@@ -7,7 +7,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     const [tempWall, setTempWall] = useState(null);
     const [wallHistory, setWallHistory] = useState([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
-    const [lastClickedEndpoint, setLastClickedEndpoint] = useState(null);
     const [hoveredWall, setHoveredWall] = useState(null);
 
     const SCALE_FACTOR = 0.1;
@@ -93,154 +92,227 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
 
         // Enhanced wall drawing with hover effects
         const drawWalls = () => {
-            const canvas = canvasRef.current;
-            const context = canvas.getContext('2d');
-            context.clearRect(0, 0, canvas.width, canvas.height);
-            drawGrid();
-    
-            // Helper function to draw wall endpoints
-            const drawEndpoints = (x, y, color = 'blue', size = 4) => {
-                context.beginPath();
-                context.arc(
-                    x * scaleFactor + offsetX,
-                    y * scaleFactor + offsetY,
-                    size, 0, 2 * Math.PI
-                );
-                context.fillStyle = color;
-                context.fill();
-            };
-    
-            // Helper function to draw wall dimensions
-            const drawDimensions = (startX, startY, endX, endY, color = 'blue') => {
-                const midX = ((startX + endX) / 2) * scaleFactor + offsetX;
-                const midY = ((startY + endY) / 2) * scaleFactor + offsetY;
-                const length = Math.sqrt(
-                    Math.pow(endX - startX, 2) +
-                    Math.pow(endY - startY, 2)
-                );
-                
-                context.fillStyle = color;
-                context.font = '12px Arial';
-                const text = `${Math.round(length)} mm`;
-                const textWidth = context.measureText(text).width;
-                
-                // Add background to text for better visibility
-                context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                context.fillRect(
-                    midX - textWidth/2 - 2,
-                    midY - 8,
-                    textWidth + 4,
-                    16
-                );
-                
-                context.fillStyle = color;
-                context.fillText(text, midX - textWidth/2, midY + 4);
-            };
-    
-            // Draw existing walls
-            walls.forEach((wall, index) => {
-                // Draw wall line
-                context.beginPath();
-                context.moveTo(
-                    wall.start_x * scaleFactor + offsetX,
-                    wall.start_y * scaleFactor + offsetY
-                );
-                context.lineTo(
-                    wall.end_x * scaleFactor + offsetX,
-                    wall.end_y * scaleFactor + offsetY
-                );
-                
-                // Wall styling based on state
-                if (selectedWall === index) {
-                    context.strokeStyle = 'red';
-                    context.lineWidth = 3;
-                } else if (hoveredWall === index) {
-                    context.strokeStyle = '#2196F3'; // Material Blue
-                    context.lineWidth = 2.5;
-                } else {
-                    context.strokeStyle = '#333333'; // Darker gray for better contrast
-                    context.lineWidth = 2;
-                }
-                context.stroke();
-    
-                // Draw endpoints with different colors based on wall state
-                const endpointColor = selectedWall === index ? 'red' : '#2196F3';
-                drawEndpoints(wall.start_x, wall.start_y, endpointColor);
-                drawEndpoints(wall.end_x, wall.end_y, endpointColor);
-    
-                // Draw dimensions
-                drawDimensions(
-                    wall.start_x,
-                    wall.start_y,
-                    wall.end_x,
-                    wall.end_y,
-                    selectedWall === index ? 'red' : '#2196F3'
-                );
-            });
-    
-            // Draw temporary wall with enhanced visual feedback
-            if (tempWall) {
-                // Draw snapping preview if close to existing walls
-                const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
-                if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
-                    context.beginPath();
-                    context.moveTo(
-                        tempWall.end_x * scaleFactor + offsetX,
-                        tempWall.end_y * scaleFactor + offsetY
-                    );
-                    context.lineTo(
-                        snapPoint.x * scaleFactor + offsetX,
-                        snapPoint.y * scaleFactor + offsetY
-                    );
-                    context.strokeStyle = 'rgba(76, 175, 80, 0.5)'; // Semi-transparent green
-                    context.lineWidth = 1;
-                    context.setLineDash([3, 3]);
-                    context.stroke();
-                    context.setLineDash([]);
-                    
-                    // Draw snap point indicator
-                    drawEndpoints(snapPoint.x, snapPoint.y, '#4CAF50', 6);
-                }
-    
-                // Draw temporary wall
-                context.beginPath();
-                context.moveTo(
-                    tempWall.start_x * scaleFactor + offsetX,
-                    tempWall.start_y * scaleFactor + offsetY
-                );
-                context.lineTo(
-                    tempWall.end_x * scaleFactor + offsetX,
-                    tempWall.end_y * scaleFactor + offsetY
-                );
-                context.strokeStyle = '#4CAF50'; // Material Green
-                context.lineWidth = 2;
-                context.setLineDash([5, 5]);
-                context.stroke();
-                context.setLineDash([]);
-    
-                // Draw temporary wall endpoints
-                drawEndpoints(tempWall.start_x, tempWall.start_y, '#4CAF50');
-                drawEndpoints(tempWall.end_x, tempWall.end_y, '#4CAF50');
-    
-                // Draw dimensions for temporary wall
-                drawDimensions(
-                    tempWall.start_x,
-                    tempWall.start_y,
-                    tempWall.end_x,
-                    tempWall.end_y,
-                    '#4CAF50'
-                );
-    
-                // Draw intersection points if any
-                const { intersection } = findClosestIntersection(
-                    { x: tempWall.start_x, y: tempWall.start_y },
-                    { x: tempWall.end_x, y: tempWall.end_y }
+    const FIXED_GAP = 2; // Fixed gap in pixels for double-line walls
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    drawGrid();
+
+    // Helper function to draw wall endpoints
+    const drawEndpoints = (x, y, color = 'blue', size = 4) => {
+        context.beginPath();
+        context.arc(
+            x * scaleFactor + offsetX,
+            y * scaleFactor + offsetY,
+            size,
+            0,
+            2 * Math.PI
+        );
+        context.fillStyle = color;
+        context.fill();
+    };
+
+    // Helper function to draw wall dimensions
+    const drawDimensions = (startX, startY, endX, endY, color = 'blue') => {
+        const midX = ((startX + endX) / 2) * scaleFactor + offsetX;
+        const midY = ((startY + endY) / 2) * scaleFactor + offsetY;
+        const length = Math.sqrt(
+            Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
+        );
+
+        context.fillStyle = color;
+        context.font = '12px Arial';
+        const text = `${Math.round(length)} mm`;
+        const textWidth = context.measureText(text).width;
+
+        // Add background to text for better visibility
+        context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        context.fillRect(midX - textWidth / 2 - 2, midY - 8, textWidth + 4, 16);
+
+        context.fillStyle = color;
+        context.fillText(text, midX - textWidth / 2, midY + 4);
+    };
+
+    // Function to calculate offset points for double-line walls
+    const calculateOffsetPoints = (x1, y1, x2, y2, gapPixels) => {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        const offsetX = (gapPixels * dy) / length;
+        const offsetY = -(gapPixels * dx) / length;
+
+        return {
+            line1: [
+                { x: x1 + offsetX / scaleFactor, y: y1 + offsetY / scaleFactor },
+                { x: x2 + offsetX / scaleFactor, y: y2 + offsetY / scaleFactor },
+            ],
+            line2: [
+                { x: x1 - offsetX / scaleFactor, y: y1 - offsetY / scaleFactor },
+                { x: x2 - offsetX / scaleFactor, y: y2 - offsetY / scaleFactor },
+            ],
+        };
+    };
+
+    // Draw existing walls
+    walls.forEach((wall, index) => {
+        const { line1, line2 } = calculateOffsetPoints(
+            wall.start_x,
+            wall.start_y,
+            wall.end_x,
+            wall.end_y,
+            FIXED_GAP
+        );
+
+        // Change color if hovered
+        const wallColor =
+            selectedWall === index
+                ? 'red'
+                : hoveredWall === index
+                ? '#2196F3' // Hovered wall color
+                : '#333333';
+
+        // Draw the first line of the wall
+        context.beginPath();
+        context.moveTo(
+            line1[0].x * scaleFactor + offsetX,
+            line1[0].y * scaleFactor + offsetY
+        );
+        context.lineTo(
+            line1[1].x * scaleFactor + offsetX,
+            line1[1].y * scaleFactor + offsetY
+        );
+        context.strokeStyle = wallColor;
+        context.lineWidth = 2;
+        context.stroke();
+
+        // Draw the second line of the wall
+        context.beginPath();
+        context.moveTo(
+            line2[0].x * scaleFactor + offsetX,
+            line2[0].y * scaleFactor + offsetY
+        );
+        context.lineTo(
+            line2[1].x * scaleFactor + offsetX,
+            line2[1].y * scaleFactor + offsetY
+        );
+        context.strokeStyle = wallColor;
+        context.lineWidth = 2;
+        context.stroke();
+
+        // Draw endpoints with different colors based on wall state
+        const endpointColor = selectedWall === index ? 'red' : '#2196F3';
+        drawEndpoints(wall.start_x, wall.start_y, endpointColor);
+        drawEndpoints(wall.end_x, wall.end_y, endpointColor);
+
+        // Draw dimensions (on the central line)
+        drawDimensions(
+            wall.start_x,
+            wall.start_y,
+            wall.end_x,
+            wall.end_y,
+            selectedWall === index ? 'red' : '#2196F3'
+        );
+
+        // Draw intersection points if any
+        walls.forEach((otherWall) => {
+            if (wall !== otherWall) {
+                const intersection = calculateIntersection(
+                    { x: wall.start_x, y: wall.start_y },
+                    { x: wall.end_x, y: wall.end_y },
+                    { x: otherWall.start_x, y: otherWall.start_y },
+                    { x: otherWall.end_x, y: otherWall.end_y }
                 );
                 if (intersection) {
-                    drawEndpoints(intersection.x, intersection.y, '#FF9800', 6); // Orange for intersection points
+                    drawEndpoints(
+                        intersection.x,
+                        intersection.y,
+                        '#FF9800', // Orange for intersection points
+                        6
+                    );
                 }
             }
-        };
+        });
+    });
+
+    // Draw temporary wall with enhanced visual feedback
+    if (tempWall) {
+        const { line1, line2 } = calculateOffsetPoints(
+            tempWall.start_x,
+            tempWall.start_y,
+            tempWall.end_x,
+            tempWall.end_y,
+            FIXED_GAP
+        );
+
+        // Draw the first line of the temporary wall
+        context.beginPath();
+        context.moveTo(
+            line1[0].x * scaleFactor + offsetX,
+            line1[0].y * scaleFactor + offsetY
+        );
+        context.lineTo(
+            line1[1].x * scaleFactor + offsetX,
+            line1[1].y * scaleFactor + offsetY
+        );
+        context.strokeStyle = '#4CAF50'; // Green for temporary walls
+        context.lineWidth = 2;
+        context.setLineDash([5, 5]);
+        context.stroke();
+
+        // Draw the second line of the temporary wall
+        context.beginPath();
+        context.moveTo(
+            line2[0].x * scaleFactor + offsetX,
+            line2[0].y * scaleFactor + offsetY
+        );
+        context.lineTo(
+            line2[1].x * scaleFactor + offsetX,
+            line2[1].y * scaleFactor + offsetY
+        );
+        context.strokeStyle = '#4CAF50'; // Green for temporary walls
+        context.lineWidth = 2;
+        context.setLineDash([5, 5]);
+        context.stroke();
+
+        context.setLineDash([]); // Reset dash style
+
+        // Draw endpoints for temporary wall
+        drawEndpoints(tempWall.start_x, tempWall.start_y, '#4CAF50');
+        drawEndpoints(tempWall.end_x, tempWall.end_y, '#4CAF50');
+
+        // Draw dimensions (on the central line)
+        drawDimensions(
+            tempWall.start_x,
+            tempWall.start_y,
+            tempWall.end_x,
+            tempWall.end_y,
+            '#4CAF50'
+        );
+
+        // Draw snapping preview if close to existing walls
+        const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
+        if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
+            context.beginPath();
+            context.moveTo(
+                tempWall.end_x * scaleFactor + offsetX,
+                tempWall.end_y * scaleFactor + offsetY
+            );
+            context.lineTo(
+                snapPoint.x * scaleFactor + offsetX,
+                snapPoint.y * scaleFactor + offsetY
+            );
+            context.strokeStyle = 'rgba(76, 175, 80, 0.5)'; // Semi-transparent green
+            context.lineWidth = 1;
+            context.setLineDash([3, 3]);
+            context.stroke();
+            context.setLineDash([]);
+
+            // Draw snap point indicator
+            drawEndpoints(snapPoint.x, snapPoint.y, '#4CAF50', 6);
+        }
+    }
+};        
 
         drawWalls();
 
@@ -459,28 +531,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
             });
     
             setHoveredWall(newHoveredWall);
-        }
-    
-        if (currentMode === 'edit-wall' && selectedWall !== null) {
-            // Move selected wall dynamically
-            const wall = walls[selectedWall];
-            const dx = x - wall.start_x;
-            const dy = y - wall.start_y;
-    
-            const updatedWall = {
-                ...wall,
-                start_x: wall.start_x + dx,
-                start_y: wall.start_y + dy,
-                end_x: wall.end_x + dx,
-                end_y: wall.end_y + dy,
-            };
-    
-            const updatedWalls = walls.map((w, index) =>
-                index === selectedWall ? updatedWall : w
-            );
-    
-            setWalls(updatedWalls); // Update walls state
-            onWallUpdate(updatedWalls); // Notify parent about the update
         }
     };      
 
