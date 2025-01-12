@@ -27,6 +27,10 @@ const ProjectDetails = () => {
         fetchProjectDetails();
     }, [projectId]);
 
+    const handleWallSelect = (wallIndex) => {
+        setSelectedWall(wallIndex); // Update selectedWall in ProjectDetails
+    };    
+
     const handleWallUpdate = (updatedWalls) => {
         // Update walls locally and in the backend
         setWalls(updatedWalls);
@@ -52,19 +56,56 @@ const ProjectDetails = () => {
             });
     };
 
+    const mergeWalls = (walls) => {
+        const mergedWalls = [...walls];
+    
+        for (let i = 0; i < mergedWalls.length - 1; i++) {
+            for (let j = i + 1; j < mergedWalls.length; j++) {
+                const wall1 = mergedWalls[i];
+                const wall2 = mergedWalls[j];
+    
+                if (
+                    (wall1.end_x === wall2.start_x && wall1.end_y === wall2.start_y) ||
+                    (wall2.end_x === wall1.start_x && wall2.end_y === wall1.start_y)
+                ) {
+                    // Merge the two walls
+                    const mergedWall = {
+                        start_x: wall1.start_x,
+                        start_y: wall1.start_y,
+                        end_x: wall2.end_x,
+                        end_y: wall2.end_y,
+                    };
+    
+                    mergedWalls.splice(j, 1); // Remove wall2
+                    mergedWalls.splice(i, 1, mergedWall); // Replace wall1 with mergedWall
+                    j--; // Adjust index after removal
+                }
+            }
+        }
+    
+        return mergedWalls;
+    };    
+
     const handleWallRemove = () => {
         if (selectedWall !== null) {
             const wallToRemove = walls[selectedWall];
             api.delete(`/walls/${wallToRemove.id}/`)
                 .then(() => {
-                    setWalls((prevWalls) => prevWalls.filter((_, index) => index !== selectedWall));
+                    // Remove the wall from the list
+                    const updatedWalls = walls.filter((_, index) => index !== selectedWall);
+    
+                    // Attempt to merge remaining walls
+                    const mergedWalls = mergeWalls(updatedWalls);
+    
+                    setWalls(mergedWalls);
+                    handleWallUpdate(mergedWalls); // Notify backend of wall updates
                     setSelectedWall(null); // Deselect the wall
                 })
                 .catch((error) => {
                     console.error('Error deleting wall:', error);
                 });
         }
-    };
+    };    
 
     if (!project) {
         return <div>Loading...</div>;
@@ -110,7 +151,7 @@ const ProjectDetails = () => {
                             Edit Wall
                         </button>
                         <button
-                            onClick={handleWallRemove}
+                            onClick={() => handleWallRemove(selectedWall)}
                             disabled={selectedWall === null}
                             className="px-4 py-2 bg-red-500 text-white rounded disabled:bg-gray-300"
                         >
@@ -182,13 +223,13 @@ const ProjectDetails = () => {
             <h2>2D Visualization:</h2>
             <Canvas2D
                 walls={walls}
-                setWalls={setWalls} // Pass the setter
+                setWalls={setWalls}
                 onWallUpdate={handleWallUpdate}
                 onNewWall={handleWallCreate}
                 isEditingMode={isEditingMode}
                 currentMode={currentMode}
+                onWallSelect={handleWallSelect} // Pass the handler here
             />
-
 
             {/* Placeholder for 3D Visualization */}
             <h2>3D Visualization (Coming Soon):</h2>

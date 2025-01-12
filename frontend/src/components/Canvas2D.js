@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, currentMode }) => {
+const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, currentMode, onWallSelect }) => {
     const canvasRef = useRef(null);
     const [selectedWall, setSelectedWall] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -445,12 +445,11 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
 
     // Enhanced click handling with endpoint detection
     const handleCanvasClick = (event) => {
-        if (!isEditingMode) return; // Disable if editing mode is off
+        if (!isEditingMode) return;
     
         const { x, y } = getMousePos(event);
     
         if (currentMode === 'add-wall') {
-            // Logic for adding a wall
             if (isDrawing) {
                 setIsDrawing(false);
     
@@ -458,18 +457,101 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                     const startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
                     const endPoint = snapToClosestPoint(x, y);
     
-                    const { intersection } = findClosestIntersection(startPoint, endPoint);
+                    // Create a copy of walls array to store all modifications
+                    let newWalls = [...walls];
+                    let wallsToAdd = [];
+                    let wallsToRemove = [];
     
-                    const finalWall = {
+                    // First, check if the start point is on an existing wall
+                    walls.forEach((wall, index) => {
+                        // Check if start point lies on this wall
+                        const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
+                        if (startSegmentPoint && 
+                            Math.hypot(startSegmentPoint.x - startPoint.x, startSegmentPoint.y - startPoint.y) < SNAP_THRESHOLD / scaleFactor) {
+                            // Add wall index to removal list
+                            wallsToRemove.push(index);
+    
+                            // Create two segments from the split at start point
+                            const splitWall1 = {
+                                start_x: wall.start_x,
+                                start_y: wall.start_y,
+                                end_x: startPoint.x,
+                                end_y: startPoint.y,
+                            };
+    
+                            const splitWall2 = {
+                                start_x: startPoint.x,
+                                start_y: startPoint.y,
+                                end_x: wall.end_x,
+                                end_y: wall.end_y,
+                            };
+    
+                            // Add both segments to the addition list
+                            wallsToAdd.push(splitWall1, splitWall2);
+                        }
+                    });
+    
+                    // Then check for intersections along the new wall
+                    walls.forEach((wall, index) => {
+                        // Skip if this wall is already marked for removal
+                        if (wallsToRemove.includes(index)) return;
+    
+                        const intersection = calculateIntersection(
+                            { x: wall.start_x, y: wall.start_y },
+                            { x: wall.end_x, y: wall.end_y },
+                            startPoint,
+                            endPoint
+                        );
+    
+                        if (intersection && 
+                            // Avoid splitting at the start point again
+                            !(Math.abs(intersection.x - startPoint.x) < SNAP_THRESHOLD / scaleFactor && 
+                              Math.abs(intersection.y - startPoint.y) < SNAP_THRESHOLD / scaleFactor)) {
+                            // Add wall index to removal list
+                            wallsToRemove.push(index);
+    
+                            // Create two segments from the split
+                            const splitWall1 = {
+                                start_x: wall.start_x,
+                                start_y: wall.start_y,
+                                end_x: intersection.x,
+                                end_y: intersection.y,
+                            };
+    
+                            const splitWall2 = {
+                                start_x: intersection.x,
+                                start_y: intersection.y,
+                                end_x: wall.end_x,
+                                end_y: wall.end_y,
+                            };
+    
+                            // Add both segments to the addition list
+                            wallsToAdd.push(splitWall1, splitWall2);
+                        }
+                    });
+    
+                    // Remove walls that need to be split (in reverse order to maintain correct indices)
+                    wallsToRemove.sort((a, b) => b - a).forEach(index => {
+                        newWalls.splice(index, 1);
+                    });
+    
+                    // Add all new wall segments
+                    newWalls = [...newWalls, ...wallsToAdd];
+    
+                    // Add the new connecting wall
+                    const newWall = {
                         start_x: startPoint.x,
                         start_y: startPoint.y,
-                        end_x: intersection ? intersection.x : endPoint.x,
-                        end_y: intersection ? intersection.y : endPoint.y,
+                        end_x: endPoint.x,
+                        end_y: endPoint.y,
                     };
+                    newWalls.push(newWall);
     
-                    onNewWall(finalWall); // Notify parent of the new wall
+                    // Update walls state
+                    setWalls(newWalls);
+                    onNewWall(newWall);
+                    addToHistory(newWalls);
                     setTempWall(null);
-                    addToHistory([...walls, finalWall]); // Save to history
                 }
             } else {
                 const snappedStart = snapToClosestPoint(x, y);
@@ -482,7 +564,7 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                 });
             }
         } else if (currentMode === 'edit-wall') {
-            // Logic for selecting a wall
+            // Wall selection logic remains unchanged
             let selectedIndex = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor;
     
@@ -496,9 +578,10 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                 }
             });
     
-            setSelectedWall(selectedIndex); // Highlight the selected wall
+            setSelectedWall(selectedIndex);
+            onWallSelect(selectedIndex);
         }
-    };    
+    };
 
     const handleMouseMove = (event) => {
         if (!isEditingMode) return; // Disable interactions if editing mode is off
