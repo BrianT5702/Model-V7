@@ -8,6 +8,7 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     const [wallHistory, setWallHistory] = useState([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [hoveredWall, setHoveredWall] = useState(null);
+    const [hoveredPoint, setHoveredPoint] = useState(null); // { x, y } or null
 
     const SNAP_THRESHOLD = 10;
     const gridSize = 50;
@@ -99,6 +100,10 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
 
             // Helper function to draw wall endpoints
             const drawEndpoints = (x, y, color = 'blue', size = 4) => {
+                if (hoveredPoint && hoveredPoint.x === x && hoveredPoint.y === y) {
+                    color = '#FF5722'; // Highlight color for hovered endpoint
+                    size = 6; // Slightly larger size for visual feedback
+                }
                 context.beginPath();
                 context.arc(
                     x * scaleFactor + offsetX,
@@ -109,7 +114,7 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                 );
                 context.fillStyle = color;
                 context.fill();
-            };
+            };            
 
             // Helper function to draw wall dimensions
             const drawDimensions = (startX, startY, endX, endY, color = 'blue') => {
@@ -313,308 +318,335 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
             }
         };        
 
-                drawWalls();
+        drawWalls();
 
-                return () => {
-                    context.clearRect(0, 0, canvas.width, canvas.height);
-                };
-            }, [walls, selectedWall, tempWall, isDrawing, hoveredWall]);
-
-            const getMousePos = (event) => {
-                const rect = canvasRef.current.getBoundingClientRect();
-                const x = (event.clientX - rect.left - offsetX) / scaleFactor;
-                const y = (event.clientY - rect.top - offsetY) / scaleFactor;
-                return { x, y };
-            };
-
-            // Enhanced snapping with wall continuation
-            const snapToClosestPoint = (x, y) => {
-                let closestPoint = { x, y }; // Default to the provided point
-                let minDistance = SNAP_THRESHOLD / scaleFactor;
-            
-                // Check snapping to wall endpoints (start and end points)
-                walls.forEach((wall) => {
-                    ['start', 'end'].forEach((point) => {
-                        const px = wall[`${point}_x`];
-                        const py = wall[`${point}_y`];
-                        const distance = Math.hypot(px - x, py - y);
-            
-                        if (distance < minDistance) {
-                            closestPoint = { x: px, y: py };
-                            minDistance = distance;
-                        }
-                    });
-                });
-            
-                // Check snapping to wall segments (for existing intersections)
-                walls.forEach((wall) => {
-                    const segmentPoint = snapToWallSegment(x, y, wall);
-                    if (segmentPoint) {
-                        const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
-                        if (distance < minDistance) {
-                            closestPoint = segmentPoint;
-                            minDistance = distance;
-                        }
-                    }
-                });
-            
-                return closestPoint;
-            };                   
-
-            const snapToWallSegment = (x, y, wall) => {
-                const wallVector = {
-                    x: wall.end_x - wall.start_x,
-                    y: wall.end_y - wall.start_y
-                };
-                const pointVector = {
-                    x: x - wall.start_x,
-                    y: y - wall.start_y
-                };
-
-                const wallLengthSquared = wallVector.x * wallVector.x + wallVector.y * wallVector.y;
-                if (wallLengthSquared === 0) return null;
-
-                const t = Math.max(0, Math.min(1,
-                    (pointVector.x * wallVector.x + pointVector.y * wallVector.y) / wallLengthSquared
-                ));
-
-                return {
-                    x: wall.start_x + t * wallVector.x,
-                    y: wall.start_y + t * wallVector.y
-                };
-            };
-
-            const calculateIntersection = (wall1Start, wall1End, wall2Start, wall2End) => {
-                const denominator = ((wall2End.y - wall2Start.y) * (wall1End.x - wall1Start.x)) -
-                                ((wall2End.x - wall2Start.x) * (wall1End.y - wall1Start.y));
-                                
-                if (denominator === 0) return null;
-
-                const ua = (((wall2End.x - wall2Start.x) * (wall1Start.y - wall2Start.y)) -
-                        ((wall2End.y - wall2Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
-                const ub = (((wall1End.x - wall1Start.x) * (wall1Start.y - wall2Start.y)) -
-                        ((wall1End.y - wall1Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
-
-                // Check if intersection occurs within both line segments
-                if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
-                    return {
-                        x: wall1Start.x + (ua * (wall1End.x - wall1Start.x)),
-                        y: wall1Start.y + (ua * (wall1End.y - wall1Start.y))
-                    };
-                }
-
-                return null;
-            };
-
-            // Enhanced click handling with endpoint detection
-            const handleCanvasClick = async (event) => {
-                if (!isEditingMode) return;
-            
-                const { x, y } = getMousePos(event);
-            
-                if (currentMode === 'add-wall') {
-                    if (isDrawing) {
-                        setIsDrawing(false);
-            
-                        if (tempWall) {
-                            const startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
-                            const endPoint = snapToClosestPoint(x, y);
-            
-                            let wallsToAdd = [];
-                            let wallsToDelete = [];
-            
-                            // Check if the start point is on an existing wall
-                            for (const wall of walls) {
-                                const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
-                                if (
-                                    startSegmentPoint &&
-                                    Math.hypot(startSegmentPoint.x - startPoint.x, startSegmentPoint.y - startPoint.y) <
-                                        SNAP_THRESHOLD / scaleFactor
-                                ) {
-                                    wallsToDelete.push(wall);
-            
-                                    // Create two segments from the split at the start point
-                                    wallsToAdd.push({
-                                        start_x: wall.start_x,
-                                        start_y: wall.start_y,
-                                        end_x: startPoint.x,
-                                        end_y: startPoint.y,
-                                    });
-            
-                                    wallsToAdd.push({
-                                        start_x: startPoint.x,
-                                        start_y: startPoint.y,
-                                        end_x: wall.end_x,
-                                        end_y: wall.end_y,
-                                    });
-                                }
-                            }
-            
-                            // Check for intersections along the new wall
-                            for (const wall of walls) {
-                                // Skip if this wall is already marked for deletion
-                                if (wallsToDelete.includes(wall)) continue;
-            
-                                const intersection = calculateIntersection(
-                                    { x: wall.start_x, y: wall.start_y },
-                                    { x: wall.end_x, y: wall.end_y },
-                                    startPoint,
-                                    endPoint
-                                );
-            
-                                if (
-                                    intersection &&
-                                    !(Math.abs(intersection.x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                                    Math.abs(intersection.y - startPoint.y) < SNAP_THRESHOLD / scaleFactor)
-                                ) {
-                                    wallsToDelete.push(wall);
-            
-                                    // Create two segments from the split
-                                    wallsToAdd.push({
-                                        start_x: wall.start_x,
-                                        start_y: wall.start_y,
-                                        end_x: intersection.x,
-                                        end_y: intersection.y,
-                                    });
-            
-                                    wallsToAdd.push({
-                                        start_x: intersection.x,
-                                        start_y: intersection.y,
-                                        end_x: wall.end_x,
-                                        end_y: wall.end_y,
-                                    });
-                                }
-                            }
-            
-                            // Add the new connecting wall
-                            wallsToAdd.push({
-                                start_x: startPoint.x,
-                                start_y: startPoint.y,
-                                end_x: endPoint.x,
-                                end_y: endPoint.y,
-                            });
-            
-                            try {
-                                // First, create all new walls
-                                const createdWalls = [];
-                                for (const wallData of wallsToAdd) {
-                                    const newWall = await onNewWall(wallData);
-                                    createdWalls.push(newWall);
-                                }
-            
-                                // Then, delete all walls that were split
-                                for (const wall of wallsToDelete) {
-                                    if (wall.id) {
-                                        await onWallDelete(wall.id); // Call deletion API for existing walls
-                                    }
-                                }
-            
-                                // Update local state with new walls
-                                const remainingWalls = walls.filter(wall => !wallsToDelete.includes(wall));
-                                const updatedWalls = [...remainingWalls, ...createdWalls];
-                                setWalls(updatedWalls);
-                                addToHistory(updatedWalls);
-            
-                            } catch (error) {
-                                console.error('Error managing walls:', error);
-                            }
-            
-                            setTempWall(null);
-                        }
-                    } else {
-                        const snappedStart = snapToClosestPoint(x, y);
-                        setIsDrawing(true);
-                        setTempWall({
-                            start_x: snappedStart.x,
-                            start_y: snappedStart.y,
-                            end_x: snappedStart.x,
-                            end_y: snappedStart.y,
-                        });
-                    }
-                } else if (currentMode === 'edit-wall') {
-                    // Wall selection logic remains unchanged
-                    let selectedIndex = null;
-                    let minDistance = SNAP_THRESHOLD / scaleFactor;
-            
-                    walls.forEach((wall, index) => {
-                        const segmentPoint = snapToWallSegment(x, y, wall);
-                        const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
-            
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            selectedIndex = index;
-                        }
-                    });
-            
-                    setSelectedWall(selectedIndex);
-                    onWallSelect(selectedIndex);
-                }
-            };            
-
-            const handleMouseMove = (event) => {
-                if (!isEditingMode) return;
-            
-                const { x, y } = getMousePos(event);
-            
-                if (isDrawing && tempWall && currentMode === 'add-wall') {
-                    // Update temporary wall during drawing
-                    const snappedPoint = snapToClosestPoint(x, y);
-                    if (snappedPoint) {
-                        setTempWall({
-                            ...tempWall,
-                            end_x: snappedPoint.x,
-                            end_y: snappedPoint.y,
-                        });
-                    }
-                }
-            
-                // Check if hovering over a wall
-                if (currentMode === 'add-wall' || currentMode === 'edit-wall') {
-                    let minDistance = SNAP_THRESHOLD / scaleFactor;
-                    let newHoveredWall = null;
-            
-                    walls.forEach((wall, index) => {
-                        const segmentPoint = snapToWallSegment(x, y, wall);
-                        if (segmentPoint) {
-                            const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
-                            if (distance < minDistance) {
-                                minDistance = distance;
-                                newHoveredWall = index;
-                            }
-                        }
-                    });
-            
-                    setHoveredWall(newHoveredWall);
-                }
-            };               
-
-            return (
-                <div className="flex flex-col items-center gap-4">
-                    <div className="flex gap-2">
-                        <button
-                            onClick={handleUndo}
-                            disabled={historyIndex <= 0}
-                            className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-                        >
-                            Undo
-                        </button>
-                        <button
-                            onClick={handleRedo}
-                            disabled={historyIndex >= wallHistory.length - 1}
-                            className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-                        >
-                            Redo
-                        </button>
-                    </div>
-                    <canvas
-                        ref={canvasRef}
-                        onClick={handleCanvasClick}
-                        onMouseMove={handleMouseMove}
-                        tabIndex={0}
-                        className="border border-gray-300 bg-gray-50"
-                    />
-                </div>
-            );
+        return () => {
+            context.clearRect(0, 0, canvas.width, canvas.height);
         };
+    }, [walls, selectedWall, tempWall, isDrawing, hoveredWall]);
+
+    const getMousePos = (event) => {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const x = (event.clientX - rect.left - offsetX) / scaleFactor;
+        const y = (event.clientY - rect.top - offsetY) / scaleFactor;
+        return { x, y };
+    };
+
+    // Enhanced snapping with wall continuation
+    const snapToClosestPoint = (x, y) => {
+        let closestPoint = { x, y }; // Default to the provided point
+        let minDistance = SNAP_THRESHOLD / scaleFactor;
+    
+        // Check snapping to wall endpoints (start and end points)
+        walls.forEach((wall) => {
+            ['start', 'end'].forEach((point) => {
+                const px = wall[`${point}_x`];
+                const py = wall[`${point}_y`];
+                const distance = Math.hypot(px - x, py - y);
+    
+                if (distance < minDistance) {
+                    closestPoint = { x: px, y: py };
+                    minDistance = distance;
+                }
+            });
+        });
+    
+        // Check snapping to wall segments (for existing intersections)
+        walls.forEach((wall) => {
+            const segmentPoint = snapToWallSegment(x, y, wall);
+            if (segmentPoint) {
+                const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                if (distance < minDistance) {
+                    closestPoint = segmentPoint;
+                    minDistance = distance;
+                }
+            }
+        });
+    
+        return closestPoint;
+    };                   
+
+    const snapToWallSegment = (x, y, wall) => {
+        const wallVector = {
+            x: wall.end_x - wall.start_x,
+            y: wall.end_y - wall.start_y
+        };
+        const pointVector = {
+            x: x - wall.start_x,
+            y: y - wall.start_y
+        };
+
+        const wallLengthSquared = wallVector.x * wallVector.x + wallVector.y * wallVector.y;
+        if (wallLengthSquared === 0) return null;
+
+        const t = Math.max(0, Math.min(1,
+            (pointVector.x * wallVector.x + pointVector.y * wallVector.y) / wallLengthSquared
+        ));
+
+        return {
+            x: wall.start_x + t * wallVector.x,
+            y: wall.start_y + t * wallVector.y
+        };
+    };
+
+    const calculateIntersection = (wall1Start, wall1End, wall2Start, wall2End) => {
+        const denominator = ((wall2End.y - wall2Start.y) * (wall1End.x - wall1Start.x)) -
+                        ((wall2End.x - wall2Start.x) * (wall1End.y - wall1Start.y));
+                        
+        if (denominator === 0) return null;
+
+        const ua = (((wall2End.x - wall2Start.x) * (wall1Start.y - wall2Start.y)) -
+                ((wall2End.y - wall2Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
+        const ub = (((wall1End.x - wall1Start.x) * (wall1Start.y - wall2Start.y)) -
+                ((wall1End.y - wall1Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
+
+        // Check if intersection occurs within both line segments
+        if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+            return {
+                x: wall1Start.x + (ua * (wall1End.x - wall1Start.x)),
+                y: wall1Start.y + (ua * (wall1End.y - wall1Start.y))
+            };
+        }
+
+        return null;
+    };
+
+    // Enhanced click handling with endpoint detection
+    const handleCanvasClick = async (event) => {
+        if (!isEditingMode) return;
+    
+        const { x, y } = getMousePos(event);
+    
+        if (currentMode === 'add-wall') {
+            if (isDrawing) {
+                setIsDrawing(false);
+    
+                if (tempWall) {
+                    const startPoint = hoveredPoint || snapToClosestPoint(tempWall.start_x, tempWall.start_y);
+                    const endPoint = snapToClosestPoint(x, y);
+    
+                    let wallsToAdd = [];
+                    let wallsToDelete = [];
+    
+                    const isStartingAtExistingEndpoint = walls.some((wall) =>
+                        (wall.start_x === startPoint.x && wall.start_y === startPoint.y) ||
+                        (wall.end_x === startPoint.x && wall.end_y === startPoint.y)
+                    );
+    
+                    if (!isStartingAtExistingEndpoint) {
+                        // Check if the start point is on an existing wall
+                        for (const wall of walls) {
+                            const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
+                            if (
+                                startSegmentPoint &&
+                                Math.hypot(startSegmentPoint.x - startPoint.x, startSegmentPoint.y - startPoint.y) <
+                                    SNAP_THRESHOLD / scaleFactor
+                            ) {
+                                wallsToDelete.push(wall);
+    
+                                // Create two segments from the split at the start point
+                                wallsToAdd.push({
+                                    start_x: wall.start_x,
+                                    start_y: wall.start_y,
+                                    end_x: startPoint.x,
+                                    end_y: startPoint.y,
+                                });
+    
+                                wallsToAdd.push({
+                                    start_x: startPoint.x,
+                                    start_y: startPoint.y,
+                                    end_x: wall.end_x,
+                                    end_y: wall.end_y,
+                                });
+                            }
+                        }
+                    }
+    
+                    // Check for intersections along the new wall
+                    for (const wall of walls) {
+                        // Skip if this wall is already marked for deletion
+                        if (wallsToDelete.includes(wall)) continue;
+    
+                        const intersection = calculateIntersection(
+                            { x: wall.start_x, y: wall.start_y },
+                            { x: wall.end_x, y: wall.end_y },
+                            startPoint,
+                            endPoint
+                        );
+    
+                        if (
+                            intersection &&
+                            !(Math.abs(intersection.x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
+                            Math.abs(intersection.y - startPoint.y) < SNAP_THRESHOLD / scaleFactor)
+                        ) {
+                            wallsToDelete.push(wall);
+    
+                            // Create two segments from the split
+                            wallsToAdd.push({
+                                start_x: wall.start_x,
+                                start_y: wall.start_y,
+                                end_x: intersection.x,
+                                end_y: intersection.y,
+                            });
+    
+                            wallsToAdd.push({
+                                start_x: intersection.x,
+                                start_y: intersection.y,
+                                end_x: wall.end_x,
+                                end_y: wall.end_y,
+                            });
+                        }
+                    }
+    
+                    // Add the new connecting wall
+                    wallsToAdd.push({
+                        start_x: startPoint.x,
+                        start_y: startPoint.y,
+                        end_x: endPoint.x,
+                        end_y: endPoint.y,
+                    });
+    
+                    try {
+                        // First, create all new walls
+                        const createdWalls = [];
+                        for (const wallData of wallsToAdd) {
+                            const newWall = await onNewWall(wallData);
+                            createdWalls.push(newWall);
+                        }
+    
+                        // Then, delete all walls that were split
+                        for (const wall of wallsToDelete) {
+                            if (wall.id) {
+                                await onWallDelete(wall.id); // Call deletion API for existing walls
+                            }
+                        }
+    
+                        // Update local state with new walls
+                        const remainingWalls = walls.filter((wall) => !wallsToDelete.includes(wall));
+                        const updatedWalls = [...remainingWalls, ...createdWalls];
+                        setWalls(updatedWalls);
+                        addToHistory(updatedWalls);
+    
+                    } catch (error) {
+                        console.error('Error managing walls:', error);
+                    }
+    
+                    setTempWall(null);
+                }
+            } else {
+                const snappedStart = hoveredPoint || snapToClosestPoint(x, y);
+                setIsDrawing(true);
+                setTempWall({
+                    start_x: snappedStart.x,
+                    start_y: snappedStart.y,
+                    end_x: snappedStart.x,
+                    end_y: snappedStart.y,
+                });
+            }
+        } else if (currentMode === 'edit-wall') {
+            // Wall selection logic remains unchanged
+            let selectedIndex = null;
+            let minDistance = SNAP_THRESHOLD / scaleFactor;
+    
+            walls.forEach((wall, index) => {
+                const segmentPoint = snapToWallSegment(x, y, wall);
+                const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+    
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    selectedIndex = index;
+                }
+            });
+    
+            setSelectedWall(selectedIndex);
+            onWallSelect(selectedIndex);
+        }
+    };                 
+
+    const handleMouseMove = (event) => {
+        if (!isEditingMode) return;
+    
+        const { x, y } = getMousePos(event);
+    
+        // Endpoint Hover Detection
+        let closestPoint = null;
+        let minDistance = SNAP_THRESHOLD / scaleFactor;
+    
+        walls.forEach((wall) => {
+            const points = [
+                { x: wall.start_x, y: wall.start_y },
+                { x: wall.end_x, y: wall.end_y },
+            ];
+            points.forEach((point) => {
+                const distance = Math.hypot(point.x - x, point.y - y);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestPoint = point;
+                }
+            });
+        });
+    
+        setHoveredPoint(closestPoint);
+    
+        // Wall Hover Detection
+        if (currentMode === 'add-wall' || currentMode === 'edit-wall') {
+            let minWallDistance = SNAP_THRESHOLD / scaleFactor;
+            let newHoveredWall = null;
+    
+            walls.forEach((wall, index) => {
+                const segmentPoint = snapToWallSegment(x, y, wall);
+                if (segmentPoint) {
+                    const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                    if (distance < minWallDistance) {
+                        minWallDistance = distance;
+                        newHoveredWall = index;
+                    }
+                }
+            });
+    
+            setHoveredWall(newHoveredWall);
+        }
+    
+        // Update `tempWall` if in drawing mode
+        if (isDrawing && tempWall && currentMode === 'add-wall') {
+            const snappedPoint = snapToClosestPoint(x, y);
+            if (snappedPoint) {
+                setTempWall({
+                    ...tempWall,
+                    end_x: snappedPoint.x,
+                    end_y: snappedPoint.y,
+                });
+            }
+        }
+    };         
+
+    return (
+        <div className="flex flex-col items-center gap-4">
+            <div className="flex gap-2">
+                <button
+                    onClick={handleUndo}
+                    disabled={historyIndex <= 0}
+                    className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+                >
+                    Undo
+                </button>
+                <button
+                    onClick={handleRedo}
+                    disabled={historyIndex >= wallHistory.length - 1}
+                    className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+                >
+                    Redo
+                </button>
+            </div>
+            <canvas
+                ref={canvasRef}
+                onClick={handleCanvasClick}
+                onMouseMove={handleMouseMove}
+                tabIndex={0}
+                className="border border-gray-300 bg-gray-50"
+            />
+        </div>
+    );
+};
 
 export default Canvas2D;

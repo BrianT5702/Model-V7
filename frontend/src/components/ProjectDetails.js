@@ -55,101 +55,98 @@ const ProjectDetails = () => {
         }
     };
 
-    const mergeWalls = (walls) => {
-        const mergedWalls = [...walls];
-        for (let i = 0; i < mergedWalls.length - 1; i++) {
-            for (let j = i + 1; j < mergedWalls.length; j++) {
-                const wall1 = mergedWalls[i];
-                const wall2 = mergedWalls[j];
-    
-                const shareEndpoint =
-                    (wall1.end_x === wall2.start_x && wall1.end_y === wall2.start_y) ||
-                    (wall2.end_x === wall1.start_x && wall2.end_y === wall1.start_y);
-    
-                const isCollinear =
-                    (wall1.end_x - wall1.start_x) * (wall2.end_y - wall2.start_y) ===
-                    (wall2.end_x - wall2.start_x) * (wall1.end_y - wall1.start_y);
-    
-                if (shareEndpoint && isCollinear) {
-                    console.log('Merging walls:', wall1, wall2);
-                    const mergedWall = {
-                        start_x: wall1.start_x === wall2.start_x ? wall1.end_x : wall1.start_x,
-                        start_y: wall1.start_y === wall2.start_y ? wall1.end_y : wall1.start_y,
-                        end_x: wall1.end_x === wall2.end_x ? wall1.start_x : wall2.end_x,
-                        end_y: wall1.end_y === wall2.end_y ? wall1.start_y : wall2.end_y,
-                    };
-    
-                    mergedWalls.splice(j, 1); // Remove wall2
-                    mergedWalls.splice(i, 1, mergedWall); // Replace wall1 with mergedWall
-                    j--; // Adjust index after removal
-                }
-            }
-        }
-        console.log('Final merged walls:', mergedWalls);
-        return mergedWalls;
-    };        
-
     const handleWallRemove = async () => {
         if (selectedWall !== null) {
             const wallToRemove = walls[selectedWall];
             console.log('Removing wall:', wallToRemove);
     
             try {
-                // Delete the wall from the backend
+                // First, identify walls that are genuinely candidates for merging
+                // These are walls that share EXACTLY one endpoint with the removed wall
+                // AND share that same endpoint with exactly one other wall
+                const startPoint = `${wallToRemove.start_x},${wallToRemove.start_y}`;
+                const endPoint = `${wallToRemove.end_x},${wallToRemove.end_y}`;
+                
+                // Group all walls by their endpoints
+                const wallsByPoint = {};
+                walls.forEach(wall => {
+                    if (wall.id === wallToRemove.id) return;
+                    
+                    [`${wall.start_x},${wall.start_y}`, `${wall.end_x},${wall.end_y}`].forEach(point => {
+                        if (!wallsByPoint[point]) wallsByPoint[point] = [];
+                        wallsByPoint[point].push(wall);
+                    });
+                });
+    
+                // Only consider merging at points where exactly two other walls meet
+                // (excluding the wall being removed)
+                const mergeCandidates = [];
+                [startPoint, endPoint].forEach(point => {
+                    if (wallsByPoint[point]?.length === 2) {
+                        const [wall1, wall2] = wallsByPoint[point];
+                        
+                        // Check if walls are collinear
+                        const isCollinear = Math.abs(
+                            (wall1.end_y - wall1.start_y) * (wall2.end_x - wall2.start_x) -
+                            (wall2.end_y - wall2.start_y) * (wall1.end_x - wall1.start_x)
+                        ) < 0.0001;
+    
+                        if (isCollinear) {
+                            mergeCandidates.push([wall1, wall2, point]);
+                        }
+                    }
+                });
+    
+                // Delete the wall being removed
                 await api.delete(`/walls/${wallToRemove.id}/`);
     
                 // Remove the wall locally
                 let updatedWalls = walls.filter((_, index) => index !== selectedWall);
     
-                // Identify affected walls
-                const affectedWalls = updatedWalls.filter(
-                    (wall) =>
-                        (wall.start_x === wallToRemove.start_x && wall.start_y === wallToRemove.start_y) ||
-                        (wall.end_x === wallToRemove.start_x && wall.end_y === wallToRemove.start_y) ||
-                        (wall.start_x === wallToRemove.end_x && wall.start_y === wallToRemove.end_y) ||
-                        (wall.end_x === wallToRemove.end_x && wall.end_y === wallToRemove.end_y)
-                );
+                // Handle any valid merges
+                for (const [wall1, wall2, point] of mergeCandidates) {
+                    console.log('Merging walls at point:', point);
+                    
+                    // Delete the original walls
+                    await api.delete(`/walls/${wall1.id}/`);
+                    await api.delete(`/walls/${wall2.id}/`);
     
-                console.log('Affected walls for merging:', affectedWalls);
+                    // Remove from local state
+                    updatedWalls = updatedWalls.filter(w => 
+                        w.id !== wall1.id && w.id !== wall2.id
+                    );
     
-                // Attempt to merge affected walls
-                const mergedWalls = mergeWalls(affectedWalls);
+                    // Create merged wall
+                    const [pointX, pointY] = point.split(',').map(Number);
+                    const end1 = wall1.start_x === pointX && wall1.start_y === pointY ?
+                        { x: wall1.end_x, y: wall1.end_y } :
+                        { x: wall1.start_x, y: wall1.start_y };
+                    const end2 = wall2.start_x === pointX && wall2.start_y === pointY ?
+                        { x: wall2.end_x, y: wall2.end_y } :
+                        { x: wall2.start_x, y: wall2.start_y };
     
-                console.log('Merged walls:', mergedWalls);
+                    const mergedWall = {
+                        start_x: end1.x,
+                        start_y: end1.y,
+                        end_x: end2.x,
+                        end_y: end2.y,
+                        project: projectId
+                    };
     
-                // Save merged walls and remove split walls
-                const mergedWallPromises = mergedWalls.map(async (wall) => {
-                    if (wall.id) {
-                        console.log('Updating wall in database:', wall);
-                        return await api.put(`/walls/${wall.id}/`, wall);
-                    } else {
-                        console.log('Creating new merged wall:', wall);
-                        const response = await api.post('/walls/create_wall/', { ...wall, project: projectId });
-                        return response.data;
-                    }
-                });
-    
-                const removedWallPromises = affectedWalls.map(async (wall) => {
-                    console.log('Deleting split wall from database:', wall);
-                    if (wall.id) {
-                        await api.delete(`/walls/${wall.id}/`);
-                    }
-                });
-    
-                await Promise.all([...mergedWallPromises, ...removedWallPromises]);
+                    // Save merged wall
+                    const response = await api.post('/walls/create_wall/', mergedWall);
+                    updatedWalls.push(response.data);
+                }
     
                 // Update state
-                const finalWalls = [
-                    ...updatedWalls.filter((wall) => !affectedWalls.includes(wall)),
-                    ...mergedWalls,
-                ];
-                setWalls(finalWalls);
+                setWalls(updatedWalls);
                 setSelectedWall(null);
+    
             } catch (error) {
                 console.error('Error handling wall removal:', error);
             }
         }
-    };       
+    };
     
     const handleWallDelete = async (wallId) => {
         try {
