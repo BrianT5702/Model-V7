@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import api from '../api/api';
 import Canvas2D from './Canvas2D';
+import ThreeCanvas3D from "./ThreeCanvas3D";
 
 const ProjectDetails = () => {
     const { projectId } = useParams(); // Fetch project ID from URL
@@ -10,6 +11,20 @@ const ProjectDetails = () => {
     const [isEditingMode, setIsEditingMode] = useState(false);
     const [currentMode, setCurrentMode] = useState(null); // "add-wall" or "edit-wall"
     const [selectedWall, setSelectedWall] = useState(null);
+    const [is3DView, setIs3DView] = useState(null);
+    const [isInteriorView, setIsInteriorView] = useState(false);
+    const threeCanvasInstance = useRef(null);
+
+    const handleViewToggle = () => {
+        if (!threeCanvasInstance.current) return;
+        
+        setIsInteriorView(!isInteriorView);
+        if (!isInteriorView) {
+            threeCanvasInstance.current.animateToInteriorView();
+        } else {
+            threeCanvasInstance.current.animateToExteriorView();
+        }
+    };
 
     useEffect(() => {
         const fetchProjectDetails = async () => {
@@ -26,6 +41,18 @@ const ProjectDetails = () => {
 
         fetchProjectDetails();
     }, [projectId]);
+
+    useEffect(() => {
+        if (is3DView) {
+            const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls);
+            threeCanvasInstance.current = threeCanvas;
+
+            return () => {
+                threeCanvas.renderer.dispose();
+                threeCanvasInstance.current = null;
+            };
+        }
+    }, [is3DView, walls]);
 
     const handleWallSelect = (wallIndex) => {
         setSelectedWall(wallIndex); // Update selectedWall in ProjectDetails
@@ -171,6 +198,22 @@ const ProjectDetails = () => {
             {/* Editing Mode Controls */}
             <div className="flex gap-2 mb-4">
                 <button
+                    onClick={() => setIs3DView(!is3DView)}
+                    className={`px-4 py-2 rounded ${is3DView ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
+                >
+                    {is3DView ? 'Switch to 2D View' : 'Switch to 3D View'}
+                </button>
+
+                {is3DView && (
+                    <button
+                        onClick={handleViewToggle}
+                        className="px-4 py-2 rounded bg-blue-500 text-white"
+                    >
+                        {isInteriorView ? 'View Exterior' : 'View Interior'}
+                    </button>
+                )}
+
+                <button
                     onClick={() => {
                         setIsEditingMode(!isEditingMode);
                         setCurrentMode(null); // Reset mode on toggling editing mode
@@ -269,24 +312,24 @@ const ProjectDetails = () => {
                 </div>
             )}
 
-            {/* Canvas2D Component */}
-            <h2>2D Visualization:</h2>
-            <Canvas2D
+                {is3DView ? (
+                    <div id="three-canvas-container" style={{ width: '100%', height: '600px' }} />
+                ) : (
+            <>
+                <h2>2D Visualization:</h2>
+                <Canvas2D
                 walls={walls}
                 setWalls={setWalls}
                 onWallUpdate={handleWallUpdate}
                 onNewWall={handleWallCreate}
-                onWallDelete={handleWallDelete}  // Add this new prop
+                onWallDelete={handleWallDelete}
                 isEditingMode={isEditingMode}
                 currentMode={currentMode}
                 onWallSelect={handleWallSelect}
-            />
+                />
+            </>
+            )}
 
-            {/* Placeholder for 3D Visualization */}
-            <h2>3D Visualization (Coming Soon):</h2>
-            <div style={{ width: '800px', height: '600px', backgroundColor: '#e0e0e0' }}>
-                3D View Placeholder
-            </div>
         </div>
     );
 };

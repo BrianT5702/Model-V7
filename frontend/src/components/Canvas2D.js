@@ -433,8 +433,50 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                         (wall.end_x === startPoint.x && wall.end_y === startPoint.y)
                     );
     
+                    // Find a reference wall to get height and thickness
+                    const getReferenceWall = () => {
+                        // First try to get properties from an intersecting wall
+                        const intersectingWall = walls.find(wall => 
+                            calculateIntersection(
+                                { x: wall.start_x, y: wall.start_y },
+                                { x: wall.end_x, y: wall.end_y },
+                                startPoint,
+                                endPoint
+                            )
+                        );
+                        
+                        if (intersectingWall) {
+                            return {
+                                height: intersectingWall.height,
+                                thickness: intersectingWall.thickness
+                            };
+                        }
+                        
+                        // If no intersecting wall, try to get properties from a connected wall
+                        const connectedWall = walls.find(wall => 
+                            (Math.abs(wall.start_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
+                             Math.abs(wall.start_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
+                            (Math.abs(wall.end_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
+                             Math.abs(wall.end_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor)
+                        );
+                        
+                        if (connectedWall) {
+                            return {
+                                height: connectedWall.height,
+                                thickness: connectedWall.thickness
+                            };
+                        }
+                        
+                        // If no reference wall found, get properties from the first existing wall
+                        return walls.length > 0 ? {
+                            height: walls[0].height,
+                            thickness: walls[0].thickness
+                        } : null;
+                    };
+
+                    const wallProperties = getReferenceWall();
+    
                     if (!isStartingAtExistingEndpoint) {
-                        // Check if the start point is on an existing wall
                         for (const wall of walls) {
                             const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
                             if (
@@ -450,6 +492,8 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                                     start_y: wall.start_y,
                                     end_x: startPoint.x,
                                     end_y: startPoint.y,
+                                    height: wall.height,
+                                    thickness: wall.thickness
                                 });
     
                                 wallsToAdd.push({
@@ -457,6 +501,8 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                                     start_y: startPoint.y,
                                     end_x: wall.end_x,
                                     end_y: wall.end_y,
+                                    height: wall.height,
+                                    thickness: wall.thickness
                                 });
                             }
                         }
@@ -464,7 +510,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     
                     // Check for intersections along the new wall
                     for (const wall of walls) {
-                        // Skip if this wall is already marked for deletion
                         if (wallsToDelete.includes(wall)) continue;
     
                         const intersection = calculateIntersection(
@@ -487,6 +532,8 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                                 start_y: wall.start_y,
                                 end_x: intersection.x,
                                 end_y: intersection.y,
+                                height: wall.height,
+                                thickness: wall.thickness
                             });
     
                             wallsToAdd.push({
@@ -494,17 +541,23 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                                 start_y: intersection.y,
                                 end_x: wall.end_x,
                                 end_y: wall.end_y,
+                                height: wall.height,
+                                thickness: wall.thickness
                             });
                         }
                     }
     
-                    // Add the new connecting wall
-                    wallsToAdd.push({
-                        start_x: startPoint.x,
-                        start_y: startPoint.y,
-                        end_x: endPoint.x,
-                        end_y: endPoint.y,
-                    });
+                    // Add the new connecting wall with properties from reference wall
+                    if (wallProperties) {
+                        wallsToAdd.push({
+                            start_x: startPoint.x,
+                            start_y: startPoint.y,
+                            end_x: endPoint.x,
+                            end_y: endPoint.y,
+                            height: wallProperties.height,
+                            thickness: wallProperties.thickness
+                        });
+                    }
     
                     try {
                         // First, create all new walls
@@ -517,7 +570,7 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                         // Then, delete all walls that were split
                         for (const wall of wallsToDelete) {
                             if (wall.id) {
-                                await onWallDelete(wall.id); // Call deletion API for existing walls
+                                await onWallDelete(wall.id);
                             }
                         }
     
@@ -550,18 +603,19 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     
             walls.forEach((wall, index) => {
                 const segmentPoint = snapToWallSegment(x, y, wall);
-                const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
-    
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    selectedIndex = index;
+                if (segmentPoint) {
+                    const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        selectedIndex = index;
+                    }
                 }
             });
     
             setSelectedWall(selectedIndex);
             onWallSelect(selectedIndex);
         }
-    };                 
+    };  
 
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;
