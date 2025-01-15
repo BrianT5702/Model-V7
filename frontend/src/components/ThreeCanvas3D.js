@@ -260,58 +260,46 @@ getModelBounds() {
   createWallMesh(wall) {
     const { start_x, start_y, end_x, end_y, height, thickness } = wall;
 
-    // Scale the coordinates
-    const scaledStartX = (start_x * this.scalingFactor) + this.modelOffset.x;
-    const scaledStartZ = (start_y * this.scalingFactor) + this.modelOffset.z;
-    const scaledEndX = (end_x * this.scalingFactor) + this.modelOffset.x;
-    const scaledEndZ = (end_y * this.scalingFactor) + this.modelOffset.z;
-    const scaledHeight = height * this.scalingFactor;
-    const scaledThickness = thickness * this.scalingFactor;
+    // Use raw start and end coordinates for positioning
+    const rawStartX = (start_x * this.scalingFactor) + this.modelOffset.x;
+    const rawStartZ = (start_y * this.scalingFactor) + this.modelOffset.z;
+    const rawEndX = (end_x * this.scalingFactor) + this.modelOffset.x;
+    const rawEndZ = (end_y * this.scalingFactor) + this.modelOffset.z;
 
     // Calculate wall direction vector
-    const dirX = scaledEndX - scaledStartX;
-    const dirZ = scaledEndZ - scaledStartZ;
+    const dirX = rawEndX - rawStartX;
+    const dirZ = rawEndZ - rawStartZ;
     const length = Math.hypot(dirX, dirZ);
-    
+
     // Normalize direction vector
     const normalizedDirX = dirX / length;
     const normalizedDirZ = dirZ / length;
-    
-    // Calculate perpendicular vector (rotate 90 degrees counterclockwise)
+
+    // Apply thickness offset (visual only)
     const perpX = -normalizedDirZ;
     const perpZ = normalizedDirX;
-    
-    // Calculate inward offset (half thickness)
-    const offsetX = perpX * (scaledThickness / 2);
-    const offsetZ = perpZ * (scaledThickness / 2);
-    
-    // Calculate new wall center position (moved inward)
-    const centerX = (scaledStartX + scaledEndX) / 2 + offsetX;
-    const centerZ = (scaledStartZ + scaledEndZ) / 2 + offsetZ;
+    const offsetX = perpX * (thickness * this.scalingFactor) / 2;
+    const offsetZ = perpZ * (thickness * this.scalingFactor) / 2;
 
-    // Create wall geometry and material
-    const geometry = new THREE.BoxGeometry(length, scaledHeight, scaledThickness);
+    // Calculate center position
+    const centerX = (rawStartX + rawEndX) / 2 + offsetX;
+    const centerZ = (rawStartZ + rawEndZ) / 2 + offsetZ;
+
+    // Create wall geometry
+    const geometry = new THREE.BoxGeometry(length, height * this.scalingFactor, thickness * this.scalingFactor);
     const material = new THREE.MeshStandardMaterial({ 
-      color: 0xaaaaaa,
-      roughness: 0.7,
-      metalness: 0.2
+        color: 0xaaaaaa,
+        roughness: 0.7,
+        metalness: 0.2,
     });
 
     // Create the mesh
     const wallMesh = new THREE.Mesh(geometry, material);
+    wallMesh.position.set(centerX, height * this.scalingFactor / 2, centerZ);
 
-    // Position the wall at the calculated center
-    wallMesh.position.set(
-      centerX,
-      scaledHeight / 2,
-      centerZ
-    );
+    // Apply rotation
+    wallMesh.rotation.y = -Math.atan2(dirZ, dirX);
 
-    // Calculate and apply rotation
-    const angle = Math.atan2(dirZ, dirX);
-    wallMesh.rotation.y = -angle;
-
-    // Add metadata
     wallMesh.userData.isWall = true;
     wallMesh.castShadow = true;
     wallMesh.receiveShadow = true;

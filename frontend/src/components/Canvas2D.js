@@ -423,7 +423,19 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     
                 if (tempWall) {
                     const startPoint = hoveredPoint || snapToClosestPoint(tempWall.start_x, tempWall.start_y);
-                    const endPoint = snapToClosestPoint(x, y);
+                    let endPoint = snapToClosestPoint(x, y);
+    
+                    // Calculate the angle for snapping
+                    const dx = endPoint.x - startPoint.x;
+                    const dy = endPoint.y - startPoint.y;
+                    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    
+                    // Snap to 90 degrees if within the threshold
+                    if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) { // Reduced snapping threshold
+                        endPoint.x = startPoint.x; // Snap vertically
+                    } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
+                        endPoint.y = startPoint.y; // Snap horizontally
+                    }
     
                     let wallsToAdd = [];
                     let wallsToDelete = [];
@@ -435,7 +447,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     
                     // Find a reference wall to get height and thickness
                     const getReferenceWall = () => {
-                        // First try to get properties from an intersecting wall
                         const intersectingWall = walls.find(wall => 
                             calculateIntersection(
                                 { x: wall.start_x, y: wall.start_y },
@@ -444,36 +455,34 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                                 endPoint
                             )
                         );
-                        
+    
                         if (intersectingWall) {
                             return {
                                 height: intersectingWall.height,
                                 thickness: intersectingWall.thickness
                             };
                         }
-                        
-                        // If no intersecting wall, try to get properties from a connected wall
+    
                         const connectedWall = walls.find(wall => 
                             (Math.abs(wall.start_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
                              Math.abs(wall.start_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
                             (Math.abs(wall.end_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
                              Math.abs(wall.end_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor)
                         );
-                        
+    
                         if (connectedWall) {
                             return {
                                 height: connectedWall.height,
                                 thickness: connectedWall.thickness
                             };
                         }
-                        
-                        // If no reference wall found, get properties from the first existing wall
+    
                         return walls.length > 0 ? {
                             height: walls[0].height,
                             thickness: walls[0].thickness
                         } : null;
                     };
-
+    
                     const wallProperties = getReferenceWall();
     
                     if (!isStartingAtExistingEndpoint) {
@@ -486,7 +495,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                             ) {
                                 wallsToDelete.push(wall);
     
-                                // Create two segments from the split at the start point
                                 wallsToAdd.push({
                                     start_x: wall.start_x,
                                     start_y: wall.start_y,
@@ -508,7 +516,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                         }
                     }
     
-                    // Check for intersections along the new wall
                     for (const wall of walls) {
                         if (wallsToDelete.includes(wall)) continue;
     
@@ -526,7 +533,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                         ) {
                             wallsToDelete.push(wall);
     
-                            // Create two segments from the split
                             wallsToAdd.push({
                                 start_x: wall.start_x,
                                 start_y: wall.start_y,
@@ -547,7 +553,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                         }
                     }
     
-                    // Add the new connecting wall with properties from reference wall
                     if (wallProperties) {
                         wallsToAdd.push({
                             start_x: startPoint.x,
@@ -560,26 +565,22 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                     }
     
                     try {
-                        // First, create all new walls
                         const createdWalls = [];
                         for (const wallData of wallsToAdd) {
                             const newWall = await onNewWall(wallData);
                             createdWalls.push(newWall);
                         }
     
-                        // Then, delete all walls that were split
                         for (const wall of wallsToDelete) {
                             if (wall.id) {
                                 await onWallDelete(wall.id);
                             }
                         }
     
-                        // Update local state with new walls
                         const remainingWalls = walls.filter((wall) => !wallsToDelete.includes(wall));
                         const updatedWalls = [...remainingWalls, ...createdWalls];
                         setWalls(updatedWalls);
                         addToHistory(updatedWalls);
-    
                     } catch (error) {
                         console.error('Error managing walls:', error);
                     }
@@ -597,7 +598,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                 });
             }
         } else if (currentMode === 'edit-wall') {
-            // Wall selection logic remains unchanged
             let selectedIndex = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor;
     
@@ -615,8 +615,8 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
             setSelectedWall(selectedIndex);
             onWallSelect(selectedIndex);
         }
-    };  
-
+    };
+    
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;
     
@@ -664,16 +664,29 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
         // Update `tempWall` if in drawing mode
         if (isDrawing && tempWall && currentMode === 'add-wall') {
             const snappedPoint = snapToClosestPoint(x, y);
-            if (snappedPoint) {
-                setTempWall({
-                    ...tempWall,
-                    end_x: snappedPoint.x,
-                    end_y: snappedPoint.y,
-                });
+            let adjustedX = snappedPoint ? snappedPoint.x : x;
+            let adjustedY = snappedPoint ? snappedPoint.y : y;
+    
+            // Calculate angle for snapping
+            const dx = adjustedX - tempWall.start_x;
+            const dy = adjustedY - tempWall.start_y;
+            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    
+            // Snapping to 90 degrees
+            if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) {
+                adjustedX = tempWall.start_x; // Snap vertically
+            } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
+                adjustedY = tempWall.start_y; // Snap horizontally
             }
+    
+            setTempWall({
+                ...tempWall,
+                end_x: adjustedX,
+                end_y: adjustedY,
+            });
         }
-    };         
-
+    };
+    
     return (
         <div className="flex flex-col items-center gap-4">
             <div className="flex gap-2">

@@ -88,31 +88,24 @@ const ProjectDetails = () => {
             console.log('Removing wall:', wallToRemove);
     
             try {
-                // First, identify walls that are genuinely candidates for merging
-                // These are walls that share EXACTLY one endpoint with the removed wall
-                // AND share that same endpoint with exactly one other wall
                 const startPoint = `${wallToRemove.start_x},${wallToRemove.start_y}`;
                 const endPoint = `${wallToRemove.end_x},${wallToRemove.end_y}`;
-                
-                // Group all walls by their endpoints
+    
                 const wallsByPoint = {};
                 walls.forEach(wall => {
                     if (wall.id === wallToRemove.id) return;
-                    
+    
                     [`${wall.start_x},${wall.start_y}`, `${wall.end_x},${wall.end_y}`].forEach(point => {
                         if (!wallsByPoint[point]) wallsByPoint[point] = [];
                         wallsByPoint[point].push(wall);
                     });
                 });
     
-                // Only consider merging at points where exactly two other walls meet
-                // (excluding the wall being removed)
                 const mergeCandidates = [];
                 [startPoint, endPoint].forEach(point => {
                     if (wallsByPoint[point]?.length === 2) {
                         const [wall1, wall2] = wallsByPoint[point];
-                        
-                        // Check if walls are collinear
+    
                         const isCollinear = Math.abs(
                             (wall1.end_y - wall1.start_y) * (wall2.end_x - wall2.start_x) -
                             (wall2.end_y - wall2.start_y) * (wall1.end_x - wall1.start_x)
@@ -124,26 +117,20 @@ const ProjectDetails = () => {
                     }
                 });
     
-                // Delete the wall being removed
                 await api.delete(`/walls/${wallToRemove.id}/`);
     
-                // Remove the wall locally
                 let updatedWalls = walls.filter((_, index) => index !== selectedWall);
     
-                // Handle any valid merges
                 for (const [wall1, wall2, point] of mergeCandidates) {
                     console.log('Merging walls at point:', point);
-                    
-                    // Delete the original walls
+    
                     await api.delete(`/walls/${wall1.id}/`);
                     await api.delete(`/walls/${wall2.id}/`);
     
-                    // Remove from local state
                     updatedWalls = updatedWalls.filter(w => 
                         w.id !== wall1.id && w.id !== wall2.id
                     );
     
-                    // Create merged wall
                     const [pointX, pointY] = point.split(',').map(Number);
                     const end1 = wall1.start_x === pointX && wall1.start_y === pointY ?
                         { x: wall1.end_x, y: wall1.end_y } :
@@ -157,15 +144,15 @@ const ProjectDetails = () => {
                         start_y: end1.y,
                         end_x: end2.x,
                         end_y: end2.y,
+                        height: Math.max(wall1.height, wall2.height),
+                        thickness: Math.max(wall1.thickness, wall2.thickness),
                         project: projectId
                     };
     
-                    // Save merged wall
                     const response = await api.post('/walls/create_wall/', mergedWall);
                     updatedWalls.push(response.data);
                 }
     
-                // Update state
                 setWalls(updatedWalls);
                 setSelectedWall(null);
     
@@ -173,7 +160,7 @@ const ProjectDetails = () => {
                 console.error('Error handling wall removal:', error);
             }
         }
-    };
+    };    
     
     const handleWallDelete = async (wallId) => {
         try {
