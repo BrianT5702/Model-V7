@@ -2,8 +2,8 @@ from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.decorators import action
-from .models import Project, Wall
-from .serializers import ProjectSerializer, WallSerializer
+from .models import Project, Wall, Room
+from .serializers import ProjectSerializer, WallSerializer, RoomSerializer
 from django.db import transaction
 
 class ProjectViewSet(viewsets.ModelViewSet):
@@ -164,4 +164,17 @@ class WallViewSet(viewsets.ModelViewSet):
                 return Response({'error': 'Walls do not share endpoints'}, status=status.HTTP_400_BAD_REQUEST)
 
         except Wall.DoesNotExist:
-            return Response({'error': 'One or more walls not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'One or more walls not found'}, status=status.HTTP_404_NOT_FOUND) 
+        
+class RoomViewSet(viewsets.ModelViewSet):
+    queryset = Room.objects.all()
+    serializer_class = RoomSerializer
+    
+    def get_queryset(self):
+        """
+        Optionally filter walls by project ID
+        """
+        project_id = self.request.query_params.get('project')
+        if project_id:
+            return Room.objects.filter(project_id=project_id)
+        return super().get_queryset()

@@ -29,3 +29,14 @@ class Wall(models.Model):
 
     def __str__(self):
         return f"Wall {self.id} in Project {self.project.name}"
+    
+class Room(models.Model):
+    project = models.ForeignKey(Project, related_name='rooms', on_delete=models.CASCADE)
+    walls = models.ManyToManyField(Wall, related_name='rooms')
+    room_name = models.CharField(max_length=100)
+    floor_type = models.CharField(max_length=100)
+    floor_thickness = models.DecimalField(max_digits=5, decimal_places=2)
+    remarks = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.room_name} in Project {self.project.name}"

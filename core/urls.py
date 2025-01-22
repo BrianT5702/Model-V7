@@ -1,11 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProjectViewSet, WallViewSet
+from .views import ProjectViewSet, WallViewSet, RoomViewSet
 
 # Create a router for registering viewsets
 router = DefaultRouter()
 router.register(r'projects', ProjectViewSet, basename='project')
 router.register(r'walls', WallViewSet, basename='wall')
+router.register(r'rooms', RoomViewSet)
 
 # Define urlpatterns
 urlpatterns = [

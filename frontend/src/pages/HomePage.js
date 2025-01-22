@@ -19,7 +19,7 @@ const HomePage = () => {
 
     return (
         <div>
-            <h1>Welcome to Project Management</h1>
+            <h1>Project Management</h1>
             {/* Create Project Form */}
             <CreateProject setProjects={setProjects} />
 

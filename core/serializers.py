@@ -1,6 +1,5 @@
 from rest_framework import serializers
-from .models import Project, Wall
-
+from .models import Project, Wall, Room
 class WallSerializer(serializers.ModelSerializer):
     class Meta:
         model = Wall
@@ -12,3 +11,10 @@ class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = ['id', 'name', 'width', 'length', 'height', 'wall_thickness', 'walls']
+        
+class RoomSerializer(serializers.ModelSerializer):
+    walls = serializers.PrimaryKeyRelatedField(many=True, queryset=Wall.objects.all())
+
+    class Meta:
+        model = Room
+        fields = ['id', 'project', 'walls', 'room_name', 'floor_type', 'floor_thickness', 'remarks']

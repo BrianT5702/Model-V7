@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import api from '../api/api';
 import Canvas2D from './Canvas2D';
 import ThreeCanvas3D from "./ThreeCanvas3D";
+import RoomManager from './RoomManager';
 
 const ProjectDetails = () => {
     const { projectId } = useParams(); // Fetch project ID from URL
@@ -14,6 +15,10 @@ const ProjectDetails = () => {
     const [is3DView, setIs3DView] = useState(null);
     const [isInteriorView, setIsInteriorView] = useState(false);
     const threeCanvasInstance = useRef(null);
+    const [showRoomManager, setShowRoomManager] = useState(false);
+    const [selectedWallsForRoom, setSelectedWallsForRoom] = useState([]);
+    const [editingRoom, setEditingRoom] = useState(null);
+    const [rooms, setRooms] = useState([]); // Initialize rooms
 
     const handleViewToggle = () => {
         if (!threeCanvasInstance.current) return;
@@ -26,19 +31,87 @@ const ProjectDetails = () => {
         }
     };
 
+    const handleCreateRoom = async (roomData) => {
+        try {
+            const response = await api.post('/rooms/', roomData);
+            console.log('Room created successfully:', response.data);
+            setSelectedWallsForRoom([]);
+            alert('Room created successfully!');
+            setShowRoomManager(false);
+        } catch (error) {
+            console.error('Error creating room:', error);
+            alert('Failed to create room.');
+        }
+    };
+
+    useEffect(() => {
+        const fetchRooms = async () => {
+            try {
+                const response = await api.get('http://127.0.0.1:8000/api/rooms/');
+                setRooms(Array.isArray(response.data) ? response.data : []);
+            } catch (error) {
+                console.error('Error fetching rooms:', error);
+                setRooms([]); // Set empty array on error
+            }
+        };
+
+        fetchRooms();
+    }, []);
+
+    // Update the handleRoomSelect function
+    const handleRoomSelect = (roomId) => {
+        const room = rooms.find(r => r.id === roomId);
+        if (room) {
+            setEditingRoom(room);
+            setShowRoomManager(true);
+            // Pre-select the walls that belong to this room
+            setSelectedWallsForRoom(room.walls);
+        }
+    };
+
+    const handleRoomUpdate = async (updatedRoomData) => {
+        try {
+            const response = await api.put(`/rooms/${updatedRoomData.id}/`, updatedRoomData);
+            setRooms(rooms.map(room => 
+                room.id === updatedRoomData.id ? response.data : room
+            ));
+            setShowRoomManager(false);
+            setEditingRoom(null);
+            setSelectedWallsForRoom([]);
+        } catch (error) {
+            console.error('Error updating room:', error);
+            alert('Failed to update room.');
+        }
+    };
+
+    const handleRoomDelete = async (roomId) => {
+        try {
+            await api.delete(`/rooms/${roomId}/`);
+            // Update rooms state by removing the deleted room
+            setRooms(rooms.filter(room => room.id !== roomId));
+            // Reset room-related states
+            setShowRoomManager(false);
+            setEditingRoom(null);
+            setSelectedWallsForRoom([]);
+        } catch (error) {
+            console.error('Error deleting room:', error);
+            alert('Failed to delete room.');
+        }
+    };
+
     useEffect(() => {
         const fetchProjectDetails = async () => {
             try {
                 const projectResponse = await api.get(`/projects/${projectId}/`);
                 setProject(projectResponse.data);
-
+    
                 const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
                 setWalls(wallsResponse.data);
             } catch (error) {
                 console.error('Error fetching project details:', error);
             }
         };
-
+    
         fetchProjectDetails();
     }, [projectId]);
 
@@ -67,7 +140,7 @@ const ProjectDetails = () => {
             } catch (error) {
                 console.error('Error updating wall:', error);
             }
-        });
+        })
     };
 
     const handleWallCreate = async (wallData) => {
@@ -171,6 +244,43 @@ const ProjectDetails = () => {
         }
     };
 
+    const resetAllSelections = () => {
+        setSelectedWall(null);
+        setSelectedWallsForRoom([]);
+        setShowRoomManager(false);
+    };
+
+    const toggleMode = (mode) => {
+        console.log(`Current Mode (before toggle): ${currentMode}`);
+        
+        // If we're already in this mode, exit it
+        if (currentMode === mode) {
+            console.log(`Exiting ${mode} mode.`);
+            
+            // Reset selections based on the mode we're exiting
+            if (mode === 'define-room') {
+                setSelectedWallsForRoom([]);
+                setShowRoomManager(false);
+            } else if (mode === 'edit-wall') {
+                setSelectedWall(null);
+            }
+            
+            setCurrentMode(null);
+        } else {
+            console.log(`Entering ${mode} mode.`);
+            
+            // Reset previous selections before entering new mode
+            resetAllSelections();
+            
+            // Set up new mode
+            if (mode === 'define-room') {
+                setShowRoomManager(true);
+            }
+            
+            setCurrentMode(mode);
+        }
+    }; 
+
     if (!project) {
         return <div>Loading...</div>;
     }
@@ -203,7 +313,8 @@ const ProjectDetails = () => {
                 <button
                     onClick={() => {
                         setIsEditingMode(!isEditingMode);
-                        setCurrentMode(null); // Reset mode on toggling editing mode
+                        setCurrentMode(null);
+                        resetAllSelections(); // Reset all selections when toggling edit mode
                     }}
                     className={`px-4 py-2 rounded ${
                         isEditingMode ? 'bg-red-500 text-white' : 'bg-gray-200'
@@ -214,21 +325,11 @@ const ProjectDetails = () => {
 
                 {isEditingMode && (
                     <>
-                        <button
-                            onClick={() => setCurrentMode('add-wall')}
-                            className={`px-4 py-2 rounded ${
-                                currentMode === 'add-wall' ? 'bg-blue-500 text-white' : 'bg-gray-200'
-                            }`}
-                        >
-                            Add Wall
+                        <button onClick={() => toggleMode('add-wall')}>
+                            {currentMode === 'add-wall' ? 'Exit Add Wall Mode' : 'Enter Add Wall Mode'}
                         </button>
-                        <button
-                            onClick={() => setCurrentMode('edit-wall')}
-                            className={`px-4 py-2 rounded ${
-                                currentMode === 'edit-wall' ? 'bg-blue-500 text-white' : 'bg-gray-200'
-                            }`}
-                        >
-                            Edit Wall
+                        <button onClick={() => toggleMode('edit-wall')}>
+                            {currentMode === 'edit-wall' ? 'Exit Edit Wall Mode' : 'Enter Edit Wall Mode'}
                         </button>
                         <button
                             onClick={() => handleWallRemove(selectedWall)}
@@ -237,6 +338,27 @@ const ProjectDetails = () => {
                         >
                             Remove Wall
                         </button>
+                        <button onClick={() => toggleMode('define-room')}>
+                            {currentMode === 'define-room' ? 'Exit Define Room Mode' : 'Enter Define Room Mode'}
+                        </button>
+
+                        {showRoomManager && (
+                            <RoomManager
+                                projectId={projectId}
+                                walls={walls}
+                                selectedWallIds={selectedWallsForRoom}
+                                onSaveRoom={handleCreateRoom}
+                                onUpdateRoom={handleRoomUpdate}
+                                onDeleteRoom={handleRoomDelete}
+                                editingRoom={editingRoom}
+                                isEditMode={!!editingRoom}
+                                onClose={() => {
+                                    setShowRoomManager(false);
+                                    setEditingRoom(null);
+                                    setSelectedWallsForRoom([]);
+                                }}
+                            />
+                        )}
                     </>
                 )}
             </div>
@@ -305,14 +427,18 @@ const ProjectDetails = () => {
             <>
                 <h2>2D Visualization:</h2>
                 <Canvas2D
-                walls={walls}
-                setWalls={setWalls}
-                onWallUpdate={handleWallUpdate}
-                onNewWall={handleWallCreate}
-                onWallDelete={handleWallDelete}
-                isEditingMode={isEditingMode}
-                currentMode={currentMode}
-                onWallSelect={handleWallSelect}
+                    walls={walls}
+                    setWalls={setWalls}
+                    onWallUpdate={handleWallUpdate}
+                    onNewWall={handleWallCreate}
+                    onWallDelete={handleWallDelete}
+                    isEditingMode={isEditingMode}
+                    currentMode={currentMode}
+                    onWallSelect={handleWallSelect}
+                    selectedWallsForRoom={selectedWallsForRoom}
+                    onRoomWallsSelect={setSelectedWallsForRoom}
+                    rooms={rooms}
+                    onRoomSelect={handleRoomSelect}
                 />
             </>
             )}

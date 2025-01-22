@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom'; // Import React Router navigation hook
 import api from '../api/api';
-import EditProject from './EditProject';
 
 const ProjectList = ({ projects, setProjects }) => {
     const [editingProject, setEditingProject] = useState(null); // Tracks which project is being edited
@@ -16,11 +15,6 @@ const ProjectList = ({ projects, setProjects }) => {
             .catch((error) => {
                 console.error('Error deleting project:', error);
             });
-    };
-
-    // Close the edit form after completion
-    const handleEditComplete = () => {
-        setEditingProject(null);
     };
 
     // Handle navigation to the project details page
@@ -53,26 +47,11 @@ const ProjectList = ({ projects, setProjects }) => {
                                 >
                                     Delete
                                 </button>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation(); // Prevent navigation when clicking edit
-                                        setEditingProject(project);
-                                    }}
-                                >
-                                    Edit
-                                </button>
                             </div>
                         </div>
                     </li>
                 ))}
             </ul>
-            {editingProject && (
-                <EditProject
-                    project={editingProject}
-                    setProjects={setProjects}
-                    onEditComplete={handleEditComplete} // Close form after edit
-                />
-            )}
         </div>
     );
 };

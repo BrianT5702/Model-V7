@@ -1,14 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, currentMode, onWallSelect, onWallDelete }) => {
+const Canvas2D = ({ 
+    walls = [], 
+    setWalls, 
+    onNewWall, 
+    isEditingMode, 
+    currentMode, 
+    onWallSelect, 
+    onWallDelete, 
+    selectedWallsForRoom = [], 
+    onRoomWallsSelect = () => {},
+    onRoomSelect = () => {},
+    rooms = []
+}) => {
+
     const canvasRef = useRef(null);
     const [selectedWall, setSelectedWall] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [tempWall, setTempWall] = useState(null);
-    const [wallHistory, setWallHistory] = useState([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
     const [hoveredWall, setHoveredWall] = useState(null);
-    const [hoveredPoint, setHoveredPoint] = useState(null); // { x, y } or null
+    const [hoveredPoint, setHoveredPoint] = useState(null);
 
     const SNAP_THRESHOLD = 10;
     const gridSize = 50;
@@ -17,30 +28,71 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     let offsetY = 0;
     let scaleFactor = 1;
 
-    // New function to add to history
-    const addToHistory = (newWalls) => {
-        const newHistory = wallHistory.slice(0, historyIndex + 1);
-        newHistory.push([...newWalls]);
-        setWallHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
+    // Add this function to determine wall orientation and interior side
+    const determineWallOrientation = (walls) => {
+        if (walls.length < 3) return null;
+        
+        let area = 0;
+        // Calculate the signed area using the shoelace formula
+        for (let i = 0; i < walls.length; i++) {
+            const wall = walls[i];
+            const nextWall = walls[(i + 1) % walls.length];
+            area += (wall.start_x * nextWall.start_y - nextWall.start_x * wall.start_y);
+        }
+        
+        // If area is negative, walls are ordered clockwise (interior on right)
+        // If area is positive, walls are ordered counterclockwise (interior on left)
+        return area > 0 ? 'ccw' : 'cw';
     };
 
-    // Undo function
-    const handleUndo = () => {
-        if (historyIndex > 0) {
-            setHistoryIndex(historyIndex - 1);
-            const previousWalls = wallHistory[historyIndex - 1];
-            onWallUpdate(previousWalls);
+    const calculateRoomArea = (roomWalls) => {
+        if (!roomWalls || roomWalls.length < 3) return null;
+    
+        // Collect unique points and ensure proper ordering
+        const points = [];
+        roomWalls.forEach(wall => {
+            const startPoint = { x: wall.start_x, y: wall.start_y };
+            const endPoint = { x: wall.end_x, y: wall.end_y };
+    
+            // Add start point only if it's not already added
+            if (!points.find(p => p.x === startPoint.x && p.y === startPoint.y)) {
+                points.push(startPoint);
+            }
+    
+            // Add end point only if it's not already added
+            if (!points.find(p => p.x === endPoint.x && p.y === endPoint.y)) {
+                points.push(endPoint);
+            }
+        });
+    
+        // Verify if the polygon is closed (first point equals last point)
+        const firstPoint = points[0];
+        const lastPoint = points[points.length - 1];
+        if (firstPoint.x !== lastPoint.x || firstPoint.y !== lastPoint.y) {
+            points.push(firstPoint); // Close the loop
         }
+    
+        // Ensure the points form a counterclockwise path
+        const orientation = determineWallOrientation(points);
+        if (orientation === 'cw') {
+            points.reverse();
+        }
+    
+        return points;
     };
 
-    // Redo function
-    const handleRedo = () => {
-        if (historyIndex < wallHistory.length - 1) {
-            setHistoryIndex(historyIndex + 1);
-            const nextWalls = wallHistory[historyIndex + 1];
-            onWallUpdate(nextWalls);
+    // Function to check if a point is inside a polygon
+    const isPointInPolygon = (point, polygon) => {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            
+            const intersect = ((yi > point.y) !== (yj > point.y))
+                && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
         }
+        return inside;
     };
 
     useEffect(() => {
@@ -88,6 +140,70 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                 context.lineTo(canvas.width, y);
                 context.stroke();
             }
+        };
+
+        const drawRooms = () => {
+            rooms.forEach(room => {
+                // Get walls for the room
+                const roomWalls = room.walls.map(wallId => 
+                    walls.find(w => w.id === wallId)
+                ).filter(Boolean);
+        
+                // Calculate area points
+                const areaPoints = calculateRoomArea(roomWalls);
+                if (!areaPoints) return;
+        
+                // Draw the room area
+                context.beginPath();
+                context.moveTo(
+                    areaPoints[0].x * scaleFactor + offsetX,
+                    areaPoints[0].y * scaleFactor + offsetY
+                );
+        
+                for (let i = 1; i < areaPoints.length; i++) {
+                    context.lineTo(
+                        areaPoints[i].x * scaleFactor + offsetX,
+                        areaPoints[i].y * scaleFactor + offsetY
+                    );
+                }
+        
+                // context.closePath();
+        
+                // // Fill the room area
+                // context.fillStyle = 'rgba(76, 175, 80, 0.5)';
+                // context.fill();
+        
+                // // Add a subtle border
+                // context.strokeStyle = 'rgba(76, 175, 80, 0.8)';
+                // context.lineWidth = 2;
+                // context.stroke();
+        
+                // Draw the room name
+                const centerX = areaPoints.reduce((sum, p) => sum + p.x, 0) / areaPoints.length;
+                const centerY = areaPoints.reduce((sum, p) => sum + p.y, 0) / areaPoints.length;
+        
+                // Add text background
+                context.fillStyle = 'white';
+                context.font = '14px Arial';
+                const textMetrics = context.measureText(room.room_name);
+                // const padding = 4;
+        
+                // context.fillRect(
+                //     centerX * scaleFactor + offsetX - textMetrics.width / 2 - padding,
+                //     centerY * scaleFactor + offsetY - 14 - padding,
+                //     textMetrics.width + padding * 2,
+                //     18 + padding * 2
+                // );
+        
+                // Draw the room name
+                context.fillStyle = '#000';
+                context.textAlign = 'center';
+                context.fillText(
+                    room.room_name,
+                    centerX * scaleFactor + offsetX,
+                    centerY * scaleFactor + offsetY
+                );
+            });
         };
 
         // Enhanced wall drawing with hover effects
@@ -169,12 +285,11 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                 );
 
                 // Change color if hovered
-                const wallColor =
-                    selectedWall === index
-                        ? 'red'
-                        : hoveredWall === index
-                        ? '#2196F3' // Hovered wall color
-                        : '#333333';
+                const wallColor = 
+                selectedWallsForRoom.includes(wall.id) ? '#4CAF50' :  // Green for room selection
+                selectedWall === index ? 'red' :
+                hoveredWall === index ? '#2196F3' : 
+                '#333333';
 
                 // Draw the first line of the wall
                 context.beginPath();
@@ -316,14 +431,15 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                     drawEndpoints(snapPoint.x, snapPoint.y, '#4CAF50', 6);
                 }
             }
-        };        
+        }        
 
         drawWalls();
+        drawRooms();
 
         return () => {
             context.clearRect(0, 0, canvas.width, canvas.height);
         };
-    }, [walls, selectedWall, tempWall, isDrawing, hoveredWall]);
+    }, [walls, selectedWall, tempWall, isDrawing, hoveredWall, selectedWallsForRoom, rooms]);
 
     const getMousePos = (event) => {
         const rect = canvasRef.current.getBoundingClientRect();
@@ -416,6 +532,7 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
         if (!isEditingMode) return;
     
         const { x, y } = getMousePos(event);
+        const clickPoint = { x, y };
     
         if (currentMode === 'add-wall') {
             if (isDrawing) {
@@ -580,7 +697,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
                         const remainingWalls = walls.filter((wall) => !wallsToDelete.includes(wall));
                         const updatedWalls = [...remainingWalls, ...createdWalls];
                         setWalls(updatedWalls);
-                        addToHistory(updatedWalls);
                     } catch (error) {
                         console.error('Error managing walls:', error);
                     }
@@ -614,8 +730,50 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     
             setSelectedWall(selectedIndex);
             onWallSelect(selectedIndex);
-        }
-    };
+        } if (currentMode === 'define-room') {
+            let selectedIndex = null;
+            let minDistance = SNAP_THRESHOLD / scaleFactor;
+
+            for (const room of rooms) {
+                const roomWalls = room.walls.map(wallId => 
+                    walls.find(w => w.id === wallId)
+                ).filter(Boolean);
+                
+                const areaPoints = calculateRoomArea(roomWalls);
+                if (areaPoints && isPointInPolygon(clickPoint, areaPoints)) {
+                    onRoomSelect(room.id);
+                    return;
+                }
+            }
+            
+            walls.forEach((wall, index) => {
+                const segmentPoint = snapToWallSegment(x, y, wall);
+                if (segmentPoint) {
+                    const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        selectedIndex = index;
+                    }
+                }
+            });
+
+            if (selectedIndex !== null) {
+                const clickedWall = walls[selectedIndex];
+                const updatedSelection = [...selectedWallsForRoom];
+                const wallIndex = updatedSelection.indexOf(clickedWall.id);
+                
+                if (wallIndex === -1) {
+                    // Add wall to selection if not already selected
+                    updatedSelection.push(clickedWall.id);
+                } else {
+                    // Remove wall from selection if already selected
+                    updatedSelection.splice(wallIndex, 1);
+                }
+                
+                onRoomWallsSelect(updatedSelection);
+            }
+    }
+}
     
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;
@@ -643,7 +801,7 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
         setHoveredPoint(closestPoint);
     
         // Wall Hover Detection
-        if (currentMode === 'add-wall' || currentMode === 'edit-wall') {
+        if (currentMode === 'add-wall' || currentMode === 'edit-wall' || currentMode ==='define-room') {
             let minWallDistance = SNAP_THRESHOLD / scaleFactor;
             let newHoveredWall = null;
     
@@ -689,22 +847,6 @@ const Canvas2D = ({ walls, setWalls, onWallUpdate, onNewWall, isEditingMode, cur
     
     return (
         <div className="flex flex-col items-center gap-4">
-            <div className="flex gap-2">
-                <button
-                    onClick={handleUndo}
-                    disabled={historyIndex <= 0}
-                    className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-                >
-                    Undo
-                </button>
-                <button
-                    onClick={handleRedo}
-                    disabled={historyIndex >= wallHistory.length - 1}
-                    className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-                >
-                    Redo
-                </button>
-            </div>
             <canvas
                 ref={canvasRef}
                 onClick={handleCanvasClick}
