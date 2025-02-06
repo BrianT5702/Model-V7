@@ -48,13 +48,13 @@ const RoomManager = ({
             walls: selectedWallIds,
             project: projectId,
         };
-
+    
         if (isEditMode && editingRoom) {
             onUpdateRoom({ ...roomData, id: editingRoom.id });
         } else {
             onSaveRoom(roomData);
         }
-    };
+    };    
 
     const handleDelete = () => {
         if (editingRoom && onDeleteRoom) {
@@ -87,24 +87,34 @@ const RoomManager = ({
                             </div>
                             <div className="flex-1">
                                 <label className="block text-sm font-medium text-gray-700">Floor Type</label>
-                                <input
-                                    type="text"
+                                <select
                                     value={floorType}
                                     onChange={(e) => setFloorType(e.target.value)}
-                                    placeholder="Floor Type"
                                     className="w-full p-2 border rounded mt-1"
-                                />
+                                >
+                                    <option value="">Select Floor Type</option>
+                                    <option value="Slab">Slab</option>
+                                    <option value="Panel">Panel</option>
+                                    <option value="None">None</option>
+                                </select>
                             </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Floor Thickness</label>
-                            <input
-                                type="number"
+                            <label className="block text-sm font-medium text-gray-700">Floor Thickness (mm)</label>
+                            <select
                                 value={floorThickness}
                                 onChange={(e) => setFloorThickness(e.target.value)}
-                                placeholder="Floor Thickness"
                                 className="w-full p-2 border rounded mt-1"
-                            />
+                            >
+                                <option value="">Select a Floor Thickness</option>
+                                <option value="50">50 mm</option>
+                                <option value="75">75 mm</option>
+                                <option value="100">100 mm</option>
+                                <option value="125">125 mm</option>
+                                <option value="150">150 mm</option>
+                                <option value="175">175 mm</option>
+                                <option value="200">200 mm</option>
+                            </select>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Remarks</label>

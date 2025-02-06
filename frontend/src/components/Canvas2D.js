@@ -4,6 +4,7 @@ const Canvas2D = ({
     walls = [], 
     setWalls, 
     onNewWall, 
+    onWallTypeSelect,
     isEditingMode, 
     currentMode, 
     onWallSelect, 
@@ -28,60 +29,57 @@ const Canvas2D = ({
     let offsetY = 0;
     let scaleFactor = 1;
 
-    // Add this function to determine wall orientation and interior side
-    const determineWallOrientation = (walls) => {
-        if (walls.length < 3) return null;
-        
-        let area = 0;
-        // Calculate the signed area using the shoelace formula
-        for (let i = 0; i < walls.length; i++) {
-            const wall = walls[i];
-            const nextWall = walls[(i + 1) % walls.length];
-            area += (wall.start_x * nextWall.start_y - nextWall.start_x * wall.start_y);
-        }
-        
-        // If area is negative, walls are ordered clockwise (interior on right)
-        // If area is positive, walls are ordered counterclockwise (interior on left)
-        return area > 0 ? 'ccw' : 'cw';
-    };
-
+    //start here about the room area defining
     const calculateRoomArea = (roomWalls) => {
         if (!roomWalls || roomWalls.length < 3) return null;
     
-        // Collect unique points and ensure proper ordering
-        const points = [];
+        // Step 1: Collect all unique points from the walls
+        let points = new Set();
         roomWalls.forEach(wall => {
-            const startPoint = { x: wall.start_x, y: wall.start_y };
-            const endPoint = { x: wall.end_x, y: wall.end_y };
-    
-            // Add start point only if it's not already added
-            if (!points.find(p => p.x === startPoint.x && p.y === startPoint.y)) {
-                points.push(startPoint);
-            }
-    
-            // Add end point only if it's not already added
-            if (!points.find(p => p.x === endPoint.x && p.y === endPoint.y)) {
-                points.push(endPoint);
-            }
+            points.add(JSON.stringify({ x: wall.start_x, y: wall.start_y }));
+            points.add(JSON.stringify({ x: wall.end_x, y: wall.end_y }));
         });
+        points = [...points].map(p => JSON.parse(p));
     
-        // Verify if the polygon is closed (first point equals last point)
-        const firstPoint = points[0];
-        const lastPoint = points[points.length - 1];
-        if (firstPoint.x !== lastPoint.x || firstPoint.y !== lastPoint.y) {
-            points.push(firstPoint); // Close the loop
-        }
+        // Step 2: Order points to form a valid polygon using Convex Hull (Graham's Scan)
+        const orderedPoints = getConvexHull(points);
     
-        // Ensure the points form a counterclockwise path
-        const orientation = determineWallOrientation(points);
-        if (orientation === 'cw') {
-            points.reverse();
-        }
-    
-        return points;
+        return orderedPoints;
     };
+    
+    const crossProduct = (o, a, b) => {
+        return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    };
+    
+    const getConvexHull = (points) => {
+        if (points.length < 3) return points;
+        points.sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+    
+        let lower = [];
+        for (let p of points) {
+            while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+                lower.pop();
+            }
+            lower.push(p);
+        }
+    
+        let upper = [];
+        for (let i = points.length - 1; i >= 0; i--) {
+            let p = points[i];
+            while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+                upper.pop();
+            }
+            upper.push(p);
+        }
+    
+        upper.pop();
+        lower.pop();
+        return lower.concat(upper);
+    };
+    
+    //room defining ends here (but got problem, nid futher improvement on the logic)
 
-    // Function to check if a point is inside a polygon
+    //Here is about the room selecting
     const isPointInPolygon = (point, polygon) => {
         let inside = false;
         for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -122,7 +120,7 @@ const Canvas2D = ({
         offsetX = (canvas.width - wallWidth * scaleFactor) / 2 - minX * scaleFactor;
         offsetY = (canvas.height - wallHeight * scaleFactor) / 2 - minY * scaleFactor;
 
-        // Enhanced grid drawing with highlight during wall drawing
+        //Grid drawing in the 2D view
         const drawGrid = () => {
             context.strokeStyle = isDrawing ? '#a0a0a0' : '#ddd';
             context.lineWidth = isDrawing ? 1.5 : 1;
@@ -142,6 +140,7 @@ const Canvas2D = ({
             }
         };
 
+        //Rooms drawing(need improvement on the room area defining so this work smoothly)
         const drawRooms = () => {
             rooms.forEach(room => {
                 // Get walls for the room
@@ -167,16 +166,16 @@ const Canvas2D = ({
                     );
                 }
         
-                // context.closePath();
+                context.closePath();
         
-                // // Fill the room area
-                // context.fillStyle = 'rgba(76, 175, 80, 0.5)';
-                // context.fill();
+                // Fill the room area
+                context.fillStyle = 'rgba(76, 175, 80, 0.5)';
+                context.fill();
         
-                // // Add a subtle border
-                // context.strokeStyle = 'rgba(76, 175, 80, 0.8)';
-                // context.lineWidth = 2;
-                // context.stroke();
+                // Add a subtle border
+                context.strokeStyle = 'rgba(76, 175, 80, 0.8)';
+                context.lineWidth = 2;
+                context.stroke();
         
                 // Draw the room name
                 const centerX = areaPoints.reduce((sum, p) => sum + p.x, 0) / areaPoints.length;
@@ -186,14 +185,14 @@ const Canvas2D = ({
                 context.fillStyle = 'white';
                 context.font = '14px Arial';
                 const textMetrics = context.measureText(room.room_name);
-                // const padding = 4;
+                const padding = 4;
         
-                // context.fillRect(
-                //     centerX * scaleFactor + offsetX - textMetrics.width / 2 - padding,
-                //     centerY * scaleFactor + offsetY - 14 - padding,
-                //     textMetrics.width + padding * 2,
-                //     18 + padding * 2
-                // );
+                context.fillRect(
+                    centerX * scaleFactor + offsetX - textMetrics.width / 2 - padding,
+                    centerY * scaleFactor + offsetY - 14 - padding,
+                    textMetrics.width + padding * 2,
+                    18 + padding * 2
+                );
         
                 // Draw the room name
                 context.fillStyle = '#000';
@@ -205,14 +204,54 @@ const Canvas2D = ({
                 );
             });
         };
+        //Room drawing end here
 
-        // Enhanced wall drawing with hover effects
+        // Wall drawing, including the hover through color change and the select color change, and also the dimension showing thing
         const drawWalls = () => {
-            const FIXED_GAP = 2; // Fixed gap in pixels for double-line walls
+            const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
             const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
             context.clearRect(0, 0, canvas.width, canvas.height);
             drawGrid();
+
+            // Helper function to differentiate the visual presentation for patition
+            const drawPartitionSlashes = (line1, line2) => {
+                const spacing = 15; // Adjust spacing between slashes
+                const slashLength = 60; // Adjust length of each slash
+            
+                const dx = line1[1].x - line1[0].x;
+                const dy = line1[1].y - line1[0].y;
+                const wallLength = Math.sqrt(dx * dx + dy * dy);
+            
+                const numSlashes = Math.floor(wallLength * scaleFactor / spacing);
+            
+                for (let i = 1; i < numSlashes - 1; i++) {
+                    // Calculate interpolation factor
+                    const t = i / numSlashes;
+            
+                    // Compute midpoint between the two parallel lines
+                    const midX = (line1[0].x + t * (line1[1].x - line1[0].x) + line2[0].x + t * (line2[1].x - line2[0].x)) / 2;
+                    const midY = (line1[0].y + t * (line1[1].y - line1[0].y) + line2[0].y + t * (line2[1].y - line2[0].y)) / 2;
+            
+                    // Fix: Keep slashes always at 45° using fixed diagonal offsets
+                    const diagX = Math.cos(Math.PI / 4) * slashLength;
+                    const diagY = Math.sin(Math.PI / 4) * slashLength;
+            
+                    // Compute diagonal slash endpoints (always 45°)
+                    const x1 = midX - diagX;
+                    const y1 = midY - diagY;
+                    const x2 = midX + diagX;
+                    const y2 = midY + diagY;
+            
+                    // Draw diagonal slashes inside partition
+                    context.beginPath();
+                    context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
+                    context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
+                    context.strokeStyle = "#666"; // Gray color for partition slashes
+                    context.lineWidth = 1.5;
+                    context.stroke();
+                }
+            };                                                    
 
             // Helper function to draw wall endpoints
             const drawEndpoints = (x, y, color = 'blue', size = 4) => {
@@ -232,7 +271,7 @@ const Canvas2D = ({
                 context.fill();
             };            
 
-            // Helper function to draw wall dimensions
+            // Wall Dimensions display in here, if got problem change here
             const drawDimensions = (startX, startY, endX, endY, color = 'blue') => {
                 const midX = ((startX + endX) / 2) * scaleFactor + offsetX;
                 const midY = ((startY + endY) / 2) * scaleFactor + offsetY;
@@ -286,10 +325,10 @@ const Canvas2D = ({
 
                 // Change color if hovered
                 const wallColor = 
-                selectedWallsForRoom.includes(wall.id) ? '#4CAF50' :  // Green for room selection
-                selectedWall === index ? 'red' :
-                hoveredWall === index ? '#2196F3' : 
-                '#333333';
+                    selectedWallsForRoom.includes(wall.id) ? '#4CAF50' : // Green for room selection
+                    selectedWall === index ? 'red' :
+                    hoveredWall === index ? '#2196F3' :
+                    wall.application_type === "partition" ? "#666" : "#333"; // Darker gray for partitions
 
                 // Draw the first line of the wall
                 context.beginPath();
@@ -319,6 +358,11 @@ const Canvas2D = ({
                 context.lineWidth = 2;
                 context.stroke();
 
+                // Draw diagonal hatching for partitions
+                if (wall.application_type === "partition") {
+                    drawPartitionSlashes(line1, line2);
+                }
+
                 // Draw endpoints with different colors based on wall state
                 const endpointColor = selectedWall === index ? 'red' : '#2196F3';
                 drawEndpoints(wall.start_x, wall.start_y, endpointColor);
@@ -333,7 +377,7 @@ const Canvas2D = ({
                     selectedWall === index ? 'red' : '#2196F3'
                 );
 
-                // Draw intersection points if any
+                // Draw intersection points (if any)
                 walls.forEach((otherWall) => {
                     if (wall !== otherWall) {
                         const intersection = calculateIntersection(
@@ -354,7 +398,7 @@ const Canvas2D = ({
                 });
             });
 
-            // Draw temporary wall with enhanced visual feedback
+            // Draw temporary wall while adding wall
             if (tempWall) {
                 const { line1, line2 } = calculateOffsetPoints(
                     tempWall.start_x,
@@ -441,6 +485,7 @@ const Canvas2D = ({
         };
     }, [walls, selectedWall, tempWall, isDrawing, hoveredWall, selectedWallsForRoom, rooms]);
 
+    //Use for getting correct mouse position
     const getMousePos = (event) => {
         const rect = canvasRef.current.getBoundingClientRect();
         const x = (event.clientX - rect.left - offsetX) / scaleFactor;
@@ -505,6 +550,7 @@ const Canvas2D = ({
         };
     };
 
+    // Calculate the intersection
     const calculateIntersection = (wall1Start, wall1End, wall2Start, wall2End) => {
         const denominator = ((wall2End.y - wall2Start.y) * (wall1End.x - wall1Start.x)) -
                         ((wall2End.x - wall2Start.x) * (wall1End.y - wall1Start.y));
@@ -540,7 +586,15 @@ const Canvas2D = ({
     
                 if (tempWall) {
                     const startPoint = hoveredPoint || snapToClosestPoint(tempWall.start_x, tempWall.start_y);
-                    let endPoint = snapToClosestPoint(x, y);
+                    let endPoint = hoveredPoint || snapToClosestPoint(x, y);
+    
+                    // Check if ending at an existing endpoint
+                    const isEndingAtExistingEndpoint = walls.some((wall) =>
+                        (Math.abs(wall.start_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor &&
+                         Math.abs(wall.start_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
+                        (Math.abs(wall.end_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor &&
+                         Math.abs(wall.end_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor)
+                    );
     
                     // Calculate the angle for snapping
                     const dx = endPoint.x - startPoint.x;
@@ -548,7 +602,7 @@ const Canvas2D = ({
                     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
     
                     // Snap to 90 degrees if within the threshold
-                    if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) { // Reduced snapping threshold
+                    if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) {
                         endPoint.x = startPoint.x; // Snap vertically
                     } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
                         endPoint.y = startPoint.y; // Snap horizontally
@@ -562,7 +616,7 @@ const Canvas2D = ({
                         (wall.end_x === startPoint.x && wall.end_y === startPoint.y)
                     );
     
-                    // Find a reference wall to get height and thickness
+                    // Get reference wall properties
                     const getReferenceWall = () => {
                         const intersectingWall = walls.find(wall => 
                             calculateIntersection(
@@ -602,6 +656,7 @@ const Canvas2D = ({
     
                     const wallProperties = getReferenceWall();
     
+                    // Handle wall splitting
                     if (!isStartingAtExistingEndpoint) {
                         for (const wall of walls) {
                             const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
@@ -611,73 +666,76 @@ const Canvas2D = ({
                                     SNAP_THRESHOLD / scaleFactor
                             ) {
                                 wallsToDelete.push(wall);
-    
+                
                                 wallsToAdd.push({
                                     start_x: wall.start_x,
                                     start_y: wall.start_y,
                                     end_x: startPoint.x,
                                     end_y: startPoint.y,
                                     height: wall.height,
-                                    thickness: wall.thickness
+                                    thickness: wall.thickness,
+                                    application_type: wall.application_type
                                 });
-    
+                
                                 wallsToAdd.push({
                                     start_x: startPoint.x,
                                     start_y: startPoint.y,
                                     end_x: wall.end_x,
                                     end_y: wall.end_y,
                                     height: wall.height,
-                                    thickness: wall.thickness
+                                    thickness: wall.thickness,
+                                    application_type: wall.application_type
                                 });
                             }
                         }
                     }
     
-                    for (const wall of walls) {
-                        if (wallsToDelete.includes(wall)) continue;
+                    if (!isEndingAtExistingEndpoint) {
+                        for (const wall of walls) {
+                            if (wallsToDelete.includes(wall)) continue;
     
-                        const intersection = calculateIntersection(
-                            { x: wall.start_x, y: wall.start_y },
-                            { x: wall.end_x, y: wall.end_y },
-                            startPoint,
-                            endPoint
-                        );
+                            const endSegmentPoint = snapToWallSegment(endPoint.x, endPoint.y, wall);
+                            if (
+                                endSegmentPoint &&
+                                Math.hypot(endSegmentPoint.x - endPoint.x, endSegmentPoint.y - endPoint.y) <
+                                    SNAP_THRESHOLD / scaleFactor
+                            ) {
+                                wallsToDelete.push(wall);
     
-                        if (
-                            intersection &&
-                            !(Math.abs(intersection.x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                            Math.abs(intersection.y - startPoint.y) < SNAP_THRESHOLD / scaleFactor)
-                        ) {
-                            wallsToDelete.push(wall);
+                                wallsToAdd.push({
+                                    start_x: wall.start_x,
+                                    start_y: wall.start_y,
+                                    end_x: endPoint.x,
+                                    end_y: endPoint.y,
+                                    height: wall.height,
+                                    thickness: wall.thickness,
+                                    application_type: wall.application_type
+                                });
     
-                            wallsToAdd.push({
-                                start_x: wall.start_x,
-                                start_y: wall.start_y,
-                                end_x: intersection.x,
-                                end_y: intersection.y,
-                                height: wall.height,
-                                thickness: wall.thickness
-                            });
-    
-                            wallsToAdd.push({
-                                start_x: intersection.x,
-                                start_y: intersection.y,
-                                end_x: wall.end_x,
-                                end_y: wall.end_y,
-                                height: wall.height,
-                                thickness: wall.thickness
-                            });
+                                wallsToAdd.push({
+                                    start_x: endPoint.x,
+                                    start_y: endPoint.y,
+                                    end_x: wall.end_x,
+                                    end_y: wall.end_y,
+                                    height: wall.height,
+                                    thickness: wall.thickness,
+                                    application_type: wall.application_type
+                                });
+                            }
                         }
                     }
     
-                    if (wallProperties) {
+                    // Add the new wall regardless of endpoint conditions
+                    if (wallProperties && 
+                        (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
                         wallsToAdd.push({
                             start_x: startPoint.x,
                             start_y: startPoint.y,
                             end_x: endPoint.x,
                             end_y: endPoint.y,
                             height: wallProperties.height,
-                            thickness: wallProperties.thickness
+                            thickness: wallProperties.thickness,
+                            application_type: onWallTypeSelect
                         });
                     }
     
@@ -713,7 +771,8 @@ const Canvas2D = ({
                     end_y: snappedStart.y,
                 });
             }
-        } else if (currentMode === 'edit-wall') {
+        } 
+        else if (currentMode === 'edit-wall') {
             let selectedIndex = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor;
     
@@ -730,7 +789,8 @@ const Canvas2D = ({
     
             setSelectedWall(selectedIndex);
             onWallSelect(selectedIndex);
-        } if (currentMode === 'define-room') {
+        } 
+        if (currentMode === 'define-room') {
             let selectedIndex = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor;
 
@@ -772,8 +832,8 @@ const Canvas2D = ({
                 
                 onRoomWallsSelect(updatedSelection);
             }
+        }
     }
-}
     
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;

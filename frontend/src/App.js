@@ -4,6 +4,11 @@ import HomePage from './pages/HomePage';
 import ProjectList from './components/ProjectList';
 import CreateProject from './components/CreateProject';
 import ProjectDetails from './components/ProjectDetails';
+// import WallDetails from './components/WallDetails'; // New component for walls
+// import RoomDetails from './components/RoomDetails'; // New component for rooms
+// import CeilingDetails from './components/CeilingDetails'; // New component for ceilings
+// import DoorDetails from './components/DoorDetails'; // New component for doors
+// import IntersectionDetails from './components/IntersectionDetails'; // New component for intersections
 
 const App = () => {
     return (
@@ -15,6 +20,11 @@ const App = () => {
                     <Route path="/projects" element={<ProjectList />} /> {/* Render ProjectList for /projects */}
                     <Route path="/projects/create" element={<CreateProject />} /> {/* Render CreateProject for creating new projects */}
                     <Route path="/projects/:projectId" element={<ProjectDetails />} /> {/* Render ProjectDetails for specific project */}
+                    {/* <Route path="/projects/:projectId/walls" element={<WallDetails />} /> Render WallDetails for walls */}
+                    {/* <Route path="/projects/:projectId/rooms" element={<RoomDetails />} /> Render RoomDetails for rooms */}
+                    {/* <Route path="/projects/:projectId/ceilings" element={<CeilingDetails />} /> Render CeilingDetails for ceilings */}
+                    {/* <Route path="/projects/:projectId/doors" element={<DoorDetails />} /> Render DoorDetails for doors */}
+                    {/* <Route path="/projects/:projectId/intersections" element={<IntersectionDetails />} /> Render IntersectionDetails */}
                 </Routes>
             </div>
         </Router>
