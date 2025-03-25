@@ -14,6 +14,7 @@ const RoomManager = ({
     const [roomName, setRoomName] = useState('');
     const [floorType, setFloorType] = useState('');
     const [floorThickness, setFloorThickness] = useState('');
+    const [temperature, setTemperature] = useState('');
     const [remarks, setRemarks] = useState('');
     const [displayWalls, setDisplayWalls] = useState([]);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -24,6 +25,7 @@ const RoomManager = ({
             setFloorType(editingRoom.floor_type);
             setFloorThickness(editingRoom.floor_thickness);
             setRemarks(editingRoom.remarks);
+            setTemperature(editingRoom.temperature || '');
         }
     }, [editingRoom]);
 
@@ -44,6 +46,7 @@ const RoomManager = ({
             room_name: roomName,
             floor_type: floorType,
             floor_thickness: floorThickness,
+            temperature: temperature,
             remarks: remarks,
             walls: selectedWallIds,
             project: projectId,
@@ -64,133 +67,174 @@ const RoomManager = ({
     };
 
     return (
-        <div className="bg-white p-4 rounded-lg shadow-lg">
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">
-                    {isEditMode ? 'Edit Room' : 'Create New Room'}
-                </h2>
-            </div>
+        <div className="bg-gray-50 p-6">
+            <div className="max-w-5xl mx-auto bg-white rounded-lg shadow-lg">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-gray-200">
+                    <h1 className="text-2xl font-bold text-gray-900">
+                        {isEditMode ? 'Edit Room' : 'Create New Room'}
+                    </h1>
+                </div>
+                
+                <div className="p-6">
+                    {/* Main Form Section - Two Columns Layout */}
+                    <div className="grid grid-cols-2 gap-6">
+                        {/* Left Column - Room Details */}
+                        <div className="space-y-4">
+                            {/* Room Details Section */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-medium text-gray-700">Room Name</label>
+                                    <input
+                                        type="text"
+                                        value={roomName}
+                                        onChange={(e) => setRoomName(e.target.value)}
+                                        placeholder="Enter room name"
+                                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-gray-700">Temperature</label>
+                                    <div className="mt-1 relative">
+                                        <input
+                                            type="number"
+                                            value={temperature}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setTemperature(value !== '' ? Math.max(-50, Math.min(50, value)) : '');
+                                            }}
+                                            placeholder="Enter temperature"
+                                            className="block w-full rounded-md border border-gray-300 px-3 py-2 pr-12 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">°C</span>
+                                    </div>
+                                </div>
+                            </div>
 
-            <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700">Room Name</label>
-                                <input
-                                    type="text"
-                                    value={roomName}
-                                    onChange={(e) => setRoomName(e.target.value)}
-                                    placeholder="Room Name"
-                                    className="w-full p-2 border rounded mt-1"
+                            {/* Floor Details Section */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-medium text-gray-700">Floor Type</label>
+                                    <select
+                                        value={floorType}
+                                        onChange={(e) => setFloorType(e.target.value)}
+                                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="">Select Type</option>
+                                        <option value="Slab">Slab</option>
+                                        <option value="Panel">Panel</option>
+                                        <option value="None">None</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-gray-700">Thickness</label>
+                                    <select
+                                        value={floorThickness}
+                                        onChange={(e) => setFloorThickness(e.target.value)}
+                                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="">Select mm</option>
+                                        {[50, 75, 100, 125, 150, 175, 200].map(value => (
+                                            <option key={value} value={value}>{value} mm</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Remarks Section */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700">Remarks</label>
+                                <textarea
+                                    value={remarks}
+                                    onChange={(e) => setRemarks(e.target.value)}
+                                    placeholder="Add any additional notes here"
+                                    rows="2"
+                                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700">Floor Type</label>
-                                <select
-                                    value={floorType}
-                                    onChange={(e) => setFloorType(e.target.value)}
-                                    className="w-full p-2 border rounded mt-1"
-                                >
-                                    <option value="">Select Floor Type</option>
-                                    <option value="Slab">Slab</option>
-                                    <option value="Panel">Panel</option>
-                                    <option value="None">None</option>
-                                </select>
-                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Floor Thickness (mm)</label>
-                            <select
-                                value={floorThickness}
-                                onChange={(e) => setFloorThickness(e.target.value)}
-                                className="w-full p-2 border rounded mt-1"
-                            >
-                                <option value="">Select a Floor Thickness</option>
-                                <option value="50">50 mm</option>
-                                <option value="75">75 mm</option>
-                                <option value="100">100 mm</option>
-                                <option value="125">125 mm</option>
-                                <option value="150">150 mm</option>
-                                <option value="175">175 mm</option>
-                                <option value="200">200 mm</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Remarks</label>
-                            <textarea
-                                value={remarks}
-                                onChange={(e) => setRemarks(e.target.value)}
-                                placeholder="Remarks"
-                                className="w-full p-2 border rounded mt-1"
-                                rows="3"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <h3 className="font-medium mb-2">Selected Walls: {displayWalls.length}</h3>
-                        <div className="max-h-48 overflow-y-auto border rounded p-2">
-                            {displayWalls.length > 0 ? (
-                                displayWalls.map(wall => (
-                                    <div key={wall.id} className="p-2 bg-green-100 rounded mb-1">
-                                        <div>Wall ID: {wall.id}</div>
-                                    </div>
-                                ))
-                            ) : (
-                                <p className="text-gray-500">No walls selected</p>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                <div className="flex gap-2 justify-end mt-4">
-                    <button 
-                        onClick={onClose}
-                        className="px-4 py-2 border rounded hover:bg-gray-100"
-                    >
-                        Cancel
-                    </button>
-                    {isEditMode && (
-                        <button 
-                            onClick={() => setShowDeleteConfirm(true)}
-                            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                        >
-                            Delete Room
-                        </button>
-                    )}
-                    <button 
-                        onClick={handleSave}
-                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-blue-300"
-                        disabled={displayWalls.length === 0}
-                    >
-                        {isEditMode ? 'Update Room' : 'Save Room'}
-                    </button>
-                </div>
 
-                {showDeleteConfirm && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                        <div className="bg-white p-4 rounded-lg">
-                            <h3 className="text-lg font-semibold mb-2">Delete Room</h3>
-                            <p>Are you sure you want to delete this room?</p>
-                            <div className="flex gap-2 justify-end mt-4">
-                                <button 
-                                    onClick={() => setShowDeleteConfirm(false)}
-                                    className="px-4 py-2 border rounded hover:bg-gray-100"
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    onClick={handleDelete}
-                                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                                >
-                                    Delete
-                                </button>
+                        {/* Right Column - Selected Walls */}
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-lg font-medium text-gray-900">Selected Walls</h3>
+                                <span className="text-sm text-gray-500">({displayWalls.length})</span>
+                            </div>
+                            <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-48 overflow-y-auto">
+                                {displayWalls.length > 0 ? (
+                                    <div className="divide-y divide-gray-200">
+                                        {displayWalls.map(wall => (
+                                            <div
+                                                key={wall.id}
+                                                className="p-2 hover:bg-blue-50 transition-colors duration-150"
+                                            >
+                                                <span className="text-sm text-gray-700">Wall ID: {wall.id}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="h-full flex items-center justify-center">
+                                        <p className="text-gray-500">No walls selected</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
-                )}
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-gray-200">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                            Cancel
+                        </button>
+                        {isEditMode && (
+                            <button
+                                onClick={() => setShowDeleteConfirm(true)}
+                                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                            >
+                                Delete Room
+                            </button>
+                        )}
+                        <button
+                            onClick={handleSave}
+                            disabled={displayWalls.length === 0}
+                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                        >
+                            {isEditMode ? 'Update Room' : 'Save Room'}
+                        </button>
+                    </div>
+                </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+                        <h3 className="text-lg font-semibold text-gray-900">Delete Room</h3>
+                        <p className="mt-2 text-sm text-gray-500">
+                            Are you sure you want to delete this room? This action cannot be undone.
+                        </p>
+                        <div className="mt-6 flex justify-end gap-4">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
-}
+};
 
 export default RoomManager;

@@ -42,6 +42,8 @@ class Wall(models.Model):
         return f"Wall {self.id} in Project {self.project.name}"
 
 
+from django.db import models
+
 class Room(models.Model):
     FLOOR_TYPE_CHOICES = [
         ('Slab', 'Slab'),
@@ -65,12 +67,19 @@ class Room(models.Model):
     floor_type = models.CharField(
         max_length=50,
         choices=FLOOR_TYPE_CHOICES,
-        default='none',
+        default='None',
         help_text="Specify the type of floor for the room."
     )
     floor_thickness = models.IntegerField(
         choices=FLOOR_THICKNESS_CHOICES,
         help_text="Floor thickness in mm (select from predefined values)."
+    )
+    temperature = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        null=True, 
+        blank=True, 
+        help_text="Room temperature in °C (Optional)."
     )
     remarks = models.TextField(blank=True, null=True)
 
@@ -132,7 +141,7 @@ class Door(models.Model):
 class Intersection(models.Model):
     JOINING_METHOD_CHOICES = [
         ('45_cut', '45° Cut'),
-        ('bulk_in', 'Bulk In'),
+        ('butt_in', 'Butt In'),
     ]
 
     project = models.ForeignKey(Project, related_name='intersections', on_delete=models.CASCADE)

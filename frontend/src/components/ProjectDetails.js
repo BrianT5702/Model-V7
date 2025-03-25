@@ -61,7 +61,7 @@ const ProjectDetails = () => {
     useEffect(() => {
         const fetchRooms = async () => {
             try {
-                const response = await api.get('http://127.0.0.1:8000/api/rooms/');
+                const response = await api.get('/rooms/');
                 setRooms(Array.isArray(response.data) ? response.data : []);
             } catch (error) {
                 console.error('Error fetching rooms:', error);
@@ -384,202 +384,261 @@ const ProjectDetails = () => {
     }
 
     return (
-        <div>
-            <h1>{project.name}</h1>
-            <p>
-                Dimensions: {project.width} x {project.length} x {project.height} mm
-            </p>
+        <div className="max-w-7xl mx-auto p-6">
+            {/* Header Section */}
+            <div className="mb-8 bg-white rounded-lg shadow-sm p-6">
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">{project.name}</h1>
+                <p className="text-gray-600">
+                    Dimensions: {project.width} x {project.length} x {project.height} mm
+                </p>
+            </div>
 
-            {/* Editing Mode Controls */}
-            <div className="flex gap-2 mb-4">
-                <button
-                    onClick={() => setIs3DView(!is3DView)}
-                    className={`px-4 py-2 rounded ${is3DView ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
-                >
-                    {is3DView ? 'Switch to 2D View' : 'Switch to 3D View'}
-                </button>
-
-                {is3DView && (
+            {/* Control Panel */}
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                {/* Primary Controls */}
+                <div className="flex flex-wrap gap-3 mb-4">
                     <button
-                        onClick={handleViewToggle}
-                        className="px-4 py-2 rounded bg-blue-500 text-white"
+                        onClick={() => setIs3DView(!is3DView)}
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            is3DView ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-100 hover:bg-gray-200'
+                        }`}
                     >
-                        {isInteriorView ? 'View Exterior' : 'View Interior'}
-                    </button>
-                )}
-
-                <button
-                    onClick={() => {
-                        setIsEditingMode(!isEditingMode);
-                        setCurrentMode(null);
-                        resetAllSelections(); // Reset all selections when toggling edit mode
-                    }}
-                    className={`px-4 py-2 rounded ${
-                        isEditingMode ? 'bg-red-500 text-white' : 'bg-gray-200'
-                    }`}
-                >
-                    {isEditingMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
-                </button>
-
-                {isEditingMode && (
-                <>
-                    {/* Add Wall Mode with Wall Type Selection */}
-                    <button onClick={() => toggleMode('add-wall')} className="px-4 py-2 border rounded">
-                        {currentMode === 'add-wall' ? 'Exit Add Wall Mode' : 'Enter Add Wall Mode'}
+                        {is3DView ? 'Switch to 2D View' : 'Switch to 3D View'}
                     </button>
 
-                    {/* Wall Type Dropdown - Only Visible in Add Wall Mode */}
-                    {currentMode === 'add-wall' && (
-                        <div className="flex gap-2 mt-2">
-                            <label className="font-semibold">Wall Type:</label>
-                            <select 
-                                value={selectedWallType} 
-                                onChange={(e) => setSelectedWallType(e.target.value)}
-                                className="border p-2 rounded"
-                            >
-                                <option value="wall">Wall</option>
-                                <option value="partition">Partition</option>
-                            </select>
-                        </div>
+                    {is3DView && (
+                        <button
+                            onClick={handleViewToggle}
+                            className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+                        >
+                            {isInteriorView ? 'View Exterior' : 'View Interior'}
+                        </button>
                     )}
 
-                    {/* Edit Wall Mode */}
-                    <button onClick={() => toggleMode('edit-wall')} className="px-4 py-2 border rounded">
-                        {currentMode === 'edit-wall' ? 'Exit Edit Wall Mode' : 'Enter Edit Wall Mode'}
+                    <button
+                        onClick={() => {
+                            if (!is3DView) {  // ✅ Prevent editing in 3D mode
+                                setIsEditingMode(!isEditingMode);
+                                setCurrentMode(null);
+                                resetAllSelections();
+                            }
+                        }}
+                        disabled={is3DView}  // ✅ Disable button when in 3D mode
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            isEditingMode ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-100 hover:bg-gray-200'
+                        } ${is3DView ? 'opacity-50 cursor-not-allowed' : ''}`}  // ✅ Style it as disabled
+                    >
+                        {isEditingMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
                     </button>
-                        <button
-                            onClick={() => handleWallRemove(selectedWall)}
-                            disabled={selectedWall === null}
-                            className="px-4 py-2 bg-red-500 text-white rounded disabled:bg-gray-300"
-                        >
-                            Remove Wall
-                        </button>
-                        <button onClick={() => toggleMode('define-room')}>
-                            {currentMode === 'define-room' ? 'Exit Define Room Mode' : 'Enter Define Room Mode'}
-                        </button>
+                </div>
 
-                        {showRoomManager && (
-                            <RoomManager
-                                projectId={projectId}
-                                walls={walls}
-                                selectedWallIds={selectedWallsForRoom}
-                                onSaveRoom={handleCreateRoom}
-                                onUpdateRoom={handleRoomUpdate}
-                                onDeleteRoom={handleRoomDelete}
-                                editingRoom={editingRoom}
-                                isEditMode={!!editingRoom}
-                                onClose={() => {
-                                    setShowRoomManager(false);
-                                    setEditingRoom(null);
-                                    setSelectedWallsForRoom([]);
-                                }}
-                            />
+                {/* Editing Mode Controls */}
+                {isEditingMode && !is3DView && (
+                    <div className="space-y-4">
+                        <div className="flex flex-wrap gap-3">
+                            <button
+                                onClick={() => toggleMode('add-wall')}
+                                className={`px-4 py-2 rounded-lg transition-colors ${
+                                    currentMode === 'add-wall'
+                                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                        : 'border border-gray-200 hover:bg-gray-50'
+                                }`}
+                            >
+                                {currentMode === 'add-wall' ? 'Exit Add Wall Mode' : 'Add Wall'}
+                            </button>
+
+                            <button
+                                onClick={() => toggleMode('edit-wall')}
+                                className={`px-4 py-2 rounded-lg transition-colors ${
+                                    currentMode === 'edit-wall'
+                                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                        : 'border border-gray-200 hover:bg-gray-50'
+                                }`}
+                            >
+                                {currentMode === 'edit-wall' ? 'Exit Edit Wall Mode' : 'Edit Wall'}
+                            </button>
+
+                            <button
+                                onClick={() => toggleMode('define-room')}
+                                className={`px-4 py-2 rounded-lg transition-colors ${
+                                    currentMode === 'define-room'
+                                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                        : 'border border-gray-200 hover:bg-gray-50'
+                                }`}
+                            >
+                                {currentMode === 'define-room' ? 'Exit Define Room Mode' : 'Define Room'}
+                            </button>
+
+                            <button
+                                onClick={() => handleWallRemove(selectedWall)}
+                                disabled={selectedWall === null}
+                                className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 
+                                    transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Remove Wall
+                            </button>
+                        </div>
+
+                        {/* Wall Type Selection */}
+                        {currentMode === 'add-wall' && (
+                            <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
+                                <label className="font-medium text-gray-700">Wall Type:</label>
+                                <select 
+                                    value={selectedWallType} 
+                                    onChange={(e) => setSelectedWallType(e.target.value)}
+                                    className="px-3 py-2 rounded-lg border border-gray-200 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="wall">Wall</option>
+                                    <option value="partition">Partition</option>
+                                </select>
+                            </div>
                         )}
+                    </div>
+                )}
+            </div>
+
+            {/* Wall Editing Panel */}
+            {selectedWall !== null && currentMode === 'edit-wall' && (
+                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                    <h3 className="text-lg font-semibold mb-4">Wall Properties</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-3">
+                            <label className="block">
+                                <span className="font-medium text-gray-700">Start X:</span>
+                                <input
+                                    type="number"
+                                    value={walls[selectedWall]?.start_x || ''}
+                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_x: parseFloat(e.target.value) })}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </label>
+
+                            <label className="block">
+                                <span className="font-medium text-gray-700">Start Y:</span>
+                                <input
+                                    type="number"
+                                    value={walls[selectedWall]?.start_y || ''}
+                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_y: parseFloat(e.target.value) })}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </label>
+                        </div>
+
+                        <div className="space-y-3">
+                            <label className="block">
+                                <span className="font-medium text-gray-700">End X:</span>
+                                <input
+                                    type="number"
+                                    value={walls[selectedWall]?.end_x || ''}
+                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_x: parseFloat(e.target.value) })}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </label>
+
+                            <label className="block">
+                                <span className="font-medium text-gray-700">End Y:</span>
+                                <input
+                                    type="number"
+                                    value={walls[selectedWall]?.end_y || ''}
+                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_y: parseFloat(e.target.value) })}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </label>
+                        </div>
+
+                        <div className="space-y-3">
+                            <label className="block">
+                                <span className="font-medium text-gray-700">Wall Height (mm):</span>
+                                <input 
+                                    type="number" 
+                                    value={walls[selectedWall]?.height || ''} 
+                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, height: parseFloat(e.target.value) })} 
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </label>
+
+                            <label className="block">
+                                <span className="font-medium text-gray-700">Wall Thickness (mm):</span>
+                                <input 
+                                    type="number" 
+                                    value={walls[selectedWall]?.thickness || ''} 
+                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, thickness: parseFloat(e.target.value) })} 
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </label>
+                        </div>
+
+                        <div className="space-y-3">
+                            <label className="block">
+                                <span className="font-medium text-gray-700">Wall Type:</span>
+                                <select 
+                                    value={walls[selectedWall]?.application_type || 'wall'} 
+                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, application_type: e.target.value })} 
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="wall">Wall</option>
+                                    <option value="partition">Partition</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Room Manager */}
+            {showRoomManager && !is3DView && (
+                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                    <RoomManager
+                        projectId={projectId}
+                        walls={walls}
+                        selectedWallIds={selectedWallsForRoom}
+                        onSaveRoom={handleCreateRoom}
+                        onUpdateRoom={handleRoomUpdate}
+                        onDeleteRoom={handleRoomDelete}
+                        editingRoom={editingRoom}
+                        isEditMode={!!editingRoom}
+                        onClose={() => {
+                            setShowRoomManager(false);
+                            setEditingRoom(null);
+                            setSelectedWallsForRoom([]);
+                        }}
+                    />
+                </div>
+            )}
+
+            {/* Visualization Area */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                {is3DView ? (
+                    <div id="three-canvas-container" className="w-full h-[600px] bg-gray-50 rounded-lg" />
+                ) : (
+                    <>
+                        <h2 className="text-xl font-semibold mb-4">2D Visualization</h2>
+                        <Canvas2D
+                            walls={walls}
+                            setWalls={setWalls}
+                            onWallTypeSelect={selectedWallType}
+                            onWallUpdate={handleWallUpdate}
+                            onNewWall={handleWallCreate}
+                            onWallDelete={handleWallDelete}
+                            isEditingMode={isEditingMode}
+                            currentMode={currentMode}
+                            onWallSelect={handleWallSelect}
+                            selectedWallsForRoom={selectedWallsForRoom}
+                            onRoomWallsSelect={setSelectedWallsForRoom}
+                            rooms={rooms}
+                            onRoomSelect={handleRoomSelect}
+                        />
                     </>
                 )}
             </div>
-
-            {/* Wall Dimension Editing */}
-            {selectedWall !== null && currentMode === 'edit-wall' && (
-            <div className="flex flex-col gap-2 mb-4">
-                {/* Start X Input */}
-                <label>
-                    Start X:
-                    <input
-                        type="number"
-                        value={walls[selectedWall]?.start_x || ''}
-                        onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_x: parseFloat(e.target.value) })}
-                        className="border p-2 rounded w-full"
-                    />
-                </label>
-
-                {/* Start Y Input */}
-                <label>
-                    Start Y:
-                    <input
-                        type="number"
-                        value={walls[selectedWall]?.start_y || ''}
-                        onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_y: parseFloat(e.target.value) })}
-                        className="border p-2 rounded w-full"
-                    />
-                </label>
-
-                {/* End X Input */}
-                <label>
-                    End X:
-                    <input
-                        type="number"
-                        value={walls[selectedWall]?.end_x || ''}
-                        onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_x: parseFloat(e.target.value) })}
-                        className="border p-2 rounded w-full"
-                    />
-                </label>
-
-                {/* End Y Input */}
-                <label>
-                    End Y:
-                    <input
-                        type="number"
-                        value={walls[selectedWall]?.end_y || ''}
-                        onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_y: parseFloat(e.target.value) })}
-                        className="border p-2 rounded w-full"
-                    />
-                </label>
-
-                {/* Height Input */}
-                <label className="font-semibold">Wall Height (mm):</label>
-                <input 
-                    type="number" 
-                    value={walls[selectedWall]?.height || ''} 
-                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, height: parseFloat(e.target.value) })} 
-                    className="border p-2 rounded w-full"
-                />
-
-                {/* Thickness Input */}
-                <label className="font-semibold">Wall Thickness (mm):</label>
-                <input 
-                    type="number" 
-                    value={walls[selectedWall]?.thickness || ''} 
-                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, thickness: parseFloat(e.target.value) })} 
-                    className="border p-2 rounded w-full"
-                />
-
-                {/* Wall Type Dropdown */}
-                <label className="font-semibold">Wall Type:</label>
-                <select 
-                    value={walls[selectedWall]?.application_type || 'wall'} 
-                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, application_type: e.target.value })} 
-                    className="border p-2 rounded"
-                >
-                    <option value="wall">Wall</option>
-                    <option value="partition">Partition</option>
-                </select>
-            </div>
-        )}
-
-                {is3DView ? (
-                    <div id="three-canvas-container" style={{ width: '100%', height: '600px' }} />
-                ) : (
-            <>
-                <h2>2D Visualization:</h2>
-                <Canvas2D
-                    walls={walls}
-                    setWalls={setWalls}
-                    onWallTypeSelect={selectedWallType}
-                    onWallUpdate={handleWallUpdate}
-                    onNewWall={handleWallCreate}
-                    onWallDelete={handleWallDelete}
-                    isEditingMode={isEditingMode}
-                    currentMode={currentMode}
-                    onWallSelect={handleWallSelect}
-                    selectedWallsForRoom={selectedWallsForRoom}
-                    onRoomWallsSelect={setSelectedWallsForRoom}
-                    rooms={rooms}
-                    onRoomSelect={handleRoomSelect}
-                />
-            </>
-            )}
-
         </div>
     );
 };

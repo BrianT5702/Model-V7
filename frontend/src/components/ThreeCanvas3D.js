@@ -302,68 +302,68 @@ getModelBounds() {
     return wallMesh;
 }
 
-addCeiling() {
-  // Remove existing ceiling
-  const existingCeiling = this.scene.getObjectByName('ceiling');
-  if (existingCeiling) {
-      this.scene.remove(existingCeiling);
-  }
+// addCeiling() {
+//   // Remove existing ceiling
+//   const existingCeiling = this.scene.getObjectByName('ceiling');
+//   if (existingCeiling) {
+//       this.scene.remove(existingCeiling);
+//   }
 
-  // Get ordered vertices of the external walls
-  const vertices = this.getExternalVertices();
+//   // Get ordered vertices of the external walls
+//   const vertices = this.getExternalVertices();
   
-  // Convert vertices to format required by earcut
-  const flatVertices = [];
-  vertices.forEach(vertex => {
-      flatVertices.push(vertex.x);
-      flatVertices.push(vertex.z);
-  });
+//   // Convert vertices to format required by earcut
+//   const flatVertices = [];
+//   vertices.forEach(vertex => {
+//       flatVertices.push(vertex.x);
+//       flatVertices.push(vertex.z);
+//   });
 
-  // Triangulate the polygon
-  const triangles = earcut(flatVertices);
+//   // Triangulate the polygon
+//   const triangles = earcut(flatVertices);
 
-  // Create ceiling geometry using triangulation
-  const geometry = new THREE.BufferGeometry();
+//   // Create ceiling geometry using triangulation
+//   const geometry = new THREE.BufferGeometry();
   
-  // Create vertices array for the geometry
-  const positions = new Float32Array(triangles.length * 3);
-  for (let i = 0; i < triangles.length; i++) {
-      const vertexIndex = triangles[i];
-      const x = flatVertices[vertexIndex * 2];
-      const z = flatVertices[vertexIndex * 2 + 1];
+//   // Create vertices array for the geometry
+//   const positions = new Float32Array(triangles.length * 3);
+//   for (let i = 0; i < triangles.length; i++) {
+//       const vertexIndex = triangles[i];
+//       const x = flatVertices[vertexIndex * 2];
+//       const z = flatVertices[vertexIndex * 2 + 1];
       
-      positions[i * 3] = x;
-      positions[i * 3 + 1] = 0;  // Y coordinate (will be transformed later)
-      positions[i * 3 + 2] = z;
-  }
+//       positions[i * 3] = x;
+//       positions[i * 3 + 1] = 0;  // Y coordinate (will be transformed later)
+//       positions[i * 3 + 2] = z;
+//   }
 
-  // Add the vertices to the geometry
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+//   // Add the vertices to the geometry
+//   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   
-  // Calculate normals
-  geometry.computeVertexNormals();
+//   // Calculate normals
+//   geometry.computeVertexNormals();
 
-  // Create material
-  const material = new THREE.MeshStandardMaterial({
-      color: 0xcccccc,
-      side: THREE.DoubleSide,
-      roughness: 0.7,
-      metalness: 0.2
-  });
+//   // Create material
+//   const material = new THREE.MeshStandardMaterial({
+//       color: 0xcccccc,
+//       side: THREE.DoubleSide,
+//       roughness: 0.7,
+//       metalness: 0.2
+//   });
 
-  // Create mesh
-  const ceiling = new THREE.Mesh(geometry, material);
-  ceiling.name = 'ceiling';
+//   // Create mesh
+//   const ceiling = new THREE.Mesh(geometry, material);
+//   ceiling.name = 'ceiling';
   
-  // Position the ceiling at the top of the walls
-  ceiling.position.y = this.walls[0].height * this.scalingFactor;
+//   // Position the ceiling at the top of the walls
+//   ceiling.position.y = this.walls[0].height * this.scalingFactor;
   
-  // Enable shadows
-  ceiling.castShadow = true;
-  ceiling.receiveShadow = true;
+//   // Enable shadows
+//   ceiling.castShadow = true;
+//   ceiling.receiveShadow = true;
 
-  this.scene.add(ceiling);
-}
+//   this.scene.add(ceiling);
+// }
 
 // Improved version of getExternalVertices to ensure proper vertex ordering
 getExternalVertices() {

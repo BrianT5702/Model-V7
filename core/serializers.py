@@ -40,7 +40,7 @@ class RoomSerializer(serializers.ModelSerializer):
         model = Room
         fields = [
             'id', 'project', 'walls', 'room_name',
-            'floor_type', 'floor_thickness', 'remarks', 'ceilings'
+            'floor_type', 'floor_thickness', 'remarks', 'ceilings', 'temperature'
         ]
 
 

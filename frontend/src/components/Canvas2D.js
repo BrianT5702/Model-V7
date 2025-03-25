@@ -21,8 +21,10 @@ const Canvas2D = ({
     const [tempWall, setTempWall] = useState(null);
     const [hoveredWall, setHoveredWall] = useState(null);
     const [hoveredPoint, setHoveredPoint] = useState(null);
+    const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
 
     const SNAP_THRESHOLD = 10;
+    const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
     const gridSize = 50;
     
     let offsetX = 0;
@@ -32,52 +34,219 @@ const Canvas2D = ({
     //start here about the room area defining
     const calculateRoomArea = (roomWalls) => {
         if (!roomWalls || roomWalls.length < 3) return null;
+
+        // Calculate ROOM_INSET using current scale factor
+        const ROOM_INSET = FIXED_GAP / currentScaleFactor + 150;
     
-        // Step 1: Collect all unique points from the walls
-        let points = new Set();
+        // Create a map of wall thicknesses for each segment
+        const wallThicknessMap = new Map();
         roomWalls.forEach(wall => {
-            points.add(JSON.stringify({ x: wall.start_x, y: wall.start_y }));
-            points.add(JSON.stringify({ x: wall.end_x, y: wall.end_y }));
+            const key = `${wall.start_x},${wall.start_y}-${wall.end_x},${wall.end_y}`;
+            const reverseKey = `${wall.end_x},${wall.end_y}-${wall.start_x},${wall.start_y}`;
+            wallThicknessMap.set(key, wall.thickness);
+            wallThicknessMap.set(reverseKey, wall.thickness);
         });
-        points = [...points].map(p => JSON.parse(p));
     
-        // Step 2: Order points to form a valid polygon using Convex Hull (Graham's Scan)
-        const orderedPoints = getConvexHull(points);
+        // Get ordered points and pass the thickness map
+        const points = getOrderedPoints(roomWalls);
+        return calculateInsetPoints(points, ROOM_INSET);
+    };
+    
+    const getOrderedPoints = (roomWalls) => {
+        const connections = new Map();
+        
+        roomWalls.forEach(wall => {
+            const start = `${wall.start_x},${wall.start_y}`;
+            const end = `${wall.end_x},${wall.end_y}`;
+            
+            if (!connections.has(start)) connections.set(start, new Set());
+            if (!connections.has(end)) connections.set(end, new Set());
+            
+            connections.get(start).add(end);
+            connections.get(end).add(start);
+        });
+    
+        const orderedPoints = [];
+        let currentPoint = Array.from(connections.keys())[0];
+        const visited = new Set();
+    
+        while (orderedPoints.length < connections.size) {
+            if (!visited.has(currentPoint)) {
+                const [x, y] = currentPoint.split(',').map(Number);
+                orderedPoints.push({ x, y });
+                visited.add(currentPoint);
+    
+                const neighbors = connections.get(currentPoint);
+                currentPoint = Array.from(neighbors).find(p => !visited.has(p));
+                
+                if (!currentPoint && visited.size < connections.size) {
+                    currentPoint = Array.from(connections.keys()).find(p => !visited.has(p));
+                }
+            }
+        }
     
         return orderedPoints;
     };
     
-    const crossProduct = (o, a, b) => {
-        return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    };
+    const calculateInsetPoints = (points, insetDistance) => {
+        const insetPoints = [];
+        const len = points.length;
     
-    const getConvexHull = (points) => {
-        if (points.length < 3) return points;
-        points.sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+        for (let i = 0; i < len; i++) {
+            const prev = points[(i - 1 + len) % len];
+            const curr = points[i];
+            const next = points[(i + 1) % len];
     
-        let lower = [];
-        for (let p of points) {
-            while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-                lower.pop();
+            // Calculate vectors for previous and next segments
+            const v1 = {
+                x: curr.x - prev.x,
+                y: curr.y - prev.y
+            };
+            const v2 = {
+                x: next.x - curr.x,
+                y: next.y - curr.y
+            };
+    
+            // Normalize vectors
+            const len1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+            const len2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+    
+            const n1 = {
+                x: -v1.y / len1,
+                y: v1.x / len1
+            };
+            const n2 = {
+                x: -v2.y / len2,
+                y: v2.x / len2
+            };
+    
+            // Calculate average normal vector (bisector)
+            const bisector = {
+                x: (n1.x + n2.x) / 2,
+                y: (n1.y + n2.y) / 2
+            };
+    
+            // Calculate angle between segments
+            const dot = n1.x * n2.x + n1.y * n2.y;
+            const angle = Math.acos(Math.min(1, Math.max(-1, dot)));
+    
+            // Calculate fixed inset distance for the corner
+            const offsetDist = insetDistance / Math.sin(angle / 2);
+    
+            // Calculate inset point
+            const bisectorLen = Math.sqrt(bisector.x * bisector.x + bisector.y * bisector.y);
+            if (bisectorLen > 0) {
+                insetPoints.push({
+                    x: curr.x + (bisector.x / bisectorLen) * offsetDist,
+                    y: curr.y + (bisector.y / bisectorLen) * offsetDist
+                });
+            } else {
+                // Fallback for collinear points
+                const avgNormal = {
+                    x: (n1.x + n2.x) / 2,
+                    y: (n1.y + n2.y) / 2
+                };
+                insetPoints.push({
+                    x: curr.x + avgNormal.x * insetDistance,
+                    y: curr.y + avgNormal.y * insetDistance
+                });
             }
-            lower.push(p);
         }
     
-        let upper = [];
-        for (let i = points.length - 1; i >= 0; i--) {
-            let p = points[i];
-            while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-                upper.pop();
-            }
-            upper.push(p);
-        }
-    
-        upper.pop();
-        lower.pop();
-        return lower.concat(upper);
+        return insetPoints;
     };
-    
+
     //room defining ends here (but got problem, nid futher improvement on the logic)
+
+    //This is to get the center of the area
+    const calculatePolygonVisualCenter = (points) => {
+        if (!points || points.length < 3) return null;
+
+        // If it's a simple rectangle/square (4 points), use regular center
+        if (points.length === 4) {
+            return {
+                x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
+                y: points.reduce((sum, p) => sum + p.y, 0) / points.length
+            };
+        }
+
+        // For L-shaped or irregular rooms, use the centroid of the largest inscribed circle
+        // First, triangulate the polygon
+        const triangulate = (vertices) => {
+            const triangles = [];
+            const n = vertices.length;
+            
+            if (n < 3) return triangles;
+            
+            const V = vertices.map((pt, i) => ({ x: pt.x, y: pt.y, index: i }));
+            
+            while (V.length > 3) {
+                for (let i = 0; i < V.length; i++) {
+                    const a = V[i];
+                    const b = V[(i + 1) % V.length];
+                    const c = V[(i + 2) % V.length];
+                    
+                    // Check if this ear is valid
+                    const isEar = isValidEar(a, b, c, V);
+                    
+                    if (isEar) {
+                        triangles.push([a, b, c]);
+                        V.splice((i + 1) % V.length, 1);
+                        break;
+                    }
+                }
+            }
+            
+            if (V.length === 3) {
+                triangles.push(V);
+            }
+            
+            return triangles;
+        };
+
+        const isValidEar = (a, b, c, vertices) => {
+            // Check if triangle abc contains any other vertices
+            for (const v of vertices) {
+                if (v === a || v === b || v === c) continue;
+                
+                if (isPointInTriangle(v, a, b, c)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        const isPointInTriangle = (p, a, b, c) => {
+            const area = 0.5 * (-b.y * c.x + a.y * (-b.x + c.x) + a.x * (b.y - c.y) + b.x * c.y);
+            const s = 1 / (2 * area) * (a.y * c.x - a.x * c.y + (c.y - a.y) * p.x + (a.x - c.x) * p.y);
+            const t = 1 / (2 * area) * (a.x * b.y - a.y * b.x + (a.y - b.y) * p.x + (b.x - a.x) * p.y);
+            
+            return s >= 0 && t >= 0 && (1 - s - t) >= 0;
+        };
+
+        // Calculate centroid of largest triangle
+        const triangles = triangulate(points);
+        let maxArea = 0;
+        let bestCentroid = null;
+
+        triangles.forEach(triangle => {
+            const area = Math.abs(
+                (triangle[0].x * (triangle[1].y - triangle[2].y) +
+                 triangle[1].x * (triangle[2].y - triangle[0].y) +
+                 triangle[2].x * (triangle[0].y - triangle[1].y)) / 2
+            );
+
+            if (area > maxArea) {
+                maxArea = area;
+                bestCentroid = {
+                    x: (triangle[0].x + triangle[1].x + triangle[2].x) / 3,
+                    y: (triangle[0].y + triangle[1].y + triangle[2].y) / 3
+                };
+            }
+        });
+
+        return bestCentroid;
+    };
 
     //Here is about the room selecting
     const isPointInPolygon = (point, polygon) => {
@@ -117,6 +286,8 @@ const Canvas2D = ({
             (canvas.height - 2 * padding) / wallHeight
         );
 
+        setCurrentScaleFactor(scaleFactor);
+
         offsetX = (canvas.width - wallWidth * scaleFactor) / 2 - minX * scaleFactor;
         offsetY = (canvas.height - wallHeight * scaleFactor) / 2 - minY * scaleFactor;
 
@@ -143,16 +314,14 @@ const Canvas2D = ({
         //Rooms drawing(need improvement on the room area defining so this work smoothly)
         const drawRooms = () => {
             rooms.forEach(room => {
-                // Get walls for the room
                 const roomWalls = room.walls.map(wallId => 
                     walls.find(w => w.id === wallId)
                 ).filter(Boolean);
         
-                // Calculate area points
                 const areaPoints = calculateRoomArea(roomWalls);
                 if (!areaPoints) return;
         
-                // Draw the room area
+                // Draw room area (same as before)
                 context.beginPath();
                 context.moveTo(
                     areaPoints[0].x * scaleFactor + offsetX,
@@ -167,40 +336,35 @@ const Canvas2D = ({
                 }
         
                 context.closePath();
-        
-                // Fill the room area
                 context.fillStyle = 'rgba(76, 175, 80, 0.5)';
                 context.fill();
-        
-                // Add a subtle border
                 context.strokeStyle = 'rgba(76, 175, 80, 0.8)';
                 context.lineWidth = 2;
                 context.stroke();
         
-                // Draw the room name
-                const centerX = areaPoints.reduce((sum, p) => sum + p.x, 0) / areaPoints.length;
-                const centerY = areaPoints.reduce((sum, p) => sum + p.y, 0) / areaPoints.length;
+                // Calculate better center position using the new function
+                const center = calculatePolygonVisualCenter(areaPoints);
+                if (!center) return;
         
-                // Add text background
+                // Draw the room name with the new center position
                 context.fillStyle = 'white';
                 context.font = '14px Arial';
                 const textMetrics = context.measureText(room.room_name);
                 const padding = 4;
         
                 context.fillRect(
-                    centerX * scaleFactor + offsetX - textMetrics.width / 2 - padding,
-                    centerY * scaleFactor + offsetY - 14 - padding,
+                    center.x * scaleFactor + offsetX - textMetrics.width / 2 - padding,
+                    center.y * scaleFactor + offsetY - 14 - padding,
                     textMetrics.width + padding * 2,
                     18 + padding * 2
                 );
         
-                // Draw the room name
                 context.fillStyle = '#000';
                 context.textAlign = 'center';
                 context.fillText(
                     room.room_name,
-                    centerX * scaleFactor + offsetX,
-                    centerY * scaleFactor + offsetY
+                    center.x * scaleFactor + offsetX,
+                    center.y * scaleFactor + offsetY
                 );
             });
         };
@@ -208,7 +372,6 @@ const Canvas2D = ({
 
         // Wall drawing, including the hover through color change and the select color change, and also the dimension showing thing
         const drawWalls = () => {
-            const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
             const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
             context.clearRect(0, 0, canvas.width, canvas.height);
@@ -278,18 +441,40 @@ const Canvas2D = ({
                 const length = Math.sqrt(
                     Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
                 );
-
+            
+                context.save();
                 context.fillStyle = color;
-                context.font = '12px Arial';
+                context.font = '15px Arial';
                 const text = `${Math.round(length)} mm`;
                 const textWidth = context.measureText(text).width;
-
-                // Add background to text for better visibility
-                context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                context.fillRect(midX - textWidth / 2 - 2, midY - 8, textWidth + 4, 16);
-
-                context.fillStyle = color;
-                context.fillText(text, midX - textWidth / 2, midY + 4);
+            
+                // Check if the wall is more horizontal or vertical
+                const dx = endX - startX;
+                const dy = endY - startY;
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            
+                if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
+                    // **Horizontal wall**
+                    context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    context.fillRect(midX - textWidth / 2 - 2, midY - 8, textWidth + 4, 16);
+            
+                    context.fillStyle = color;
+                    context.fillText(text, midX - textWidth / 2, midY + 4);
+                } else {
+                    // **Vertical wall**
+                    context.translate(midX, midY);
+                    context.rotate(-Math.PI / 2); // Rotate text to be vertical
+            
+                    context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
+            
+                    context.fillStyle = color;
+                    context.fillText(text, -textWidth / 2, 4);
+            
+                    context.restore();
+                }
+            
+                context.restore();
             };
 
             // Function to calculate offset points for double-line walls
@@ -585,15 +770,17 @@ const Canvas2D = ({
                 setIsDrawing(false);
     
                 if (tempWall) {
-                    const startPoint = hoveredPoint || snapToClosestPoint(tempWall.start_x, tempWall.start_y);
+                    const startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
                     let endPoint = hoveredPoint || snapToClosestPoint(x, y);
+                    console.log(startPoint.x, ", ", startPoint.y)
+                    console.log(endPoint.x, ", ", endPoint.y)
     
-                    // Check if ending at an existing endpoint
+                    // Check if the endpoint matches an existing endpoint of any wall
                     const isEndingAtExistingEndpoint = walls.some((wall) =>
                         (Math.abs(wall.start_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                         Math.abs(wall.start_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
+                        Math.abs(wall.start_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
                         (Math.abs(wall.end_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                         Math.abs(wall.end_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor)
+                        Math.abs(wall.end_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor)
                     );
     
                     // Calculate the angle for snapping
@@ -618,7 +805,7 @@ const Canvas2D = ({
     
                     // Get reference wall properties
                     const getReferenceWall = () => {
-                        const intersectingWall = walls.find(wall => 
+                        const intersectingWall = walls.find(wall =>
                             calculateIntersection(
                                 { x: wall.start_x, y: wall.start_y },
                                 { x: wall.end_x, y: wall.end_y },
@@ -634,7 +821,7 @@ const Canvas2D = ({
                             };
                         }
     
-                        const connectedWall = walls.find(wall => 
+                        const connectedWall = walls.find(wall =>
                             (Math.abs(wall.start_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
                              Math.abs(wall.start_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
                             (Math.abs(wall.end_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
@@ -656,7 +843,6 @@ const Canvas2D = ({
     
                     const wallProperties = getReferenceWall();
     
-                    // Handle wall splitting
                     if (!isStartingAtExistingEndpoint) {
                         for (const wall of walls) {
                             const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
@@ -666,7 +852,7 @@ const Canvas2D = ({
                                     SNAP_THRESHOLD / scaleFactor
                             ) {
                                 wallsToDelete.push(wall);
-                
+                    
                                 wallsToAdd.push({
                                     start_x: wall.start_x,
                                     start_y: wall.start_y,
@@ -676,7 +862,7 @@ const Canvas2D = ({
                                     thickness: wall.thickness,
                                     application_type: wall.application_type
                                 });
-                
+                    
                                 wallsToAdd.push({
                                     start_x: startPoint.x,
                                     start_y: startPoint.y,
@@ -689,11 +875,12 @@ const Canvas2D = ({
                             }
                         }
                     }
-    
+
+                    // Handle wall splitting only if the endpoint is not at an existing endpoint
                     if (!isEndingAtExistingEndpoint) {
                         for (const wall of walls) {
                             if (wallsToDelete.includes(wall)) continue;
-    
+
                             const endSegmentPoint = snapToWallSegment(endPoint.x, endPoint.y, wall);
                             if (
                                 endSegmentPoint &&
@@ -701,7 +888,7 @@ const Canvas2D = ({
                                     SNAP_THRESHOLD / scaleFactor
                             ) {
                                 wallsToDelete.push(wall);
-    
+
                                 wallsToAdd.push({
                                     start_x: wall.start_x,
                                     start_y: wall.start_y,
@@ -711,7 +898,7 @@ const Canvas2D = ({
                                     thickness: wall.thickness,
                                     application_type: wall.application_type
                                 });
-    
+
                                 wallsToAdd.push({
                                     start_x: endPoint.x,
                                     start_y: endPoint.y,
@@ -724,10 +911,9 @@ const Canvas2D = ({
                             }
                         }
                     }
-    
-                    // Add the new wall regardless of endpoint conditions
-                    if (wallProperties && 
-                        (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
+
+                    // Ensure the new wall is added regardless of splitting
+                    if (wallProperties && (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
                         wallsToAdd.push({
                             start_x: startPoint.x,
                             start_y: startPoint.y,
@@ -737,6 +923,8 @@ const Canvas2D = ({
                             thickness: wallProperties.thickness,
                             application_type: onWallTypeSelect
                         });
+                        console.log("Walls to be added:", wallsToAdd);
+
                     }
     
                     try {
@@ -771,7 +959,7 @@ const Canvas2D = ({
                     end_y: snappedStart.y,
                 });
             }
-        } 
+        }
         else if (currentMode === 'edit-wall') {
             let selectedIndex = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor;
