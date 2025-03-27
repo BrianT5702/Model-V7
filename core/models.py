@@ -150,9 +150,13 @@ class Intersection(models.Model):
     joining_method = models.CharField(
         max_length=50,
         choices=JOINING_METHOD_CHOICES,
-        default='bulk_in',
+        default='butt_in',
         help_text="Specify the joining method at this intersection."
     )
 
+    class Meta:
+        unique_together = ('wall_1', 'wall_2')  # Add this
+        ordering = ['wall_1_id', 'wall_2_id']
+        
     def __str__(self):
         return f"Intersection between Wall {self.wall_1.id} and Wall {self.wall_2.id} in Project {self.project.name}"

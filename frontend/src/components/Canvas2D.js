@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
+import api from '../api/api';
 
 const Canvas2D = ({ 
     walls = [], 
     setWalls, 
+    projectId,
+    joints = [],
     onNewWall, 
     onWallTypeSelect,
     isEditingMode, 
@@ -12,7 +15,8 @@ const Canvas2D = ({
     selectedWallsForRoom = [], 
     onRoomWallsSelect = () => {},
     onRoomSelect = () => {},
-    rooms = []
+    rooms = [],
+    onJointsUpdate
 }) => {
 
     const canvasRef = useRef(null);
@@ -22,14 +26,19 @@ const Canvas2D = ({
     const [hoveredWall, setHoveredWall] = useState(null);
     const [hoveredPoint, setHoveredPoint] = useState(null);
     const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
+    const [intersections, setIntersections] = useState([]);
+    const [selectedIntersection, setSelectedIntersection] = useState(null);
+    const [joiningMethod, setJoiningMethod] = useState("butt_in");
+    const [highlightWalls, setHighlightWalls] = useState([]);
+    const [selectedJointPair, setSelectedJointPair] = useState(null);
 
     const SNAP_THRESHOLD = 10;
     const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
     const gridSize = 50;
     
-    let offsetX = 0;
-    let offsetY = 0;
-    let scaleFactor = 1;
+    const offsetX = useRef(0);
+    const offsetY = useRef(0);
+    const scaleFactor = useRef(1);
 
     //start here about the room area defining
     const calculateRoomArea = (roomWalls) => {
@@ -281,15 +290,16 @@ const Canvas2D = ({
         const wallHeight = maxY - minY || 1;
 
         const padding = 50;
-        scaleFactor = Math.min(
+        const sf = Math.min(
             (canvas.width - 2 * padding) / wallWidth,
             (canvas.height - 2 * padding) / wallHeight
         );
 
-        setCurrentScaleFactor(scaleFactor);
+        scaleFactor.current = sf;
+        setCurrentScaleFactor(sf);
 
-        offsetX = (canvas.width - wallWidth * scaleFactor) / 2 - minX * scaleFactor;
-        offsetY = (canvas.height - wallHeight * scaleFactor) / 2 - minY * scaleFactor;
+        offsetX.current = (canvas.width - wallWidth * sf) / 2 - minX * sf;
+        offsetY.current = (canvas.height - wallHeight * sf) / 2 - minY * sf;
 
         //Grid drawing in the 2D view
         const drawGrid = () => {
@@ -324,14 +334,14 @@ const Canvas2D = ({
                 // Draw room area (same as before)
                 context.beginPath();
                 context.moveTo(
-                    areaPoints[0].x * scaleFactor + offsetX,
-                    areaPoints[0].y * scaleFactor + offsetY
+                    areaPoints[0].x * scaleFactor.current + offsetX.current,
+                    areaPoints[0].y * scaleFactor.current + offsetY.current
                 );
         
                 for (let i = 1; i < areaPoints.length; i++) {
                     context.lineTo(
-                        areaPoints[i].x * scaleFactor + offsetX,
-                        areaPoints[i].y * scaleFactor + offsetY
+                        areaPoints[i].x * scaleFactor.current + offsetX.current,
+                        areaPoints[i].y * scaleFactor.current + offsetY.current
                     );
                 }
         
@@ -353,8 +363,8 @@ const Canvas2D = ({
                 const padding = 4;
         
                 context.fillRect(
-                    center.x * scaleFactor + offsetX - textMetrics.width / 2 - padding,
-                    center.y * scaleFactor + offsetY - 14 - padding,
+                    center.x * scaleFactor.current + offsetX.current - textMetrics.width / 2 - padding,
+                    center.y * scaleFactor.current + offsetY.current - 14 - padding,
                     textMetrics.width + padding * 2,
                     18 + padding * 2
                 );
@@ -363,12 +373,33 @@ const Canvas2D = ({
                 context.textAlign = 'center';
                 context.fillText(
                     room.room_name,
-                    center.x * scaleFactor + offsetX,
-                    center.y * scaleFactor + offsetY
+                    center.x * scaleFactor.current + offsetX.current,
+                    center.y * scaleFactor.current + offsetY.current
                 );
             });
         };
         //Room drawing end here
+
+        const allIntersections = findIntersectionPointsBetweenWalls();
+  
+  // Merge with saved joints data
+  const mergedIntersections = allIntersections.map(inter => ({
+    ...inter,
+    pairs: inter.pairs.map(pair => {
+      // Find matching joint (check both wall order permutations)
+      const joint = joints.find(j => 
+        (j.wall_1 === pair.wall1.id && j.wall_2 === pair.wall2.id) ||
+        (j.wall_1 === pair.wall2.id && j.wall_2 === pair.wall1.id)
+      );
+      
+      return {
+        ...pair,
+        joining_method: joint?.joining_method || 'butt_in'
+      };
+    })
+  }));
+
+  setIntersections(mergedIntersections);
 
         // Wall drawing, including the hover through color change and the select color change, and also the dimension showing thing
         const drawWalls = () => {
@@ -386,7 +417,7 @@ const Canvas2D = ({
                 const dy = line1[1].y - line1[0].y;
                 const wallLength = Math.sqrt(dx * dx + dy * dy);
             
-                const numSlashes = Math.floor(wallLength * scaleFactor / spacing);
+                const numSlashes = Math.floor(wallLength * scaleFactor.current / spacing);
             
                 for (let i = 1; i < numSlashes - 1; i++) {
                     // Calculate interpolation factor
@@ -408,8 +439,8 @@ const Canvas2D = ({
             
                     // Draw diagonal slashes inside partition
                     context.beginPath();
-                    context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
-                    context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
+                    context.moveTo(x1 * scaleFactor.current + offsetX.current, y1 * scaleFactor.current + offsetY.current);
+                    context.lineTo(x2 * scaleFactor.current + offsetX.current, y2 * scaleFactor.current + offsetY.current);
                     context.strokeStyle = "#666"; // Gray color for partition slashes
                     context.lineWidth = 1.5;
                     context.stroke();
@@ -424,8 +455,8 @@ const Canvas2D = ({
                 }
                 context.beginPath();
                 context.arc(
-                    x * scaleFactor + offsetX,
-                    y * scaleFactor + offsetY,
+                    x * scaleFactor.current + offsetX.current,
+                    y * scaleFactor.current + offsetY.current,
                     size,
                     0,
                     2 * Math.PI
@@ -436,8 +467,8 @@ const Canvas2D = ({
 
             // Wall Dimensions display in here, if got problem change here
             const drawDimensions = (startX, startY, endX, endY, color = 'blue') => {
-                const midX = ((startX + endX) / 2) * scaleFactor + offsetX;
-                const midY = ((startY + endY) / 2) * scaleFactor + offsetY;
+                const midX = ((startX + endX) / 2) * scaleFactor.current + offsetX.current;
+                const midY = ((startY + endY) / 2) * scaleFactor.current + offsetY.current;
                 const length = Math.sqrt(
                     Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
                 );
@@ -488,18 +519,26 @@ const Canvas2D = ({
 
                 return {
                     line1: [
-                        { x: x1 + offsetX / scaleFactor, y: y1 + offsetY / scaleFactor },
-                        { x: x2 + offsetX / scaleFactor, y: y2 + offsetY / scaleFactor },
+                        { x: x1 + offsetX / scaleFactor.current, y: y1 + offsetY / scaleFactor.current },
+                        { x: x2 + offsetX / scaleFactor.current, y: y2 + offsetY / scaleFactor.current },
                     ],
                     line2: [
-                        { x: x1 - offsetX / scaleFactor, y: y1 - offsetY / scaleFactor },
-                        { x: x2 - offsetX / scaleFactor, y: y2 - offsetY / scaleFactor },
+                        { x: x1 - offsetX / scaleFactor.current, y: y1 - offsetY / scaleFactor.current },
+                        { x: x2 - offsetX / scaleFactor.current, y: y2 - offsetY / scaleFactor.current },
                     ],
                 };
             };
 
             // Draw existing walls
             walls.forEach((wall, index) => {
+                const isHighlighted = highlightWalls.includes(wall.id);
+                const wallColor = 
+                    isHighlighted ? '#FF4081' :  // Pink for highlighted joint walls (higher priority)
+                    selectedWallsForRoom.includes(wall.id) ? '#4CAF50' : // Green for room selection
+                    selectedWall === index ? 'red' : // Red for selected wall
+                    hoveredWall === index ? '#2196F3' :  // Blue for hovered wall
+                    wall.application_type === "partition" ? "#666" : "#333"; // Default colors
+            
                 const { line1, line2 } = calculateOffsetPoints(
                     wall.start_x,
                     wall.start_y,
@@ -508,22 +547,15 @@ const Canvas2D = ({
                     FIXED_GAP
                 );
 
-                // Change color if hovered
-                const wallColor = 
-                    selectedWallsForRoom.includes(wall.id) ? '#4CAF50' : // Green for room selection
-                    selectedWall === index ? 'red' :
-                    hoveredWall === index ? '#2196F3' :
-                    wall.application_type === "partition" ? "#666" : "#333"; // Darker gray for partitions
-
                 // Draw the first line of the wall
                 context.beginPath();
                 context.moveTo(
-                    line1[0].x * scaleFactor + offsetX,
-                    line1[0].y * scaleFactor + offsetY
+                    line1[0].x * scaleFactor.current + offsetX.current,
+                    line1[0].y * scaleFactor.current + offsetY.current
                 );
                 context.lineTo(
-                    line1[1].x * scaleFactor + offsetX,
-                    line1[1].y * scaleFactor + offsetY
+                    line1[1].x * scaleFactor.current + offsetX.current,
+                    line1[1].y * scaleFactor.current + offsetY.current
                 );
                 context.strokeStyle = wallColor;
                 context.lineWidth = 2;
@@ -532,12 +564,12 @@ const Canvas2D = ({
                 // Draw the second line of the wall
                 context.beginPath();
                 context.moveTo(
-                    line2[0].x * scaleFactor + offsetX,
-                    line2[0].y * scaleFactor + offsetY
+                    line2[0].x * scaleFactor.current + offsetX.current,
+                    line2[0].y * scaleFactor.current + offsetY.current
                 );
                 context.lineTo(
-                    line2[1].x * scaleFactor + offsetX,
-                    line2[1].y * scaleFactor + offsetY
+                    line2[1].x * scaleFactor.current + offsetX.current,
+                    line2[1].y * scaleFactor.current + offsetY.current
                 );
                 context.strokeStyle = wallColor;
                 context.lineWidth = 2;
@@ -596,12 +628,12 @@ const Canvas2D = ({
                 // Draw the first line of the temporary wall
                 context.beginPath();
                 context.moveTo(
-                    line1[0].x * scaleFactor + offsetX,
-                    line1[0].y * scaleFactor + offsetY
+                    line1[0].x * scaleFactor.current + offsetX.current,
+                    line1[0].y * scaleFactor.current + offsetY.current
                 );
                 context.lineTo(
-                    line1[1].x * scaleFactor + offsetX,
-                    line1[1].y * scaleFactor + offsetY
+                    line1[1].x * scaleFactor.current + offsetX.current,
+                    line1[1].y * scaleFactor.current + offsetY.current
                 );
                 context.strokeStyle = '#4CAF50'; // Green for temporary walls
                 context.lineWidth = 2;
@@ -611,12 +643,12 @@ const Canvas2D = ({
                 // Draw the second line of the temporary wall
                 context.beginPath();
                 context.moveTo(
-                    line2[0].x * scaleFactor + offsetX,
-                    line2[0].y * scaleFactor + offsetY
+                    line2[0].x * scaleFactor.current + offsetX.current,
+                    line2[0].y * scaleFactor.current + offsetY.current
                 );
                 context.lineTo(
-                    line2[1].x * scaleFactor + offsetX,
-                    line2[1].y * scaleFactor + offsetY
+                    line2[1].x * scaleFactor.current + offsetX.current,
+                    line2[1].y * scaleFactor.current + offsetY.current
                 );
                 context.strokeStyle = '#4CAF50'; // Green for temporary walls
                 context.lineWidth = 2;
@@ -643,12 +675,12 @@ const Canvas2D = ({
                 if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
                     context.beginPath();
                     context.moveTo(
-                        tempWall.end_x * scaleFactor + offsetX,
-                        tempWall.end_y * scaleFactor + offsetY
+                        tempWall.end_x * scaleFactor.current + offsetX.current,
+                        tempWall.end_y * scaleFactor.current + offsetY.current
                     );
                     context.lineTo(
-                        snapPoint.x * scaleFactor + offsetX,
-                        snapPoint.y * scaleFactor + offsetY
+                        snapPoint.x * scaleFactor.current + offsetX.current,
+                        snapPoint.y * scaleFactor.current + offsetY.current
                     );
                     context.strokeStyle = 'rgba(76, 175, 80, 0.5)'; // Semi-transparent green
                     context.lineWidth = 1;
@@ -668,20 +700,20 @@ const Canvas2D = ({
         return () => {
             context.clearRect(0, 0, canvas.width, canvas.height);
         };
-    }, [walls, selectedWall, tempWall, isDrawing, hoveredWall, selectedWallsForRoom, rooms]);
+    }, [walls, selectedWall, tempWall, isDrawing, hoveredWall, selectedWallsForRoom, rooms, highlightWalls, joints]);
 
     //Use for getting correct mouse position
     const getMousePos = (event) => {
         const rect = canvasRef.current.getBoundingClientRect();
-        const x = (event.clientX - rect.left - offsetX) / scaleFactor;
-        const y = (event.clientY - rect.top - offsetY) / scaleFactor;
+        const x = (event.clientX - rect.left - offsetX.current) / scaleFactor.current;
+        const y = (event.clientY - rect.top - offsetY.current) / scaleFactor.current;
         return { x, y };
-    };
+    };    
 
     // Enhanced snapping with wall continuation
     const snapToClosestPoint = (x, y) => {
         let closestPoint = { x, y }; // Default to the provided point
-        let minDistance = SNAP_THRESHOLD / scaleFactor;
+        let minDistance = SNAP_THRESHOLD / scaleFactor.current;
     
         // Check snapping to wall endpoints (start and end points)
         walls.forEach((wall) => {
@@ -735,6 +767,38 @@ const Canvas2D = ({
         };
     };
 
+    const findIntersectionPointsBetweenWalls = () => {
+        const map = new Map();
+    
+        for (let i = 0; i < walls.length; i++) {
+            for (let j = i + 1; j < walls.length; j++) {
+                const wallA = walls[i];
+                const wallB = walls[j];
+    
+                const intersection = calculateIntersection(
+                    { x: wallA.start_x, y: wallA.start_y },
+                    { x: wallA.end_x, y: wallA.end_y },
+                    { x: wallB.start_x, y: wallB.start_y },
+                    { x: wallB.end_x, y: wallB.end_y }
+                );
+    
+                if (intersection) {
+                    const key = `${Math.round(intersection.x)}-${Math.round(intersection.y)}`;
+                    if (!map.has(key)) {
+                        map.set(key, {
+                            x: intersection.x,
+                            y: intersection.y,
+                            pairs: []
+                        });
+                    }
+                    map.get(key).pairs.push({ wall1: wallA, wall2: wallB });
+                }
+            }
+        }
+    
+        return Array.from(map.values());
+    };
+    
     // Calculate the intersection
     const calculateIntersection = (wall1Start, wall1End, wall2Start, wall2End) => {
         const denominator = ((wall2End.y - wall2Start.y) * (wall1End.x - wall1Start.x)) -
@@ -765,6 +829,17 @@ const Canvas2D = ({
         const { x, y } = getMousePos(event);
         const clickPoint = { x, y };
     
+        if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room') {
+            for (const inter of intersections) {
+                const distance = Math.hypot(inter.x - x, inter.y - y);
+                if (distance < SNAP_THRESHOLD / scaleFactor.current) {
+                    setSelectedIntersection(inter);
+                    setJoiningMethod("butt_in");
+                    return; // Skip further processing
+                }
+            }
+        }
+    
         if (currentMode === 'add-wall') {
             if (isDrawing) {
                 setIsDrawing(false);
@@ -777,10 +852,10 @@ const Canvas2D = ({
     
                     // Check if the endpoint matches an existing endpoint of any wall
                     const isEndingAtExistingEndpoint = walls.some((wall) =>
-                        (Math.abs(wall.start_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                        Math.abs(wall.start_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
-                        (Math.abs(wall.end_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                        Math.abs(wall.end_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor)
+                        (Math.abs(wall.start_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor.current &&
+                        Math.abs(wall.start_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor.current) ||
+                        (Math.abs(wall.end_x - endPoint.x) < SNAP_THRESHOLD / scaleFactor.current &&
+                        Math.abs(wall.end_y - endPoint.y) < SNAP_THRESHOLD / scaleFactor.current)
                     );
     
                     // Calculate the angle for snapping
@@ -822,10 +897,10 @@ const Canvas2D = ({
                         }
     
                         const connectedWall = walls.find(wall =>
-                            (Math.abs(wall.start_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                             Math.abs(wall.start_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor) ||
-                            (Math.abs(wall.end_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor &&
-                             Math.abs(wall.end_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor)
+                            (Math.abs(wall.start_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor.current &&
+                             Math.abs(wall.start_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor.current) ||
+                            (Math.abs(wall.end_x - startPoint.x) < SNAP_THRESHOLD / scaleFactor.current &&
+                             Math.abs(wall.end_y - startPoint.y) < SNAP_THRESHOLD / scaleFactor.current)
                         );
     
                         if (connectedWall) {
@@ -849,7 +924,7 @@ const Canvas2D = ({
                             if (
                                 startSegmentPoint &&
                                 Math.hypot(startSegmentPoint.x - startPoint.x, startSegmentPoint.y - startPoint.y) <
-                                    SNAP_THRESHOLD / scaleFactor
+                                    SNAP_THRESHOLD / scaleFactor.current
                             ) {
                                 wallsToDelete.push(wall);
                     
@@ -885,7 +960,7 @@ const Canvas2D = ({
                             if (
                                 endSegmentPoint &&
                                 Math.hypot(endSegmentPoint.x - endPoint.x, endSegmentPoint.y - endPoint.y) <
-                                    SNAP_THRESHOLD / scaleFactor
+                                    SNAP_THRESHOLD / scaleFactor.current
                             ) {
                                 wallsToDelete.push(wall);
 
@@ -914,17 +989,89 @@ const Canvas2D = ({
 
                     // Ensure the new wall is added regardless of splitting
                     if (wallProperties && (startPoint.x !== endPoint.x || startPoint.y !== endPoint.y)) {
-                        wallsToAdd.push({
-                            start_x: startPoint.x,
-                            start_y: startPoint.y,
-                            end_x: endPoint.x,
-                            end_y: endPoint.y,
+                        // Check for mid intersections between new wall and existing walls
+                        const newWallStart = { x: startPoint.x, y: startPoint.y };
+                        const newWallEnd = { x: endPoint.x, y: endPoint.y };
+                        const midIntersections = [];
+                    
+                        walls.forEach(existingWall => {
+                            if (wallsToDelete.includes(existingWall)) return;
+                    
+                            const intersection = calculateIntersection(
+                                newWallStart,
+                                newWallEnd,
+                                { x: existingWall.start_x, y: existingWall.start_y },
+                                { x: existingWall.end_x, y: existingWall.end_y }
+                            );
+                            if (intersection) {
+                                const isNewWallStart = arePointsEqual(intersection, newWallStart);
+                                const isNewWallEnd = arePointsEqual(intersection, newWallEnd);
+                                const isExistingWallStart = arePointsEqual(intersection, { x: existingWall.start_x, y: existingWall.start_y });
+                                const isExistingWallEnd = arePointsEqual(intersection, { x: existingWall.end_x, y: existingWall.end_y });
+                                
+                                if (!isNewWallStart && !isNewWallEnd && !isExistingWallStart && !isExistingWallEnd) {
+                                    midIntersections.push({
+                                        point: intersection,
+                                        existingWall: existingWall
+                                    });
+                                }
+                            }
+                        });
+                    
+                        // Sort intersections along the new wall's direction
+                        midIntersections.sort((a, b) => {
+                            const distA = calculateDistance(newWallStart, a.point);
+                            const distB = calculateDistance(newWallStart, b.point);
+                            return distA - distB;
+                        });
+                    
+                        // Split the new wall into segments
+                        let currentStart = newWallStart;
+                        const newWallSegments = [];
+                        for (const inter of midIntersections) {
+                            newWallSegments.push({
+                                start_x: currentStart.x,
+                                start_y: currentStart.y,
+                                end_x: inter.point.x,
+                                end_y: inter.point.y,
+                                height: wallProperties.height,
+                                thickness: wallProperties.thickness,
+                                application_type: onWallTypeSelect
+                            });
+                            currentStart = inter.point;
+                        }
+                        newWallSegments.push({
+                            start_x: currentStart.x,
+                            start_y: currentStart.y,
+                            end_x: newWallEnd.x,
+                            end_y: newWallEnd.y,
                             height: wallProperties.height,
                             thickness: wallProperties.thickness,
                             application_type: onWallTypeSelect
                         });
-                        console.log("Walls to be added:", wallsToAdd);
-
+                    
+                        // Add the split new wall segments
+                        wallsToAdd.push(...newWallSegments);
+                    
+                        // Split existing walls at mid intersections
+                        midIntersections.forEach(inter => {
+                            const existingWall = inter.existingWall;
+                            if (!wallsToDelete.includes(existingWall)) {
+                                wallsToDelete.push(existingWall);
+                                wallsToAdd.push({
+                                    ...existingWall,
+                                    end_x: inter.point.x,
+                                    end_y: inter.point.y
+                                });
+                                wallsToAdd.push({
+                                    ...existingWall,
+                                    start_x: inter.point.x,
+                                    start_y: inter.point.y,
+                                    end_x: existingWall.end_x,
+                                    end_y: existingWall.end_y
+                                });
+                            }
+                        });
                     }
     
                     try {
@@ -962,7 +1109,7 @@ const Canvas2D = ({
         }
         else if (currentMode === 'edit-wall') {
             let selectedIndex = null;
-            let minDistance = SNAP_THRESHOLD / scaleFactor;
+            let minDistance = SNAP_THRESHOLD / scaleFactor.current;
     
             walls.forEach((wall, index) => {
                 const segmentPoint = snapToWallSegment(x, y, wall);
@@ -980,7 +1127,7 @@ const Canvas2D = ({
         } 
         if (currentMode === 'define-room') {
             let selectedIndex = null;
-            let minDistance = SNAP_THRESHOLD / scaleFactor;
+            let minDistance = SNAP_THRESHOLD / scaleFactor.current;
 
             for (const room of rooms) {
                 const roomWalls = room.walls.map(wallId => 
@@ -1022,15 +1169,23 @@ const Canvas2D = ({
             }
         }
     }
+
+    const arePointsEqual = (p1, p2, epsilon = 0.001) => {
+        return Math.abs(p1.x - p2.x) < epsilon && Math.abs(p1.y - p2.y) < epsilon;
+    };
+    
+    const calculateDistance = (p1, p2) => {
+        return Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    };    
     
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;
-    
+
         const { x, y } = getMousePos(event);
-    
+
         // Endpoint Hover Detection
         let closestPoint = null;
-        let minDistance = SNAP_THRESHOLD / scaleFactor;
+        let minDistance = SNAP_THRESHOLD / scaleFactor.current;
     
         walls.forEach((wall) => {
             const points = [
@@ -1050,7 +1205,7 @@ const Canvas2D = ({
     
         // Wall Hover Detection
         if (currentMode === 'add-wall' || currentMode === 'edit-wall' || currentMode ==='define-room') {
-            let minWallDistance = SNAP_THRESHOLD / scaleFactor;
+            let minWallDistance = SNAP_THRESHOLD / scaleFactor.current;
             let newHoveredWall = null;
     
             walls.forEach((wall, index) => {
@@ -1102,6 +1257,103 @@ const Canvas2D = ({
                 tabIndex={0}
                 className="border border-gray-300 bg-gray-50"
             />
+            {selectedIntersection && (
+            <div className="fixed inset-0 bg-black bg-opacity-10 flex justify-end items-start z-50"> {/* Changed to items-start and justify-end */}
+                <div className="bg-white p-4 rounded-lg shadow-lg m-4 max-w-md w-full"> {/* Added margin and reduced padding */}
+                <div className="flex justify-between items-center mb-3">
+                    <h2 className="text-lg font-semibold">Configure Joints</h2>
+                    <button 
+                    onClick={() => {
+                        setSelectedIntersection(null);
+                        setHighlightWalls([]);
+                        setSelectedJointPair(null);
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                    >
+                    ×
+                    </button>
+                </div>
+                <div className="overflow-y-auto max-h-[70vh]"> {/* Add scroll for many joints */}
+                    {selectedIntersection.pairs.map((pair, index) => (
+                    <div
+                        key={index}
+                        onClick={() => {
+                        setSelectedJointPair(index);
+                        setHighlightWalls([pair.wall1.id, pair.wall2.id]);
+                        }}
+                        className={`mb-2 p-2 rounded cursor-pointer transition-colors ${
+                        selectedJointPair === index 
+                            ? 'bg-blue-50 border border-blue-200' 
+                            : 'hover:bg-gray-100'
+                        }`}
+                    >
+                    <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-blue-400" />
+                    <span className="font-medium">Wall {pair.wall1.id}</span>
+                    <div className="mx-2">↔</div>
+                    <div className="w-3 h-3 rounded-full bg-blue-400" />
+                    <span className="font-medium">Wall {pair.wall2.id}</span>
+                    </div>
+                    <select
+                    value={pair.joining_method || 'butt_in'}
+                    onChange={(e) => {
+                        const updated = [...selectedIntersection.pairs];
+                        updated[index].joining_method = e.target.value;
+                        setSelectedIntersection({ ...selectedIntersection, pairs: updated });
+                    }}
+                    className="w-full mt-2 px-2 py-1 border border-gray-300 rounded"
+                    >
+                    <option value="butt_in">Butt-in</option>
+                    <option value="45_cut">45° Cut</option>
+                    </select>
+                </div>
+                ))}
+                <div className="flex justify-end gap-2 mt-4">
+                <button
+                    className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                    onClick={() => {
+                        setSelectedIntersection(null);
+                        setHighlightWalls([]);
+                        setSelectedJointPair(null);
+                    }}
+                    >
+                    Cancel
+                    </button>
+                    <button
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    onClick={async () => {
+                        try {
+                            for (const pair of selectedIntersection.pairs) {
+                                const payload = {
+                                    project: projectId,
+                                    wall_1: pair.wall1.id,
+                                    wall_2: pair.wall2.id,
+                                    joining_method: pair.joining_method || 'butt_in'
+                                };
+                                await api.post('/intersections/set_joint/', payload);
+                            }
+                            
+                            // Refresh intersections data after saving
+                            const response = await api.get(`/intersections/?projectid=${projectId}`);
+                            onJointsUpdate(response.data);  // Update parent state
+                            
+                            alert("All joints saved!");
+                            setSelectedIntersection(null);
+                            setHighlightWalls([]);
+                            setSelectedJointPair(null);
+                        } catch (error) {
+                            alert("Failed to save joint types.");
+                            console.error(error);
+                        }
+                    }}
+                    >
+                    Save All
+                    </button>
+                </div>
+                </div>
+            </div>
+            </div>
+            )}
         </div>
     );
 };

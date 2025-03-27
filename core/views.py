@@ -253,3 +253,32 @@ class IntersectionViewSet(viewsets.ModelViewSet):
         if project_id:
             return Intersection.objects.filter(project_id=project_id)
         return super().get_queryset()
+
+    @action(detail=False, methods=['post'])
+    def set_joint(self, request):
+        project_id = request.data.get('project')
+        wall_1_id = request.data.get('wall_1')
+        wall_2_id = request.data.get('wall_2')
+        method = request.data.get('joining_method')
+
+        if not all([project_id, wall_1_id, wall_2_id, method]):
+            return Response({'error': 'project, wall_1, wall_2, and joining_method are required'}, 
+                        status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Ensure consistent ordering of wall IDs
+            wall_ids = sorted([int(wall_1_id), int(wall_2_id)])
+            
+            intersection, created = Intersection.objects.update_or_create(
+                project_id=project_id,
+                wall_1_id=wall_ids[0],  # Always smaller ID first
+                wall_2_id=wall_ids[1],  # Always larger ID second
+                defaults={'joining_method': method}
+            )
+            
+            return Response(
+                IntersectionSerializer(intersection).data,
+                status=status.HTTP_200_OK if not created else status.HTTP_201_CREATED
+            )
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

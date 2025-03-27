@@ -20,6 +20,10 @@ const ProjectDetails = () => {
     const [editingRoom, setEditingRoom] = useState(null);
     const [rooms, setRooms] = useState([]); // Initialize rooms
     const [selectedWallType, setSelectedWallType] = useState("wall");
+    const [showWallEditor, setShowWallEditor] = useState(false);
+    const [showRoomManagerModal, setShowRoomManagerModal] = useState(false);
+    const [joints, setJoints] = useState([]);
+    const [setIntersections] = useState([]);
 
     const handleViewToggle = () => {
         if (!threeCanvasInstance.current) return;
@@ -121,6 +125,10 @@ const ProjectDetails = () => {
     
                 const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
                 setWalls(wallsResponse.data);
+    
+                // Fix the intersection API URL by removing the extra '/api'
+                const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
+                setJoints(intersectionsResponse.data); // Update joints state with intersections data
             } catch (error) {
                 console.error('Error fetching project details:', error);
             }
@@ -128,6 +136,7 @@ const ProjectDetails = () => {
     
         fetchProjectDetails();
     }, [projectId]);
+    
 
     useEffect(() => {
         if (is3DView) {
@@ -172,60 +181,125 @@ const ProjectDetails = () => {
             console.error("Error updating wall:", error);
         }
     };
-
-    const checkAndMergeWalls = async (updatedWall) => {
-        // Helper function to check if walls form a straight line
-        const areLevelWalls = (wall1, wall2) => {
-            // Case 1: Vertical walls (same X coordinates)
-            if (wall1.start_x === wall1.end_x && wall2.start_x === wall2.end_x && wall1.start_x === wall2.start_x) {
-                return true;
-            }
-            
-            // Case 2: Horizontal walls (same Y coordinates)
-            if (wall1.start_y === wall1.end_y && wall2.start_y === wall2.end_y && wall1.start_y === wall2.start_y) {
-                return true;
-            }
-            
-            return false;
+    
+    // Updated helper function to check collinearity for any orientation
+    const areCollinearWalls = (wall1, wall2) => {
+        // Vector approach for collinearity check
+        const vector1 = {
+        x: wall1.end_x - wall1.start_x,
+        y: wall1.end_y - wall1.start_y
+        };
+        
+        const vector2 = {
+        x: wall2.end_x - wall2.start_x,
+        y: wall2.end_y - wall2.start_y
         };
     
+        // Check if vectors are parallel using cross product
+        const crossProduct = vector1.x * vector2.y - vector1.y * vector2.x;
+        if (Math.abs(crossProduct) > 0.001) return false;
+    
+        // Check if a point from wall2 lies on wall1's line
+        const dx = wall2.start_x - wall1.start_x;
+        const dy = wall2.start_y - wall1.start_y;
+        const crossPointCheck = dx * vector1.y - dy * vector1.x;
+        return Math.abs(crossPointCheck) < 0.001;
+    };
+    
+    const calculateIntersection = (wall1Start, wall1End, wall2Start, wall2End) => {
+        const denominator = ((wall2End.y - wall2Start.y) * (wall1End.x - wall1Start.x)) -
+                            ((wall2End.x - wall2Start.x) * (wall1End.y - wall1Start.y));
+        if (denominator === 0) return null;
+    
+        const ua = (((wall2End.x - wall2Start.x) * (wall1Start.y - wall2Start.y)) -
+                   ((wall2End.y - wall2Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
+        const ub = (((wall1End.x - wall1Start.x) * (wall1Start.y - wall2Start.y)) -
+                   ((wall1End.y - wall1Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
+    
+        if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+            return {
+                x: wall1Start.x + (ua * (wall1End.x - wall1Start.x)),
+                y: wall1Start.y + (ua * (wall1End.y - wall1Start.y))
+            };
+        }
+        return null;
+    };
+    
+    const arePointsEqual = (p1, p2, epsilon = 0.001) => {
+        return Math.abs(p1.x - p2.x) < epsilon && Math.abs(p1.y - p2.y) < epsilon;
+    };
+
+    // Updated wall merging logic
+    const checkAndMergeWalls = async (updatedWall) => {
         const adjacentWalls = walls.filter((wall) =>
             (wall.end_x === updatedWall.start_x && wall.end_y === updatedWall.start_y) ||
             (wall.start_x === updatedWall.end_x && wall.start_y === updatedWall.end_y)
         );
-    
+
         adjacentWalls.forEach(async (neighborWall) => {
             if (
                 neighborWall.application_type === updatedWall.application_type &&
                 neighborWall.height === updatedWall.height &&
                 neighborWall.thickness === updatedWall.thickness &&
-                areLevelWalls(neighborWall, updatedWall)  // Add level check
+                areCollinearWalls(neighborWall, updatedWall)
             ) {
-                console.log(`Merging walls ${neighborWall.id} and ${updatedWall.id} as they now have identical properties and are level.`);
-    
+                // Determine merged line coordinates
+                let mergedStart, mergedEnd;
+                if (updatedWall.end_x === neighborWall.start_x && updatedWall.end_y === neighborWall.start_y) {
+                    mergedStart = { x: updatedWall.start_x, y: updatedWall.start_y };
+                    mergedEnd = { x: neighborWall.end_x, y: neighborWall.end_y };
+                } else if (updatedWall.start_x === neighborWall.end_x && updatedWall.start_y === neighborWall.end_y) {
+                    mergedStart = { x: neighborWall.start_x, y: neighborWall.start_y };
+                    mergedEnd = { x: updatedWall.end_x, y: updatedWall.end_y };
+                } else {
+                    return; // Not adjacent
+                }
+
+                // Check for intersections with other walls
+                let hasMidIntersection = false;
+                walls.forEach((otherWall) => {
+                    if (otherWall.id === updatedWall.id || otherWall.id === neighborWall.id) return;
+
+                    const intersection = calculateIntersection(
+                        mergedStart,
+                        mergedEnd,
+                        { x: otherWall.start_x, y: otherWall.start_y },
+                        { x: otherWall.end_x, y: otherWall.end_y }
+                    );
+
+                    if (intersection) {
+                        const isStart = arePointsEqual(intersection, mergedStart);
+                        const isEnd = arePointsEqual(intersection, mergedEnd);
+                        if (!isStart && !isEnd) {
+                            hasMidIntersection = true;
+                        }
+                    }
+                });
+
+                if (hasMidIntersection) {
+                    console.log('Cannot merge: Intersection detected');
+                    return;
+                }
+
+                // Proceed with merging
                 try {
                     const mergeResponse = await api.post("/walls/merge_walls/", {
                         wall_ids: [neighborWall.id, updatedWall.id],
                     });
-    
+
                     if (mergeResponse.status === 201) {
-                        console.log("Merge successful, response:", mergeResponse.data);
-                        const mergedWall = mergeResponse.data;
-    
                         setWalls((prevWalls) =>
-                            prevWalls.filter((wall) => wall.id !== neighborWall.id && wall.id !== updatedWall.id)
-                                .concat(mergedWall)
+                            prevWalls.filter(w => w.id !== neighborWall.id && w.id !== updatedWall.id)
+                                .concat(mergeResponse.data)
                         );
-                    } else {
-                        console.error("Error merging walls. Unexpected status:", mergeResponse.status);
                     }
                 } catch (error) {
                     console.error("Error merging walls:", error);
                 }
             }
         });
-    };  
-
+    };
+    
     const handleWallCreate = async (wallData) => {
         try {
             // Include the project ID in the wall data
@@ -353,8 +427,7 @@ const ProjectDetails = () => {
     
             // Reset selections based on the mode we're exiting
             if (mode === 'define-room') {
-                setSelectedWallsForRoom([]);
-                setShowRoomManager(false);
+                setShowRoomManagerModal(false);
             } else if (mode === 'edit-wall') {
                 setSelectedWall(null);
             }
@@ -370,7 +443,7 @@ const ProjectDetails = () => {
     
         // Handle special cases
         if (mode === 'define-room') {
-            setShowRoomManager(true);
+            setShowRoomManagerModal(true);  // Changed from setShowRoomManager
         } else {
             setShowRoomManager(false); // Ensure RoomManager is hidden if switching to another mode
         }
@@ -448,7 +521,12 @@ const ProjectDetails = () => {
                             </button>
 
                             <button
-                                onClick={() => toggleMode('edit-wall')}
+                            onClick={() => {
+                                if (selectedWall !== null) {
+                                setShowWallEditor(true);
+                                }
+                                toggleMode('edit-wall');
+                            }}
                                 className={`px-4 py-2 rounded-lg transition-colors ${
                                     currentMode === 'edit-wall'
                                         ? 'bg-blue-500 text-white hover:bg-blue-600'
@@ -467,15 +545,6 @@ const ProjectDetails = () => {
                                 }`}
                             >
                                 {currentMode === 'define-room' ? 'Exit Define Room Mode' : 'Define Room'}
-                            </button>
-
-                            <button
-                                onClick={() => handleWallRemove(selectedWall)}
-                                disabled={selectedWall === null}
-                                className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 
-                                    transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Remove Wall
                             </button>
                         </div>
 
@@ -498,121 +567,161 @@ const ProjectDetails = () => {
                 )}
             </div>
 
-            {/* Wall Editing Panel */}
-            {selectedWall !== null && currentMode === 'edit-wall' && (
-                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-                    <h3 className="text-lg font-semibold mb-4">Wall Properties</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-3">
-                            <label className="block">
-                                <span className="font-medium text-gray-700">Start X:</span>
-                                <input
-                                    type="number"
-                                    value={walls[selectedWall]?.start_x || ''}
-                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_x: parseFloat(e.target.value) })}
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </label>
+            <div className="max-w-7xl mx-auto p-6 relative">
+                {/* Wall Editor Modal */}
+                    {selectedWall !== null && currentMode === 'edit-wall' && (
+                        <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50">
+                            <div className="bg-white p-6 rounded-lg shadow-lg max-w-2xl w-full">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-semibold">Wall Properties</h3>
+                                    <button 
+                                        onClick={() => {
+                                            setSelectedWall(null);
+                                            setCurrentMode(null);
+                                        }}
+                                        className="text-gray-500 hover:text-gray-700"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-3">
+                                            <label className="block">
+                                                <span className="font-medium text-gray-700">Start X:</span>
+                                                <input
+                                                    type="number"
+                                                    value={walls[selectedWall]?.start_x || ''}
+                                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_x: parseFloat(e.target.value) })}
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </label>
 
-                            <label className="block">
-                                <span className="font-medium text-gray-700">Start Y:</span>
-                                <input
-                                    type="number"
-                                    value={walls[selectedWall]?.start_y || ''}
-                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_y: parseFloat(e.target.value) })}
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </label>
+                                            <label className="block">
+                                                <span className="font-medium text-gray-700">Start Y:</span>
+                                                <input
+                                                    type="number"
+                                                    value={walls[selectedWall]?.start_y || ''}
+                                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, start_y: parseFloat(e.target.value) })}
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </label>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <label className="block">
+                                                <span className="font-medium text-gray-700">End X:</span>
+                                                <input
+                                                    type="number"
+                                                    value={walls[selectedWall]?.end_x || ''}
+                                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_x: parseFloat(e.target.value) })}
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </label>
+
+                                            <label className="block">
+                                                <span className="font-medium text-gray-700">End Y:</span>
+                                                <input
+                                                    type="number"
+                                                    value={walls[selectedWall]?.end_y || ''}
+                                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_y: parseFloat(e.target.value) })}
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </label>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <label className="block">
+                                                <span className="font-medium text-gray-700">Wall Height (mm):</span>
+                                                <input 
+                                                    type="number" 
+                                                    value={walls[selectedWall]?.height || ''} 
+                                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, height: parseFloat(e.target.value) })} 
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </label>
+
+                                            <label className="block">
+                                                <span className="font-medium text-gray-700">Wall Thickness (mm):</span>
+                                                <input 
+                                                    type="number" 
+                                                    value={walls[selectedWall]?.thickness || ''} 
+                                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, thickness: parseFloat(e.target.value) })} 
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </label>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <label className="block">
+                                                <span className="font-medium text-gray-700">Wall Type:</span>
+                                                <select 
+                                                    value={walls[selectedWall]?.application_type || 'wall'} 
+                                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, application_type: e.target.value })} 
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                >
+                                                    <option value="wall">Wall</option>
+                                                    <option value="partition">Partition</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Buttons at the Bottom Right */}
+                                    <div className="mt-6 flex justify-end space-x-3">
+                                        <button
+                                            onClick={() => {
+                                                // You can add any additional save logic here if needed
+                                                setSelectedWall(null);
+                                            }}
+                                            className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 
+                                                transition-colors"
+                                        >
+                                            Save
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => {
+                                                handleWallRemove(selectedWall);
+                                                setSelectedWall(null);
+                                            }}
+                                            className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 
+                                                transition-colors"
+                                        >
+                                            Remove Wall
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+                    )}
+            </div>
 
-                        <div className="space-y-3">
-                            <label className="block">
-                                <span className="font-medium text-gray-700">End X:</span>
-                                <input
-                                    type="number"
-                                    value={walls[selectedWall]?.end_x || ''}
-                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_x: parseFloat(e.target.value) })}
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </label>
-
-                            <label className="block">
-                                <span className="font-medium text-gray-700">End Y:</span>
-                                <input
-                                    type="number"
-                                    value={walls[selectedWall]?.end_y || ''}
-                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, end_y: parseFloat(e.target.value) })}
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </label>
-                        </div>
-
-                        <div className="space-y-3">
-                            <label className="block">
-                                <span className="font-medium text-gray-700">Wall Height (mm):</span>
-                                <input 
-                                    type="number" 
-                                    value={walls[selectedWall]?.height || ''} 
-                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, height: parseFloat(e.target.value) })} 
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </label>
-
-                            <label className="block">
-                                <span className="font-medium text-gray-700">Wall Thickness (mm):</span>
-                                <input 
-                                    type="number" 
-                                    value={walls[selectedWall]?.thickness || ''} 
-                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, thickness: parseFloat(e.target.value) })} 
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </label>
-                        </div>
-
-                        <div className="space-y-3">
-                            <label className="block">
-                                <span className="font-medium text-gray-700">Wall Type:</span>
-                                <select 
-                                    value={walls[selectedWall]?.application_type || 'wall'} 
-                                    onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, application_type: e.target.value })} 
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                    <option value="wall">Wall</option>
-                                    <option value="partition">Partition</option>
-                                </select>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Room Manager */}
-            {showRoomManager && !is3DView && (
-                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+             {/* Room Manager Modal */}
+                {showRoomManagerModal && !is3DView && (
                     <RoomManager
                         projectId={projectId}
                         walls={walls}
-                        selectedWallIds={selectedWallsForRoom}
                         onSaveRoom={handleCreateRoom}
                         onUpdateRoom={handleRoomUpdate}
                         onDeleteRoom={handleRoomDelete}
+                        selectedWallIds={selectedWallsForRoom}
                         editingRoom={editingRoom}
                         isEditMode={!!editingRoom}
                         onClose={() => {
-                            setShowRoomManager(false);
+                            setShowRoomManagerModal(false);
                             setEditingRoom(null);
                             setSelectedWallsForRoom([]);
                         }}
                     />
-                </div>
-            )}
+                )}
 
             {/* Visualization Area */}
             <div className="bg-white rounded-lg shadow-sm p-6">
@@ -624,6 +733,8 @@ const ProjectDetails = () => {
                         <Canvas2D
                             walls={walls}
                             setWalls={setWalls}
+                            joints={joints}
+                            projectId={projectId}
                             onWallTypeSelect={selectedWallType}
                             onWallUpdate={handleWallUpdate}
                             onNewWall={handleWallCreate}
@@ -635,6 +746,7 @@ const ProjectDetails = () => {
                             onRoomWallsSelect={setSelectedWallsForRoom}
                             rooms={rooms}
                             onRoomSelect={handleRoomSelect}
+                            onJointsUpdate={(updatedJoints) => setJoints(updatedJoints)}
                         />
                     </>
                 )}
