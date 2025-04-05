@@ -240,6 +240,73 @@ class DoorViewSet(viewsets.ModelViewSet):
         if project_id:
             return Door.objects.filter(project_id=project_id)
         return super().get_queryset()
+    
+    @action(detail=True, methods=['get'])
+    def doors(self, request, pk=None):
+        """
+        Retrieve doors associated with a specific project
+        """
+        try:
+            project = Project.objects.get(pk=pk)
+            doors = Door.objects.filter(project=project)
+            serializer = DoorSerializer(doors, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['post'])
+    def create_door(self, request):
+        """
+        Create a door and associate it with a wall and project.
+        Requires: thickness and height must be provided in the request.
+        """
+        # Log the received data for debugging
+        print(f"Received door data: {request.data}")
+
+        project_id = request.data.get('project')
+        wall_id = request.data.get('wall')
+        thickness = request.data.get('thickness')
+        height = request.data.get('height')
+
+        # Basic validation
+        if not project_id:
+            return Response({'error': 'Project ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not wall_id:
+            return Response({'error': 'Wall ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if thickness in [None, '']:
+            return Response({'error': 'Thickness is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if height in [None, '']:
+            return Response({'error': 'Height is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch related models
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            wall = Wall.objects.get(pk=wall_id)
+        except Wall.DoesNotExist:
+            return Response({'error': 'Wall not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Serialize and save
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            door = serializer.save(
+                project=project,
+                linked_wall=wall,
+                side=request.data.get('side', 'interior'),
+                swing_direction=request.data.get('swing_direction', 'right'),
+                slide_direction=request.data.get('slide_direction', 'right'),
+                orientation='horizontal'  # Will be updated from frontend
+            )
+            return Response(DoorSerializer(door).data, status=status.HTTP_201_CREATED)
+        else:
+            print(f"Serializer errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class IntersectionViewSet(viewsets.ModelViewSet):
     queryset = Intersection.objects.all()
@@ -256,23 +323,25 @@ class IntersectionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def set_joint(self, request):
+        """Handle both creation and updates using POST"""
         project_id = request.data.get('project')
         wall_1_id = request.data.get('wall_1')
         wall_2_id = request.data.get('wall_2')
         method = request.data.get('joining_method')
 
         if not all([project_id, wall_1_id, wall_2_id, method]):
-            return Response({'error': 'project, wall_1, wall_2, and joining_method are required'}, 
-                        status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Missing required fields'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Ensure consistent ordering of wall IDs
+            # Ensure consistent ordering
             wall_ids = sorted([int(wall_1_id), int(wall_2_id)])
             
+            # Update or create using the sorted wall IDs
             intersection, created = Intersection.objects.update_or_create(
                 project_id=project_id,
-                wall_1_id=wall_ids[0],  # Always smaller ID first
-                wall_2_id=wall_ids[1],  # Always larger ID second
+                wall_1_id=wall_ids[0],
+                wall_2_id=wall_ids[1],
                 defaults={'joining_method': method}
             )
             

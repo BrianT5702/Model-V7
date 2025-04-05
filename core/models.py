@@ -101,7 +101,7 @@ class Ceiling(models.Model):
 
 class Door(models.Model):
     DOOR_TYPE_CHOICES = [
-        ('sweep', 'Sweep Door'),
+        ('swing', 'Swing Door'),
         ('slide', 'Slide Door'),
     ]
 
@@ -109,6 +109,46 @@ class Door(models.Model):
         ('single_sided', 'Single-Sided'),
         ('double_sided', 'Double-Sided'),
     ]
+    
+    DOOR_SIDE_CHOICES = [
+    ('interior', 'Interior'),
+    ('exterior', 'Exterior'),
+    ]
+    
+    side = models.CharField(
+        max_length=20,
+        choices=DOOR_SIDE_CHOICES,
+        default='interior',
+        help_text="Specify if the door opens to the interior or exterior side."
+    )
+    
+    SWING_DIRECTION_CHOICES = [
+    ('left', 'Left'),
+    ('right', 'Right'),
+    ]
+    
+    swing_direction = models.CharField(
+        max_length=20,
+        choices=SWING_DIRECTION_CHOICES,
+        default='right',
+        null=True,  # ✅ allow null
+        blank=True,
+        help_text="Swing direction for sweep doors."
+    )
+    
+    SLIDE_DIRECTION_CHOICES = [
+    ('left', 'Left'),
+    ('right', 'Right'),
+    ]
+    
+    slide_direction = models.CharField(
+        max_length=20,
+        choices=SLIDE_DIRECTION_CHOICES,
+        default='right',
+        null=True,  # ✅ allow null
+        blank=True,
+        help_text="Sliding direction for slide doors."
+    )
 
     project = models.ForeignKey(Project, related_name='doors', on_delete=models.CASCADE)
     door_type = models.CharField(
@@ -125,6 +165,7 @@ class Door(models.Model):
     )
     width = models.FloatField(help_text="Width of the door in mm")
     height = models.FloatField(help_text="Height of the door in mm")
+    thickness = models.FloatField(help_text = "thickness of the Door Panel in mm")
     position_x = models.FloatField(help_text="X-coordinate of the door's position")
     position_y = models.FloatField(help_text="Y-coordinate of the door's position")
     orientation = models.CharField(

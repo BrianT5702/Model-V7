@@ -20,10 +20,7 @@ class CeilingSerializer(serializers.ModelSerializer):
 class DoorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Door
-        fields = [
-            'id', 'project', 'door_type', 'configuration',
-            'width', 'height', 'position_x', 'position_y', 'orientation', 'linked_wall'
-        ]
+        fields = '__all__'
 
 
 class IntersectionSerializer(serializers.ModelSerializer):

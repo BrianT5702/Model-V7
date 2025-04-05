@@ -4,6 +4,8 @@ import api from '../api/api';
 import Canvas2D from './Canvas2D';
 import ThreeCanvas3D from "./ThreeCanvas3D";
 import RoomManager from './RoomManager';
+import DoorManager from './DoorManager';
+import DoorEditorModal from './DoorEditorModal';
 
 const ProjectDetails = () => {
     const { projectId } = useParams(); // Fetch project ID from URL
@@ -23,7 +25,11 @@ const ProjectDetails = () => {
     const [showWallEditor, setShowWallEditor] = useState(false);
     const [showRoomManagerModal, setShowRoomManagerModal] = useState(false);
     const [joints, setJoints] = useState([]);
-    const [setIntersections] = useState([]);
+    const [selectedDoorWall, setSelectedDoorWall] = useState(null);
+    const [showDoorManager, setShowDoorManager] = useState(false);
+    const [doors, setDoors] = useState([]);
+    const [editingDoor, setEditingDoor] = useState(null);
+    const [showDoorEditor, setShowDoorEditor] = useState(false);
 
     const handleViewToggle = () => {
         if (!threeCanvasInstance.current) return;
@@ -35,6 +41,57 @@ const ProjectDetails = () => {
             threeCanvasInstance.current.animateToExteriorView();
         }
     };
+
+    const handleCreateDoor = async (doorData) => {
+        try {
+          // Add default direction values
+          const completeDoorData = {
+            ...doorData,
+            swing_direction: 'right',
+            slide_direction: 'right',
+            side: 'interior'
+          };
+          
+          const response = await api.post('/doors/create_door/', completeDoorData);
+          setDoors([...doors, response.data]);
+          setShowDoorManager(false);
+          setCurrentMode(null);
+        } catch (error) {
+          console.error('Error creating door:', error);
+        }
+      };
+
+      const handleDoorSelect = (door) => {
+        setEditingDoor(door);
+        setShowDoorEditor(true); // show editor instead of DoorManager
+      };
+
+      const handleUpdateDoor = async (updatedDoor) => {
+        try {
+            const response = await api.put(`/doors/${updatedDoor.id}/`, {
+                project: updatedDoor.project,
+                wall: updatedDoor.wall,
+                width: updatedDoor.width,
+                height: updatedDoor.height,
+                thickness: updatedDoor.thickness,
+                position_x: updatedDoor.position_x,
+                position_y: updatedDoor.position_y,
+                door_type: updatedDoor.door_type,
+                configuration: updatedDoor.configuration,
+                swing_direction: updatedDoor.swing_direction,
+                slide_direction: updatedDoor.slide_direction,
+                side: updatedDoor.side,
+              });
+      
+          const updated = response.data;
+          setDoors(doors.map(d => d.id === updated.id ? updated : d));
+          setShowDoorEditor(false);
+          setEditingDoor(null);
+          setSelectedWall(null);
+        } catch (error) {
+          console.error("Failed to update door:", error);
+        }
+      };
 
     const handleCreateRoom = async (roomData) => {
         try {
@@ -125,6 +182,9 @@ const ProjectDetails = () => {
     
                 const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
                 setWalls(wallsResponse.data);
+
+                const doorsResponse = await api.get(`/doors/?project=${projectId}`);
+                setDoors(doorsResponse.data);
     
                 // Fix the intersection API URL by removing the extra '/api'
                 const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
@@ -176,6 +236,7 @@ const ProjectDetails = () => {
     
             // Check if merge is needed (use the updatedWall from the server if needed)
             checkAndMergeWalls(updatedWall); // Or use response.data if server returns merged data
+            setSelectedWall(null);
     
         } catch (error) {
             console.error("Error updating wall:", error);
@@ -546,6 +607,27 @@ const ProjectDetails = () => {
                             >
                                 {currentMode === 'define-room' ? 'Exit Define Room Mode' : 'Define Room'}
                             </button>
+
+                            <button
+                                onClick={() => toggleMode('add-door')}
+                                className={`px-4 py-2 rounded-lg transition-colors ${
+                                currentMode === 'add-door'
+                                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                    : 'border border-gray-200 hover:bg-gray-50'
+                                }`}
+                            >
+                                {currentMode === 'add-door' ? 'Exit Add Door' : 'Add Door'}
+                            </button>
+                            <button
+                                onClick={() => toggleMode('edit-door')}
+                                className={`px-4 py-2 rounded-lg transition-colors ${
+                                    currentMode === 'edit-door'
+                                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                    : 'border border-gray-200 hover:bg-gray-50'
+                                }`}
+                                >
+                                {currentMode === 'edit-door' ? 'Exit Edit Door' : 'Edit Door'}
+                            </button>
                         </div>
 
                         {/* Wall Type Selection */}
@@ -723,6 +805,38 @@ const ProjectDetails = () => {
                     />
                 )}
 
+                {/* Door Manager Modal */}
+                {showDoorManager && (
+                    <DoorManager
+                        projectId={projectId}
+                        wall={selectedDoorWall}
+                        editingDoor={editingDoor}
+                        onSaveDoor={editingDoor ? handleUpdateDoor : handleCreateDoor}
+                        onClose={() => {
+                        setShowDoorManager(false);
+                        setEditingDoor(null);
+                        }}
+                    />
+                    )}
+
+                 {/* Door Editor Modal */}
+                {showDoorEditor && editingDoor && (
+                    <DoorEditorModal
+                        door={editingDoor}
+                        onUpdate={handleUpdateDoor}
+                        onDelete={async (doorId) => {
+                        await api.delete(`/doors/${doorId}/`);
+                        setDoors(doors.filter(d => d.id !== doorId));
+                        setShowDoorEditor(false);
+                        setEditingDoor(null);
+                        }}
+                        onClose={() => {
+                        setShowDoorEditor(false);
+                        setEditingDoor(null);
+                        }}
+                    />
+                )}
+
             {/* Visualization Area */}
             <div className="bg-white rounded-lg shadow-sm p-6">
                 {is3DView ? (
@@ -747,6 +861,12 @@ const ProjectDetails = () => {
                             rooms={rooms}
                             onRoomSelect={handleRoomSelect}
                             onJointsUpdate={(updatedJoints) => setJoints(updatedJoints)}
+                            doors={doors}
+                            onDoorSelect={handleDoorSelect}
+                            onDoorWallSelect={(wall) => {
+                                setSelectedDoorWall(wall);
+                                setShowDoorManager(true);
+                            }}
                         />
                     </>
                 )}
