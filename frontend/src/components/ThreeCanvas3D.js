@@ -22,29 +22,353 @@ export default class ThreeCanvas {
     this.gridSize = 1000;
     this.isInteriorView = false;
 
-    this.init();
+    this.raycaster = new THREE.Raycaster();
+    this.mouse = new THREE.Vector2();
+    this.doorObjects = []; // Store references to door objects
+    this.doorStates = new Map(); // Track door open/closed states
     
+    // Store HTML container for UI elements
+    this.uiContainer = document.createElement('div');
+    this.uiContainer.style.position = 'absolute';
+    this.uiContainer.style.top = '0';
+    this.uiContainer.style.left = '0';
+    this.uiContainer.style.width = '100%';
+    this.uiContainer.style.height = '100%';
+    this.uiContainer.style.pointerEvents = 'none';
+    this.container.appendChild(this.uiContainer);
+    
+    // Door button
+    this.doorButton = document.createElement('button');
+    this.doorButton.textContent = 'No Door Selected';
+    this.doorButton.style.position = 'absolute';
+    this.doorButton.style.top = '20px';
+    this.doorButton.style.right = '20px';
+    this.doorButton.style.padding = '10px 16px';
+    this.doorButton.style.backgroundColor = '#4CAF50';
+    this.doorButton.style.color = 'white';
+    this.doorButton.style.border = 'none';
+    this.doorButton.style.borderRadius = '4px';
+    this.doorButton.style.cursor = 'pointer';
+    this.doorButton.style.fontWeight = 'bold';
+    this.doorButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
+    this.doorButton.style.transition = 'all 0.3s ease';
+    this.doorButton.style.pointerEvents = 'auto';
+    this.doorButton.style.display = 'block'; // Always visible
+    this.doorButton.style.opacity = '0.7'; // Semi-transparent when no door selected
+    this.doorButton.disabled = true; // Disabled by default
+    this.uiContainer.appendChild(this.doorButton);
+    
+    // Current door being interacted with
+    this.activeDoor = null;
+    
+    // Initialize
+    this.init();
   }
 
   init() {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.shadowMap.enabled = true;
     this.container.appendChild(this.renderer.domElement);
-
+    this.container.addEventListener('mousemove', this.onMouseMove.bind(this));
+    this.container.addEventListener('click', this.onCanvasClick.bind(this)); // Add this line
+    this.doorButton.addEventListener('click', this.toggleDoor.bind(this));
+  
     // Adjust initial camera position for better view
     this.camera.position.set(200, 200, 200);
     this.camera.lookAt(0, 0, 0);
-
+  
     this.addControls();
     this.addGrid();
     this.addLighting();
-
+  
     // Calculate and adjust model scale
     this.calculateModelOffset();
     this.adjustModelScale();
     this.buildModel();
-
+  
     this.animate();
+  }
+
+  onMouseMove(event) {
+    // Calculate mouse position in normalized device coordinates
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    // Update the raycaster
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    
+    // Find intersections with door objects
+    const intersects = this.raycaster.intersectObjects(this.doorObjects, true);
+    
+    // Add a subtle hover effect for doors
+    if (intersects.length > 0) {
+      let doorObj = intersects[0].object;
+      while (doorObj && !doorObj.userData.doorId) {
+        doorObj = doorObj.parent;
+      }
+      
+      if (doorObj && doorObj.material) {
+        // We can add a subtle hover effect here if desired
+        // But we shouldn't change the active door selection just from hovering
+        document.body.style.cursor = 'pointer'; // Change cursor to indicate clickable
+      }
+    } else {
+      document.body.style.cursor = 'default';
+    }
+  }
+
+  onCanvasClick(event) {
+    // Calculate mouse position for this click event specifically
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    // Update the raycaster
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    
+    // Find intersections with door objects
+    const intersects = this.raycaster.intersectObjects(this.doorObjects, true);
+    
+    if (intersects.length > 0) {
+      // Find the door object (might be a child of a pivot/group)
+      let doorObj = intersects[0].object;
+      while (doorObj && !doorObj.userData.doorId) {
+        doorObj = doorObj.parent;
+      }
+      
+      if (doorObj && doorObj.userData.doorId) {
+        // Found a door - select it and update the button
+        this.activeDoor = doorObj;
+        
+        // Update button text based on door state
+        const isOpen = this.doorStates.get(doorObj.userData.doorId) || false;
+        this.doorButton.textContent = isOpen ? 'Close Door' : 'Open Door';
+        
+        // Enable the button and update style
+        this.doorButton.disabled = false;
+        this.doorButton.style.opacity = '1';
+        this.doorButton.style.backgroundColor = '#4CAF50';
+        
+        // Add a visual indicator for the selected door (optional)
+        // This could be a temporary highlight effect
+        if (doorObj.material) {
+          const originalColor = doorObj.material.color.clone();
+          doorObj.material.color.set(0xffcc00); // Highlight color
+          
+          // Reset after a short delay
+          setTimeout(() => {
+            doorObj.material.color.copy(originalColor);
+          }, 500);
+        }
+        
+        // Show a visual feedback that the door was selected
+        gsap.to(this.doorButton, {
+          scale: 1.2,
+          duration: 0.2,
+          yoyo: true,
+          repeat: 1,
+          ease: 'power1.inOut'
+        });
+        
+        console.log('Door selected:', doorObj.userData.doorId);
+        return;
+      }
+    }
+    
+    // If we clicked elsewhere (not on a door), deselect the current door
+    if (this.activeDoor) {
+      this.activeDoor = null;
+      this.doorButton.textContent = 'No Door Selected';
+      this.doorButton.disabled = true;
+      this.doorButton.style.opacity = '0.7';
+      this.doorButton.style.backgroundColor = '#999999';
+    }
+  } 
+
+  toggleDoor() {
+    if (!this.activeDoor) {
+      console.log('No door selected to toggle');
+      return;
+    }
+    
+    const doorId = this.activeDoor.userData.doorId;
+    const isCurrentlyOpen = this.doorStates.get(doorId) || false;
+    const newState = !isCurrentlyOpen;
+    
+    console.log(`Toggling door ${doorId} from ${isCurrentlyOpen ? 'open' : 'closed'} to ${newState ? 'open' : 'closed'}`);
+    
+    // Update state
+    this.doorStates.set(doorId, newState);
+    
+    // Get the door info
+    const doorInfo = this.activeDoor.userData.doorInfo;
+    
+    // Handle animation based on door type
+    if (doorInfo.door_type === 'swing') {
+      this.toggleSwingDoor(doorInfo, newState);
+    } 
+    else if (doorInfo.door_type === 'slide') {
+      this.toggleSlideDoor(doorInfo, newState);
+    }
+    
+    // Update button text
+    this.doorButton.textContent = newState ? 'Close Door' : 'Open Door';
+  }
+  
+  // New helper method for swing doors
+  toggleSwingDoor(doorInfo, newState) {
+    if (doorInfo.configuration === 'double_sided') {
+      // For double-sided swing doors
+      const doorContainer = this.activeDoor;
+      
+      // Find the left and right pivots (which should be the first two children)
+      if (doorContainer.children.length >= 2) {
+        const leftPivot = doorContainer.children[0];
+        const rightPivot = doorContainer.children[1];
+        
+        // Get the door panels (first child of each pivot)
+        const leftPanel = leftPivot.children[0];
+        const rightPanel = rightPivot.children[0];
+        
+        // Get swing parameters
+        const mountedInside = doorInfo.side === 'interior';
+        
+        // Calculate angles for both doors
+        const leftAngle = newState ? Math.PI / 2 * (mountedInside ? -1 : 1) : 0;
+        const rightAngle = newState ? Math.PI / 2 * (mountedInside ? 1 : -1) : 0;
+        
+        // Animate both doors
+        gsap.to(leftPanel.rotation, {
+          y: leftAngle,
+          duration: 1,
+          ease: 'power2.inOut'
+        });
+        
+        gsap.to(rightPanel.rotation, {
+          y: rightAngle,
+          duration: 1,
+          ease: 'power2.inOut'
+        });
+      }
+    } else {
+      // Single swing door
+      const doorContainer = this.activeDoor;
+      const pivot = doorContainer.children[0]; // First child should be the pivot
+      const doorPanel = pivot.children[0]; // First child of pivot is the door panel
+      
+      // Get swing parameters
+      const mountedInside = doorInfo.side === 'interior';
+      const hingeOnRight = doorInfo.swing_direction === 'right';
+      const effectiveHingeOnRight = mountedInside ? !hingeOnRight : hingeOnRight;
+      
+      // Determine swing direction
+      let baseDir = 0;
+      if (mountedInside) {
+        baseDir = effectiveHingeOnRight ? 1 : -1;
+      } else {
+        baseDir = effectiveHingeOnRight ? -1 : 1;
+      }
+      
+      // Target angle (open = Math.PI/2 in correct direction, closed = 0)
+      const targetAngle = newState ? Math.PI / 2 * baseDir : 0;
+      
+      // Animate
+      gsap.to(doorPanel.rotation, {
+        y: targetAngle,
+        duration: 1,
+        ease: 'power2.inOut'
+      });
+    }
+  }
+  
+  // New helper method for slide doors
+  toggleSlideDoor(doorInfo, newState) {
+    if (doorInfo.configuration === 'double_sided') {
+      // For double-sided sliding doors
+      const doorContainer = this.activeDoor;
+      
+      if (doorContainer.children.length >= 2) {
+        const leftDoor = doorContainer.children[0];
+        const rightDoor = doorContainer.children[1];
+        
+        // Get original positions from userData
+        const origLeftPos = leftDoor.userData.origPosition || { x: leftDoor.position.x, z: leftDoor.position.z };
+        const origRightPos = rightDoor.userData.origPosition || { x: rightDoor.position.x, z: rightDoor.position.z };
+        
+        // Store original positions if not already stored
+        if (!leftDoor.userData.origPosition) {
+          leftDoor.userData.origPosition = { ...origLeftPos };
+          rightDoor.userData.origPosition = { ...origRightPos };
+        }
+        
+        // Get door dimensions
+        const doorWidth = doorInfo.width * this.scalingFactor;
+        const slideDistance = doorWidth * 0.48 * 0.9; // Slightly less than half-width
+        
+        if (newState) {
+          // Open doors - slide apart
+          gsap.to(leftDoor.position, {
+            x: origLeftPos.x - slideDistance,
+            duration: 1,
+            ease: 'power2.inOut'
+          });
+          
+          gsap.to(rightDoor.position, {
+            x: origRightPos.x + slideDistance,
+            duration: 1,
+            ease: 'power2.inOut'
+          });
+        } else {
+          // Close doors - return to original positions
+          gsap.to(leftDoor.position, {
+            x: origLeftPos.x,
+            duration: 1,
+            ease: 'power2.inOut'
+          });
+          
+          gsap.to(rightDoor.position, {
+            x: origRightPos.x,
+            duration: 1,
+            ease: 'power2.inOut'
+          });
+        }
+      }
+    } else {
+      // Single sliding door
+      const doorContainer = this.activeDoor;
+      const doorPanel = doorContainer.children[0]; // First child is the door panel
+      
+      // Get original position
+      const origPos = doorPanel.userData.origPosition || { x: doorPanel.position.x, z: doorPanel.position.z };
+      
+      // Store original position if not already stored
+      if (!doorPanel.userData.origPosition) {
+        doorPanel.userData.origPosition = { ...origPos };
+      }
+      
+      // Calculate slide direction and distance
+      const slideDirection = doorInfo.slide_direction === 'right' ? -1 : 1;
+      const sideCoefficient = doorInfo.side === 'exterior' ? -1 : 1;
+      const effectiveDirection = slideDirection * sideCoefficient;
+      const slideDistance = doorInfo.width * this.scalingFactor * 0.9;
+      
+      if (newState) {
+        // Open door - slide in the appropriate direction
+        gsap.to(doorPanel.position, {
+          x: origPos.x + slideDistance * effectiveDirection,
+          duration: 1,
+          ease: 'power2.inOut'
+        });
+      } else {
+        // Close door - return to original position
+        gsap.to(doorPanel.position, {
+          x: origPos.x,
+          duration: 1,
+          ease: 'power2.inOut'
+        });
+      }
+    }
   }
 
   addGrid() {
@@ -249,69 +573,349 @@ getModelBounds() {
       child => !child.userData.isWall && !child.userData.isJointLine && !child.userData.isDoor && child.name !== 'ceiling'
     );
   
+    // Clear door objects array
+    this.doorObjects = [];
+    
     // Normalize door data: map linked_wall → wall
     this.doors.forEach(d => {
       if (d.linked_wall && !d.wall) d.wall = d.linked_wall;
     });
-  
-    // Create new walls and attach doors
+    
+    // First, create all walls with cutouts
+    console.log('Creating walls with cutouts...');
     this.walls.forEach(wall => {
       const wallMesh = this.createWallMesh(wall);
       this.scene.add(wallMesh);
-  
-      console.log('Current Wall ID:', wall.id);
-      console.log('Available Doors:', this.doors);
-  
-      const wallDoors = this.doors.filter(d => String(d.wall) === String(wall.id));
-      console.log('Doors matched with wall:', wallDoors);
-  
-      wallDoors.forEach(door => {
-        const doorMesh = this.createDoorMesh(door, wall);
-        if (doorMesh) this.scene.add(doorMesh);
-      });
     });
-  
-    // this.addCeiling();
+    
+    // Then create all doors using the calculated positions from wall creation
+    console.log('Creating doors in cutouts...');
+    this.doors.forEach(door => {
+      if (door.calculatedPosition) {
+        const doorMesh = this.createDoorMesh(door, null); // Wall reference not needed anymore
+        if (doorMesh) this.scene.add(doorMesh);
+      } else {
+        console.warn(`Door ${door.id} has no calculated position`);
+      }
+    });
   }  
 
+  // Complete createDoorMesh method with door object tracking added
+  createWallMesh(wall) {
+    const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
+    const scale = this.scalingFactor;
+  
+    let startX = start_x * scale;
+    let startZ = start_y * scale;
+    let endX = end_x * scale;
+    let endZ = end_y * scale;
+  
+    const dx = endX - startX;
+    const dz = endZ - startZ;
+    const wallLength = Math.hypot(dx, dz);
+  
+    const normX = -dz / wallLength;
+    const normZ = dx / wallLength;
+    const offsetX = normX * (thickness * scale / 2);
+    const offsetZ = normZ * (thickness * scale / 2);
+  
+    startX += offsetX;
+    startZ += offsetZ;
+    endX += offsetX;
+    endZ += offsetZ;
+  
+    // Find all doors that belong to this wall
+    const wallDoors = this.doors.filter(d => String(d.wall) === String(id));
+    
+    // If no doors, create a simple wall
+    if (wallDoors.length === 0) {
+      const geometry = new THREE.BoxGeometry(
+        wallLength,
+        height * scale,
+        thickness * scale
+      );
+  
+      const material = new THREE.MeshStandardMaterial({ 
+        color: 0xaaaaaa,
+        roughness: 0.7,
+        metalness: 0.2,
+      });
+  
+      const wallMesh = new THREE.Mesh(geometry, material);
+      wallMesh.position.set(
+        (startX + endX) / 2 + this.modelOffset.x,
+        height * scale / 2,
+        (startZ + endZ) / 2 + this.modelOffset.z
+      );
+  
+      const angle = Math.atan2(endZ - startZ, endX - startX);
+      wallMesh.rotation.y = -angle;
+  
+      wallMesh.userData.isWall = true;
+      wallMesh.castShadow = true;
+      wallMesh.receiveShadow = true;
+      
+      return wallMesh;
+    }
+    
+    // If we have doors, we need to create a wall with cutouts
+    const wallGroup = new THREE.Group();
+    wallGroup.userData.isWall = true;
+    
+    // Sort doors by position for easier segment creation
+    wallDoors.sort((a, b) => a.position_x - b.position_x);
+    
+    // Prepare all door positions and dimensions
+    const cutouts = wallDoors.map(door => {
+      const doorWidth = door.width * scale;
+      const doorHeight = door.height * scale;
+      const doorPosRatio = door.position_x;
+      
+      // Calculate the distance from start of wall for this door
+      const doorPos = doorPosRatio * wallLength;
+      
+      // Allow a slight gap around the door (for frame effect)
+      const cutoutWidth = doorWidth * 1.05;
+      const cutoutHeight = doorHeight * 1.02;
+      
+      return {
+        start: Math.max(0, doorPos - cutoutWidth / 2),
+        end: Math.min(wallLength, doorPos + cutoutWidth / 2),
+        height: cutoutHeight,
+        doorId: door.id,
+        doorInfo: door
+      };
+    });
+    
+    // Create wall segments
+    let currentPos = 0;
+    const wallHeight = height * scale;
+    const wallThickness = thickness * scale;
+    const material = new THREE.MeshStandardMaterial({ 
+      color: 0xaaaaaa,
+      roughness: 0.7,
+      metalness: 0.2,
+    });
+    
+    // Add segment before first door, if any
+    if (cutouts[0].start > 0) {
+      const segmentLength = cutouts[0].start;
+      const segment = new THREE.Mesh(
+        new THREE.BoxGeometry(segmentLength, wallHeight, wallThickness),
+        material
+      );
+      segment.position.set(
+        startX + this.modelOffset.x + (dx / wallLength) * (currentPos + segmentLength / 2),
+        wallHeight / 2,
+        startZ + this.modelOffset.z + (dz / wallLength) * (currentPos + segmentLength / 2)
+      );
+      const angle = Math.atan2(dz, dx);
+      segment.rotation.y = -angle;
+      segment.castShadow = true;
+      segment.receiveShadow = true;
+      wallGroup.add(segment);
+    }
+    
+    // Process each door cutout and create segments between them
+    for (let i = 0; i < cutouts.length; i++) {
+      const cutout = cutouts[i];
+      currentPos = cutout.end;
+      
+      // Create door frame/edges around the cutout
+      this.createDoorFrame(
+        wallGroup,
+        startX + this.modelOffset.x + (dx / wallLength) * (cutout.start + (cutout.end - cutout.start) / 2),
+        startZ + this.modelOffset.z + (dz / wallLength) * (cutout.start + (cutout.end - cutout.start) / 2),
+        cutout.end - cutout.start,
+        cutout.height,
+        wallThickness,
+        Math.atan2(dz, dx),
+        cutout.doorInfo
+      );
+      
+      // If there's another door, add wall segment between doors
+      if (i < cutouts.length - 1) {
+        const nextCutout = cutouts[i + 1];
+        if (nextCutout.start > currentPos) {
+          const segmentLength = nextCutout.start - currentPos;
+          const segment = new THREE.Mesh(
+            new THREE.BoxGeometry(segmentLength, wallHeight, wallThickness),
+            material
+          );
+          segment.position.set(
+            startX + this.modelOffset.x + (dx / wallLength) * (currentPos + segmentLength / 2),
+            wallHeight / 2,
+            startZ + this.modelOffset.z + (dz / wallLength) * (currentPos + segmentLength / 2)
+          );
+          const angle = Math.atan2(dz, dx);
+          segment.rotation.y = -angle;
+          segment.castShadow = true;
+          segment.receiveShadow = true;
+          wallGroup.add(segment);
+        }
+      }
+    }
+    
+    // Add final segment after last door, if any
+    if (currentPos < wallLength) {
+      const segmentLength = wallLength - currentPos;
+      const segment = new THREE.Mesh(
+        new THREE.BoxGeometry(segmentLength, wallHeight, wallThickness),
+        material
+      );
+      segment.position.set(
+        startX + this.modelOffset.x + (dx / wallLength) * (currentPos + segmentLength / 2),
+        wallHeight / 2,
+        startZ + this.modelOffset.z + (dz / wallLength) * (currentPos + segmentLength / 2)
+      );
+      const angle = Math.atan2(dz, dx);
+      segment.rotation.y = -angle;
+      segment.castShadow = true;
+      segment.receiveShadow = true;
+      wallGroup.add(segment);
+    }
+    
+    // Add top and bottom parts of the wall (above and below doors)
+    for (const cutout of cutouts) {
+      // Top part above door
+      const topHeight = wallHeight - cutout.height;
+      if (topHeight > 0.01) {
+        const topSegment = new THREE.Mesh(
+          new THREE.BoxGeometry(cutout.end - cutout.start, topHeight, wallThickness),
+          material
+        );
+        topSegment.position.set(
+          startX + this.modelOffset.x + (dx / wallLength) * (cutout.start + (cutout.end - cutout.start) / 2),
+          wallHeight - topHeight / 2,
+          startZ + this.modelOffset.z + (dz / wallLength) * (cutout.start + (cutout.end - cutout.start) / 2)
+        );
+        const angle = Math.atan2(dz, dx);
+        topSegment.rotation.y = -angle;
+        topSegment.castShadow = true;
+        topSegment.receiveShadow = true;
+        wallGroup.add(topSegment);
+      }
+    }
+    
+    // Process joint lines as in the original code
+    const addCutLine = (px, pz, direction = 1) => {
+      const t = thickness * scale;
+      const h = height * scale;
+      const offsetY = 0.05;
+  
+      const top = new THREE.Vector3(
+        px + direction * normX * t / 2 + this.modelOffset.x,
+        h + offsetY,
+        pz + direction * normZ * t / 2 + this.modelOffset.z
+      );
+      const bottom = new THREE.Vector3(
+        px - direction * normX * t / 2 + this.modelOffset.x,
+        offsetY,
+        pz - direction * normZ * t / 2 + this.modelOffset.z
+      );
+  
+      const points = [bottom, top];
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+      const line = new THREE.Line(geometry, material);
+      line.userData.isJointLine = true;
+      this.scene.add(line);
+    };
+  
+    const nearlyEqual = (a, b, epsilon = 0.001) => Math.abs(a - b) < epsilon;
+  
+    this.joints.forEach(j => {
+      if (j.joining_method === '45_cut' && (j.wall_1 === id || j.wall_2 === id)) {
+        const isStart = nearlyEqual(j.intersection_x, wall.start_x) && nearlyEqual(j.intersection_y, wall.start_y);
+        const isEnd = nearlyEqual(j.intersection_x, wall.end_x) && nearlyEqual(j.intersection_y, wall.end_y);
+        if (isStart) addCutLine(startX, startZ);
+        if (isEnd) addCutLine(endX, endZ, -1);
+      }
+    });
+  
+    return wallGroup;
+  }
+  
+  // New method to create door frames/edges around cutouts
+  createDoorFrame(wallGroup, centerX, centerZ, width, height, depth, wallAngle, doorInfo) {
+    // Create frame border using a thin edge around the cutout
+    const frameThickness = Math.min(0.1, depth * 0.2); // Thin frame edge
+    const frameMaterial = new THREE.MeshStandardMaterial({
+      color: 0x8B4513,
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    
+    // Create frame edges: left, right, top
+    // Left vertical frame
+    const leftFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(frameThickness, height, depth),
+      frameMaterial
+    );
+    leftFrame.position.set(
+      centerX - (width/2 - frameThickness/2) * Math.cos(wallAngle),
+      height/2,
+      centerZ - (width/2 - frameThickness/2) * Math.sin(wallAngle)
+    );
+    leftFrame.rotation.y = -wallAngle;
+    wallGroup.add(leftFrame);
+    
+    // Right vertical frame
+    const rightFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(frameThickness, height, depth),
+      frameMaterial
+    );
+    rightFrame.position.set(
+      centerX + (width/2 - frameThickness/2) * Math.cos(wallAngle),
+      height/2,
+      centerZ + (width/2 - frameThickness/2) * Math.sin(wallAngle)
+    );
+    rightFrame.rotation.y = -wallAngle;
+    wallGroup.add(rightFrame);
+    
+    // Top horizontal frame
+    const topFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(width - 2 * frameThickness, frameThickness, depth),
+      frameMaterial
+    );
+    topFrame.position.set(
+      centerX,
+      height - frameThickness/2,
+      centerZ
+    );
+    topFrame.rotation.y = -wallAngle;
+    wallGroup.add(topFrame);
+    
+    // Store the doorway center position for door creation
+    doorInfo.calculatedPosition = {
+      x: centerX,
+      z: centerZ,
+      angle: wallAngle,
+      width: width,
+      height: height,
+      depth: depth
+    };
+  }
+  
+  // Modified createDoorMesh to work with wall cutouts
   createDoorMesh(door, wall) {
+    // Skip door creation here if we don't have calculated position yet
+    // (Doors will be created after wall segments in buildModel)
+    if (!door.calculatedPosition) {
+      return null;
+    }
+    
+    // Extract calculated position data
+    const { x: doorPosX, z: doorPosZ, angle: wallAngle, width: cutoutWidth, 
+            height: doorHeight, depth: wallDepth } = door.calculatedPosition;
+    
     // Scale factors
     const scale = this.scalingFactor;
     
     // Extract door properties
-    const { width, height, thickness, position_x, door_type, swing_direction, slide_direction, side, configuration } = door;
-    
-    // Extract wall properties
-    const { start_x, start_y, end_x, end_y, thickness: wallThickness } = wall;
-    
-    // Calculate scaled dimensions
-    const doorWidth = width * scale;
-    const doorHeight = height * scale;
-    const doorThickness = thickness * scale;
-    const scaledWallThickness = wallThickness * scale;
-    
-    // Calculate wall direction and position
-    const startX = start_x * scale + this.modelOffset.x;
-    const startZ = start_y * scale + this.modelOffset.z;
-    const endX = end_x * scale + this.modelOffset.x;
-    const endZ = end_y * scale + this.modelOffset.z;
-    
-    // Wall vector and length
-    const dx = endX - startX;
-    const dz = endZ - startZ;
-    const wallLength = Math.hypot(dx, dz);
-    
-    // Normalized wall direction
-    const wallDirX = dx / wallLength;
-    const wallDirZ = dz / wallLength;
-    
-    // Wall normal (perpendicular to wall)
-    const wallNormX = -wallDirZ;
-    const wallNormZ = wallDirX;
-    
-    // Calculate door position along wall
-    const doorPosX = startX + wallDirX * (wallLength * position_x);
-    const doorPosZ = startZ + wallDirZ * (wallLength * position_x);
+    const { width, thickness, door_type, swing_direction, slide_direction, side, configuration } = door;
+    const doorWidth = width * scale * 1.1; // Slightly smaller than cutout
+    const doorThickness = door.thickness * this.scalingFactor; // Make door thinner than wall
     
     // Side coefficient (1 for exterior, -1 for interior)
     const sideCoefficient = side === 'exterior' ? 1 : -1;
@@ -325,44 +929,19 @@ getModelBounds() {
       opacity: 0.8
     });
     
-    // Frame material
-    const frameMaterial = new THREE.MeshStandardMaterial({
-      color: 0x8B4513,
-      roughness: 0.7,
-      metalness: 0.1
-    });
-    
-    // Calculate the wall's actual center line position 
-    // (This matches how walls are positioned in createWallMesh)
-    const wallOffsetX = wallNormX * (scaledWallThickness / 2);
-    const wallOffsetZ = wallNormZ * (scaledWallThickness / 2);
-    const wallCenterX = doorPosX + wallOffsetX;
-    const wallCenterZ = doorPosZ + wallOffsetZ;
-    
-    // Create a door frame that fits into the wall
-    const frameWidth = doorWidth * 1.05;
-    const frameHeight = doorHeight * 1.02;
-    const frameDepth = scaledWallThickness;
-    
-    const frame = new THREE.Mesh(
-      new THREE.BoxGeometry(frameWidth, frameHeight, frameDepth),
-      frameMaterial
-    );
-    
-    frame.position.set(wallCenterX, doorHeight / 2, wallCenterZ);
-    frame.rotation.y = -Math.atan2(wallDirZ, wallDirX);
-    this.scene.add(frame);
-    
     // === SLIDING DOOR IMPLEMENTATION ===
     if (door_type === 'slide') {
-      // Position sliding door flush with the wall surface
-      // The door should be positioned on the interior or exterior side of the wall
-      const doorOffsetX = wallNormX * (scaledWallThickness/2) * sideCoefficient;
-      const doorOffsetZ = wallNormZ * (scaledWallThickness/2) * sideCoefficient;
+      // Offset the sliding door to align with the wall face based on side
+      const doorOffsetZ = (wallDepth/2) * sideCoefficient;
       
       if (configuration === 'double_sided') {
         // Create double sliding doors
         const halfWidth = doorWidth * 0.48; // Slightly less than half to fit with gap
+        
+        // Create a door container
+        const doorContainer = new THREE.Object3D();
+        doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+        doorContainer.rotation.y = -wallAngle;
         
         // Create both door panels
         const leftDoor = new THREE.Mesh(
@@ -375,111 +954,133 @@ getModelBounds() {
           doorMaterial
         );
         
-        // Position doors at the correct wall surface
-        const leftPosX = wallCenterX - wallDirX * (halfWidth/2) + doorOffsetX;
-        const leftPosZ = wallCenterZ - wallDirZ * (halfWidth/2) + doorOffsetZ;
-        const rightPosX = wallCenterX + wallDirX * (halfWidth/2) + doorOffsetX;
-        const rightPosZ = wallCenterZ + wallDirZ * (halfWidth/2) + doorOffsetZ;
+        // Position doors within the container, with proper offset for the wall side
+        leftDoor.position.set(-halfWidth/2, 0, doorOffsetZ);
+        rightDoor.position.set(halfWidth/2, 0, doorOffsetZ);
         
-        leftDoor.position.set(leftPosX, doorHeight/2, leftPosZ);
-        rightDoor.position.set(rightPosX, doorHeight/2, rightPosZ);
+        // Store original positions
+        leftDoor.userData.origPosition = { x: leftDoor.position.x, z: leftDoor.position.z };
+        rightDoor.userData.origPosition = { x: rightDoor.position.x, z: rightDoor.position.z };
         
-        leftDoor.rotation.y = -Math.atan2(wallDirZ, wallDirX);
-        rightDoor.rotation.y = -Math.atan2(wallDirZ, wallDirX);
+        // Add to container
+        doorContainer.add(leftDoor);
+        doorContainer.add(rightDoor);
+        
+        // Register as a door object with metadata
+        doorContainer.userData.isDoor = true;
+        doorContainer.userData.doorId = `door_${door.id}`;
+        doorContainer.userData.doorInfo = door;
+        this.doorObjects.push(doorContainer);
+        this.doorStates.set(`door_${door.id}`, true); // Start in open state
         
         // Animate doors sliding open
         const slideDistance = halfWidth * 0.9;
         
         gsap.to(leftDoor.position, {
-          x: leftPosX - wallDirX * slideDistance,
-          z: leftPosZ - wallDirZ * slideDistance,
+          x: -halfWidth/2 - slideDistance,
+          z: leftDoor.position.z,
           duration: 1.5,
           ease: 'power2.inOut'
         });
         
         gsap.to(rightDoor.position, {
-          x: rightPosX + wallDirX * slideDistance,
-          z: rightPosZ + wallDirZ * slideDistance,
+          x: halfWidth/2 + slideDistance,
+          z: rightDoor.position.z,
           duration: 1.5,
           ease: 'power2.inOut'
         });
         
-        this.scene.add(leftDoor);
-        this.scene.add(rightDoor);
+        return doorContainer;
       } else {
         // Single sliding door
-        const door = new THREE.Mesh(
-          new THREE.BoxGeometry(doorWidth * 0.95, doorHeight * 0.98, doorThickness),
+        const doorMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(doorWidth, doorHeight * 0.98, doorThickness),
           doorMaterial
         );
         
-        // Position door at wall
-        const doorX = wallCenterX + doorOffsetX;
-        const doorZ = wallCenterZ + doorOffsetZ;
+        // Create door container to handle rotation and position
+        const doorContainer = new THREE.Object3D();
+        doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+        doorContainer.rotation.y = -wallAngle;
         
-        door.position.set(doorX, doorHeight/2, doorZ);
-        door.rotation.y = Math.atan2(wallDirZ, wallDirX);
+        // Position door at wall face
+        doorMesh.position.z = doorOffsetZ;
+        doorContainer.add(doorMesh);
+        
+        // Store original position
+        doorMesh.userData.origPosition = { x: 0, z: doorOffsetZ };
+        
+        // Register as a door object with metadata
+        doorContainer.userData.isDoor = true;
+        doorContainer.userData.doorId = `door_${door.id}`;
+        doorContainer.userData.doorInfo = door;
+        this.doorObjects.push(doorContainer);
+        this.doorStates.set(`door_${door.id}`, true); // Start in open state
         
         // Sliding direction
         const rawDirection = slide_direction === 'right' ? -1 : 1;
         const slideDirectionSign = side === 'exterior' ? -rawDirection : rawDirection;
-        const slideDistance = doorWidth *0.9;
+        const slideDistance = doorWidth * 0.9;
         
         // Animate door sliding
-        gsap.to(door.position, {
-          x: doorX + wallDirX * slideDistance * slideDirectionSign,
-          z: doorZ + wallDirZ * slideDistance * slideDirectionSign,
+        gsap.to(doorMesh.position, {
+          x: slideDistance * slideDirectionSign,
           duration: 1.5,
           ease: 'power2.inOut'
         });
         
-        this.scene.add(door);
+        return doorContainer;
       }
-      
-      return null;
     }
     
     // === SWING DOOR IMPLEMENTATION ===
     else if (door_type === 'swing') {
+      // For swing doors, position in the middle of the door hole
       if (configuration === 'double_sided') {
         const halfWidth = doorWidth * 0.48;
       
+        // Create door container
+        const doorContainer = new THREE.Object3D();
+        doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+        doorContainer.rotation.y = -wallAngle;
+      
         // Left hinge
         const leftPivot = new THREE.Object3D();
-        const leftHingePos = {
-          x: wallCenterX - wallDirX * (frameWidth / 2),
-          z: wallCenterZ - wallDirZ * (frameWidth / 2)
-        };
-        leftPivot.position.set(leftHingePos.x, doorHeight / 2, leftHingePos.z);
-        leftPivot.rotation.y = -Math.atan2(wallDirZ, wallDirX);
+        leftPivot.position.set(-cutoutWidth/2 + 0.1, 0, 0);
+        doorContainer.add(leftPivot);
       
         // Right hinge
         const rightPivot = new THREE.Object3D();
-        const rightHingePos = {
-          x: wallCenterX + wallDirX * (frameWidth / 2),
-          z: wallCenterZ + wallDirZ * (frameWidth / 2)
-        };
-        rightPivot.position.set(rightHingePos.x, doorHeight / 2, rightHingePos.z);
-        rightPivot.rotation.y = -Math.atan2(wallDirZ, wallDirX);
+        rightPivot.position.set(cutoutWidth/2 - 0.1, 0, 0);
+        doorContainer.add(rightPivot);
       
         // Translated geometry so hinge is at edge
-        const leftGeometry = new THREE.BoxGeometry(halfWidth, doorHeight * 0.98, doorThickness);
+        const leftGeometry = new THREE.BoxGeometry(halfWidth, doorHeight * 0.95, doorThickness);
         leftGeometry.translate(halfWidth / 2, 0, 0); // Extend from left edge to center
       
-        const rightGeometry = new THREE.BoxGeometry(halfWidth, doorHeight * 0.98, doorThickness);
+        const rightGeometry = new THREE.BoxGeometry(halfWidth, doorHeight * 0.95, doorThickness);
         rightGeometry.translate(-halfWidth / 2, 0, 0); // Extend from right edge to center
       
         // Mesh panels
         const leftPanel = new THREE.Mesh(leftGeometry, doorMaterial);
         const rightPanel = new THREE.Mesh(rightGeometry, doorMaterial);
       
-        // Position panels on wall face
-        leftPanel.position.set(0, 0, (scaledWallThickness / 2) * sideCoefficient);
-        rightPanel.position.set(0, 0, (scaledWallThickness / 2) * sideCoefficient);
+        // Position panels in the middle of the wall thickness
+        leftPanel.position.set(0, 0, 0);
+        rightPanel.position.set(0, 0, 0);
       
         // Add to pivots
         leftPivot.add(leftPanel);
         rightPivot.add(rightPanel);
+      
+        // Register as door objects with metadata
+        doorContainer.userData.isDoor = true;
+        doorContainer.userData.doorId = `door_${door.id}`;
+        doorContainer.userData.doorInfo = { ...door };
+        
+        this.doorObjects.push(doorContainer);
+        this.doorStates.set(`door_${door.id}_left`, true); // Start in open state
+        this.doorStates.set(`door_${door.id}_right`, true); // Start in open state
       
         // Animate swing open (adjust based on installation side)
         const leftAngle = Math.PI / 2 * (side === 'exterior' ? 1 : -1);
@@ -497,163 +1098,75 @@ getModelBounds() {
           ease: 'power2.inOut'
         });
       
-        this.scene.add(leftPivot);
-        this.scene.add(rightPivot);
+        return doorContainer;
       }
       else {
-        // Single swing door section - FIXED VERSION
+        // Single swing door section
         const hingeOnRight = swing_direction === 'right';
         const mountedInside = side === 'interior';
   
-        // IMPORTANT FIX: For interior doors, we need to flip which side the hinge is on
-        // since we're viewing from the opposite side of the wall
+        // Create door container to handle position and rotation
+        const doorContainer = new THREE.Object3D();
+        doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+        doorContainer.rotation.y = -wallAngle;
+        
+        // IMPORTANT: For interior doors, we need to flip which side the hinge is on
         const effectiveHingeOnRight = mountedInside ? !hingeOnRight : hingeOnRight;
   
-        // Determine hinge position based on the effective hinge side
-        const hingePos = effectiveHingeOnRight ? {
-          x: wallCenterX + wallDirX * (frameWidth / 2),
-          z: wallCenterZ + wallDirZ * (frameWidth / 2)
-        } : {
-          x: wallCenterX - wallDirX * (frameWidth / 2),
-          z: wallCenterZ - wallDirZ * (frameWidth / 2)
-        };
-  
+        // Create pivot at the correct edge of the cutout
+        const pivotX = effectiveHingeOnRight ? cutoutWidth/2 - 0.1 : -cutoutWidth/2 + 0.1;
         const pivot = new THREE.Object3D();
-        pivot.position.set(hingePos.x, doorHeight / 2, hingePos.z);
-        pivot.rotation.y = -Math.atan2(wallDirZ, wallDirX);
+        pivot.position.set(pivotX, 0, 0);
+        doorContainer.add(pivot);
   
         // Build panel with hinge at edge
-        const doorWidth95 = doorWidth * 0.95;
-        const geometry = new THREE.BoxGeometry(doorWidth95, doorHeight * 0.98, doorThickness);
+        const doorGeometry = new THREE.BoxGeometry(doorWidth, doorHeight * 0.95, doorThickness);
         
-        // IMPORTANT FIX: Translate the geometry based on the effective hinge side
-        geometry.translate(effectiveHingeOnRight ? -doorWidth95 / 2 : doorWidth95 / 2, 0, 0);
+        // Offset geometry so hinge is at edge
+        const offsetX = effectiveHingeOnRight ? -doorWidth/2 : doorWidth/2;
+        doorGeometry.translate(offsetX, 0, 0);
   
-        const doorPanel = new THREE.Mesh(geometry, doorMaterial);
-  
-        // Position panel on wall face based on side
-        const wallFaceOffset = (scaledWallThickness / 2) * sideCoefficient;
-        doorPanel.position.set(0, 0, wallFaceOffset);
-  
+        const doorPanel = new THREE.Mesh(doorGeometry, doorMaterial);
+        
+        // Position panel in the middle of the wall
+        doorPanel.position.set(0, 0, 0);
         pivot.add(doorPanel);
   
-        // FIXED: Determine swing direction correctly
-        // The base direction is determined by the effective hinge side
+        // Register as a door object with metadata
+        doorContainer.userData.isDoor = true;
+        doorContainer.userData.doorId = `door_${door.id}`;
+        doorContainer.userData.doorInfo = door;
+        this.doorObjects.push(doorContainer);
+        this.doorStates.set(`door_${door.id}`, true); // Start in open state
+  
+        // Determine swing direction correctly
         let baseDir = 0;
-        if (mountedInside)
-        {
+        if (mountedInside) {
           baseDir = effectiveHingeOnRight ? 1 : -1;
-        }
-        else
-        {
+        } else {
           baseDir = effectiveHingeOnRight ? -1 : 1;
         }
         
-        // The swing angle is always positive for exterior doors (opening outward)
-        // and negative for interior doors (opening inward)
+        // The swing angle
         const swingAngle = Math.PI / 2 * baseDir;
   
         gsap.to(doorPanel.rotation, {
           y: swingAngle,
-          duration: 2,
+          duration: 1.5,
           ease: 'power2.inOut'
         });
   
-        this.scene.add(pivot);
+        return doorContainer;
       }
-    
-      return null;
-    }    
+    }
     
     return null;
   }
 
-  // Create a single wall mesh
-  createWallMesh(wall) {
-    const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
-    const scale = this.scalingFactor;
-
-    let startX = start_x * scale;
-    let startZ = start_y * scale;
-    let endX = end_x * scale;
-    let endZ = end_y * scale;
-
-    const dx = endX - startX;
-    const dz = endZ - startZ;
-    const length = Math.hypot(dx, dz);
-
-    const normX = -dz / length;
-    const normZ = dx / length;
-    const offsetX = normX * (thickness * scale / 2);
-    const offsetZ = normZ * (thickness * scale / 2);
-
-    startX += offsetX;
-    startZ += offsetZ;
-    endX += offsetX;
-    endZ += offsetZ;
-
-    const geometry = new THREE.BoxGeometry(
-      length,
-      height * scale,
-      thickness * scale
-    );
-
-    const material = new THREE.MeshStandardMaterial({ 
-      color: 0xaaaaaa,
-      roughness: 0.7,
-      metalness: 0.2,
-    });
-
-    const wallMesh = new THREE.Mesh(geometry, material);
-    wallMesh.position.set(
-      (startX + endX) / 2 + this.modelOffset.x,
-      height * scale / 2,
-      (startZ + endZ) / 2 + this.modelOffset.z
-    );
-
-    const angle = Math.atan2(endZ - startZ, endX - startX);
-    wallMesh.rotation.y = -angle;
-
-    wallMesh.userData.isWall = true;
-    wallMesh.castShadow = true;
-    wallMesh.receiveShadow = true;
-
-    const addCutLine = (px, pz, direction = 1) => {
-      const t = thickness * scale;
-      const h = height * scale;
-      const offsetY = 0.05;
-
-      const top = new THREE.Vector3(
-        px + direction * normX * t / 2 + this.modelOffset.x,
-        h + offsetY,
-        pz + direction * normZ * t / 2 + this.modelOffset.z
-      );
-      const bottom = new THREE.Vector3(
-        px - direction * normX * t / 2 + this.modelOffset.x,
-        offsetY,
-        pz - direction * normZ * t / 2 + this.modelOffset.z
-      );
-
-      const points = [bottom, top];
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
-      const line = new THREE.Line(geometry, material);
-      line.userData.isJointLine = true;
-      this.scene.add(line);
-    };
-
-    const nearlyEqual = (a, b, epsilon = 0.001) => Math.abs(a - b) < epsilon;
-
-    this.joints.forEach(j => {
-      if (j.joining_method === '45_cut' && (j.wall_1 === id || j.wall_2 === id)) {
-        const isStart = nearlyEqual(j.intersection_x, wall.start_x) && nearlyEqual(j.intersection_y, wall.start_y);
-        const isEnd = nearlyEqual(j.intersection_x, wall.end_x) && nearlyEqual(j.intersection_y, wall.end_y);
-        if (isStart) addCutLine(startX, startZ);
-        if (isEnd) addCutLine(endX, endZ, -1);
-      }
-    });
-
-    return wallMesh;
+  handleResize() {
+    this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
   }
 
 // addCeiling() {

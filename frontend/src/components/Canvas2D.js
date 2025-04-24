@@ -485,8 +485,8 @@ const Canvas2D = ({
 
             // Wall Dimensions display in here, if got problem change here
             const drawDimensions = (startX, startY, endX, endY, color = 'blue') => {
-                const midX = ((startX + endX) / 2) * scaleFactor.current + offsetX.current;
-                const midY = ((startY + endY) / 2) * scaleFactor.current + offsetY.current;
+                let midX = 0;
+                let midY = 0;
                 const length = Math.sqrt(
                     Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
                 );
@@ -504,6 +504,8 @@ const Canvas2D = ({
             
                 if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
                     // **Horizontal wall**
+                    midX = ((startX + endX) / 2) * scaleFactor.current + offsetX.current;
+                    midY = ((startY + endY) / 2) * scaleFactor.current + offsetY.current - 15;
                     context.fillStyle = 'rgba(255, 255, 255, 0.8)';
                     context.fillRect(midX - textWidth / 2 - 2, midY - 8, textWidth + 4, 16);
             
@@ -511,6 +513,8 @@ const Canvas2D = ({
                     context.fillText(text, midX - textWidth / 2, midY + 4);
                 } else {
                     // **Vertical wall**
+                    midX = ((startX + endX) / 2) * scaleFactor.current + offsetX.current + 15;
+                    midY = ((startY + endY) / 2) * scaleFactor.current + offsetY.current;
                     context.translate(midX, midY);
                     context.rotate(-Math.PI / 2); // Rotate text to be vertical
             
@@ -829,7 +833,7 @@ const Canvas2D = ({
           
               const angle = Math.atan2(y2 - y1, x2 - x1);
               const doorWidth = door.width;
-              const doorThickness = wall.thickness;
+              const doorThickness = 150;
           
               const isHovered = door.id === hoveredDoorId;
               let doorColor = 'orange';
@@ -859,7 +863,7 @@ const Canvas2D = ({
                 const px = slashStart.x + (slashEnd.x - slashStart.x) * t;
                 const py = 0;
                 const slashAngle = Math.PI / 4;
-                const lineLen = doorThickness * 0.6;
+                const lineLen = doorThickness * 1.5;
           
                 ctx.beginPath();
                 ctx.moveTo(
