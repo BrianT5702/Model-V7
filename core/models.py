@@ -180,24 +180,16 @@ class Door(models.Model):
         return f"Door {self.id} ({self.door_type}, {self.configuration}) in Project {self.project.name}"
 
 class Intersection(models.Model):
-    JOINING_METHOD_CHOICES = [
-        ('45_cut', '45° Cut'),
-        ('butt_in', 'Butt In'),
-    ]
-
-    project = models.ForeignKey(Project, related_name='intersections', on_delete=models.CASCADE)
-    wall_1 = models.ForeignKey(Wall, related_name='intersection_wall_1', on_delete=models.CASCADE)
-    wall_2 = models.ForeignKey(Wall, related_name='intersection_wall_2', on_delete=models.CASCADE)
-    joining_method = models.CharField(
-        max_length=50,
-        choices=JOINING_METHOD_CHOICES,
-        default='butt_in',
-        help_text="Specify the joining method at this intersection."
-    )
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='intersections')
+    wall_1 = models.ForeignKey(Wall, on_delete=models.CASCADE, related_name='intersections_as_wall1')
+    wall_2 = models.ForeignKey(Wall, on_delete=models.CASCADE, related_name='intersections_as_wall2')
+    joining_method = models.CharField(max_length=20, choices=[
+        ('butt_in', 'Butt-in'),
+        ('45_cut', '45° Cut')
+    ])
 
     class Meta:
-        unique_together = ('wall_1', 'wall_2')  # Add this
-        ordering = ['wall_1_id', 'wall_2_id']
+        unique_together = ('wall_1', 'wall_2')
         
     def __str__(self):
         return f"Intersection between Wall {self.wall_1.id} and Wall {self.wall_2.id} in Project {self.project.name}"

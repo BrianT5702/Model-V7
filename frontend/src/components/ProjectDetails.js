@@ -200,7 +200,7 @@ const ProjectDetails = () => {
 
     useEffect(() => {
         if (is3DView) {
-            const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls);
+            const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors);
             threeCanvasInstance.current = threeCanvas;
 
             return () => {
@@ -221,27 +221,40 @@ const ProjectDetails = () => {
         }
     
         try {
-            // Update local state first
+            // Step 1: Get the previous wall from state
+            const prevWall = walls.find(w => w.id === updatedWall.id);
+    
+            // Step 2: Update local state immediately
             setWalls((prevWalls) =>
                 prevWalls.map((wall) =>
                     wall.id === updatedWall.id ? { ...wall, ...updatedWall } : wall
                 )
             );
     
-            // Send PUT request (assuming `api` is Axios or similar)
+            // Step 3: Send PUT request to backend
             const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
+            const updatedFromBackend = response.data;
     
-            // Axios stores response data in `response.data`
-            console.log("Backend response:", response.data);
+            // Step 4: Handle type change cases
+            const wasWall = prevWall?.application_type === 'wall';
+            const wasPartition = prevWall?.application_type === 'partition';
+            const nowWall = updatedFromBackend.application_type === 'wall';
+            const nowPartition = updatedFromBackend.application_type === 'partition';
     
-            // Check if merge is needed (use the updatedWall from the server if needed)
-            checkAndMergeWalls(updatedWall); // Or use response.data if server returns merged data
-            setSelectedWall(null);
+            if (wasWall && nowPartition) {
+                console.log("Wall type changed from 'wall' to 'partition'. Attempting merge...");
+                await checkAndMergeWalls(updatedFromBackend);
+            }
+    
+            if (wasPartition && nowWall) {
+                alert("Note: Walls changed from partition to wall do not automatically split other walls. If you want splitting behavior, please delete and re-add the wall.");
+            }
     
         } catch (error) {
             console.error("Error updating wall:", error);
         }
     };
+    
     
     // Updated helper function to check collinearity for any orientation
     const areCollinearWalls = (wall1, wall2) => {
@@ -288,6 +301,55 @@ const ProjectDetails = () => {
     
     const arePointsEqual = (p1, p2, epsilon = 0.001) => {
         return Math.abs(p1.x - p2.x) < epsilon && Math.abs(p1.y - p2.y) < epsilon;
+    };
+
+    const handleManualWallMerge = async (selectedWallIds) => {
+        const wall1 = walls.find(w => w.id === selectedWallIds[0]);
+        const wall2 = walls.find(w => w.id === selectedWallIds[1]);
+
+        if (!wall1 || !wall2) {
+            alert("Invalid wall selection.");
+            return;
+        }
+
+        if (
+            wall1.application_type !== wall2.application_type ||
+            wall1.height !== wall2.height ||
+            wall1.thickness !== wall2.thickness
+        ) {
+            alert("Walls must have the same type, height, and thickness.");
+            return;
+        }
+
+        const connected =
+            (wall1.start_x === wall2.end_x && wall1.start_y === wall2.end_y) ||
+            (wall1.end_x === wall2.start_x && wall1.end_y === wall2.start_y) ||
+            (wall1.start_x === wall2.start_x && wall1.start_y === wall2.start_y) ||
+            (wall1.end_x === wall2.end_x && wall1.end_y === wall2.end_y);
+
+        if (!connected) {
+            alert("Walls must be connected at one endpoint.");
+            return;
+        }
+
+        try {
+            const response = await api.post("/walls/merge_walls/", {
+                wall_ids: [wall1.id, wall2.id],
+            });
+
+            if (response.status === 201) {
+                const newWall = response.data;
+                setWalls(prev => [
+                    ...prev.filter(w => w.id !== wall1.id && w.id !== wall2.id),
+                    newWall,
+                ]);
+                setSelectedWallsForRoom([]);
+                alert("Walls merged successfully.");
+            }
+        } catch (error) {
+            console.error("Merge failed:", error);
+            alert("Wall merge failed.");
+        }
     };
 
     // Updated wall merging logic
@@ -491,6 +553,8 @@ const ProjectDetails = () => {
                 setShowRoomManagerModal(false);
             } else if (mode === 'edit-wall') {
                 setSelectedWall(null);
+            } else if (mode === 'merge-wall') {
+                setSelectedWallsForRoom([]); // Clear wall selection
             }
     
             setCurrentMode(null);
@@ -596,6 +660,32 @@ const ProjectDetails = () => {
                             >
                                 {currentMode === 'edit-wall' ? 'Exit Edit Wall Mode' : 'Edit Wall'}
                             </button>
+
+                            <button
+                            onClick={() => toggleMode('merge-wall')}
+                            className={`px-4 py-2 rounded-lg transition-colors ${
+                                currentMode === 'merge-wall'
+                                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                    : 'border border-gray-200 hover:bg-gray-50'
+                            }`}
+                        >
+                            {currentMode === 'merge-wall' ? 'Exit Merge Mode' : 'Merge Walls'}
+                        </button>
+
+                        {currentMode === 'merge-wall' && (
+                            <button
+                                onClick={() => {
+                                    if (selectedWallsForRoom.length === 2) {
+                                    handleManualWallMerge(selectedWallsForRoom);
+                                    } else {
+                                    alert("Please select exactly 2 walls to merge.");
+                                    }
+                                }}
+                            className="px-4 py-2 rounded-lg transition-colors border border-gray-200 hover:bg-gray-50"
+                            >
+                                Confirm Merge
+                            </button>
+                        )}
 
                             <button
                                 onClick={() => toggleMode('define-room')}
@@ -867,6 +957,7 @@ const ProjectDetails = () => {
                                 setSelectedDoorWall(wall);
                                 setShowDoorManager(true);
                             }}
+                            project = {project}
                         />
                     </>
                 )}

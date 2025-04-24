@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from .models import Project, Wall, Room, Ceiling, Door, Intersection
 from .serializers import ProjectSerializer, WallSerializer, RoomSerializer, CeilingSerializer, DoorSerializer, IntersectionSerializer
 from django.db import transaction
+from django.db.models import Q
 
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
@@ -321,33 +322,41 @@ class IntersectionViewSet(viewsets.ModelViewSet):
             return Intersection.objects.filter(project_id=project_id)
         return super().get_queryset()
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], url_path='set_joint')
     def set_joint(self, request):
-        """Handle both creation and updates using POST"""
-        project_id = request.data.get('project')
-        wall_1_id = request.data.get('wall_1')
-        wall_2_id = request.data.get('wall_2')
-        method = request.data.get('joining_method')
+        project_id = request.data.get("project")
+        wall_1_id = request.data.get("wall_1")
+        wall_2_id = request.data.get("wall_2")
+        joining_method = request.data.get("joining_method")
 
-        if not all([project_id, wall_1_id, wall_2_id, method]):
-            return Response({'error': 'Missing required fields'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+        if not all([project_id, wall_1_id, wall_2_id, joining_method]):
+            return Response({"error": "Missing required fields."}, status=400)
 
         try:
-            # Ensure consistent ordering
-            wall_ids = sorted([int(wall_1_id), int(wall_2_id)])
-            
-            # Update or create using the sorted wall IDs
-            intersection, created = Intersection.objects.update_or_create(
-                project_id=project_id,
-                wall_1_id=wall_ids[0],
-                wall_2_id=wall_ids[1],
-                defaults={'joining_method': method}
+            project = Project.objects.get(pk=project_id)
+            wall_1 = Wall.objects.get(pk=wall_1_id)
+            wall_2 = Wall.objects.get(pk=wall_2_id)
+        except (Project.DoesNotExist, Wall.DoesNotExist):
+            return Response({"error": "Invalid project or wall ID."}, status=404)
+
+        # Find intersection in either direction
+        intersection = Intersection.objects.filter(
+            project=project,
+            wall_1__in=[wall_1, wall_2],
+            wall_2__in=[wall_1, wall_2]
+        ).first()
+
+        if intersection:
+            intersection.wall_1 = wall_1
+            intersection.wall_2 = wall_2
+            intersection.joining_method = joining_method
+            intersection.save()
+            return Response({"message": "Joint updated", "id": intersection.id}, status=200)
+        else:
+            intersection = Intersection.objects.create(
+                project=project,
+                wall_1=wall_1,
+                wall_2=wall_2,
+                joining_method=joining_method
             )
-            
-            return Response(
-                IntersectionSerializer(intersection).data,
-                status=status.HTTP_200_OK if not created else status.HTTP_201_CREATED
-            )
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Joint created", "id": intersection.id}, status=201)

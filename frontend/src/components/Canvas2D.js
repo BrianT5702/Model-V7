@@ -5,6 +5,7 @@ const Canvas2D = ({
     walls = [], 
     setWalls, 
     projectId,
+    project,
     joints = [],
     onNewWall, 
     onWallTypeSelect,
@@ -388,38 +389,30 @@ const Canvas2D = ({
 
         const allIntersections = findIntersectionPointsBetweenWalls();
   
-  // Merge with saved joints data
-  const mergedIntersections = allIntersections.map(inter => ({
-    ...inter,
-    pairs: inter.pairs.map(pair => {
-      // Find matching joint (check both wall order permutations)
-      const joint = joints.find(j => 
-        (j.wall_1 === pair.wall1.id && j.wall_2 === pair.wall2.id) ||
-        (j.wall_1 === pair.wall2.id && j.wall_2 === pair.wall1.id)
-      );
-      
-      // Auto-create missing joints
-      if (!joint) {
-        api.post('/intersections/set_joint/', {
-            project: projectId,
-            wall_1: pair.wall1.id,
-            wall_2: pair.wall2.id,
-            joining_method: 'butt_in'
-        }).then(() => {
-            // Refresh joints after creation
-            api.get(`/intersections/?projectid=${projectId}`)
-                .then(res => onJointsUpdate(res.data));
-        });
-    }
-    
-      return {
-        ...pair,
-        joining_method: joint?.joining_method || 'butt_in'
-      };
-    })
-  }));
+        // Merge with saved joints data
 
-  setIntersections(mergedIntersections);
+        const mergedIntersections = allIntersections.map(inter => ({
+            ...inter,
+            pairs: inter.pairs.map(pair => {
+                const w1 = pair.wall1.id;
+                const w2 = pair.wall2.id;
+        
+                // Find matching joint (check both wall orders)
+                const joint = joints.find(j => 
+                    (j.wall_1 === w1 && j.wall_2 === w2) || 
+                    (j.wall_1 === w2 && j.wall_2 === w1)
+                );
+        
+                return {
+                    ...pair,
+                    wall1: joint ? { id: joint.wall_1 } : pair.wall1,
+                    wall2: joint ? { id: joint.wall_2 } : pair.wall2,
+                    joining_method: joint?.joining_method || 'butt_in'
+                  };
+            })
+        }));
+
+        setIntersections(mergedIntersections);
 
         // Wall drawing, including the hover through color change and the select color change, and also the dimension showing thing
         const drawWalls = () => {
@@ -428,80 +421,10 @@ const Canvas2D = ({
             context.clearRect(0, 0, canvas.width, canvas.height);
             drawGrid();
 
-            // Helper function to get joints at a specific point
-            const getJointsForPoint = (x, y) => {
-                return joints.filter(joint => 
-                    Math.abs(joint.x - x) < 0.001 && 
-                    Math.abs(joint.y - y) < 0.001
-                );
-            };
-
-            // Helper function to draw joint visualization
-            // const drawJoint = (ctx, joint, wall1, wall2, gap) => {
-            //     // Calculate offset points for both walls
-            //     const wall1Offset = calculateOffsetPoints(
-            //       wall1.start_x, wall1.start_y, 
-            //       wall1.end_x, wall1.end_y, 
-            //       gap
-            //     );
-            //     const wall2Offset = calculateOffsetPoints(
-            //       wall2.start_x, wall2.start_y, 
-            //       wall2.end_x, wall2.end_y, 
-            //       gap
-            //     );
-              
-            //     // Draw joints for both lines of each wall
-            //     [wall1Offset.line1, wall1Offset.line2].forEach((wallLine) => {
-            //       [wall2Offset.line1, wall2Offset.line2].forEach((otherWallLine) => {
-            //         // Find intersection point between these two lines
-            //         const intersection = calculateIntersection(
-            //           { x: wallLine[0].x, y: wallLine[0].y },
-            //           { x: wallLine[1].x, y: wallLine[1].y },
-            //           { x: otherWallLine[0].x, y: otherWallLine[0].y },
-            //           { x: otherWallLine[1].x, y: otherWallLine[1].y }
-            //         );
-              
-            //         if (intersection) {
-            //           ctx.save();
-            //           ctx.translate(
-            //             intersection.x * scaleFactor.current + offsetX.current,
-            //             intersection.y * scaleFactor.current + offsetY.current
-            //           );
-              
-            //           // Get wall vectors for direction calculation
-            //           const wall1Vec = {
-            //             x: wallLine[1].x - wallLine[0].x,
-            //             y: wallLine[1].y - wallLine[0].y
-            //           };
-            //           const wall2Vec = {
-            //             x: otherWallLine[1].x - otherWallLine[0].x,
-            //             y: otherWallLine[1].y - otherWallLine[0].y
-            //           };
-              
-            //           // Draw based on joint type
-            //           if (joint.joining_method === '45_cut') {
-            //             // 45-degree cut for both lines
-            //             const angle1 = Math.atan2(wall1Vec.y, wall1Vec.x);
-            //             const angle2 = Math.atan2(wall2Vec.y, wall2Vec.x);
-            //             const bisectAngle = (angle1 + angle2) / 2;
-              
-            //             ctx.rotate(bisectAngle);
-            //             ctx.beginPath();
-            //             ctx.moveTo(-gap/2, -gap/2);
-            //             ctx.lineTo(gap/2, gap/2);
-            //             ctx.strokeStyle = wall1.color;
-            //             ctx.stroke();
-            //           } else {
-            //             // Default to butt-in (square ends)
-            //             ctx.fillStyle = wall1.color;
-            //             ctx.fillRect(-gap/2, -gap/2, gap, gap);
-            //           }
-              
-            //           ctx.restore();
-            //         }
-            //       });
-            //     });
-            //   };
+            const center = {
+                x: project.width / 2,
+                y: project.length / 2,
+            };         
 
             // Helper function to differentiate the visual presentation for patition
             const drawPartitionSlashes = (line1, line2) => {
@@ -543,7 +466,7 @@ const Canvas2D = ({
             };                                                    
 
             // Helper function to draw wall endpoints
-            const drawEndpoints = (x, y, color = 'blue', size = 4) => {
+            const drawEndpoints = (x, y, color = 'blue', size = 2) => {
                 if (hoveredPoint && hoveredPoint.x === x && hoveredPoint.y === y) {
                     color = '#FF5722'; // Highlight color for hovered endpoint
                     size = 6; // Slightly larger size for visual feedback
@@ -603,23 +526,51 @@ const Canvas2D = ({
                 context.restore();
             };
 
+
             // Function to calculate offset points for double-line walls
-            const calculateOffsetPoints = (x1, y1, x2, y2, gapPixels) => {
+            const calculateOffsetPoints = (x1, y1, x2, y2, gapPixels, center) => {
                 const dx = x2 - x1;
                 const dy = y2 - y1;
                 const length = Math.sqrt(dx * dx + dy * dy);
-
-                const offsetX = (gapPixels * dy) / length;
-                const offsetY = -(gapPixels * dx) / length;
-
+            
+                if (length === 0) {
+                    return {
+                        line1: [{ x: x1, y: y1 }, { x: x2, y: y2 }],
+                        line2: [{ x: x1, y: y1 }, { x: x2, y: y2 }],
+                    };
+                }
+            
+                // Step 1: Get wall normal (perpendicular direction)
+                const normalX = dy / length;
+                const normalY = -dx / length;
+            
+                // Step 2: Get midpoint of wall
+                const midX = (x1 + x2) / 2;
+                const midY = (y1 + y2) / 2;
+            
+                // Step 3: Direction from wall midpoint to model center
+                const dirToCenterX = center.x - midX;
+                const dirToCenterY = center.y - midY;
+            
+                // Step 4: Use dot product to determine offset direction
+                const dotProduct = normalX * dirToCenterX + normalY * dirToCenterY;
+                const shouldFlip = dotProduct > 0;
+            
+                // Step 5: Apply offset
+                const offsetX = (gapPixels * normalX) / scaleFactor.current;
+                const offsetY = (gapPixels * normalY) / scaleFactor.current;
+            
+                const finalOffsetX = shouldFlip ? -offsetX : offsetX;
+                const finalOffsetY = shouldFlip ? -offsetY : offsetY;
+            
                 return {
                     line1: [
-                        { x: x1 + offsetX / scaleFactor.current, y: y1 + offsetY / scaleFactor.current },
-                        { x: x2 + offsetX / scaleFactor.current, y: y2 + offsetY / scaleFactor.current },
+                        { x: x1, y: y1 },
+                        { x: x2, y: y2 },
                     ],
                     line2: [
-                        { x: x1 - offsetX / scaleFactor.current, y: y1 - offsetY / scaleFactor.current },
-                        { x: x2 - offsetX / scaleFactor.current, y: y2 - offsetY / scaleFactor.current },
+                        { x: x1 - finalOffsetX *2 , y: y1 - finalOffsetY * 2},
+                        { x: x2 - finalOffsetX *2 , y: y2 - finalOffsetY * 2},
                     ],
                 };
             };
@@ -643,60 +594,141 @@ const Canvas2D = ({
                 context.setLineDash([]); // Reset dash
             };
 
+            //draw double lined wall cap
+            const drawWallCaps = (context, wall, joints, center) => {
+                if (!wall._line1 || !wall._line2) return;
+            
+                const endpoints = [
+                    { label: 'start', x: wall.start_x, y: wall.start_y },
+                    { label: 'end', x: wall.end_x, y: wall.end_y }
+                ];
+            
+                endpoints.forEach((pt) => {
+                    const relevantIntersections = intersections.filter(inter => {
+                        const dx = inter.x - pt.x;
+                        const dy = inter.y - pt.y;
+                        return Math.hypot(dx, dy) < SNAP_THRESHOLD / currentScaleFactor;
+                    });
+            
+                    let joiningMethod = 'butt_in';
+                    let isPrimaryWall = true;
+            
+                    relevantIntersections.forEach(inter => {
+                        inter.pairs.forEach(pair => {
+                            if (pair.wall1.id === wall.id || pair.wall2.id === wall.id) {
+                                joiningMethod = pair.joining_method;
+                                if (pair.wall2.id === wall.id) {
+                                    isPrimaryWall = false;
+                                }
+                            }
+                        });
+                    });
+            
+                    if (joiningMethod === '45_cut' && !isPrimaryWall) {
+                        return; // Avoid drawing duplicate cap from other wall
+                    }
+            
+                    const cap1 = pt.label === 'start' ? wall._line1[0] : wall._line1[1];
+                    const cap2 = pt.label === 'start' ? wall._line2[0] : wall._line2[1]; // ✅ already adjusted
+            
+                    context.beginPath();
+                    context.moveTo(
+                        cap1.x * scaleFactor.current + offsetX.current,
+                        cap1.y * scaleFactor.current + offsetY.current
+                    );
+                    context.lineTo(
+                        cap2.x * scaleFactor.current + offsetX.current,
+                        cap2.y * scaleFactor.current + offsetY.current
+                    );
+            
+                    context.strokeStyle = 'black';
+                    context.setLineDash([]);
+                    context.lineWidth = 1.5;
+                    context.stroke();
+                });
+            };                                    
+
             // Draw existing walls
             walls.forEach((wall, index) => {
-                const isHighlighted = highlightWalls.includes(wall.id);
+                const highlight = highlightWalls.find(h => h.id === wall.id);
                 const wallColor = 
-                isHighlighted ? '#FF4081' :
+                highlight ? highlight.color :
                 selectedWallsForRoom.includes(wall.id) ? '#4CAF50' :
                 selectedWall === index ? 'red' :
                 hoveredWall === index ? '#2196F3' :
                 wall.application_type === "partition" ? "#666" : "#333";
             
-                const { line1, line2 } = calculateOffsetPoints(
+                let { line1, line2 } = calculateOffsetPoints(
                     wall.start_x,
                     wall.start_y,
                     wall.end_x,
                     wall.end_y,
-                    FIXED_GAP
+                    FIXED_GAP,
+                    center
                 );
-
+                
+                // ✅ Check if either endpoint has a 45° joint
+                const endpoints = [
+                    { label: 'start', x: wall.start_x, y: wall.start_y },
+                    { label: 'end', x: wall.end_x, y: wall.end_y }
+                ];
+                
+                endpoints.forEach((pt, idx) => {
+                    const relevantIntersections = intersections.filter(inter => {
+                        const dx = inter.x - pt.x;
+                        const dy = inter.y - pt.y;
+                        return Math.hypot(dx, dy) < SNAP_THRESHOLD / currentScaleFactor;
+                    });
+                
+                    const has45 = relevantIntersections.some(inter => 
+                        inter.pairs.some(pair => 
+                            (pair.wall1.id === wall.id || pair.wall2.id === wall.id) &&
+                            pair.joining_method === '45_cut'
+                        )
+                    );
+                
+                    if (has45) {
+                        // Shorten the appropriate end of line2
+                        const dx = wall.end_x - wall.start_x;
+                        const dy = wall.end_y - wall.start_y;
+                        const len = Math.hypot(dx, dy);
+                        const ux = len ? dx / len : 0;
+                        const uy = len ? dy / len : 0;
+                        const adjust = 150 *0.9;
+                
+                        // Clone to avoid mutating shared reference
+                        line2 = [...line2.map(p => ({ ...p }))];
+                
+                        if (pt.label === 'start') {
+                            line2[0].x += ux * adjust;
+                            line2[0].y += uy * adjust;
+                        } else {
+                            line2[1].x -= ux * adjust;
+                            line2[1].y -= uy * adjust;
+                        }
+                    }
+                });
+                
+                // ✅ Store adjusted lines for cap rendering
+                wall._line1 = line1;
+                wall._line2 = line2;
+                
+                // ✅ Now draw
                 drawWallLinePair([line1, line2], wallColor);
-
-                // // Draw joints after all walls are drawn
-                // walls.forEach(wall => {
-                //     const jointsForWall = joints.filter(j => 
-                //         j.wall_1 === wall.id || j.wall_2 === wall.id
-                //       );
-                      
-                //       jointsForWall.forEach((joint) => {
-                //         const otherWallId = joint.wall_1 === wall.id ? joint.wall_2 : joint.wall_1;
-                //         const otherWall = walls.find(w => w.id === otherWallId);
-                        
-                //         if (otherWall) {
-                //           drawJoint(
-                //             context, 
-                //             joint, 
-                //             wall, 
-                //             otherWall, 
-                //             FIXED_GAP / scaleFactor.current // Pass gap in world units
-                //           );
-                //         }
-                //       });
-                // });
+                drawWallCaps(context, wall, joints, center);
 
                 // Draw diagonal hatching for partitions
                 if (wall.application_type === "partition") {
                     drawPartitionSlashes(line1, line2);
-                }
+                }   
 
-                // Draw endpoints with different colors based on wall state
-                // if (isEditingMode)
-                // {
+                //Draw endpoints with different colors based on wall state
+                if (isEditingMode)
+                {
                     const endpointColor = selectedWall === index ? 'red' : '#2196F3';
                     drawEndpoints(wall.start_x, wall.start_y, endpointColor);
                     drawEndpoints(wall.end_x, wall.end_y, endpointColor);
-                // }
+                }
                 
                 // Draw dimensions (on the central line)
                 drawDimensions(
@@ -708,25 +740,15 @@ const Canvas2D = ({
                 );
 
                 // Draw intersection points (if any)
-                if (isEditingMode){
-                    walls.forEach((otherWall) => {
-                    if (wall !== otherWall) {
-                        const intersection = calculateIntersection(
-                            { x: wall.start_x, y: wall.start_y },
-                            { x: wall.end_x, y: wall.end_y },
-                            { x: otherWall.start_x, y: otherWall.start_y },
-                            { x: otherWall.end_x, y: otherWall.end_y }
+                if (isEditingMode) {
+                    intersections.forEach((inter) => {
+                        drawEndpoints(
+                            inter.x,
+                            inter.y,
+                            '#FF9800', // Orange for intersection points
+                            6
                         );
-                        if (intersection) {
-                            drawEndpoints(
-                                intersection.x,
-                                intersection.y,
-                                '#FF9800', // Orange for intersection points
-                                6
-                            );
-                        }
-                    }
-                });
+                    });
                 }
             });
 
@@ -737,7 +759,8 @@ const Canvas2D = ({
                     tempWall.start_y,
                     tempWall.end_x,
                     tempWall.end_y,
-                    FIXED_GAP
+                    FIXED_GAP,
+                    center
                 );
 
                 drawWallLinePair([line1, line2], '#4CAF50', [5, 5]);
@@ -821,7 +844,7 @@ const Canvas2D = ({
               ctx.save();
               ctx.translate(doorCenterX * scale + offsetX, doorCenterY * scale + offsetY);
               ctx.rotate(angle);
-              if (door.side === 'exterior') ctx.rotate(Math.PI);
+              if (door.side === 'interior') ctx.rotate(Math.PI);
           
               // === Slashed Wall Section ===
               const slashHalf = slashLength / 2;
@@ -1016,60 +1039,102 @@ const Canvas2D = ({
         };
     };
 
-    // In Canvas2D.js, modify findIntersectionPointsBetweenWalls
-    const findIntersectionPointsBetweenWalls = () => {
+      const findIntersectionPointsBetweenWalls = () => {
         const map = new Map();
-
-        // Existing intersection detection
+    
+        const wallTouchesWallBody = (endpoints, hostWall) => {
+            const dx = hostWall.end_x - hostWall.start_x;
+            const dy = hostWall.end_y - hostWall.start_y;
+            const length = Math.hypot(dx, dy);
+            if (length === 0) return null;
+    
+            const ux = dx / length;
+            const uy = dy / length;
+            const nx = -uy;
+            const ny = ux;
+    
+            for (const pt of endpoints) {
+                const relX = pt.x - hostWall.start_x;
+                const relY = pt.y - hostWall.start_y;
+                const along = relX * ux + relY * uy;
+                const perp = relX * nx + relY * ny;
+    
+                if (along >= 0 && along <= length && Math.abs(perp) <= hostWall.thickness) {
+                    return { x: pt.x, y: pt.y };
+                }
+            }
+    
+            return null;
+        };
+    
         for (let i = 0; i < walls.length; i++) {
             for (let j = i + 1; j < walls.length; j++) {
                 const wallA = walls[i];
                 const wallB = walls[j];
-                
-                // Check for colinear endpoint connections first
-                const endpointsA = [
-                    `${wallA.start_x},${wallA.start_y}`,
-                    `${wallA.end_x},${wallA.end_y}`
+    
+                const aEndpoints = [
+                    { x: wallA.start_x, y: wallA.start_y },
+                    { x: wallA.end_x, y: wallA.end_y }
                 ];
-                const endpointsB = [
-                    `${wallB.start_x},${wallB.start_y}`,
-                    `${wallB.end_x},${wallB.end_y}`
+                const bEndpoints = [
+                    { x: wallB.start_x, y: wallB.start_y },
+                    { x: wallB.end_x, y: wallB.end_y }
                 ];
-
-                // Check if walls share an endpoint and are colinear
-                const sharedEndpoint = endpointsA.find(ep => endpointsB.includes(ep));
-                if (sharedEndpoint && areCollinearWalls(wallA, wallB)) {
-                    const [x, y] = sharedEndpoint.split(',').map(Number);
-                    const key = `${Math.round(x)}-${Math.round(y)}`;
-                    
-                    if (!map.has(key)) {
-                        map.set(key, { x, y, pairs: [] });
-                    }
-                    map.get(key).pairs.push({ wall1: wallA, wall2: wallB });
+    
+                // Shared endpoint check
+                const sharedPoints = [];
+                aEndpoints.forEach(aPt => {
+                    bEndpoints.forEach(bPt => {
+                        if (arePointsEqual(aPt, bPt)) {
+                            sharedPoints.push({ x: aPt.x, y: aPt.y });
+                        }
+                    });
+                });
+    
+                if (sharedPoints.length > 0 && areCollinearWalls(wallA, wallB)) {
+                    sharedPoints.forEach(point => {
+                        const key = `${Math.round(point.x)}-${Math.round(point.y)}`;
+                        if (!map.has(key)) map.set(key, { x: point.x, y: point.y, pairs: [] });
+                        map.get(key).pairs.push({ wall1: wallA, wall2: wallB });
+                    });
+                    continue;
                 }
-
-                // Existing line intersection check
+    
+                // Regular intersection
                 const intersection = calculateIntersection(
                     { x: wallA.start_x, y: wallA.start_y },
                     { x: wallA.end_x, y: wallA.end_y },
                     { x: wallB.start_x, y: wallB.start_y },
                     { x: wallB.end_x, y: wallB.end_y }
                 );
-
+    
                 if (intersection) {
                     const key = `${Math.round(intersection.x)}-${Math.round(intersection.y)}`;
-                    if (!map.has(key)) {
-                        map.set(key, {
-                            x: intersection.x,
-                            y: intersection.y,
-                            pairs: []
-                        });
-                    }
+                    if (!map.has(key)) map.set(key, { x: intersection.x, y: intersection.y, pairs: [] });
                     map.get(key).pairs.push({ wall1: wallA, wall2: wallB });
+                    continue;
+                }
+    
+                // A endpoint in body of B
+                const touchAinB = wallTouchesWallBody(aEndpoints, wallB);
+                if (touchAinB) {
+                    const key = `${Math.round(touchAinB.x)}-${Math.round(touchAinB.y)}`;
+                    if (!map.has(key)) map.set(key, { x: touchAinB.x, y: touchAinB.y, pairs: [] });
+                    map.get(key).pairs.push({ wall1: wallA, wall2: wallB });
+                    continue;
+                }
+    
+                // B endpoint in body of A
+                const touchBinA = wallTouchesWallBody(bEndpoints, wallA);
+                if (touchBinA) {
+                    const key = `${Math.round(touchBinA.x)}-${Math.round(touchBinA.y)}`;
+                    if (!map.has(key)) map.set(key, { x: touchBinA.x, y: touchBinA.y, pairs: [] });
+                    map.get(key).pairs.push({ wall1: wallB, wall2: wallA });
+                    continue;
                 }
             }
         }
-
+    
         return Array.from(map.values());
     };
 
@@ -1120,11 +1185,17 @@ const Canvas2D = ({
     
         if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room') {
             for (const inter of intersections) {
+                const wall1 = walls.find(w => w.id === inter.wall_1);
+                const wall2 = walls.find(w => w.id === inter.wall_2);
+        
+                const maxThickness = Math.max(wall1?.thickness || 0, wall2?.thickness || 0);
+                const dynamicThreshold = (SNAP_THRESHOLD + maxThickness) / scaleFactor.current;
+        
                 const distance = Math.hypot(inter.x - x, inter.y - y);
-                if (distance < SNAP_THRESHOLD / scaleFactor.current) {
+                if (distance < dynamicThreshold) {
                     setSelectedIntersection(inter);
-                    setJoiningMethod("butt_in");
-                    return; // Skip further processing
+                    setJoiningMethod(inter.joining_method || "butt_in");
+                    return;
                 }
             }
         }
@@ -1206,72 +1277,76 @@ const Canvas2D = ({
                     };
     
                     const wallProperties = getReferenceWall();
+                    const isPartition = onWallTypeSelect === "partition";
     
-                    if (!isStartingAtExistingEndpoint) {
-                        for (const wall of walls) {
-                            const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
-                            if (
-                                startSegmentPoint &&
-                                Math.hypot(startSegmentPoint.x - startPoint.x, startSegmentPoint.y - startPoint.y) <
-                                    SNAP_THRESHOLD / scaleFactor.current
-                            ) {
-                                wallsToDelete.push(wall);
-                    
-                                wallsToAdd.push({
-                                    start_x: wall.start_x,
-                                    start_y: wall.start_y,
-                                    end_x: startPoint.x,
-                                    end_y: startPoint.y,
-                                    height: wall.height,
-                                    thickness: wall.thickness,
-                                    application_type: wall.application_type
-                                });
-                    
-                                wallsToAdd.push({
-                                    start_x: startPoint.x,
-                                    start_y: startPoint.y,
-                                    end_x: wall.end_x,
-                                    end_y: wall.end_y,
-                                    height: wall.height,
-                                    thickness: wall.thickness,
-                                    application_type: wall.application_type
-                                });
+                    if(!isPartition)
+                    {
+                        if (!isStartingAtExistingEndpoint) {
+                            for (const wall of walls) {
+                                const startSegmentPoint = snapToWallSegment(startPoint.x, startPoint.y, wall);
+                                if (
+                                    startSegmentPoint &&
+                                    Math.hypot(startSegmentPoint.x - startPoint.x, startSegmentPoint.y - startPoint.y) <
+                                        SNAP_THRESHOLD / scaleFactor.current
+                                ) {
+                                    wallsToDelete.push(wall);
+                        
+                                    wallsToAdd.push({
+                                        start_x: wall.start_x,
+                                        start_y: wall.start_y,
+                                        end_x: startPoint.x,
+                                        end_y: startPoint.y,
+                                        height: wall.height,
+                                        thickness: wall.thickness,
+                                        application_type: wall.application_type
+                                    });
+                        
+                                    wallsToAdd.push({
+                                        start_x: startPoint.x,
+                                        start_y: startPoint.y,
+                                        end_x: wall.end_x,
+                                        end_y: wall.end_y,
+                                        height: wall.height,
+                                        thickness: wall.thickness,
+                                        application_type: wall.application_type
+                                    });
+                                }
                             }
                         }
-                    }
 
-                    // Handle wall splitting only if the endpoint is not at an existing endpoint
-                    if (!isEndingAtExistingEndpoint) {
-                        for (const wall of walls) {
-                            if (wallsToDelete.includes(wall)) continue;
+                        // Handle wall splitting only if the endpoint is not at an existing endpoint
+                        if (!isEndingAtExistingEndpoint) {
+                            for (const wall of walls) {
+                                if (wallsToDelete.includes(wall)) continue;
 
-                            const endSegmentPoint = snapToWallSegment(endPoint.x, endPoint.y, wall);
-                            if (
-                                endSegmentPoint &&
-                                Math.hypot(endSegmentPoint.x - endPoint.x, endSegmentPoint.y - endPoint.y) <
-                                    SNAP_THRESHOLD / scaleFactor.current
-                            ) {
-                                wallsToDelete.push(wall);
+                                const endSegmentPoint = snapToWallSegment(endPoint.x, endPoint.y, wall);
+                                if (
+                                    endSegmentPoint &&
+                                    Math.hypot(endSegmentPoint.x - endPoint.x, endSegmentPoint.y - endPoint.y) <
+                                        SNAP_THRESHOLD / scaleFactor.current
+                                ) {
+                                    wallsToDelete.push(wall);
 
-                                wallsToAdd.push({
-                                    start_x: wall.start_x,
-                                    start_y: wall.start_y,
-                                    end_x: endPoint.x,
-                                    end_y: endPoint.y,
-                                    height: wall.height,
-                                    thickness: wall.thickness,
-                                    application_type: wall.application_type
-                                });
+                                    wallsToAdd.push({
+                                        start_x: wall.start_x,
+                                        start_y: wall.start_y,
+                                        end_x: endPoint.x,
+                                        end_y: endPoint.y,
+                                        height: wall.height,
+                                        thickness: wall.thickness,
+                                        application_type: wall.application_type
+                                    });
 
-                                wallsToAdd.push({
-                                    start_x: endPoint.x,
-                                    start_y: endPoint.y,
-                                    end_x: wall.end_x,
-                                    end_y: wall.end_y,
-                                    height: wall.height,
-                                    thickness: wall.thickness,
-                                    application_type: wall.application_type
-                                });
+                                    wallsToAdd.push({
+                                        start_x: endPoint.x,
+                                        start_y: endPoint.y,
+                                        end_x: wall.end_x,
+                                        end_y: wall.end_y,
+                                        height: wall.height,
+                                        thickness: wall.thickness,
+                                        application_type: wall.application_type
+                                    });
+                                }
                             }
                         }
                     }
@@ -1414,6 +1489,8 @@ const Canvas2D = ({
             setSelectedWall(selectedIndex);
             onWallSelect(selectedIndex);
         } 
+        
+
         if (currentMode === 'define-room') {
             let selectedIndex = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor.current;
@@ -1457,6 +1534,41 @@ const Canvas2D = ({
                 onRoomWallsSelect(updatedSelection);
             }
         }
+
+        if (currentMode === 'merge-wall') {
+            let selectedIndex = null;
+            let minDistance = SNAP_THRESHOLD / scaleFactor.current;
+      
+            walls.forEach((wall, index) => {
+              const segmentPoint = snapToWallSegment(x, y, wall);
+              if (segmentPoint) {
+                const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  selectedIndex = index;
+                }
+              }
+            });
+      
+            if (selectedIndex !== null) {
+                const clickedWall = walls[selectedIndex];
+                const updatedSelection = [...selectedWallsForRoom];
+                const wallIndex = updatedSelection.indexOf(clickedWall.id);
+        
+                if (wallIndex === -1) {
+                  if (updatedSelection.length < 2) {
+                    updatedSelection.push(clickedWall.id);
+                  } else {
+                    alert("You can only select up to 2 walls for merging.");
+                    return;
+                  }
+                } else {
+                  updatedSelection.splice(wallIndex, 1);
+                }
+        
+                onRoomWallsSelect(updatedSelection);
+              }
+            }
 
         if (currentMode === 'add-door') {
             let closestWallIndex = null;
@@ -1557,7 +1669,6 @@ const Canvas2D = ({
                 if (distanceToCenter <= radius) {
                   // Determine the angle of the click point from the door center
                   const clickAngle = Math.atan2(y - doorCenterY, x - doorCenterX);
-                  let angleRange = Math.abs(endAngle - startAngle);
                   
                   // Normalize the angles for comparison
                   let normClickAngle = (clickAngle - angle) % (2 * Math.PI);
@@ -1622,7 +1733,86 @@ const Canvas2D = ({
     
     const calculateDistance = (p1, p2) => {
         return Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    };    
+    };
+    
+    //Shorten the wall if is butt-in, extend if is 45
+    const originalWallEndpoints = new Map();
+
+    const getWallLength = (wall) => {
+        const dx = wall.end_x - wall.start_x;
+        const dy = wall.end_y - wall.start_y;
+        return Math.hypot(dx, dy);
+    };
+    
+    const adjustWallForJointType = async (joint, walls, setWalls, projectId, intersection) => {
+        const wall1 = walls.find(w => w.id === joint.wall_1);
+        const wall2 = walls.find(w => w.id === joint.wall_2);
+        if (!wall1 || !wall2) return;
+    
+        const updatedWall = { ...wall1 };
+        const dx = wall1.end_x - wall1.start_x;
+        const dy = wall1.end_y - wall1.start_y;
+        const length = Math.hypot(dx, dy);
+        const ux = dx / length;
+        const uy = dy / length;
+    
+        const startConnected = (
+            (wall1.start_x === wall2.start_x && wall1.start_y === wall2.start_y) ||
+            (wall1.start_x === wall2.end_x && wall1.start_y === wall2.end_y)
+        );
+    
+        try {
+            // Get all joints at this intersection from the passed data
+            const anyIs45 = intersection.pairs.some(p => p.joining_method === '45_cut');
+            const allAreButtIn = intersection.pairs.every(p => p.joining_method === 'butt_in');
+            const onlyOneJoint = intersection.pairs.length === 1;
+    
+            const shouldShorten = joint.joining_method === 'butt_in' && (onlyOneJoint || (allAreButtIn && !anyIs45));
+    
+            if (shouldShorten) {
+                const len1 = getWallLength(wall1);
+                const len2 = getWallLength(wall2);
+                const shorter = onlyOneJoint ? wall1 : (len1 <= len2 ? wall1 : wall2);
+                const longer = onlyOneJoint ? wall2 : (len1 > len2 ? wall1 : wall2);
+                const delta = onlyOneJoint ? wall2.thickness : longer.thickness / 2;
+    
+                if (!originalWallEndpoints.has(wall1.id)) {
+                    originalWallEndpoints.set(wall1.id, {
+                        start_x: wall1.start_x,
+                        start_y: wall1.start_y,
+                        end_x: wall1.end_x,
+                        end_y: wall1.end_y
+                    });
+                }
+    
+                if (wall1.id === shorter.id) {
+                    if (startConnected) {
+                        updatedWall.start_x += ux * delta;
+                        updatedWall.start_y += uy * delta;
+                    } else {
+                        updatedWall.end_x -= ux * delta;
+                        updatedWall.end_y -= uy * delta;
+                    }
+                }
+            } else if (joint.joining_method === '45_cut') {
+                if (originalWallEndpoints.has(wall1.id)) {
+                    const original = originalWallEndpoints.get(wall1.id);
+                    updatedWall.start_x = original.start_x;
+                    updatedWall.start_y = original.start_y;
+                    updatedWall.end_x = original.end_x;
+                    updatedWall.end_y = original.end_y;
+                    originalWallEndpoints.delete(wall1.id);
+                }
+            }
+    
+            const res = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
+            setWalls(prev =>
+                prev.map(w => (w.id === updatedWall.id ? res.data : w))
+            );
+        } catch (error) {
+            console.error("Failed to update wall after joint change:", error);
+        }
+    };
     
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;
@@ -1650,7 +1840,7 @@ const Canvas2D = ({
         setHoveredPoint(closestPoint);
     
         // Wall Hover Detection
-        if (currentMode === 'add-wall' || currentMode === 'edit-wall' || currentMode ==='define-room' || currentMode === 'add-door') {
+        if (currentMode === 'add-wall' || currentMode === 'edit-wall' || currentMode ==='define-room' || currentMode === 'add-door' || currentMode === 'merge-wall') {
             let minWallDistance = SNAP_THRESHOLD / scaleFactor.current;
             let newHoveredWall = null;
     
@@ -1736,7 +1926,11 @@ const Canvas2D = ({
                         key={index}
                         onClick={() => {
                         setSelectedJointPair(index);
-                        setHighlightWalls([pair.wall1.id, pair.wall2.id]);
+                        setHighlightWalls([
+                            { id: pair.wall1.id, color: '#60A5FA' }, // light blue
+                            { id: pair.wall2.id, color: '#A855F7' }  // purple
+                          ]);
+                          
                         }}
                         className={`mb-2 p-2 rounded cursor-pointer transition-colors ${
                         selectedJointPair === index 
@@ -1748,7 +1942,7 @@ const Canvas2D = ({
                     <div className="w-3 h-3 rounded-full bg-blue-400" />
                     <span className="font-medium">Wall {pair.wall1.id}</span>
                     <div className="mx-2">↔</div>
-                    <div className="w-3 h-3 rounded-full bg-blue-400" />
+                    <div className="w-3 h-3 rounded-full bg-purple-400" />
                     <span className="font-medium">Wall {pair.wall2.id}</span>
                     </div>
                     <select
@@ -1763,6 +1957,22 @@ const Canvas2D = ({
                     <option value="butt_in">Butt-in</option>
                     <option value="45_cut">45° Cut</option>
                     </select>
+
+                    <div className="flex justify-end">
+                    <button
+                        onClick={() => {
+                        const updated = [...selectedIntersection.pairs];
+                        const temp = updated[index].wall1;
+                        updated[index].wall1 = updated[index].wall2;
+                        updated[index].wall2 = temp;
+                        setSelectedIntersection({ ...selectedIntersection, pairs: updated });
+                        }}
+                        className="text-sm text-blue-500 hover:underline mt-1"
+                    >
+                        Flip Wall Order
+                    </button>
+                    </div>
+
                 </div>
                 ))}
                 <div className="flex justify-end gap-2 mt-4">
@@ -1780,15 +1990,26 @@ const Canvas2D = ({
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                     onClick={async () => {
                         try {
-                          for (const pair of selectedIntersection.pairs) {
-                            // Use POST to /intersections/set_joint/ instead of PUT
-                            await api.post('/intersections/set_joint/', {
-                              project: projectId,
-                              wall_1: pair.wall1.id,
-                              wall_2: pair.wall2.id,
-                              joining_method: pair.joining_method
-                            });
-                          }
+                            for (const pair of selectedIntersection.pairs) {
+                                await api.post('/intersections/set_joint/', {
+                                    project: projectId,
+                                    wall_1: pair.wall1.id,
+                                    wall_2: pair.wall2.id,
+                                    joining_method: pair.joining_method
+                                });
+                            
+                                adjustWallForJointType(
+                                    {
+                                        wall_1: pair.wall1.id,
+                                        wall_2: pair.wall2.id,
+                                        joining_method: pair.joining_method
+                                    },
+                                    walls,
+                                    setWalls,
+                                    projectId,
+                                    selectedIntersection // Pass the entire intersection data
+                                );
+                            }
                           // Refresh joints
                           const response = await api.get(`/intersections/?projectid=${projectId}`);
                           onJointsUpdate(response.data);
