@@ -848,8 +848,11 @@ const Canvas2D = ({
               ctx.save();
               ctx.translate(doorCenterX * scale + offsetX, doorCenterY * scale + offsetY);
               ctx.rotate(angle);
-              if (door.side === 'interior') ctx.rotate(Math.PI);
-          
+              if (door.side === 'interior') 
+                {
+                    ctx.rotate(Math.PI);
+                }
+                
               // === Slashed Wall Section ===
               const slashHalf = slashLength / 2;
               const slashStart = { x: -slashHalf, y: 0 };
