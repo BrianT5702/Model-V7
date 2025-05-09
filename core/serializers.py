@@ -35,10 +35,7 @@ class RoomSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Room
-        fields = [
-            'id', 'project', 'walls', 'room_name',
-            'floor_type', 'floor_thickness', 'remarks', 'ceilings', 'temperature'
-        ]
+        fields = '__all__'
 
 
 class ProjectSerializer(serializers.ModelSerializer):

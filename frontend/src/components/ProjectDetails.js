@@ -30,6 +30,8 @@ const ProjectDetails = () => {
     const [doors, setDoors] = useState([]);
     const [editingDoor, setEditingDoor] = useState(null);
     const [showDoorEditor, setShowDoorEditor] = useState(false);
+    const [selectedRoomPoints, setSelectedRoomPoints] = useState([]);
+
 
     const handleViewToggle = () => {
         if (!threeCanvasInstance.current) return;
@@ -93,31 +95,28 @@ const ProjectDetails = () => {
         }
       };
 
-    const handleCreateRoom = async (roomData) => {
+      const handleCreateRoom = async (roomData) => {
         try {
-            const response = await api.post('/rooms/', roomData);
+            const completeRoomData = {
+                ...roomData,
+                room_points: selectedRoomPoints,
+            };
     
+            const response = await api.post('/rooms/', completeRoomData);
             if (response.status === 201) {
                 const newRoom = response.data;
-                console.log('✅ Room created successfully:', newRoom);
-    
-                // ✅ Update state immediately to reflect the new room
                 setRooms((prevRooms) => [...prevRooms, newRoom]);
     
-                // ✅ Clear selected walls after room creation
-                setSelectedWallsForRoom([]);
-    
-                // ✅ Show success message
                 alert('Room created successfully!');
-    
-                // ✅ Close the Room Manager after creation
-                setShowRoomManager(false);
+                setShowRoomManagerModal(false); // ✅ correct modal visibility
+                setSelectedRoomPoints([]);
+                setCurrentMode(null);
             }
         } catch (error) {
             console.error('Error creating room:', error);
             alert('Failed to create room.');
         }
-    };    
+    };          
 
     useEffect(() => {
         const fetchRooms = async () => {
@@ -139,10 +138,10 @@ const ProjectDetails = () => {
         if (room) {
             setEditingRoom(room);
             setShowRoomManager(true);
-            // Pre-select the walls that belong to this room
             setSelectedWallsForRoom(room.walls);
+            setSelectedRoomPoints(room.room_points || []);  // ✅ ← Set the polygon for editing
         }
-    };
+    };    
 
     const handleRoomUpdate = async (updatedRoomData) => {
         try {
@@ -150,9 +149,9 @@ const ProjectDetails = () => {
             setRooms(rooms.map(room => 
                 room.id === updatedRoomData.id ? response.data : room
             ));
-            setShowRoomManager(false);
-            setEditingRoom(null);
-            setSelectedWallsForRoom([]);
+            setShowRoomManagerModal(false);
+            setSelectedRoomPoints([]);
+            setCurrentMode(null);
         } catch (error) {
             console.error('Error updating room:', error);
             alert('Failed to update room.');
@@ -165,9 +164,9 @@ const ProjectDetails = () => {
             // Update rooms state by removing the deleted room
             setRooms(rooms.filter(room => room.id !== roomId));
             // Reset room-related states
-            setShowRoomManager(false);
-            setEditingRoom(null);
-            setSelectedWallsForRoom([]);
+            setShowRoomManagerModal(false);
+            setSelectedRoomPoints([]);
+            setCurrentMode(null);
         } catch (error) {
             console.error('Error deleting room:', error);
             alert('Failed to delete room.');
@@ -551,6 +550,7 @@ const ProjectDetails = () => {
             // Reset selections based on the mode we're exiting
             if (mode === 'define-room') {
                 setShowRoomManagerModal(false);
+                setSelectedRoomPoints([]);  // Reset polygon points when entering define-room
             } else if (mode === 'edit-wall') {
                 setSelectedWall(null);
             } else if (mode === 'merge-wall') {
@@ -892,6 +892,7 @@ const ProjectDetails = () => {
                             setEditingRoom(null);
                             setSelectedWallsForRoom([]);
                         }}
+                        selectedPolygonPoints={selectedRoomPoints}
                     />
                 )}
 
@@ -958,6 +959,9 @@ const ProjectDetails = () => {
                                 setShowDoorManager(true);
                             }}
                             project = {project}
+                            selectedRoomPoints={selectedRoomPoints}
+                            onUpdateRoomPoints={setSelectedRoomPoints}
+                        
                         />
                     </>
                 )}

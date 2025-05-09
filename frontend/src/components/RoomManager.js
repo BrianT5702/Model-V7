@@ -9,6 +9,7 @@ const RoomManager = ({
     selectedWallIds = [], 
     editingRoom = null,
     isEditMode = false,
+    selectedPolygonPoints = [],
     onClose 
 }) => {
     const [roomName, setRoomName] = useState('');
@@ -50,6 +51,7 @@ const RoomManager = ({
             remarks: remarks,
             walls: selectedWallIds,
             project: projectId,
+            room_points: selectedPolygonPoints,
         };
     
         if (isEditMode && editingRoom) {
@@ -157,24 +159,26 @@ const RoomManager = ({
                         {/* Right Column - Selected Walls */}
                         <div>
                             <div className="flex items-center justify-between mb-1">
-                                <h3 className="text-base font-medium text-gray-900">Selected Walls</h3>
-                                <span className="text-xs text-gray-500">({displayWalls.length})</span>
+                                <h3 className="text-base font-medium text-gray-900">Selected Points</h3>
+                                <span className="text-xs text-gray-500">({selectedPolygonPoints.length})</span>
                             </div>
                             <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-32 overflow-y-auto">
-                                {displayWalls.length > 0 ? (
+                                {selectedPolygonPoints.length > 0 ? (
                                     <div className="divide-y divide-gray-200">
-                                        {displayWalls.map(wall => (
+                                        {selectedPolygonPoints.map((pt, index) => (
                                             <div
-                                                key={wall.id}
+                                                key={index}
                                                 className="p-1 hover:bg-blue-50 transition-colors duration-150"
                                             >
-                                                <span className="text-xs text-gray-700">Wall ID: {wall.id}</span>
+                                                <span className="text-xs text-gray-700">
+                                                    Point {index + 1}: ({pt.x.toFixed(2)}, {pt.y.toFixed(2)})
+                                                </span>
                                             </div>
                                         ))}
                                     </div>
                                 ) : (
                                     <div className="h-full flex items-center justify-center">
-                                        <p className="text-xs text-gray-500">No walls selected</p>
+                                        <p className="text-xs text-gray-500">No points selected</p>
                                     </div>
                                 )}
                             </div>
@@ -199,7 +203,7 @@ const RoomManager = ({
                         )}
                         <button
                             onClick={handleSave}
-                            disabled={displayWalls.length === 0}
+                            disabled={selectedPolygonPoints.length < 3}
                             className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
                         >
                             {isEditMode ? 'Update Room' : 'Save Room'}

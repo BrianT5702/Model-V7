@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.postgres.fields import ArrayField
 
 class Project(models.Model):
     name = models.CharField(max_length=255)
@@ -41,9 +42,6 @@ class Wall(models.Model):
     def __str__(self):
         return f"Wall {self.id} in Project {self.project.name}"
 
-
-from django.db import models
-
 class Room(models.Model):
     FLOOR_TYPE_CHOICES = [
         ('Slab', 'Slab'),
@@ -82,6 +80,13 @@ class Room(models.Model):
         help_text="Room temperature in °C (Optional)."
     )
     remarks = models.TextField(blank=True, null=True)
+    
+    room_points = ArrayField(
+        base_field=models.JSONField(),
+        default=list,
+        blank=True,
+        help_text="List of points {x, y} defining the room boundary"
+    )
 
     class Meta:
         unique_together = ('project', 'room_name')

@@ -14,14 +14,15 @@ const Canvas2D = ({
     onWallSelect, 
     onWallDelete, 
     selectedWallsForRoom = [], 
-    onRoomWallsSelect = () => {},
-    onRoomSelect = () => {},
+    onRoomWallsSelect,
     rooms = [],
     onJointsUpdate,
     doors = [],
     onDoorWallSelect,
     onDoorSelect = () => {},
-
+    selectedRoomPoints = [],
+    onUpdateRoomPoints = () => {},
+    onRoomSelect
 }) => {
 
     const canvasRef = useRef(null);
@@ -335,7 +336,10 @@ const Canvas2D = ({
                     walls.find(w => w.id === wallId)
                 ).filter(Boolean);
         
-                const areaPoints = calculateRoomArea(roomWalls);
+                const areaPoints = (room.room_points && room.room_points.length >= 3)
+                    ? room.room_points
+                    : calculateRoomArea(roomWalls);
+
                 if (!areaPoints) return;
         
                 // Draw room area (same as before)
@@ -386,6 +390,44 @@ const Canvas2D = ({
             });
         };
         //Room drawing end here
+
+        const drawRoomPreview = () => {
+            if (selectedRoomPoints.length < 2) return;
+
+            selectedRoomPoints.forEach(pt => {
+                context.beginPath();
+                context.arc(
+                    pt.x * scaleFactor.current + offsetX.current,
+                    pt.y * scaleFactor.current + offsetY.current,
+                    4, 0, 2 * Math.PI
+                );
+                context.fillStyle = '#007bff';
+                context.fill();
+            });  
+        
+            context.beginPath();
+            context.moveTo(
+                selectedRoomPoints[0].x * scaleFactor.current + offsetX.current,
+                selectedRoomPoints[0].y * scaleFactor.current + offsetY.current
+            );
+        
+            for (let i = 1; i < selectedRoomPoints.length; i++) {
+                context.lineTo(
+                    selectedRoomPoints[i].x * scaleFactor.current + offsetX.current,
+                    selectedRoomPoints[i].y * scaleFactor.current + offsetY.current
+                );
+            }          
+        
+            context.strokeStyle = 'rgba(0, 123, 255, 0.8)';
+            context.lineWidth = 2;
+            context.setLineDash([5, 5]);
+            context.stroke();
+            context.setLineDash([]);
+        
+            // Optionally fill with light transparent color
+            context.fillStyle = 'rgba(0, 123, 255, 0.2)';
+            context.fill();
+        };
 
         const allIntersections = findIntersectionPointsBetweenWalls();
   
@@ -744,7 +786,7 @@ const Canvas2D = ({
                 );
 
                 // Draw intersection points (if any)
-                if (isEditingMode) {
+                if (isEditingMode && currentMode !== 'define-room') {
                     intersections.forEach((inter) => {
                         drawEndpoints(
                             inter.x,
@@ -976,10 +1018,17 @@ const Canvas2D = ({
             });
           }
              
-          drawWalls();
-          drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
+        drawWalls();
+        drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
         drawRooms();
-    }, [doors, walls, selectedWall, tempWall, isDrawing, hoveredWall, selectedWallsForRoom, rooms, highlightWalls, joints, isEditingMode, hoveredDoorId]);
+        drawRoomPreview();
+        
+    }, [
+        walls, rooms, selectedWall, tempWall, doors,
+        selectedWallsForRoom, joints, isEditingMode,
+        hoveredWall, hoveredDoorId, highlightWalls,
+        selectedRoomPoints
+      ]);
 
     //Use for getting correct mouse position
     const getMousePos = (event) => {
@@ -1497,50 +1546,24 @@ const Canvas2D = ({
             onWallSelect(selectedIndex);
         } 
         
-
         if (currentMode === 'define-room') {
-            let selectedIndex = null;
-            let minDistance = SNAP_THRESHOLD / scaleFactor.current;
-
+            const clickPoint = { x, y };
+        
+            // Step 1: Check if clicked inside an existing room
             for (const room of rooms) {
-                const roomWalls = room.walls.map(wallId => 
-                    walls.find(w => w.id === wallId)
-                ).filter(Boolean);
-                
-                const areaPoints = calculateRoomArea(roomWalls);
-                if (areaPoints && isPointInPolygon(clickPoint, areaPoints)) {
-                    onRoomSelect(room.id);
+                const polygon = room.room_points?.length >= 3 ? room.room_points : null;
+                if (polygon && isPointInPolygon(clickPoint, polygon)) {
+                    onRoomSelect(room.id);  // ✅ show RoomManager
                     return;
                 }
             }
-            
-            walls.forEach((wall, index) => {
-                const segmentPoint = snapToWallSegment(x, y, wall);
-                if (segmentPoint) {
-                    const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        selectedIndex = index;
-                    }
-                }
-            });
-
-            if (selectedIndex !== null) {
-                const clickedWall = walls[selectedIndex];
-                const updatedSelection = [...selectedWallsForRoom];
-                const wallIndex = updatedSelection.indexOf(clickedWall.id);
-                
-                if (wallIndex === -1) {
-                    // Add wall to selection if not already selected
-                    updatedSelection.push(clickedWall.id);
-                } else {
-                    // Remove wall from selection if already selected
-                    updatedSelection.splice(wallIndex, 1);
-                }
-                
-                onRoomWallsSelect(updatedSelection);
-            }
-        }
+        
+            // Step 2: Otherwise, record a new point
+            const newPoint = { x, y };
+            const updatedPoints = [...selectedRoomPoints, newPoint];
+            onUpdateRoomPoints(updatedPoints);
+            return;
+        }        
 
         if (currentMode === 'merge-wall') {
             let selectedIndex = null;
@@ -1824,6 +1847,11 @@ const Canvas2D = ({
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;
 
+        if (currentMode === 'define-room') {
+            setHoveredPoint(null); // Disable endpoint hover effect
+            return;
+        }
+        
         const { x, y } = getMousePos(event);
 
         // Endpoint Hover Detection
@@ -1847,7 +1875,7 @@ const Canvas2D = ({
         setHoveredPoint(closestPoint);
     
         // Wall Hover Detection
-        if (currentMode === 'add-wall' || currentMode === 'edit-wall' || currentMode ==='define-room' || currentMode === 'add-door' || currentMode === 'merge-wall') {
+        if (currentMode === 'add-wall' || currentMode === 'edit-wall' || currentMode === 'add-door' || currentMode === 'merge-wall') {
             let minWallDistance = SNAP_THRESHOLD / scaleFactor.current;
             let newHoveredWall = null;
     

@@ -206,13 +206,22 @@ class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
 
     def get_queryset(self):
-        """
-        Optionally filter rooms by project ID
-        """
         project_id = self.request.query_params.get('project')
         if project_id:
             return Room.objects.filter(project_id=project_id)
         return super().get_queryset()
+
+    def create(self, request, *args, **kwargs):
+        room_points = request.data.get('room_points', [])
+        if room_points and len(room_points) < 3:
+            return Response({'error': 'At least 3 points are required to define a room polygon.'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        room_points = request.data.get('room_points', [])
+        if room_points and len(room_points) < 3:
+            return Response({'error': 'At least 3 points are required to define a room polygon.'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().update(request, *args, **kwargs)
     
     
 class CeilingViewSet(viewsets.ModelViewSet):

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import earcut from 'earcut';
 import gsap from 'gsap';
+import {CSG} from 'three-csg-ts'
 
 export default class ThreeCanvas {
   constructor(containerId, walls, joints = [], doors = [], scalingFactor = 0.01) {
@@ -604,7 +605,7 @@ getModelBounds() {
   createWallMesh(wall) {
     const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
     const scale = this.scalingFactor;
-
+  
     let startX = start_x * scale;
     let startZ = start_y * scale;
     let endX = end_x * scale;
@@ -613,10 +614,9 @@ getModelBounds() {
     const dx = endX - startX;
     const dz = endZ - startZ;
     const wallLength = Math.hypot(dx, dz);
-
+  
     const wallDirX = dx / wallLength;
     const wallDirZ = dz / wallLength;
-  
     const normX = -dz / wallLength;
     const normZ = dx / wallLength;
     const offsetX = normX * (thickness * scale / 2);
@@ -627,218 +627,130 @@ getModelBounds() {
     endX += offsetX;
     endZ += offsetZ;
   
-    // Determine if start or end has 45_cut joints
+    const wallDoors = this.doors.filter(d => String(d.wall) === String(id));
+    const wallHeight = height * scale;
+    const wallThickness = thickness * scale;
+  
+    // Check for 45 degree cuts
     let hasStart45 = false;
     let hasEnd45 = false;
     const nearlyEqual = (a, b) => Math.abs(a - b) < 0.001;
-
-    // Check for 45-degree joints
     if (this.joints && this.joints.length) {
-        this.joints.forEach(j => {
-            if (j.joining_method === '45_cut' && (j.wall_1 === id || j.wall_2 === id)) {
-                const isStart = nearlyEqual(j.intersection_x, start_x) && 
-                                nearlyEqual(j.intersection_y, start_y);
-                const isEnd = nearlyEqual(j.intersection_x, end_x) && 
-                            nearlyEqual(j.intersection_y, end_y);
-                if (isStart) hasStart45 = true;
-                if (isEnd) hasEnd45 = true;
-            }
-        });
-    }
-  
-    const wallDoors = this.doors.filter(d => String(d.wall) === String(id));
-  
-    // 🧱 If no doors — simple full wall
-    if (wallDoors.length === 0) {
-        const geometry = new THREE.BoxGeometry(wallLength, height * scale, thickness * scale);
-        
-        // Apply 45-degree cuts to vertices if needed
-        if (hasStart45 || hasEnd45) {
-            const vertices = geometry.attributes.position.array;
-            const halfThickness = thickness * scale / 2;
-            const halfLength = wallLength / 2;
-
-            for (let i = 0; i < vertices.length; i += 3) {
-                const localX = vertices[i];
-                const localZ = vertices[i + 2];
-
-                // Start end adjustment (localX = -halfLength)
-                if (hasStart45 && Math.abs(localX + halfLength) < 0.001) {
-                    if (Math.abs(localZ - halfThickness) < 0.001) {
-                        vertices[i] += halfThickness; // Move front vertex inward
-                    }
-                }
-
-                // End end adjustment (localX = halfLength)
-                if (hasEnd45 && Math.abs(localX - halfLength) < 0.001) {
-                    if (Math.abs(localZ - halfThickness) < 0.001) {
-                        vertices[i] -= halfThickness; // Move front vertex inward
-                    }
-                }
-            }
-            geometry.attributes.position.needsUpdate = true;
-            geometry.computeVertexNormals();
+      this.joints.forEach(j => {
+        if (j.joining_method === '45_cut' && (j.wall_1 === id || j.wall_2 === id)) {
+          if (nearlyEqual(j.intersection_x, start_x) && nearlyEqual(j.intersection_y, start_y)) {
+            hasStart45 = true;
+          }
+          if (nearlyEqual(j.intersection_x, end_x) && nearlyEqual(j.intersection_y, end_y)) {
+            hasEnd45 = true;
+          }
         }
-        
-        const material = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.7, metalness: 0.2 });
-  
-        const wallMesh = new THREE.Mesh(geometry, material);
-        wallMesh.position.set(
-            (startX + endX) / 2 + this.modelOffset.x,
-            height * scale / 2,
-            (startZ + endZ) / 2 + this.modelOffset.z
-        );
-        wallMesh.rotation.y = -Math.atan2(endZ - startZ, endX - startX);
-        wallMesh.userData.isWall = true;
-        wallMesh.castShadow = true;
-        wallMesh.receiveShadow = true;
-  
-        // ➕ Black edge lines
-        const edges = new THREE.EdgesGeometry(geometry);
-        const edgeLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-        wallMesh.add(edgeLines);
-  
-        return wallMesh;
+      });
     }
   
-    // 🧱 Wall with doors
-    const wallGroup = new THREE.Group();
-    wallGroup.userData.isWall = true;
+    // 🔵 Create Wall Base Shape
+    const wallShape = new THREE.Shape();
+    const bevel = wallThickness;
+  
+    if (hasStart45) {
+      wallShape.moveTo(bevel, 0);              // Start slightly ahead
+      wallShape.lineTo(0, bevel);               // Go up diagonally for 45 cut
+      wallShape.lineTo(0, wallHeight);
+    } else {
+      wallShape.moveTo(0, 0);
+      wallShape.lineTo(0, wallHeight);
+    }
+  
+    let lastX = hasStart45 ? bevel : 0;
     wallDoors.sort((a, b) => a.position_x - b.position_x);
   
     const cutouts = wallDoors.map(door => {
-        const doorWidth = door.width * scale;
-        const doorHeight = door.height * scale;
-        const doorPos = door.position_x * wallLength;
-        const cutoutWidth = doorWidth * 1.05;
-        const cutoutHeight = doorHeight * 1.02;
+      const isSlideDoor = (door.type === 'slide'); // assume your door has "type" field
+      const doorWidth = door.width * scale;
+      const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : 1.05);
+      const doorHeight = door.height * scale * 1.02;
+      const doorPos = door.position_x * wallLength;
   
-        return {
-            start: Math.max(0, doorPos - cutoutWidth / 2),
-            end: Math.min(wallLength, doorPos + cutoutWidth / 2),
-            height: cutoutHeight,
-            doorId: door.id,
-            doorInfo: door
-        };
+      return {
+        start: Math.max(0, doorPos - cutoutWidth / 2),
+        end: Math.min(wallLength, doorPos + cutoutWidth / 2),
+        height: doorHeight,
+        doorInfo: door
+      };
     });
   
-    let currentPos = 0;
-    const wallHeight = height * scale;
-    const wallThickness = thickness * scale;
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.7, metalness: 0.2 });
+    // Draw top edge of the wall
+    if (hasEnd45) {
+      wallShape.lineTo(wallLength - bevel, wallHeight); // End before the bevel
+      wallShape.lineTo(wallLength, wallHeight - bevel); // Down to 45° cut
+      wallShape.lineTo(wallLength, 0);                  // Then down to bottom
+    } else {
+      wallShape.lineTo(wallLength, wallHeight);
+      wallShape.lineTo(wallLength, 0);
+    }
   
-    // Helper function to create a wall segment with possible 45-degree cuts
-    const addSegment = (segmentLength, offsetAlongWall, yPos, isFirstSegment, isLastSegment) => {
-        const geometry = new THREE.BoxGeometry(segmentLength, wallHeight, wallThickness);
-        
-        // Apply 45-degree cuts for first or last segments
-        if ((isFirstSegment && hasStart45) || (isLastSegment && hasEnd45)) {
-            const vertices = geometry.attributes.position.array;
-            const halfThickness = wallThickness / 2;
-            const halfLength = segmentLength / 2;
-
-            for (let i = 0; i < vertices.length; i += 3) {
-                const localX = vertices[i];
-                const localZ = vertices[i + 2];
-
-                // Start end adjustment (localX = -halfLength)
-                if (isFirstSegment && hasStart45 && Math.abs(localX + halfLength) < 0.001) {
-                    if (Math.abs(localZ - halfThickness) < 0.001) {
-                        vertices[i] += halfThickness; // Move front vertex inward
-                    }
-                }
-
-                // End end adjustment (localX = halfLength)
-                if (isLastSegment && hasEnd45 && Math.abs(localX - halfLength) < 0.001) {
-                    if (Math.abs(localZ - halfThickness) < 0.001) {
-                        vertices[i] -= halfThickness; // Move front vertex inward
-                    }
-                }
-            }
-            geometry.attributes.position.needsUpdate = true;
-            geometry.computeVertexNormals();
-        }
-        
-        const segment = new THREE.Mesh(geometry, baseMat);
-        const angle = Math.atan2(dz, dx);
-        segment.position.set(
-            startX + this.modelOffset.x + (dx / wallLength) * offsetAlongWall,
-            yPos,
-            startZ + this.modelOffset.z + (dz / wallLength) * offsetAlongWall
-        );
-        segment.rotation.y = -angle;
-        segment.castShadow = true;
-        segment.receiveShadow = true;
+    wallShape.lineTo(lastX, 0);
+    if (hasStart45) {
+      wallShape.lineTo(bevel, 0);
+    }
   
-        const edges = new THREE.EdgesGeometry(segment.geometry);
-        const edgeLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-        segment.add(edgeLines);
+    // ➕ Add door holes properly
+    for (const cutout of cutouts) {
+      const doorHole = new THREE.Path();
+      doorHole.moveTo(cutout.start, 0);
+      doorHole.lineTo(cutout.end, 0);
+      doorHole.lineTo(cutout.end, cutout.height);
+      doorHole.lineTo(cutout.start, cutout.height);
+      doorHole.lineTo(cutout.start, 0);
+      wallShape.holes.push(doorHole);
+    }
   
-        wallGroup.add(segment);
+    // 🏗️ Extrude wall
+    const extrudeSettings = {
+      depth: wallThickness,
+      bevelEnabled: false
     };
   
-    if (cutouts[0].start > 0) {
-        const segLen = cutouts[0].start;
-        addSegment(segLen, segLen / 2, wallHeight / 2, true, false);
-    }
+    const wallGeometry = new THREE.ExtrudeGeometry(wallShape, extrudeSettings);
+    wallGeometry.computeVertexNormals();
   
-    for (let i = 0; i < cutouts.length; i++) {
-        const cutout = cutouts[i];
-        currentPos = cutout.end;
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.7, metalness: 0.2 });
+    const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+    wallMesh.userData.isWall = true;
+    wallMesh.castShadow = true;
+    wallMesh.receiveShadow = true;
   
-        const cutoutMid = cutout.start + (cutout.end - cutout.start) / 2;
-        this.createDoorFrame(
-            wallGroup,
-            startX + this.modelOffset.x + (dx / wallLength) * cutoutMid,
-            startZ + this.modelOffset.z + (dz / wallLength) * cutoutMid,
-            cutout.end - cutout.start,
-            cutout.height,
-            wallThickness,
-            Math.atan2(dz, dx),
-            cutout.doorInfo
-        );
+    // ➡️ Position and rotate
+    wallMesh.rotation.y = -Math.atan2(dz, dx);
+    wallMesh.position.set(startX + this.modelOffset.x, 0, startZ + this.modelOffset.z);
   
-        if (i < cutouts.length - 1) {
-            const nextStart = cutouts[i + 1].start;
-            if (nextStart > currentPos) {
-                const segLen = nextStart - currentPos;
-                addSegment(segLen, currentPos + segLen / 2, wallHeight / 2, false, false);
-            }
-        }
-    }
+    // ⚡ Correct wall centerline
+    wallMesh.position.x -= normX * (wallThickness / 2);
+    wallMesh.position.z -= normZ * (wallThickness / 2);
   
-    if (currentPos < wallLength) {
-        const segLen = wallLength - currentPos;
-        addSegment(segLen, currentPos + segLen / 2, wallHeight / 2, false, true);
-    }
+    // ➕ Black outline edges
+    const edges = new THREE.EdgesGeometry(wallGeometry);
+    const edgeLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+    wallMesh.add(edgeLines);
   
+    // 🛠️ Set calculated door positions for createDoorFrame
     for (const cutout of cutouts) {
-        const topHeight = wallHeight - cutout.height;
-        if (topHeight > 0.01) {
-            const topSegment = new THREE.Mesh(
-                new THREE.BoxGeometry(cutout.end - cutout.start, topHeight, wallThickness),
-                baseMat
-            );
-            const angle = Math.atan2(dz, dx);
-            const topMid = cutout.start + (cutout.end - cutout.start) / 2;
-            topSegment.position.set(
-                startX + this.modelOffset.x + (dx / wallLength) * topMid,
-                wallHeight - topHeight / 2,
-                startZ + this.modelOffset.z + (dz / wallLength) * topMid
-            );
-            topSegment.rotation.y = -angle;
-            topSegment.castShadow = true;
-            topSegment.receiveShadow = true;
-  
-            const edges = new THREE.EdgesGeometry(topSegment.geometry);
-            const edgeLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-            topSegment.add(edgeLines);
-  
-            wallGroup.add(topSegment);
-        }
+      const mid = (cutout.start + cutout.end) / 2;
+      const centerX = startX + wallDirX * mid;
+      const centerZ = startZ + wallDirZ * mid;
+      cutout.doorInfo.calculatedPosition = {
+        x: centerX + this.modelOffset.x - normX * (wallThickness / 2),
+        z: centerZ + this.modelOffset.z - normZ * (wallThickness / 2),
+        angle: Math.atan2(dz, dx),
+        width: cutout.end - cutout.start,
+        height: cutout.height,
+        depth: wallThickness
+      };
     }
-    return wallGroup;
+  
+    return wallMesh;
   }
+    
   
   // New method to create door frames/edges around cutouts
   createDoorFrame(wallGroup, centerX, centerZ, width, height, depth, wallAngle, doorInfo) {
@@ -928,7 +840,7 @@ getModelBounds() {
     const doorMaterial = new THREE.MeshStandardMaterial({
       color: door_type === 'swing' ? 0xFFA500 : 0x00FF00,
       roughness: 0.5,
-      metalness: 0.1,
+      metalness: 0.3,
       transparent: true,
       opacity: 1
     });
@@ -936,7 +848,7 @@ getModelBounds() {
     // === SLIDING DOOR IMPLEMENTATION ===
     if (door_type === 'slide') {
       // Offset the sliding door to align with the wall face based on side
-      const doorOffsetZ = (wallDepth/2) * sideCoefficient;
+      const doorOffsetZ = (wallDepth/2);
       
       if (configuration === 'double_sided') {
         // Create double sliding doors
@@ -959,8 +871,10 @@ getModelBounds() {
         );
         
         // Position doors within the container, with proper offset for the wall side
-        leftDoor.position.set(-halfWidth/2, 0, doorOffsetZ);
-        rightDoor.position.set(halfWidth/2, 0, doorOffsetZ);
+        if (side === 'interior') {
+          leftDoor.position.set(-halfWidth/2, 0, -doorOffsetZ);
+          rightDoor.position.set(halfWidth/2, 0, -doorOffsetZ);
+        }
         
         // Store original positions
         leftDoor.userData.origPosition = { x: leftDoor.position.x, z: leftDoor.position.z };
@@ -1008,7 +922,9 @@ getModelBounds() {
         doorContainer.rotation.y = -wallAngle;
         
         // Position door at wall face
-        doorMesh.position.z = doorOffsetZ;
+        if (side === 'interior') {
+          doorMesh.position.z = -doorOffsetZ;
+        }
         doorContainer.add(doorMesh);
         
         // Store original position
@@ -1060,10 +976,10 @@ getModelBounds() {
       
         // Translated geometry so hinge is at edge
         const leftGeometry = new THREE.BoxGeometry(halfWidth, doorHeight, doorThickness);
-        leftGeometry.translate(halfWidth / 2, 0, 0); // Extend from left edge to center
+        leftGeometry.translate(halfWidth / 2, 0, +(wallDepth / 2)); // Extend from left edge to center
       
         const rightGeometry = new THREE.BoxGeometry(halfWidth, doorHeight, doorThickness);
-        rightGeometry.translate(-halfWidth / 2, 0, 0); // Extend from right edge to center
+        rightGeometry.translate(-halfWidth / 2, 0, +(wallDepth / 2)); // Extend from right edge to center
       
         // Mesh panels
         const leftPanel = new THREE.Mesh(leftGeometry, doorMaterial);
@@ -1133,7 +1049,7 @@ getModelBounds() {
         const doorPanel = new THREE.Mesh(doorGeometry, doorMaterial);
         
         // Position panel in the middle of the wall
-        doorPanel.position.set(0, 0, 0);
+        doorPanel.position.set(0, 0, +(wallDepth / 2));
         pivot.add(doorPanel);
   
         // Register as a door object with metadata
