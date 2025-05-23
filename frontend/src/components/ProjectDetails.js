@@ -121,7 +121,7 @@ const ProjectDetails = () => {
     useEffect(() => {
         const fetchRooms = async () => {
             try {
-                const response = await api.get('/rooms/');
+                const response = await api.get(`/rooms/?project=${projectId}`);
                 setRooms(Array.isArray(response.data) ? response.data : []);
             } catch (error) {
                 console.error('Error fetching rooms:', error);
@@ -130,7 +130,7 @@ const ProjectDetails = () => {
         };
 
         fetchRooms();
-    }, []);
+    }, [projectId]);
 
     // Update the handleRoomSelect function
     const handleRoomSelect = (roomId) => {

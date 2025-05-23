@@ -7,6 +7,9 @@ const ProjectList = ({ projects, setProjects }) => {
 
     // Handle project deletion
     const handleDelete = (id) => {
+        const confirmDelete = window.confirm('Are you sure you want to delete this project?');
+        if (!confirmDelete) return;
+    
         api.delete(`projects/${id}/`)
             .then(() => {
                 setProjects(projects.filter((project) => project.id !== id));

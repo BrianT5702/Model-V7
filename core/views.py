@@ -206,6 +206,9 @@ class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
 
     def get_queryset(self):
+        """
+        Optionally filter rooms by project ID
+        """
         project_id = self.request.query_params.get('project')
         if project_id:
             return Room.objects.filter(project_id=project_id)

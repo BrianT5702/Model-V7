@@ -601,27 +601,118 @@ getModelBounds() {
     });
   }  
 
+  calculateModelCenter() {
+    let sumX = 0, sumZ = 0, count = 0;
+    const scale = this.scalingFactor;
+    const offsetX = this.modelOffset.x;
+    const offsetZ = this.modelOffset.z;
+  
+    this.walls.forEach(wall => {
+      sumX += wall.start_x * scale + offsetX;
+      sumX += wall.end_x * scale + offsetX;
+      sumZ += wall.start_y * scale + offsetZ;
+      sumZ += wall.end_y * scale + offsetZ;
+      count += 2;
+    });
+  
+    return { x: sumX / count, z: sumZ / count };
+  }  
+
+  createBeveledWallShape(length, height, thickness, hasStart45, hasEnd45) {
+    const shape = new THREE.Shape();
+    const bevel = thickness; // Since tan(45°) = 1
+  
+    if (hasStart45) {
+      shape.moveTo(bevel, 0);                // Start from slant point
+      shape.lineTo(0, bevel);                // 45° cut
+      shape.lineTo(0, height);               // Left vertical
+    } else {
+      shape.moveTo(0, 0);
+      shape.lineTo(0, height);
+    }
+  
+    if (hasEnd45) {
+      shape.lineTo(length - bevel, height);  // Right vertical stop early
+      shape.lineTo(length, height - bevel);  // 45° cut
+      shape.lineTo(length, 0);               // Down to base
+    } else {
+      shape.lineTo(length, height);
+      shape.lineTo(length, 0);
+    }
+  
+    shape.lineTo(hasStart45 ? bevel : 0, 0); // Close shape
+    return shape;
+  }
+  
   // Complete method with door object tracking added
   createWallMesh(wall) {
     const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
     const scale = this.scalingFactor;
   
+    // Calculate center of the model to determine interior direction
+    const modelCenter = this.calculateModelCenter();
+    
+    // Scale wall coordinates
     let startX = start_x * scale;
     let startZ = start_y * scale;
     let endX = end_x * scale;
     let endZ = end_y * scale;
   
+    // Calculate wall vector
     const dx = endX - startX;
     const dz = endZ - startZ;
     const wallLength = Math.hypot(dx, dz);
   
+    // Calculate wall direction and normal vectors
     const wallDirX = dx / wallLength;
     const wallDirZ = dz / wallLength;
     const normX = -dz / wallLength;
     const normZ = dx / wallLength;
-    const offsetX = normX * (thickness * scale / 2);
-    const offsetZ = normZ * (thickness * scale / 2);
-  
+    
+    // Calculate wall midpoint
+    const wallMidX = (startX + endX) / 2;
+    const wallMidZ = (startZ + endZ) / 2;
+    
+    // Determine if this is an external wall
+    const isExternalWall = 
+        Math.abs(startX) < 0.001 || Math.abs(startX - 15000 * scale) < 0.001 ||
+        Math.abs(startZ) < 0.001 || Math.abs(startZ - 8000 * scale) < 0.001;
+    
+    let finalNormX, finalNormZ;
+    
+    if (isExternalWall) {
+        // For external walls, explicitly set the normal to point inward
+        if (Math.abs(startX) < 0.001) {
+            // Left wall
+            finalNormX = 1;
+            finalNormZ = 0;
+        } else if (Math.abs(startX - 15000 * scale) < 0.001) {
+            // Right wall
+            finalNormX = -1;
+            finalNormZ = 0;
+        } else if (Math.abs(startZ) < 0.001) {
+            // Bottom wall
+            finalNormX = 0;
+            finalNormZ = 1;
+        } else {
+            // Top wall
+            finalNormX = 0;
+            finalNormZ = -1;
+        }
+    } else {
+        // For internal walls, use the center-based logic
+        const toCenterX = (modelCenter.x * scale) - wallMidX;
+        const toCenterZ = (modelCenter.z * scale) - wallMidZ;
+        const dotProduct = normX * toCenterX + normZ * toCenterZ;
+        finalNormX = dotProduct < 0 ? -normX : normX;
+        finalNormZ = dotProduct < 0 ? -normZ : normZ;
+    }
+    
+    // Calculate offset based on wall thickness (always toward inside)
+    const offsetX = finalNormX * (thickness * scale / 2);
+    const offsetZ = finalNormZ * (thickness * scale / 2);
+    
+    // Apply offset to wall position
     startX += offsetX;
     startZ += offsetZ;
     endX += offsetX;
@@ -651,7 +742,7 @@ getModelBounds() {
     // 🔵 Create Wall Base Shape
     const wallShape = new THREE.Shape();
     const bevel = wallThickness;
-  
+
     if (hasStart45) {
       wallShape.moveTo(bevel, 0);              // Start slightly ahead
       wallShape.lineTo(0, bevel);               // Go up diagonally for 45 cut
@@ -665,7 +756,7 @@ getModelBounds() {
     wallDoors.sort((a, b) => a.position_x - b.position_x);
   
     const cutouts = wallDoors.map(door => {
-      const isSlideDoor = (door.type === 'slide'); // assume your door has "type" field
+      const isSlideDoor = (door.door_type === 'slide'); // Changed from door.type to door.door_type
       const doorWidth = door.width * scale;
       const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : 1.05);
       const doorHeight = door.height * scale * 1.02;
@@ -725,8 +816,8 @@ getModelBounds() {
     wallMesh.position.set(startX + this.modelOffset.x, 0, startZ + this.modelOffset.z);
   
     // ⚡ Correct wall centerline
-    wallMesh.position.x -= normX * (wallThickness / 2);
-    wallMesh.position.z -= normZ * (wallThickness / 2);
+    wallMesh.position.x -= finalNormX * (wallThickness / 2); // Using finalNormX instead of normX
+    wallMesh.position.z -= finalNormZ * (wallThickness / 2); // Using finalNormZ instead of normZ
   
     // ➕ Black outline edges
     const edges = new THREE.EdgesGeometry(wallGeometry);
@@ -739,8 +830,8 @@ getModelBounds() {
       const centerX = startX + wallDirX * mid;
       const centerZ = startZ + wallDirZ * mid;
       cutout.doorInfo.calculatedPosition = {
-        x: centerX + this.modelOffset.x - normX * (wallThickness / 2),
-        z: centerZ + this.modelOffset.z - normZ * (wallThickness / 2),
+        x: centerX + this.modelOffset.x - finalNormX * (wallThickness / 2), // Using finalNormX
+        z: centerZ + this.modelOffset.z - finalNormZ * (wallThickness / 2), // Using finalNormZ
         angle: Math.atan2(dz, dx),
         width: cutout.end - cutout.start,
         height: cutout.height,
@@ -750,8 +841,7 @@ getModelBounds() {
   
     return wallMesh;
   }
-    
-  
+
   // New method to create door frames/edges around cutouts
   createDoorFrame(wallGroup, centerX, centerZ, width, height, depth, wallAngle, doorInfo) {
     // Create frame border using a thin edge around the cutout

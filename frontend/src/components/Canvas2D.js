@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import api from '../api/api';
+import PanelCalculationControls from './PanelCalculationControls';
+import PanelCalculator from '../utils/PanelCalculator';
 
 const Canvas2D = ({ 
     walls = [], 
@@ -39,6 +41,8 @@ const Canvas2D = ({
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [selectedDoorId, setSelectedDoorId] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
+    const [calculatedPanels, setCalculatedPanels] = useState(null);
+    const [showPanelTable, setShowPanelTable] = useState(false);
 
     const SNAP_THRESHOLD = 10;
     const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
@@ -66,7 +70,22 @@ const Canvas2D = ({
     
         // Get ordered points and pass the thickness map
         const points = getOrderedPoints(roomWalls);
-        return calculateInsetPoints(points, ROOM_INSET);
+        const insetPoints = calculateInsetPoints(points, ROOM_INSET);
+
+        // Calculate the exact area of the floor
+        const area = calculatePolygonArea(insetPoints);
+
+        return { insetPoints, area };
+    };
+    
+    const calculatePolygonArea = (points) => {
+        let area = 0;
+        for (let i = 0; i < points.length; i++) {
+            const j = (i + 1) % points.length;
+            area += points[i].x * points[j].y;
+            area -= points[j].x * points[i].y;
+        }
+        return Math.abs(area) / 2;
     };
     
     const getOrderedPoints = (roomWalls) => {
@@ -337,22 +356,22 @@ const Canvas2D = ({
                 ).filter(Boolean);
         
                 const areaPoints = (room.room_points && room.room_points.length >= 3)
-                    ? room.room_points
+                    ? { insetPoints: room.room_points }
                     : calculateRoomArea(roomWalls);
 
-                if (!areaPoints) return;
+                if (!areaPoints || !areaPoints.insetPoints || areaPoints.insetPoints.length < 3) return;
         
                 // Draw room area (same as before)
                 context.beginPath();
                 context.moveTo(
-                    areaPoints[0].x * scaleFactor.current + offsetX.current,
-                    areaPoints[0].y * scaleFactor.current + offsetY.current
+                    areaPoints.insetPoints[0].x * scaleFactor.current + offsetX.current,
+                    areaPoints.insetPoints[0].y * scaleFactor.current + offsetY.current
                 );
         
-                for (let i = 1; i < areaPoints.length; i++) {
+                for (let i = 1; i < areaPoints.insetPoints.length; i++) {
                     context.lineTo(
-                        areaPoints[i].x * scaleFactor.current + offsetX.current,
-                        areaPoints[i].y * scaleFactor.current + offsetY.current
+                        areaPoints.insetPoints[i].x * scaleFactor.current + offsetX.current,
+                        areaPoints.insetPoints[i].y * scaleFactor.current + offsetY.current
                     );
                 }
         
@@ -364,7 +383,7 @@ const Canvas2D = ({
                 context.stroke();
         
                 // Calculate better center position using the new function
-                const center = calculatePolygonVisualCenter(areaPoints);
+                const center = calculatePolygonVisualCenter(areaPoints.insetPoints);
                 if (!center) return;
         
                 // Draw the room name with the new center position
@@ -786,7 +805,7 @@ const Canvas2D = ({
                 );
 
                 // Draw intersection points (if any)
-                if (isEditingMode && currentMode !== 'define-room') {
+                if (isEditingMode) {
                     intersections.forEach((inter) => {
                         drawEndpoints(
                             inter.x,
@@ -1558,9 +1577,75 @@ const Canvas2D = ({
                 }
             }
         
-            // Step 2: Otherwise, record a new point
-            const newPoint = { x, y };
-            const updatedPoints = [...selectedRoomPoints, newPoint];
+            // Step 2: Snap the point to the nearest intersection point, wall segment, or endpoint
+            let snappedPoint = clickPoint;
+            let minDistance = SNAP_THRESHOLD / scaleFactor.current;
+
+            // First priority: Check snapping to intersections
+            intersections.forEach(inter => {
+                const distance = Math.hypot(inter.x - x, inter.y - y);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    snappedPoint = { x: inter.x, y: inter.y };
+                }
+            });
+
+            // Second priority: Check snapping to wall segments (only if not already snapped to intersection)
+            if (snappedPoint === clickPoint) {
+                walls.forEach(wall => {
+                    const segmentPoint = snapToWallSegment(x, y, wall);
+                    if (segmentPoint) {
+                        const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            snappedPoint = segmentPoint;
+                        }
+                    }
+                });
+            }
+
+            // Third priority: Check snapping to wall endpoints (only if not already snapped)
+            if (snappedPoint === clickPoint) {
+                walls.forEach(wall => {
+                    ['start', 'end'].forEach(point => {
+                        const px = wall[`${point}_x`];
+                        const py = wall[`${point}_y`];
+                        const distance = Math.hypot(px - x, py - y);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            snappedPoint = { x: px, y: py };
+                        }
+                    });
+                });
+            }
+
+            // Step 3: Validate the new point
+            if (selectedRoomPoints.length > 0) {
+                const lastPoint = selectedRoomPoints[selectedRoomPoints.length - 1];
+                
+                // Check if the new point is too close to the last point
+                const distanceToLastPoint = Math.hypot(
+                    snappedPoint.x - lastPoint.x,
+                    snappedPoint.y - lastPoint.y
+                );
+                if (distanceToLastPoint < 100 / scaleFactor.current) {
+                    return; // Ignore points that are too close together
+                }
+
+                // Check if the new point would create a self-intersecting polygon
+                if (selectedRoomPoints.length >= 2) {
+                    const newSegment = [lastPoint, snappedPoint];
+                    for (let i = 0; i < selectedRoomPoints.length - 1; i++) {
+                        const existingSegment = [selectedRoomPoints[i], selectedRoomPoints[i + 1]];
+                        if (doSegmentsIntersect(newSegment[0], newSegment[1], existingSegment[0], existingSegment[1])) {
+                            return; // Ignore points that would create self-intersection
+                        }
+                    }
+                }
+            }
+
+            // Step 4: Add the snapped point
+            const updatedPoints = [...selectedRoomPoints, snappedPoint];
             onUpdateRoomPoints(updatedPoints);
             return;
         }        
@@ -1929,6 +2014,39 @@ const Canvas2D = ({
     }
     };
     
+    const calculateAllPanels = () => {
+        const panelCalculator = new PanelCalculator();
+        const allPanels = [];
+
+        walls.forEach(wall => {
+            const wallLength = Math.sqrt(
+                Math.pow(wall.end_x - wall.start_x, 2) + 
+                Math.pow(wall.end_y - wall.start_y, 2)
+            );
+
+            const panels = panelCalculator.calculatePanels(
+                wallLength,
+                wall.thickness,
+                wall.joint_type || 'butt_in'
+            );
+
+            // Add wall-specific information to each panel
+            panels.forEach(panel => {
+                allPanels.push({
+                    ...panel,
+                    length: wall.height,
+                    application: wall.application_type || 'standard',
+                    wallId: wall.id,
+                    wallLength: wallLength,
+                    wallStart: `(${Math.round(wall.start_x)}, ${Math.round(wall.start_y)})`,
+                    wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`
+                });
+            });
+        });
+
+        setCalculatedPanels(allPanels);
+    };
+    
     return (
         <div className="flex flex-col items-center gap-4">
             <canvas
@@ -2061,8 +2179,19 @@ const Canvas2D = ({
             </div>
             </div>
             )}
+            {/* Existing panel table and controls can be removed or kept as needed */}
+            {/* Add PanelCalculationControls below the canvas */}
+            <PanelCalculationControls walls={walls} />
         </div>
     );
 };
 
 export default Canvas2D;
+
+// Helper function to check if two line segments intersect
+const doSegmentsIntersect = (p1, p2, p3, p4) => {
+    const ccw = (A, B, C) => {
+        return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+    };
+    return ccw(p1, p3, p4) !== ccw(p2, p3, p4) && ccw(p1, p2, p3) !== ccw(p1, p2, p4);
+};
