@@ -1,12 +1,20 @@
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
+from .constants import (
+    WALL_APPLICATION_TYPES, ROOM_FLOOR_TYPES, ROOM_FLOOR_THICKNESS_CHOICES,
+    DOOR_TYPES, DOOR_CONFIGURATIONS, DOOR_SIDES, DOOR_SWING_DIRECTIONS,
+    DOOR_SLIDE_DIRECTIONS, WALL_JOINING_METHODS,
+    DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT, DEFAULT_DOOR_SIDE,
+    DEFAULT_DOOR_SWING_DIRECTION, DEFAULT_DOOR_SLIDE_DIRECTION,
+    DEFAULT_DOOR_TYPE, DEFAULT_DOOR_CONFIGURATION, DEFAULT_ROOM_FLOOR_TYPE
+)
 
 class Project(models.Model):
     name = models.CharField(max_length=255)
     width = models.FloatField(help_text="Width of the site in mm")
     length = models.FloatField(help_text="Length of the site in mm")
     height = models.FloatField(help_text="Height of the site in mm")
-    wall_thickness = models.FloatField(default=200.0, help_text="Default wall thickness in mm")
+    wall_thickness = models.FloatField(default=DEFAULT_WALL_THICKNESS, help_text="Default wall thickness in mm")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -15,21 +23,16 @@ class Project(models.Model):
 
 
 class Wall(models.Model):
-    APPLICATION_TYPE_CHOICES = [
-        ('wall', 'Wall'),
-        ('partition', 'Partition'),
-    ]
-
     project = models.ForeignKey(Project, related_name="walls", on_delete=models.CASCADE)
     start_x = models.FloatField(help_text="X-coordinate of the wall's start point")
     start_y = models.FloatField(help_text="Y-coordinate of the wall's start point")
     end_x = models.FloatField(help_text="X-coordinate of the wall's end point")
     end_y = models.FloatField(help_text="Y-coordinate of the wall's end point")
-    height = models.FloatField(default=1000.0, help_text="Height of the wall in mm")
-    thickness = models.FloatField(default=200.0, help_text="Wall thickness in mm")
+    height = models.FloatField(default=DEFAULT_WALL_HEIGHT, help_text="Height of the wall in mm")
+    thickness = models.FloatField(default=DEFAULT_WALL_THICKNESS, help_text="Wall thickness in mm")
     application_type = models.CharField(
         max_length=50,
-        choices=APPLICATION_TYPE_CHOICES,
+        choices=WALL_APPLICATION_TYPES,
         default='wall',
         help_text="Specify whether this is a wall or a partition."
     )
@@ -43,33 +46,17 @@ class Wall(models.Model):
         return f"Wall {self.id} in Project {self.project.name}"
 
 class Room(models.Model):
-    FLOOR_TYPE_CHOICES = [
-        ('Slab', 'Slab'),
-        ('Panel', 'Panel'),
-        ('None', 'None'),
-    ]
-
-    FLOOR_THICKNESS_CHOICES = [
-        (50, '50 mm'),
-        (75, '75 mm'),
-        (100, '100 mm'),
-        (125, '125 mm'),
-        (150, '150 mm'),
-        (175, '175 mm'),
-        (200, '200 mm'),
-    ]
-
     project = models.ForeignKey(Project, related_name='rooms', on_delete=models.CASCADE)
     walls = models.ManyToManyField(Wall, related_name='rooms')
     room_name = models.CharField(max_length=100)
     floor_type = models.CharField(
         max_length=50,
-        choices=FLOOR_TYPE_CHOICES,
-        default='None',
+        choices=ROOM_FLOOR_TYPES,
+        default=DEFAULT_ROOM_FLOOR_TYPE,
         help_text="Specify the type of floor for the room."
     )
     floor_thickness = models.IntegerField(
-        choices=FLOOR_THICKNESS_CHOICES,
+        choices=ROOM_FLOOR_THICKNESS_CHOICES,
         help_text="Floor thickness in mm (select from predefined values)."
     )
     temperature = models.DecimalField(
@@ -105,72 +92,44 @@ class Ceiling(models.Model):
 
 
 class Door(models.Model):
-    DOOR_TYPE_CHOICES = [
-        ('swing', 'Swing Door'),
-        ('slide', 'Slide Door'),
-    ]
-
-    CONFIGURATION_CHOICES = [
-        ('single_sided', 'Single-Sided'),
-        ('double_sided', 'Double-Sided'),
-    ]
-    
-    DOOR_SIDE_CHOICES = [
-    ('interior', 'Interior'),
-    ('exterior', 'Exterior'),
-    ]
-    
-    side = models.CharField(
-        max_length=20,
-        choices=DOOR_SIDE_CHOICES,
-        default='interior',
-        help_text="Specify if the door opens to the interior or exterior side."
-    )
-    
-    SWING_DIRECTION_CHOICES = [
-    ('left', 'Left'),
-    ('right', 'Right'),
-    ]
-    
-    swing_direction = models.CharField(
-        max_length=20,
-        choices=SWING_DIRECTION_CHOICES,
-        default='right',
-        null=True,  # ✅ allow null
-        blank=True,
-        help_text="Swing direction for sweep doors."
-    )
-    
-    SLIDE_DIRECTION_CHOICES = [
-    ('left', 'Left'),
-    ('right', 'Right'),
-    ]
-    
-    slide_direction = models.CharField(
-        max_length=20,
-        choices=SLIDE_DIRECTION_CHOICES,
-        default='right',
-        null=True,  # ✅ allow null
-        blank=True,
-        help_text="Sliding direction for slide doors."
-    )
-
     project = models.ForeignKey(Project, related_name='doors', on_delete=models.CASCADE)
     door_type = models.CharField(
         max_length=50,
-        choices=DOOR_TYPE_CHOICES,
-        default='sweep',
+        choices=DOOR_TYPES,
+        default=DEFAULT_DOOR_TYPE,
         help_text="Specify the type of door."
     )
     configuration = models.CharField(
         max_length=50,
-        choices=CONFIGURATION_CHOICES,
-        default='single_sided',
+        choices=DOOR_CONFIGURATIONS,
+        default=DEFAULT_DOOR_CONFIGURATION,
         help_text="Specify the configuration of the door."
+    )
+    side = models.CharField(
+        max_length=20,
+        choices=DOOR_SIDES,
+        default=DEFAULT_DOOR_SIDE,
+        help_text="Specify if the door opens to the interior or exterior side."
+    )
+    swing_direction = models.CharField(
+        max_length=20,
+        choices=DOOR_SWING_DIRECTIONS,
+        default=DEFAULT_DOOR_SWING_DIRECTION,
+        null=True,
+        blank=True,
+        help_text="Swing direction for sweep doors."
+    )
+    slide_direction = models.CharField(
+        max_length=20,
+        choices=DOOR_SLIDE_DIRECTIONS,
+        default=DEFAULT_DOOR_SLIDE_DIRECTION,
+        null=True,
+        blank=True,
+        help_text="Sliding direction for slide doors."
     )
     width = models.FloatField(help_text="Width of the door in mm")
     height = models.FloatField(help_text="Height of the door in mm")
-    thickness = models.FloatField(help_text = "thickness of the Door Panel in mm")
+    thickness = models.FloatField(help_text="thickness of the Door Panel in mm")
     position_x = models.FloatField(help_text="X-coordinate of the door's position")
     position_y = models.FloatField(help_text="Y-coordinate of the door's position")
     orientation = models.CharField(
@@ -188,10 +147,7 @@ class Intersection(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='intersections')
     wall_1 = models.ForeignKey(Wall, on_delete=models.CASCADE, related_name='intersections_as_wall1')
     wall_2 = models.ForeignKey(Wall, on_delete=models.CASCADE, related_name='intersections_as_wall2')
-    joining_method = models.CharField(max_length=20, choices=[
-        ('butt_in', 'Butt-in'),
-        ('45_cut', '45° Cut')
-    ])
+    joining_method = models.CharField(max_length=20, choices=WALL_JOINING_METHODS)
 
     class Meta:
         unique_together = ('wall_1', 'wall_2')

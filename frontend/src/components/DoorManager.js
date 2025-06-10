@@ -54,7 +54,7 @@ const DoorManager = ({
 
     const doorData = {
       project: projectId,
-      wall: wall.id,
+      linked_wall: wall.id,
       door_type: doorType,
       configuration: configuration === "single" ? "single_sided" : "double_sided",
       width: parseFloat(width),

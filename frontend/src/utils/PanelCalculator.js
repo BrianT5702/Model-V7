@@ -1,7 +1,6 @@
 class PanelCalculator {
     constructor() {
         this.MAX_PANEL_WIDTH = 1150; // mm
-        this.MIN_SIDE_PANEL = 200; // mm
         this.leftovers = []; // Array to store leftover panels
         this.panelAnalysis = {
             totalFullPanels: 0,
@@ -23,275 +22,270 @@ class PanelCalculator {
         ];
     }
 
+    // Add new method to clean up leftover panels
+    cleanupLeftovers() {
+        this.leftovers = this.leftovers.filter(leftover => 
+            leftover.longer_face > 0 && leftover.shorter_face > 0
+        );
+    }
+
     // Enhanced panel calculation with 45-degree cut handling
     calculatePanels(wallLength, wallThickness, jointType) {
+        console.log(`\n=== Starting calculation for wall length: ${wallLength}mm, thickness: ${wallThickness}mm ===`);
+        console.log(`Joint type:`, jointType);
+        
         const panels = [];
         let remainingLength = wallLength;
-        
+
         // Calculate full panels needed
         const fullPanelsCount = Math.floor(remainingLength / this.MAX_PANEL_WIDTH);
+        console.log(`\nFull panels calculation:`);
+        console.log(`- Full panels needed: ${fullPanelsCount}`);
+        
         for (let i = 0; i < fullPanelsCount; i++) {
             panels.push(this.createFullPanel(jointType));
             remainingLength -= this.MAX_PANEL_WIDTH;
         }
+        console.log(`- Remaining length after full panels: ${remainingLength}mm`);
 
         // Handle remaining length
         if (remainingLength > 0) {
-            if (remainingLength < this.MIN_SIDE_PANEL) {
-                // If remaining length is small, use it as one piece
-                const sidePanel = this.createSidePanelWithCut(remainingLength, wallThickness, jointType);
-                panels.push(sidePanel);
+            console.log(`\nHandling remaining length: ${remainingLength}mm`);
+            if (remainingLength <= (wallThickness * 2)) {
+                console.log(`- Remaining length <= 2 * wall thickness, creating single side panel`);
+                
+                // For mixed joint types, try to optimize leftover usage
+                if (typeof jointType === 'object' && jointType.left !== jointType.right) {
+                    console.log(`- Mixed joint types detected: left=${jointType.left}, right=${jointType.right}`);
+                    
+                    // First try to find a compatible leftover for 45° cut
+                    const sideNeeding45Cut = jointType.left === '45_cut' ? 'left' : 'right';
+                    const compatibleLeftover = this.findCompatibleLeftover(remainingLength, wallThickness, '45_cut');
+                    
+                    if (compatibleLeftover) {
+                        console.log(`- Found compatible leftover for 45° cut, placing panel on ${sideNeeding45Cut} side`);
+                        const sidePanel = this.createSidePanelWithCut(
+                            remainingLength, 
+                            wallThickness, 
+                            sideNeeding45Cut,
+                            '45_cut'  // Explicitly pass the joint type
+                        );
+                        panels.push(sidePanel);
+                    } else {
+                        // If no compatible leftover found, use butt-in side
+                        const sideNeedingButtIn = jointType.left === 'butt_in' ? 'left' : 'right';
+                        console.log(`- No compatible leftover found, placing panel on ${sideNeedingButtIn} side (butt-in)`);
+                        const sidePanel = this.createSidePanelWithCut(
+                            remainingLength, 
+                            wallThickness, 
+                            sideNeedingButtIn,
+                            'butt_in'  // Explicitly pass the joint type
+                        );
+                        panels.push(sidePanel);
+                    }
+                } else {
+                    // For uniform joint types, use the original logic
+                    if (typeof jointType === 'object') {
+                        const sidePanel = this.createSidePanelWithCut(
+                            remainingLength, 
+                            wallThickness, 
+                            jointType.left === '45_cut' ? 'left' : 'right',
+                            jointType.left  // Pass the actual joint type
+                        );
+                        panels.push(sidePanel);
+                    } else {
+                        const sidePanel = this.createSidePanelWithCut(
+                            remainingLength, 
+                            wallThickness, 
+                            jointType,
+                            jointType  // Pass the actual joint type
+                        );
+                        panels.push(sidePanel);
+                    }
+                }
             } else {
-                // Split remaining length evenly
+                console.log(`- Remaining length > 2 * wall thickness, splitting into two side panels`);
                 const halfLength = Math.floor(remainingLength / 2);
-                const firstSidePanel = this.createSidePanelWithCut(halfLength, wallThickness, jointType);
-                const secondSidePanel = this.createSidePanelWithCut(remainingLength - halfLength, wallThickness, jointType);
-                panels.push(firstSidePanel, secondSidePanel);
+                console.log(`- Split lengths: ${halfLength}mm and ${remainingLength - halfLength}mm`);
+                
+                if (typeof jointType === 'object') {
+                    const firstSidePanel = this.createSidePanelWithCut(
+                        halfLength, 
+                        wallThickness, 
+                        'left',
+                        jointType.left  // Pass the actual joint type
+                    );
+                    const secondSidePanel = this.createSidePanelWithCut(
+                        remainingLength - halfLength, 
+                        wallThickness, 
+                        'right',
+                        jointType.right  // Pass the actual joint type
+                    );
+                    panels.push(firstSidePanel, secondSidePanel);
+                } else {
+                    const firstSidePanel = this.createSidePanelWithCut(
+                        halfLength, 
+                        wallThickness, 
+                        jointType,
+                        jointType  // Pass the actual joint type
+                    );
+                    const secondSidePanel = this.createSidePanelWithCut(
+                        remainingLength - halfLength, 
+                        wallThickness, 
+                        jointType,
+                        jointType  // Pass the actual joint type
+                    );
+                    panels.push(firstSidePanel, secondSidePanel);
+                }
             }
         }
 
+        console.log(`\nCurrent leftovers after calculation:`, this.leftovers);
+        console.log(`Panel analysis:`, this.getPanelAnalysis());
         return panels;
     }
 
-    createSidePanelWithCut(width, wallThickness, jointType) {
+    createSidePanelWithCut(width, wallThickness, position, jointType) {
+        console.log(`\nCreating side panel:`);
+        console.log(`- Width: ${width}mm`);
+        console.log(`- Wall thickness: ${wallThickness}mm`);
+        console.log(`- Position: ${position}`);
+        console.log(`- Joint type: ${jointType}`);
+        
         this.panelAnalysis.totalCutPanels++;
         this.panelAnalysis.totalPanels++;
 
-        // Find compatible leftover panel
         const compatibleLeftover = this.findCompatibleLeftover(width, wallThickness, jointType);
-        
+        console.log(`\nLooking for compatible leftover:`);
+        console.log(`- Compatible leftover found:`, compatibleLeftover ? 'Yes' : 'No');
+
         if (compatibleLeftover) {
-            // Use existing leftover panel
+            console.log(`\nUsing existing leftover:`);
+            console.log(`- Leftover ID: ${compatibleLeftover.id}`);
+            console.log(`- Current longer face: ${compatibleLeftover.longer_face}mm`);
+            console.log(`- Current shorter face: ${compatibleLeftover.shorter_face}mm`);
+            console.log(`- Left edge type: ${compatibleLeftover.leftEdgeType}`);
+            console.log(`- Right edge type: ${compatibleLeftover.rightEdgeType}`);
+            
             const panel = this.createPanelFromLeftover(compatibleLeftover, width, jointType);
             this.updateLeftoverAfterCut(compatibleLeftover, width, wallThickness, jointType);
+            
+            console.log(`\nAfter cutting leftover:`);
+            console.log(`- New longer face: ${compatibleLeftover.longer_face}mm`);
+            console.log(`- New shorter face: ${compatibleLeftover.shorter_face}mm`);
+            console.log(`- New left edge type: ${compatibleLeftover.leftEdgeType}`);
+            console.log(`- New right edge type: ${compatibleLeftover.rightEdgeType}`);
+            
             return panel;
         } else {
-            // Create new panel and make cut
+            console.log(`\nNo compatible leftover found, creating new panel and leftover`);
+            const panel = this.createSidePanel(width, position, jointType);
             this.panelAnalysis.fullPanelsUsedForCutting++;
-            const panel = this.createSidePanel(width, 'right', jointType);
-            
-            // Create new leftover
+
             const leftover = {
-                id: Date.now(),
-                shorter_face: this.MAX_PANEL_WIDTH - width,
-                longer_face: jointType === '45_cut' ? 
-                    this.MAX_PANEL_WIDTH - width + wallThickness : 
-                    this.MAX_PANEL_WIDTH - width,
-                wallThickness: wallThickness,
-                has45DegreeEdge: jointType === '45_cut',
+                id: Date.now() + Math.random(),
+                wallThickness,
+                leftEdgeType: jointType === '45_cut' ? '45_cut' : 'straight',
+                rightEdgeType: 'straight',
                 created: Date.now()
             };
+
+            if (jointType === '45_cut') {
+                leftover.longer_face = this.MAX_PANEL_WIDTH - width + wallThickness;
+                leftover.shorter_face = leftover.longer_face - wallThickness;
+            } else {
+                leftover.longer_face = this.MAX_PANEL_WIDTH - width;
+                leftover.shorter_face = leftover.longer_face;
+            }
+
+            console.log(`\nCreated new leftover:`);
+            console.log(`- ID: ${leftover.id}`);
+            console.log(`- Longer face: ${leftover.longer_face}mm`);
+            console.log(`- Shorter face: ${leftover.shorter_face}mm`);
+            console.log(`- Left edge type: ${leftover.leftEdgeType}`);
+            console.log(`- Right edge type: ${leftover.rightEdgeType}`);
+
             this.leftovers.push(leftover);
-            
             return panel;
         }
     }
-
+    
     findCompatibleLeftover(neededWidth, wallThickness, jointType) {
+        console.log(`\nSearching for compatible leftover:`);
+        console.log(`- Needed width: ${neededWidth}mm`);
+        console.log(`- Wall thickness: ${wallThickness}mm`);
+        console.log(`- Joint type: ${jointType}`);
+        console.log(`- Current leftovers count: ${this.leftovers.length}`);
+        
         return this.leftovers.find(leftover => {
-            // Check if thickness matches
-            if (leftover.wallThickness !== wallThickness) return false;
-
-            // For 45-degree cut, use longer face
-            // For butt-in joint, use shorter face
-            const availableLength = jointType === '45_cut' ? 
-                leftover.longer_face : 
-                leftover.shorter_face;
-
-            return availableLength >= neededWidth;
-        });
-    }
-
-    updateLeftoverAfterCut(leftover, cutWidth, wallThickness, jointType) {
-        if (jointType === '45_cut') {
-            // For 45-degree cut, deduct from longer face
-            leftover.longer_face -= cutWidth;
-            // If we've used the 45-degree edge, update the leftover
-            if (leftover.has45DegreeEdge) {
-                leftover.has45DegreeEdge = false;
-                // Update shorter face to match new longer face
-                leftover.shorter_face = leftover.longer_face - wallThickness;
-            }
-        } else {
-            // For butt-in joint, deduct from shorter face
-            leftover.shorter_face -= cutWidth;
-            // If the leftover had a 45-degree edge, update it
-            if (leftover.has45DegreeEdge) {
-                leftover.longer_face = leftover.shorter_face + wallThickness;
-            }
-        }
-        
-        // Keep all leftovers regardless of size
-        // They might be useful in other places
-    }
-
-    // Calculate efficiency score for a leftover panel
-    calculateEfficiencyScore(leftover) {
-        const usableLength = Math.min(
-            this.MAX_PANEL_WIDTH,
-            leftover.jointType === '45_cut' ? leftover.longer_side : leftover.shorter_side
-        );
-        const wasteRatio = 1 - (usableLength / this.MAX_PANEL_WIDTH);
-        const ageFactor = 1 - (Date.now() - leftover.created) / (30 * 24 * 60 * 60 * 1000); // 30 days
-        return (1 - wasteRatio) * 0.7 + ageFactor * 0.3;
-    }
-
-    // Find best-fit leftover panel
-    findBestFitLeftover(neededLength, jointType) {
-        return this.leftovers.find(leftover => {
-            // For 45-degree cut, use the longer face
-            // For butt-in joint, use the shorter face
-            const suitableLength = jointType === '45_cut' ? 
-                Math.min(leftover.longer_side, this.MAX_PANEL_WIDTH) :
-                Math.min(leftover.shorter_side, this.MAX_PANEL_WIDTH);
-
-            // Consider both exact fit and near-fit with waste threshold
-            return suitableLength >= neededLength || 
-                   (suitableLength >= this.MIN_SIDE_PANEL && 
-                    suitableLength >= neededLength * 0.8 &&
-                    (suitableLength - neededLength) <= this.MAX_PANEL_WIDTH * 0.2);
-        });
-    }
-
-    // Calculate optimal cut for a leftover panel
-    calculateOptimalCut(leftover, neededLength, jointType) {
-        if (jointType === '45_cut') {
-            // For 45-degree cut
-            const longerFace = leftover.longer_side - neededLength + 100; // wall thickness
-            const shorterFace = leftover.longer_side - neededLength;
-            return {
-                cutLength: neededLength,
-                longerFace: longerFace,
-                shorterFace: shorterFace,
-                is45Degree: true
-            };
-        } else {
-            // For straight cut (butt-in)
-            const straightLength = leftover.shorter_side - neededLength;
-            return {
-                cutLength: neededLength,
-                longerFace: straightLength,
-                shorterFace: straightLength,
-                is45Degree: false
-            };
-        }
-    }
-
-    // Optimize the number of full panels to minimize waste
-    optimizeFullPanelCount(remainingLength, initialCount) {
-        const wasteWithFullPanels = remainingLength - (initialCount * this.MAX_PANEL_WIDTH);
-        const wasteWithOneLess = (initialCount - 1) * this.MAX_PANEL_WIDTH - remainingLength;
-        
-        // If using one less full panel would result in less waste, adjust the count
-        if (wasteWithOneLess < wasteWithFullPanels && wasteWithOneLess >= this.MIN_SIDE_PANEL) {
-            return initialCount - 1;
-        }
-        
-        return initialCount;
-    }
-
-    // Optimize remaining length handling
-    optimizeRemainingLength(remainingLength, wallThickness, jointType) {
-        const panels = [];
-        
-        // If remaining length is large enough, consider splitting it optimally
-        if (remainingLength >= this.MIN_SIDE_PANEL * 2) {
-            const optimalSplit = this.calculateOptimalSplit(remainingLength);
-            panels.push(
-                this.createSidePanel(optimalSplit.first, 'left', jointType),
-                this.createSidePanel(optimalSplit.second, 'right', jointType)
-            );
-        } else if (remainingLength >= this.MIN_SIDE_PANEL) {
-            // Use as single panel if it meets minimum size
-            panels.push(this.createSidePanel(remainingLength, 'right', jointType));
-        } else {
-            // Handle small remaining length
-            this.handleSmallRemainingLength(remainingLength, panels, jointType);
-        }
-
-        return panels;
-    }
-
-    // Calculate optimal split for remaining length
-    calculateOptimalSplit(remainingLength) {
-        // Try to split in a way that creates useful leftover pieces
-        const halfLength = Math.floor(remainingLength / 2);
-        const firstHalf = Math.ceil(halfLength / 50) * 50; // Round to nearest 50mm
-        return {
-            first: firstHalf,
-            second: remainingLength - firstHalf
-        };
-    }
-
-    // Handle small remaining length
-    handleSmallRemainingLength(remainingLength, panels, jointType) {
-        if (panels.length > 0) {
-            const lastPanel = panels[panels.length - 1];
-            const newWidth = lastPanel.width + remainingLength;
+            console.log(`\nChecking leftover ID ${leftover.id}:`);
+            console.log(`- Wall thickness match: ${leftover.wallThickness === wallThickness}`);
             
-            if (newWidth <= this.MAX_PANEL_WIDTH) {
-                lastPanel.width = newWidth;
+            if (leftover.wallThickness !== wallThickness) {
+                console.log(`- Rejected: Wall thickness mismatch`);
+                return false;
+            }
+            
+            if (jointType === '45_cut') {
+                console.log(`- Left edge type: ${leftover.leftEdgeType}`);
+                console.log(`- Longer face length: ${leftover.longer_face}mm`);
+                
+                if (leftover.leftEdgeType === '45_cut') {
+                    const hasEnoughLength = leftover.longer_face >= neededWidth;
+                    console.log(`- Has enough length for 45° cut: ${hasEnoughLength}`);
+                    return hasEnoughLength;
+                }
+                const hasEnoughLength = leftover.longer_face >= neededWidth;
+                console.log(`- Has enough length for new 45° cut: ${hasEnoughLength}`);
+                return hasEnoughLength;
             } else {
-                // Create a new panel if adding would exceed max width
-                panels.push(this.createSidePanel(remainingLength, 'right', jointType));
+                console.log(`- Right edge type: ${leftover.rightEdgeType}`);
+                console.log(`- Shorter face length: ${leftover.shorter_face}mm`);
+                const isCompatible = leftover.rightEdgeType === 'straight' && leftover.shorter_face >= neededWidth;
+                console.log(`- Is compatible for butt-in: ${isCompatible}`);
+                return isCompatible;
+            }
+        });
+    }
+    
+    updateLeftoverAfterCut(leftover, cutWidth, wallThickness, jointType) {
+        console.log(`\nUpdating leftover after cut:`);
+        console.log(`- Cut width: ${cutWidth}mm`);
+        console.log(`- Wall thickness: ${wallThickness}mm`);
+        console.log(`- Joint type: ${jointType}`);
+        console.log(`- Before update:`);
+        console.log(`  * Longer face: ${leftover.longer_face}mm`);
+        console.log(`  * Shorter face: ${leftover.shorter_face}mm`);
+        console.log(`  * Left edge type: ${leftover.leftEdgeType}`);
+        console.log(`  * Right edge type: ${leftover.rightEdgeType}`);
+
+        if (jointType === '45_cut') {
+            if (leftover.leftEdgeType === '45_cut') {
+                console.log(`\nReusing existing 45° cut:`);
+                leftover.longer_face -= cutWidth;
+                leftover.shorter_face = leftover.longer_face;
+                leftover.leftEdgeType = 'straight';
+            } else {
+                console.log(`\nCreating new 45° cut:`);
+                leftover.longer_face = leftover.longer_face - cutWidth + wallThickness;
+                leftover.shorter_face = leftover.longer_face - wallThickness;
+                leftover.leftEdgeType = '45_cut';
             }
         } else {
-            // If no panels yet, create a panel with exact remaining length
-            panels.push(this.createSidePanel(remainingLength, 'right', jointType));
-        }
-    }
-
-    // Calculate optimization metrics
-    calculateOptimizationMetrics(panels, originalLength) {
-        const totalWidth = panels.reduce((sum, panel) => sum + panel.width, 0);
-        const waste = totalWidth - originalLength;
-        
-        this.panelAnalysis.totalWaste = waste;
-        this.panelAnalysis.optimizationScore = this.calculateOptimizationScore(panels, waste);
-    }
-
-    // Calculate overall optimization score
-    calculateOptimizationScore(panels, waste) {
-        const fullPanelRatio = panels.filter(p => p.type === 'full').length / panels.length;
-        const leftoverUsageRatio = panels.filter(p => p.type === 'leftover').length / panels.length;
-        const wasteRatio = waste / (panels.length * this.MAX_PANEL_WIDTH);
-        
-        return (fullPanelRatio * 0.4 + leftoverUsageRatio * 0.4 + (1 - wasteRatio) * 0.2) * 100;
-    }
-
-    // Find pattern match for common wall lengths
-    findPatternMatch(length) {
-        return this.commonLengths.find(commonLength => 
-            Math.abs(length - commonLength) < 50 // Allow 50mm tolerance
-        );
-    }
-
-    // Apply pattern-based panel calculation
-    applyPattern(patternLength, wallThickness, jointType) {
-        const panels = [];
-        const fullPanelsCount = Math.floor(patternLength / this.MAX_PANEL_WIDTH);
-        let remainingLength = patternLength;
-
-        // Add full panels
-        for (let i = 0; i < fullPanelsCount; i++) {
-            panels.push(this.createFullPanel(jointType));
-            remainingLength -= this.MAX_PANEL_WIDTH;
+            console.log(`\nButt-in joint:`);
+            leftover.longer_face -= cutWidth;
+            leftover.shorter_face = leftover.longer_face;
+            leftover.rightEdgeType = 'straight';
         }
 
-        // Handle remaining length based on pattern
-        if (remainingLength > 0) {
-            if (remainingLength >= this.MIN_SIDE_PANEL * 2) {
-                const halfLength = Math.floor(remainingLength / 2);
-                panels.push(
-                    this.createSidePanel(halfLength, 'left', jointType),
-                    this.createSidePanel(remainingLength - halfLength, 'right', jointType)
-                );
-            } else {
-                panels.push(this.createSidePanel(remainingLength, 'right', jointType));
-            }
-        }
+        console.log(`\nAfter update:`);
+        console.log(`- Longer face: ${leftover.longer_face}mm`);
+        console.log(`- Shorter face: ${leftover.shorter_face}mm`);
+        console.log(`- Left edge type: ${leftover.leftEdgeType}`);
+        console.log(`- Right edge type: ${leftover.rightEdgeType}`);
 
-        return panels;
+        // Clean up leftovers after updating
+        this.cleanupLeftovers();
     }
 
     // Helper methods for creating different types of panels
@@ -330,39 +324,6 @@ class PanelCalculator {
         };
     }
 
-    // Reset panel analysis
-    resetPanelAnalysis() {
-        this.panelAnalysis = {
-            totalFullPanels: 0,
-            totalCutPanels: 0,
-            totalLeftoverPanels: 0,
-            totalPanels: 0,
-            totalWaste: 0,
-            optimizationScore: 0,
-            fullPanelsUsedForCutting: 0
-        };
-    }
-
-    // Calculate total material used
-    calculateMaterialUsage(panels) {
-        return panels.reduce((total, panel) => total + panel.width, 0);
-    }
-
-    // Get panel visualization data
-    getPanelVisualization(panels, wallStart, wallEnd) {
-        let currentPosition = 0;
-        return panels.map(panel => {
-            const start = currentPosition;
-            currentPosition += panel.width;
-            return {
-                ...panel,
-                start: start,
-                end: currentPosition,
-                center: (start + currentPosition) / 2
-            };
-        });
-    }
-
     // Get panel analysis
     getPanelAnalysis() {
         return {
@@ -377,40 +338,59 @@ class PanelCalculator {
         };
     }
 
-    // Update leftovers after using a panel
-    updateLeftovers(leftover, cut, jointType) {
-        // Remove the used leftover
-        this.removeLeftover(leftover.id);
-
-        // Create new leftover based on cut type
-        if (cut.is45Degree) {
-            // For 45-degree cut, store both faces
-            if (cut.longerFace >= this.MIN_SIDE_PANEL) {
-                this.leftovers.push({
-                    id: Date.now(),
-                    longer_side: cut.longerFace,
-                    shorter_side: cut.shorterFace,
-                    jointType: jointType,
-                    created: new Date()
-                });
-            }
-        } else {
-            // For straight cut, both faces are equal
-            if (cut.longerFace >= this.MIN_SIDE_PANEL) {
-                this.leftovers.push({
-                    id: Date.now(),
-                    longer_side: cut.longerFace,
-                    shorter_side: cut.shorterFace,
-                    jointType: 'straight',
-                    created: new Date()
-                });
-            }
-        }
-    }
-
-    // Remove used leftover
-    removeLeftover(id) {
-        this.leftovers = this.leftovers.filter(leftover => leftover.id !== id);
+    // Test method for specific dataset
+    calculateTestDataset() {
+        const calculator = new PanelCalculator();
+        
+        // Wall 4542 (4800mm)
+        console.log("Wall 4542 (4800mm):");
+        // Wall 4542 has butt_in joints on both sides
+        const wall4542Panels = calculator.calculatePanels(4800, 100, {left: 'butt_in', right: 'butt_in'});
+        console.log("Panels:", wall4542Panels);
+        console.log("Leftovers after Wall 4542:", calculator.leftovers);
+        console.log("Analysis:", calculator.getPanelAnalysis());
+        
+        // Wall 4544 (10000mm)
+        console.log("\nWall 4544 (10000mm):");
+        // Wall 4544 has 45_cut joints on both sides
+        const wall4544Panels = calculator.calculatePanels(10000, 100, {left: '45_cut', right: '45_cut'});
+        console.log("Panels:", wall4544Panels);
+        console.log("Leftovers after Wall 4544:", calculator.leftovers);
+        console.log("Analysis:", calculator.getPanelAnalysis());
+        
+        // Wall 4543 (10000mm)
+        console.log("\nWall 4543 (10000mm):");
+        // Wall 4543 has 45_cut joints on both sides
+        const wall4543Panels = calculator.calculatePanels(10000, 100, {left: '45_cut', right: '45_cut'});
+        console.log("Panels:", wall4543Panels);
+        console.log("Leftovers after Wall 4543:", calculator.leftovers);
+        console.log("Analysis:", calculator.getPanelAnalysis());
+        
+        // Wall 4534 (5000mm)
+        console.log("\nWall 4534 (5000mm):");
+        // Wall 4534 has 45_cut joints on both sides
+        const wall4534Panels = calculator.calculatePanels(5000, 100, {left: '45_cut', right: '45_cut'});
+        console.log("Panels:", wall4534Panels);
+        console.log("Leftovers after Wall 4534:", calculator.leftovers);
+        console.log("Analysis:", calculator.getPanelAnalysis());
+        
+        // Wall 4536 (5000mm)
+        console.log("\nWall 4536 (5000mm):");
+        // Wall 4536 has 45_cut joints on both sides
+        const wall4536Panels = calculator.calculatePanels(5000, 100, {left: '45_cut', right: '45_cut'});
+        console.log("Panels:", wall4536Panels);
+        console.log("Leftovers after Wall 4536:", calculator.leftovers);
+        console.log("Analysis:", calculator.getPanelAnalysis());
+        
+        return {
+            wall4542: wall4542Panels,
+            wall4544: wall4544Panels,
+            wall4543: wall4543Panels,
+            wall4534: wall4534Panels,
+            wall4536: wall4536Panels,
+            analysis: calculator.getPanelAnalysis(),
+            leftovers: calculator.leftovers
+        };
     }
 }
 

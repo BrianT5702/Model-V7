@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import api from '../api/api';
 import PanelCalculationControls from './PanelCalculationControls';
 import PanelCalculator from '../utils/PanelCalculator';
+import DoorTable from './DoorTable';
 
 const Canvas2D = ({ 
     walls = [], 
@@ -41,7 +42,6 @@ const Canvas2D = ({
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [selectedDoorId, setSelectedDoorId] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
-    const [calculatedPanels, setCalculatedPanels] = useState(null);
     const [showPanelTable, setShowPanelTable] = useState(false);
 
     const SNAP_THRESHOLD = 10;
@@ -1871,10 +1871,18 @@ const Canvas2D = ({
         const ux = dx / length;
         const uy = dy / length;
     
-        const startConnected = (
-            (wall1.start_x === wall2.start_x && wall1.start_y === wall2.start_y) ||
-            (wall1.start_x === wall2.end_x && wall1.start_y === wall2.end_y)
+        // Calculate distances from intersection point to both ends of wall1
+        const distToStart = Math.hypot(
+            intersection.x - wall1.start_x,
+            intersection.y - wall1.start_y
         );
+        const distToEnd = Math.hypot(
+            intersection.x - wall1.end_x,
+            intersection.y - wall1.end_y
+        );
+        
+        // Determine which end is closer to the intersection point
+        const isStartEnd = distToStart < distToEnd;
     
         try {
             // Get all joints at this intersection from the passed data
@@ -1901,7 +1909,8 @@ const Canvas2D = ({
                 }
     
                 if (wall1.id === shorter.id) {
-                    if (startConnected) {
+                    // Shorten the end that's closer to the intersection point
+                    if (isStartEnd) {
                         updatedWall.start_x += ux * delta;
                         updatedWall.start_y += uy * delta;
                     } else {
@@ -2012,39 +2021,6 @@ const Canvas2D = ({
     } else {
         setHoveredDoorId(null);
     }
-    };
-    
-    const calculateAllPanels = () => {
-        const panelCalculator = new PanelCalculator();
-        const allPanels = [];
-
-        walls.forEach(wall => {
-            const wallLength = Math.sqrt(
-                Math.pow(wall.end_x - wall.start_x, 2) + 
-                Math.pow(wall.end_y - wall.start_y, 2)
-            );
-
-            const panels = panelCalculator.calculatePanels(
-                wallLength,
-                wall.thickness,
-                wall.joint_type || 'butt_in'
-            );
-
-            // Add wall-specific information to each panel
-            panels.forEach(panel => {
-                allPanels.push({
-                    ...panel,
-                    length: wall.height,
-                    application: wall.application_type || 'standard',
-                    wallId: wall.id,
-                    wallLength: wallLength,
-                    wallStart: `(${Math.round(wall.start_x)}, ${Math.round(wall.start_y)})`,
-                    wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`
-                });
-            });
-        });
-
-        setCalculatedPanels(allPanels);
     };
     
     return (
@@ -2181,7 +2157,13 @@ const Canvas2D = ({
             )}
             {/* Existing panel table and controls can be removed or kept as needed */}
             {/* Add PanelCalculationControls below the canvas */}
-            <PanelCalculationControls walls={walls} />
+            <PanelCalculationControls 
+                walls={walls} 
+                intersections={intersections}
+            />
+            
+            {/* Add DoorTable component */}
+            <DoorTable doors={doors} />
         </div>
     );
 };

@@ -389,6 +389,14 @@ export default class ThreeCanvas {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
+
+    // Add a visual indicator for the model center
+    const centerGeometry = new THREE.SphereGeometry(5, 32, 32);
+    const centerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const centerSphere = new THREE.Mesh(centerGeometry, centerMaterial);
+    const center = this.calculateModelCenter();
+    centerSphere.position.set(center.x, 100, center.z);
+    this.scene.add(centerSphere);
   }
 
   adjustModelScale() {
@@ -549,13 +557,15 @@ getModelBounds() {
   }
 
   calculateModelOffset() {
+    // Find the actual bounds of the model
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    const scale = this.scalingFactor;
 
     this.walls.forEach((wall) => {
-      const startX = wall.start_x * this.scalingFactor;
-      const startZ = wall.start_y * this.scalingFactor;
-      const endX = wall.end_x * this.scalingFactor;
-      const endZ = wall.end_y * this.scalingFactor;
+      const startX = wall.start_x * scale;
+      const startZ = wall.start_y * scale;
+      const endX = wall.end_x * scale;
+      const endZ = wall.end_y * scale;
 
       minX = Math.min(minX, startX, endX);
       minZ = Math.min(minZ, startZ, endZ);
@@ -563,7 +573,8 @@ getModelBounds() {
       maxZ = Math.max(maxZ, startZ, endZ);
     });
 
-    this.modelOffset.x = -(minX + maxX) / 2;
+    // Calculate offset to center the model
+    this.modelOffset.x = -(minX + maxX) / 2 ;
     this.modelOffset.z = -(minZ + maxZ) / 2;
   }
 
@@ -602,21 +613,29 @@ getModelBounds() {
   }  
 
   calculateModelCenter() {
-    let sumX = 0, sumZ = 0, count = 0;
+    // First find the actual bounds of the model
+    let minX = Infinity, maxX = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
     const scale = this.scalingFactor;
-    const offsetX = this.modelOffset.x;
-    const offsetZ = this.modelOffset.z;
-  
+
     this.walls.forEach(wall => {
-      sumX += wall.start_x * scale + offsetX;
-      sumX += wall.end_x * scale + offsetX;
-      sumZ += wall.start_y * scale + offsetZ;
-      sumZ += wall.end_y * scale + offsetZ;
-      count += 2;
+      const startX = wall.start_x * scale;
+      const startZ = wall.start_y * scale;
+      const endX = wall.end_x * scale;
+      const endZ = wall.end_y * scale;
+      
+      minX = Math.min(minX, startX, endX);
+      maxX = Math.max(maxX, startX, endX);
+      minZ = Math.min(minZ, startZ, endZ);
+      maxZ = Math.max(maxZ, startZ, endZ);
     });
-  
-    return { x: sumX / count, z: sumZ / count };
-  }  
+
+    // Calculate the true center
+    const centerX = (minX + maxX) / 2 * scale;
+    const centerZ = (minZ + maxZ) / 2 * scale;
+
+    return { x: centerX, z: centerZ };
+  }
 
   createBeveledWallShape(length, height, thickness, hasStart45, hasEnd45) {
     const shape = new THREE.Shape();
@@ -649,7 +668,7 @@ getModelBounds() {
     const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
     const scale = this.scalingFactor;
   
-    // Calculate center of the model to determine interior direction
+    // Calculate center of the model
     const modelCenter = this.calculateModelCenter();
     
     // Scale wall coordinates
@@ -673,39 +692,66 @@ getModelBounds() {
     const wallMidX = (startX + endX) / 2;
     const wallMidZ = (startZ + endZ) / 2;
     
-    // Determine if this is an external wall
-    const isExternalWall = 
-        Math.abs(startX) < 0.001 || Math.abs(startX - 15000 * scale) < 0.001 ||
-        Math.abs(startZ) < 0.001 || Math.abs(startZ - 8000 * scale) < 0.001;
+    // Calculate vector from wall midpoint to model center
+    const toCenterX = modelCenter.x - wallMidX;
+    const toCenterZ = modelCenter.z - wallMidZ;
     
+    // Find all connected walls and their joint types
+    const connectedWalls = this.joints
+      .filter(j => j.wall_1 === id || j.wall_2 === id)
+      .map(j => ({
+        wallId: j.wall_1 === id ? j.wall_2 : j.wall_1,
+        jointType: j.joining_method
+      }));
+    
+    // Get the connected wall objects
+    const connectedWallObjects = connectedWalls.map(({wallId, jointType}) => {
+      const wall = this.walls.find(w => w.id === wallId);
+      return wall ? {wall, jointType} : null;
+    }).filter(Boolean);
+    
+    // Determine normal direction based on connections
     let finalNormX, finalNormZ;
     
-    if (isExternalWall) {
-        // For external walls, explicitly set the normal to point inward
-        if (Math.abs(startX) < 0.001) {
-            // Left wall
-            finalNormX = 1;
-            finalNormZ = 0;
-        } else if (Math.abs(startX - 15000 * scale) < 0.001) {
-            // Right wall
-            finalNormX = -1;
-            finalNormZ = 0;
-        } else if (Math.abs(startZ) < 0.001) {
-            // Bottom wall
-            finalNormX = 0;
-            finalNormZ = 1;
-        } else {
-            // Top wall
-            finalNormX = 0;
-            finalNormZ = -1;
-        }
+    // First, check for butt-in joints as they're most important for wall extension
+    const buttInConnections = connectedWallObjects.filter(({jointType}) => jointType === 'butt_in');
+    
+    if (buttInConnections.length > 0) {
+      // For walls with butt-in joints, determine direction based on connection points
+      const {wall: connectedWall} = buttInConnections[0];
+      const connStartX = connectedWall.start_x * scale;
+      const connStartZ = connectedWall.start_y * scale;
+      const connEndX = connectedWall.end_x * scale;
+      const connEndZ = connectedWall.end_y * scale;
+      
+      // Check which end of this wall connects to the other wall
+      const isStartConnected = (Math.abs(startX - connStartX) < 0.1 && Math.abs(startZ - connStartZ) < 0.1) ||
+                             (Math.abs(startX - connEndX) < 0.1 && Math.abs(startZ - connEndZ) < 0.1);
+      
+      // Calculate wall direction vector
+      const wallDirX = endX - startX;
+      const wallDirZ = endZ - startZ;
+      const wallLength = Math.sqrt(wallDirX * wallDirX + wallDirZ * wallDirZ);
+      
+      // Normalize wall direction
+      const normWallDirX = wallDirX / wallLength;
+      const normWallDirZ = wallDirZ / wallLength;
+      
+      // For butt-in joints, the normal should be perpendicular to the wall direction
+      // and point towards the connected wall
+      finalNormX = -normWallDirZ;
+      finalNormZ = normWallDirX;
+      
+      // If the start point is connected, we need to flip the normal
+      if (isStartConnected) {
+        finalNormX = -finalNormX;
+        finalNormZ = -finalNormZ;
+      }
     } else {
-        // For internal walls, use the center-based logic
-        const toCenterX = (modelCenter.x * scale) - wallMidX;
-        const toCenterZ = (modelCenter.z * scale) - wallMidZ;
-        const dotProduct = normX * toCenterX + normZ * toCenterZ;
-        finalNormX = dotProduct < 0 ? -normX : normX;
-        finalNormZ = dotProduct < 0 ? -normZ : normZ;
+      // For walls without butt-in joints, use the dot product method
+      const dotProduct = normX * toCenterX + normZ * toCenterZ;
+      finalNormX = dotProduct > 0 ? -normX : normX;
+      finalNormZ = dotProduct > 0 ? -normZ : normZ;
     }
     
     // Calculate offset based on wall thickness (always toward inside)
@@ -717,6 +763,12 @@ getModelBounds() {
     startZ += offsetZ;
     endX += offsetX;
     endZ += offsetZ;
+
+    // Add model offset
+    startX += this.modelOffset.x;
+    startZ += this.modelOffset.z;
+    endX += this.modelOffset.x;
+    endZ += this.modelOffset.z;
   
     const wallDoors = this.doors.filter(d => String(d.wall) === String(id));
     const wallHeight = height * scale;
@@ -813,7 +865,7 @@ getModelBounds() {
   
     // ➡️ Position and rotate
     wallMesh.rotation.y = -Math.atan2(dz, dx);
-    wallMesh.position.set(startX + this.modelOffset.x, 0, startZ + this.modelOffset.z);
+    wallMesh.position.set(startX, 0, startZ);
   
     // ⚡ Correct wall centerline
     wallMesh.position.x -= finalNormX * (wallThickness / 2); // Using finalNormX instead of normX
@@ -830,8 +882,8 @@ getModelBounds() {
       const centerX = startX + wallDirX * mid;
       const centerZ = startZ + wallDirZ * mid;
       cutout.doorInfo.calculatedPosition = {
-        x: centerX + this.modelOffset.x - finalNormX * (wallThickness / 2), // Using finalNormX
-        z: centerZ + this.modelOffset.z - finalNormZ * (wallThickness / 2), // Using finalNormZ
+        x: centerX,
+        z: centerZ,
         angle: Math.atan2(dz, dx),
         width: cutout.end - cutout.start,
         height: cutout.height,
@@ -938,7 +990,7 @@ getModelBounds() {
     // === SLIDING DOOR IMPLEMENTATION ===
     if (door_type === 'slide') {
       // Offset the sliding door to align with the wall face based on side
-      const doorOffsetZ = (wallDepth/2);
+      const doorOffsetZ = (wallDepth * this.scalingFactor);
       
       if (configuration === 'double_sided') {
         // Create double sliding doors
@@ -1066,10 +1118,10 @@ getModelBounds() {
       
         // Translated geometry so hinge is at edge
         const leftGeometry = new THREE.BoxGeometry(halfWidth, doorHeight, doorThickness);
-        leftGeometry.translate(halfWidth / 2, 0, +(wallDepth / 2)); // Extend from left edge to center
+        leftGeometry.translate(halfWidth / 2, 0, + wallDepth); // Extend from left edge to center
       
         const rightGeometry = new THREE.BoxGeometry(halfWidth, doorHeight, doorThickness);
-        rightGeometry.translate(-halfWidth / 2, 0, +(wallDepth / 2)); // Extend from right edge to center
+        rightGeometry.translate(-halfWidth / 2, 0, + wallDepth); // Extend from right edge to center
       
         // Mesh panels
         const leftPanel = new THREE.Mesh(leftGeometry, doorMaterial);
@@ -1139,7 +1191,7 @@ getModelBounds() {
         const doorPanel = new THREE.Mesh(doorGeometry, doorMaterial);
         
         // Position panel in the middle of the wall
-        doorPanel.position.set(0, 0, +(wallDepth / 2));
+        doorPanel.position.set(0, 0, +(wallDepth));
         pivot.add(doorPanel);
   
         // Register as a door object with metadata

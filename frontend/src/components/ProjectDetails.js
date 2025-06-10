@@ -223,26 +223,97 @@ const ProjectDetails = () => {
             // Step 1: Get the previous wall from state
             const prevWall = walls.find(w => w.id === updatedWall.id);
     
-            // Step 2: Update local state immediately
+            // Step 2: Find walls that share endpoints with the updated wall
+            const connectedWalls = walls.filter(wall => {
+                if (wall.id === updatedWall.id) return false;
+                
+                // Check all possible endpoint connections
+                const startToStart = (
+                    Math.abs(wall.start_x - prevWall.start_x) < 0.001 &&
+                    Math.abs(wall.start_y - prevWall.start_y) < 0.001
+                );
+                
+                const startToEnd = (
+                    Math.abs(wall.start_x - prevWall.end_x) < 0.001 &&
+                    Math.abs(wall.start_y - prevWall.end_y) < 0.001
+                );
+                
+                const endToStart = (
+                    Math.abs(wall.end_x - prevWall.start_x) < 0.001 &&
+                    Math.abs(wall.end_y - prevWall.start_y) < 0.001
+                );
+                
+                const endToEnd = (
+                    Math.abs(wall.end_x - prevWall.end_x) < 0.001 &&
+                    Math.abs(wall.end_y - prevWall.end_y) < 0.001
+                );
+
+                return startToStart || startToEnd || endToStart || endToEnd;
+            });
+    
+            // Step 3: Prepare updates for connected walls
+            const wallsToUpdate = [updatedWall];
+            
+            connectedWalls.forEach(wall => {
+                const updatedConnectedWall = { ...wall };
+                
+                // Check all possible endpoint connections and update accordingly
+                if (Math.abs(wall.start_x - prevWall.start_x) < 0.001 && 
+                    Math.abs(wall.start_y - prevWall.start_y) < 0.001) {
+                    // Start point matches prevWall's start, update to new start
+                    updatedConnectedWall.start_x = updatedWall.start_x;
+                    updatedConnectedWall.start_y = updatedWall.start_y;
+                }
+                
+                if (Math.abs(wall.start_x - prevWall.end_x) < 0.001 && 
+                    Math.abs(wall.start_y - prevWall.end_y) < 0.001) {
+                    // Start point matches prevWall's end, update to new end
+                    updatedConnectedWall.start_x = updatedWall.end_x;
+                    updatedConnectedWall.start_y = updatedWall.end_y;
+                }
+                
+                if (Math.abs(wall.end_x - prevWall.start_x) < 0.001 && 
+                    Math.abs(wall.end_y - prevWall.start_y) < 0.001) {
+                    // End point matches prevWall's start, update to new start
+                    updatedConnectedWall.end_x = updatedWall.start_x;
+                    updatedConnectedWall.end_y = updatedWall.start_y;
+                }
+                
+                if (Math.abs(wall.end_x - prevWall.end_x) < 0.001 && 
+                    Math.abs(wall.end_y - prevWall.end_y) < 0.001) {
+                    // End point matches prevWall's end, update to new end
+                    updatedConnectedWall.end_x = updatedWall.end_x;
+                    updatedConnectedWall.end_y = updatedWall.end_y;
+                }
+                
+                wallsToUpdate.push(updatedConnectedWall);
+            });
+    
+            // Step 4: Update local state immediately
             setWalls((prevWalls) =>
-                prevWalls.map((wall) =>
-                    wall.id === updatedWall.id ? { ...wall, ...updatedWall } : wall
-                )
+                prevWalls.map((wall) => {
+                    const update = wallsToUpdate.find(w => w.id === wall.id);
+                    return update ? { ...wall, ...update } : wall;
+                })
             );
     
-            // Step 3: Send PUT request to backend
-            const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
-            const updatedFromBackend = response.data;
+            // Step 5: Send all updates to backend
+            const updatePromises = wallsToUpdate.map(wall => 
+                api.put(`/walls/${wall.id}/`, wall)
+            );
+            
+            const responses = await Promise.all(updatePromises);
+            const updatedFromBackend = responses.map(r => r.data);
     
-            // Step 4: Handle type change cases
+            // Step 6: Handle type change cases
             const wasWall = prevWall?.application_type === 'wall';
             const wasPartition = prevWall?.application_type === 'partition';
-            const nowWall = updatedFromBackend.application_type === 'wall';
-            const nowPartition = updatedFromBackend.application_type === 'partition';
+            const nowWall = updatedFromBackend[0].application_type === 'wall';
+            const nowPartition = updatedFromBackend[0].application_type === 'partition';
     
             if (wasWall && nowPartition) {
                 console.log("Wall type changed from 'wall' to 'partition'. Attempting merge...");
-                await checkAndMergeWalls(updatedFromBackend);
+                await checkAndMergeWalls(updatedFromBackend[0]);
             }
     
             if (wasPartition && nowWall) {
@@ -351,59 +422,20 @@ const ProjectDetails = () => {
         }
     };
 
-    // Updated wall merging logic
+    // Updated wall merging logic to use backend merge logic
     const checkAndMergeWalls = async (updatedWall) => {
         const adjacentWalls = walls.filter((wall) =>
             (wall.end_x === updatedWall.start_x && wall.end_y === updatedWall.start_y) ||
             (wall.start_x === updatedWall.end_x && wall.start_y === updatedWall.end_y)
         );
 
-        adjacentWalls.forEach(async (neighborWall) => {
+        for (const neighborWall of adjacentWalls) {
             if (
                 neighborWall.application_type === updatedWall.application_type &&
                 neighborWall.height === updatedWall.height &&
                 neighborWall.thickness === updatedWall.thickness &&
                 areCollinearWalls(neighborWall, updatedWall)
             ) {
-                // Determine merged line coordinates
-                let mergedStart, mergedEnd;
-                if (updatedWall.end_x === neighborWall.start_x && updatedWall.end_y === neighborWall.start_y) {
-                    mergedStart = { x: updatedWall.start_x, y: updatedWall.start_y };
-                    mergedEnd = { x: neighborWall.end_x, y: neighborWall.end_y };
-                } else if (updatedWall.start_x === neighborWall.end_x && updatedWall.start_y === neighborWall.end_y) {
-                    mergedStart = { x: neighborWall.start_x, y: neighborWall.start_y };
-                    mergedEnd = { x: updatedWall.end_x, y: updatedWall.end_y };
-                } else {
-                    return; // Not adjacent
-                }
-
-                // Check for intersections with other walls
-                let hasMidIntersection = false;
-                walls.forEach((otherWall) => {
-                    if (otherWall.id === updatedWall.id || otherWall.id === neighborWall.id) return;
-
-                    const intersection = calculateIntersection(
-                        mergedStart,
-                        mergedEnd,
-                        { x: otherWall.start_x, y: otherWall.start_y },
-                        { x: otherWall.end_x, y: otherWall.end_y }
-                    );
-
-                    if (intersection) {
-                        const isStart = arePointsEqual(intersection, mergedStart);
-                        const isEnd = arePointsEqual(intersection, mergedEnd);
-                        if (!isStart && !isEnd) {
-                            hasMidIntersection = true;
-                        }
-                    }
-                });
-
-                if (hasMidIntersection) {
-                    console.log('Cannot merge: Intersection detected');
-                    return;
-                }
-
-                // Proceed with merging
                 try {
                     const mergeResponse = await api.post("/walls/merge_walls/", {
                         wall_ids: [neighborWall.id, updatedWall.id],
@@ -414,12 +446,14 @@ const ProjectDetails = () => {
                             prevWalls.filter(w => w.id !== neighborWall.id && w.id !== updatedWall.id)
                                 .concat(mergeResponse.data)
                         );
+                        // After successful merge, check if the new wall can be merged with other walls
+                        await checkAndMergeWalls(mergeResponse.data);
                     }
                 } catch (error) {
                     console.error("Error merging walls:", error);
                 }
             }
-        });
+        }
     };
     
     const handleWallCreate = async (wallData) => {
@@ -434,7 +468,7 @@ const ProjectDetails = () => {
         }
     };
 
-    const handleWallRemove = async () => {
+    const handleWallRemove = async (wallId) => {
         if (selectedWall !== null) {
             const wallToRemove = walls[selectedWall];
             console.log('Removing wall:', wallToRemove);
