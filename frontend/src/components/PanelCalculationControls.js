@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PanelCalculator from '../utils/PanelCalculator';
 
-const PanelCalculationControls = ({ walls, intersections }) => {
+const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDetails, toggleMaterialDetails }) => {
     const [calculatedPanels, setCalculatedPanels] = useState(null);
     const [showTable, setShowTable] = useState(false);
     const [panelAnalysis, setPanelAnalysis] = useState(null);
@@ -59,22 +59,21 @@ const PanelCalculationControls = ({ walls, intersections }) => {
                                     leftEndIntersections.push(pair.joining_method);
                                 }
                             }
+                        }
+                        // For vertical walls
+                        if (isBottomToTop) {
+                            // Wall goes bottom to top
+                            if (inter.y === wall.start_y) {
+                                leftEndIntersections.push(pair.joining_method);
+                            } else if (inter.y === wall.end_y) {
+                                rightEndIntersections.push(pair.joining_method);
+                            }
                         } else {
-                            // For vertical walls
-                            if (isBottomToTop) {
-                                // Wall goes bottom to top
-                                if (inter.y === wall.start_y) {
-                                    leftEndIntersections.push(pair.joining_method);
-                                } else if (inter.y === wall.end_y) {
-                                    rightEndIntersections.push(pair.joining_method);
-                                }
-                            } else {
-                                // Wall goes top to bottom
-                                if (inter.y === wall.start_y) {
-                                    rightEndIntersections.push(pair.joining_method);
-                                } else if (inter.y === wall.end_y) {
-                                    leftEndIntersections.push(pair.joining_method);
-                                }
+                            // Wall goes top to bottom
+                            if (inter.y === wall.start_y) {
+                                rightEndIntersections.push(pair.joining_method);
+                            } else if (inter.y === wall.end_y) {
+                                leftEndIntersections.push(pair.joining_method);
                             }
                         }
                     }
@@ -85,16 +84,6 @@ const PanelCalculationControls = ({ walls, intersections }) => {
             leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
             rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
 
-            console.log(`Wall ${wall.id} joint types:`, { 
-                left: leftJointType, 
-                right: rightJointType,
-                orientation: isHorizontal ? 'horizontal' : 'vertical',
-                direction: isHorizontal ? (isLeftToRight ? 'left-to-right' : 'right-to-left') : 
-                           (isBottomToTop ? 'bottom-to-top' : 'top-to-bottom'),
-                leftEndIntersections,
-                rightEndIntersections
-            });
-
             const panels = calculator.calculatePanels(
                 wallLength,
                 wall.thickness,
@@ -103,7 +92,6 @@ const PanelCalculationControls = ({ walls, intersections }) => {
 
             // Add wall-specific information to each panel
             panels.forEach(panel => {
-                // If a panel is a small remainder (like 50mm) and is not from leftover, ensure its type is 'side'
                 let panelType = panel.type;
                 if (panelType === 'leftover' && panel.width < 200 && !panel.isLeftover) {
                     panelType = 'side';
@@ -151,37 +139,44 @@ const PanelCalculationControls = ({ walls, intersections }) => {
         setCutPanelsCount(cutPanelsCount);
     };
 
+    const handleButtonClick = () => {
+        if (!showMaterialDetails) {
+            calculateAllPanels();
+        }
+        toggleMaterialDetails();
+    };
+
     return (
         <div className="w-full max-w-4xl mt-4">
             <div className="flex gap-4 mb-4">
                 <button
-                    onClick={calculateAllPanels}
+                    onClick={handleButtonClick}
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
-                    Calculate Panels Needed
+                    {showMaterialDetails ? 'Hide Material Needed' : 'View Material Needed'}
                 </button>
                 {calculatedPanels && (
                     <button
                         onClick={() => setShowTable(!showTable)}
                         className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
                     >
-                        {showTable ? 'Hide Table' : 'Show Table'}
+                        {showTable ? 'Hide Panel Details' : 'Show Panel Details'}
                     </button>
                 )}
             </div>
 
-            {panelAnalysis && (
+            {showMaterialDetails && panelAnalysis && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                    <h3 className="text-lg font-semibold mb-2">Panel Analysis</h3>
+                    <h3 className="text-lg font-semibold mb-2">Material Analysis</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="p-2 bg-white rounded shadow">
                             <div className="text-sm text-gray-600">Full Panels</div>
                             <div className="text-xl font-bold">
-                              {panelAnalysis.details.fullPanels + panelAnalysis.details.fullPanelsUsedForCutting}
-                            {panelAnalysis.details.fullPanelsUsedForCutting > 0 && (
-                                <span className="text-xs text-gray-500"> ({panelAnalysis.details.fullPanelsUsedForCutting} used for cutting)</span>
-                              )}
-                                </div>
+                                {panelAnalysis.details.fullPanels + panelAnalysis.details.fullPanelsUsedForCutting}
+                                {panelAnalysis.details.fullPanelsUsedForCutting > 0 && (
+                                    <span className="text-xs text-gray-500"> ({panelAnalysis.details.fullPanelsUsedForCutting} used for cutting)</span>
+                                )}
+                            </div>
                         </div>
                         <div className="p-2 bg-white rounded shadow">
                             <div className="text-sm text-gray-600">Cut Panels</div>
@@ -194,6 +189,12 @@ const PanelCalculationControls = ({ walls, intersections }) => {
                             <div className="text-sm text-gray-600">Leftover Panels</div>
                             <div className="text-xl font-bold">{panelAnalysis.details.leftoverPanels}</div>
                         </div>
+                        {calculatedPanels && (
+                            <div className="p-2 bg-white rounded shadow">
+                                <div className="text-sm text-gray-600">Doors Needed</div>
+                                <div className="text-xl font-bold">{doors.length}</div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

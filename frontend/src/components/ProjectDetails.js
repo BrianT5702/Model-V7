@@ -6,6 +6,7 @@ import ThreeCanvas3D from "./ThreeCanvas3D";
 import RoomManager from './RoomManager';
 import DoorManager from './DoorManager';
 import DoorEditorModal from './DoorEditorModal';
+import { FaPencilAlt } from 'react-icons/fa';
 
 const ProjectDetails = () => {
     const { projectId } = useParams(); // Fetch project ID from URL
@@ -31,7 +32,8 @@ const ProjectDetails = () => {
     const [editingDoor, setEditingDoor] = useState(null);
     const [showDoorEditor, setShowDoorEditor] = useState(false);
     const [selectedRoomPoints, setSelectedRoomPoints] = useState([]);
-
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [editedName, setEditedName] = useState('');
 
     const handleViewToggle = () => {
         if (!threeCanvasInstance.current) return;
@@ -611,6 +613,30 @@ const ProjectDetails = () => {
         setCurrentMode(mode);
     };    
 
+    const handleNameEdit = () => {
+        setEditedName(project.name);
+        setIsEditingName(true);
+    };
+
+    const handleNameSave = async () => {
+        try {
+            const response = await api.put(`/projects/${projectId}/`, {
+                ...project,
+                name: editedName
+            });
+            setProject(response.data);
+            setIsEditingName(false);
+        } catch (error) {
+            console.error('Error updating project name:', error);
+            alert('Failed to update project name');
+        }
+    };
+
+    const handleNameCancel = () => {
+        setIsEditingName(false);
+        setEditedName('');
+    };
+
     if (!project) {
         return <div>Loading...</div>;
     }
@@ -619,7 +645,41 @@ const ProjectDetails = () => {
         <div className="max-w-7xl mx-auto p-6">
             {/* Header Section */}
             <div className="mb-8 bg-white rounded-lg shadow-sm p-6">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">{project.name}</h1>
+                <div className="mb-4 flex items-center">
+                    {isEditingName ? (
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="text"
+                                value={editedName}
+                                onChange={(e) => setEditedName(e.target.value)}
+                                className="border rounded px-2 py-1"
+                                autoFocus
+                            />
+                            <button
+                                onClick={handleNameSave}
+                                className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+                            >
+                                Save
+                            </button>
+                            <button
+                                onClick={handleNameCancel}
+                                className="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-3xl font-bold text-gray-900 mb-2">{project.name}</h1>
+                            <button
+                                onClick={handleNameEdit}
+                                className="text-gray-600 hover:text-gray-800"
+                            >
+                                <FaPencilAlt />
+                            </button>
+                        </div>
+                    )}
+                </div>
                 <p className="text-gray-600">
                     Dimensions: {project.width} x {project.length} x {project.height} mm
                 </p>

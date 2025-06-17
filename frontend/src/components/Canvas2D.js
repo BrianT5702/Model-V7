@@ -43,6 +43,11 @@ const Canvas2D = ({
     const [selectedDoorId, setSelectedDoorId] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
     const [showPanelTable, setShowPanelTable] = useState(false);
+    const [showMaterialDetails, setShowMaterialDetails] = useState(false);
+
+    const toggleMaterialDetails = () => {
+        setShowMaterialDetails(prev => !prev);
+    };
 
     const SNAP_THRESHOLD = 10;
     const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
@@ -2160,10 +2165,13 @@ const Canvas2D = ({
             <PanelCalculationControls 
                 walls={walls} 
                 intersections={intersections}
+                doors={doors}
+                showMaterialDetails={showMaterialDetails}
+                toggleMaterialDetails={toggleMaterialDetails}
             />
             
             {/* Add DoorTable component */}
-            <DoorTable doors={doors} />
+            {showMaterialDetails && <DoorTable doors={doors} />}
         </div>
     );
 };
