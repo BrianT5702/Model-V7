@@ -41,6 +41,15 @@ const CreateProject = ({ setProjects }) => {
             })
             .catch((error) => {
                 console.error('Error creating project:', error);
+                
+                // Handle duplicate name error
+                if (error.response && error.response.data && error.response.data.name) {
+                    alert(`Error: ${error.response.data.name[0]}`);
+                } else if (error.response && error.response.data && error.response.data.error) {
+                    alert(`Error: ${error.response.data.error}`);
+                } else {
+                    alert('An error occurred while creating the project. Please try again.');
+                }
             });
     };
 

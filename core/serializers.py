@@ -81,6 +81,13 @@ class ProjectSerializer(serializers.ModelSerializer):
             'walls', 'rooms', 'doors', 'intersections'
         ]
 
+    def validate_name(self, value):
+        """Validate that project name is unique"""
+        # Check if a project with this name already exists
+        if Project.objects.filter(name=value).exists():
+            raise serializers.ValidationError("A project with this name already exists.")
+        return value
+
     def validate_width(self, value):
         """Validate that width is greater than 0"""
         if value <= 0:
