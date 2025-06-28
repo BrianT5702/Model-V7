@@ -46,6 +46,12 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
   };
 
   const handleSave = () => {
+    // Validate that dimensions are greater than 0
+    if (editedDoor.width <= 0 || editedDoor.height <= 0 || editedDoor.thickness <= 0) {
+      alert("Width, Height, and Thickness must be greater than 0");
+      return;
+    }
+    
     onUpdate(editedDoor);
   };
 
@@ -85,6 +91,8 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
               type="number"
               value={editedDoor.width}
               onChange={e => handleChange('width', parseFloat(e.target.value))}
+              min="100"
+              step="100"
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
             />
           </label>
@@ -95,6 +103,8 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
               type="number"
               value={editedDoor.height}
               onChange={e => handleChange('height', parseFloat(e.target.value))}
+              min="100"
+              step="100"
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
             />
           </label>
@@ -105,6 +115,8 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
               type="number"
               value={editedDoor.thickness}
               onChange={e => handleChange('thickness', parseFloat(e.target.value))}
+              min="25"
+              step="25"
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
             />
           </label>

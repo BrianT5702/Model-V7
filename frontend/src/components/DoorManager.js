@@ -52,14 +52,24 @@ const DoorManager = ({
       return;
     }
 
+    // Validate that dimensions are greater than 0
+    const widthValue = parseFloat(width);
+    const heightValue = parseFloat(height);
+    const thicknessValue = parseFloat(thickness);
+    
+    if (widthValue <= 0 || heightValue <= 0 || thicknessValue <= 0) {
+      alert("Width, Height, and Thickness must be greater than 0");
+      return;
+    }
+
     const doorData = {
       project: projectId,
       linked_wall: wall.id,
       door_type: doorType,
       configuration: configuration === "single" ? "single_sided" : "double_sided",
-      width: parseFloat(width),
-      height: parseFloat(height),
-      thickness: parseFloat(thickness),
+      width: widthValue,
+      height: heightValue,
+      thickness: thicknessValue,
       position_x: localPosition,
       position_y: 0,
       swing_direction: swingDirection,
@@ -108,17 +118,38 @@ const DoorManager = ({
 
           <div>
             <label className="text-sm font-medium text-gray-700">Width (mm)</label>
-            <input type="number" value={width} onChange={(e) => setWidth(e.target.value)} className="input" />
+            <input 
+              type="number" 
+              value={width} 
+              onChange={(e) => setWidth(e.target.value)} 
+              min="100"
+              step="100"
+              className="input" 
+            />
           </div>
 
           <div>
             <label className="text-sm font-medium text-gray-700">Height (mm)</label>
-            <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} className="input" />
+            <input 
+              type="number" 
+              value={height} 
+              onChange={(e) => setHeight(e.target.value)} 
+              min="100"
+              step="100"
+              className="input" 
+            />
           </div>
 
           <div>
             <label className="text-sm font-medium text-gray-700">Thickness (mm)</label>
-            <input type="number" value={thickness} onChange={(e) => setThickness(e.target.value)} className="input" />
+            <input 
+              type="number" 
+              value={thickness} 
+              onChange={(e) => setThickness(e.target.value)} 
+              min="25"
+              step="25"
+              className="input" 
+            />
           </div>
         </div>
 

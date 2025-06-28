@@ -216,114 +216,28 @@ const ProjectDetails = () => {
     };    
 
     const handleWallUpdate = async (updatedWall) => {
-        if (!updatedWall?.id) {
-            console.error("Error: Wall ID is undefined.");
-            return;
-        }
-    
         try {
-            // Step 1: Get the previous wall from state
-            const prevWall = walls.find(w => w.id === updatedWall.id);
-    
-            // Step 2: Find walls that share endpoints with the updated wall
-            const connectedWalls = walls.filter(wall => {
-                if (wall.id === updatedWall.id) return false;
-                
-                // Check all possible endpoint connections
-                const startToStart = (
-                    Math.abs(wall.start_x - prevWall.start_x) < 0.001 &&
-                    Math.abs(wall.start_y - prevWall.start_y) < 0.001
-                );
-                
-                const startToEnd = (
-                    Math.abs(wall.start_x - prevWall.end_x) < 0.001 &&
-                    Math.abs(wall.start_y - prevWall.end_y) < 0.001
-                );
-                
-                const endToStart = (
-                    Math.abs(wall.end_x - prevWall.start_x) < 0.001 &&
-                    Math.abs(wall.end_y - prevWall.start_y) < 0.001
-                );
-                
-                const endToEnd = (
-                    Math.abs(wall.end_x - prevWall.end_x) < 0.001 &&
-                    Math.abs(wall.end_y - prevWall.end_y) < 0.001
-                );
+            // Validate that wall dimensions are greater than 0
+            if (updatedWall.height <= 0 || updatedWall.thickness <= 0) {
+                alert("Wall Height and Thickness must be greater than 0");
+                return;
+            }
 
-                return startToStart || startToEnd || endToStart || endToEnd;
-            });
-    
-            // Step 3: Prepare updates for connected walls
-            const wallsToUpdate = [updatedWall];
+            const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
+            const updatedWallData = response.data;
             
-            connectedWalls.forEach(wall => {
-                const updatedConnectedWall = { ...wall };
-                
-                // Check all possible endpoint connections and update accordingly
-                if (Math.abs(wall.start_x - prevWall.start_x) < 0.001 && 
-                    Math.abs(wall.start_y - prevWall.start_y) < 0.001) {
-                    // Start point matches prevWall's start, update to new start
-                    updatedConnectedWall.start_x = updatedWall.start_x;
-                    updatedConnectedWall.start_y = updatedWall.start_y;
-                }
-                
-                if (Math.abs(wall.start_x - prevWall.end_x) < 0.001 && 
-                    Math.abs(wall.start_y - prevWall.end_y) < 0.001) {
-                    // Start point matches prevWall's end, update to new end
-                    updatedConnectedWall.start_x = updatedWall.end_x;
-                    updatedConnectedWall.start_y = updatedWall.end_y;
-                }
-                
-                if (Math.abs(wall.end_x - prevWall.start_x) < 0.001 && 
-                    Math.abs(wall.end_y - prevWall.start_y) < 0.001) {
-                    // End point matches prevWall's start, update to new start
-                    updatedConnectedWall.end_x = updatedWall.start_x;
-                    updatedConnectedWall.end_y = updatedWall.start_y;
-                }
-                
-                if (Math.abs(wall.end_x - prevWall.end_x) < 0.001 && 
-                    Math.abs(wall.end_y - prevWall.end_y) < 0.001) {
-                    // End point matches prevWall's end, update to new end
-                    updatedConnectedWall.end_x = updatedWall.end_x;
-                    updatedConnectedWall.end_y = updatedWall.end_y;
-                }
-                
-                wallsToUpdate.push(updatedConnectedWall);
-            });
-    
-            // Step 4: Update local state immediately
-            setWalls((prevWalls) =>
-                prevWalls.map((wall) => {
-                    const update = wallsToUpdate.find(w => w.id === wall.id);
-                    return update ? { ...wall, ...update } : wall;
-                })
-            );
-    
-            // Step 5: Send all updates to backend
-            const updatePromises = wallsToUpdate.map(wall => 
-                api.put(`/walls/${wall.id}/`, wall)
+            setWalls(prevWalls => 
+                prevWalls.map(wall => 
+                    wall.id === updatedWallData.id ? updatedWallData : wall
+                )
             );
             
-            const responses = await Promise.all(updatePromises);
-            const updatedFromBackend = responses.map(r => r.data);
-    
-            // Step 6: Handle type change cases
-            const wasWall = prevWall?.application_type === 'wall';
-            const wasPartition = prevWall?.application_type === 'partition';
-            const nowWall = updatedFromBackend[0].application_type === 'wall';
-            const nowPartition = updatedFromBackend[0].application_type === 'partition';
-    
-            if (wasWall && nowPartition) {
-                console.log("Wall type changed from 'wall' to 'partition'. Attempting merge...");
-                await checkAndMergeWalls(updatedFromBackend[0]);
-            }
-    
-            if (wasPartition && nowWall) {
-                alert("Note: Walls changed from partition to wall do not automatically split other walls. If you want splitting behavior, please delete and re-add the wall.");
-            }
-    
+            // Check for potential wall merges after update
+            await checkAndMergeWalls(updatedWallData);
+            
         } catch (error) {
-            console.error("Error updating wall:", error);
+            console.error('Error updating wall:', error);
+            alert('Failed to update wall');
         }
     };
     
@@ -907,6 +821,8 @@ const ProjectDetails = () => {
                                                     type="number" 
                                                     value={walls[selectedWall]?.height || ''} 
                                                     onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, height: parseFloat(e.target.value) })} 
+                                                    min="10"
+                                                    step="10"
                                                     className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
                                                         focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 />
@@ -918,6 +834,8 @@ const ProjectDetails = () => {
                                                     type="number" 
                                                     value={walls[selectedWall]?.thickness || ''} 
                                                     onChange={(e) => handleWallUpdate({ ...walls[selectedWall], id: walls[selectedWall].id, thickness: parseFloat(e.target.value) })} 
+                                                    min="25"
+                                                    step="25"
                                                     className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
                                                         focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 />

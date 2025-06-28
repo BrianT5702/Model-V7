@@ -10,6 +10,18 @@ class WallSerializer(serializers.ModelSerializer):
             'is_default', 'has_concrete_base', 'concrete_base_height'
         ]
 
+    def validate_height(self, value):
+        """Validate that height is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Height must be greater than 0")
+        return value
+
+    def validate_thickness(self, value):
+        """Validate that thickness is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Thickness must be greater than 0")
+        return value
+
 
 class CeilingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -21,6 +33,24 @@ class DoorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Door
         fields = '__all__'
+
+    def validate_width(self, value):
+        """Validate that width is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Width must be greater than 0")
+        return value
+
+    def validate_height(self, value):
+        """Validate that height is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Height must be greater than 0")
+        return value
+
+    def validate_thickness(self, value):
+        """Validate that thickness is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Thickness must be greater than 0")
+        return value
 
 
 class IntersectionSerializer(serializers.ModelSerializer):
@@ -50,3 +80,27 @@ class ProjectSerializer(serializers.ModelSerializer):
             'id', 'name', 'width', 'length', 'height', 'wall_thickness',
             'walls', 'rooms', 'doors', 'intersections'
         ]
+
+    def validate_width(self, value):
+        """Validate that width is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Width must be greater than 0")
+        return value
+
+    def validate_length(self, value):
+        """Validate that length is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Length must be greater than 0")
+        return value
+
+    def validate_height(self, value):
+        """Validate that height is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Height must be greater than 0")
+        return value
+
+    def validate_wall_thickness(self, value):
+        """Validate that wall_thickness is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Wall thickness must be greater than 0")
+        return value
