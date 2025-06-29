@@ -4,6 +4,7 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
   const [editedDoor, setEditedDoor] = useState({ ...door });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [dbConnectionError, setDbConnectionError] = useState(false);
+  const [validationError, setValidationError] = useState("");
 
   useEffect(() => {
     setEditedDoor({ ...door });
@@ -48,9 +49,14 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
   };
 
   const handleSave = async () => {
-    // Validate that dimensions are greater than 0
-    if (editedDoor.width <= 0 || editedDoor.height <= 0 || editedDoor.thickness <= 0) {
-      alert("Width, Height, and Thickness must be greater than 0");
+    // Validate that dimensions are greater than 0 and required fields are present
+    if (!editedDoor.width || editedDoor.width <= 0 ||
+        !editedDoor.height || editedDoor.height <= 0 ||
+        !editedDoor.thickness || editedDoor.thickness <= 0 ||
+        !editedDoor.door_type || !editedDoor.configuration ||
+        editedDoor.position_x === undefined || editedDoor.position_x === null) {
+      setValidationError("Please fill in all required fields. Width, Height, and Thickness must be greater than 0.");
+      setTimeout(() => setValidationError(""), 4000);
       return;
     }
     try {
@@ -222,6 +228,17 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
             <span className="font-medium">Fail to connect to database. Try again later.</span>
+          </div>
+        </div>
+      )}
+
+      {validationError && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <span className="font-medium">{validationError}</span>
           </div>
         </div>
       )}

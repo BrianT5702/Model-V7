@@ -21,6 +21,7 @@ const DoorManager = ({
   const [localPosition, setLocalPosition] = useState(0.5);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [dbConnectionError, setDbConnectionError] = useState(false);
+  const [validationError, setValidationError] = useState("");
 
   useEffect(() => {
     if (editingDoor) {
@@ -45,12 +46,14 @@ const DoorManager = ({
 
   const handleSave = () => {
     if (!wall?.id || !projectId) {
-      alert("Missing wall or project ID");
+      setValidationError("Missing wall or project ID");
+      setTimeout(() => setValidationError(""), 4000);
       return;
     }
 
     if (!width || !height || !thickness) {
-      alert("Please fill in all required dimensions (width, height, thickness).");
+      setValidationError("Please fill in all required dimensions (width, height, thickness).");
+      setTimeout(() => setValidationError(""), 4000);
       return;
     }
 
@@ -60,7 +63,8 @@ const DoorManager = ({
     const thicknessValue = parseFloat(thickness);
     
     if (widthValue <= 0 || heightValue <= 0 || thicknessValue <= 0) {
-      alert("Width, Height, and Thickness must be greater than 0");
+      setValidationError("Width, Height, and Thickness must be greater than 0");
+      setTimeout(() => setValidationError(""), 4000);
       return;
     }
 
@@ -129,6 +133,17 @@ const DoorManager = ({
         <h2 className="text-lg font-bold mb-4">
           {isEditMode ? 'Edit Door' : 'Add New Door'}
         </h2>
+
+        {validationError && (
+          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span className="font-medium">{validationError}</span>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
