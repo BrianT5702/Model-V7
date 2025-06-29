@@ -1490,88 +1490,41 @@ getModelBounds() {
 
   // Get building footprint for a specific set of walls (for multi-level ceilings)
   getBuildingFootprintForHeight(walls) {
-    // Create a map of wall segments for this height
-  const wallSegments = new Map();
-  const vertices = new Map();
-  
-    walls.forEach(wall => {
-      const startX = wall.start_x * this.scalingFactor + this.modelOffset.x;
-      const startZ = wall.start_y * this.scalingFactor + this.modelOffset.z;
-      const endX = wall.end_x * this.scalingFactor + this.modelOffset.x;
-      const endZ = wall.end_y * this.scalingFactor + this.modelOffset.z;
-      
-      const startKey = `${startX.toFixed(4)},${startZ.toFixed(4)}`;
-      const endKey = `${endX.toFixed(4)},${endZ.toFixed(4)}`;
-      
-      vertices.set(startKey, { x: startX, z: startZ });
-      vertices.set(endKey, { x: endX, z: endZ });
-      
-      if (!wallSegments.has(startKey)) wallSegments.set(startKey, new Set());
-      if (!wallSegments.has(endKey)) wallSegments.set(endKey, new Set());
-      
-      wallSegments.get(startKey).add(endKey);
-      wallSegments.get(endKey).add(startKey);
-  });
-
-  // Create ordered list of vertices
-  const orderedVertices = [];
-  const visited = new Set();
-
-    // Start with any vertex
-    let currentKey = Array.from(vertices.keys())[0];
-    
-    while (orderedVertices.length < vertices.size && currentKey) {
-      if (visited.has(currentKey)) break;
-      
-      visited.add(currentKey);
-      orderedVertices.push(vertices.get(currentKey));
-      
-      const connections = wallSegments.get(currentKey);
-      currentKey = Array.from(connections).find(key => !visited.has(key));
-    }
-
-    return orderedVertices.length >= 3 ? this.createConvexHull(orderedVertices) : [];
-  }
-
-  // Improved method to get building footprint vertices
-  getBuildingFootprint() {
-    // Build a map of all wall endpoints and their connections
+    // Build a map of all wall endpoints and their connections for this height
     const pointMap = new Map();
     const toKey = (x, z) => `${x.toFixed(4)},${z.toFixed(4)}`;
     const fromKey = (pt) => toKey(pt.x, pt.z);
-    const allPoints = [];
 
-    this.walls.forEach(wall => {
-      const start = {
-        x: wall.start_x * this.scalingFactor + this.modelOffset.x,
-        z: wall.start_y * this.scalingFactor + this.modelOffset.z
-      };
-      const end = {
-        x: wall.end_x * this.scalingFactor + this.modelOffset.x,
-        z: wall.end_y * this.scalingFactor + this.modelOffset.z
-      };
-      allPoints.push(start, end);
-      const startKey = fromKey(start);
-      const endKey = fromKey(end);
-      if (!pointMap.has(startKey)) pointMap.set(startKey, { pt: start, neighbors: new Set() });
-      if (!pointMap.has(endKey)) pointMap.set(endKey, { pt: end, neighbors: new Set() });
-      pointMap.get(startKey).neighbors.add(endKey);
-      pointMap.get(endKey).neighbors.add(startKey);
+    walls.forEach(wall => {
+        const start = {
+            x: wall.start_x * this.scalingFactor + this.modelOffset.x,
+            z: wall.start_y * this.scalingFactor + this.modelOffset.z
+        };
+        const end = {
+            x: wall.end_x * this.scalingFactor + this.modelOffset.x,
+            z: wall.end_y * this.scalingFactor + this.modelOffset.z
+        };
+        const startKey = fromKey(start);
+        const endKey = fromKey(end);
+        if (!pointMap.has(startKey)) pointMap.set(startKey, { pt: start, neighbors: new Set() });
+        if (!pointMap.has(endKey)) pointMap.set(endKey, { pt: end, neighbors: new Set() });
+        pointMap.get(startKey).neighbors.add(endKey);
+        pointMap.get(endKey).neighbors.add(startKey);
     });
 
     // Find the leftmost, bottommost point to start
     let startKey = null;
     let minX = Infinity, minZ = Infinity;
     for (const [key, val] of pointMap.entries()) {
-      if (val.pt.x < minX || (val.pt.x === minX && val.pt.z < minZ)) {
-        minX = val.pt.x;
-        minZ = val.pt.z;
-        startKey = key;
-      }
+        if (val.pt.x < minX || (val.pt.x === minX && val.pt.z < minZ)) {
+            minX = val.pt.x;
+            minZ = val.pt.z;
+            startKey = key;
+        }
     }
     if (!startKey) {
-      console.warn('No wall vertices found');
-      return this.createBoundingBoxVertices();
+        console.warn('No wall vertices found for this height');
+        return this.createBoundingBoxVertices();
     }
 
     // Trace the outer boundary in order
@@ -1581,58 +1534,70 @@ getModelBounds() {
     let prevKey = null;
     let safety = 0;
     do {
-      const current = pointMap.get(currentKey);
-      boundary.push(current.pt);
-      visited.add(currentKey);
-      // Find the next neighbor that is not the previous point and not already visited (unless closing the loop)
-      let nextKey = null;
-      let minAngle = Infinity;
-      for (const neighborKey of current.neighbors) {
-        if (neighborKey === prevKey) continue;
-        if (neighborKey === startKey && boundary.length > 2) {
-          nextKey = neighborKey;
-          break;
+        const current = pointMap.get(currentKey);
+        boundary.push(current.pt);
+        visited.add(currentKey);
+        // Find the next neighbor that is not the previous point and not already visited (unless closing the loop)
+        let nextKey = null;
+        let minAngle = Infinity;
+        for (const neighborKey of current.neighbors) {
+            if (neighborKey === prevKey) continue;
+            if (neighborKey === startKey && boundary.length > 2) {
+                nextKey = neighborKey;
+                break;
+            }
+            if (visited.has(neighborKey)) continue;
+            // Prefer the leftmost turn (smallest angle from previous segment)
+            if (prevKey) {
+                const prev = pointMap.get(prevKey).pt;
+                const curr = current.pt;
+                const next = pointMap.get(neighborKey).pt;
+                const angle = Math.atan2(next.z - curr.z, next.x - curr.x) - Math.atan2(curr.z - prev.z, curr.x - prev.x);
+                const normAngle = ((angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI; // Normalize to [-PI, PI]
+                if (normAngle < minAngle) {
+                    minAngle = normAngle;
+                    nextKey = neighborKey;
+                }
+            } else {
+                // First step, just pick any neighbor
+                nextKey = neighborKey;
+            }
         }
-        if (visited.has(neighborKey)) continue;
-        // Prefer the leftmost turn (smallest angle from previous segment)
-        if (prevKey) {
-          const prev = pointMap.get(prevKey).pt;
-          const curr = current.pt;
-          const next = pointMap.get(neighborKey).pt;
-          const angle = Math.atan2(next.z - curr.z, next.x - curr.x) - Math.atan2(curr.z - prev.z, curr.x - prev.x);
-          const normAngle = ((angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI; // Normalize to [-PI, PI]
-          if (normAngle < minAngle) {
-            minAngle = normAngle;
-            nextKey = neighborKey;
-          }
-        } else {
-          // First step, just pick any neighbor
-          nextKey = neighborKey;
+        if (!nextKey) break;
+        prevKey = currentKey;
+        currentKey = nextKey;
+        safety++;
+        if (safety > 1000) {
+            console.error('Boundary tracing safety break');
+            break;
         }
-      }
-      if (!nextKey) break;
-      prevKey = currentKey;
-      currentKey = nextKey;
-      safety++;
-      if (safety > 1000) {
-        console.error('Boundary tracing safety break');
-        break;
-      }
     } while (currentKey !== startKey);
 
     // Remove duplicates at the end
     if (boundary.length > 1 &&
         boundary[0].x === boundary[boundary.length - 1].x &&
         boundary[0].z === boundary[boundary.length - 1].z) {
-      boundary.pop();
+        boundary.pop();
     }
 
     if (boundary.length < 3) {
-      console.warn('Not enough unique boundary vertices for ceiling');
-      return this.createBoundingBoxVertices();
+        console.warn('Not enough unique boundary vertices for ceiling at this height');
+        return this.createBoundingBoxVertices();
     }
     return boundary;
-}
+  }
+
+  // Fallback method to create bounding box vertices
+  createBoundingBoxVertices() {
+    const bounds = this.getModelBounds();
+    const margin = 100 * this.scalingFactor; // or any margin you prefer
+    return [
+        { x: bounds.minX - margin, z: bounds.minZ - margin },
+        { x: bounds.maxX + margin, z: bounds.minZ - margin },
+        { x: bounds.maxX + margin, z: bounds.maxZ + margin },
+        { x: bounds.minX - margin, z: bounds.maxZ + margin }
+    ];
+  }
 
   // Animation loop
   animate() {
