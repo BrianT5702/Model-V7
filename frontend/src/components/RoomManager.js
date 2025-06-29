@@ -19,6 +19,7 @@ const RoomManager = ({
     const [remarks, setRemarks] = useState('');
     const [displayWalls, setDisplayWalls] = useState([]);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [validationErrors, setValidationErrors] = useState({});
 
     useEffect(() => {
         if (editingRoom) {
@@ -43,6 +44,10 @@ const RoomManager = ({
     }, [selectedWallIds, walls]);
 
     const handleSave = () => {
+        if (!validateForm()) {
+            return; // Don't proceed if validation fails
+        }
+
         const roomData = {
             room_name: roomName,
             floor_type: floorType,
@@ -68,6 +73,54 @@ const RoomManager = ({
         }
     };
 
+    // Validation function
+    const validateForm = () => {
+        const errors = {};
+        
+        if (!roomName.trim()) {
+            errors.roomName = 'Room name is required';
+        }
+        
+        if (!floorType) {
+            errors.floorType = 'Floor type is required';
+        }
+        
+        if (!floorThickness) {
+            errors.floorThickness = 'Floor thickness is required';
+        }
+        
+        if (!temperature) {
+            errors.temperature = 'Temperature is required';
+        }
+        
+        if (selectedPolygonPoints.length < 3) {
+            errors.polygonPoints = 'At least 3 points are required to define a room';
+        }
+        
+        setValidationErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
+    // Clear validation errors when user starts typing
+    const clearValidationError = (fieldName) => {
+        if (validationErrors[fieldName]) {
+            setValidationErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[fieldName];
+                return newErrors;
+            });
+        }
+    };
+
+    // Check if form is valid for button disabled state
+    const isFormValid = () => {
+        return roomName.trim() && 
+               floorType && 
+               floorThickness && 
+               temperature && 
+               selectedPolygonPoints.length >= 3;
+    };
+
     return (
         <div className="bg-gray-50 p-4">
             <div className="max-w-5xl mx-auto bg-white rounded-lg shadow-lg">
@@ -90,10 +143,20 @@ const RoomManager = ({
                                     <input
                                         type="text"
                                         value={roomName}
-                                        onChange={(e) => setRoomName(e.target.value)}
+                                        onChange={(e) => {
+                                            setRoomName(e.target.value);
+                                            clearValidationError('roomName');
+                                        }}
                                         placeholder="Enter room name"
-                                        className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                        className={`mt-1 block w-full rounded-md border px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 ${
+                                            validationErrors.roomName 
+                                                ? 'border-red-300 focus:border-red-500' 
+                                                : 'border-gray-300 focus:border-blue-500'
+                                        }`}
                                     />
+                                    {validationErrors.roomName && (
+                                        <p className="text-xs text-red-500 mt-1">{validationErrors.roomName}</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="text-xs font-medium text-gray-700">Temperature</label>
@@ -104,12 +167,20 @@ const RoomManager = ({
                                             onChange={(e) => {
                                                 const value = e.target.value;
                                                 setTemperature(value !== '' ? Math.max(-50, Math.min(50, value)) : '');
+                                                clearValidationError('temperature');
                                             }}
                                             placeholder="Enter temperature"
-                                            className="block w-full rounded-md border border-gray-300 px-2 py-1 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                            className={`block w-full rounded-md border px-2 py-1 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 ${
+                                                validationErrors.temperature 
+                                                    ? 'border-red-300 focus:border-red-500' 
+                                                    : 'border-gray-300 focus:border-blue-500'
+                                            }`}
                                         />
                                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">°C</span>
                                     </div>
+                                    {validationErrors.temperature && (
+                                        <p className="text-xs text-red-500 mt-1">{validationErrors.temperature}</p>
+                                    )}
                                 </div>
                             </div>
 
@@ -119,27 +190,47 @@ const RoomManager = ({
                                     <label className="text-xs font-medium text-gray-700">Floor Type</label>
                                     <select
                                         value={floorType}
-                                        onChange={(e) => setFloorType(e.target.value)}
-                                        className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                        onChange={(e) => {
+                                            setFloorType(e.target.value);
+                                            clearValidationError('floorType');
+                                        }}
+                                        className={`mt-1 block w-full rounded-md border px-2 py-1 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 ${
+                                            validationErrors.floorType 
+                                                ? 'border-red-300 focus:border-red-500' 
+                                                : 'border-gray-300 focus:border-blue-500'
+                                        }`}
                                     >
                                         <option value="">Select Type</option>
                                         <option value="Slab">Slab</option>
                                         <option value="Panel">Panel</option>
                                         <option value="None">None</option>
                                     </select>
+                                    {validationErrors.floorType && (
+                                        <p className="text-xs text-red-500 mt-1">{validationErrors.floorType}</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="text-xs font-medium text-gray-700">Thickness</label>
                                     <select
                                         value={floorThickness}
-                                        onChange={(e) => setFloorThickness(e.target.value)}
-                                        className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                        onChange={(e) => {
+                                            setFloorThickness(e.target.value);
+                                            clearValidationError('floorThickness');
+                                        }}
+                                        className={`mt-1 block w-full rounded-md border px-2 py-1 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 ${
+                                            validationErrors.floorThickness 
+                                                ? 'border-red-300 focus:border-red-500' 
+                                                : 'border-gray-300 focus:border-blue-500'
+                                        }`}
                                     >
                                         <option value="">Select mm</option>
                                         {[50, 75, 100, 125, 150, 175, 200].map(value => (
                                             <option key={value} value={value}>{value} mm</option>
                                         ))}
                                     </select>
+                                    {validationErrors.floorThickness && (
+                                        <p className="text-xs text-red-500 mt-1">{validationErrors.floorThickness}</p>
+                                    )}
                                 </div>
                             </div>
 
@@ -162,7 +253,9 @@ const RoomManager = ({
                                 <h3 className="text-base font-medium text-gray-900">Selected Points</h3>
                                 <span className="text-xs text-gray-500">({selectedPolygonPoints.length})</span>
                             </div>
-                            <div className="bg-white border border-gray-200 rounded-lg shadow-sm h-32 overflow-y-auto">
+                            <div className={`bg-white border rounded-lg shadow-sm h-32 overflow-y-auto ${
+                                validationErrors.polygonPoints ? 'border-red-300' : 'border-gray-200'
+                            }`}>
                                 {selectedPolygonPoints.length > 0 ? (
                                     <div className="divide-y divide-gray-200">
                                         {selectedPolygonPoints.map((pt, index) => (
@@ -182,6 +275,9 @@ const RoomManager = ({
                                     </div>
                                 )}
                             </div>
+                            {validationErrors.polygonPoints && (
+                                <p className="text-xs text-red-500 mt-1">{validationErrors.polygonPoints}</p>
+                            )}
                         </div>
                     </div>
 
@@ -203,8 +299,8 @@ const RoomManager = ({
                         )}
                         <button
                             onClick={handleSave}
-                            disabled={selectedPolygonPoints.length < 3}
                             className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                            disabled={!isFormValid()}
                         >
                             {isEditMode ? 'Update Room' : 'Save Room'}
                         </button>

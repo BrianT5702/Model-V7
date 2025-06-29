@@ -34,6 +34,16 @@ const ProjectDetails = () => {
     const [selectedRoomPoints, setSelectedRoomPoints] = useState([]);
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
+    const [wallMergeError, setWallMergeError] = useState('');
+    const [dbConnectionError, setDbConnectionError] = useState(false);
+    const [showWallDeleteConfirm, setShowWallDeleteConfirm] = useState(false);
+    const [wallToDelete, setWallToDelete] = useState(null);
+    const [wallDeleteSuccess, setWallDeleteSuccess] = useState(false);
+    const [wallDeleteError, setWallDeleteError] = useState('');
+    const [roomCreateSuccess, setRoomCreateSuccess] = useState(false);
+    const [wallMergeSuccess, setWallMergeSuccess] = useState(false);
+    const [roomError, setRoomError] = useState('');
+    const [projectLoadError, setProjectLoadError] = useState('');
 
     const handleViewToggle = () => {
         if (!threeCanvasInstance.current) return;
@@ -85,19 +95,19 @@ const ProjectDetails = () => {
                 swing_direction: updatedDoor.swing_direction,
                 slide_direction: updatedDoor.slide_direction,
                 side: updatedDoor.side,
-              });
-      
-          const updated = response.data;
-          setDoors(doors.map(d => d.id === updated.id ? updated : d));
-          setShowDoorEditor(false);
-          setEditingDoor(null);
-          setSelectedWall(null);
+            });
+            const updated = response.data;
+            setDoors(doors.map(d => d.id === updated.id ? updated : d));
+            setShowDoorEditor(false);
+            setEditingDoor(null);
+            setSelectedWall(null);
         } catch (error) {
-          console.error("Failed to update door:", error);
+            console.error("Failed to update door:", error);
+            throw error;
         }
-      };
+    };
 
-      const handleCreateRoom = async (roomData) => {
+    const handleCreateRoom = async (roomData) => {
         try {
             const completeRoomData = {
                 ...roomData,
@@ -109,14 +119,20 @@ const ProjectDetails = () => {
                 const newRoom = response.data;
                 setRooms((prevRooms) => [...prevRooms, newRoom]);
     
-                alert('Room created successfully!');
+                setRoomCreateSuccess(true);
+                setTimeout(() => setRoomCreateSuccess(false), 3000);
                 setShowRoomManagerModal(false); // ✅ correct modal visibility
                 setSelectedRoomPoints([]);
                 setCurrentMode(null);
             }
         } catch (error) {
             console.error('Error creating room:', error);
-            alert('Failed to create room.');
+            if (isDatabaseConnectionError(error)) {
+                setRoomError('Fail to connect to database. Try again later.');
+            } else {
+                setRoomError('Failed to create room.');
+            }
+            setTimeout(() => setRoomError(''), 5000);
         }
     };          
 
@@ -145,6 +161,19 @@ const ProjectDetails = () => {
         }
     };    
 
+    const isDatabaseConnectionError = (error) => {
+        return (
+            error.code === 'ERR_NETWORK' ||
+            error.code === 'ECONNREFUSED' ||
+            error.code === 'ENOTFOUND' ||
+            error.message?.includes('Network Error') ||
+            error.message?.includes('Failed to fetch') ||
+            error.message?.includes('Connection refused') ||
+            error.message?.includes('getaddrinfo ENOTFOUND') ||
+            (error.response?.status >= 500 && error.response?.status < 600)
+        );
+    };
+
     const handleRoomUpdate = async (updatedRoomData) => {
         try {
             const response = await api.put(`/rooms/${updatedRoomData.id}/`, updatedRoomData);
@@ -156,48 +185,61 @@ const ProjectDetails = () => {
             setCurrentMode(null);
         } catch (error) {
             console.error('Error updating room:', error);
-            alert('Failed to update room.');
+            if (isDatabaseConnectionError(error)) {
+                setRoomError('Fail to connect to database. Try again later.');
+            } else {
+                setRoomError('Failed to update room.');
+            }
+            setTimeout(() => setRoomError(''), 5000);
         }
     };
 
     const handleRoomDelete = async (roomId) => {
         try {
             await api.delete(`/rooms/${roomId}/`);
-            // Update rooms state by removing the deleted room
             setRooms(rooms.filter(room => room.id !== roomId));
-            // Reset room-related states
             setShowRoomManagerModal(false);
             setSelectedRoomPoints([]);
             setCurrentMode(null);
         } catch (error) {
             console.error('Error deleting room:', error);
-            alert('Failed to delete room.');
+            if (isDatabaseConnectionError(error)) {
+                setRoomError('Fail to connect to database. Try again later.');
+            } else {
+                setRoomError('Failed to delete room.');
+            }
+            setTimeout(() => setRoomError(''), 5000);
+        }
+    };
+
+    const fetchProjectDetails = async () => {
+        try {
+            const projectResponse = await api.get(`/projects/${projectId}/`);
+            setProject(projectResponse.data);
+    
+            const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+            setWalls(wallsResponse.data);
+
+            const doorsResponse = await api.get(`/doors/?project=${projectId}`);
+            setDoors(doorsResponse.data);
+    
+            // Fix the intersection API URL by removing the extra '/api'
+            const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
+            setJoints(intersectionsResponse.data); // Update joints state with intersections data
+            setProjectLoadError(''); // clear error if successful
+        } catch (error) {
+            console.error('Error fetching project details:', error);
+            if (isDatabaseConnectionError(error)) {
+                setProjectLoadError('Fail to connect to database. Try again later.');
+            } else {
+                setProjectLoadError('Failed to load project. Please try again.');
+            }
         }
     };
 
     useEffect(() => {
-        const fetchProjectDetails = async () => {
-            try {
-                const projectResponse = await api.get(`/projects/${projectId}/`);
-                setProject(projectResponse.data);
-    
-                const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
-                setWalls(wallsResponse.data);
-
-                const doorsResponse = await api.get(`/doors/?project=${projectId}`);
-                setDoors(doorsResponse.data);
-    
-                // Fix the intersection API URL by removing the extra '/api'
-                const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
-                setJoints(intersectionsResponse.data); // Update joints state with intersections data
-            } catch (error) {
-                console.error('Error fetching project details:', error);
-            }
-        };
-    
         fetchProjectDetails();
     }, [projectId]);
-    
 
     useEffect(() => {
         if (is3DView) {
@@ -236,8 +278,12 @@ const ProjectDetails = () => {
             await checkAndMergeWalls(updatedWallData);
             
         } catch (error) {
-            console.error('Error updating wall:', error);
-            alert('Failed to update wall');
+            if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || (error.response?.status >= 500 && error.response?.status < 600)) {
+                setDbConnectionError(true);
+                setTimeout(() => setDbConnectionError(false), 5000);
+            } else {
+                alert('Failed to update wall');
+            }
         }
     };
     
@@ -294,7 +340,8 @@ const ProjectDetails = () => {
         const wall2 = walls.find(w => w.id === selectedWallIds[1]);
 
         if (!wall1 || !wall2) {
-            alert("Invalid wall selection.");
+            setWallMergeError("Invalid wall selection.");
+            setTimeout(() => setWallMergeError(''), 5000);
             return;
         }
 
@@ -303,7 +350,8 @@ const ProjectDetails = () => {
             wall1.height !== wall2.height ||
             wall1.thickness !== wall2.thickness
         ) {
-            alert("Walls must have the same type, height, and thickness.");
+            setWallMergeError("Walls must have the same type, height, and thickness.");
+            setTimeout(() => setWallMergeError(''), 5000);
             return;
         }
 
@@ -314,7 +362,8 @@ const ProjectDetails = () => {
             (wall1.end_x === wall2.end_x && wall1.end_y === wall2.end_y);
 
         if (!connected) {
-            alert("Walls must be connected at one endpoint.");
+            setWallMergeError("Walls must be connected at one endpoint.");
+            setTimeout(() => setWallMergeError(''), 5000);
             return;
         }
 
@@ -330,11 +379,29 @@ const ProjectDetails = () => {
                     newWall,
                 ]);
                 setSelectedWallsForRoom([]);
-                alert("Walls merged successfully.");
+                setWallMergeSuccess(true);
+                setTimeout(() => setWallMergeSuccess(false), 3000);
             }
         } catch (error) {
-            console.error("Merge failed:", error);
-            alert("Wall merge failed.");
+            if (error.response && error.response.data) {
+                const errorData = error.response.data;
+                if (errorData.wall_ids) {
+                    setWallMergeError(`Merge Error: ${errorData.wall_ids[0]}`);
+                } else if (errorData.non_field_errors) {
+                    setWallMergeError(`Merge Error: ${errorData.non_field_errors[0]}`);
+                } else if (errorData.error) {
+                    setWallMergeError(`Merge Error: ${errorData.error}`);
+                } else if (typeof errorData === 'string') {
+                    setWallMergeError(`Merge Error: ${errorData}`);
+                } else {
+                    setWallMergeError('Unable to merge walls. The walls may not be compatible for merging.');
+                }
+            } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+                setWallMergeError('Network error. Please check your connection and try again.');
+            } else {
+                setWallMergeError('Failed to merge walls. Please try again.');
+            }
+            setTimeout(() => setWallMergeError(''), 5000);
         }
     };
 
@@ -366,7 +433,27 @@ const ProjectDetails = () => {
                         await checkAndMergeWalls(mergeResponse.data);
                     }
                 } catch (error) {
-                    console.error("Error merging walls:", error);
+                    // Handle automatic merge errors with user-friendly messages
+                    if (error.response && error.response.data) {
+                        const errorData = error.response.data;
+                        
+                        // Check for specific backend validation errors
+                        if (errorData.wall_ids) {
+                            console.warn(`Auto-merge failed: ${errorData.wall_ids[0]}`);
+                        } else if (errorData.non_field_errors) {
+                            console.warn(`Auto-merge failed: ${errorData.non_field_errors[0]}`);
+                        } else if (errorData.error) {
+                            console.warn(`Auto-merge failed: ${errorData.error}`);
+                        } else if (typeof errorData === 'string') {
+                            console.warn(`Auto-merge failed: ${errorData}`);
+                        } else {
+                            console.warn('Auto-merge failed: Walls may not be compatible for merging.');
+                        }
+                    } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+                        console.warn('Network error during auto-merge. Please check your connection.');
+                    } else {
+                        console.warn('Auto-merge failed. Please try again.');
+                    }
                 }
             }
         }
@@ -542,7 +629,15 @@ const ProjectDetails = () => {
             setIsEditingName(false);
         } catch (error) {
             console.error('Error updating project name:', error);
-            alert('Failed to update project name');
+            // Show backend error message if present, but do not exit editing mode
+            if (error.response && error.response.data && error.response.data.name) {
+                alert(`Error: ${error.response.data.name[0]}`);
+            } else if (error.response && error.response.data && error.response.data.error) {
+                alert(`Error: ${error.response.data.error}`);
+            } else {
+                alert('Failed to update project name');
+            }
+            // Do not call setIsEditingName(false) here, so the user can continue editing
         }
     };
 
@@ -550,6 +645,46 @@ const ProjectDetails = () => {
         setIsEditingName(false);
         setEditedName('');
     };
+
+    const handleConfirmWallDelete = async () => {
+        if (wallToDelete === null) return;
+        try {
+            await handleWallRemove(wallToDelete);
+            setWallDeleteSuccess(true);
+            setTimeout(() => setWallDeleteSuccess(false), 3000);
+            setSelectedWall(null);
+        } catch (error) {
+            setWallDeleteError('Failed to delete wall. Please try again.');
+            setTimeout(() => setWallDeleteError(''), 5000);
+        } finally {
+            setShowWallDeleteConfirm(false);
+            setWallToDelete(null);
+        }
+    };
+
+    const handleCancelWallDelete = () => {
+        setShowWallDeleteConfirm(false);
+        setWallToDelete(null);
+    };
+
+    if (projectLoadError) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+                <div className="bg-white p-8 rounded-lg shadow-md flex flex-col items-center">
+                    <svg className="w-12 h-12 text-red-500 mb-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <h2 className="text-xl font-semibold text-red-600 mb-2">{projectLoadError}</h2>
+                    <button
+                        onClick={fetchProjectDetails}
+                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     if (!project) {
         return <div>Loading...</div>;
@@ -686,7 +821,8 @@ const ProjectDetails = () => {
                                     if (selectedWallsForRoom.length === 2) {
                                     handleManualWallMerge(selectedWallsForRoom);
                                     } else {
-                                    alert("Please select exactly 2 walls to merge.");
+                                    setWallMergeError("Please select exactly 2 walls to merge.");
+                                    setTimeout(() => setWallMergeError(''), 5000);
                                     }
                                 }}
                             className="px-4 py-2 rounded-lg transition-colors border border-gray-200 hover:bg-gray-50"
@@ -873,8 +1009,8 @@ const ProjectDetails = () => {
                                         
                                         <button
                                             onClick={() => {
-                                                handleWallRemove(selectedWall);
-                                                setSelectedWall(null);
+                                                setWallToDelete(selectedWall);
+                                                setShowWallDeleteConfirm(true);
                                             }}
                                             className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 
                                                 transition-colors"
@@ -915,12 +1051,18 @@ const ProjectDetails = () => {
                         wall={selectedDoorWall}
                         editingDoor={editingDoor}
                         onSaveDoor={editingDoor ? handleUpdateDoor : handleCreateDoor}
+                        onDeleteDoor={async (doorId) => {
+                            await api.delete(`/doors/${doorId}/`);
+                            setDoors(doors.filter(d => d.id !== doorId));
+                            setShowDoorManager(false);
+                            setEditingDoor(null);
+                        }}
                         onClose={() => {
-                        setShowDoorManager(false);
-                        setEditingDoor(null);
+                            setShowDoorManager(false);
+                            setEditingDoor(null);
                         }}
                     />
-                    )}
+                )}
 
                  {/* Door Editor Modal */}
                 {showDoorEditor && editingDoor && (
@@ -978,6 +1120,77 @@ const ProjectDetails = () => {
                     </>
                 )}
             </div>
+
+            {/* Database Connection Error Banner */}
+            {dbConnectionError && (
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
+                    <div className="flex items-center">
+                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <span className="font-medium">Fail to connect to database. Try again later.</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Wall Merge Error Banner */}
+            {wallMergeError && (
+                <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
+                    <div className="flex items-center">
+                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <span className="font-medium">{wallMergeError}</span>
+                    </div>
+                </div>
+            )}
+
+            {showWallDeleteConfirm && (
+                <div className="fixed top-32 left-1/2 transform -translate-x-1/2 z-50 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded shadow-lg flex items-center gap-4">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <span className="font-medium">Are you sure you want to delete this wall?</span>
+                    <button onClick={handleConfirmWallDelete} className="ml-4 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600">Yes, Delete</button>
+                    <button onClick={handleCancelWallDelete} className="px-3 py-1 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">Cancel</button>
+                </div>
+            )}
+
+            {wallDeleteSuccess && (
+                <div className="fixed top-44 left-1/2 transform -translate-x-1/2 z-50 bg-green-100 border border-green-400 text-green-800 px-4 py-3 rounded shadow-lg flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3-9a1 1 0 10-2 0 1 1 0 002 0zm-1-4a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <span className="font-medium">Wall deleted successfully!</span>
+                </div>
+            )}
+
+            {roomCreateSuccess && (
+                <div className="fixed top-56 left-1/2 transform -translate-x-1/2 z-50 bg-green-100 border border-green-400 text-green-800 px-4 py-3 rounded shadow-lg flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3-9a1 1 0 10-2 0 1 1 0 002 0zm-1-4a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <span className="font-medium">Room created successfully!</span>
+                </div>
+            )}
+
+            {wallMergeSuccess && (
+                <div className="fixed top-56 left-1/2 transform -translate-x-1/2 z-50 bg-green-100 border border-green-400 text-green-800 px-4 py-3 rounded shadow-lg flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3-9a1 1 0 10-2 0 1 1 0 002 0zm-1-4a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <span className="font-medium">Walls merged successfully!</span>
+                </div>
+            )}
+
+            {roomError && (
+                <div className="fixed top-64 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <span className="font-medium">{roomError}</span>
+                </div>
+            )}
         </div>
     );
 };

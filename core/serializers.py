@@ -83,8 +83,11 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def validate_name(self, value):
         """Validate that project name is unique"""
-        # Check if a project with this name already exists
-        if Project.objects.filter(name=value).exists():
+        # When updating, exclude the current instance from the uniqueness check
+        project_qs = Project.objects.filter(name=value)
+        if self.instance:
+            project_qs = project_qs.exclude(pk=self.instance.pk)
+        if project_qs.exists():
             raise serializers.ValidationError("A project with this name already exists.")
         return value
 

@@ -7,7 +7,9 @@ from .serializers import (
     CeilingSerializer, DoorSerializer, IntersectionSerializer
 )
 from .services import WallService, RoomService, DoorService
-from django.db import transaction
+from django.db import transaction, IntegrityError
+from django.core.exceptions import PermissionDenied
+from django.db.utils import OperationalError
 
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()

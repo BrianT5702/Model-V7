@@ -44,6 +44,28 @@ const Canvas2D = ({
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
     const [showPanelTable, setShowPanelTable] = useState(false);
     const [showMaterialDetails, setShowMaterialDetails] = useState(false);
+    const [dbConnectionError, setDbConnectionError] = useState(false);
+    const [wallMergeError, setWallMergeError] = useState('');
+
+    // Utility function to detect database connection errors
+    const isDatabaseConnectionError = (error) => {
+        return (
+            error.code === 'ERR_NETWORK' ||
+            error.code === 'ECONNREFUSED' ||
+            error.code === 'ENOTFOUND' ||
+            error.message?.includes('Network Error') ||
+            error.message?.includes('Failed to fetch') ||
+            error.message?.includes('Connection refused') ||
+            error.message?.includes('getaddrinfo ENOTFOUND') ||
+            (error.response?.status >= 500 && error.response?.status < 600)
+        );
+    };
+
+    // Function to show database connection error
+    const showDatabaseError = () => {
+        setDbConnectionError(true);
+        setTimeout(() => setDbConnectionError(false), 5000); // Hide after 5 seconds
+    };
 
     const toggleMaterialDetails = () => {
         setShowMaterialDetails(prev => !prev);
@@ -1536,6 +1558,9 @@ const Canvas2D = ({
                         setWalls(updatedWalls);
                     } catch (error) {
                         console.error('Error managing walls:', error);
+                        if (isDatabaseConnectionError(error)) {
+                            showDatabaseError();
+                        }
                     }
     
                     setTempWall(null);
@@ -1679,7 +1704,8 @@ const Canvas2D = ({
                   if (updatedSelection.length < 2) {
                     updatedSelection.push(clickedWall.id);
                   } else {
-                    alert("You can only select up to 2 walls for merging.");
+                    setWallMergeError("You can only select up to 2 walls for merging.");
+                    setTimeout(() => setWallMergeError(''), 5000);
                     return;
                   }
                 } else {
@@ -1940,6 +1966,9 @@ const Canvas2D = ({
             );
         } catch (error) {
             console.error("Failed to update wall after joint change:", error);
+            if (isDatabaseConnectionError(error)) {
+                showDatabaseError();
+            }
         }
     };
     
@@ -2030,6 +2059,18 @@ const Canvas2D = ({
     
     return (
         <div className="flex flex-col items-center gap-4">
+            {/* Database Connection Error Message */}
+            {dbConnectionError && (
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
+                    <div className="flex items-center">
+                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <span className="font-medium">Fail to connect to database. Try again later.</span>
+                    </div>
+                </div>
+            )}
+            
             <canvas
                 ref={canvasRef}
                 onClick={handleCanvasClick}
@@ -2149,7 +2190,11 @@ const Canvas2D = ({
                           onJointsUpdate(response.data);
                           alert("Joint types updated!");
                         } catch (error) {
-                          alert("Failed to update joints.");
+                          if (isDatabaseConnectionError(error)) {
+                            showDatabaseError();
+                          } else {
+                            alert("Failed to update joints.");
+                          }
                         }
                       }}
                     >
@@ -2172,6 +2217,16 @@ const Canvas2D = ({
             
             {/* Add DoorTable component */}
             {showMaterialDetails && <DoorTable doors={doors} />}
+            {wallMergeError && (
+              <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span className="font-medium">{wallMergeError}</span>
+                </div>
+              </div>
+            )}
         </div>
     );
 };
