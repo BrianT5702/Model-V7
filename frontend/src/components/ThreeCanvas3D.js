@@ -439,10 +439,24 @@ export default class ThreeCanvas {
     const bounds = this.getModelBounds();
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-    const ceiling = this.scene.getObjectByName('ceiling');
 
-    // Animate ceiling opacity
+    // Handle multiple ceiling levels
+    const ceilingLevels = [];
+    for (let i = 0; i < 10; i++) { // Check for up to 10 ceiling levels
+        const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
     if (ceiling) {
+            ceilingLevels.push(ceiling);
+        }
+    }
+    
+    // Also check for single ceiling
+    const singleCeiling = this.scene.getObjectByName('ceiling');
+    if (singleCeiling) {
+        ceilingLevels.push(singleCeiling);
+    }
+
+    // Animate all ceiling levels
+    ceilingLevels.forEach(ceiling => {
         gsap.to(ceiling.material, {
             opacity: 0,
             duration: 1,
@@ -453,7 +467,7 @@ export default class ThreeCanvas {
                 ceiling.visible = false;
             }
         });
-    }
+    });
 
     // Animate camera position
     gsap.to(this.camera.position, {
@@ -482,19 +496,33 @@ animateToExteriorView() {
     const bounds = this.getModelBounds();
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-    const ceiling = this.scene.getObjectByName('ceiling');
 
-    // Animate ceiling opacity
+    // Handle multiple ceiling levels
+    const ceilingLevels = [];
+    for (let i = 0; i < 10; i++) { // Check for up to 10 ceiling levels
+        const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
     if (ceiling) {
+            ceilingLevels.push(ceiling);
+        }
+    }
+    
+    // Also check for single ceiling
+    const singleCeiling = this.scene.getObjectByName('ceiling');
+    if (singleCeiling) {
+        ceilingLevels.push(singleCeiling);
+    }
+
+    // Animate all ceiling levels
+    ceilingLevels.forEach(ceiling => {
         ceiling.visible = true;
         gsap.to(ceiling.material, {
-            opacity: 1,
+            opacity: 0.9,
             duration: 1,
             onComplete: () => {
                 ceiling.material.transparent = false;
             }
         });
-    }
+    });
 
     // Animate camera position
     gsap.to(this.camera.position, {
@@ -569,10 +597,14 @@ getModelBounds() {
 
   // Build the 3D model using the walls data
   buildModel() {
-    // Remove existing walls from the scene
-    this.scene.children = this.scene.children.filter(
-      child => !child.userData.isWall && !child.userData.isJointLine && !child.userData.isDoor && child.name !== 'ceiling'
-    );
+    // Remove existing walls, doors, and ceilings from the scene
+    this.scene.children = this.scene.children.filter(child => {
+      // Keep everything except walls, doors, joint lines, and ceilings
+      return !child.userData.isWall && 
+             !child.userData.isJointLine && 
+             !child.userData.isDoor && 
+             !child.name.startsWith('ceiling');
+    });
   
     // Clear door objects array
     this.doorObjects = [];
@@ -599,6 +631,10 @@ getModelBounds() {
         console.warn(`Door ${door.id} has no calculated position`);
       }
     });
+
+    // Add ceiling after walls and doors are created
+    console.log('Creating ceiling...');
+    this.addCeiling();
   }  
 
   calculateModelCenter() {
@@ -1179,90 +1215,297 @@ getModelBounds() {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
   }
 
-// addCeiling() {
-//   // Remove existing ceiling
-//   const existingCeiling = this.scene.getObjectByName('ceiling');
-//   if (existingCeiling) {
-//       this.scene.remove(existingCeiling);
-//   }
+  addCeiling() {
+    // Remove existing ceiling
+    const existingCeiling = this.scene.getObjectByName('ceiling');
+    if (existingCeiling) {
+        this.scene.remove(existingCeiling);
+    }
 
-//   // Get ordered vertices of the external walls
-//   const vertices = this.getExternalVertices();
-  
-//   // Convert vertices to format required by earcut
-//   const flatVertices = [];
-//   vertices.forEach(vertex => {
-//       flatVertices.push(vertex.x);
-//       flatVertices.push(vertex.z);
-//   });
+    // Check if we have rooms with different heights
+    const roomHeights = this.getRoomHeights();
+    
+    if (roomHeights.length > 1) {
+        // Create multi-level ceiling
+        this.createMultiLevelCeiling(roomHeights);
+    } else {
+        // Create single-level ceiling
+        this.createSingleLevelCeiling();
+    }
+  }
 
-//   // Triangulate the polygon
-//   const triangles = earcut(flatVertices);
+  // Get unique room heights from walls
+  getRoomHeights() {
+    const heights = new Set();
+    this.walls.forEach(wall => {
+        heights.add(wall.height);
+    });
+    return Array.from(heights).sort((a, b) => a - b);
+  }
 
-//   // Create ceiling geometry using triangulation
-//   const geometry = new THREE.BufferGeometry();
-  
-//   // Create vertices array for the geometry
-//   const positions = new Float32Array(triangles.length * 3);
-//   for (let i = 0; i < triangles.length; i++) {
-//       const vertexIndex = triangles[i];
-//       const x = flatVertices[vertexIndex * 2];
-//       const z = flatVertices[vertexIndex * 2 + 1];
-      
-//       positions[i * 3] = x;
-//       positions[i * 3 + 1] = 0;  // Y coordinate (will be transformed later)
-//       positions[i * 3 + 2] = z;
-//   }
+  // Create a single-level ceiling for the entire building
+  createSingleLevelCeiling() {
+    // Get the building footprint vertices
+    const vertices = this.getBuildingFootprint();
+    
+    if (vertices.length < 3) {
+        console.warn('Not enough vertices to create ceiling');
+        this.createBoundingBoxCeiling();
+        return;
+    }
 
-//   // Add the vertices to the geometry
-//   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  
-//   // Calculate normals
-//   geometry.computeVertexNormals();
+    // Extend the vertices outward to ensure complete coverage
+    const extendedVertices = this.extendVerticesOutward(vertices, 50 * this.scalingFactor);
 
-//   // Create material
-//   const material = new THREE.MeshStandardMaterial({
-//       color: 0xcccccc,
-//       side: THREE.DoubleSide,
-//       roughness: 0.7,
-//       metalness: 0.2
-//   });
+    // Convert vertices to format required by earcut
+    const flatVertices = [];
+    extendedVertices.forEach(vertex => {
+        flatVertices.push(vertex.x);
+        flatVertices.push(vertex.z);
+    });
 
-//   // Create mesh
-//   const ceiling = new THREE.Mesh(geometry, material);
-//   ceiling.name = 'ceiling';
-  
-//   // Position the ceiling at the top of the walls
-//   ceiling.position.y = this.walls[0].height * this.scalingFactor;
-  
-//   // Enable shadows
-//   ceiling.castShadow = true;
-//   ceiling.receiveShadow = true;
+    // Triangulate the polygon
+    const triangles = earcut(flatVertices);
 
-//   this.scene.add(ceiling);
-// }
+    if (triangles.length === 0) {
+        console.warn('Failed to triangulate ceiling polygon, trying bounding box approach');
+        this.createBoundingBoxCeiling();
+        return;
+    }
 
-// Improved version of getExternalVertices to ensure proper vertex ordering
-getExternalVertices() {
-  // Create a map of all wall segments
+    // Create ceiling geometry using triangulation
+    const geometry = new THREE.BufferGeometry();
+    
+    // Create vertices array for the geometry
+    const positions = new Float32Array(triangles.length * 3);
+    for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = 0;  // Y coordinate (will be transformed later)
+        positions[i * 3 + 2] = z;
+    }
+
+    // Add the vertices to the geometry
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    
+    // Calculate normals
+    geometry.computeVertexNormals();
+
+    // Create material
+    const material = new THREE.MeshStandardMaterial({
+        color: 0xcccccc,
+        side: THREE.DoubleSide,
+        roughness: 0.7,
+        metalness: 0.2,
+        transparent: true,
+        opacity: 0.9
+    });
+
+    // Create mesh
+    const ceiling = new THREE.Mesh(geometry, material);
+    ceiling.name = 'ceiling';
+    
+    // Position the ceiling at the top of the walls
+    const maxWallHeight = Math.max(...this.walls.map(wall => wall.height));
+    ceiling.position.y = maxWallHeight * this.scalingFactor;
+    
+    // Enable shadows
+    ceiling.castShadow = true;
+    ceiling.receiveShadow = true;
+
+    this.scene.add(ceiling);
+    
+    console.log(`Single-level ceiling created with ${triangles.length / 3} triangles covering ${extendedVertices.length} vertices`);
+  }
+
+  // Extend vertices outward to ensure complete coverage
+  extendVerticesOutward(vertices, distance) {
+    if (vertices.length < 3) return vertices;
+    
+    // Calculate the centroid of all vertices
+    const centroid = { x: 0, z: 0 };
+    vertices.forEach(vertex => {
+        centroid.x += vertex.x;
+        centroid.z += vertex.z;
+    });
+    centroid.x /= vertices.length;
+    centroid.z /= vertices.length;
+    
+    // Extend each vertex outward from the centroid
+    return vertices.map(vertex => {
+        const dx = vertex.x - centroid.x;
+        const dz = vertex.z - centroid.z;
+        const length = Math.sqrt(dx * dx + dz * dz);
+        
+        if (length === 0) return vertex;
+        
+        const scale = (length + distance) / length;
+        
+        return {
+            x: centroid.x + dx * scale,
+            z: centroid.z + dz * scale
+        };
+    });
+  }
+
+  // Create a simple bounding box ceiling as fallback
+  createBoundingBoxCeiling() {
+    const bounds = this.getModelBounds();
+    const margin = 150 * this.scalingFactor; // Large margin for complete coverage
+    
+    const vertices = [
+        { x: bounds.minX - margin, z: bounds.minZ - margin },
+        { x: bounds.maxX + margin, z: bounds.minZ - margin },
+        { x: bounds.maxX + margin, z: bounds.maxZ + margin },
+        { x: bounds.minX - margin, z: bounds.maxZ + margin }
+    ];
+    
+    // Convert to flat array for earcut
+    const flatVertices = [];
+    vertices.forEach(vertex => {
+        flatVertices.push(vertex.x);
+        flatVertices.push(vertex.z);
+    });
+    
+    // Triangulate (should be simple for a rectangle)
+    const triangles = earcut(flatVertices);
+    
+    if (triangles.length === 0) {
+        console.error('Failed to create even bounding box ceiling');
+        return;
+    }
+    
+    // Create geometry
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(triangles.length * 3);
+    
+    for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = 0;
+        positions[i * 3 + 2] = z;
+    }
+    
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    
+    // Create material
+    const material = new THREE.MeshStandardMaterial({
+        color: 0xdddddd,
+        side: THREE.DoubleSide,
+        roughness: 0.7,
+        metalness: 0.2,
+        transparent: true,
+        opacity: 0.9
+    });
+    
+    // Create mesh
+    const ceiling = new THREE.Mesh(geometry, material);
+    ceiling.name = 'ceiling';
+    
+    const maxWallHeight = Math.max(...this.walls.map(wall => wall.height));
+    ceiling.position.y = maxWallHeight * this.scalingFactor;
+    
+    ceiling.castShadow = true;
+    ceiling.receiveShadow = true;
+    
+    this.scene.add(ceiling);
+    
+    console.log(`Bounding box ceiling created with ${triangles.length / 3} triangles`);
+  }
+
+  // Create multi-level ceiling for buildings with different room heights
+  createMultiLevelCeiling(roomHeights) {
+    console.log(`Creating multi-level ceiling for ${roomHeights.length} different heights`);
+    
+    roomHeights.forEach((height, index) => {
+        // Get walls at this height
+        const wallsAtHeight = this.walls.filter(wall => wall.height === height);
+        
+        if (wallsAtHeight.length === 0) return;
+        
+        // Create ceiling for this height level
+        const vertices = this.getBuildingFootprintForHeight(wallsAtHeight);
+        
+        if (vertices.length < 3) return;
+        
+        // Convert vertices to format required by earcut
+        const flatVertices = [];
+        vertices.forEach(vertex => {
+            flatVertices.push(vertex.x);
+            flatVertices.push(vertex.z);
+        });
+
+        // Triangulate the polygon
+        const triangles = earcut(flatVertices);
+
+        if (triangles.length === 0) return;
+
+        // Create ceiling geometry
+        const geometry = new THREE.BufferGeometry();
+        
+        const positions = new Float32Array(triangles.length * 3);
+        for (let i = 0; i < triangles.length; i++) {
+            const vertexIndex = triangles[i];
+            const x = flatVertices[vertexIndex * 2];
+            const z = flatVertices[vertexIndex * 2 + 1];
+            
+            positions[i * 3] = x;
+            positions[i * 3 + 1] = 0;
+            positions[i * 3 + 2] = z;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.computeVertexNormals();
+
+        // Create material with slight color variation based on height
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xcccccc + (index * 0x111111),
+            side: THREE.DoubleSide,
+            roughness: 0.7,
+            metalness: 0.2,
+            transparent: true,
+            opacity: 0.9
+        });
+
+        // Create mesh
+        const ceiling = new THREE.Mesh(geometry, material);
+        ceiling.name = `ceiling_level_${index}`;
+        ceiling.position.y = height * this.scalingFactor;
+        
+        ceiling.castShadow = true;
+        ceiling.receiveShadow = true;
+
+        this.scene.add(ceiling);
+        
+        console.log(`Ceiling level ${index} created at height ${height} with ${triangles.length / 3} triangles`);
+    });
+  }
+
+  // Get building footprint for a specific set of walls (for multi-level ceilings)
+  getBuildingFootprintForHeight(walls) {
+    // Create a map of wall segments for this height
   const wallSegments = new Map();
   const vertices = new Map();
   
-  this.walls.forEach(wall => {
+    walls.forEach(wall => {
       const startX = wall.start_x * this.scalingFactor + this.modelOffset.x;
       const startZ = wall.start_y * this.scalingFactor + this.modelOffset.z;
       const endX = wall.end_x * this.scalingFactor + this.modelOffset.x;
       const endZ = wall.end_y * this.scalingFactor + this.modelOffset.z;
       
-      // Create unique keys for vertices
       const startKey = `${startX.toFixed(4)},${startZ.toFixed(4)}`;
       const endKey = `${endX.toFixed(4)},${endZ.toFixed(4)}`;
       
-      // Store vertices
       vertices.set(startKey, { x: startX, z: startZ });
       vertices.set(endKey, { x: endX, z: endZ });
       
-      // Store wall segments
       if (!wallSegments.has(startKey)) wallSegments.set(startKey, new Set());
       if (!wallSegments.has(endKey)) wallSegments.set(endKey, new Set());
       
@@ -1270,58 +1513,125 @@ getExternalVertices() {
       wallSegments.get(endKey).add(startKey);
   });
 
-  // Find the leftmost vertex to start with (this ensures consistent ordering)
-  let startKey = Array.from(vertices.keys()).reduce((a, b) => {
-      return vertices.get(a).x < vertices.get(b).x ? a : b;
-  });
-
   // Create ordered list of vertices
   const orderedVertices = [];
-  let currentKey = startKey;
   const visited = new Set();
 
-  while (orderedVertices.length < vertices.size) {
+    // Start with any vertex
+    let currentKey = Array.from(vertices.keys())[0];
+    
+    while (orderedVertices.length < vertices.size && currentKey) {
       if (visited.has(currentKey)) break;
       
       visited.add(currentKey);
       orderedVertices.push(vertices.get(currentKey));
       
-      // Find next unvisited connected vertex
       const connections = wallSegments.get(currentKey);
       currentKey = Array.from(connections).find(key => !visited.has(key));
-      
-      if (!currentKey) break; // Exit if no unvisited connected vertices found
+    }
+
+    return orderedVertices.length >= 3 ? this.createConvexHull(orderedVertices) : [];
   }
 
-  return orderedVertices;
-}
+  // Improved method to get building footprint vertices
+  getBuildingFootprint() {
+    // Build a map of all wall endpoints and their connections
+    const pointMap = new Map();
+    const toKey = (x, z) => `${x.toFixed(4)},${z.toFixed(4)}`;
+    const fromKey = (pt) => toKey(pt.x, pt.z);
+    const allPoints = [];
 
-// Add a method to validate the ceiling
-validateCeilingCoverage() {
-  const ceiling = this.scene.getObjectByName('ceiling');
-  if (!ceiling) return false;
+    this.walls.forEach(wall => {
+      const start = {
+        x: wall.start_x * this.scalingFactor + this.modelOffset.x,
+        z: wall.start_y * this.scalingFactor + this.modelOffset.z
+      };
+      const end = {
+        x: wall.end_x * this.scalingFactor + this.modelOffset.x,
+        z: wall.end_y * this.scalingFactor + this.modelOffset.z
+      };
+      allPoints.push(start, end);
+      const startKey = fromKey(start);
+      const endKey = fromKey(end);
+      if (!pointMap.has(startKey)) pointMap.set(startKey, { pt: start, neighbors: new Set() });
+      if (!pointMap.has(endKey)) pointMap.set(endKey, { pt: end, neighbors: new Set() });
+      pointMap.get(startKey).neighbors.add(endKey);
+      pointMap.get(endKey).neighbors.add(startKey);
+    });
 
-  // Get the bounds of the ceiling
-  const geometry = ceiling.geometry;
-  geometry.computeBoundingBox();
-  const ceilingBounds = geometry.boundingBox;
-
-  // Get the bounds of all walls
-  const wallBounds = new THREE.Box3();
-  this.scene.children.forEach(child => {
-      if (child.userData.isWall) {
-          wallBounds.expandByObject(child);
+    // Find the leftmost, bottommost point to start
+    let startKey = null;
+    let minX = Infinity, minZ = Infinity;
+    for (const [key, val] of pointMap.entries()) {
+      if (val.pt.x < minX || (val.pt.x === minX && val.pt.z < minZ)) {
+        minX = val.pt.x;
+        minZ = val.pt.z;
+        startKey = key;
       }
-  });
+    }
+    if (!startKey) {
+      console.warn('No wall vertices found');
+      return this.createBoundingBoxVertices();
+    }
 
-  // Check if ceiling bounds roughly match wall bounds
-  const ceilingArea = (ceilingBounds.max.x - ceilingBounds.min.x) * 
-                     (ceilingBounds.max.z - ceilingBounds.min.z);
-  const wallArea = (wallBounds.max.x - wallBounds.min.x) * 
-                  (wallBounds.max.z - wallBounds.min.z);
-  
-  // Allow for small differences due to triangulation
-  return Math.abs(ceilingArea - wallArea) / wallArea < 0.1;
+    // Trace the outer boundary in order
+    const boundary = [];
+    const visited = new Set();
+    let currentKey = startKey;
+    let prevKey = null;
+    let safety = 0;
+    do {
+      const current = pointMap.get(currentKey);
+      boundary.push(current.pt);
+      visited.add(currentKey);
+      // Find the next neighbor that is not the previous point and not already visited (unless closing the loop)
+      let nextKey = null;
+      let minAngle = Infinity;
+      for (const neighborKey of current.neighbors) {
+        if (neighborKey === prevKey) continue;
+        if (neighborKey === startKey && boundary.length > 2) {
+          nextKey = neighborKey;
+          break;
+        }
+        if (visited.has(neighborKey)) continue;
+        // Prefer the leftmost turn (smallest angle from previous segment)
+        if (prevKey) {
+          const prev = pointMap.get(prevKey).pt;
+          const curr = current.pt;
+          const next = pointMap.get(neighborKey).pt;
+          const angle = Math.atan2(next.z - curr.z, next.x - curr.x) - Math.atan2(curr.z - prev.z, curr.x - prev.x);
+          const normAngle = ((angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI; // Normalize to [-PI, PI]
+          if (normAngle < minAngle) {
+            minAngle = normAngle;
+            nextKey = neighborKey;
+          }
+        } else {
+          // First step, just pick any neighbor
+          nextKey = neighborKey;
+        }
+      }
+      if (!nextKey) break;
+      prevKey = currentKey;
+      currentKey = nextKey;
+      safety++;
+      if (safety > 1000) {
+        console.error('Boundary tracing safety break');
+        break;
+      }
+    } while (currentKey !== startKey);
+
+    // Remove duplicates at the end
+    if (boundary.length > 1 &&
+        boundary[0].x === boundary[boundary.length - 1].x &&
+        boundary[0].z === boundary[boundary.length - 1].z) {
+      boundary.pop();
+    }
+
+    if (boundary.length < 3) {
+      console.warn('Not enough unique boundary vertices for ceiling');
+      return this.createBoundingBoxVertices();
+    }
+    return boundary;
 }
 
   // Animation loop
