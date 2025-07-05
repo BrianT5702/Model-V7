@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import CreateProject from '../components/CreateProject';
-import ProjectList from '../components/ProjectList';
+import CreateProject from '../features/project/CreateProject';
+import ProjectList from '../features/project/ProjectList';
 import api from '../api/api';
 
 const HomePage = () => {

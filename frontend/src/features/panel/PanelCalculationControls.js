@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import PanelCalculator from '../utils/PanelCalculator';
+import PanelCalculator from './PanelCalculator';
 
 const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDetails, toggleMaterialDetails }) => {
     const [calculatedPanels, setCalculatedPanels] = useState(null);

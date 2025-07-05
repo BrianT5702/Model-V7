@@ -10,6 +10,7 @@ const DoorManager = ({
   onDeleteDoor,
   onClose
 }) => {
+  // Local state for all door fields
   const [doorType, setDoorType] = useState('swing');
   const [configuration, setConfiguration] = useState('single');
   const [width, setWidth] = useState('');
@@ -23,8 +24,9 @@ const DoorManager = ({
   const [dbConnectionError, setDbConnectionError] = useState(false);
   const [validationError, setValidationError] = useState("");
 
+  // Pre-fill in edit mode, reset in add mode
   useEffect(() => {
-    if (editingDoor) {
+    if (isEditMode && editingDoor) {
       setDoorType(editingDoor.door_type);
       setConfiguration(editingDoor.configuration?.includes('double') ? 'double' : 'single');
       setWidth(editingDoor.width);
@@ -34,43 +36,46 @@ const DoorManager = ({
       setSwingDirection(editingDoor.swing_direction || 'right');
       setSlideDirection(editingDoor.slide_direction || 'right');
       setLocalPosition(editingDoor.position_x || 0.5);
-    }
-  }, [editingDoor]);
-
-  useEffect(() => {
-    if (!isEditMode && wall) {
+    } else if (!isEditMode && wall) {
+      setDoorType('swing');
+      setConfiguration('single');
+      setWidth('');
       setHeight('');
       setThickness('');
+      setSide('interior');
+      setSwingDirection('right');
+      setSlideDirection('right');
+      setLocalPosition(0.5);
     }
-  }, [wall, isEditMode]);
+  }, [editingDoor, isEditMode, wall]);
 
   const handleSave = () => {
-    if (!wall?.id || !projectId) {
+    let wallId = wall?.id;
+    if (isEditMode && editingDoor) {
+      wallId = editingDoor.linked_wall || editingDoor.wall_id;
+    }
+    if (!wallId || !projectId) {
       setValidationError("Missing wall or project ID");
       setTimeout(() => setValidationError(""), 4000);
       return;
     }
-
     if (!width || !height || !thickness) {
       setValidationError("Please fill in all required dimensions (width, height, thickness).");
       setTimeout(() => setValidationError(""), 4000);
       return;
     }
-
     // Validate that dimensions are greater than 0
     const widthValue = parseFloat(width);
     const heightValue = parseFloat(height);
     const thicknessValue = parseFloat(thickness);
-    
     if (widthValue <= 0 || heightValue <= 0 || thicknessValue <= 0) {
       setValidationError("Width, Height, and Thickness must be greater than 0");
       setTimeout(() => setValidationError(""), 4000);
       return;
     }
-
     const doorData = {
       project: projectId,
-      linked_wall: wall.id,
+      wall: wallId,
       door_type: doorType,
       configuration: configuration === "single" ? "single_sided" : "double_sided",
       width: widthValue,
@@ -82,11 +87,10 @@ const DoorManager = ({
       slide_direction: slideDirection,
       side: side
     };
-
     if (isEditMode && editingDoor) {
       onUpdateDoor({ ...doorData, id: editingDoor.id });
     } else {
-      onSaveDoor(doorData);
+      onSaveDoor({ ...doorData, linked_wall: wallId });
     }
   };
 
@@ -96,35 +100,48 @@ const DoorManager = ({
     }
   };
 
-  const isDatabaseConnectionError = (error) => {
-    return (
-      error.code === 'ERR_NETWORK' ||
-      error.code === 'ECONNREFUSED' ||
-      error.code === 'ENOTFOUND' ||
-      error.message?.includes('Network Error') ||
-      error.message?.includes('Failed to fetch') ||
-      error.message?.includes('Connection refused') ||
-      error.message?.includes('getaddrinfo ENOTFOUND') ||
-      (error.response?.status >= 500 && error.response?.status < 600)
-    );
-  };
-
   const handleConfirmDelete = async () => {
     if (editingDoor?.id && onDeleteDoor) {
       try {
         await onDeleteDoor(editingDoor.id);
         setShowDeleteConfirm(false);
       } catch (error) {
-        if (isDatabaseConnectionError(error)) {
-          setDbConnectionError(true);
-          setTimeout(() => setDbConnectionError(false), 5000);
-        }
+        setDbConnectionError(true);
+        setTimeout(() => setDbConnectionError(false), 5000);
       }
     }
   };
 
   const handleCancelDelete = () => {
     setShowDeleteConfirm(false);
+  };
+
+  const handleTypeChange = (e) => {
+    const newType = e.target.value;
+    setDoorType(newType);
+    if (newType === 'swing') {
+      setSwingDirection('right');
+      setSlideDirection('');
+    } else {
+      setSlideDirection('right');
+      setSwingDirection('');
+    }
+  };
+
+  const handleConfigChange = (e) => {
+    setConfiguration(e.target.value);
+  };
+
+  const handleFlipDirection = () => {
+    if (doorType === 'swing') {
+      setSwingDirection(swingDirection === 'left' ? 'right' : 'left');
+    } else {
+      setSlideDirection(slideDirection === 'left' ? 'right' : 'left');
+    }
+  };
+
+  const handleFlipSide = () => {
+    setSide(side === 'interior' ? 'exterior' : 'interior');
   };
 
   return (
@@ -148,7 +165,7 @@ const DoorManager = ({
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="text-sm font-medium text-gray-700">Type</label>
-            <select value={doorType} onChange={(e) => setDoorType(e.target.value)} className="input">
+            <select value={doorType} onChange={handleTypeChange} className="input">
               <option value="swing">Swing</option>
               <option value="slide">Slide</option>
             </select>
@@ -156,7 +173,7 @@ const DoorManager = ({
 
           <div>
             <label className="text-sm font-medium text-gray-700">Configuration</label>
-            <select value={configuration} onChange={(e) => setConfiguration(e.target.value)} className="input">
+            <select value={configuration} onChange={handleConfigChange} className="input">
               <option value="single">Single</option>
               <option value="double">Double</option>
             </select>
@@ -167,7 +184,7 @@ const DoorManager = ({
             <input 
               type="number" 
               value={width} 
-              onChange={(e) => setWidth(e.target.value)} 
+              onChange={e => setWidth(e.target.value)} 
               min="100"
               step="100"
               className="input" 
@@ -179,7 +196,7 @@ const DoorManager = ({
             <input 
               type="number" 
               value={height} 
-              onChange={(e) => setHeight(e.target.value)} 
+              onChange={e => setHeight(e.target.value)} 
               min="100"
               step="100"
               className="input" 
@@ -191,7 +208,7 @@ const DoorManager = ({
             <input 
               type="number" 
               value={thickness} 
-              onChange={(e) => setThickness(e.target.value)} 
+              onChange={e => setThickness(e.target.value)} 
               min="25"
               step="25"
               className="input" 
@@ -207,7 +224,7 @@ const DoorManager = ({
             max="1"
             step="0.01"
             value={localPosition}
-            onChange={(e) => setLocalPosition(parseFloat(e.target.value))}
+            onChange={e => setLocalPosition(parseFloat(e.target.value))}
             className="w-full mt-1"
           />
         </div>

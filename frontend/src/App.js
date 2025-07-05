@@ -1,9 +1,9 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import HomePage from './pages/HomePage';
-import ProjectList from './components/ProjectList';
-import CreateProject from './components/CreateProject';
-import ProjectDetails from './components/ProjectDetails';
+import ProjectList from './features/project/ProjectList';
+import CreateProject from './features/project/CreateProject';
+import ProjectDetails from './features/project/ProjectDetails';
 // import WallDetails from './components/WallDetails'; // New component for walls
 // import RoomDetails from './components/RoomDetails'; // New component for rooms
 // import CeilingDetails from './components/CeilingDetails'; // New component for ceilings

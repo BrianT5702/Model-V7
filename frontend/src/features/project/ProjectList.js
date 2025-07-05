@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom'; // Import React Router navigation hook
-import api from '../api/api';
+import api from '../../api/api';
 
 const ProjectList = ({ projects, setProjects }) => {
     const navigate = useNavigate(); // React Router navigation hook
