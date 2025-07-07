@@ -458,7 +458,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         ctx.restore();
     });
-}
+} 
 
 // Calculate the intersection point of two line segments
 export function calculateIntersection(wall1Start, wall1End, wall2Start, wall2End) {

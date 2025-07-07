@@ -3,7 +3,7 @@ import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
 import PanelCalculator from '../panel/PanelCalculator';
 import DoorTable from '../door/DoorTable';
-import { calculatePolygonArea, getOrderedPoints, calculateInsetPoints, calculatePolygonVisualCenter, isPointInPolygon, findIntersectionPointsBetweenWalls } from './utils';
+import { calculatePolygonArea, getOrderedPoints, calculateInsetPoints, calculatePolygonVisualCenter, isPointInPolygon, findIntersectionPointsBetweenWalls, calculateIntersection } from './utils';
 import {
   drawGrid,
   drawRooms,
@@ -27,7 +27,6 @@ const Canvas2D = ({
     joints = [],
     onNewWall, 
     onWallTypeSelect,
-    onWallUpdate,
     isEditingMode, 
     currentMode, 
     onWallSelect, 
@@ -426,81 +425,48 @@ const Canvas2D = ({
                 if (tempWall) {
                     const startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
                     let endPoint = hoveredPoint || snapToClosestPoint(x, y);
-                    
-                    // Check if wall has minimum length
-                    const wallLength = Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y);
-                    if (wallLength < 50) { // Minimum 50mm wall length
-                        setTempWall(null);
-                        return;
+
+                    // --- Snap to 90/180 degrees ---
+                    let dx = endPoint.x - startPoint.x;
+                    let dy = endPoint.y - startPoint.y;
+                    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                    if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) {
+                        endPoint.x = startPoint.x; // Snap vertically
+                    } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
+                        endPoint.y = startPoint.y; // Snap horizontally
                     }
-                    
-                    // Check for intersections with existing walls
-                    const intersections = [];
-                    walls.forEach((wall) => {
-                        const intersection = findIntersectionPoint(
-                            startPoint.x, startPoint.y, endPoint.x, endPoint.y,
-                            wall.start_x, wall.start_y, wall.end_x, wall.end_y
-                        );
-                        if (intersection) {
-                            intersections.push({
-                                point: intersection,
-                                wall: wall
+
+                    // Use modular handler for wall splitting/adding
+                    const wallProperties = walls.length > 0 ? {
+                        height: walls[0].height,
+                        thickness: walls[0].thickness,
+                        application_type: onWallTypeSelect
+                    } : { height: 2800, thickness: 200, application_type: onWallTypeSelect };
+                    try {
+                        if (typeof onNewWall === 'function' && onNewWall.name === 'handleAddWallWithSplitting') {
+                            await onNewWall(startPoint, endPoint, wallProperties);
+                        } else if (typeof onNewWall === 'function' && onNewWall.length === 3) {
+                            await onNewWall(startPoint, endPoint, wallProperties);
+                        } else {
+                            // fallback: just add a single wall
+                            await onNewWall({
+                                start_x: startPoint.x,
+                                start_y: startPoint.y,
+                                end_x: endPoint.x,
+                                end_y: endPoint.y,
+                                ...wallProperties
                             });
                         }
-                    });
-                    
-                    // Sort intersections by distance from start point
-                    intersections.sort((a, b) => {
-                        const distA = Math.hypot(a.point.x - startPoint.x, a.point.y - startPoint.y);
-                        const distB = Math.hypot(b.point.x - startPoint.x, b.point.y - startPoint.y);
-                        return distA - distB;
-                    });
-                    
-                    // Create wall segments
-                    let currentStart = startPoint;
-                    const wallSegments = [];
-                    
-                    for (const intersection of intersections) {
-                        // Create wall segment from current start to intersection
-                        wallSegments.push({
-                            start_x: currentStart.x,
-                            start_y: currentStart.y,
-                            end_x: intersection.point.x,
-                            end_y: intersection.point.y
-                        });
-                        currentStart = intersection.point;
-                    }
-                    
-                    // Add final segment
-                    wallSegments.push({
-                        start_x: currentStart.x,
-                        start_y: currentStart.y,
-                        end_x: endPoint.x,
-                        end_y: endPoint.y
-                    });
-                    
-                    // Create walls for each segment
-                    for (const segment of wallSegments) {
-                        const wallData = {
-                            start_x: segment.start_x,
-                            start_y: segment.start_y,
-                            end_x: segment.end_x,
-                            end_y: segment.end_y,
-                            application_type: onWallTypeSelect ? onWallTypeSelect() : 'wall',
-                            height: project?.height || 1000,
-                            thickness: project?.wall_thickness || 200
-                        };
-                        
-                        try {
-                            await onNewWall(wallData);
-                        } catch (error) {
-                            console.error('Failed to create wall:', error);
-                            if (isDatabaseConnectionError(error)) {
-                                showDatabaseError();
-                            }
+                        // Refresh wall list from parent state
+                        if (typeof setWalls === 'function') {
+                            // Optionally, you can call refreshWalls in parent and pass down new walls
+                        }
+                    } catch (error) {
+                        console.error('Error managing walls:', error);
+                        if (isDatabaseConnectionError(error)) {
+                            showDatabaseError();
                         }
                     }
-                    
                     setTempWall(null);
                 }
             } else {
@@ -513,8 +479,8 @@ const Canvas2D = ({
                     end_y: snappedStart.y,
                 });
             }
-            return;
-        }
+                    return;
+            }
         
         // === Edit-Wall Mode ===
         if (currentMode === 'edit-wall') {
@@ -632,16 +598,6 @@ const Canvas2D = ({
             return;
         }
         const { x, y } = getMousePos(event);
-        
-        // Update tempWall during drawing
-        if (isDrawing && tempWall && currentMode === 'add-wall') {
-            setTempWall(prev => ({
-                ...prev,
-                end_x: x,
-                end_y: y
-            }));
-        }
-        
         // Endpoint Hover Detection
         let closestPoint = null;
         let minDistance = SNAP_THRESHOLD / scaleFactor.current;
@@ -674,6 +630,25 @@ const Canvas2D = ({
                 }
             });
             setHoveredWall(newHoveredWall);
+        }
+
+        // --- Update tempWall while drawing (snapping logic) ---
+        if (isDrawing && tempWall && currentMode === 'add-wall') {
+            let snapped = snapToClosestPoint(x, y);
+            // Snap to 90/180 degrees
+            let dx = snapped.x - tempWall.start_x;
+            let dy = snapped.y - tempWall.start_y;
+            let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) {
+                snapped.x = tempWall.start_x;
+            } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
+                snapped.y = tempWall.start_y;
+            }
+            setTempWall({
+                ...tempWall,
+                end_x: snapped.x,
+                end_y: snapped.y,
+            });
         }
     };
 
@@ -1049,23 +1024,4 @@ const doSegmentsIntersect = (p1, p2, p3, p4) => {
         return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
     };
     return ccw(p1, p3, p4) !== ccw(p2, p3, p4) && ccw(p1, p2, p3) !== ccw(p1, p2, p4);
-};
-
-// Function to find intersection point between two line segments
-const findIntersectionPoint = (x1, y1, x2, y2, x3, y3, x4, y4) => {
-    const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-    if (Math.abs(denominator) < 1e-10) return null; // Lines are parallel
-    
-    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
-    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denominator;
-    
-    // Check if intersection is within both line segments
-    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-        return {
-            x: x1 + t * (x2 - x1),
-            y: y1 + t * (y2 - y1)
-        };
-    }
-    
-    return null;
 };

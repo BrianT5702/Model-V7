@@ -306,12 +306,53 @@ const ProjectDetails = () => {
                                     {/* Action Buttons at the Bottom Right */}
                                     <div className="mt-6 flex justify-end space-x-3">
                                         <button
-                                            onClick={() => {
-                                                if (editedWall) projectDetails.handleWallUpdate(editedWall);
+                                            onClick={async () => {
+                                                // 1. Find which endpoints changed
+                                                const original = projectDetails.walls.find(w => w.id === projectDetails.selectedWall);
+                                                const edited = editedWall;
+                                                const changedEndpoints = [];
+                                                if (original && edited) {
+                                                    if (original.start_x !== edited.start_x || original.start_y !== edited.start_y) {
+                                                        changedEndpoints.push({
+                                                            which: 'start',
+                                                            old: { x: original.start_x, y: original.start_y },
+                                                            new: { x: edited.start_x, y: edited.start_y }
+                                                        });
+                                                    }
+                                                    if (original.end_x !== edited.end_x || original.end_y !== edited.end_y) {
+                                                        changedEndpoints.push({
+                                                            which: 'end',
+                                                            old: { x: original.end_x, y: original.end_y },
+                                                            new: { x: edited.end_x, y: edited.end_y }
+                                                        });
+                                                    }
+                                                }
+                                                // 2. For each changed endpoint, update all other walls sharing that endpoint
+                                                const updates = [];
+                                                for (const endpoint of changedEndpoints) {
+                                                    for (const [idx, wall] of projectDetails.walls.entries()) {
+                                                        if (wall.id === edited.id) continue;
+                                                        // Check start
+                                                        if (Math.abs(endpoint.old.x - wall.start_x) < 0.001 && Math.abs(endpoint.old.y - wall.start_y) < 0.001) {
+                                                            const updatedWall = { ...wall, start_x: endpoint.new.x, start_y: endpoint.new.y };
+                                                            updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
+                                                        }
+                                                        // Check end
+                                                        if (Math.abs(endpoint.old.x - wall.end_x) < 0.001 && Math.abs(endpoint.old.y - wall.end_y) < 0.001) {
+                                                            const updatedWall = { ...wall, end_x: endpoint.new.x, end_y: endpoint.new.y };
+                                                            updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
+                                                        }
+                                                    }
+                                                }
+                                                // 3. Update the edited wall itself (skip merge)
+                                                await Promise.all([
+                                                    ...updates,
+                                                    projectDetails.handleWallUpdateNoMerge(edited)
+                                                ]);
                                                 projectDetails.setSelectedWall(null);
+                                                setEditedWall(null);
                                             }}
-                                            className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 
-                                                transition-colors"
+                                            className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
                                         >
                                             Save
                                         </button>
@@ -397,9 +438,9 @@ const ProjectDetails = () => {
                             setWalls={projectDetails.setWalls}
                             joints={projectDetails.joints}
                             projectId={projectId}
-                            onWallTypeSelect={() => projectDetails.selectedWallType}
+                            onWallTypeSelect={projectDetails.selectedWallType}
                             onWallUpdate={projectDetails.handleWallUpdate}
-                            onNewWall={projectDetails.handleWallCreate}
+                            onNewWall={projectDetails.handleAddWallWithSplitting}
                             onWallDelete={projectDetails.handleWallDelete}
                             isEditingMode={projectDetails.isEditingMode}
                             currentMode={projectDetails.currentMode}
