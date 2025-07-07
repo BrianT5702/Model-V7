@@ -330,8 +330,111 @@ export default function useProjectDetails(projectId) {
   // Add this function to handle wall deletion
   const handleWallDelete = async (wallId) => {
     try {
+      // Find the wall to be deleted
+      const wallToDelete = walls.find(w => w.id === wallId);
+      if (!wallToDelete) return;
+
+      // Collect all intersection points (endpoints and mid-wall intersections)
+      const pointsToCheck = [
+        { x: wallToDelete.start_x, y: wallToDelete.start_y },
+        { x: wallToDelete.end_x, y: wallToDelete.end_y }
+      ];
+      // Find all walls that intersect wallToDelete (not at endpoints)
+      walls.forEach(wall => {
+        if (wall.id === wallToDelete.id) return;
+        const intersection = calculateIntersection(
+          { x: wallToDelete.start_x, y: wallToDelete.start_y },
+          { x: wallToDelete.end_x, y: wallToDelete.end_y },
+          { x: wall.start_x, y: wall.start_y },
+          { x: wall.end_x, y: wall.end_y }
+        );
+        if (intersection) {
+          // Exclude endpoints
+          const isEndpoint = (pt, w) =>
+            (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
+            (Math.abs(w.end_x - pt.x) < 0.001 && Math.abs(w.end_y - pt.y) < 0.001);
+          if (!isEndpoint(intersection, wallToDelete) && !isEndpoint(intersection, wall)) {
+            // Only add if not already present
+            if (!pointsToCheck.some(pt => Math.abs(pt.x - intersection.x) < 0.001 && Math.abs(pt.y - intersection.y) < 0.001)) {
+              pointsToCheck.push(intersection);
+            }
+          }
+        }
+      });
+
+      // Delete the wall
       await api.delete(`/walls/${wallId}/`);
-      setWalls(prevWalls => prevWalls.filter(wall => wall.id !== wallId));
+      let updatedWalls = walls.filter(w => w.id !== wallId);
+
+      // Helper to find walls sharing a point
+      const findWallsAtPoint = (pt, wallList) =>
+        wallList.filter(w =>
+          (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
+          (Math.abs(w.end_x - pt.x) < 0.001 && Math.abs(w.end_y - pt.y) < 0.001)
+        );
+      // Helper to check if two walls can be merged
+      const canMerge = (w1, w2) => {
+        if (
+          w1.application_type !== w2.application_type ||
+          w1.height !== w2.height ||
+          w1.thickness !== w2.thickness
+        ) return false;
+        // Collinear check
+        return areCollinearWalls(w1, w2);
+      };
+      // Recursive merge
+      const tryMergeAtPoint = async (pt) => {
+        let mergeHappened = false;
+        let wallsAtPt = findWallsAtPoint(pt, updatedWalls);
+        if (wallsAtPt.length === 2) {
+          const [w1, w2] = wallsAtPt;
+          if (canMerge(w1, w2)) {
+            // Call merge API
+            const response = await api.post("/walls/merge_walls/", {
+              wall_ids: [w1.id, w2.id],
+            });
+            if (response.status === 201) {
+              const newWall = response.data;
+              updatedWalls = updatedWalls.filter(w => w.id !== w1.id && w.id !== w2.id);
+              updatedWalls.push(newWall);
+              mergeHappened = true;
+              // Recursively try to merge at both endpoints of the new wall
+              await tryMergeAtPoint({ x: newWall.start_x, y: newWall.start_y });
+              await tryMergeAtPoint({ x: newWall.end_x, y: newWall.end_y });
+            }
+          }
+        }
+        return mergeHappened;
+      };
+      // --- Network-wide merge: collect all unique endpoints ---
+      const getAllEndpoints = (wallList) => {
+        const pts = [];
+        wallList.forEach(w => {
+          const addPt = (pt) => {
+            if (!pts.some(p => Math.abs(p.x - pt.x) < 0.001 && Math.abs(p.y - pt.y) < 0.001)) {
+              pts.push({ x: pt.x, y: pt.y });
+            }
+          };
+          addPt({ x: w.start_x, y: w.start_y });
+          addPt({ x: w.end_x, y: w.end_y });
+        });
+        return pts;
+      };
+      // Try to merge at all collected points (endpoints and intersections)
+      for (const pt of pointsToCheck) {
+        await tryMergeAtPoint(pt);
+      }
+      // --- Now do a network-wide merge pass ---
+      let mergeOccurred = true;
+      while (mergeOccurred) {
+        mergeOccurred = false;
+        const endpoints = getAllEndpoints(updatedWalls);
+        for (const pt of endpoints) {
+          const merged = await tryMergeAtPoint(pt);
+          if (merged) mergeOccurred = true;
+        }
+      }
+      setWalls(updatedWalls);
     } catch (error) {
       console.error('Error deleting wall:', error);
       throw error;
