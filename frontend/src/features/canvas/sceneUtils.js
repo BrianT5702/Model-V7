@@ -31,6 +31,12 @@ export function addControls(instance) {
   instance.controls = new OrbitControls(instance.camera, instance.renderer.domElement);
   instance.controls.maxDistance = instance.gridSize;
   instance.controls.minDistance = 10;
+  // Set the center of rotation to the model center if possible
+  if (typeof instance.calculateModelCenter === 'function') {
+    const center = instance.calculateModelCenter();
+    instance.controls.target.set(center.x, 0, center.z);
+    instance.controls.update();
+  }
 }
 
 export function calculateModelOffset(instance) {

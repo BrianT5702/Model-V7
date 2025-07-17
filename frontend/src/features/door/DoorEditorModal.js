@@ -35,8 +35,8 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
               onChange={form.handleConfigChange}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
             >
-              <option value="single_sided">Single-Sided</option>
-              <option value="double_sided">Double-Sided</option>
+              <option value="single">Single-Sided</option>
+              <option value="double">Double-Sided</option>
             </select>
           </label>
 

@@ -7,7 +7,7 @@ import { addGrid, adjustModelScale, addLighting, addControls, calculateModelOffs
 import { createWallMesh, createDoorMesh } from './meshUtils';
 
 export default class ThreeCanvas {
-  constructor(containerId, walls, joints = [], doors = [], scalingFactor = 0.01) {
+  constructor(containerId, walls, joints = [], doors = [], scalingFactor = 0.01, project = null) {
     this.container = document.getElementById(containerId);
     this.THREE = THREE;
     this.scene = new THREE.Scene();
@@ -26,6 +26,7 @@ export default class ThreeCanvas {
     this.buildingHeight = 3;
     this.gridSize = 1000;
     this.isInteriorView = false;
+    this.project = project;
 
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
@@ -81,6 +82,13 @@ export default class ThreeCanvas {
     this.container.addEventListener('mousemove', (event) => onMouseMoveHandler(this, event));
     this.container.addEventListener('click', (event) => onCanvasClickHandler(this, event));
     this.doorButton.addEventListener('click', () => toggleDoorHandler(this));
+    // Add double-click to animate door
+    this.container.addEventListener('dblclick', (event) => {
+      // Only animate if a door is selected (activeDoor)
+      if (this.activeDoor) {
+        toggleDoorHandler(this);
+      }
+    });
   
     // Adjust initial camera position for better view
     this.camera.position.set(200, 200, 200);
@@ -92,6 +100,15 @@ export default class ThreeCanvas {
     addControls(this);
     calculateModelOffset(this);
     buildModel(this);
+
+    // Add a red dot at the model center
+    const modelCenter = this.calculateModelCenter();
+    const dotGeometry = new THREE.SphereGeometry(100 * this.scalingFactor, 20, 20);
+    const dotMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
+    dotMesh.position.set(modelCenter.x, 10 * this.scalingFactor, modelCenter.z);
+    dotMesh.name = 'model_center_dot';
+    this.scene.add(dotMesh);
   
     this.animate();
   }
@@ -228,20 +245,23 @@ getModelBounds() {
   }
 
   calculateModelCenter() {
-    let sumX = 0, sumZ = 0, count = 0;
-    const scale = this.scalingFactor;
-    const offsetX = this.modelOffset.x;
-    const offsetZ = this.modelOffset.z;
-  
-    this.walls.forEach(wall => {
-      sumX += wall.start_x * scale + offsetX;
-      sumX += wall.end_x * scale + offsetX;
-      sumZ += wall.start_y * scale + offsetZ;
-      sumZ += wall.end_y * scale + offsetZ;
-      count += 2;
-    });
-  
-    return { x: sumX / count, z: sumZ / count };
+    if (this.project && this.project.width && this.project.length) {
+      // Match 2D logic: center is at (width/2, length/2)
+      return { x: this.project.width / 2 * this.scalingFactor, z: this.project.length / 2 * this.scalingFactor };
+    } else {
+      let sumX = 0, sumZ = 0, count = 0;
+      const scale = this.scalingFactor;
+      const offsetX = this.modelOffset.x;
+      const offsetZ = this.modelOffset.z;
+      this.walls.forEach(wall => {
+        sumX += wall.start_x * scale + offsetX;
+        sumX += wall.end_x * scale + offsetX;
+        sumZ += wall.start_y * scale + offsetZ;
+        sumZ += wall.end_y * scale + offsetZ;
+        count += 2;
+      });
+      return { x: sumX / count, z: sumZ / count };
+    }
   }  
 
   createBeveledWallShape(length, height, thickness, hasStart45, hasEnd45) {

@@ -120,7 +120,7 @@ export default function useProjectDetails(projectId) {
   // 3D view effect
   useEffect(() => {
     if (is3DView) {
-      const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors);
+      const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors, 0.01, project);
       threeCanvasInstance.current = threeCanvas;
       return () => {
         threeCanvas.renderer.dispose();
@@ -247,7 +247,23 @@ export default function useProjectDetails(projectId) {
 
   // Add toggleMode utility
   const toggleMode = (mode) => {
-    setCurrentMode((prev) => (prev === mode ? null : mode));
+    setCurrentMode((prev) => {
+      if (prev === mode) {
+        // Exiting mode
+        if (mode === 'define-room') {
+          setShowRoomManagerModal(false);
+          setSelectedRoomPoints([]);
+        }
+        return null;
+      } else {
+        // Entering new mode
+        if (mode === 'define-room') {
+          setShowRoomManagerModal(true); // Always show modal in define-room mode
+          setSelectedRoomPoints([]);    // Clear points when entering
+        }
+        return mode;
+      }
+    });
   };
 
   // Add a function to refresh walls from the backend
@@ -270,6 +286,17 @@ export default function useProjectDetails(projectId) {
     } catch (error) {
       console.error('Error creating wall:', error);
       throw error;
+    }
+  };
+
+  // Add this function to handle room selection and open the editor modal
+  const handleRoomSelect = (roomId) => {
+    const room = rooms.find(r => r.id === roomId);
+    if (room) {
+      setEditingRoom(room);
+      setShowRoomManagerModal(true); // Always show modal for editing
+      setSelectedWallsForRoom(room.walls);
+      setSelectedRoomPoints(room.room_points || []);
     }
   };
 
@@ -673,6 +700,18 @@ export default function useProjectDetails(projectId) {
     }
   };
 
+  // Add this function to toggle between interior and exterior 3D views
+  const handleViewToggle = () => {
+    if (!threeCanvasInstance.current) return;
+    if (isInteriorView) {
+      threeCanvasInstance.current.animateToExteriorView();
+      setIsInteriorView(false);
+    } else {
+      threeCanvasInstance.current.animateToInteriorView();
+      setIsInteriorView(true);
+    }
+  };
+
   // Expose all state and handlers
   return {
     // State
@@ -757,6 +796,7 @@ export default function useProjectDetails(projectId) {
     handleDoorSelect,
     handleDeleteDoor,
     handleAddWallWithSplitting,
+    handleViewToggle,
     // Utility
     isDatabaseConnectionError,
     areCollinearWalls,
@@ -768,5 +808,6 @@ export default function useProjectDetails(projectId) {
     handleConfirmWallDelete,
     handleCancelWallDelete,
     handleWallUpdateNoMerge,
+    handleRoomSelect,
   };
 } 

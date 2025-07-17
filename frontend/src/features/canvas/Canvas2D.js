@@ -395,6 +395,47 @@ const Canvas2D = ({
         };
     };
 
+    // Helper: snap to intersections, then wall segments, then endpoints, then raw click
+    function snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor) {
+        let closestPoint = { x, y };
+        // Make intersection snapping more sensitive (3x normal threshold)
+        let intersectionThreshold = SNAP_THRESHOLD * 3 / scaleFactor;
+        let minDistance = intersectionThreshold;
+        // 1. Intersections (high sensitivity)
+        intersections.forEach(inter => {
+            const distance = Math.hypot(inter.x - x, inter.y - y);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestPoint = { x: inter.x, y: inter.y };
+            }
+        });
+        // 2. Wall segments (disabled in define-room mode)
+        // walls.forEach(wall => {
+        //     const segmentPoint = snapToWallSegment(x, y, wall);
+        //     if (segmentPoint) {
+        //         const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+        //         if (distance < segmentThreshold && distance < minDistance) {
+        //             minDistance = distance;
+        //             closestPoint = segmentPoint;
+        //         }
+        //     }
+        // });
+        // 3. Endpoints (normal threshold)
+        let segmentThreshold = SNAP_THRESHOLD / scaleFactor;
+        walls.forEach(wall => {
+            ['start', 'end'].forEach(point => {
+                const px = wall[`${point}_x`];
+                const py = wall[`${point}_y`];
+                const distance = Math.hypot(px - x, py - y);
+                if (distance < segmentThreshold && distance < minDistance) {
+                    minDistance = distance;
+                    closestPoint = { x: px, y: py };
+                }
+            });
+        });
+        return closestPoint;
+    }
+
     // Enhanced click handling with endpoint detection
     const handleCanvasClick = async (event) => {
         const { x, y } = getMousePos(event);
@@ -557,8 +598,69 @@ const Canvas2D = ({
           
         // === Define-Room Mode ===
         if (currentMode === 'define-room') {
-            // ... (room point selection and polygon validation logic from old code) ...
-            // (Copy your old define-room logic here)
+            // 1. Check if clicked inside an existing room polygon
+            const clickPoint = { x, y };
+            for (const room of rooms) {
+                const polygon = room.room_points?.length >= 3 ? room.room_points : null;
+                if (polygon && isPointInPolygon(clickPoint, polygon)) {
+                    if (typeof onRoomSelect === 'function') onRoomSelect(room.id);
+                    return;
+                }
+            }
+            // 2. Snap to intersections, wall segments, endpoints
+            const snapped = snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor.current);
+            let points = [...selectedRoomPoints];
+            // 3. If right-click, remove last point
+            if (event.type === 'contextmenu' || event.button === 2) {
+                if (points.length > 0) {
+                    points.pop();
+                    onUpdateRoomPoints(points);
+                }
+                return;
+            }
+            // 4. If clicking near the first point and ≥3 points, close polygon
+            if (points.length >= 3) {
+                const first = points[0];
+                const distToFirst = Math.hypot(snapped.x - first.x, snapped.y - first.y);
+                if (distToFirst < SNAP_THRESHOLD / scaleFactor.current) {
+                    points.push({ ...first });
+                    onUpdateRoomPoints(points);
+                    return;
+                }
+            }
+            // 5. Prevent duplicate points
+            if (points.some(pt => Math.abs(pt.x - snapped.x) < 0.001 && Math.abs(pt.y - snapped.y) < 0.001)) {
+                return;
+            }
+            // 6. Prevent self-intersection
+            if (points.length >= 2) {
+                const newSegment = [points[points.length - 1], snapped];
+                for (let i = 0; i < points.length - 2; i++) {
+                    const existingSegment = [points[i], points[i + 1]];
+                    if (doSegmentsIntersect(newSegment[0], newSegment[1], existingSegment[0], existingSegment[1])) {
+                        return;
+                    }
+                }
+            }
+            // 7. Add new point
+            points.push(snapped);
+            onUpdateRoomPoints(points);
+            return;
+        }
+
+        // === Edit-Door Mode ===
+        if (currentMode === 'edit-door') {
+            // Use detectClickedDoor to select a door
+            const clickedDoor = detectClickedDoor(
+                x, y, doors, walls, scaleFactor.current, offsetX.current, offsetY.current
+            );
+            if (clickedDoor) {
+                setSelectedDoorId(clickedDoor.id);
+                onDoorSelect(clickedDoor);
+            } else {
+                setSelectedDoorId(null);
+            }
+            return;
         }
     };
 
@@ -616,7 +718,9 @@ const Canvas2D = ({
         });
         setHoveredPoint(closestPoint);
         // Wall Hover Detection (use wall.id)
-        if (['add-wall', 'edit-wall', 'add-door', 'merge-wall'].includes(currentMode)) {
+        if ([
+            'add-wall', 'edit-wall', 'add-door', 'merge-wall'
+        ].includes(currentMode)) {
             let minWallDistance = SNAP_THRESHOLD / scaleFactor.current;
             let newHoveredWall = null;
             walls.forEach((wall) => {
@@ -631,7 +735,15 @@ const Canvas2D = ({
             });
             setHoveredWall(newHoveredWall);
         }
-
+        // Door Hover Detection (edit-door mode)
+        if (currentMode === 'edit-door') {
+            const hoveredDoor = detectHoveredDoor(
+                x, y, doors, walls, scaleFactor.current, offsetX.current, offsetY.current
+            );
+            setHoveredDoorId(hoveredDoor ? hoveredDoor.id : null);
+        } else {
+            setHoveredDoorId(null);
+        }
         // --- Update tempWall while drawing (snapping logic) ---
         if (isDrawing && tempWall && currentMode === 'add-wall') {
             let snapped = snapToClosestPoint(x, y);
