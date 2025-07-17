@@ -398,7 +398,8 @@ export function drawWalls({
                     const toJoinY = joinMidY - midY;
                     const dotToJoin = normalX * toJoinX + normalY * toJoinY;
                     // If dotToCenter and dotToJoin have opposite signs, flip the side for line2
-                    if ((dotToCenter > 0 && dotToJoin < 0) || (dotToCenter < 0 && dotToJoin > 0)) {
+                    const shouldFlip = (dotToCenter > 0 && dotToJoin < 0) || (dotToCenter < 0 && dotToJoin > 0);
+                    if (shouldFlip) {
                         // Recalculate line2 with flipped offset
                         const gapPixels = FIXED_GAP;
                         const scale = scaleFactor;

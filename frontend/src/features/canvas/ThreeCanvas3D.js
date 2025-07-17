@@ -6,6 +6,8 @@ import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './t
 import { addGrid, adjustModelScale, addLighting, addControls, calculateModelOffset, buildModel } from './sceneUtils';
 import { createWallMesh, createDoorMesh } from './meshUtils';
 
+window.gsap = gsap;
+
 export default class ThreeCanvas {
   constructor(containerId, walls, joints = [], doors = [], scalingFactor = 0.01, project = null) {
     this.container = document.getElementById(containerId);

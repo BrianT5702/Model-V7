@@ -5,46 +5,134 @@ export function createWallMesh(instance, wall) {
   const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
   const scale = instance.scalingFactor;
   const modelCenter = instance.calculateModelCenter();
-  let startX = start_x * scale;
-  let startZ = start_y * scale;
-  let endX = end_x * scale;
-  let endZ = end_y * scale;
+  // Snap endpoints to a fixed precision to avoid floating point misalignment
+  function snap(val, precision = 0.01) {
+    return Math.round(val / precision) * precision;
+  }
+  let startX = snap(start_x * scale);
+  let startZ = snap(start_y * scale);
+  let endX = snap(end_x * scale);
+  let endZ = snap(end_y * scale);
   const dx = endX - startX;
   const dz = endZ - startZ;
   const wallLength = Math.hypot(dx, dz);
   const wallDirX = dx / wallLength;
   const wallDirZ = dz / wallLength;
-  const normX = -dz / wallLength;
-  const normZ = dx / wallLength;
+  // Calculate the wall's midpoint
   const wallMidX = (startX + endX) / 2;
   const wallMidZ = (startZ + endZ) / 2;
-  const isExternalWall = 
-    Math.abs(startX) < 0.001 || Math.abs(startX - 15000 * scale) < 0.001 ||
-    Math.abs(startZ) < 0.001 || Math.abs(startZ - 8000 * scale) < 0.001;
+  // Calculate the direction to the model center
+  const toCenterX = (modelCenter.x * scale) - wallMidX;
+  const toCenterZ = (modelCenter.z * scale) - wallMidZ;
+
+  // Determine if the wall is horizontal, vertical, or diagonal
+  const isHorizontal = Math.abs(start_y - end_y) < 1e-6;
+  const isVertical = Math.abs(start_x - end_x) < 1e-6;
   let finalNormX, finalNormZ;
-  if (isExternalWall) {
-    if (Math.abs(startX) < 0.001) {
-      finalNormX = 1; finalNormZ = 0;
-    } else if (Math.abs(startX - 15000 * scale) < 0.001) {
-      finalNormX = -1; finalNormZ = 0;
-    } else if (Math.abs(startZ) < 0.001) {
-      finalNormX = 0; finalNormZ = 1;
+  if (isHorizontal) {
+    // Normal is along Z axis (up or down)
+    if (toCenterZ < 0) {
+      finalNormX = 0;
+      finalNormZ = -1;
     } else {
-      finalNormX = 0; finalNormZ = -1;
+      finalNormX = 0;
+      finalNormZ = 1;
+    }
+  } else if (isVertical) {
+    // Normal is along X axis (left or right)
+    if (toCenterX < 0) {
+      finalNormX = -1;
+      finalNormZ = 0;
+    } else {
+      finalNormX = 1;
+      finalNormZ = 0;
     }
   } else {
-    const toCenterX = (modelCenter.x * scale) - wallMidX;
-    const toCenterZ = (modelCenter.z * scale) - wallMidZ;
+    // Diagonal wall: use original logic
+    const normX = -dz / wallLength;
+    const normZ = dx / wallLength;
     const dotProduct = normX * toCenterX + normZ * toCenterZ;
     finalNormX = dotProduct < 0 ? -normX : normX;
     finalNormZ = dotProduct < 0 ? -normZ : normZ;
   }
-  const offsetX = finalNormX * (thickness * scale / 2);
-  const offsetZ = finalNormZ * (thickness * scale / 2);
-  startX += offsetX;
-  startZ += offsetZ;
-  endX += offsetX;
-  endZ += offsetZ;
+  // --- Joint-aware normal flipping logic ---
+  // Helper to get normal for a wall (same logic as above)
+  function getWallNormal(wall, modelCenter, scale) {
+    const sx = snap(wall.start_x * scale);
+    const sz = snap(wall.start_y * scale);
+    const ex = snap(wall.end_x * scale);
+    const ez = snap(wall.end_y * scale);
+    const dx = ex - sx;
+    const dz = ez - sz;
+    const wallLength = Math.hypot(dx, dz);
+    const wallMidX = (sx + ex) / 2;
+    const wallMidZ = (sz + ez) / 2;
+    const toCenterX = (modelCenter.x * scale) - wallMidX;
+    const toCenterZ = (modelCenter.z * scale) - wallMidZ;
+    const isHorizontal = Math.abs(wall.start_y - wall.end_y) < 1e-6;
+    const isVertical = Math.abs(wall.start_x - wall.end_x) < 1e-6;
+    let nX, nZ;
+    if (isHorizontal) {
+      nX = 0;
+      nZ = toCenterZ < 0 ? -1 : 1;
+    } else if (isVertical) {
+      nX = toCenterX < 0 ? -1 : 1;
+      nZ = 0;
+    } else {
+      const normX = -dz / wallLength;
+      const normZ = dx / wallLength;
+      const dotProduct = normX * toCenterX + normZ * toCenterZ;
+      nX = dotProduct < 0 ? -normX : normX;
+      nZ = dotProduct < 0 ? -normZ : normZ;
+    }
+    return { nX, nZ };
+  }
+
+  // Find all joints involving this wall
+  let flipNormal = false;
+  if (instance.joints && Array.isArray(instance.joints)) {
+    for (const joint of instance.joints) {
+      // Only consider joints with joining_method '45_cut'
+      if ((joint.wall_1 === id || joint.wall_2 === id) && joint.joining_method === '45_cut') {
+        // Find the joining wall (the other wall in the joint)
+        const joiningWallId = joint.wall_1 === id ? joint.wall_2 : joint.wall_1;
+        const joiningWall = instance.walls.find(w => String(w.id) === String(joiningWallId));
+        if (joiningWall) {
+          // Wall midpoint
+          const midX = (startX + endX) / 2;
+          const midZ = (startZ + endZ) / 2;
+          // Vector to model center
+          const toCenterX = (modelCenter.x * scale) - midX;
+          const toCenterZ = (modelCenter.z * scale) - midZ;
+          const dotToCenter = finalNormX * toCenterX + finalNormZ * toCenterZ;
+          // Joining wall midpoint
+          const joinMidX = (joiningWall.start_x * scale + joiningWall.end_x * scale) / 2;
+          const joinMidZ = (joiningWall.start_y * scale + joiningWall.end_y * scale) / 2;
+          const toJoinX = joinMidX - midX;
+          const toJoinZ = joinMidZ - midZ;
+          const dotToJoin = finalNormX * toJoinX + finalNormZ * toJoinZ;
+          const shouldFlip = (dotToCenter > 0 && dotToJoin < 0) || (dotToCenter < 0 && dotToJoin < 0);
+          console.log('[3D FlipCheck]', {
+            wallId: id,
+            joiningWallId,
+            dotToCenter,
+            dotToJoin,
+            shouldFlip,
+            joiningMethod: joint.joining_method
+          });
+          if (shouldFlip) {
+            flipNormal = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+  if (flipNormal) {
+    finalNormX = finalNormX;
+    finalNormZ = - finalNormZ;
+  }
+
   const wallDoors = instance.doors.filter(d => String(d.wall) === String(id));
   const wallHeight = height * scale;
   const wallThickness = thickness * scale;
@@ -115,15 +203,21 @@ export function createWallMesh(instance, wall) {
   };
   const wallGeometry = new instance.THREE.ExtrudeGeometry(wallShape, extrudeSettings);
   wallGeometry.computeVertexNormals();
-  const wallMaterial = new instance.THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.7, metalness: 0.2 });
+  const wallMaterial = new instance.THREE.MeshStandardMaterial({ color: 0xFFFFFFF, roughness: 0.5, metalness: 0.7 });
   const wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
   wallMesh.userData.isWall = true;
   wallMesh.castShadow = true;
   wallMesh.receiveShadow = true;
   wallMesh.rotation.y = -Math.atan2(dz, dx);
+  // Position the mesh so that the database line is one face, and thickness extends toward the model center
+  // By default, ExtrudeGeometry extrudes along +Z, so we need to shift the mesh by wallThickness/2 in the -normal direction
   wallMesh.position.set(startX + instance.modelOffset.x, 0, startZ + instance.modelOffset.z);
-  wallMesh.position.x -= finalNormX * (wallThickness / 2);
-  wallMesh.position.z -= finalNormZ * (wallThickness / 2);
+  // If flipNormal, offset the mesh by -wallThickness in the direction of the (flipped) normal (away from model center)
+  if (flipNormal) {
+    wallMesh.position.x -= finalNormX * wallThickness;
+    wallMesh.position.z -= finalNormZ * wallThickness;
+    // Do NOT rotate the mesh
+  }
   const edges = new instance.THREE.EdgesGeometry(wallGeometry);
   const edgeLines = new instance.THREE.LineSegments(edges, new instance.THREE.LineBasicMaterial({ color: 0x000000 }));
   wallMesh.add(edgeLines);
@@ -131,9 +225,16 @@ export function createWallMesh(instance, wall) {
     const mid = (cutout.start + cutout.end) / 2;
     const centerX = startX + wallDirX * mid;
     const centerZ = startZ + wallDirZ * mid;
+    // If flipNormal, offset the door position as well
+    let doorX = centerX + instance.modelOffset.x;
+    let doorZ = centerZ + instance.modelOffset.z;
+    if (flipNormal) {
+      doorX -= finalNormX * wallThickness;
+      doorZ -= finalNormZ * wallThickness;
+    }
     cutout.doorInfo.calculatedPosition = {
-      x: centerX + instance.modelOffset.x - finalNormX * (wallThickness / 2),
-      z: centerZ + instance.modelOffset.z - finalNormZ * (wallThickness / 2),
+      x: doorX,
+      z: doorZ,
       angle: Math.atan2(dz, dx),
       width: cutout.end - cutout.start,
       height: cutout.height,
@@ -150,11 +251,11 @@ export function createDoorMesh(instance, door, wall) {
   const { x: doorPosX, z: doorPosZ, angle: wallAngle, width: cutoutWidth, height: doorHeight, depth: wallDepth } = door.calculatedPosition;
   const scale = instance.scalingFactor;
   const { width, thickness, door_type, swing_direction, slide_direction, side, configuration } = door;
-  const doorWidth = width * scale * 1.1;
+  const doorWidth = width * scale * 1.05;
   const doorThickness = thickness * instance.scalingFactor;
   const sideCoefficient = side === 'exterior' ? 1 : -1;
   const doorMaterial = new instance.THREE.MeshStandardMaterial({
-    color: door_type === 'swing' ? 0xFFA500 : 0x00FF00,
+    color: door_type === 'swing' ? 0xF8F8FF : 0xF8F8FF,
     roughness: 0.5,
     metalness: 0.3,
     transparent: true,
