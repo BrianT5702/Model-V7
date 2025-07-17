@@ -14,7 +14,8 @@ import {
   drawDimensions,
   calculateOffsetPoints,
   drawWallLinePair,
-  drawWallCaps
+  drawWallCaps,
+  drawPanelDivisions // <-- add this
 } from './drawing';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
@@ -461,10 +462,12 @@ const Canvas2D = ({
     
         // === Add-Wall Mode ===
         if (currentMode === 'add-wall') {
+            // Helper to round coordinates
+            const roundPoint = (pt) => ({ x: Math.round(pt.x), y: Math.round(pt.y) });
             if (isDrawing) {
                 setIsDrawing(false);
                 if (tempWall) {
-                    const startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
+                    let startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
                     let endPoint = hoveredPoint || snapToClosestPoint(x, y);
 
                     // --- Snap to 90/180 degrees ---
@@ -476,6 +479,10 @@ const Canvas2D = ({
                     } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
                         endPoint.y = startPoint.y; // Snap horizontally
                     }
+
+                    // Round both points before saving
+                    startPoint = roundPoint(startPoint);
+                    endPoint = roundPoint(endPoint);
 
                     // Use modular handler for wall splitting/adding
                     const wallProperties = walls.length > 0 ? {
@@ -511,7 +518,9 @@ const Canvas2D = ({
                     setTempWall(null);
                 }
             } else {
-                const snappedStart = hoveredPoint || snapToClosestPoint(x, y);
+                let snappedStart = hoveredPoint || snapToClosestPoint(x, y);
+                // Round the start point before showing temp wall
+                snappedStart = roundPoint(snappedStart);
                 setIsDrawing(true);
                 setTempWall({
                     start_x: snappedStart.x,
@@ -520,9 +529,9 @@ const Canvas2D = ({
                     end_y: snappedStart.y,
                 });
             }
-                    return;
-            }
-        
+            return;
+        }        
+
         // === Edit-Wall Mode ===
         if (currentMode === 'edit-wall') {
             let selectedId = null;
@@ -764,79 +773,6 @@ const Canvas2D = ({
         }
     };
 
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-        canvas.width = 800;
-        canvas.height = 600;
-
-        // === Restore original scale/offset calculation ===
-        // Find bounding box of all wall endpoints
-        const minX = Math.min(...walls.map((wall) => Math.min(wall.start_x, wall.end_x)), 0);
-        const maxX = Math.max(...walls.map((wall) => Math.max(wall.start_x, wall.end_x)), 0);
-        const minY = Math.min(...walls.map((wall) => Math.min(wall.start_y, wall.end_y)), 0);
-        const maxY = Math.max(...walls.map((wall) => Math.max(wall.start_y, wall.end_y)), 0);
-
-        const wallWidth = maxX - minX || 1;
-        const wallHeight = maxY - minY || 1;
-
-        const padding = 50;
-        const sf = Math.min(
-            (canvas.width - 4 * padding) / wallWidth,
-            (canvas.height - 4 * padding) / wallHeight
-        );
-
-        scaleFactor.current = sf;
-        setCurrentScaleFactor(sf);
-
-        offsetX.current = (canvas.width - wallWidth * sf) / 2 - minX * sf;
-        offsetY.current = (canvas.height - wallHeight * sf) / 2 - minY * sf;
-        // === End scale/offset calculation ===
-
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        // Draw grid
-        drawGrid(context, canvas.width, canvas.height, gridSize, isDrawing);
-        // Draw walls
-        drawWalls({
-            context,
-            walls,
-            highlightWalls,
-            selectedWallsForRoom,
-            selectedWall,
-            hoveredWall,
-            isEditingMode,
-            joints,
-            intersections,
-            tempWall,
-            snapToClosestPoint,
-            scaleFactor: scaleFactor.current,
-            offsetX: offsetX.current,
-            offsetY: offsetY.current,
-            FIXED_GAP,
-            // Use project center only for wall offset direction, not for scale/offset
-            center: project ? { x: project.width / 2, y: project.length / 2 } : { x: 0, y: 0 },
-            currentScaleFactor,
-            SNAP_THRESHOLD,
-            drawPartitionSlashes,
-            hoveredPoint,
-            drawWallLinePair,
-            drawWallCaps,
-            drawEndpoints,
-            drawDimensions
-        });
-        // Draw doors
-        drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
-        // Draw rooms
-        drawRooms(context, rooms, walls, scaleFactor.current, offsetX.current, offsetY.current, calculateRoomArea, calculatePolygonVisualCenter);
-        // Draw room preview
-        drawRoomPreview(context, selectedRoomPoints, scaleFactor.current, offsetX.current, offsetY.current);
-    }, [
-        walls, rooms, selectedWall, tempWall, doors,
-        selectedWallsForRoom, joints, isEditingMode,
-        hoveredWall, hoveredDoorId, highlightWalls,
-        selectedRoomPoints, project, hoveredPoint
-    ]);
-
     // Add adjustWallForJointType and dependencies from old code
     const originalWallEndpoints = new Map();
 
@@ -953,6 +889,173 @@ const Canvas2D = ({
         }));
         setIntersections(mergedIntersections);
     }, [walls, joints]);
+
+    // Helper to get joint types for a wall
+    const getWallJointTypes = (wall, intersections) => {
+        // Find all intersections for this wall
+        const wallIntersections = intersections.filter(inter => 
+            inter.pairs && inter.pairs.some(pair => 
+                pair.wall1.id === wall.id || pair.wall2.id === wall.id
+            )
+        );
+        let leftJointType = 'butt_in';
+        let rightJointType = 'butt_in';
+        // Determine wall orientation and which end is left/right
+        const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
+        const isLeftToRight = wall.end_x > wall.start_x;
+        const isBottomToTop = wall.end_y > wall.start_y;
+        // Track all intersections for each end
+        const leftEndIntersections = [];
+        const rightEndIntersections = [];
+        wallIntersections.forEach(inter => {
+            inter.pairs.forEach(pair => {
+                if (pair.wall1.id === wall.id || pair.wall2.id === wall.id) {
+                    if (isHorizontal) {
+                        if (isLeftToRight) {
+                            if (inter.x === wall.start_x) {
+                                leftEndIntersections.push(pair.joining_method);
+                            } else if (inter.x === wall.end_x) {
+                                rightEndIntersections.push(pair.joining_method);
+                            }
+                        } else {
+                            if (inter.x === wall.start_x) {
+                                rightEndIntersections.push(pair.joining_method);
+                            } else if (inter.x === wall.end_x) {
+                                leftEndIntersections.push(pair.joining_method);
+                            }
+                        }
+                    }
+                    if (isBottomToTop) {
+                        if (inter.y === wall.start_y) {
+                            leftEndIntersections.push(pair.joining_method);
+                        } else if (inter.y === wall.end_y) {
+                            rightEndIntersections.push(pair.joining_method);
+                        }
+                    } else {
+                        if (inter.y === wall.start_y) {
+                            rightEndIntersections.push(pair.joining_method);
+                        } else if (inter.y === wall.end_y) {
+                            leftEndIntersections.push(pair.joining_method);
+                        }
+                    }
+                }
+            });
+        });
+        leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
+        rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
+        return { left: leftJointType, right: rightJointType };
+    };
+
+    // Calculate panels for each wall
+    const wallPanelsMap = React.useMemo(() => {
+        const PanelCalculator = require('../panel/PanelCalculator').default || require('../panel/PanelCalculator');
+        const map = {};
+        walls.forEach(wall => {
+            const jointTypes = getWallJointTypes(wall, intersections);
+            const calculator = new PanelCalculator();
+            const wallLength = Math.sqrt(
+                Math.pow(wall.end_x - wall.start_x, 2) + 
+                Math.pow(wall.end_y - wall.start_y, 2)
+            );
+            let panels = calculator.calculatePanels(
+                wallLength,
+                wall.thickness,
+                jointTypes
+            );
+            // Reorder: left side panel (if any), then full panels, then right side panel (if any)
+            const leftSide = panels.find(p => p.type === 'side' && p.position === 'left');
+            const rightSide = panels.find(p => p.type === 'side' && p.position === 'right');
+            const fullPanels = panels.filter(p => p.type === 'full');
+            // If there are leftover/cut panels that are not left/right, treat them as side panels (fallback)
+            const otherSides = panels.filter(p => p.type === 'side' && p.position !== 'left' && p.position !== 'right');
+            let orderedPanels = [];
+            if (leftSide) orderedPanels.push(leftSide);
+            if (otherSides.length > 0 && !leftSide) orderedPanels.push(otherSides[0]);
+            orderedPanels = orderedPanels.concat(fullPanels);
+            if (rightSide) orderedPanels.push(rightSide);
+            if (otherSides.length > 1 || (otherSides.length === 1 && leftSide)) orderedPanels.push(otherSides[otherSides.length - 1]);
+            // If no side panels, just use the original order
+            if (orderedPanels.length === 0) orderedPanels = panels;
+            map[wall.id] = orderedPanels;
+        });
+        return map;
+    }, [walls, intersections]);
+    
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // === Restore original scale/offset calculation ===
+        // Find bounding box of all wall endpoints
+        const minX = Math.min(...walls.map((wall) => Math.min(wall.start_x, wall.end_x)), 0);
+        const maxX = Math.max(...walls.map((wall) => Math.max(wall.start_x, wall.end_x)), 0);
+        const minY = Math.min(...walls.map((wall) => Math.min(wall.start_y, wall.end_y)), 0);
+        const maxY = Math.max(...walls.map((wall) => Math.max(wall.start_y, wall.end_y)), 0);
+
+        const wallWidth = maxX - minX || 1;
+        const wallHeight = maxY - minY || 1;
+
+        const padding = 50;
+        const sf = Math.min(
+            (canvas.width - 4 * padding) / wallWidth,
+            (canvas.height - 4 * padding) / wallHeight
+        );
+
+        scaleFactor.current = sf;
+        setCurrentScaleFactor(sf);
+
+        offsetX.current = (canvas.width - wallWidth * sf) / 2 - minX * sf;
+        offsetY.current = (canvas.height - wallHeight * sf) / 2 - minY * sf;
+        // === End scale/offset calculation ===
+
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        // Draw grid
+        drawGrid(context, canvas.width, canvas.height, gridSize, isDrawing);
+        // Draw walls
+        drawWalls({
+            context,
+            walls,
+            highlightWalls,
+            selectedWallsForRoom,
+            selectedWall,
+            hoveredWall,
+            isEditingMode,
+            joints,
+            intersections,
+            tempWall,
+            snapToClosestPoint,
+            scaleFactor: scaleFactor.current,
+            offsetX: offsetX.current,
+            offsetY: offsetY.current,
+            FIXED_GAP,
+            center: project ? { x: project.width / 2, y: project.length / 2 } : { x: 0, y: 0 },
+            currentScaleFactor,
+            SNAP_THRESHOLD,
+            drawPartitionSlashes,
+            hoveredPoint,
+            drawWallLinePair,
+            drawWallCaps,
+            drawEndpoints,
+            drawDimensions,
+            // Add these:
+            wallPanelsMap,
+            drawPanelDivisions
+        });
+        // Draw doors
+        drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
+        // Draw rooms
+        drawRooms(context, rooms, walls, scaleFactor.current, offsetX.current, offsetY.current, calculateRoomArea, calculatePolygonVisualCenter);
+        // Draw room preview
+        drawRoomPreview(context, selectedRoomPoints, scaleFactor.current, offsetX.current, offsetY.current);
+    }, [
+        walls, rooms, selectedWall, tempWall, doors,
+        selectedWallsForRoom, joints, isEditingMode,
+        hoveredWall, hoveredDoorId, highlightWalls,
+        selectedRoomPoints, project, hoveredPoint,
+        wallPanelsMap // Add wallPanelsMap to dependencies
+    ]);
     
     return (
         <div className="flex flex-col items-center gap-4">

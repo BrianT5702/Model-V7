@@ -9,6 +9,164 @@ const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDet
     const [cutPanelsCount, setCutPanelsCount] = useState(0);
     const [showLeftoverDetails, setShowLeftoverDetails] = useState(false);
     const [panelCalculator, setPanelCalculator] = useState(null);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [exportTab, setExportTab] = useState('pdf'); // 'pdf' or 'csv'
+
+    // Helper to generate CSV string from calculatedPanels
+    const getCSVString = () => {
+        if (!calculatedPanels) return '';
+        const header = 'Width,Length,Application,Quantity,Type';
+        const rows = calculatedPanels.map(panel =>
+            `${panel.width},${panel.length},${panel.application},${panel.quantity},${panel.type}`
+        );
+        return [header, ...rows].join('\n');
+    };
+
+    // Helper to generate HTML table for PDF preview (as React element)
+    const getPDFTable = () => {
+        if (!calculatedPanels) return null;
+        return (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead>
+                    <tr style={{ background: '#f3f3f3' }}>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Width</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Length</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Application</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Quantity</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {calculatedPanels.map((panel, idx) => (
+                        <tr key={idx}>
+                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.width}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.length}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.application}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.quantity}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.type}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
+    };
+
+    // Helper to generate HTML table as a string for PDF export
+    const getPDFTableHtml = () => {
+        if (!calculatedPanels) return '';
+        const header = `
+            <tr>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Width</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Length</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Application</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Quantity</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Type</th>
+            </tr>
+        `;
+        const rows = calculatedPanels.map(panel => `
+            <tr>
+                <td style="border:1px solid #ccc;padding:4px;">${panel.width}</td>
+                <td style="border:1px solid #ccc;padding:4px;">${panel.length}</td>
+                <td style="border:1px solid #ccc;padding:4px;">${panel.application}</td>
+                <td style="border:1px solid #ccc;padding:4px;">${panel.quantity}</td>
+                <td style="border:1px solid #ccc;padding:4px;">${panel.type}</td>
+            </tr>
+        `).join('');
+        return `<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
+    };
+
+    // Helper to generate HTML table for door details (React element)
+    const getDoorTable = () => {
+        if (!doors || doors.length === 0) return null;
+        return (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', marginTop: '32px' }}>
+                <thead>
+                    <tr style={{ background: '#f3f3f3' }}>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>No.</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Door Type</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Single/Double Side</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Clear Opening Size</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {doors.map((door, idx) => (
+                        <tr key={door.id || idx}>
+                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{idx + 1}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{door.door_type === 'swing' ? 'Swing' : 'Slide'}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{door.configuration === 'single_sided' ? 'Single' : 'Double'}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{`W ${door.width}mm x ${door.height}mm HT`}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
+    };
+
+    // Helper to generate HTML table as a string for door details (for PDF export)
+    const getDoorTableHtml = () => {
+        if (!doors || doors.length === 0) return '';
+        const header = `
+            <tr>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">No.</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Door Type</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Single/Double Side</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Clear Opening Size</th>
+            </tr>
+        `;
+        const rows = doors.map((door, idx) => `
+            <tr>
+                <td style="border:1px solid #ccc;padding:4px;text-align:center;">${idx + 1}</td>
+                <td style="border:1px solid #ccc;padding:4px;text-align:center;">${door.door_type === 'swing' ? 'Swing' : 'Slide'}</td>
+                <td style="border:1px solid #ccc;padding:4px;text-align:center;">${door.configuration === 'single_sided' ? 'Single' : 'Double'}</td>
+                <td style="border:1px solid #ccc;padding:4px;text-align:center;">W ${door.width}mm x ${door.height}mm HT</td>
+            </tr>
+        `).join('');
+        return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:32px;"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
+    };
+
+    // Helper to generate CSV for doors
+    const getDoorCSV = () => {
+        if (!doors || doors.length === 0) return '';
+        const header = 'No.,Door Type,Single/Double Side,Clear Opening Size';
+        const rows = doors.map((door, idx) =>
+            `${idx + 1},${door.door_type === 'swing' ? 'Swing' : 'Slide'},${door.configuration === 'single_sided' ? 'Single' : 'Double'},W ${door.width}mm x ${door.height}mm HT`
+        );
+        return [header, ...rows].join('\n');
+    };
+
+    // Update getPDFTableHtml and getCSVString to include door table
+    const getPDFTableHtmlWithDoors = () => {
+        return getPDFTableHtml() + getDoorTableHtml();
+    };
+    const getCSVStringWithDoors = () => {
+        return getCSVString() + '\n\n' + getDoorCSV();
+    };
+
+    // Download helpers
+    const downloadCSV = () => {
+        const csv = getCSVStringWithDoors();
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'material_panels_and_doors.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+    const downloadPDF = () => {
+        // Open a new window with both tables for printing
+        const tableHtml = `<!DOCTYPE html><html><head><title>Material Panels PDF</title><style>
+            table { width: 100%; border-collapse: collapse; font-size: 14px; }
+            th, td { border: 1px solid #ccc; padding: 4px; }
+            th { background: #f3f3f3; }
+        </style></head><body>${getPDFTableHtmlWithDoors()}</body></html>`;
+        const printWindow = window.open('', '', 'width=800,height=600');
+        printWindow.document.write(tableHtml);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        // Do NOT close the window automatically!
+    };
 
     const calculateAllPanels = () => {
         const calculator = new PanelCalculator();
@@ -156,7 +314,8 @@ const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDet
                 >
                     {showMaterialDetails ? 'Hide Material Needed' : 'View Material Needed'}
                 </button>
-                {calculatedPanels && (
+                {/* Show Panel Details button only when material details are visible */}
+                {showMaterialDetails && calculatedPanels && (
                     <button
                         onClick={() => setShowTable(!showTable)}
                         className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
@@ -164,7 +323,64 @@ const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDet
                         {showTable ? 'Hide Panel Details' : 'Show Panel Details'}
                     </button>
                 )}
+                {/* Export button, only show when material details are visible */}
+                {showMaterialDetails && calculatedPanels && (
+                    <button
+                        onClick={() => setShowExportModal(true)}
+                        className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
+                    >
+                        Export
+                    </button>
+                )}
             </div>
+
+            {/* Export Modal */}
+            {showExportModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+                    <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl relative">
+                        <button
+                            onClick={() => setShowExportModal(false)}
+                            className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-xl"
+                        >
+                            &times;
+                        </button>
+                        <div className="flex gap-4 mb-4">
+                            <button
+                                className={`px-4 py-2 rounded ${exportTab === 'pdf' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
+                                onClick={() => setExportTab('pdf')}
+                            >PDF Preview</button>
+                            <button
+                                className={`px-4 py-2 rounded ${exportTab === 'csv' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
+                                onClick={() => setExportTab('csv')}
+                            >CSV Preview</button>
+                        </div>
+                        <div className="overflow-auto max-h-96 border rounded p-4 bg-gray-50">
+                            {exportTab === 'pdf' ? (
+                                <div>
+                                    {getPDFTable()}
+                                    {getDoorTable()}
+                                </div>
+                            ) : (
+                                <pre className="whitespace-pre-wrap text-sm">{getCSVStringWithDoors()}</pre>
+                            )}
+                        </div>
+                        <div className="flex gap-4 mt-6 justify-end">
+                            <button
+                                onClick={downloadPDF}
+                                className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800"
+                            >
+                                Save as PDF
+                            </button>
+                            <button
+                                onClick={downloadCSV}
+                                className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800"
+                            >
+                                Save as CSV
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showMaterialDetails && panelAnalysis && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg">

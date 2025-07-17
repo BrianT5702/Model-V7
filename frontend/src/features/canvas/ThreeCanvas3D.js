@@ -1,7 +1,5 @@
 import * as THREE from "three";
-import earcut from 'earcut';
 import gsap from 'gsap';
-import {CSG} from 'three-csg-ts'
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
 import { addGrid, adjustModelScale, addLighting, addControls, calculateModelOffset, buildModel } from './sceneUtils';
 import { createWallMesh, createDoorMesh } from './meshUtils';
@@ -141,7 +139,7 @@ export default class ThreeCanvas {
             opacity: 0,
             duration: 1,
             onStart: () => {
-                ceiling.material.transparent = true;
+                ceiling.material.transparent = false;
             },
             onComplete: () => {
                 ceiling.visible = false;
@@ -196,7 +194,7 @@ animateToExteriorView() {
     ceilingLevels.forEach(ceiling => {
         ceiling.visible = true;
         gsap.to(ceiling.material, {
-            opacity: 0.9,
+            opacity: 100,
             duration: 1,
             onComplete: () => {
                 ceiling.material.transparent = false;

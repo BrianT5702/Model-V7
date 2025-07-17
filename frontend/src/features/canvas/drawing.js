@@ -331,6 +331,8 @@ export function drawWalls({
     drawWallCaps,
     drawEndpoints,
     drawDimensions,
+    wallPanelsMap, // <-- added
+    drawPanelDivisions // <-- added
 }) {
     if (!Array.isArray(walls) || !walls) return;
     walls.forEach((wall, index) => {
@@ -449,6 +451,14 @@ export function drawWalls({
         if (wall.application_type === "partition") {
             drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX, offsetY);
         }
+        // --- Draw panel divisions here ---
+        if (wallPanelsMap && drawPanelDivisions) {
+            const panels = wallPanelsMap[wall.id];
+            if (panels && panels.length > 0) {
+                drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, undefined, FIXED_GAP);
+            }
+        }
+        // --- End panel divisions ---
         if (isEditingMode) {
             const endpointColor = selectedWall === wall.id ? 'red' : '#2196F3';
             drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
@@ -551,5 +561,48 @@ export function drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX
         context.strokeStyle = "#666";
         context.lineWidth = 1.5;
         context.stroke();
+    }
+} 
+
+// Draw panel division lines along a wall
+export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, color = '#333', FIXED_GAP = 2.5) {
+    if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
+    const line1 = wall._line1;
+    const line2 = wall._line2;
+    const wallLength = Math.sqrt(Math.pow(line1[1].x - line1[0].x, 2) + Math.pow(line1[1].y - line1[0].y, 2));
+    if (wallLength === 0) return;
+    let accumulated = 0;
+    for (let i = 0; i < panels.length - 1; i++) {
+        accumulated += panels[i].width;
+        const t = accumulated / wallLength;
+        // Center point along the wall (centerline)
+        const cx = line1[0].x + (line1[1].x - line1[0].x) * t;
+        const cy = line1[0].y + (line1[1].y - line1[0].y) * t;
+        const c2x = line2[0].x + (line2[1].x - line2[0].x) * t;
+        const c2y = line2[0].y + (line2[1].y - line2[0].y) * t;
+        // Midpoint between the two wall lines at t
+        const mx = (cx + c2x) / 2;
+        const my = (cy + c2y) / 2;
+        // Direction vector along the wall
+        const dx = (line1[1].x - line1[0].x) / wallLength;
+        const dy = (line1[1].y - line1[0].y) / wallLength;
+        // Perpendicular vector
+        const perpX = -dy;
+        const perpY = dx;
+        // Half the gap between the wall lines at this t
+        const halfGap = Math.sqrt(Math.pow(cx - c2x, 2) + Math.pow(cy - c2y, 2)) / 2;
+        // Endpoints of the perpendicular division line
+        const x1 = mx + perpX * halfGap;
+        const y1 = my + perpY * halfGap;
+        const x2 = mx - perpX * halfGap;
+        const y2 = my - perpY * halfGap;
+        context.save();
+        context.beginPath();
+        context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
+        context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
+        context.strokeStyle = color;
+        context.lineWidth = 2;
+        context.stroke();
+        context.restore();
     }
 } 
