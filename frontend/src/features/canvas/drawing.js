@@ -121,12 +121,17 @@ export function drawEndpoints(context, x, y, scaleFactor, offsetX, offsetY, hove
 }
 
 // Draw wall dimensions
-export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue') {
+export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false) {
     let midX = 0;
     let midY = 0;
     const length = Math.sqrt(
         Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
+    
+    // Calculate wall midpoint
+    const wallMidX = (startX + endX) / 2;
+    const wallMidY = (startY + endY) / 2;
+    
     context.save();
     context.fillStyle = color;
     context.font = '15px Arial';
@@ -135,25 +140,197 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     const dx = endX - startX;
     const dy = endY - startY;
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-    if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-        // Horizontal wall
-        midX = ((startX + endX) / 2) * scaleFactor + offsetX;
-        midY = ((startY + endY) / 2) * scaleFactor + offsetY - 15;
-        context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        context.fillRect(midX - textWidth / 2 - 2, midY - 8, textWidth + 4, 16);
-        context.fillStyle = color;
-        context.fillText(text, midX - textWidth / 2, midY + 4);
+    
+    // If modelBounds is provided, use external dimensioning
+    if (modelBounds) {
+        const { minX, maxX, minY, maxY } = modelBounds;
+        const baseOffset = 30; // Base distance outside the model
+        
+        if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
+            // Horizontal wall - place on top or bottom
+            const isTopHalf = wallMidY < (minY + maxY) / 2;
+            const side = isTopHalf ? 'top' : 'bottom';
+            
+            // Find available position to avoid overlaps
+            let labelY, labelX;
+            let offset = baseOffset;
+            let attempts = 0;
+            const maxAttempts = 10;
+            
+            do {
+                labelY = isTopHalf ? 
+                    (minY * scaleFactor + offsetY - offset) : 
+                    (maxY * scaleFactor + offsetY + offset);
+                labelX = wallMidX * scaleFactor + offsetX;
+                
+                // Check for overlaps with existing labels
+                const labelBounds = {
+                    x: labelX - textWidth / 2 - 2,
+                    y: labelY - 8,
+                    width: textWidth + 4,
+                    height: 16
+                };
+                
+                const hasOverlap = placedLabels.some(existing => {
+                    return !(labelBounds.x + labelBounds.width < existing.x || 
+                           existing.x + existing.width < labelBounds.x ||
+                           labelBounds.y + labelBounds.height < existing.y ||
+                           existing.y + existing.height < labelBounds.y);
+                });
+                
+                if (!hasOverlap) break;
+                
+                // Increase offset and try again
+                offset += 20;
+                attempts++;
+            } while (attempts < maxAttempts);
+            
+            // Draw standard architectural dimensioning lines
+            context.beginPath();
+            context.setLineDash([5, 5]);
+            // Extension line from start of wall (perpendicular to wall)
+            context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
+            context.lineTo(startX * scaleFactor + offsetX, labelY);
+            // Extension line from end of wall (perpendicular to wall)
+            context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
+            context.lineTo(endX * scaleFactor + offsetX, labelY);
+            // Dimension line connecting the two extension lines
+            context.moveTo(startX * scaleFactor + offsetX, labelY);
+            context.lineTo(endX * scaleFactor + offsetX, labelY);
+            context.strokeStyle = color;
+            context.lineWidth = 1.5;
+            context.stroke();
+            context.setLineDash([]);
+            
+                         // Add to placed labels for future collision detection
+             placedLabels.push({
+                 x: labelX - textWidth / 2 - 2,
+                 y: labelY - 8,
+                 width: textWidth + 4,
+                 height: 16,
+                 side: side,
+                 text: text,
+                 angle: angle,
+                 type: 'wall'
+             });
+             
+             // Collect for second pass if needed
+             if (collectOnly) {
+                 allLabels.push({
+                     x: labelX - textWidth / 2 - 2,
+                     y: labelY - 8,
+                     width: textWidth + 4,
+                     height: 16,
+                     side: side,
+                     text: text,
+                     angle: angle,
+                     type: 'wall'
+                 });
+             }
+        } else {
+            // Vertical wall - place on left or right
+            const isLeftHalf = wallMidX < (minX + maxX) / 2;
+            const side = isLeftHalf ? 'left' : 'right';
+            
+            // Find available position to avoid overlaps
+            let labelX, labelY;
+            let offset = baseOffset;
+            let attempts = 0;
+            const maxAttempts = 10;
+            
+            do {
+                labelX = isLeftHalf ? 
+                    (minX * scaleFactor + offsetX - offset) : 
+                    (maxX * scaleFactor + offsetX + offset);
+                labelY = wallMidY * scaleFactor + offsetY;
+                
+                // Check for overlaps with existing labels (rotated bounding box for vertical text)
+                const labelBounds = {
+                    x: labelX - 8, // Center the rotated text
+                    y: labelY - textWidth / 2 - 2,
+                    width: 16, // Swapped with height for rotated text
+                    height: textWidth + 4 // Swapped with width for rotated text
+                };
+                
+                const hasOverlap = placedLabels.some(existing => {
+                    return !(labelBounds.x + labelBounds.width < existing.x || 
+                           existing.x + existing.width < labelBounds.x ||
+                           labelBounds.y + labelBounds.height < existing.y ||
+                           existing.y + existing.height < labelBounds.y);
+                });
+                
+                if (!hasOverlap) break;
+                
+                // Increase offset and try again
+                offset += 20;
+                attempts++;
+            } while (attempts < maxAttempts);
+            
+            // Draw standard architectural dimensioning lines
+            context.beginPath();
+            context.setLineDash([5, 5]);
+            // Extension line from start of wall (perpendicular to wall)
+            context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
+            context.lineTo(labelX, startY * scaleFactor + offsetY);
+            // Extension line from end of wall (perpendicular to wall)
+            context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
+            context.lineTo(labelX, endY * scaleFactor + offsetY);
+            // Dimension line connecting the two extension lines
+            context.moveTo(labelX, startY * scaleFactor + offsetY);
+            context.lineTo(labelX, endY * scaleFactor + offsetY);
+            context.strokeStyle = color;
+            context.lineWidth = 1.5;
+            context.stroke();
+            context.setLineDash([]);
+            
+                         // Add to placed labels for future collision detection (rotated bounding box for vertical text)
+             placedLabels.push({
+                 x: labelX - 8, // Center the rotated text
+                 y: labelY - textWidth / 2 - 2,
+                 width: 16, // Swapped with height for rotated text
+                 height: textWidth + 4, // Swapped with width for rotated text
+                 side: side,
+                 text: text,
+                 angle: angle,
+                 type: 'wall'
+             });
+             
+             // Collect for second pass if needed
+             if (collectOnly) {
+                 allLabels.push({
+                     x: labelX - 8, // Center the rotated text
+                     y: labelY - textWidth / 2 - 2,
+                     width: 16, // Swapped with height for rotated text
+                     height: textWidth + 4, // Swapped with width for rotated text
+                     side: side,
+                     text: text,
+                     angle: angle,
+                     type: 'wall'
+                 });
+             }
+        }
     } else {
-        // Vertical wall
-        midX = ((startX + endX) / 2) * scaleFactor + offsetX + 15;
-        midY = ((startY + endY) / 2) * scaleFactor + offsetY;
-        context.translate(midX, midY);
-        context.rotate(-Math.PI / 2);
-        context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
-        context.fillStyle = color;
-        context.fillText(text, -textWidth / 2, 4);
-        context.restore();
+        // Original internal dimensioning (fallback)
+        if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
+            // Horizontal wall
+            midX = ((startX + endX) / 2) * scaleFactor + offsetX;
+            midY = ((startY + endY) / 2) * scaleFactor + offsetY - 15;
+            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            context.fillRect(midX - textWidth / 2 - 2, midY - 8, textWidth + 4, 16);
+            context.fillStyle = color;
+            context.fillText(text, midX - textWidth / 2, midY + 4);
+        } else {
+            // Vertical wall
+            midX = ((startX + endX) / 2) * scaleFactor + offsetX + 15;
+            midY = ((startY + endY) / 2) * scaleFactor + offsetY;
+            context.translate(midX, midY);
+            context.rotate(-Math.PI / 2);
+            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
+            context.fillStyle = color;
+            context.fillText(text, -textWidth / 2, 4);
+            context.restore();
+        }
     }
     context.restore();
 }
@@ -335,6 +512,22 @@ export function drawWalls({
     drawPanelDivisions // <-- added
 }) {
     if (!Array.isArray(walls) || !walls) return;
+    
+    // Calculate model bounds for external dimensioning
+    const modelBounds = walls.length > 0 ? {
+        minX: Math.min(...walls.map(w => Math.min(w.start_x, w.end_x))),
+        maxX: Math.max(...walls.map(w => Math.max(w.start_x, w.end_x))),
+        minY: Math.min(...walls.map(w => Math.min(w.start_y, w.end_y))),
+        maxY: Math.max(...walls.map(w => Math.max(w.start_y, w.end_y)))
+    } : null;
+    
+    // Track placed labels to prevent overlaps
+    const placedLabels = [];
+    // Collect label info for second pass
+    const allLabels = [];
+    const allPanelLabels = [];
+    
+    // First pass: draw all dashed lines and collect label info
     walls.forEach((wall, index) => {
         const highlight = highlightWalls.find(h => h.id === wall.id);
         const wallColor =
@@ -451,11 +644,11 @@ export function drawWalls({
         if (wall.application_type === "partition") {
             drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX, offsetY);
         }
-        // --- Draw panel divisions here ---
+        // --- Draw panel divisions here (collect panel label info) ---
         if (wallPanelsMap && drawPanelDivisions) {
             const panels = wallPanelsMap[wall.id];
             if (panels && panels.length > 0) {
-                drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, undefined, FIXED_GAP);
+                drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, undefined, FIXED_GAP, modelBounds, placedLabels, allPanelLabels, true);
             }
         }
         // --- End panel divisions ---
@@ -464,6 +657,7 @@ export function drawWalls({
             drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
             drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
         }
+        // Collect wall label info for second pass
         drawDimensions(
             context,
             wall.start_x,
@@ -473,7 +667,11 @@ export function drawWalls({
             scaleFactor,
             offsetX,
             offsetY,
-            selectedWall === wall.id ? 'red' : '#2196F3'
+            selectedWall === wall.id ? 'red' : '#2196F3',
+            modelBounds,
+            placedLabels,
+            allLabels,
+            true // collectOnly
         );
         if (isEditingMode) {
             intersections.forEach((inter) => {
@@ -491,7 +689,7 @@ export function drawWalls({
             });
         }
     });
-    // Draw temporary wall while adding wall
+    // Draw temporary wall while adding wall (skip label collection for temp wall)
     if (tempWall) {
         const { line1, line2 } = calculateOffsetPoints(
             tempWall.start_x,
@@ -514,7 +712,11 @@ export function drawWalls({
             scaleFactor,
             offsetX,
             offsetY,
-            '#4CAF50'
+            '#4CAF50',
+            modelBounds,
+            placedLabels,
+            allLabels,
+            true // collectOnly
         );
         const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
         if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
@@ -535,6 +737,12 @@ export function drawWalls({
             drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 6);
         }
     }
+    // Second pass: draw all label backgrounds and text for walls
+    allLabels.forEach(label => { label.draw = makeLabelDrawFn(label); });
+    allLabels.forEach(label => { label.draw(context); });
+    // Second pass: draw all label backgrounds and text for panels
+    allPanelLabels.forEach(label => { label.draw = makeLabelDrawFn(label); });
+    allPanelLabels.forEach(label => { label.draw(context); });
 }
 
 // Draw diagonal hatching for partitions
@@ -565,13 +773,16 @@ export function drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX
 } 
 
 // Draw panel division lines along a wall
-export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, color = '#333', FIXED_GAP = 2.5) {
+export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, color = '#333', FIXED_GAP = 2.5, modelBounds = null, placedLabels = [], allPanelLabels = [], collectOnly = false) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
     const line1 = wall._line1;
     const line2 = wall._line2;
     const wallLength = Math.sqrt(Math.pow(line1[1].x - line1[0].x, 2) + Math.pow(line1[1].y - line1[0].y, 2));
     if (wallLength === 0) return;
+    
     let accumulated = 0;
+    
+    // Draw panel division lines
     for (let i = 0; i < panels.length - 1; i++) {
         accumulated += panels[i].width;
         const t = accumulated / wallLength;
@@ -605,4 +816,270 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
         context.stroke();
         context.restore();
     }
+    
+    // Draw side panel length labels
+    accumulated = 0;
+    for (let i = 0; i < panels.length; i++) {
+        const panel = panels[i];
+        const panelWidth = panel.width;
+        const panelCenter = accumulated + panelWidth / 2;
+        const t = panelCenter / wallLength;
+        
+        // Calculate position for the label
+        const cx = line1[0].x + (line1[1].x - line1[0].x) * t;
+        const cy = line1[0].y + (line1[1].y - line1[0].y) * t;
+        const c2x = line2[0].x + (line2[1].x - line2[0].x) * t;
+        const c2y = line2[0].y + (line2[1].y - line2[0].y) * t;
+        const mx = (cx + c2x) / 2;
+        const my = (cy + c2y) / 2;
+        
+        // Direction vector along the wall
+        const dx = (line1[1].x - line1[0].x) / wallLength;
+        const dy = (line1[1].y - line1[0].y) / wallLength;
+        // Perpendicular vector for label offset
+        const perpX = -dy;
+        const perpY = dx;
+        
+        // Only show labels for side panels (first and last panels)
+        if (i === 0 || i === panels.length - 1) {
+            const labelText = `${Math.round(panelWidth)} mm`;
+
+            // Start and end t values for the panel
+            const tStart = accumulated / wallLength;
+            const tEnd = (accumulated + panelWidth) / wallLength;
+
+            // Start and end points along the wall centerline
+            const cxStart = line1[0].x + (line1[1].x - line1[0].x) * tStart;
+            const cyStart = line1[0].y + (line1[1].y - line1[0].y) * tStart;
+            const c2xStart = line2[0].x + (line2[1].x - line2[0].x) * tStart;
+            const c2yStart = line2[0].y + (line2[1].y - line2[0].y) * tStart;
+            const mxStart = (cxStart + c2xStart) / 2;
+            const myStart = (cyStart + c2yStart) / 2;
+
+            const cxEnd = line1[0].x + (line1[1].x - line1[0].x) * tEnd;
+            const cyEnd = line1[0].y + (line1[1].y - line1[0].y) * tEnd;
+            const c2xEnd = line2[0].x + (line2[1].x - line2[0].x) * tEnd;
+            const c2yEnd = line2[0].y + (line2[1].y - line2[0].y) * tEnd;
+            const mxEnd = (cxEnd + c2xEnd) / 2;
+            const myEnd = (cyEnd + c2yEnd) / 2;
+
+            // Calculate direction and angle
+            const dx = mxEnd - mxStart;
+            const dy = myEnd - myStart;
+            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+            // Panel midpoint
+            const panelMidX = (mxStart + mxEnd) / 2;
+            const panelMidY = (myStart + myEnd) / 2;
+
+            // Use the passed modelBounds or fallback to wall bounds
+            const bounds = modelBounds || {
+                minX: Math.min(wall.start_x, wall.end_x),
+                maxX: Math.max(wall.start_x, wall.end_x),
+                minY: Math.min(wall.start_y, wall.end_y),
+                maxY: Math.max(wall.start_y, wall.end_y)
+            };
+
+            const baseOffset = 30;
+            const text = labelText;
+            const textWidth = context.measureText(text).width;
+
+            if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
+                // Horizontal panel - place on top or bottom
+                const isTopHalf = panelMidY < (bounds.minY + bounds.maxY) / 2;
+                const side = isTopHalf ? 'top' : 'bottom';
+                
+                // Find available position to avoid overlaps
+                let labelY, labelX;
+                let offset = baseOffset;
+                let attempts = 0;
+                const maxAttempts = 10;
+                
+                do {
+                    labelY = isTopHalf ? 
+                        (bounds.minY * scaleFactor + offsetY - offset) : 
+                        (bounds.maxY * scaleFactor + offsetY + offset);
+                    labelX = panelMidX * scaleFactor + offsetX;
+                    
+                    // Check for overlaps with existing labels
+                    const labelBounds = {
+                        x: labelX - textWidth / 2 - 2,
+                        y: labelY - 8,
+                        width: textWidth + 4,
+                        height: 16
+                    };
+                    
+                    const hasOverlap = placedLabels.some(existing => {
+                        return !(labelBounds.x + labelBounds.width < existing.x || 
+                               existing.x + existing.width < labelBounds.x ||
+                               labelBounds.y + labelBounds.height < existing.y ||
+                               existing.y + existing.height < labelBounds.y);
+                    });
+                    
+                    if (!hasOverlap) break;
+                    
+                    // Increase offset and try again
+                    offset += 20;
+                    attempts++;
+                } while (attempts < maxAttempts);
+                
+                // Draw standard architectural dimensioning lines for panel
+                context.beginPath();
+                context.setLineDash([5, 5]);
+                // Extension line from start of panel (perpendicular to panel)
+                context.moveTo(mxStart * scaleFactor + offsetX, myStart * scaleFactor + offsetY);
+                context.lineTo(mxStart * scaleFactor + offsetX, labelY);
+                // Extension line from end of panel (perpendicular to panel)
+                context.moveTo(mxEnd * scaleFactor + offsetX, myEnd * scaleFactor + offsetY);
+                context.lineTo(mxEnd * scaleFactor + offsetX, labelY);
+                // Dimension line connecting the two extension lines
+                context.moveTo(mxStart * scaleFactor + offsetX, labelY);
+                context.lineTo(mxEnd * scaleFactor + offsetX, labelY);
+                context.strokeStyle = '#FF6B35';
+                context.lineWidth = 1.5;
+                context.stroke();
+                context.setLineDash([]);
+                
+                                 // Add to placed labels for future collision detection
+                 placedLabels.push({
+                     x: labelX - textWidth / 2 - 2,
+                     y: labelY - 8,
+                     width: textWidth + 4,
+                     height: 16,
+                     side: side,
+                     text: text,
+                     angle: angle,
+                     type: 'panel'
+                 });
+                 
+                 // Collect for second pass if needed
+                 if (collectOnly) {
+                     allPanelLabels.push({
+                         x: labelX - textWidth / 2 - 2,
+                         y: labelY - 8,
+                         width: textWidth + 4,
+                         height: 16,
+                         side: side,
+                         text: text,
+                         angle: angle,
+                         type: 'panel'
+                     });
+                 }
+            } else {
+                // Vertical panel - place on left or right
+                const isLeftHalf = panelMidX < (bounds.minX + bounds.maxX) / 2;
+                const side = isLeftHalf ? 'left' : 'right';
+                
+                // Find available position to avoid overlaps
+                let labelX, labelY;
+                let offset = baseOffset;
+                let attempts = 0;
+                const maxAttempts = 10;
+                
+                do {
+                    labelX = isLeftHalf ? 
+                        (bounds.minX * scaleFactor + offsetX - offset) : 
+                        (bounds.maxX * scaleFactor + offsetX + offset);
+                    labelY = panelMidY * scaleFactor + offsetY;
+                    
+                    // Check for overlaps with existing labels (rotated bounding box for vertical text)
+                    const labelBounds = {
+                        x: labelX - 8, // Center the rotated text
+                        y: labelY - textWidth / 2 - 2,
+                        width: 16, // Swapped with height for rotated text
+                        height: textWidth + 4 // Swapped with width for rotated text
+                    };
+                    
+                    const hasOverlap = placedLabels.some(existing => {
+                        return !(labelBounds.x + labelBounds.width < existing.x || 
+                               existing.x + existing.width < labelBounds.x ||
+                               labelBounds.y + labelBounds.height < existing.y ||
+                               existing.y + existing.height < labelBounds.y);
+                    });
+                    
+                    if (!hasOverlap) break;
+                    
+                    // Increase offset and try again
+                    offset += 20;
+                    attempts++;
+                } while (attempts < maxAttempts);
+                
+                // Draw standard architectural dimensioning lines for panel
+                context.beginPath();
+                context.setLineDash([5, 5]);
+                // Extension line from start of panel (perpendicular to panel)
+                context.moveTo(mxStart * scaleFactor + offsetX, myStart * scaleFactor + offsetY);
+                context.lineTo(labelX, myStart * scaleFactor + offsetY);
+                // Extension line from end of panel (perpendicular to panel)
+                context.moveTo(mxEnd * scaleFactor + offsetX, myEnd * scaleFactor + offsetY);
+                context.lineTo(labelX, myEnd * scaleFactor + offsetY);
+                // Dimension line connecting the two extension lines
+                context.moveTo(labelX, myStart * scaleFactor + offsetY);
+                context.lineTo(labelX, myEnd * scaleFactor + offsetY);
+                context.strokeStyle = '#FF6B35';
+                context.lineWidth = 1.5;
+                context.stroke();
+                context.setLineDash([]);
+                
+                                 // Add to placed labels for future collision detection (rotated bounding box for vertical text)
+                 placedLabels.push({
+                     x: labelX - 8, // Center the rotated text
+                     y: labelY - textWidth / 2 - 2,
+                     width: 16, // Swapped with height for rotated text
+                     height: textWidth + 4, // Swapped with width for rotated text
+                     side: side,
+                     text: text,
+                     angle: angle,
+                     type: 'panel'
+                 });
+                 
+                 // Collect for second pass if needed
+                 if (collectOnly) {
+                     allPanelLabels.push({
+                         x: labelX - 8, // Center the rotated text
+                         y: labelY - textWidth / 2 - 2,
+                         width: 16, // Swapped with height for rotated text
+                         height: textWidth + 4, // Swapped with width for rotated text
+                         side: side,
+                         text: text,
+                         angle: angle,
+                         type: 'panel'
+                     });
+                 }
+            }
+        }
+        
+        accumulated += panelWidth;
+    }
+} 
+
+// Helper to create label draw function
+function makeLabelDrawFn(label) {
+    return function(context) {
+        context.save();
+        if (label.angle && Math.abs(label.angle) > 45 && Math.abs(label.angle) < 135) {
+            // Vertical (rotated)
+            const centerX = label.x + label.width / 2;
+            const centerY = label.y + label.height / 2;
+            context.translate(centerX, centerY);
+            context.rotate(-Math.PI / 2);
+            context.fillStyle = 'rgba(255,255,255,0.8)';
+            context.fillRect(-label.height / 2, -label.width / 2, label.height, label.width);
+            context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
+            context.font = '15px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(label.text, 0, 0);
+        } else {
+            // Horizontal
+            context.fillStyle = 'rgba(255,255,255,0.8)';
+            context.fillRect(label.x, label.y, label.width, label.height);
+            context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
+            context.font = '15px Arial';
+            context.textAlign = 'left';
+            context.textBaseline = 'top';
+            context.fillText(label.text, label.x + 2, label.y + 2);
+        }
+        context.restore();
+    };
 } 
