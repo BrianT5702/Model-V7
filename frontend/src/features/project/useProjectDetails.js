@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../../api/api';
 import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
-import { areCollinearWalls, calculateIntersection, arePointsEqual } from './projectUtils';
+import { areCollinearWalls, calculateIntersection, arePointsEqual, detectRoomWalls } from './projectUtils';
 
 export default function useProjectDetails(projectId) {
   // State
@@ -27,6 +27,21 @@ export default function useProjectDetails(projectId) {
   const [editingDoor, setEditingDoor] = useState(null);
   const [showDoorEditor, setShowDoorEditor] = useState(false);
   const [selectedRoomPoints, setSelectedRoomPoints] = useState([]);
+  
+  // Function to update room points and automatically detect walls
+  const updateRoomPointsAndDetectWalls = (newPoints) => {
+    setSelectedRoomPoints(newPoints);
+    
+    // If we have enough points to form a polygon, detect walls
+    if (newPoints.length >= 3) {
+      const detectedWallIds = detectRoomWalls(newPoints, walls, 1); // 1mm tolerance
+      console.log('Auto-detected walls for room:', detectedWallIds);
+      setSelectedWallsForRoom(detectedWallIds);
+    } else {
+      // Clear selected walls if not enough points
+      setSelectedWallsForRoom([]);
+    }
+  };
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [wallMergeError, setWallMergeError] = useState('');
@@ -59,7 +74,7 @@ export default function useProjectDetails(projectId) {
     setSelectedWall(null);
     setSelectedWallsForRoom([]);
     setEditingRoom(null);
-    setSelectedRoomPoints([]);
+    updateRoomPointsAndDetectWalls([]);
     setCurrentMode(null);
     setShowWallEditor(false);
     setShowRoomManagerModal(false);
@@ -141,10 +156,23 @@ export default function useProjectDetails(projectId) {
       if (response.status === 201) {
         const newRoom = response.data;
         setRooms((prevRooms) => [...prevRooms, newRoom]);
+        
+        // Update wall heights in frontend state immediately
+        if (roomData.walls && roomData.height) {
+          setWalls(prevWalls => 
+            prevWalls.map(wall => 
+              roomData.walls.includes(wall.id) 
+                ? { ...wall, height: roomData.height }
+                : wall
+            )
+          );
+          console.log('Updated wall heights in frontend state:', roomData.walls, 'to height:', roomData.height);
+        }
+        
         setRoomCreateSuccess(true);
         setTimeout(() => setRoomCreateSuccess(false), 3000);
         setShowRoomManagerModal(false);
-        setSelectedRoomPoints([]);
+        updateRoomPointsAndDetectWalls([]);
         setCurrentMode(null);
       }
     } catch (error) {
@@ -162,8 +190,25 @@ export default function useProjectDetails(projectId) {
     try {
       const response = await api.put(`/rooms/${updatedRoomData.id}/`, updatedRoomData);
       setRooms(rooms.map(room => room.id === updatedRoomData.id ? response.data : room));
+      
+      // Update wall heights in frontend state immediately if height was changed
+      if (updatedRoomData.height) {
+        // Get the room to find its associated walls
+        const room = rooms.find(r => r.id === updatedRoomData.id);
+        if (room && room.walls) {
+          setWalls(prevWalls => 
+            prevWalls.map(wall => 
+              room.walls.includes(wall.id) 
+                ? { ...wall, height: updatedRoomData.height }
+                : wall
+            )
+          );
+          console.log('Updated wall heights in frontend state for room update:', room.walls, 'to height:', updatedRoomData.height);
+        }
+      }
+      
       setShowRoomManagerModal(false);
-      setSelectedRoomPoints([]);
+      updateRoomPointsAndDetectWalls([]);
       setCurrentMode(null);
     } catch (error) {
       console.error('Error updating room:', error);
@@ -181,7 +226,7 @@ export default function useProjectDetails(projectId) {
       await api.delete(`/rooms/${roomId}/`);
       setRooms(rooms.filter(room => room.id !== roomId));
       setShowRoomManagerModal(false);
-      setSelectedRoomPoints([]);
+      updateRoomPointsAndDetectWalls([]);
       setCurrentMode(null);
     } catch (error) {
       console.error('Error deleting room:', error);
@@ -252,14 +297,14 @@ export default function useProjectDetails(projectId) {
         // Exiting mode
         if (mode === 'define-room') {
           setShowRoomManagerModal(false);
-          setSelectedRoomPoints([]);
+          updateRoomPointsAndDetectWalls([]);
         }
         return null;
       } else {
         // Entering new mode
         if (mode === 'define-room') {
           setShowRoomManagerModal(true); // Always show modal in define-room mode
-          setSelectedRoomPoints([]);    // Clear points when entering
+          updateRoomPointsAndDetectWalls([]);    // Clear points when entering
         }
         return mode;
       }
@@ -296,7 +341,7 @@ export default function useProjectDetails(projectId) {
       setEditingRoom(room);
       setShowRoomManagerModal(true); // Always show modal for editing
       setSelectedWallsForRoom(room.walls);
-      setSelectedRoomPoints(room.room_points || []);
+      updateRoomPointsAndDetectWalls(room.room_points || []);
     }
   };
 
@@ -756,7 +801,7 @@ export default function useProjectDetails(projectId) {
     showDoorEditor,
     setShowDoorEditor,
     selectedRoomPoints,
-    setSelectedRoomPoints,
+    updateRoomPointsAndDetectWalls,
     isEditingName,
     setIsEditingName,
     editedName,

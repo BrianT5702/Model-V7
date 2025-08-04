@@ -131,20 +131,81 @@ class RoomViewSet(viewsets.ModelViewSet):
         return super().get_queryset()
 
     def create(self, request, *args, **kwargs):
-        """Create a new room with validation"""
+        """Create a new room with validation and automatic height calculation"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
+            logger.info(f"Creating room with data: {request.data}")
             RoomService.validate_room_points(request.data.get('room_points', []))
-            return super().create(request, *args, **kwargs)
+            room = RoomService.create_room_with_height(request.data)
+            logger.info(f"Successfully created room {room.id} with height {room.height}")
+            return Response(RoomSerializer(room).data, status=status.HTTP_201_CREATED)
         except ValueError as e:
+            logger.error(f"Validation error creating room: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error creating room: {str(e)}")
+            return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def update(self, request, *args, **kwargs):
-        """Update a room with validation"""
+        """Update a room with validation and wall height updates"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
+            logger.info(f"Updating room with data: {request.data}")
             RoomService.validate_room_points(request.data.get('room_points', []))
-            return super().update(request, *args, **kwargs)
+            
+            # Get the room instance
+            room = self.get_object()
+            logger.info(f"Found room to update: {room.id}, current height: {room.height}")
+            
+            # Update the room
+            serializer = self.get_serializer(room, data=request.data, partial=kwargs.get('partial', False))
+            serializer.is_valid(raise_exception=True)
+            updated_room = serializer.save()
+            logger.info(f"Updated room height to: {updated_room.height}")
+            
+            # If height is being updated, update wall heights
+            if 'height' in request.data and request.data['height'] is not None:
+                wall_ids = list(updated_room.walls.values_list('id', flat=True))
+                logger.info(f"Updating {len(wall_ids)} walls with new height: {request.data['height']}")
+                updated_count = RoomService.update_wall_heights_for_room(wall_ids, request.data['height'])
+                logger.info(f"Successfully updated {updated_count} walls")
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ValueError as e:
+            logger.error(f"Validation error updating room: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error updating room: {str(e)}")
+            return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['patch'])
+    def update_height(self, request, pk=None):
+        """Update room height and all associated wall heights"""
+        try:
+            new_height = request.data.get('height')
+            if new_height is None:
+                return Response({'error': 'height is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            room = RoomService.update_room_height(pk, new_height)
+            return Response(RoomSerializer(room).data, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def calculate_min_height(self, request):
+        """Calculate minimum wall height for given wall IDs"""
+        try:
+            wall_ids = request.data.get('wall_ids', [])
+            min_height = RoomService.calculate_minimum_wall_height(wall_ids)
+            return Response({'min_height': min_height}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CeilingViewSet(viewsets.ModelViewSet):
     queryset = Ceiling.objects.all()

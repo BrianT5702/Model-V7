@@ -66,6 +66,11 @@ class Room(models.Model):
         blank=True, 
         help_text="Room temperature in °C (Optional)."
     )
+    height = models.FloatField(
+        null=True, 
+        blank=True, 
+        help_text="Height of the room in mm (will be set to minimum wall height if not specified)"
+    )
     remarks = models.TextField(blank=True, null=True)
     
     room_points = ArrayField(

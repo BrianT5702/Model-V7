@@ -1,5 +1,6 @@
 import React from 'react';
 import useRoomForm from './useRoomForm';
+import { calculateMinWallHeight } from '../../api/api';
 
 const RoomManager = ({ 
     projectId, 
@@ -139,6 +140,56 @@ const RoomManager = ({
                                 </div>
                             </div>
 
+                            {/* Room Height Section */}
+                            <div>
+                                <label className="text-xs font-medium text-gray-700">Room Height</label>
+                                <div className="mt-1 relative">
+                                    <input
+                                        type="number"
+                                        value={form.roomHeight}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            form.setRoomHeight(value !== '' ? Math.max(0, parseFloat(value) || 0) : '');
+                                            form.clearValidationError('roomHeight');
+                                        }}
+                                        placeholder="Enter room height"
+                                        className={`block w-full rounded-md border px-2 py-1 pr-12 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 ${
+                                            form.validationErrors.roomHeight 
+                                                ? 'border-red-300 focus:border-red-500' 
+                                                : 'border-gray-300 focus:border-blue-500'
+                                        }`}
+                                    />
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">mm</span>
+                                </div>
+                                {form.validationErrors.roomHeight && (
+                                    <p className="text-xs text-red-500 mt-1">{form.validationErrors.roomHeight}</p>
+                                )}
+                                {form.roomHeight && (
+                                    <p className="text-xs text-blue-600 mt-1">
+                                        This will update all wall heights in the room to {form.roomHeight} mm
+                                    </p>
+                                )}
+                                {selectedWallIds.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            calculateMinWallHeight(selectedWallIds)
+                                                .then(response => {
+                                                    if (response.data.min_height) {
+                                                        form.setRoomHeight(response.data.min_height);
+                                                    }
+                                                })
+                                                .catch(error => {
+                                                    console.error('Error calculating minimum wall height:', error);
+                                                });
+                                        }}
+                                        className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                                    >
+                                        Use minimum wall height ({Math.min(...walls.filter(w => selectedWallIds.includes(w.id)).map(w => w.height))} mm)
+                                    </button>
+                                )}
+                            </div>
+
                             {/* Remarks Section */}
                             <div>
                                 <label className="text-xs font-medium text-gray-700">Remarks</label>
@@ -152,7 +203,7 @@ const RoomManager = ({
                             </div>
                         </div>
 
-                        {/* Right Column - Selected Walls */}
+                        {/* Right Column - Selected Points and Walls */}
                         <div>
                             <div className="flex items-center justify-between mb-1">
                                 <h3 className="text-base font-medium text-gray-900">Selected Points</h3>
@@ -182,6 +233,30 @@ const RoomManager = ({
                             </div>
                             {form.validationErrors.polygonPoints && (
                                 <p className="text-xs text-red-500 mt-1">{form.validationErrors.polygonPoints}</p>
+                            )}
+                            
+                            {/* Auto-detected Walls Section */}
+                            {selectedWallIds.length > 0 && (
+                                <div className="mt-3">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <h3 className="text-base font-medium text-gray-900">Auto-detected Walls</h3>
+                                        <span className="text-xs text-gray-500">({selectedWallIds.length})</span>
+                                    </div>
+                                    <div className="bg-green-50 border border-green-200 rounded-lg shadow-sm h-24 overflow-y-auto">
+                                        <div className="divide-y divide-green-200">
+                                            {selectedWallIds.map((wallId) => {
+                                                const wall = walls.find(w => w.id === wallId);
+                                                return (
+                                                    <div key={wallId} className="p-1 hover:bg-green-100 transition-colors duration-150">
+                                                        <span className="text-xs text-gray-700">
+                                                            Wall {wallId}: ({wall?.start_x?.toFixed(2) || '?'}, {wall?.start_y?.toFixed(2) || '?'}) → ({wall?.end_x?.toFixed(2) || '?'}, {wall?.end_y?.toFixed(2) || '?'}) - Height: {wall?.height || '?'} mm
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>

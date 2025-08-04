@@ -9,4 +9,7 @@ const api = axios.create({
 // export const updateRoom = (roomId, updateData) => api.put(`/rooms/${roomId}/`, updateData);
 // export const deleteRoom = (roomId) => api.delete(`/rooms/${roomId}/`);
 
+// Room height calculation
+export const calculateMinWallHeight = (wallIds) => api.post('/rooms/calculate_min_height/', { wall_ids: wallIds });
+
 export default api;

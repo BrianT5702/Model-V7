@@ -458,7 +458,7 @@ const ProjectDetails = () => {
                             }}
                             project={projectDetails.project}
                             selectedRoomPoints={projectDetails.selectedRoomPoints}
-                            onUpdateRoomPoints={projectDetails.setSelectedRoomPoints}
+                            onUpdateRoomPoints={projectDetails.updateRoomPointsAndDetectWalls}
                         />
                     </>
                 )}
