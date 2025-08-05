@@ -6,7 +6,7 @@ from .serializers import (
     ProjectSerializer, WallSerializer, RoomSerializer,
     CeilingSerializer, DoorSerializer, IntersectionSerializer
 )
-from .services import WallService, RoomService, DoorService
+from .services import WallService, RoomService, DoorService, normalize_wall_coordinates
 from django.db import transaction, IntegrityError
 from django.core.exceptions import PermissionDenied
 from django.db.utils import OperationalError
@@ -46,6 +46,24 @@ class WallViewSet(viewsets.ModelViewSet):
             return Wall.objects.filter(project_id=project_id)
         return super().get_queryset()
 
+    def create(self, request, *args, **kwargs):
+        """Create a new wall with normalized coordinates"""
+        # Normalize wall coordinates before validation
+        data = request.data.copy()
+        if 'start_x' in data and 'start_y' in data and 'end_x' in data and 'end_y' in data:
+            norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(
+                data['start_x'], data['start_y'], data['end_x'], data['end_y']
+            )
+            data['start_x'] = norm_start_x
+            data['start_y'] = norm_start_y
+            data['end_x'] = norm_end_x
+            data['end_y'] = norm_end_y
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        wall = serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     def update(self, request, *args, **kwargs):
         """Update wall properties"""
         instance = self.get_object()
@@ -66,7 +84,18 @@ class WallViewSet(viewsets.ModelViewSet):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = self.get_serializer(data=request.data)
+        # Normalize wall coordinates before validation
+        data = request.data.copy()
+        if 'start_x' in data and 'start_y' in data and 'end_x' in data and 'end_y' in data:
+            norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(
+                data['start_x'], data['start_y'], data['end_x'], data['end_y']
+            )
+            data['start_x'] = norm_start_x
+            data['start_y'] = norm_start_y
+            data['end_x'] = norm_end_x
+            data['end_y'] = norm_end_y
+
+        serializer = self.get_serializer(data=data)
         if serializer.is_valid():
             wall = serializer.save(project=project)
             return Response(WallSerializer(wall).data, status=status.HTTP_201_CREATED)

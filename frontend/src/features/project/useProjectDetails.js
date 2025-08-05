@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import api from '../../api/api';
 import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
 import { areCollinearWalls, calculateIntersection, arePointsEqual, detectRoomWalls } from './projectUtils';
+import { normalizeWallCoordinates } from '../canvas/drawing';
 
 export default function useProjectDetails(projectId) {
   // State
@@ -324,7 +325,20 @@ export default function useProjectDetails(projectId) {
   // Update handleWallCreate to refresh walls after creation
   const handleWallCreate = async (wallData) => {
     try {
-      const dataToSend = { ...wallData, project: project.id };
+      // Normalize wall coordinates before sending to backend
+      const normalizedCoords = normalizeWallCoordinates(
+        { x: wallData.start_x, y: wallData.start_y },
+        { x: wallData.end_x, y: wallData.end_y }
+      );
+      
+      const dataToSend = { 
+        ...wallData, 
+        start_x: normalizedCoords.startPoint.x,
+        start_y: normalizedCoords.startPoint.y,
+        end_x: normalizedCoords.endPoint.x,
+        end_y: normalizedCoords.endPoint.y,
+        project: project.id 
+      };
       const response = await api.post('/walls/create_wall/', dataToSend);
       await refreshWalls(); // Ensure UI is in sync with backend
       return response.data;
@@ -627,6 +641,11 @@ export default function useProjectDetails(projectId) {
 
   // Advanced modular wall adding with splitting (splits both existing and new wall at intersections)
   const handleAddWallWithSplitting = async (startPoint, endPoint, wallProps) => {
+    // Normalize wall coordinates to ensure proper direction
+    const normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
+    startPoint = normalizedCoords.startPoint;
+    endPoint = normalizedCoords.endPoint;
+    
     // 1. Find all intersections between the new wall and existing walls (not at endpoints)
     const intersections = [];
     const isAtEndpoint = (pt, w) =>
@@ -675,21 +694,33 @@ export default function useProjectDetails(projectId) {
     let wallsToAdd = [];
     intersections.forEach(({ wall, intersection }) => {
       wallsToDelete.push(wall);
+      
+      // Normalize first segment
+      const segment1Coords = normalizeWallCoordinates(
+        { x: wall.start_x, y: wall.start_y },
+        { x: intersection.x, y: intersection.y }
+      );
       wallsToAdd.push({
-        start_x: wall.start_x,
-        start_y: wall.start_y,
-        end_x: intersection.x,
-        end_y: intersection.y,
+        start_x: segment1Coords.startPoint.x,
+        start_y: segment1Coords.startPoint.y,
+        end_x: segment1Coords.endPoint.x,
+        end_y: segment1Coords.endPoint.y,
         height: wall.height,
         thickness: wall.thickness,
         application_type: wall.application_type,
         project: project.id
       });
+      
+      // Normalize second segment
+      const segment2Coords = normalizeWallCoordinates(
+        { x: intersection.x, y: intersection.y },
+        { x: wall.end_x, y: wall.end_y }
+      );
       wallsToAdd.push({
-        start_x: intersection.x,
-        start_y: intersection.y,
-        end_x: wall.end_x,
-        end_y: wall.end_y,
+        start_x: segment2Coords.startPoint.x,
+        start_y: segment2Coords.startPoint.y,
+        end_x: segment2Coords.endPoint.x,
+        end_y: segment2Coords.endPoint.y,
         height: wall.height,
         thickness: wall.thickness,
         application_type: wall.application_type,
@@ -706,11 +737,16 @@ export default function useProjectDetails(projectId) {
     });
     let newWallSegments = [];
     for (let i = 0; i < splitPoints.length - 1; i++) {
+      // Normalize each new wall segment
+      const segmentCoords = normalizeWallCoordinates(
+        { x: splitPoints[i].x, y: splitPoints[i].y },
+        { x: splitPoints[i+1].x, y: splitPoints[i+1].y }
+      );
       newWallSegments.push({
-        start_x: splitPoints[i].x,
-        start_y: splitPoints[i].y,
-        end_x: splitPoints[i+1].x,
-        end_y: splitPoints[i+1].y,
+        start_x: segmentCoords.startPoint.x,
+        start_y: segmentCoords.startPoint.y,
+        end_x: segmentCoords.endPoint.x,
+        end_y: segmentCoords.endPoint.y,
         height: wallProps.height,
         thickness: wallProps.thickness,
         application_type: wallProps.application_type,

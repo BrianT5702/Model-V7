@@ -15,7 +15,8 @@ import {
   calculateOffsetPoints,
   drawWallLinePair,
   drawWallCaps,
-  drawPanelDivisions // <-- add this
+  drawPanelDivisions, // <-- add this
+  normalizeWallCoordinates
 } from './drawing';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
@@ -483,6 +484,11 @@ const Canvas2D = ({
                     // Round both points before saving
                     startPoint = roundPoint(startPoint);
                     endPoint = roundPoint(endPoint);
+
+                    // Normalize wall coordinates to ensure proper direction
+                    const normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
+                    startPoint = normalizedCoords.startPoint;
+                    endPoint = normalizedCoords.endPoint;
 
                     // Use modular handler for wall splitting/adding
                     const wallProperties = walls.length > 0 ? {

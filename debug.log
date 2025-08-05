@@ -189,3 +189,27 @@ INFO 2025-08-04 09:40:34,397 services 13104 5228 Wall 5821: new height = 2000.0
 INFO 2025-08-04 09:40:34,397 services 13104 5228 Wall 5823: new height = 2000.0
 INFO 2025-08-04 09:40:34,397 services 13104 5228 Updated 4 walls for room 126
 INFO 2025-08-04 09:40:34,397 views 13104 5228 Successfully created room 126 with height 2000
+INFO 2025-08-04 10:19:51,709 services 13104 9440 calculate_minimum_wall_height called with wall_ids: [5830, 5833]
+INFO 2025-08-04 10:19:51,709 services 13104 9440 Converted wall_ids to integers: [5830, 5833]
+INFO 2025-08-04 10:19:51,754 services 13104 9440 Found 2 walls
+INFO 2025-08-04 10:19:51,755 services 13104 9440 Calculated minimum wall height: 8000.0
+INFO 2025-08-04 10:21:22,693 services 13104 9440 calculate_minimum_wall_height called with wall_ids: [5828, 5830]
+INFO 2025-08-04 10:21:22,693 services 13104 9440 Converted wall_ids to integers: [5828, 5830]
+INFO 2025-08-04 10:21:22,736 services 13104 9440 Found 2 walls
+INFO 2025-08-04 10:21:22,738 services 13104 9440 Calculated minimum wall height: 8000.0
+INFO 2025-08-05 12:36:29,370 autoreload 22568 22096 Watching for file changes with StatReloader
+INFO 2025-08-05 13:44:28,561 autoreload 22568 22096 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-08-05 13:44:29,255 autoreload 10560 24384 Watching for file changes with StatReloader
+INFO 2025-08-05 13:44:40,755 autoreload 10560 24384 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-08-05 13:44:41,287 autoreload 22772 14992 Watching for file changes with StatReloader
+INFO 2025-08-05 13:44:50,340 autoreload 22772 14992 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py changed, reloading.
+INFO 2025-08-05 13:44:50,797 autoreload 13856 3180 Watching for file changes with StatReloader
+INFO 2025-08-05 13:45:03,003 autoreload 13856 3180 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py changed, reloading.
+INFO 2025-08-05 13:45:03,441 autoreload 3632 8300 Watching for file changes with StatReloader
+INFO 2025-08-05 13:45:11,529 autoreload 3632 8300 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py changed, reloading.
+INFO 2025-08-05 13:45:12,046 autoreload 20580 2836 Watching for file changes with StatReloader
+INFO 2025-08-05 13:45:29,684 autoreload 20580 2836 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-08-05 13:45:30,191 autoreload 23448 25540 Watching for file changes with StatReloader
+INFO 2025-08-05 13:46:11,761 autoreload 23448 25540 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-08-05 13:46:12,483 autoreload 18028 4744 Watching for file changes with StatReloader
+WARNING 2025-08-05 13:47:24,522 log 18028 17940 Not Found: /favicon.ico

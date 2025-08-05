@@ -1,5 +1,68 @@
 // Drawing functions extracted from Canvas2D.js
 
+// Utility function to normalize wall coordinates
+// Ensures horizontal walls are created from left to right
+// and vertical walls are created from top to bottom
+export function normalizeWallCoordinates(startPoint, endPoint) {
+    const dx = endPoint.x - startPoint.x;
+    const dy = endPoint.y - startPoint.y;
+    
+    // Determine if wall is horizontal or vertical
+    const isHorizontal = Math.abs(dy) < Math.abs(dx);
+    
+    if (isHorizontal) {
+        // For horizontal walls, ensure start_x < end_x (left to right)
+        if (startPoint.x > endPoint.x) {
+            return {
+                startPoint: { x: endPoint.x, y: endPoint.y },
+                endPoint: { x: startPoint.x, y: startPoint.y }
+            };
+        }
+    } else {
+        // For vertical walls, ensure start_y < end_y (top to bottom)
+        if (startPoint.y > endPoint.y) {
+            return {
+                startPoint: { x: endPoint.x, y: endPoint.y },
+                endPoint: { x: startPoint.x, y: startPoint.y }
+            };
+        }
+    }
+    
+    // No change needed
+    return {
+        startPoint: { x: startPoint.x, y: startPoint.y },
+        endPoint: { x: endPoint.x, y: endPoint.y }
+    };
+}
+
+// Test function to verify normalization logic
+export function testNormalization() {
+    console.log('Testing wall coordinate normalization...');
+    
+    // Test horizontal wall (should be left to right)
+    const horizontalTest1 = normalizeWallCoordinates({ x: 100, y: 50 }, { x: 50, y: 50 });
+    console.log('Horizontal wall (right to left):', horizontalTest1);
+    // Should return: startPoint: {x: 50, y: 50}, endPoint: {x: 100, y: 50}
+    
+    const horizontalTest2 = normalizeWallCoordinates({ x: 50, y: 50 }, { x: 100, y: 50 });
+    console.log('Horizontal wall (left to right):', horizontalTest2);
+    // Should return: startPoint: {x: 50, y: 50}, endPoint: {x: 100, y: 50}
+    
+    // Test vertical wall (should be top to bottom)
+    const verticalTest1 = normalizeWallCoordinates({ x: 50, y: 100 }, { x: 50, y: 50 });
+    console.log('Vertical wall (bottom to top):', verticalTest1);
+    // Should return: startPoint: {x: 50, y: 50}, endPoint: {x: 50, y: 100}
+    
+    const verticalTest2 = normalizeWallCoordinates({ x: 50, y: 50 }, { x: 50, y: 100 });
+    console.log('Vertical wall (top to bottom):', verticalTest2);
+    // Should return: startPoint: {x: 50, y: 50}, endPoint: {x: 50, y: 100}
+    
+    // Test diagonal wall (should not change)
+    const diagonalTest = normalizeWallCoordinates({ x: 50, y: 50 }, { x: 100, y: 100 });
+    console.log('Diagonal wall:', diagonalTest);
+    // Should return: startPoint: {x: 50, y: 50}, endPoint: {x: 100, y: 100}
+}
+
 // Draw the grid on the canvas
 export function drawGrid(context, canvasWidth, canvasHeight, gridSize, isDrawing) {
     context.strokeStyle = isDrawing ? '#a0a0a0' : '#ddd';

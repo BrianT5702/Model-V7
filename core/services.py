@@ -1,6 +1,30 @@
 from django.db import transaction
 from .models import Project, Wall, Room, Door, Intersection
 
+def normalize_wall_coordinates(start_x, start_y, end_x, end_y):
+    """
+    Normalize wall coordinates to ensure:
+    - Horizontal walls are created from left to right (start_x < end_x)
+    - Vertical walls are created from top to bottom (start_y < end_y)
+    """
+    dx = end_x - start_x
+    dy = end_y - start_y
+    
+    # Determine if wall is horizontal or vertical
+    is_horizontal = abs(dy) < abs(dx)
+    
+    if is_horizontal:
+        # For horizontal walls, ensure start_x < end_x (left to right)
+        if start_x > end_x:
+            return end_x, end_y, start_x, start_y
+    else:
+        # For vertical walls, ensure start_y < end_y (top to bottom)
+        if start_y > end_y:
+            return end_x, end_y, start_x, start_y
+    
+    # No change needed
+    return start_x, start_y, end_x, end_y
+
 class WallService:
     @staticmethod
     def create_default_walls(project):
@@ -10,12 +34,27 @@ class WallService:
         height = project.height
         thickness = project.wall_thickness
 
-        walls = [
-            {'project': project, 'start_x': 0, 'start_y': 0, 'end_x': width, 'end_y': 0, 'height': height, 'thickness': thickness},
-            {'project': project, 'start_x': width, 'start_y': 0, 'end_x': width, 'end_y': length, 'height': height, 'thickness': thickness},
-            {'project': project, 'start_x': width, 'start_y': length, 'end_x': 0, 'end_y': length, 'height': height, 'thickness': thickness},
-            {'project': project, 'start_x': 0, 'start_y': length, 'end_x': 0, 'end_y': 0, 'height': height, 'thickness': thickness},
+        # Define wall coordinates and normalize them
+        wall_coords = [
+            (0, 0, width, 0),  # Bottom wall
+            (width, 0, width, length),  # Right wall
+            (width, length, 0, length),  # Top wall
+            (0, length, 0, 0),  # Left wall
         ]
+        
+        walls = []
+        for start_x, start_y, end_x, end_y in wall_coords:
+            # Normalize coordinates
+            norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(start_x, start_y, end_x, end_y)
+            walls.append({
+                'project': project, 
+                'start_x': norm_start_x, 
+                'start_y': norm_start_y, 
+                'end_x': norm_end_x, 
+                'end_y': norm_end_y, 
+                'height': height, 
+                'thickness': thickness
+            })
 
         return Wall.objects.bulk_create([Wall(**wall) for wall in walls])
 
@@ -25,23 +64,31 @@ class WallService:
         with transaction.atomic():
             wall = Wall.objects.get(pk=wall_id)
             
+            # Normalize first segment
+            norm_start_x1, norm_start_y1, norm_end_x1, norm_end_y1 = normalize_wall_coordinates(
+                wall.start_x, wall.start_y, intersection_x, intersection_y
+            )
             split_wall_1 = Wall.objects.create(
                 project=wall.project,
-                start_x=wall.start_x,
-                start_y=wall.start_y,
-                end_x=intersection_x,
-                end_y=intersection_y,
+                start_x=norm_start_x1,
+                start_y=norm_start_y1,
+                end_x=norm_end_x1,
+                end_y=norm_end_y1,
                 height=wall.height,
                 thickness=wall.thickness,
                 application_type=wall.application_type
             )
             
+            # Normalize second segment
+            norm_start_x2, norm_start_y2, norm_end_x2, norm_end_y2 = normalize_wall_coordinates(
+                intersection_x, intersection_y, wall.end_x, wall.end_y
+            )
             split_wall_2 = Wall.objects.create(
                 project=wall.project,
-                start_x=intersection_x,
-                start_y=intersection_y,
-                end_x=wall.end_x,
-                end_y=wall.end_y,
+                start_x=norm_start_x2,
+                start_y=norm_start_y2,
+                end_x=norm_end_x2,
+                end_y=norm_end_y2,
                 height=wall.height,
                 thickness=wall.thickness,
                 application_type=wall.application_type
@@ -76,13 +123,18 @@ class WallService:
         else:
             raise ValueError('Walls do not share endpoints')
 
+        # Normalize the merged wall coordinates
+        norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(
+            new_start_x, new_start_y, new_end_x, new_end_y
+        )
+        
         # Create the merged wall
         merged_wall = Wall.objects.create(
             project=wall_1.project,
-            start_x=new_start_x,
-            start_y=new_start_y,
-            end_x=new_end_x,
-            end_y=new_end_y,
+            start_x=norm_start_x,
+            start_y=norm_start_y,
+            end_x=norm_end_x,
+            end_y=norm_end_y,
             height=wall_1.height,
             thickness=wall_1.thickness,
             application_type=wall_1.application_type
