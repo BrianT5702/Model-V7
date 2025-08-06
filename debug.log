@@ -213,3 +213,5 @@ INFO 2025-08-05 13:45:30,191 autoreload 23448 25540 Watching for file changes wi
 INFO 2025-08-05 13:46:11,761 autoreload 23448 25540 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
 INFO 2025-08-05 13:46:12,483 autoreload 18028 4744 Watching for file changes with StatReloader
 WARNING 2025-08-05 13:47:24,522 log 18028 17940 Not Found: /favicon.ico
+INFO 2025-08-06 07:22:57,615 autoreload 18812 20444 Watching for file changes with StatReloader
+WARNING 2025-08-06 07:23:00,423 log 18812 9716 Not Found: /favicon.ico
