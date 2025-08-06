@@ -433,50 +433,64 @@ export function createDoorMesh(instance, door, wall) {
     opacity: 1
   });
   if (door_type === 'slide') {
-    const doorOffsetZ = (wallDepth/2);
+    // Offset the sliding door to align with the wall face based on side
+    // For interior doors: position on inner face (toward room interior)
+    // For exterior doors: position on outer face (toward outside)
+    const doorOffsetZ = wallDepth/2;
+    
     if (configuration === 'double_sided') {
-      const halfWidth = doorWidth * 0.48;
+      // Create double sliding doors
+      const halfWidth = doorWidth * 0.48; // Slightly less than half to fit with gap
+      
+      // Create a door container
       const doorContainer = new instance.THREE.Object3D();
       doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
+      
+      // Create both door panels
       const leftDoor = new instance.THREE.Mesh(
-        new instance.THREE.BoxGeometry(halfWidth, doorHeight * 0.98, doorThickness),
+        new instance.THREE.BoxGeometry(halfWidth, doorHeight, doorThickness),
         doorMaterial
       );
+      
       const rightDoor = new instance.THREE.Mesh(
-        new instance.THREE.BoxGeometry(halfWidth, doorHeight * 0.98, doorThickness),
+        new instance.THREE.BoxGeometry(halfWidth, doorHeight, doorThickness),
         doorMaterial
       );
+      
+      // Position doors within the container, with proper offset for the wall side
+      // For interior doors: position on inner face (Z = wallThickness, toward model center)
+      // For exterior doors: position on outer face (Z = 0, database line face)
       if (adjustedSide === 'interior') {
-        leftDoor.position.set(-halfWidth/2, 0, -doorOffsetZ);
-        rightDoor.position.set(halfWidth/2, 0, -doorOffsetZ);
+        leftDoor.position.set(-halfWidth/2, 0, -wallDepth/2);
+        rightDoor.position.set(halfWidth/2, 0, -wallDepth/2);
       } else {
-        leftDoor.position.set(-halfWidth/2, 0, doorOffsetZ);
-        rightDoor.position.set(halfWidth/2, 0, doorOffsetZ);
+        leftDoor.position.set(-halfWidth/2, 0, wallDepth * 1.2);
+        rightDoor.position.set(halfWidth/2, 0, wallDepth * 1.2);
       }
       
-      if (wasWallFlipped) {
-        console.log('[Double Slide Door Position Fix] Door positioning adjusted:', {
-          doorId: door.id,
-          originalSide: side,
-          adjustedSide: adjustedSide,
-          doorOffsetZ: doorOffsetZ,
-          leftDoorZ: leftDoor.position.z,
-          rightDoorZ: rightDoor.position.z,
-          wasWallFlipped: wasWallFlipped
-        });
-      }
-      
+      // Store original positions
       leftDoor.userData.origPosition = { x: leftDoor.position.x, z: leftDoor.position.z };
       rightDoor.userData.origPosition = { x: rightDoor.position.x, z: rightDoor.position.z };
+      
+      // Add to container
       doorContainer.add(leftDoor);
       doorContainer.add(rightDoor);
+      
+      // Register as a door object with metadata
       doorContainer.userData.isDoor = true;
       doorContainer.userData.doorId = `door_${door.id}`;
-      doorContainer.userData.doorInfo = door;
+      doorContainer.userData.doorInfo = {
+        ...door,
+        adjustedSlideDirection: adjustedSlideDirection,
+        adjustedSide: adjustedSide
+      };
       instance.doorObjects.push(doorContainer);
-      instance.doorStates.set(`door_${door.id}`, true);
+      instance.doorStates.set(`door_${door.id}`, true); // Start in open state
+      
+      // Animate doors sliding open
       const slideDistance = halfWidth * 0.9;
+      
       if (typeof window !== 'undefined' && window.gsap) {
         window.gsap.to(leftDoor.position, {
           x: -halfWidth/2 - slideDistance,
@@ -484,6 +498,7 @@ export function createDoorMesh(instance, door, wall) {
           duration: 1.5,
           ease: 'power2.inOut'
         });
+        
         window.gsap.to(rightDoor.position, {
           x: halfWidth/2 + slideDistance,
           z: rightDoor.position.z,
@@ -491,42 +506,50 @@ export function createDoorMesh(instance, door, wall) {
           ease: 'power2.inOut'
         });
       }
+      
       return doorContainer;
     } else {
+      // Single sliding door
       const doorMesh = new instance.THREE.Mesh(
-        new instance.THREE.BoxGeometry(doorWidth, doorHeight * 0.98, doorThickness),
+        new instance.THREE.BoxGeometry(doorWidth, doorHeight, doorThickness),
         doorMaterial
       );
+      
+      // Create door container to handle rotation and position
       const doorContainer = new instance.THREE.Object3D();
       doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
-      if (adjustedSide === 'interior') {
-        doorMesh.position.z = -doorOffsetZ;
+      
+      // Position door at wall face
+      // For interior doors: position on inner face (Z = wallThickness, toward model center)
+      // For exterior doors: position on outer face (Z = 0, database line face)
+      if (adjustedSide === 'exterior') {
+        doorMesh.position.z = wallDepth * 1.2;
       } else {
-        doorMesh.position.z = doorOffsetZ; // Explicitly set exterior position
+        doorMesh.position.z = -wallDepth/2;
       }
-      
-      if (wasWallFlipped) {
-        console.log('[Slide Door Position Fix] Door positioning adjusted:', {
-          doorId: door.id,
-          originalSide: side,
-          adjustedSide: adjustedSide,
-          doorOffsetZ: doorOffsetZ,
-          doorMeshZ: doorMesh.position.z,
-          wasWallFlipped: wasWallFlipped
-        });
-      }
-      
       doorContainer.add(doorMesh);
+      
+      // Store original position
       doorMesh.userData.origPosition = { x: 0, z: doorMesh.position.z };
+      
+      // Register as a door object with metadata
       doorContainer.userData.isDoor = true;
       doorContainer.userData.doorId = `door_${door.id}`;
-      doorContainer.userData.doorInfo = door;
+      doorContainer.userData.doorInfo = {
+        ...door,
+        adjustedSlideDirection: adjustedSlideDirection,
+        adjustedSide: adjustedSide
+      };
       instance.doorObjects.push(doorContainer);
-      instance.doorStates.set(`door_${door.id}`, true);
+      instance.doorStates.set(`door_${door.id}`, true); // Start in open state
+      
+      // Sliding direction
       const rawDirection = adjustedSlideDirection === 'right' ? -1 : 1;
       const slideDirectionSign = adjustedSide === 'exterior' ? -rawDirection : rawDirection;
       const slideDistance = doorWidth * 0.9;
+      
+      // Animate door sliding
       if (typeof window !== 'undefined' && window.gsap) {
         window.gsap.to(doorMesh.position, {
           x: slideDistance * slideDirectionSign,
@@ -534,9 +557,13 @@ export function createDoorMesh(instance, door, wall) {
           ease: 'power2.inOut'
         });
       }
+      
       return doorContainer;
     }
-  } else if (door_type === 'swing') {
+  }
+  
+  // === SWING DOOR IMPLEMENTATION ===
+  else if (door_type === 'swing') {
     if (configuration === 'double_sided') {
       const halfWidth = doorWidth * 0.48;
       const doorContainer = new instance.THREE.Object3D();
@@ -560,7 +587,11 @@ export function createDoorMesh(instance, door, wall) {
       rightPivot.add(rightPanel);
       doorContainer.userData.isDoor = true;
       doorContainer.userData.doorId = `door_${door.id}`;
-      doorContainer.userData.doorInfo = { ...door };
+      doorContainer.userData.doorInfo = {
+        ...door,
+        adjustedSwingDirection: adjustedSwingDirection,
+        adjustedSide: adjustedSide
+      };
       instance.doorObjects.push(doorContainer);
       instance.doorStates.set(`door_${door.id}_left`, true);
       instance.doorStates.set(`door_${door.id}_right`, true);
@@ -624,7 +655,12 @@ export function createDoorMesh(instance, door, wall) {
       pivot.add(doorPanel);
       doorContainer.userData.isDoor = true;
       doorContainer.userData.doorId = `door_${door.id}`;
-      doorContainer.userData.doorInfo = door;
+      doorContainer.userData.doorInfo = {
+        ...door,
+        adjustedSwingDirection: adjustedSwingDirection,
+        adjustedSide: adjustedSide,
+        effectiveHingeOnRight: effectiveHingeOnRight
+      };
       instance.doorObjects.push(doorContainer);
       instance.doorStates.set(`door_${door.id}`, true);
       let baseDir = 0;
@@ -645,4 +681,94 @@ export function createDoorMesh(instance, door, wall) {
     }
   }
   return null;
+} 
+
+export function createPanelDivisionLines(instance, wall, panels) {
+  if (!panels || panels.length === 0) return null;
+  
+  const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
+  const scale = instance.scalingFactor;
+  
+  // Snap endpoints to a fixed precision to avoid floating point misalignment
+  function snap(val, precision = 0.01) {
+    return Math.round(val / precision) * precision;
+  }
+  
+  let startX = snap(start_x * scale);
+  let startZ = snap(start_y * scale);
+  let endX = snap(end_x * scale);
+  let endZ = snap(end_y * scale);
+  
+  // Calculate wall direction and length
+  const dx = endX - startX;
+  const dz = endZ - startZ;
+  const wallLength = Math.hypot(dx, dz);
+  
+  if (wallLength === 0) return null;
+  
+  // Create a group to hold all panel division lines
+  const panelLinesGroup = new instance.THREE.Object3D();
+  panelLinesGroup.userData.isPanelLines = true;
+  panelLinesGroup.userData.wallId = id;
+  
+  let accumulated = 0;
+  
+  // Create division lines for each panel boundary
+  for (let i = 0; i < panels.length - 1; i++) {
+    accumulated += panels[i].width;
+    const t = accumulated / wallLength;
+    
+    // Calculate position along the wall
+    const divisionX = startX + dx * t;
+    const divisionZ = startZ + dz * t;
+    
+    // Calculate perpendicular direction for the division line
+    const perpX = -dz / wallLength;
+    const perpZ = dx / wallLength;
+    
+    // Calculate the offset based on wall thickness
+    const offsetDistance = (thickness * scale) / 2;
+    
+    // Create four points for the division rectangle (perpendicular to wall)
+    const lineStartX1 = divisionX + perpX * offsetDistance;
+    const lineStartZ1 = divisionZ + perpZ * offsetDistance;
+    const lineStartX2 = divisionX - perpX * offsetDistance;
+    const lineStartZ2 = divisionZ - perpZ * offsetDistance;
+    
+    // Create the division line geometry as a rectangle
+    const lineGeometry = new instance.THREE.BufferGeometry().setFromPoints([
+      // Bottom edge
+      new instance.THREE.Vector3(lineStartX1, 0, lineStartZ1),
+      new instance.THREE.Vector3(lineStartX2, 0, lineStartZ2),
+      // Top edge
+      new instance.THREE.Vector3(lineStartX1, height * scale, lineStartZ1),
+      new instance.THREE.Vector3(lineStartX2, height * scale, lineStartZ2),
+      // Left edge
+      new instance.THREE.Vector3(lineStartX1, 0, lineStartZ1),
+      new instance.THREE.Vector3(lineStartX1, height * scale, lineStartZ1),
+      // Right edge
+      new instance.THREE.Vector3(lineStartX2, 0, lineStartZ2),
+      new instance.THREE.Vector3(lineStartX2, height * scale, lineStartZ2)
+    ]);
+    
+    // Create line segments
+    const lineMaterial = new instance.THREE.LineBasicMaterial({ 
+      color: 0xFF6B35, // Orange color to match 2D panel lines
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.8
+    });
+    
+    // Create the division line mesh
+    const divisionLine = new instance.THREE.LineSegments(lineGeometry, lineMaterial);
+    divisionLine.userData.isPanelDivision = true;
+    divisionLine.userData.panelIndex = i;
+    
+    panelLinesGroup.add(divisionLine);
+  }
+  
+  // Position the group at the model offset
+  panelLinesGroup.position.set(instance.modelOffset.x, 0, instance.modelOffset.z);
+  
+  return panelLinesGroup;
 } 

@@ -96,7 +96,16 @@ export function toggleDoorHandler(instance) {
         const rightPivot = doorContainer.children[1];
         const leftPanel = leftPivot.children[0];
         const rightPanel = rightPivot.children[0];
-        const mountedInside = doorInfo.side === 'interior';
+        const mountedInside = (doorInfo.adjustedSide || doorInfo.side) === 'interior';
+        
+        // Debug logging for double swing door toggle
+        console.log('[Double Swing Door Toggle] Using properties:', {
+          doorId: doorInfo.id,
+          originalSide: doorInfo.side,
+          adjustedSide: doorInfo.adjustedSide || doorInfo.side,
+          mountedInside: mountedInside,
+          newState: newState
+        });
         const leftAngle = newState ? Math.PI / 2 * (mountedInside ? -1 : 1) : 0;
         const rightAngle = newState ? Math.PI / 2 * (mountedInside ? 1 : -1) : 0;
         if (window.gsap) {
@@ -117,9 +126,25 @@ export function toggleDoorHandler(instance) {
       const doorContainer = instance.activeDoor;
       const pivot = doorContainer.children[0];
       const doorPanel = pivot.children[0];
-      const mountedInside = doorInfo.side === 'interior';
-      const hingeOnRight = doorInfo.swing_direction === 'right';
-      const effectiveHingeOnRight = mountedInside ? !hingeOnRight : hingeOnRight;
+      const mountedInside = (doorInfo.adjustedSide || doorInfo.side) === 'interior';
+      const hingeOnRight = (doorInfo.adjustedSwingDirection || doorInfo.swing_direction) === 'right';
+      
+      // Use stored effectiveHingeOnRight if available, otherwise calculate it
+      const effectiveHingeOnRight = doorInfo.effectiveHingeOnRight !== undefined ? 
+        doorInfo.effectiveHingeOnRight : (mountedInside ? !hingeOnRight : hingeOnRight);
+      
+      // Debug logging for swing door toggle
+      console.log('[Swing Door Toggle] Using properties:', {
+        doorId: doorInfo.id,
+        originalSwingDirection: doorInfo.swing_direction,
+        adjustedSwingDirection: doorInfo.adjustedSwingDirection || doorInfo.swing_direction,
+        originalSide: doorInfo.side,
+        adjustedSide: doorInfo.adjustedSide || doorInfo.side,
+        mountedInside: mountedInside,
+        hingeOnRight: hingeOnRight,
+        effectiveHingeOnRight: effectiveHingeOnRight,
+        newState: newState
+      });
       let baseDir = 0;
       if (mountedInside) {
         baseDir = effectiveHingeOnRight ? 1 : -1;
@@ -184,10 +209,26 @@ export function toggleDoorHandler(instance) {
       if (!doorPanel.userData.origPosition) {
         doorPanel.userData.origPosition = { ...origPos };
       }
-      const slideDirection = doorInfo.slide_direction === 'right' ? -1 : 1;
-      const sideCoefficient = doorInfo.side === 'exterior' ? -1 : 1;
+      
+      // Use adjusted properties for wall flipping
+      const adjustedSlideDirection = doorInfo.adjustedSlideDirection || doorInfo.slide_direction;
+      const adjustedSide = doorInfo.adjustedSide || doorInfo.side;
+      
+      // Debug logging for sliding door toggle
+      console.log('[Slide Door Toggle] Using properties:', {
+        doorId: doorInfo.id,
+        originalSlideDirection: doorInfo.slide_direction,
+        adjustedSlideDirection: adjustedSlideDirection,
+        originalSide: doorInfo.side,
+        adjustedSide: adjustedSide,
+        newState: newState
+      });
+      
+      const slideDirection = adjustedSlideDirection === 'right' ? -1 : 1;
+      const sideCoefficient = adjustedSide === 'exterior' ? -1 : 1;
       const effectiveDirection = slideDirection * sideCoefficient;
       const slideDistance = doorInfo.width * instance.scalingFactor * 0.9;
+      
       if (window.gsap) {
         if (newState) {
           window.gsap.to(doorPanel.position, {

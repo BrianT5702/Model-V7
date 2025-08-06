@@ -146,6 +146,13 @@ export default function useProjectDetails(projectId) {
     // eslint-disable-next-line
   }, [is3DView, walls]);
 
+  // Update 3D canvas when walls, joints, or doors change
+  useEffect(() => {
+    if (is3DView && threeCanvasInstance.current) {
+      threeCanvasInstance.current.updateData(walls, joints, doors);
+    }
+  }, [is3DView, walls, joints, doors]);
+
   // Room handlers
   const handleCreateRoom = async (roomData) => {
     try {

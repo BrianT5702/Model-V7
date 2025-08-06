@@ -65,6 +65,19 @@ const ProjectDetails = () => {
                         </button>
                     )}
 
+                    {projectDetails.is3DView && (
+                        <button
+                            onClick={() => {
+                                if (projectDetails.threeCanvasInstance.current) {
+                                    projectDetails.threeCanvasInstance.current.togglePanelLines();
+                                }
+                            }}
+                            className="px-4 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                        >
+                            Toggle Panel Lines
+                        </button>
+                    )}
+
                     <button
                         onClick={() => {
                             if (!projectDetails.is3DView) {  // ✅ Prevent editing in 3D mode

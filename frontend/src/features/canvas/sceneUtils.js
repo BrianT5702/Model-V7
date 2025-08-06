@@ -188,9 +188,9 @@ function getBuildingFootprint(instance) {
 }
 
 export function buildModel(instance) {
-  // Remove existing walls, doors, and ceilings from the scene
+  // Remove existing walls, doors, ceilings, and panel lines from the scene
   instance.scene.children = instance.scene.children.filter(child => {
-    return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling');
+    return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.userData?.isPanelLines;
   });
 
   // Clear door objects array
@@ -201,10 +201,22 @@ export function buildModel(instance) {
     if (d.linked_wall && !d.wall) d.wall = d.linked_wall;
   });
 
+  // Calculate panels for all walls
+  const wallPanelsMap = instance.calculateWallPanels();
+
   // Create all walls
   instance.walls.forEach(wall => {
     const wallMesh = instance.createWallMesh(instance, wall);
     instance.scene.add(wallMesh);
+    
+    // Create panel division lines for this wall
+    const panels = wallPanelsMap[wall.id];
+    if (panels && panels.length > 1) {
+      const panelLines = instance.createPanelDivisionLines(instance, wall, panels);
+      if (panelLines) {
+        instance.scene.add(panelLines);
+      }
+    }
   });
 
   // Create all doors
