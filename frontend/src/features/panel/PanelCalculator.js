@@ -167,7 +167,7 @@ class PanelCalculator {
             console.log(`- Left edge type: ${compatibleLeftover.leftEdgeType}`);
             console.log(`- Right edge type: ${compatibleLeftover.rightEdgeType}`);
             
-            const panel = this.createPanelFromLeftover(compatibleLeftover, width, jointType);
+            const panel = this.createPanelFromLeftover(compatibleLeftover, width, position, jointType);
             this.updateLeftoverAfterCut(compatibleLeftover, width, wallThickness, jointType);
             
             console.log(`\nAfter cutting leftover:`);
@@ -312,13 +312,14 @@ class PanelCalculator {
         };
     }
 
-    createPanelFromLeftover(leftover, width, jointType) {
+    createPanelFromLeftover(leftover, width, position, jointType) {
         this.panelAnalysis.totalLeftoverPanels++;
         this.panelAnalysis.totalPanels++;
         return {
             width: width,
             isLeftover: true,
             leftoverId: leftover.id,
+            position: position,
             jointType: jointType,
             type: 'side'
         };
