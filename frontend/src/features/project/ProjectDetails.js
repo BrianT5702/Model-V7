@@ -449,6 +449,8 @@ const ProjectDetails = () => {
                             onRoomWallsSelect={projectDetails.setSelectedWallsForRoom}
                             rooms={projectDetails.rooms}
                             onRoomSelect={projectDetails.handleRoomSelect}
+                            onRoomUpdate={projectDetails.handleRoomUpdate}
+                            onRoomLabelPositionUpdate={projectDetails.handleRoomLabelPositionUpdate}
                             onJointsUpdate={projectDetails.setJoints}
                             doors={projectDetails.doors}
                             onDoorSelect={projectDetails.handleDoorSelect}

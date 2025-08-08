@@ -1063,14 +1063,29 @@ getModelBounds() {
           const adjustedPositionX = wasWallFlipped ? (1 - door.position_x) : door.position_x;
           const doorPos = adjustedPositionX * finalWallLength;
           
-          return {
+          const cutout = {
             start: Math.max(0, doorPos - cutoutWidth / 2),
             end: Math.min(finalWallLength, doorPos + cutoutWidth / 2),
             doorInfo: door
           };
+          
+          console.log(`Door ${door.id} cutout:`, {
+            originalPosition: door.position_x,
+            adjustedPosition: adjustedPositionX,
+            doorPos: doorPos,
+            doorWidth: doorWidth,
+            cutoutWidth: cutoutWidth,
+            cutoutStart: cutout.start,
+            cutoutEnd: cutout.end,
+            wallFlipped: wasWallFlipped
+          });
+          
+          return cutout;
         });
         
         let accumulated = 0;
+        
+        console.log(`Wall ${wall.id} panel division positions:`);
         
         // Create division lines for each panel boundary
         // Note: The panels array from calculateWallPanels() already has the correct flipped positions
@@ -1079,6 +1094,8 @@ getModelBounds() {
           accumulated += panels[i].width;
           const t = accumulated / finalWallLength; // Position along wall (0-1)
           const divisionPosition = accumulated; // Position in wall units
+          
+          console.log(`  Panel division ${i + 1}: ${divisionPosition}mm (panel ${i}: ${panels[i].width}mm)`);
           
           // Calculate division point along the wall using final coordinates
           const divX = finalStartX + (finalEndX - finalStartX) * t;
@@ -1133,12 +1150,25 @@ getModelBounds() {
   // Method to create line segments with gaps at door cutouts
   createLineSegmentsWithCutouts(dbLinePoint, offsetLinePoint, wallHeight, cutouts, divisionPosition, finalWallLength, finalStartX, finalStartY, finalEndX, finalEndY, scale) {
     // Check if this division line intersects with any door cutout
-    const intersectingCutouts = cutouts.filter(cutout => 
-      divisionPosition >= cutout.start && divisionPosition <= cutout.end
-    );
+    // A door cutout is an area/range, so we check if the panel line falls within that area
+    const intersectingCutouts = cutouts.filter(cutout => {
+      const isWithinCutout = divisionPosition >= cutout.start && divisionPosition <= cutout.end;
+      
+      if (isWithinCutout) {
+        console.log(`  Panel line at ${divisionPosition}mm is WITHIN door cutout ${cutout.start}-${cutout.end}mm`);
+      }
+      
+      return isWithinCutout;
+    });
+    
+    // Debug logging
+    console.log(`Panel line at position ${divisionPosition}mm`);
+    console.log(`Available cutouts:`, cutouts.map(c => `${c.start}-${c.end}mm`));
+    console.log(`Intersecting cutouts:`, intersectingCutouts.length);
     
     if (intersectingCutouts.length === 0) {
       // No cutouts intersect, create continuous lines from floor to wall top
+      console.log(`Creating full line - no door intersection`);
       this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight);
       return;
     }
@@ -1147,8 +1177,43 @@ getModelBounds() {
     const cutout = intersectingCutouts[0]; // Should only be one cutout per division line
     const doorHeight = cutout.doorInfo.height * scale * 1.02; // Same as in meshUtils.js
     
+    console.log(`Creating partial line - door intersection detected`);
+    console.log(`Door height: ${doorHeight}mm, Wall height: ${wallHeight}mm`);
+    
     // Create line only from door top to wall top
     this.createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight);
+  }
+  
+  // Method to create lines only from door top to wall top
+  createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight) {
+    // Only create line from door top to wall top (no line from floor to door bottom)
+    if (doorHeight < wallHeight) {
+      const lineGeometry = new this.THREE.BufferGeometry();
+      const vertices = new Float32Array([
+        // Line at database coordinate position (0 position) - from door top to wall top
+        dbLinePoint.x, doorHeight, dbLinePoint.z,
+        dbLinePoint.x, wallHeight, dbLinePoint.z,
+        // Line offset by wall thickness - from door top to wall top
+        offsetLinePoint.x, doorHeight, offsetLinePoint.z,
+        offsetLinePoint.x, wallHeight, offsetLinePoint.z
+      ]);
+      
+      lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
+      
+      const lineMaterial = new this.THREE.LineBasicMaterial({
+        color: 0xFFFFFF,
+        linewidth: 3,
+        transparent: true,
+        opacity: 0.6
+      });
+      
+      const line = new this.THREE.Line(lineGeometry, lineMaterial);
+      line.userData.isPanelLine = true;
+      line.visible = this.showPanelLines;
+      
+      this.scene.add(line);
+      this.panelLines.push(line);
+    }
   }
   
   // Method to create continuous lines (no cutouts)
@@ -1184,37 +1249,7 @@ getModelBounds() {
     this.panelLines.push(divisionLine);
   }
   
-  // Method to create lines only from door top to wall top
-  createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight) {
-    // Only create line from door top to wall top (no line from floor to door bottom)
-    if (doorHeight < wallHeight) {
-      const lineGeometry = new this.THREE.BufferGeometry();
-      const vertices = new Float32Array([
-        // Line at database coordinate position (0 position) - from door top to wall top
-        dbLinePoint.x, doorHeight, dbLinePoint.z,
-        dbLinePoint.x, wallHeight, dbLinePoint.z,
-        // Line offset by wall thickness - from door top to wall top
-        offsetLinePoint.x, doorHeight, offsetLinePoint.z,
-        offsetLinePoint.x, wallHeight, offsetLinePoint.z
-      ]);
-      
-      lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
-      
-      const lineMaterial = new this.THREE.LineBasicMaterial({
-        color: 0xFFFFFF,
-        linewidth: 3,
-        transparent: true,
-        opacity: 0.6
-      });
-      
-      const line = new this.THREE.Line(lineGeometry, lineMaterial);
-      line.userData.isPanelLine = true;
-      line.visible = this.showPanelLines;
-      
-      this.scene.add(line);
-      this.panelLines.push(line);
-    }
-  }
+
 
   // Method to set panel division lines visibility
   setPanelLinesVisibility(visible) {

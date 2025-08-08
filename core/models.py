@@ -79,6 +79,12 @@ class Room(models.Model):
         blank=True,
         help_text="List of points {x, y} defining the room boundary"
     )
+    
+    label_position = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Position {x, y} of the room label on the canvas"
+    )
 
     class Meta:
         unique_together = ('project', 'room_name')

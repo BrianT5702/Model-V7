@@ -16,8 +16,10 @@ import {
   drawWallLinePair,
   drawWallCaps,
   drawPanelDivisions, // <-- add this
-  normalizeWallCoordinates
+  normalizeWallCoordinates,
+  getRoomLabelPositions
 } from './drawing';
+import InteractiveRoomLabel from './InteractiveRoomLabel';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
 
@@ -42,7 +44,9 @@ const Canvas2D = ({
     onDoorSelect = () => {},
     selectedRoomPoints = [],
     onUpdateRoomPoints = () => {},
-    onRoomSelect
+    onRoomSelect,
+    onRoomUpdate,
+    onRoomLabelPositionUpdate
 }) => {
 
     const canvasRef = useRef(null);
@@ -63,6 +67,9 @@ const Canvas2D = ({
     const [showMaterialDetails, setShowMaterialDetails] = useState(false);
     const [dbConnectionError, setDbConnectionError] = useState(false);
     const [wallMergeError, setWallMergeError] = useState('');
+    const [selectedRoomId, setSelectedRoomId] = useState(null);
+    const [roomLabelPositions, setRoomLabelPositions] = useState([]);
+    const lastRoomDataRef = useRef({ rooms: [], walls: [] });
 
     const offsetX = useRef(0);
     const offsetY = useRef(0);
@@ -90,6 +97,103 @@ const Canvas2D = ({
 
     const toggleMaterialDetails = () => {
         setShowMaterialDetails(prev => !prev);
+    };
+
+    // Handle room updates
+    const handleRoomUpdate = async (roomId, updates) => {
+        try {
+            // Find the current room
+            const currentRoom = rooms.find(room => room.id === roomId);
+            if (!currentRoom) {
+                console.error('Room not found:', roomId);
+                return;
+            }
+            
+            // Create updated room data
+            const updatedRoomData = { ...currentRoom, ...updates };
+            
+            // Use the parent's room update function
+            if (onRoomUpdate) {
+                await onRoomUpdate(updatedRoomData);
+            } else {
+                // Fallback to direct API call if no parent function provided
+                const response = await api.put(`/rooms/${roomId}/`, updates);
+                if (response.status === 200) {
+                    console.log('Room updated successfully:', response.data);
+                }
+            }
+        } catch (error) {
+            console.error('Error updating room:', error);
+            if (isDatabaseConnectionError(error)) {
+                showDatabaseError();
+            }
+        }
+    };
+
+    // Handle room label position changes (optimized to avoid unnecessary re-renders)
+    const handleRoomLabelPositionChange = (roomId, newPosition) => {
+        setRoomLabelPositions(prev => 
+            prev.map(label => 
+                label.roomId === roomId 
+                    ? { ...label, position: newPosition }
+                    : label
+            )
+        );
+    };
+
+    // Optimized room update that doesn't trigger unnecessary re-calculations
+    const handleRoomUpdateOptimized = async (roomId, updates) => {
+        try {
+            // If this is just a label position update, use the specialized function
+            if (updates.label_position && Object.keys(updates).length === 1) {
+                console.log('Sending label position update:', updates);
+                
+                if (onRoomLabelPositionUpdate) {
+                    await onRoomLabelPositionUpdate(roomId, updates.label_position);
+                    console.log('Label position updated successfully');
+                } else {
+                    // Fallback to direct API call with full room data
+                    const currentRoom = rooms.find(room => room.id === roomId);
+                    if (!currentRoom) {
+                        console.error('Room not found:', roomId);
+                        return;
+                    }
+                    
+                    const fullRoomData = { ...currentRoom, ...updates };
+                    const response = await api.put(`/rooms/${roomId}/`, fullRoomData);
+                    if (response.status === 200) {
+                        console.log('Label position updated successfully');
+                    }
+                }
+            } else {
+                // For other updates, use the parent's room update function
+                const currentRoom = rooms.find(room => room.id === roomId);
+                if (!currentRoom) {
+                    console.error('Room not found:', roomId);
+                    return;
+                }
+                
+                const updatedRoomData = { ...currentRoom, ...updates };
+                if (onRoomUpdate) {
+                    await onRoomUpdate(updatedRoomData);
+                } else {
+                    const response = await api.put(`/rooms/${roomId}/`, updates);
+                    if (response.status === 200) {
+                        console.log('Room updated successfully:', response.data);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error updating room:', error);
+            if (isDatabaseConnectionError(error)) {
+                showDatabaseError();
+            }
+        }
+    };
+
+    // Handle room selection
+    const handleRoomSelect = (roomId) => {
+        setSelectedRoomId(roomId);
     };
 
     const SNAP_THRESHOLD = 10;
@@ -444,6 +548,11 @@ const Canvas2D = ({
         console.log('Canvas clicked! Screen:', event.clientX, event.clientY, 'Model:', x, y, 'currentMode:', currentMode);
         if (!isEditingMode) return;
         const clickPoint = { x, y };
+        
+        // Deselect room label when clicking on empty space
+        if (selectedRoomId !== null) {
+            setSelectedRoomId(null);
+        }
     
         // Intersection selection block (unchanged)
         if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room') {
@@ -1055,12 +1164,64 @@ const Canvas2D = ({
         drawRooms(context, rooms, walls, scaleFactor.current, offsetX.current, offsetY.current, calculateRoomArea, calculatePolygonVisualCenter);
         // Draw room preview
         drawRoomPreview(context, selectedRoomPoints, scaleFactor.current, offsetX.current, offsetY.current);
+        
     }, [
         walls, rooms, selectedWall, tempWall, doors,
         selectedWallsForRoom, joints, isEditingMode,
         hoveredWall, hoveredDoorId, highlightWalls,
         selectedRoomPoints, project, hoveredPoint,
         wallPanelsMap // Add wallPanelsMap to dependencies
+        // Removed roomLabelPositions from dependencies to prevent infinite loop
+    ]);
+
+    // Separate useEffect for room label positions to avoid triggering panel calculations
+    useEffect(() => {
+        // Check if rooms or walls have actually changed (not just label_position updates)
+        const roomsChanged = rooms.length !== lastRoomDataRef.current.rooms.length ||
+            rooms.some((room, index) => {
+                const lastRoom = lastRoomDataRef.current.rooms[index];
+                return !lastRoom || 
+                       room.id !== lastRoom.id ||
+                       room.room_name !== lastRoom.room_name ||
+                       room.height !== lastRoom.height ||
+                       room.remarks !== lastRoom.remarks ||
+                       JSON.stringify(room.walls) !== JSON.stringify(lastRoom.walls);
+                       // Note: We intentionally ignore label_position changes here
+            });
+        
+        const wallsChanged = walls.length !== lastRoomDataRef.current.walls.length ||
+            walls.some((wall, index) => {
+                const lastWall = lastRoomDataRef.current.walls[index];
+                return !lastWall || 
+                       wall.id !== lastWall.id ||
+                       wall.start_x !== lastWall.start_x ||
+                       wall.start_y !== lastWall.start_y ||
+                       wall.end_x !== lastWall.end_x ||
+                       wall.end_y !== lastWall.end_y;
+            });
+        
+        // Only recalculate if rooms or walls have actually changed
+        if (roomsChanged || wallsChanged) {
+            const newLabelPositions = getRoomLabelPositions(
+                rooms, 
+                walls, 
+                scaleFactor.current, 
+                offsetX.current, 
+                offsetY.current, 
+                calculateRoomArea, 
+                calculatePolygonVisualCenter
+            );
+            setRoomLabelPositions(newLabelPositions);
+            
+            // Update the ref with current data
+            lastRoomDataRef.current = {
+                rooms: rooms.map(room => ({ ...room })),
+                walls: walls.map(wall => ({ ...wall }))
+            };
+        }
+    }, [
+        rooms, walls, scaleFactor.current, offsetX.current, offsetY.current
+        // Only depend on the actual data that affects label positions
     ]);
     
     return (
@@ -1077,14 +1238,32 @@ const Canvas2D = ({
                 </div>
             )}
             
-            <canvas
-                ref={canvasRef}
-                onClick={handleCanvasClick}
-                onMouseMove={handleMouseMove}
+            <div className="relative">
+                <canvas
+                    ref={canvasRef}
+                    onClick={handleCanvasClick}
+                    onMouseMove={handleMouseMove}
+                    
+                    tabIndex={0}
+                    className="border border-gray-300 bg-gray-50"
+                />
                 
-                tabIndex={0}
-                className="border border-gray-300 bg-gray-50"
-            />
+                {/* Interactive Room Labels */}
+                {roomLabelPositions.map((labelData) => (
+                    <InteractiveRoomLabel
+                        key={labelData.roomId}
+                        room={labelData.room}
+                        position={labelData.position}
+                        scaleFactor={scaleFactor.current}
+                        offsetX={offsetX.current}
+                        offsetY={offsetY.current}
+                        onUpdateRoom={handleRoomUpdateOptimized}
+                        onPositionChange={handleRoomLabelPositionChange}
+                        isSelected={selectedRoomId === labelData.roomId}
+                        onSelect={handleRoomSelect}
+                    />
+                ))}
+            </div>
             {selectedIntersection && (
             <div className="fixed inset-0 bg-black bg-opacity-10 flex justify-end items-start z-50"> {/* Changed to items-start and justify-end */}
                 <div className="bg-white p-4 rounded-lg shadow-lg m-4 max-w-md w-full"> {/* Added margin and reduced padding */}

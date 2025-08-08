@@ -83,7 +83,7 @@ export function drawGrid(context, canvasWidth, canvasHeight, gridSize, isDrawing
 
 // Additional drawing functions (drawRooms, drawWalls, etc.) can be added here as you extract them from Canvas2D.js. 
 
-// Draw rooms on the canvas
+// Draw rooms on the canvas (without labels - labels are now handled by InteractiveRoomLabel component)
 export function drawRooms(context, rooms, walls, scaleFactor, offsetX, offsetY, calculateRoomArea, calculatePolygonVisualCenter) {
     rooms.forEach(room => {
         const roomWalls = room.walls.map(wallId => 
@@ -110,26 +110,43 @@ export function drawRooms(context, rooms, walls, scaleFactor, offsetX, offsetY, 
         context.strokeStyle = 'rgba(76, 175, 80, 0.8)';
         context.lineWidth = 2;
         context.stroke();
-        const center = calculatePolygonVisualCenter(areaPoints.insetPoints);
-        if (!center) return;
-        context.fillStyle = 'white';
-        context.font = '14px Arial';
-        const textMetrics = context.measureText(room.room_name);
-        const padding = 4;
-        context.fillRect(
-            center.x * scaleFactor + offsetX - textMetrics.width / 2 - padding,
-            center.y * scaleFactor + offsetY - 14 - padding,
-            textMetrics.width + padding * 2,
-            18 + padding * 2
-        );
-        context.fillStyle = '#000';
-        context.textAlign = 'center';
-        context.fillText(
-            room.room_name,
-            center.x * scaleFactor + offsetX,
-            center.y * scaleFactor + offsetY
-        );
     });
+}
+
+// Get room label positions for interactive labels
+export function getRoomLabelPositions(rooms, walls, scaleFactor, offsetX, offsetY, calculateRoomArea, calculatePolygonVisualCenter) {
+    const labelPositions = [];
+    
+    rooms.forEach(room => {
+        const roomWalls = room.walls.map(wallId => 
+            walls.find(w => w.id === wallId)
+        ).filter(Boolean);
+        const areaPoints = (room.room_points && room.room_points.length >= 3)
+            ? { insetPoints: room.room_points }
+            : calculateRoomArea(roomWalls);
+        if (!areaPoints || !areaPoints.insetPoints || areaPoints.insetPoints.length < 3) return;
+        
+        // Use stored label position if available, otherwise calculate center
+        let position;
+        if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
+            position = room.label_position;
+        } else {
+            const center = calculatePolygonVisualCenter(areaPoints.insetPoints);
+            if (center) {
+                position = center;
+            } else {
+                return; // Skip if no position can be determined
+            }
+        }
+        
+        labelPositions.push({
+            roomId: room.id,
+            position: position,
+            room: room
+        });
+    });
+    
+    return labelPositions;
 }
 
 // Draw the preview of a room being defined

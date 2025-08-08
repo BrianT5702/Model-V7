@@ -60,12 +60,29 @@ class IntersectionSerializer(serializers.ModelSerializer):
 
 
 class RoomSerializer(serializers.ModelSerializer):
-    walls = serializers.PrimaryKeyRelatedField(many=True, queryset=Wall.objects.all())
+    walls = serializers.PrimaryKeyRelatedField(many=True, queryset=Wall.objects.all(), required=False)
     ceilings = CeilingSerializer(many=True, read_only=True)
 
     class Meta:
         model = Room
         fields = '__all__'
+
+    def update(self, instance, validated_data):
+        """Override update to handle partial updates properly"""
+        # Handle the walls field separately since it's a ManyToManyField
+        walls_data = validated_data.pop('walls', None)
+        
+        # Update all other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        
+        # Update walls if provided
+        if walls_data is not None:
+            instance.walls.set(walls_data)
+        
+        return instance
 
 
 class ProjectSerializer(serializers.ModelSerializer):

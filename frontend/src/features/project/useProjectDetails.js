@@ -229,6 +229,33 @@ export default function useProjectDetails(projectId) {
     }
   };
 
+  // Separate function for label position updates that doesn't trigger room state updates
+  const handleRoomLabelPositionUpdate = async (roomId, labelPosition) => {
+    try {
+      // Get the current room to include all required fields
+      const currentRoom = rooms.find(room => room.id === roomId);
+      if (!currentRoom) {
+        console.error('Room not found:', roomId);
+        return;
+      }
+      
+      // Send only the label position for partial update
+      console.log('Sending label position update:', { label_position: labelPosition });
+      const response = await api.patch(`/rooms/${roomId}/`, { label_position: labelPosition });
+      // Don't update the rooms state to avoid triggering panel calculations
+      console.log('Label position updated successfully');
+    } catch (error) {
+      console.error('Error updating room label position:', error);
+      console.error('Error response data:', error.response?.data);
+      if (isDatabaseConnectionError(error)) {
+        setRoomError('Fail to connect to database. Try again later.');
+      } else {
+        setRoomError('Failed to update room label position.');
+      }
+      setTimeout(() => setRoomError(''), 5000);
+    }
+  };
+
   const handleRoomDelete = async (roomId) => {
     try {
       await api.delete(`/rooms/${roomId}/`);
