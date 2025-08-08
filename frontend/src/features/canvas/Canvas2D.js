@@ -22,6 +22,7 @@ import {
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
+import { filterDimensions } from './dimensionFilter.js';
 
 const Canvas2D = ({ 
     walls = [], 
@@ -1095,6 +1096,11 @@ const Canvas2D = ({
         });
         return map;
     }, [walls, intersections]);
+
+    // Filter dimensions to show only unique ones
+    const filteredDimensions = React.useMemo(() => {
+        return filterDimensions(walls, intersections, wallPanelsMap);
+    }, [walls, intersections, wallPanelsMap]);
     
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -1156,7 +1162,8 @@ const Canvas2D = ({
             drawDimensions,
             // Add these:
             wallPanelsMap,
-            drawPanelDivisions
+            drawPanelDivisions,
+            filteredDimensions
         });
         // Draw doors
         drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
@@ -1170,7 +1177,8 @@ const Canvas2D = ({
         selectedWallsForRoom, joints, isEditingMode,
         hoveredWall, hoveredDoorId, highlightWalls,
         selectedRoomPoints, project, hoveredPoint,
-        wallPanelsMap // Add wallPanelsMap to dependencies
+        wallPanelsMap, // Add wallPanelsMap to dependencies
+        filteredDimensions // Add filteredDimensions to dependencies
         // Removed roomLabelPositions from dependencies to prevent infinite loop
     ]);
 

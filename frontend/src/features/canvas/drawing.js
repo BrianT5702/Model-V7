@@ -1,5 +1,8 @@
 // Drawing functions extracted from Canvas2D.js
 
+// Import dimension filtering helper
+import { shouldShowWallDimension, shouldShowPanelDimension } from './dimensionFilter.js';
+
 // Utility function to normalize wall coordinates
 // Ensures horizontal walls are created from left to right
 // and vertical walls are created from top to bottom
@@ -589,7 +592,8 @@ export function drawWalls({
     drawEndpoints,
     drawDimensions,
     wallPanelsMap, // <-- added
-    drawPanelDivisions // <-- added
+    drawPanelDivisions, // <-- added
+    filteredDimensions // <-- added for dimension filtering
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
@@ -728,7 +732,7 @@ export function drawWalls({
         if (wallPanelsMap && drawPanelDivisions) {
             const panels = wallPanelsMap[wall.id];
             if (panels && panels.length > 0) {
-                drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, undefined, FIXED_GAP, modelBounds, placedLabels, allPanelLabels, true);
+                drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, undefined, FIXED_GAP, modelBounds, placedLabels, allPanelLabels, true, filteredDimensions);
             }
         }
         // --- End panel divisions ---
@@ -737,22 +741,24 @@ export function drawWalls({
             drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
             drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
         }
-        // Collect wall label info for second pass
-        drawDimensions(
-            context,
-            wall.start_x,
-            wall.start_y,
-            wall.end_x,
-            wall.end_y,
-            scaleFactor,
-            offsetX,
-            offsetY,
-            selectedWall === wall.id ? 'red' : '#2196F3',
-            modelBounds,
-            placedLabels,
-            allLabels,
-            true // collectOnly
-        );
+        // Collect wall label info for second pass (only if this wall should show dimensions)
+        if (!filteredDimensions || shouldShowWallDimension(wall, intersections, filteredDimensions.wallDimensions, walls)) {
+            drawDimensions(
+                context,
+                wall.start_x,
+                wall.start_y,
+                wall.end_x,
+                wall.end_y,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                selectedWall === wall.id ? 'red' : '#2196F3',
+                modelBounds,
+                placedLabels,
+                allLabels,
+                true // collectOnly
+            );
+        }
         if (isEditingMode) {
             intersections.forEach((inter) => {
                 drawEndpoints(
@@ -853,7 +859,7 @@ export function drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX
 } 
 
 // Draw panel division lines along a wall
-export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, color = '#333', FIXED_GAP = 2.5, modelBounds = null, placedLabels = [], allPanelLabels = [], collectOnly = false) {
+export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, color = '#333', FIXED_GAP = 2.5, modelBounds = null, placedLabels = [], allPanelLabels = [], collectOnly = false, filteredDimensions = null) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
     const line1 = wall._line1;
     const line2 = wall._line2;
@@ -920,9 +926,10 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
         const perpX = -dy;
         const perpY = dx;
         
-        // Only show labels for side panels (first and last panels)
-        if (i === 0 || i === panels.length - 1) {
-            const labelText = `${Math.round(panelWidth)} mm`;
+                    // Only show labels for side panels (first and last panels) and if this panel should show dimensions
+            if ((i === 0 || i === panels.length - 1) && 
+                (!filteredDimensions || shouldShowPanelDimension(panel, wall.thickness, filteredDimensions.panelDimensions, wall.id, wall))) {
+                const labelText = `${Math.round(panelWidth)} mm`;
 
             // Start and end t values for the panel
             const tStart = accumulated / wallLength;
