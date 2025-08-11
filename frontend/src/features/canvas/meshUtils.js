@@ -1,4 +1,5 @@
 // Utility functions for mesh creation in Three.js
+import { CSG } from 'three-csg-ts';
 
 // Calculate intersection point between two line segments
 function calculateLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
@@ -136,20 +137,20 @@ export function createWallMesh(instance, wall) {
             sameSide = modelRightOfWall === connectRightOfWall;
           }
           
-          // Debug logging for all cases
-          console.log('[Joint Check]', {
-            wallId: id,
-            connectingWallId,
-            isHorizontal,
-            modelCenterZ: modelCenter.z * scale,
-            modelCenterX: modelCenter.x * scale,
-            wallMidZ,
-            wallMidX,
-            connectMidZ,
-            connectMidX,
-            sameSide,
-            shouldFlip: !sameSide
-          });
+          // // Debug logging for all cases
+          // console.log('[Joint Check]', {
+          //   wallId: id,
+          //   connectingWallId,
+          //   isHorizontal,
+          //   modelCenterZ: modelCenter.z * scale,
+          //   modelCenterX: modelCenter.x * scale,
+          //   wallMidZ,
+          //   wallMidX,
+          //   connectMidZ,
+          //   connectMidX,
+          //   sameSide,
+          //   shouldFlip: !sameSide
+          // });
           
           // If they're on opposite sides, we need to flip
           if (!sameSide) {
@@ -192,9 +193,11 @@ export function createWallMesh(instance, wall) {
   // Check for 45° cut joints using final coordinates
   let hasStart45 = false;
   let hasEnd45 = false;
+  let startJointInfo = null;
+  let endJointInfo = null;
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.001;
   
-  console.log('[45° Cut Debug] Wall ID:', id, 'Joints:', instance.joints);
+  // console.log('[45° Cut Debug] Wall ID:', id, 'Joints:', instance.joints);
   
   if (instance.joints && instance.joints.length) {
     instance.joints.forEach(j => {
@@ -225,29 +228,66 @@ export function createWallMesh(instance, wall) {
             const jointX = intersection.x;
             const jointZ = intersection.z;
             
-            console.log('[45° Cut Debug] Checking joint:', {
-              wallId: id,
-              jointId: j.id,
-              otherWallId,
-              jointX,
-              jointZ,
-              finalStartX,
-              finalStartZ,
-              finalEndX,
-              finalEndZ,
-              startMatch: nearlyEqual(jointX, finalStartX) && nearlyEqual(jointZ, finalStartZ),
-              endMatch: nearlyEqual(jointX, finalEndX) && nearlyEqual(jointZ, finalEndZ)
-            });
+            // console.log('[45° Cut Debug] Checking joint:', {
+            //   wallId: id,
+            //   jointId: j.id,
+            //   otherWallId,
+            //   jointX,
+            //   jointZ,
+            //   finalStartX,
+            //   finalStartZ,
+            //   finalEndX,
+            //   finalEndZ,
+            //   startMatch: nearlyEqual(jointX, finalStartX) && nearlyEqual(jointZ, finalStartZ),
+            //   endMatch: nearlyEqual(jointX, finalEndX) && nearlyEqual(jointZ, finalEndZ)
+            // });
+            
+            // Calculate wall vectors for miter calculation
+            const wallVec = {
+              x: finalEndX - finalStartX,
+              z: finalEndZ - finalStartZ
+            };
+            
+            const joinVec = {
+              x: wall2EndX - wall2StartX,
+              z: wall2EndZ - wall2StartZ
+            };
+            
+            // Normalize vectors
+            const wallLen = Math.hypot(wallVec.x, wallVec.z);
+            const joinLen = Math.hypot(joinVec.x, joinVec.z);
+            const wallNorm = { x: wallVec.x / wallLen, z: wallVec.z / wallLen };
+            const joinNorm = { x: joinVec.x / joinLen, z: joinVec.z / joinLen };
+            
+            // Calculate bisector (average of the two vectors)
+            const bisector = {
+              x: (wallNorm.x + joinNorm.x) / 2,
+              z: (wallNorm.z + joinNorm.z) / 2
+            };
+            
+            // Normalize bisector
+            const bisectorLen = Math.hypot(bisector.x, bisector.z);
+            const bisectorNorm = { x: bisector.x / bisectorLen, z: bisector.z / bisectorLen };
             
             // Check if joint is at start (with tolerance)
             if (nearlyEqual(jointX, finalStartX) && nearlyEqual(jointZ, finalStartZ)) {
               hasStart45 = true;
-              console.log('[45° Cut Debug] Found start 45° cut for wall:', id);
+              startJointInfo = {
+                otherWall,
+                bisector: bisectorNorm,
+                jointPoint: { x: jointX, z: jointZ }
+              };
+              // console.log('[45° Cut Debug] Found start 45° cut for wall:', id);
             }
             // Check if joint is at end (with tolerance)
             if (nearlyEqual(jointX, finalEndX) && nearlyEqual(jointZ, finalEndZ)) {
               hasEnd45 = true;
-              console.log('[45° Cut Debug] Found end 45° cut for wall:', id);
+              endJointInfo = {
+                otherWall,
+                bisector: bisectorNorm,
+                jointPoint: { x: jointX, z: jointZ }
+              };
+              // console.log('[45° Cut Debug] Found end 45° cut for wall:', id);
             }
           }
         }
@@ -255,32 +295,33 @@ export function createWallMesh(instance, wall) {
     });
   }
   
-  console.log('[45° Cut Debug] Final result for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
+  // console.log('[45° Cut Debug] Final result for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
   // Calculate wall length using final coordinates
   const finalDx = finalEndX - finalStartX;
   const finalDz = finalEndZ - finalStartZ;
   const finalWallLength = Math.hypot(finalDx, finalDz);
   
   const wallShape = new instance.THREE.Shape();
-  const bevel = wallThickness; // Make 45° cuts more visible by doubling the depth
   
-  console.log('[45° Cut Debug] Creating wall shape for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45, 'bevel:', bevel);
+  // console.log('[45° Cut Debug] Creating wall shape for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
   
   // Create wall shape with 45° cuts
-  if (hasStart45) {
+  if (hasStart45 && startJointInfo) {
     // Start with 45° cut at the beginning
-    console.log('[45° Cut Debug] Applying start 45° cut');
-    wallShape.moveTo(bevel, 0);                // Start from the bevel point
-    wallShape.lineTo(0, bevel);                // 45° cut up to the top
-    wallShape.lineTo(0, wallHeight);           // Vertical line to top
+    // console.log('[45° Cut Debug] Applying start 45° cut - outer face shortened by wallThickness');
+    const bevel = wallThickness; // 45° bevel depth
+    
+    // Start 45° cut - will be applied using boolean operations
+    wallShape.moveTo(0, 0);
+    wallShape.lineTo(0, wallHeight);
   } else {
     // Normal start without bevel
-    console.log('[45° Cut Debug] No start 45° cut');
+    //console.log('[45° Cut Debug] No start 45° cut');
     wallShape.moveTo(0, 0);
     wallShape.lineTo(0, wallHeight);
   }
   
-  let lastX = hasStart45 ? bevel : 0;
+  let lastX = hasStart45 ? wallThickness : 0;
   
   // Add door cutouts
   // IMPORTANT: When wall start/end points are flipped (for joint alignment or model center positioning),
@@ -289,12 +330,7 @@ export function createWallMesh(instance, wall) {
   const wasWallFlipped = (finalStartX !== startX) || (finalStartZ !== startZ);
   
   if (wasWallFlipped && wallDoors.length > 0) {
-    console.log('[Door Position Fix] Wall was flipped, adjusting door positions:', {
-      wallId: id,
-      originalStart: { x: startX, z: startZ },
-      finalStart: { x: finalStartX, z: finalStartZ },
-      doors: wallDoors.map(d => ({ id: d.id, originalPosition: d.position_x }))
-    });
+    // Wall was flipped, door positions will be adjusted
   }
   
   wallDoors.sort((a, b) => a.position_x - b.position_x);
@@ -309,12 +345,7 @@ export function createWallMesh(instance, wall) {
     const doorPos = adjustedPositionX * finalWallLength;
     
     if (wasWallFlipped) {
-      console.log('[Door Position Fix] Door position adjusted:', {
-        doorId: door.id,
-        originalPosition: door.position_x,
-        adjustedPosition: adjustedPositionX,
-        doorPos: doorPos
-      });
+      // Door position adjusted for flipped wall
     }
     
     return {
@@ -326,24 +357,23 @@ export function createWallMesh(instance, wall) {
   });
   
   // Continue wall shape to the end
-  if (hasEnd45) {
+  if (hasEnd45 && endJointInfo) {
     // End with 45° cut
-    console.log('[45° Cut Debug] Applying end 45° cut');
-    wallShape.lineTo(finalWallLength - bevel, wallHeight);  // Horizontal to bevel point
-    wallShape.lineTo(finalWallLength, wallHeight - bevel);  // 45° cut down
-    wallShape.lineTo(finalWallLength, 0);                   // Vertical to bottom
+    //console.log('[45° Cut Debug] Applying end 45° cut - outer face shortened by wallThickness');
+    const bevel = wallThickness; // 45° bevel depth
+    
+    // End 45° cut - will be applied using boolean operations
+    wallShape.lineTo(finalWallLength, wallHeight);
+    wallShape.lineTo(finalWallLength, 0);
   } else {
     // Normal end without bevel
-    console.log('[45° Cut Debug] No end 45° cut');
+    //console.log('[45° Cut Debug] No end 45° cut');
     wallShape.lineTo(finalWallLength, wallHeight);
     wallShape.lineTo(finalWallLength, 0);
   }
   
   // Close the shape
   wallShape.lineTo(lastX, 0);
-  if (hasStart45) {
-    wallShape.lineTo(bevel, 0);
-  }
   for (const cutout of cutouts) {
     const doorHole = new instance.THREE.Path();
     doorHole.moveTo(cutout.start, 0);
@@ -360,11 +390,20 @@ export function createWallMesh(instance, wall) {
   const wallGeometry = new instance.THREE.ExtrudeGeometry(wallShape, extrudeSettings);
   wallGeometry.computeVertexNormals();
   const wallMaterial = new instance.THREE.MeshStandardMaterial({ color: 0xFFFFFFF, roughness: 0.5, metalness: 0.7 });
-  const wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
+  let wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
+  
+  // Apply 45° cuts using boolean operations if needed
+  if (hasStart45 || hasEnd45) {
+    //console.log('[45° Cut Debug] About to apply boolean operations:', { hasStart45, hasEnd45, finalWallLength, wallHeight, wallThickness });
+    wallMesh = apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, finalWallLength, wallHeight, wallThickness);
+  } else {
+    //console.log('[45° Cut Debug] No 45° cuts detected for this wall');
+  }
   wallMesh.userData.isWall = true;
   wallMesh.castShadow = true;
   wallMesh.receiveShadow = true;
   wallMesh.rotation.y = -Math.atan2(finalDz, finalDx);
+  
   // Position the mesh so that the database line is one face, and thickness extends toward the model center
   wallMesh.position.set(finalStartX + instance.modelOffset.x, 0, finalStartZ + instance.modelOffset.z);
   const edges = new instance.THREE.EdgesGeometry(wallGeometry);
@@ -389,6 +428,111 @@ export function createWallMesh(instance, wall) {
   return wallMesh;
 }
 
+function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength, wallHeight, wallThickness) {
+  try {
+    // console.log('[45° Cut Debug] Starting boolean operations:', { hasStart45, hasEnd45, wallLength, wallHeight, wallThickness });
+    // console.log('[45° Cut Debug] CSG available:', typeof CSG);
+    
+    // Convert wall mesh to CSG
+    let wallCSG = CSG.fromMesh(wallMesh);
+    // console.log('[45° Cut Debug] Wall converted to CSG');
+    
+    if (hasStart45) {
+      // console.log('[45° Cut Debug] Creating start cutting plane');
+      // Create a diagonal cutting plane for the start 45° cut
+      const startCutGeometry = new instance.THREE.PlaneGeometry(wallHeight * 2, wallThickness * 2);
+      const startCutMaterial = new instance.THREE.MeshBasicMaterial();
+      const startCutPlane = new instance.THREE.Mesh(startCutGeometry, startCutMaterial);
+      
+      // Position and rotate the cutting plane to create a diagonal cut
+      startCutPlane.position.set(0, wallHeight/2, wallThickness/2);
+      startCutPlane.rotation.y = Math.PI / 4; // 45 degrees
+      startCutPlane.rotation.z = Math.PI / 2; // Rotate to face the wall
+      
+      // console.log('[45° Cut Debug] Start cutting plane position:', startCutPlane.position);
+      // console.log('[45° Cut Debug] Start cutting plane rotation:', startCutPlane.rotation);
+      
+      // Convert cutting plane to CSG and subtract from wall
+      const startCutCSG = CSG.fromMesh(startCutPlane);
+      wallCSG = wallCSG.subtract(startCutCSG);
+      
+      // console.log('[45° Cut Debug] Applied start 45° cut using boolean operations');
+    }
+    
+    if (hasEnd45) {
+      // console.log('[45° Cut Debug] Creating end cutting plane');
+      // Create a diagonal cutting plane for the end 45° cut
+      const endCutGeometry = new instance.THREE.PlaneGeometry(wallHeight * 2, wallThickness * 2);
+      const endCutMaterial = new instance.THREE.MeshBasicMaterial();
+      const endCutPlane = new instance.THREE.Mesh(endCutGeometry, endCutMaterial);
+      
+      // Position and rotate the cutting plane to create a diagonal cut
+      endCutPlane.position.set(wallLength, wallHeight/2, wallThickness/2);
+      endCutPlane.rotation.y = -Math.PI / 4; // -45 degrees
+      endCutPlane.rotation.z = Math.PI / 2; // Rotate to face the wall
+      
+      // console.log('[45° Cut Debug] End cutting plane position:', endCutPlane.position);
+      // console.log('[45° Cut Debug] End cutting plane rotation:', endCutPlane.rotation);
+      
+      // Convert cutting plane to CSG and subtract from wall
+      const endCutCSG = CSG.fromMesh(endCutPlane);
+      wallCSG = wallCSG.subtract(endCutCSG);
+      
+      console.log('[45° Cut Debug] Applied end 45° cut using boolean operations');
+    }
+    
+    // Convert back to mesh
+    const resultMesh = CSG.toMesh(wallCSG, wallMesh.matrix, wallMesh.material);
+    resultMesh.userData = wallMesh.userData;
+    
+    // console.log('[45° Cut Debug] Successfully applied boolean operations for 45° cuts');
+    // console.log('[45° Cut Debug] Result mesh geometry:', resultMesh.geometry.attributes.position.count, 'vertices');
+    // console.log('[45° Cut Debug] Original mesh geometry:', wallMesh.geometry.attributes.position.count, 'vertices');
+    
+    return resultMesh;
+    
+  } catch (error) {
+    // console.error('[45° Cut Debug] Error applying boolean operations:', error);
+    // console.error('[45° Cut Debug] Error stack:', error.stack);
+    
+    // Fallback: Create visible cutting planes for debugging
+    // console.log('[45° Cut Debug] Creating fallback cutting planes for visualization');
+    
+    if (hasStart45) {
+      const startCutGeometry = new instance.THREE.PlaneGeometry(wallHeight * 2, wallThickness * 2);
+      const startCutMaterial = new instance.THREE.MeshBasicMaterial({ 
+        color: 0xff0000, 
+        transparent: true, 
+        opacity: 0.5,
+        side: instance.THREE.DoubleSide 
+      });
+      const startCutPlane = new instance.THREE.Mesh(startCutGeometry, startCutMaterial);
+      startCutPlane.position.set(-wallThickness/2, wallHeight/2, wallThickness/2);
+      startCutPlane.rotation.y = Math.PI / 4;
+      startCutPlane.rotation.z = Math.PI / 2;
+      wallMesh.add(startCutPlane);
+    }
+    
+    if (hasEnd45) {
+      const endCutGeometry = new instance.THREE.PlaneGeometry(wallHeight * 2, wallThickness * 2);
+      const endCutMaterial = new instance.THREE.MeshBasicMaterial({ 
+        color: 0x00ff00, 
+        transparent: true, 
+        opacity: 0.5,
+        side: instance.THREE.DoubleSide 
+      });
+      const endCutPlane = new instance.THREE.Mesh(endCutGeometry, endCutMaterial);
+      endCutPlane.position.set(wallLength + wallThickness/2, wallHeight/2, wallThickness/2);
+      endCutPlane.rotation.y = -Math.PI / 4;
+      endCutPlane.rotation.z = Math.PI / 2;
+      wallMesh.add(endCutPlane);
+    }
+    
+    // Return original mesh if boolean operations fail
+    return wallMesh;
+  }
+}
+
 export function createDoorMesh(instance, door, wall) {
   if (!door.calculatedPosition) {
     return null;
@@ -411,16 +555,7 @@ export function createDoorMesh(instance, door, wall) {
   const adjustedSide = wasWallFlipped ? (side === 'interior' ? 'exterior' : 'interior') : side;
   
   if (wasWallFlipped) {
-    console.log('[Door Direction Fix] Door properties adjusted:', {
-      doorId: door.id,
-      doorType: door_type,
-      originalSwingDirection: swing_direction,
-      adjustedSwingDirection: adjustedSwingDirection,
-      originalSlideDirection: slide_direction,
-      adjustedSlideDirection: adjustedSlideDirection,
-      originalSide: side,
-      adjustedSide: adjustedSide
-    });
+    // Door properties adjusted for flipped wall
   }
   const doorWidth = width * scale * 1.05;
   const doorThickness = thickness * instance.scalingFactor;
@@ -601,14 +736,7 @@ export function createDoorMesh(instance, door, wall) {
       const rightAngle = Math.PI / 2 * (adjustedSide === 'exterior' ? -1 : 1);
       
       if (wasWallFlipped) {
-        console.log('[Double Door Swing Fix] Swing angles calculated with adjusted side:', {
-          doorId: door.id,
-          originalSide: side,
-          adjustedSide: adjustedSide,
-          leftAngle: leftAngle,
-          rightAngle: rightAngle,
-          wasWallFlipped: wasWallFlipped
-        });
+        // Double door swing angles calculated with adjusted side
       }
       if (typeof window !== 'undefined' && window.gsap) {
         window.gsap.to(leftPanel.rotation, {
@@ -636,12 +764,7 @@ export function createDoorMesh(instance, door, wall) {
       let effectiveHingeOnRight = mountedInside ? !hingeOnRight : hingeOnRight;
       if (wasWallFlipped) {
         effectiveHingeOnRight = !effectiveHingeOnRight;
-        console.log('[Hinge Position Fix] Hinge position flipped:', {
-          doorId: door.id,
-          originalHingeOnRight: !effectiveHingeOnRight,
-          adjustedHingeOnRight: effectiveHingeOnRight,
-          wasWallFlipped: wasWallFlipped
-        });
+        // Hinge position flipped for wall flip
       }
       const pivotX = effectiveHingeOnRight ? cutoutWidth/2 - 0.1 : -cutoutWidth/2 + 0.1;
       const pivot = new instance.THREE.Object3D();

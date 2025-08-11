@@ -563,3 +563,216 @@ export function findIntersectionPointsBetweenWalls(walls) {
     }
     return Array.from(map.values());
 } 
+
+// Export 2D canvas as image
+export function exportCanvasAsImage(canvasRef, filename = '2d_sketch.png') {
+    try {
+        if (!canvasRef || !canvasRef.current) {
+            console.error('Canvas reference not found');
+            return;
+        }
+
+        const canvas = canvasRef.current;
+        
+        // Create a temporary canvas for high-quality export
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        if (!tempCtx) {
+            console.error('Could not get 2D context for temporary canvas');
+            return;
+        }
+        
+        // Set high resolution for better quality
+        const scale = 2; // 2x resolution for crisp images
+        tempCanvas.width = canvas.width * scale;
+        tempCanvas.height = canvas.height * scale;
+        
+        // Scale the context to match the high resolution
+        tempCtx.scale(scale, scale);
+        
+        // Draw the original canvas content to the temporary canvas
+        tempCtx.drawImage(canvas, 0, 0);
+        
+        // Convert to blob and download
+        tempCanvas.toBlob((blob) => {
+            if (blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                console.error('Failed to create blob from canvas');
+            }
+        }, 'image/png', 1.0);
+    } catch (error) {
+        console.error('Error exporting canvas as image:', error);
+    }
+}
+
+// Export 2D canvas as SVG (for vector format)
+export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections, filename = '2d_sketch.svg') {
+    try {
+        if (!canvasRef || !canvasRef.current) {
+            console.error('Canvas reference not found');
+            return;
+        }
+
+    const canvas = canvasRef.current;
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Calculate bounds to center the drawing
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    // Find bounds from walls
+    walls.forEach(wall => {
+        minX = Math.min(minX, wall.start_x, wall.end_x);
+        minY = Math.min(minY, wall.start_y, wall.end_y);
+        maxX = Math.max(maxX, wall.start_x, wall.end_x);
+        maxY = Math.max(maxY, wall.start_y, wall.end_y);
+    });
+    
+    // Add padding
+    const padding = 50;
+    minX -= padding;
+    minY -= padding;
+    maxX += padding;
+    maxY += padding;
+    
+    // Calculate scale to fit in canvas
+    const drawingWidth = maxX - minX;
+    const drawingHeight = maxY - minY;
+    const scaleX = (width - 100) / drawingWidth;
+    const scaleY = (height - 100) / drawingHeight;
+    const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
+    
+    // Calculate offset to center
+    const offsetX = (width - drawingWidth * scale) / 2 - minX * scale;
+    const offsetY = (height - drawingHeight * scale) / 2 - minY * scale;
+    
+    // Transform function
+    const transform = (x, y) => ({
+        x: x * scale + offsetX,
+        y: y * scale + offsetY
+    });
+    
+    // Create SVG content
+    let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            .wall { stroke: #333; stroke-width: ${Math.max(1, 2 * scale)}; fill: none; }
+            .room-fill { fill: rgba(200, 200, 255, 0.3); stroke: #666; stroke-width: ${Math.max(0.5, 1 * scale)}; }
+            .door { stroke: #ff6b6b; stroke-width: ${Math.max(1.5, 3 * scale)}; fill: none; }
+            .dimension { stroke: #666; stroke-width: ${Math.max(0.5, 1 * scale)}; font-size: ${Math.max(8, 12 * scale)}px; font-family: Arial; }
+            .room-label { font-size: ${Math.max(10, 14 * scale)}px; font-family: Arial; fill: #333; text-anchor: middle; }
+            .grid { stroke: #ddd; stroke-width: ${Math.max(0.25, 0.5 * scale)}; opacity: 0.5; }
+        </style>
+    </defs>
+    <rect width="${width}" height="${height}" fill="white"/>
+    
+    <!-- Grid lines -->
+    <g class="grid">
+`;
+
+    // Add grid lines
+    const gridSize = 50 * scale;
+    const gridStartX = Math.floor(minX / 50) * 50;
+    const gridStartY = Math.floor(minY / 50) * 50;
+    const gridEndX = Math.ceil(maxX / 50) * 50;
+    const gridEndY = Math.ceil(maxY / 50) * 50;
+    
+    for (let x = gridStartX; x <= gridEndX; x += 50) {
+        const transformedX = transform(x, 0).x;
+        svgContent += `<line x1="${transformedX}" y1="0" x2="${transformedX}" y2="${height}" class="grid"/>`;
+    }
+    for (let y = gridStartY; y <= gridEndY; y += 50) {
+        const transformedY = transform(0, y).y;
+        svgContent += `<line x1="0" y1="${transformedY}" x2="${width}" y2="${transformedY}" class="grid"/>`;
+    }
+    svgContent += '</g>';
+
+    // Add walls
+    walls.forEach(wall => {
+        const start = transform(wall.start_x, wall.start_y);
+        const end = transform(wall.end_x, wall.end_y);
+        svgContent += `<line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" class="wall"/>`;
+    });
+
+    // Add room fills
+    rooms.forEach(room => {
+        if (room.room_points && room.room_points.length >= 3) {
+            const points = room.room_points.map(p => {
+                const transformed = transform(p.x, p.y);
+                return `${transformed.x},${transformed.y}`;
+            }).join(' ');
+            svgContent += `<polygon points="${points}" class="room-fill"/>`;
+        }
+    });
+
+    // Add doors
+    doors.forEach(door => {
+        const wall = walls.find(w => w.id === door.wall);
+        if (wall) {
+            // Calculate door position along the wall
+            const wallLength = Math.sqrt(
+                Math.pow(wall.end_x - wall.start_x, 2) + 
+                Math.pow(wall.end_y - wall.start_y, 2)
+            );
+            const doorPosition = door.position_along_wall || 0.5;
+            
+            const doorX = wall.start_x + (wall.end_x - wall.start_x) * doorPosition;
+            const doorY = wall.start_y + (wall.end_y - wall.start_y) * doorPosition;
+            
+            // Draw door as a line perpendicular to the wall
+            const wallAngle = Math.atan2(wall.end_y - wall.start_y, wall.end_x - wall.start_x);
+            const doorLength = 30 * scale; // Door width scaled
+            
+            const doorStartX = doorX + Math.cos(wallAngle + Math.PI/2) * doorLength/2;
+            const doorStartY = doorY + Math.sin(wallAngle + Math.PI/2) * doorLength/2;
+            const doorEndX = doorX + Math.cos(wallAngle - Math.PI/2) * doorLength/2;
+            const doorEndY = doorY + Math.sin(wallAngle - Math.PI/2) * doorLength/2;
+            
+            const doorStart = transform(doorStartX, doorStartY);
+            const doorEnd = transform(doorEndX, doorEndY);
+            
+            svgContent += `<line x1="${doorStart.x}" y1="${doorStart.y}" x2="${doorEnd.x}" y2="${doorEnd.y}" class="door"/>`;
+        }
+    });
+
+    // Add room labels
+    rooms.forEach(room => {
+        if (room.label_position) {
+            const pos = transform(room.label_position.x, room.label_position.y);
+            const name = room.room_name || 'Unnamed Room';
+            const height = room.height ? `EXT HT: ${room.height}mm` : 'EXT HT: No height';
+            const description = room.remarks || 'No description';
+            
+            const labelSpacing = 15 * scale;
+            svgContent += `<text x="${pos.x}" y="${pos.y - labelSpacing}" class="room-label">${name}</text>`;
+            svgContent += `<text x="${pos.x}" y="${pos.y}" class="room-label">${height}</text>`;
+            svgContent += `<text x="${pos.x}" y="${pos.y + labelSpacing}" class="room-label">${description}</text>`;
+        }
+    });
+
+    svgContent += '</svg>';
+
+    // Create and download SVG file
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error('Error exporting canvas as SVG:', error);
+    }
+} 

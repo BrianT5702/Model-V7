@@ -1,8 +1,18 @@
 
 import React, { useState } from 'react';
 import PanelCalculator from './PanelCalculator';
+import { exportCanvasAsImage, exportCanvasAsSVG } from '../canvas/utils';
 
-const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDetails, toggleMaterialDetails }) => {
+const PanelCalculationControls = ({ 
+    walls, 
+    intersections, 
+    doors, 
+    showMaterialDetails, 
+    toggleMaterialDetails,
+    canvasRef,
+    rooms = [],
+    project = null
+}) => {
     const [calculatedPanels, setCalculatedPanels] = useState(null);
     const [showTable, setShowTable] = useState(false);
     const [panelAnalysis, setPanelAnalysis] = useState(null);
@@ -10,7 +20,7 @@ const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDet
     const [showLeftoverDetails, setShowLeftoverDetails] = useState(false);
     const [panelCalculator, setPanelCalculator] = useState(null);
     const [showExportModal, setShowExportModal] = useState(false);
-    const [exportTab, setExportTab] = useState('pdf'); // 'pdf' or 'csv'
+    const [exportTab, setExportTab] = useState('pdf'); // 'pdf', 'csv', 'sketch'
 
     // Helper to generate CSV string from calculatedPanels
     const getCSVString = () => {
@@ -166,6 +176,19 @@ const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDet
         printWindow.focus();
         printWindow.print();
         // Do NOT close the window automatically!
+    };
+
+    // Sketch export functions
+    const downloadSketchAsPNG = () => {
+        const projectName = project?.name || 'project';
+        const filename = `${projectName}_2d_sketch.png`;
+        exportCanvasAsImage(canvasRef, filename);
+    };
+
+    const downloadSketchAsSVG = () => {
+        const projectName = project?.name || 'project';
+        const filename = `${projectName}_2d_sketch.svg`;
+        exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections, filename);
     };
 
     const calculateAllPanels = () => {
@@ -353,6 +376,10 @@ const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDet
                                 className={`px-4 py-2 rounded ${exportTab === 'csv' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
                                 onClick={() => setExportTab('csv')}
                             >CSV Preview</button>
+                            <button
+                                className={`px-4 py-2 rounded ${exportTab === 'sketch' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
+                                onClick={() => setExportTab('sketch')}
+                            >2D Sketch</button>
                         </div>
                         <div className="overflow-auto max-h-96 border rounded p-4 bg-gray-50">
                             {exportTab === 'pdf' ? (
@@ -360,23 +387,78 @@ const PanelCalculationControls = ({ walls, intersections, doors, showMaterialDet
                                     {getPDFTable()}
                                     {getDoorTable()}
                                 </div>
-                            ) : (
+                            ) : exportTab === 'csv' ? (
                                 <pre className="whitespace-pre-wrap text-sm">{getCSVStringWithDoors()}</pre>
-                            )}
+                            ) : exportTab === 'sketch' ? (
+                                <div className="text-center">
+                                    <div className="mb-4">
+                                        <h3 className="text-lg font-semibold mb-2">2D Sketch Export</h3>
+                                        <p className="text-gray-600 mb-4">
+                                            Export your 2D floor plan sketch in high-quality image or vector format.
+                                        </p>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="p-4 border rounded bg-white">
+                                            <h4 className="font-semibold mb-2">PNG Image</h4>
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                High-resolution raster image suitable for printing and sharing.
+                                            </p>
+                                            <button
+                                                onClick={downloadSketchAsPNG}
+                                                className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                            >
+                                                Download PNG
+                                            </button>
+                                        </div>
+                                        <div className="p-4 border rounded bg-white">
+                                            <h4 className="font-semibold mb-2">SVG Vector</h4>
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                Scalable vector format for editing and high-quality printing.
+                                            </p>
+                                            <button
+                                                onClick={downloadSketchAsSVG}
+                                                className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                                            >
+                                                Download SVG
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
                         </div>
                         <div className="flex gap-4 mt-6 justify-end">
-                            <button
-                                onClick={downloadPDF}
-                                className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800"
-                            >
-                                Save as PDF
-                            </button>
-                            <button
-                                onClick={downloadCSV}
-                                className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800"
-                            >
-                                Save as CSV
-                            </button>
+                            {exportTab === 'pdf' && (
+                                <button
+                                    onClick={downloadPDF}
+                                    className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800"
+                                >
+                                    Save as PDF
+                                </button>
+                            )}
+                            {exportTab === 'csv' && (
+                                <button
+                                    onClick={downloadCSV}
+                                    className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800"
+                                >
+                                    Save as CSV
+                                </button>
+                            )}
+                            {exportTab === 'sketch' && (
+                                <>
+                                    <button
+                                        onClick={downloadSketchAsPNG}
+                                        className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800"
+                                    >
+                                        Download PNG
+                                    </button>
+                                    <button
+                                        onClick={downloadSketchAsSVG}
+                                        className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800"
+                                    >
+                                        Download SVG
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

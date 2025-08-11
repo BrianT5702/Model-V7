@@ -372,8 +372,10 @@ getModelBounds() {
       // Add ceiling after walls and doors are created
       this.addCeiling();
       
-      // Create panel division lines
-      this.createPanelDivisionLines();
+      // Create panel division lines only if they're enabled
+      if (this.showPanelLines) {
+        this.createPanelDivisionLines();
+      }
     } catch (error) {
       console.error('Error building model:', error);
     }
@@ -723,7 +725,7 @@ getModelBounds() {
               // If they're on opposite sides, we need to flip
               if (!sameSide) {
                 shouldFlipWall = true;
-                console.log(`Wall ${wall.id} will be flipped in calculateWallPanels due to 45° cut joint`);
+                // Wall will be flipped in calculateWallPanels due to 45° cut joint
                 break;
               }
             }
@@ -741,7 +743,7 @@ getModelBounds() {
       
       // If wall is flipped, swap left and right side panel positions
       if (shouldFlipWall) {
-        console.log(`Wall ${wall.id} panels being flipped - swapping left/right positions`);
+        // Wall panels being flipped - swapping left/right positions
         // Swap left and right side panels
         if (rightSide) {
           const flippedRightSide = { ...rightSide, position: 'left' };
@@ -784,7 +786,7 @@ getModelBounds() {
       this.panelLines = [];
       
       const wallPanelsMap = this.calculateWallPanels();
-      console.log('Panel calculation result:', wallPanelsMap);
+              // Panel calculation result
       
       this.walls.forEach(wall => {
         const panels = wallPanelsMap[wall.id];
@@ -793,12 +795,12 @@ getModelBounds() {
           return;
         }
         
-        console.log(`Creating panel lines for wall ${wall.id} with ${panels.length} panels:`, panels);
+        // Creating panel lines for wall
         
         // Debug: Log side panel positions
         const sidePanels = panels.filter(p => p.type === 'side');
         if (sidePanels.length > 0) {
-          console.log(`Wall ${wall.id} side panels:`, sidePanels.map(p => ({ position: p.position, width: p.width })));
+          // Wall side panels
         }
         
         const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
@@ -811,7 +813,7 @@ getModelBounds() {
         const wallLength = Math.sqrt(dx * dx + dy * dy);
         
         if (wallLength === 0) {
-          console.warn(`Wall ${wall.id} has zero length, skipping panel lines`);
+          // Wall has zero length, skipping panel lines
           return;
         }
         
@@ -869,7 +871,7 @@ getModelBounds() {
                 // If they're on opposite sides, we need to flip
                 if (!sameSide) {
                   shouldFlipWall = true;
-                  console.log(`Wall ${wall.id} will be flipped due to 45° cut joint`);
+                  // Wall will be flipped due to 45° cut joint
                   break;
                 }
               }
@@ -912,6 +914,11 @@ getModelBounds() {
         const finalDx = finalEndX - finalStartX;
         const finalDy = finalEndY - finalStartY;
         const finalWallLength = Math.sqrt(finalDx * finalDx + finalDy * finalDy);
+        
+        // Calculate wall length in unscaled coordinates (mm) for panel and door calculations
+        const finalWallLengthUnscaled = finalWallLength / scale;
+        
+        console.log(`Wall ${wall.id} - Scaled length: ${finalWallLength}, Unscaled length: ${finalWallLengthUnscaled}mm, Scale: ${scale}`);
         
         // Calculate wall normal (perpendicular to final wall direction)
         const wallDirX = finalDx / finalWallLength;
@@ -965,8 +972,8 @@ getModelBounds() {
             const toConnectingX = connectingWallMidX - wallMidX;
             const toConnectingY = connectingWallMidY - wallMidY;
             
-            console.log(`Wall ${wall.id} flipped - Connecting wall at (${connectingWallMidX}, ${connectingWallMidY})`);
-            console.log(`Wall ${wall.id} flipped - Direction to connecting wall: (${toConnectingX}, ${toConnectingY})`);
+            // Wall flipped - Connecting wall position
+            // Wall flipped - Direction to connecting wall
             
             if (isFinalHorizontal) {
               // Normal is along Y axis (up or down)
@@ -993,7 +1000,7 @@ getModelBounds() {
               finalNormZ = dotProduct < 0 ? -normZ : normZ;
             }
             
-            console.log(`Wall ${wall.id} flipped - Final normal: (${finalNormX}, ${finalNormZ})`);
+            // Wall flipped - Final normal
           } else {
             // Fallback to model center logic if connecting wall not found
             if (isFinalHorizontal) {
@@ -1056,8 +1063,9 @@ getModelBounds() {
         wallDoors.sort((a, b) => a.position_x - b.position_x);
         const cutouts = wallDoors.map(door => {
           const isSlideDoor = (door.door_type === 'slide');
-          const doorWidth = door.width * scale;
-          const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : 1.05);
+          const doorWidth = door.width; // Use UNSCALED width (mm) since finalWallLength is already scaled
+          const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : 1.05); // cutout width in mm
+          const doorHeight = door.height * scale * 1.02; // Store height in cutout object like meshUtils.js
           
           // If wall was flipped, flip the door position
           const adjustedPositionX = wasWallFlipped ? (1 - door.position_x) : door.position_x;
@@ -1066,38 +1074,66 @@ getModelBounds() {
           const cutout = {
             start: Math.max(0, doorPos - cutoutWidth / 2),
             end: Math.min(finalWallLength, doorPos + cutoutWidth / 2),
+            height: doorHeight, // Store height directly in cutout object
             doorInfo: door
           };
           
-          console.log(`Door ${door.id} cutout:`, {
+          console.log(`🚪 DOOR CUTOUT CREATION - Door ${door.id}:`, {
+            doorType: door.door_type,
             originalPosition: door.position_x,
             adjustedPosition: adjustedPositionX,
             doorPos: doorPos,
             doorWidth: doorWidth,
             cutoutWidth: cutoutWidth,
+            doorHeight: doorHeight,
+            wallFlipped: wasWallFlipped,
+            finalWallLength: finalWallLength,
             cutoutStart: cutout.start,
             cutoutEnd: cutout.end,
-            wallFlipped: wasWallFlipped
+            cutoutRange: `${cutout.start}mm to ${cutout.end}mm`,
+            cutoutWidth: cutout.end - cutout.start,
+            scale: scale,
+            originalDoorWidth: door.width
           });
           
           return cutout;
         });
         
+        console.log(`📋 ALL CUTOUTS CREATED:`, cutouts.map(c => ({
+          doorId: c.doorInfo.id,
+          start: c.start,
+          end: c.end,
+          range: `${c.start}mm to ${c.end}mm`,
+          height: c.height
+        })));
+        
         let accumulated = 0;
         
-        console.log(`Wall ${wall.id} panel division positions:`);
+        // Wall panel division positions
         
         // Create division lines for each panel boundary
         // Note: The panels array from calculateWallPanels() already has the correct flipped positions
         // for side panels when shouldFlipWall is true, so we use them as-is
+        console.log(`🔧 WALL ${wall.id} PANEL DIVISION PROCESSING:`);
+        console.log(`  - Total panels: ${panels.length}`);
+        console.log(`  - Wall length: ${finalWallLength}mm`);
+        console.log(`  - Available cutouts:`, cutouts.map(c => `Door ${c.doorInfo.id}: ${c.start}-${c.end}mm`));
+        
         for (let i = 0; i < panels.length - 1; i++) {
           accumulated += panels[i].width;
           const t = accumulated / finalWallLength; // Position along wall (0-1)
-          const divisionPosition = accumulated; // Position in wall units
+          const divisionPosition = accumulated; // Position in wall units (mm)
           
-          console.log(`  Panel division ${i + 1}: ${divisionPosition}mm (panel ${i}: ${panels[i].width}mm)`);
+          console.log(`\n🔧 Panel division ${i + 1}:`);
+          console.log(`  - Panel ${i} width: ${panels[i].width}mm`);
+          console.log(`  - Accumulated: ${accumulated}mm`);
+          console.log(`  - Division position: ${divisionPosition}mm (${(t*100).toFixed(1)}% of wall)`);
+          console.log(`  - Will check against cutouts:`, cutouts.map(c => `${c.start}-${c.end}mm`));
+          
+          // Panel division created
           
           // Calculate division point along the wall using final coordinates
+          // Use scaled coordinates for 3D positioning
           const divX = finalStartX + (finalEndX - finalStartX) * t;
           const divY = finalStartY + (finalEndY - finalStartY) * t;
           
@@ -1114,6 +1150,9 @@ getModelBounds() {
             x: divX3D + finalNormX * wallThickness,
             z: divZ3D + finalNormZ * wallThickness
           };
+          
+          console.log(`  - 3D coordinates: (${divX3D.toFixed(2)}, ${divZ3D.toFixed(2)})`);
+          console.log(`  - Calling createLineSegmentsWithCutouts with position ${divisionPosition}mm`);
           
           // Create line segments that break at door cutouts
           this.createLineSegmentsWithCutouts(
@@ -1132,7 +1171,7 @@ getModelBounds() {
         }
       });
       
-      console.log(`Created ${this.panelLines.length} panel division lines`);
+              // Panel division lines created
     } catch (error) {
       console.error('Error creating panel division lines:', error);
     }
@@ -1142,43 +1181,77 @@ getModelBounds() {
   togglePanelLines() {
     this.showPanelLines = !this.showPanelLines;
     this.panelButton.textContent = this.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines';
-    this.panelLines.forEach(line => {
-      line.visible = this.showPanelLines;
-    });
+    
+    if (this.showPanelLines && this.panelLines.length === 0) {
+      // Create panel lines only when first enabled
+      this.createPanelDivisionLines();
+    } else {
+      // Just toggle visibility of existing lines
+      this.panelLines.forEach(line => {
+        line.visible = this.showPanelLines;
+      });
+    }
   }
 
   // Method to create line segments with gaps at door cutouts
   createLineSegmentsWithCutouts(dbLinePoint, offsetLinePoint, wallHeight, cutouts, divisionPosition, finalWallLength, finalStartX, finalStartY, finalEndX, finalEndY, scale) {
+    console.log(`🔍 LINE DETECTION START - Panel line at position ${divisionPosition}mm`);
+    console.log(`📏 Wall length: ${finalWallLength}mm, Wall height: ${wallHeight}mm`);
+    console.log(`📍 Line position: ${divisionPosition}mm (${(divisionPosition/finalWallLength*100).toFixed(1)}% of wall)`);
+    
     // Check if this division line intersects with any door cutout
     // A door cutout is an area/range, so we check if the panel line falls within that area
     const intersectingCutouts = cutouts.filter(cutout => {
       const isWithinCutout = divisionPosition >= cutout.start && divisionPosition <= cutout.end;
       
+      console.log(`🔍 Checking cutout for door ${cutout.doorInfo.id}:`, {
+        cutoutStart: cutout.start,
+        cutoutEnd: cutout.end,
+        cutoutRange: `${cutout.start}mm to ${cutout.end}mm`,
+        divisionPosition: divisionPosition,
+        isWithinCutout: isWithinCutout,
+        startCheck: `${divisionPosition} >= ${cutout.start} = ${divisionPosition >= cutout.start}`,
+        endCheck: `${divisionPosition} <= ${cutout.end} = ${divisionPosition <= cutout.end}`
+      });
+      
       if (isWithinCutout) {
-        console.log(`  Panel line at ${divisionPosition}mm is WITHIN door cutout ${cutout.start}-${cutout.end}mm`);
+        console.log(`✅ Panel line at ${divisionPosition}mm is WITHIN door cutout ${cutout.start}-${cutout.end}mm`);
+      } else {
+        console.log(`❌ Panel line at ${divisionPosition}mm is OUTSIDE door cutout ${cutout.start}-${cutout.end}mm`);
       }
       
       return isWithinCutout;
     });
     
     // Debug logging
-    console.log(`Panel line at position ${divisionPosition}mm`);
-    console.log(`Available cutouts:`, cutouts.map(c => `${c.start}-${c.end}mm`));
-    console.log(`Intersecting cutouts:`, intersectingCutouts.length);
+    console.log(`📊 INTERSECTION RESULTS:`);
+    console.log(`  - Available cutouts:`, cutouts.map(c => `${c.doorInfo.id}: ${c.start}-${c.end}mm`));
+    console.log(`  - Intersecting cutouts:`, intersectingCutouts.length);
+    console.log(`  - Division position: ${divisionPosition}mm`);
     
     if (intersectingCutouts.length === 0) {
-      // No cutouts intersect, create continuous lines from floor to wall top
-      console.log(`Creating full line - no door intersection`);
+      console.log(`🚫 Creating full line - no door intersection detected`);
       this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight);
       return;
     }
     
     // Get door cutout information for this division line
     const cutout = intersectingCutouts[0]; // Should only be one cutout per division line
-    const doorHeight = cutout.doorInfo.height * scale * 1.02; // Same as in meshUtils.js
     
-    console.log(`Creating partial line - door intersection detected`);
-    console.log(`Door height: ${doorHeight}mm, Wall height: ${wallHeight}mm`);
+    // Validate cutout data
+    if (!cutout || typeof cutout.height !== 'number' || cutout.height < 0) {
+      console.error(`❌ Invalid cutout data:`, cutout);
+      console.log(`🔄 Falling back to full line due to invalid cutout data`);
+      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight);
+      return;
+    }
+    
+    const doorHeight = cutout.height; // Use the height stored in the cutout object
+    
+    console.log(`✅ Creating partial line - door intersection confirmed`);
+    console.log(`📏 Door height: ${doorHeight}mm, Wall height: ${wallHeight}mm`);
+    console.log(`🔍 Height comparison: doorHeight ${doorHeight >= wallHeight ? '>=' : '<'} wallHeight`);
+    console.log(`🚪 Selected cutout: Door ${cutout.doorInfo.id}, Range: ${cutout.start}-${cutout.end}mm`);
     
     // Create line only from door top to wall top
     this.createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight);
@@ -1186,6 +1259,10 @@ getModelBounds() {
   
   // Method to create lines only from door top to wall top
   createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight) {
+    console.log(`🎯 Creating door top to wall top line:`);
+    console.log(`  - Door height: ${doorHeight}mm`);
+    console.log(`  - Wall height: ${wallHeight}mm`);
+    
     // Only create line from door top to wall top (no line from floor to door bottom)
     if (doorHeight < wallHeight) {
       const lineGeometry = new this.THREE.BufferGeometry();
@@ -1213,11 +1290,50 @@ getModelBounds() {
       
       this.scene.add(line);
       this.panelLines.push(line);
+      
+      console.log(`✅ Created partial line from door top (${doorHeight}mm) to wall top (${wallHeight}mm)`);
+    } else {
+      // Handle case where door height >= wall height
+      // In this case, the door covers the entire wall height, so no line should be visible
+      console.log(`⚠️ Door height (${doorHeight}mm) >= wall height (${wallHeight}mm) - creating minimal line`);
+      
+      // Create a very short line at the very top to maintain visual consistency
+      const lineGeometry = new this.THREE.BufferGeometry();
+      const vertices = new Float32Array([
+        // Line at database coordinate position (0 position) - very short at top
+        dbLinePoint.x, wallHeight - 1, dbLinePoint.z,
+        dbLinePoint.x, wallHeight, dbLinePoint.z,
+        // Line offset by wall thickness - very short at top
+        offsetLinePoint.x, wallHeight - 1, offsetLinePoint.z,
+        offsetLinePoint.x, wallHeight, offsetLinePoint.z
+      ]);
+      
+      lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
+      
+      const lineMaterial = new this.THREE.LineBasicMaterial({
+        color: 0xFFFFFF,
+        linewidth: 3,
+        transparent: true,
+        opacity: 0.6
+      });
+      
+      const line = new this.THREE.Line(lineGeometry, lineMaterial);
+      line.userData.isPanelLine = true;
+      line.visible = this.showPanelLines;
+      
+      this.scene.add(line);
+      this.panelLines.push(line);
+      
+      console.log(`✅ Created minimal line at wall top for door that covers entire wall height`);
     }
   }
   
   // Method to create continuous lines (no cutouts)
   createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight) {
+    console.log(`🎯 Creating continuous line:`);
+    console.log(`  - From floor (0mm) to ceiling (${wallHeight}mm)`);
+    console.log(`  - Position: (${dbLinePoint.x.toFixed(2)}, ${dbLinePoint.z.toFixed(2)})`);
+    
     // Create the division line geometry - two lines: one at DB position, one offset
     const lineGeometry = new this.THREE.BufferGeometry();
     const vertices = new Float32Array([
@@ -1247,6 +1363,8 @@ getModelBounds() {
     // Add to scene and store reference
     this.scene.add(divisionLine);
     this.panelLines.push(divisionLine);
+    
+    console.log(`✅ Created continuous line from floor to ceiling. Total panel lines: ${this.panelLines.length}`);
   }
   
 

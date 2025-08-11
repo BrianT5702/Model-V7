@@ -1406,6 +1406,9 @@ const Canvas2D = ({
                 doors={doors}
                 showMaterialDetails={showMaterialDetails}
                 toggleMaterialDetails={toggleMaterialDetails}
+                canvasRef={canvasRef}
+                rooms={rooms}
+                project={project}
             />
             
             {/* Add DoorTable component */}

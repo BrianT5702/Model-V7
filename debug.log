@@ -1542,3 +1542,21 @@ INFO 2025-08-08 13:32:34,371 services 11584 12904 Wall 5844: new height = 6000.0
 INFO 2025-08-08 13:32:34,371 views 11584 12904 Successfully updated 6 walls
 INFO 2025-08-08 13:34:57,840 autoreload 11584 12876 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
 INFO 2025-08-08 13:34:58,403 autoreload 10100 7856 Watching for file changes with StatReloader
+INFO 2025-08-08 17:15:59,972 views 10100 14244 Updating room with data: {'id': 127, 'walls': [5843, 5844, 5869, 5847], 'ceilings': [], 'room_name': 'Room A', 'floor_type': 'Slab', 'floor_thickness': 50, 'temperature': '-12.00', 'height': 5000, 'remarks': 'Nothing', 'room_points': [{'x': 11500, 'y': 0}, {'x': 11500, 'y': 9375}, {'x': 20000, 'y': 9375}, {'x': 20000, 'y': 0}], 'label_position': {'x': 15825, 'y': 5287.500000000004}, 'project': 392}
+INFO 2025-08-08 17:16:00,022 views 10100 14244 Found room to update: 127, current height: 5000.0
+INFO 2025-08-08 17:16:00,063 views 10100 14244 Updated room height to: 5000.0
+INFO 2025-08-08 17:16:00,067 views 10100 14244 Updating 4 walls with new height: 5000
+INFO 2025-08-08 17:16:00,067 services 10100 14244 update_wall_heights_for_room called with wall_ids: [5843, 5844, 5869, 5847], new_height: 5000
+INFO 2025-08-08 17:16:00,067 services 10100 14244 Converted wall_ids to integers: [5843, 5844, 5869, 5847]
+INFO 2025-08-08 17:16:00,074 services 10100 14244 Found 4 walls to update
+INFO 2025-08-08 17:16:00,076 services 10100 14244 Wall 5843: current height = 5000.0
+INFO 2025-08-08 17:16:00,079 services 10100 14244 Wall 5869: current height = 5000.0
+INFO 2025-08-08 17:16:00,079 services 10100 14244 Wall 5847: current height = 6000.0
+INFO 2025-08-08 17:16:00,079 services 10100 14244 Wall 5844: current height = 6000.0
+INFO 2025-08-08 17:16:00,081 services 10100 14244 Updated 4 walls to height 5000
+INFO 2025-08-08 17:16:00,082 services 10100 14244 Wall 5843: new height = 5000.0
+INFO 2025-08-08 17:16:00,082 services 10100 14244 Wall 5869: new height = 5000.0
+INFO 2025-08-08 17:16:00,082 services 10100 14244 Wall 5847: new height = 5000.0
+INFO 2025-08-08 17:16:00,083 services 10100 14244 Wall 5844: new height = 5000.0
+INFO 2025-08-08 17:16:00,083 views 10100 14244 Successfully updated 4 walls
+INFO 2025-08-11 10:49:18,463 autoreload 17760 10912 Watching for file changes with StatReloader
