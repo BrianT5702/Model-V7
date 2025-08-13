@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FaCube, FaPlus, FaFolderOpen } from 'react-icons/fa';
 import CreateProject from '../features/project/CreateProject';
 import ProjectList from '../features/project/ProjectList';
 import api from '../api/api';
@@ -6,6 +7,8 @@ import api from '../api/api';
 const HomePage = () => {
     const [projects, setProjects] = useState([]);
     const [dbConnectionError, setDbConnectionError] = useState(false);
+    const [showCreateForm, setShowCreateForm] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     // Utility function to detect database connection errors
     const isDatabaseConnectionError = (error) => {
@@ -24,53 +27,122 @@ const HomePage = () => {
     // Function to show database connection error
     const showDatabaseError = () => {
         setDbConnectionError(true);
-        setTimeout(() => setDbConnectionError(false), 5000); // Hide after 5 seconds
+        setTimeout(() => setDbConnectionError(false), 5000);
     };
 
     // Fetch projects from the backend
     useEffect(() => {
+        setIsLoading(true);
         api.get('projects/')
             .then((response) => {
                 setProjects(response.data);
+                setIsLoading(false);
             })
             .catch((error) => {
                 console.error('Error fetching projects:', error);
+                setIsLoading(false);
                 
                 if (isDatabaseConnectionError(error)) {
                     showDatabaseError();
                 } else {
-                    // Show user-friendly error message
                     if (error.response) {
                         const { status, data } = error.response;
-                        alert(`Error loading projects: ${data.error || 'Failed to load projects. Please refresh the page.'}`);
+                        console.error(`Error ${status}:`, data.error || 'Failed to load projects');
                     } else if (error.request) {
-                        alert('Network error: Unable to connect to the server. Please check your internet connection and refresh the page.');
+                        console.error('Network error: Unable to connect to the server');
                     } else {
-                        alert('An unexpected error occurred while loading projects. Please refresh the page.');
+                        console.error('An unexpected error occurred while loading projects');
                     }
                 }
             });
     }, []);
 
+    const quickActions = [
+        {
+            icon: FaPlus,
+            title: "Create New Project",
+            action: () => setShowCreateForm(true),
+            color: "from-blue-500 to-indigo-600"
+        },
+        {
+            icon: FaFolderOpen,
+            title: "View Projects",
+            action: () => document.getElementById('projects-section')?.scrollIntoView({ behavior: 'smooth' }),
+            color: "from-green-500 to-emerald-600"
+        }
+    ];
+
     return (
-        <div>
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50">
             {/* Database Connection Error Message */}
             {dbConnectionError && (
-                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-xl shadow-lg animate-fade-in">
                     <div className="flex items-center">
-                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        <span className="font-medium">Fail to connect to database. Try again later.</span>
+                        <span className="font-medium">Database connection failed. Please try again later.</span>
                     </div>
                 </div>
             )}
-            
-            {/* Create Project Form */}
-            <CreateProject setProjects={setProjects} />
 
-            {/* Project List */}
-            <ProjectList projects={projects} setProjects={setProjects} />
+            {/* Header Section */}
+            <div className="bg-white border-b border-gray-200">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                            <FaCube className="w-10 h-10 text-blue-600 mr-4" />
+                            <h1 className="text-3xl font-bold text-gray-900">Model-V6</h1>
+                        </div>
+                        
+                        <div className="flex items-center space-x-4">
+                            {quickActions.map((action, index) => (
+                                <button
+                                    key={index}
+                                    onClick={action.action}
+                                    className={`group relative px-6 py-3 rounded-xl bg-gradient-to-r ${action.color} text-white font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300`}
+                                >
+                                    <div className="flex items-center">
+                                        <action.icon className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-300" />
+                                        {action.title}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+                {/* Create Project Section */}
+                {showCreateForm && (
+                    <div className="mb-12">
+                        <div className="text-center mb-8">
+                            <h2 className="text-2xl font-bold text-gray-900">Create New Project</h2>
+                        </div>
+                        
+                        <div className="flex justify-center">
+                            <CreateProject 
+                                setProjects={setProjects} 
+                                onClose={() => setShowCreateForm(false)}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Projects Section */}
+                <div id="projects-section">
+                    <div className="flex items-center justify-between mb-8">
+                        <h2 className="text-2xl font-bold text-gray-900">Projects</h2>
+                        <div className="text-sm text-gray-600">
+                            {isLoading ? 'Loading...' : `${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+                        </div>
+                    </div>
+                    
+                    <ProjectList projects={projects} setProjects={setProjects} />
+                </div>
+            </div>
         </div>
     );
 };

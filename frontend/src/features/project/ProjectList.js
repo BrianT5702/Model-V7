@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // Import React Router navigation hook
+import { useNavigate } from 'react-router-dom';
+import { FaPlus } from 'react-icons/fa';
 import api from '../../api/api';
 
 const ProjectList = ({ projects, setProjects }) => {
@@ -80,7 +81,7 @@ const ProjectList = ({ projects, setProjects }) => {
     };
 
     return (
-        <div className="max-w-5xl mx-auto p-6">
+        <div className="w-full">
             {/* Database Connection Error Message */}
             {dbConnectionError && (
                 <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
@@ -122,36 +123,77 @@ const ProjectList = ({ projects, setProjects }) => {
                 </div>
             )}
             
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">Projects</h2>
             {projects.length === 0 ? (
-                <p className="text-gray-500">No projects available.</p>
+                <div className="text-center py-12">
+                    <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                        <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No projects</h3>
+                    <button
+                        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                        <FaPlus className="w-4 h-4 mr-2" />
+                        Create Project
+                    </button>
+                </div>
             ) : (
-                <ul className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {projects.map((project) => (
-                        <li key={project.id}>
-                            <div
-                                className="border border-gray-300 rounded-lg p-4 shadow-sm bg-white hover:shadow-md transition cursor-pointer flex justify-between items-center"
-                                onClick={() => handleProjectClick(project.id)}
-                            >
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-800">{project.name}</h3>
-                                    <p className="text-gray-600">
-                                        Dimensions: {project.width} x {project.length} x {project.height} mm
-                                    </p>
+                        <div
+                            key={project.id}
+                            className="group bg-white rounded-2xl border border-gray-200 p-6 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all duration-300 transform hover:-translate-y-2 cursor-pointer"
+                            onClick={() => handleProjectClick(project.id)}
+                        >
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                    </svg>
                                 </div>
                                 <button
                                     onClick={(e) => {
-                                        e.stopPropagation(); // Prevent navigation when clicking delete
+                                        e.stopPropagation();
                                         handleDeleteClick(project.id);
                                     }}
-                                    className="px-3 py-1 text-sm bg-red-500 text-white rounded-md hover:bg-red-600 transition"
+                                    className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all duration-200"
                                 >
-                                    Delete
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
                                 </button>
                             </div>
-                        </li>
+                            
+                            <h3 className="text-xl font-semibold text-gray-900 mb-3 group-hover:text-blue-600 transition-colors">
+                                {project.name}
+                            </h3>
+                            
+                            <div className="space-y-2 mb-4">
+                                <div className="flex items-center text-sm text-gray-600">
+                                    <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                    </svg>
+                                    {project.width} × {project.length} × {project.height} mm
+                                </div>
+                                <div className="flex items-center text-sm text-gray-600">
+                                    <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                                    </svg>
+                                    Wall thickness: {project.wall_thickness} mm
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center text-sm text-blue-600 font-medium">
+                                <span>Click to open</span>
+                                <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </div>
+                        </div>
                     ))}
-                </ul>
+                </div>
             )}
         </div>
     );

@@ -50,11 +50,12 @@ export default function useProjectDetails(projectId) {
   const [showWallDeleteConfirm, setShowWallDeleteConfirm] = useState(false);
   const [wallToDelete, setWallToDelete] = useState(null);
   const [wallDeleteSuccess, setWallDeleteSuccess] = useState(false);
-  const [wallDeleteError, setWallDeleteError] = useState('');
-  const [roomCreateSuccess, setRoomCreateSuccess] = useState(false);
-  const [wallMergeSuccess, setWallMergeSuccess] = useState(false);
-  const [roomError, setRoomError] = useState('');
-  const [projectLoadError, setProjectLoadError] = useState('');
+      const [wallDeleteError, setWallDeleteError] = useState('');
+    const [roomCreateSuccess, setRoomCreateSuccess] = useState(false);
+    const [wallMergeSuccess, setWallMergeSuccess] = useState(false);
+    const [roomError, setRoomError] = useState('');
+    const [projectLoadError, setProjectLoadError] = useState('');
+    const [showPanelLines, setShowPanelLines] = useState(false);
 
   // Utility: DB/network error check
   const isDatabaseConnectionError = (error) => {
@@ -136,15 +137,38 @@ export default function useProjectDetails(projectId) {
   // 3D view effect
   useEffect(() => {
     if (is3DView) {
-      const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors, 0.01, project);
-      threeCanvasInstance.current = threeCanvas;
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        const container = document.getElementById('three-canvas-container');
+        if (container) {
+          try {
+            const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors, 0.01, project);
+            threeCanvasInstance.current = threeCanvas;
+          } catch (error) {
+            console.error('Error creating 3D canvas:', error);
+            threeCanvasInstance.current = null;
+          }
+        }
+      }, 100);
       return () => {
-        threeCanvas.renderer.dispose();
-        threeCanvasInstance.current = null;
+        if (threeCanvasInstance.current) {
+          if (threeCanvasInstance.current.renderer) {
+            threeCanvasInstance.current.renderer.dispose();
+          }
+          threeCanvasInstance.current = null;
+        }
       };
+    } else {
+      // Clean up 3D canvas when switching back to 2D
+      if (threeCanvasInstance.current) {
+        if (threeCanvasInstance.current.renderer) {
+          threeCanvasInstance.current.renderer.dispose();
+        }
+        threeCanvasInstance.current = null;
+      }
     }
     // eslint-disable-next-line
-  }, [is3DView, walls]);
+  }, [is3DView, walls, joints, doors]);
 
   // Update 3D canvas when walls, joints, or doors change
   useEffect(() => {
@@ -152,6 +176,67 @@ export default function useProjectDetails(projectId) {
       threeCanvasInstance.current.updateData(walls, joints, doors);
     }
   }, [is3DView, walls, joints, doors]);
+
+  // Sync panel lines visibility with 3D canvas
+  useEffect(() => {
+    if (is3DView && threeCanvasInstance.current && threeCanvasInstance.current.setPanelLinesVisibility) {
+      threeCanvasInstance.current.setPanelLinesVisibility(showPanelLines);
+    }
+  }, [is3DView, showPanelLines]);
+
+
+
+
+
+  // Reset edit mode when switching to 3D view
+  useEffect(() => {
+    if (is3DView) {
+      setIsEditingMode(false);
+      setCurrentMode(null);
+      resetAllSelections();
+    }
+  }, [is3DView]);
+
+  // Ensure proper canvas visibility
+  useEffect(() => {
+    const threeContainer = document.getElementById('three-canvas-container');
+    const canvas2D = document.querySelector('.canvas-container canvas');
+    
+    if (threeContainer) {
+      if (is3DView) {
+        threeContainer.style.display = 'block';
+        if (canvas2D) {
+          canvas2D.style.display = 'none';
+        }
+      } else {
+        threeContainer.style.display = 'none';
+        if (canvas2D) {
+          canvas2D.style.display = 'block';
+        }
+      }
+    }
+  }, [is3DView]);
+
+  // Add a function to force cleanup of 3D canvas
+  const forceCleanup3D = () => {
+    try {
+      if (threeCanvasInstance.current) {
+        // Dispose of renderer
+        if (threeCanvasInstance.current.renderer) {
+          threeCanvasInstance.current.renderer.dispose();
+        }
+        // Clear the container
+        const container = document.getElementById('three-canvas-container');
+        if (container) {
+          container.innerHTML = '';
+        }
+        threeCanvasInstance.current = null;
+      }
+    } catch (error) {
+      console.warn('Error during 3D cleanup:', error);
+      threeCanvasInstance.current = null;
+    }
+  };
 
   // Room handlers
   const handleCreateRoom = async (roomData) => {
@@ -583,6 +668,77 @@ export default function useProjectDetails(projectId) {
     setWallToDelete(null);
   };
 
+  // Helper function to fetch updated walls from backend
+  const fetchUpdatedWalls = async () => {
+    console.log('Fetching updated walls from backend...');
+    try {
+      const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+      if (wallsResponse.status === 200) {
+        console.log('Successfully fetched updated walls from backend:', wallsResponse.data);
+        setWalls(wallsResponse.data);
+        setSelectedWallsForRoom([]);
+        setWallMergeSuccess(true);
+        setTimeout(() => setWallMergeSuccess(false), 3000);
+        return true;
+      }
+    } catch (fetchError) {
+      console.error('Failed to fetch updated walls:', fetchError);
+    }
+    return false;
+  };
+
+  // Helper function to construct merged wall coordinates
+  const constructMergedWallCoordinates = async (newWall, wall1, wall2) => {
+    console.log('Constructing merged wall coordinates from original walls...');
+    
+    // Find the original walls to get their coordinates
+    const wall1Coords = { start_x: wall1.start_x, start_y: wall1.start_y, end_x: wall1.end_x, end_y: wall1.end_y };
+    const wall2Coords = { start_x: wall2.start_x, start_y: wall2.start_y, end_x: wall2.end_x, end_y: wall2.end_y };
+    
+    console.log('Wall 1 coordinates:', wall1Coords);
+    console.log('Wall 2 coordinates:', wall2Coords);
+    
+    let mergedWall = { ...newWall };
+    
+    // Determine the merged wall coordinates based on connection type
+    if (wall1.start_x === wall2.end_x && wall1.start_y === wall2.end_y) {
+      // Wall1 start connects to Wall2 end
+      mergedWall.start_x = wall2.start_x;
+      mergedWall.start_y = wall2.start_y;
+      mergedWall.end_x = wall1.end_x;
+      mergedWall.end_y = wall1.end_y;
+    } else if (wall1.end_x === wall2.start_x && wall1.end_y === wall2.start_y) {
+      // Wall1 end connects to Wall2 start
+      mergedWall.start_x = wall1.start_x;
+      mergedWall.start_y = wall1.start_y;
+      mergedWall.end_x = wall2.end_x;
+      mergedWall.end_y = wall2.end_y;
+    } else if (wall1.start_x === wall2.start_x && wall1.start_y === wall2.start_y) {
+      // Walls share start point
+      mergedWall.start_x = wall1.end_x;
+      mergedWall.start_y = wall1.end_y;
+      mergedWall.end_x = wall2.end_x;
+      mergedWall.end_y = wall2.end_y;
+    } else if (wall1.end_x === wall2.end_x && wall1.end_y === wall2.end_y) {
+      // Walls share end point
+      mergedWall.start_x = wall1.start_x;
+      mergedWall.start_y = wall1.start_y;
+      mergedWall.end_x = wall2.start_x;
+      mergedWall.end_y = wall2.start_y;
+    }
+    
+    console.log('Constructed merged wall coordinates:', mergedWall);
+    
+    // Validate the constructed wall
+    if (mergedWall.start_x !== undefined && mergedWall.start_y !== undefined && 
+        mergedWall.end_x !== undefined && mergedWall.end_y !== undefined) {
+      return mergedWall;
+    } else {
+      console.error('Failed to construct merged wall coordinates');
+      throw new Error('Could not construct merged wall coordinates');
+    }
+  };
+
   // Add this function to handle manual wall merging
   const handleManualWallMerge = async (selectedWallIds) => {
     const wall1 = walls.find(w => w.id === selectedWallIds[0]);
@@ -623,13 +779,103 @@ export default function useProjectDetails(projectId) {
 
       if (response.status === 201) {
         const newWall = response.data;
-        setWalls(prev => [
-          ...prev.filter(w => w.id !== wall1.id && w.id !== wall2.id),
-          newWall,
-        ]);
-        setSelectedWallsForRoom([]);
-        setWallMergeSuccess(true);
-        setTimeout(() => setWallMergeSuccess(false), 3000);
+        console.log('Wall merge successful, API response:', newWall);
+        console.log('Response data type:', typeof newWall);
+        console.log('Response data keys:', Object.keys(newWall));
+        console.log('Previous walls count:', walls.length);
+        
+        // Check if the API response has the required properties
+        if (!newWall.start_x || !newWall.start_y || !newWall.end_x || !newWall.end_y) {
+          console.log('API response missing coordinates, attempting to construct merged wall...');
+          
+          // If we have the wall ID, try to fetch the complete wall data
+          if (newWall.id) {
+            console.log('Attempting to fetch complete merged wall data...');
+            
+            try {
+              // Try to fetch the specific merged wall by ID
+              const wallResponse = await api.get(`/walls/${newWall.id}/`);
+              if (wallResponse.status === 200 && wallResponse.data) {
+                const completeWall = wallResponse.data;
+                console.log('Successfully fetched complete merged wall:', completeWall);
+                
+                // Check if this wall has coordinates
+                if (completeWall.start_x && completeWall.start_y && completeWall.end_x && completeWall.end_y) {
+                  newWall = completeWall;
+                  console.log('Using complete wall data from API');
+                } else {
+                  console.log('Fetched wall still missing coordinates, attempting coordinate construction...');
+                  // Fall back to coordinate construction
+                  try {
+                    newWall = await constructMergedWallCoordinates(newWall, wall1, wall2);
+                  } catch (constructionError) {
+                    console.error('Coordinate construction failed:', constructionError);
+                    // Try to fetch all walls as fallback
+                    await fetchUpdatedWalls();
+                    return;
+                  }
+                }
+              } else {
+                console.log('Failed to fetch wall by ID, attempting coordinate construction...');
+                // Fall back to coordinate construction
+                try {
+                  newWall = await constructMergedWallCoordinates(newWall, wall1, wall2);
+                } catch (constructionError) {
+                  console.error('Coordinate construction failed:', constructionError);
+                  // Try to fetch all walls as fallback
+                  await fetchUpdatedWalls();
+                  return;
+                }
+              }
+            } catch (fetchError) {
+              console.log('Failed to fetch wall by ID, attempting coordinate construction...');
+              // Fall back to coordinate construction
+              try {
+                newWall = await constructMergedWallCoordinates(newWall, wall1, wall2);
+              } catch (constructionError) {
+                console.error('Coordinate construction failed:', constructionError);
+                // Try to fetch all walls as fallback
+                await fetchUpdatedWalls();
+                return;
+              }
+            }
+          } else {
+            console.log('No wall ID in response, attempting coordinate construction...');
+            try {
+              newWall = await constructMergedWallCoordinates(newWall, wall1, wall2);
+            } catch (constructionError) {
+              console.error('Coordinate construction failed:', constructionError);
+              // Try to fetch all walls as fallback
+              await fetchUpdatedWalls();
+              return;
+            }
+          }
+        }
+        
+        // Final validation that we have a complete wall
+        if (newWall.start_x && newWall.start_y && newWall.end_x && newWall.end_y) {
+          console.log('Wall merge complete with valid coordinates, updating state...');
+          setWalls(prev => {
+            const filteredWalls = prev.filter(w => w.id !== wall1.id && w.id !== wall2.id);
+            const updatedWalls = [...filteredWalls, newWall];
+            console.log('Updated walls count:', updatedWalls.length);
+            console.log('New walls array:', updatedWalls);
+            return updatedWalls;
+          });
+          
+          setSelectedWallsForRoom([]);
+          setWallMergeSuccess(true);
+          setTimeout(() => setWallMergeSuccess(false), 3000);
+        } else {
+          console.error('Final validation failed, wall still missing coordinates:', newWall);
+          // Even if we can't display the new wall, remove the old ones and show success
+          console.log('Removing old walls and showing success message...');
+          setWalls(prev => prev.filter(w => w.id !== wall1.id && w.id !== wall2.id));
+          setSelectedWallsForRoom([]);
+          setWallMergeSuccess(true);
+          setTimeout(() => setWallMergeSuccess(false), 3000);
+          console.log('Note: Please refresh the page to see the complete merged wall.');
+        }
       }
     } catch (error) {
       if (error.response && error.response.data) {
@@ -896,6 +1142,8 @@ export default function useProjectDetails(projectId) {
     setRoomError,
     projectLoadError,
     setProjectLoadError,
+    showPanelLines,
+    setShowPanelLines,
     // Handlers
     fetchProjectDetails,
     handleCreateRoom,
@@ -912,6 +1160,7 @@ export default function useProjectDetails(projectId) {
     handleDeleteDoor,
     handleAddWallWithSplitting,
     handleViewToggle,
+    togglePanelLines: () => setShowPanelLines(prev => !prev),
     // Utility
     isDatabaseConnectionError,
     areCollinearWalls,
@@ -924,5 +1173,6 @@ export default function useProjectDetails(projectId) {
     handleCancelWallDelete,
     handleWallUpdateNoMerge,
     handleRoomSelect,
+    forceCleanup3D,
   };
 } 

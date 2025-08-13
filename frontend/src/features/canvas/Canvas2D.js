@@ -66,10 +66,13 @@ const Canvas2D = ({
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
     const [showPanelTable, setShowPanelTable] = useState(false);
     const [showMaterialDetails, setShowMaterialDetails] = useState(false);
+
+
     const [dbConnectionError, setDbConnectionError] = useState(false);
     const [wallMergeError, setWallMergeError] = useState('');
     const [selectedRoomId, setSelectedRoomId] = useState(null);
     const [roomLabelPositions, setRoomLabelPositions] = useState([]);
+    const [forceRefresh, setForceRefresh] = useState(0);
     const lastRoomDataRef = useRef({ rooms: [], walls: [] });
 
     const offsetX = useRef(0);
@@ -982,6 +985,7 @@ const Canvas2D = ({
     
     // Sync joints prop to local intersections state
     useEffect(() => {
+        console.log('Canvas2D: Walls changed, recalculating intersections. Wall count:', walls.length);
         // Calculate all geometric intersections between walls
         const allIntersections = findIntersectionPointsBetweenWalls(walls);
         // Merge with saved joints data from backend
@@ -1005,6 +1009,19 @@ const Canvas2D = ({
         }));
         setIntersections(mergedIntersections);
     }, [walls, joints]);
+
+    // Force canvas re-render when walls change
+    useEffect(() => {
+        console.log('Canvas2D: Walls prop changed, triggering canvas redraw. Wall count:', walls.length);
+        // Force a canvas redraw by incrementing the refresh counter
+        setForceRefresh(prev => prev + 1);
+        
+        // Clear any invalid wall selections (walls that no longer exist)
+        if (selectedWall && !walls.find(w => w.id === selectedWall.id)) {
+            console.log('Canvas2D: Selected wall no longer exists, clearing selection');
+            setSelectedWall(null);
+        }
+    }, [walls, selectedWall]);
 
     // Helper to get joint types for a wall
     const getWallJointTypes = (wall, intersections) => {
@@ -1178,7 +1195,8 @@ const Canvas2D = ({
         hoveredWall, hoveredDoorId, highlightWalls,
         selectedRoomPoints, project, hoveredPoint,
         wallPanelsMap, // Add wallPanelsMap to dependencies
-        filteredDimensions // Add filteredDimensions to dependencies
+        filteredDimensions, // Add filteredDimensions to dependencies
+        forceRefresh // Add forceRefresh to dependencies to force re-renders
         // Removed roomLabelPositions from dependencies to prevent infinite loop
     ]);
 
@@ -1398,11 +1416,11 @@ const Canvas2D = ({
             </div>
             </div>
             )}
-            {/* Existing panel table and controls can be removed or kept as needed */}
-            {/* Add PanelCalculationControls below the canvas */}
+
+            {/* Panel Calculation Controls */}
             <PanelCalculationControls 
                 walls={walls} 
-                intersections={intersections}
+                intersections={joints}
                 doors={doors}
                 showMaterialDetails={showMaterialDetails}
                 toggleMaterialDetails={toggleMaterialDetails}
@@ -1411,8 +1429,9 @@ const Canvas2D = ({
                 project={project}
             />
             
-            {/* Add DoorTable component */}
+            {/* Door Table */}
             {showMaterialDetails && <DoorTable doors={doors} />}
+
             {wallMergeError && (
               <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
                 <div className="flex items-center">

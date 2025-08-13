@@ -5,21 +5,20 @@ import { calculateMinWallHeight } from '../../api/api';
 const RoomManager = ({ 
     projectId, 
     walls, 
-    onSaveRoom, 
-    onUpdateRoom,
-    onDeleteRoom,
+    onSave, 
+    onDelete,
+    onClose,
     selectedWallIds = [], 
     editingRoom = null,
-    isEditMode = false,
-    selectedPolygonPoints = [],
-    onClose 
+    selectedPolygonPoints = []
 }) => {
+    const isEditMode = !!editingRoom;
     const form = useRoomForm({
         initialRoom: editingRoom,
         isEditMode,
-        onSave: onSaveRoom,
-        onUpdate: onUpdateRoom,
-        onDelete: onDeleteRoom,
+        onSave: onSave,
+        onUpdate: onSave, // Use onSave for both create and update
+        onDelete: onDelete,
         onClose,
         projectId,
         selectedWallIds,

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PanelCalculator from './PanelCalculator';
 import { exportCanvasAsImage, exportCanvasAsSVG } from '../canvas/utils';
 
@@ -21,6 +21,14 @@ const PanelCalculationControls = ({
     const [panelCalculator, setPanelCalculator] = useState(null);
     const [showExportModal, setShowExportModal] = useState(false);
     const [exportTab, setExportTab] = useState('pdf'); // 'pdf', 'csv', 'sketch'
+    const [isCalculating, setIsCalculating] = useState(false);
+
+    // Auto-show panel table when panels are calculated
+    useEffect(() => {
+        if (calculatedPanels && calculatedPanels.length > 0) {
+            setShowTable(true);
+        }
+    }, [calculatedPanels]);
 
     // Helper to generate CSV string from calculatedPanels
     const getCSVString = () => {
@@ -192,10 +200,39 @@ const PanelCalculationControls = ({
     };
 
     const calculateAllPanels = () => {
-        const calculator = new PanelCalculator();
-        const allPanels = [];
+        try {
+            setIsCalculating(true);
+            
+            if (!walls || !Array.isArray(walls) || walls.length === 0) {
+                console.warn('No walls data available for panel calculation');
+                setIsCalculating(false);
+                return;
+            }
+            
+            if (!intersections || !Array.isArray(intersections)) {
+                console.warn('No intersections data available for panel calculation');
+                setIsCalculating(false);
+                return;
+            }
+
+            // Check if PanelCalculator is available
+            if (typeof PanelCalculator !== 'function') {
+                console.error('PanelCalculator class is not available');
+                setIsCalculating(false);
+                return;
+            }
+
+            const calculator = new PanelCalculator();
+            const allPanels = [];
 
         walls.forEach(wall => {
+            // Validate wall object structure
+            if (!wall || typeof wall.start_x !== 'number' || typeof wall.start_y !== 'number' || 
+                typeof wall.end_x !== 'number' || typeof wall.end_y !== 'number') {
+                console.warn('Invalid wall data structure:', wall);
+                return;
+            }
+            
             const wallLength = Math.sqrt(
                 Math.pow(wall.end_x - wall.start_x, 2) + 
                 Math.pow(wall.end_y - wall.start_y, 2)
@@ -203,8 +240,8 @@ const PanelCalculationControls = ({
 
             // Find all intersections for this wall
             const wallIntersections = intersections.filter(inter => 
-                inter.pairs.some(pair => 
-                    pair.wall1.id === wall.id || pair.wall2.id === wall.id
+                inter.pairs && inter.pairs.some(pair => 
+                    pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)
                 )
             );
 
@@ -222,8 +259,9 @@ const PanelCalculationControls = ({
             const rightEndIntersections = [];
 
             wallIntersections.forEach(inter => {
+                if (!inter.pairs) return;
                 inter.pairs.forEach(pair => {
-                    if (pair.wall1.id === wall.id || pair.wall2.id === wall.id) {
+                    if (pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)) {
                         // For horizontal walls
                         if (isHorizontal) {
                             if (isLeftToRight) {
@@ -266,14 +304,31 @@ const PanelCalculationControls = ({
             leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
             rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
 
+            // Validate wall height and thickness
+            if (typeof wall.height !== 'number' || typeof wall.thickness !== 'number') {
+                console.warn('Invalid wall height or thickness:', { height: wall.height, thickness: wall.thickness });
+                return;
+            }
+            
             const panels = calculator.calculatePanels(
                 wallLength,
                 wall.thickness,
                 { left: leftJointType, right: rightJointType }
             );
 
+            // Validate panels array
+            if (!panels || !Array.isArray(panels)) {
+                console.warn('No panels returned for wall:', wall.id);
+                return;
+            }
+            
             // Add wall-specific information to each panel
             panels.forEach(panel => {
+                if (!panel || typeof panel.width !== 'number') {
+                    console.warn('Invalid panel data:', panel);
+                    return;
+                }
+                
                 let panelType = panel.type;
                 if (panelType === 'leftover' && panel.width < 200 && !panel.isLeftover) {
                     panelType = 'side';
@@ -312,6 +367,12 @@ const PanelCalculationControls = ({
             return acc;
         }, {});
 
+        // Final validation before setting state
+        if (Object.keys(groupedPanels).length === 0) {
+            console.warn('No panels calculated');
+            return;
+        }
+
         setCalculatedPanels(Object.values(groupedPanels));
 
         // Calculate cut panels count (only 'side' panels)
@@ -319,17 +380,32 @@ const PanelCalculationControls = ({
             .filter(panel => panel.type === 'side')
             .reduce((sum, panel) => sum + panel.quantity, 0);
         setCutPanelsCount(cutPanelsCount);
+        
+        setIsCalculating(false);
+        } catch (error) {
+            console.error('Error calculating panels:', error);
+            setCalculatedPanels(null);
+            setShowTable(false);
+            setIsCalculating(false);
+        }
     };
 
     const handleButtonClick = () => {
         if (!showMaterialDetails) {
+            // Calculate panels when showing material details
             calculateAllPanels();
+        } else {
+            // Clear data when hiding material details
+            setCalculatedPanels(null);
+            setPanelAnalysis(null);
+            setShowTable(false);
+            setCutPanelsCount(0);
         }
         toggleMaterialDetails();
     };
 
     return (
-        <div className="w-full max-w-4xl mt-4">
+        <div className="w-full max-w-4xl mt-4 material-list-container">
             <div className="flex gap-4 mb-4">
                 <button
                     onClick={handleButtonClick}
@@ -464,9 +540,20 @@ const PanelCalculationControls = ({
                 </div>
             )}
 
-            {showMaterialDetails && panelAnalysis && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                    <h3 className="text-lg font-semibold mb-2">Material Analysis</h3>
+            {showMaterialDetails && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <h3 className="text-lg font-semibold mb-2 text-gray-900">Material Analysis</h3>
+                    
+                    {!walls || walls.length === 0 ? (
+                        <div className="text-center py-4 text-gray-500">
+                            No walls available for material calculation. Please add walls to your project first.
+                        </div>
+                    ) : isCalculating ? (
+                        <div className="text-center py-8">
+                            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <p className="mt-2 text-gray-600">Calculating material requirements...</p>
+                        </div>
+                    ) : panelAnalysis ? (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="p-2 bg-white rounded shadow">
                             <div className="text-sm text-gray-600">Full Panels</div>
@@ -495,6 +582,11 @@ const PanelCalculationControls = ({
                             </div>
                         )}
                     </div>
+                ) : (
+                    <div className="text-center py-4 text-gray-500">
+                        No material data available. Please ensure you have walls in your project.
+                    </div>
+                )}
                 </div>
             )}
 

@@ -49,45 +49,53 @@ export default class ThreeCanvas {
     this.uiContainer.style.pointerEvents = 'none';
     this.container.appendChild(this.uiContainer);
     
+    // Create a button container for better organization
+    this.buttonContainer = document.createElement('div');
+    this.buttonContainer.className = 'button-container';
+    this.buttonContainer.style.position = 'absolute';
+    this.buttonContainer.style.top = '20px';
+    this.buttonContainer.style.right = '20px';
+    this.buttonContainer.style.display = 'flex';
+    this.buttonContainer.style.flexDirection = 'row';
+    this.buttonContainer.style.gap = '12px';
+    this.buttonContainer.style.alignItems = 'center';
+    this.uiContainer.appendChild(this.buttonContainer);
+    
+    // Panel lines toggle button - now handled by React component
+    // this.panelButton = document.createElement('button');
+    // this.panelButton.textContent = 'Show Panel Lines';
+    // this.panelButton.style.padding = '8px 16px';
+    // this.panelButton.style.backgroundColor = '#2196F3';
+    // this.panelButton.style.color = 'white';
+    // this.panelButton.style.border = 'none';
+    // this.panelButton.style.borderRadius = '6px';
+    // this.panelButton.style.cursor = 'pointer';
+    // this.panelButton.style.fontWeight = '500';
+    // this.panelButton.style.fontSize = '14px';
+    // this.panelButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+    // this.panelButton.style.transition = 'all 0.2s ease';
+    // this.panelButton.style.pointerEvents = 'auto';
+    // this.panelButton.addEventListener('click', () => this.togglePanelLines());
+    // this.buttonContainer.appendChild(this.panelButton);
+    
     // Door button
     this.doorButton = document.createElement('button');
     this.doorButton.textContent = 'No Door Selected';
-    this.doorButton.style.position = 'absolute';
-    this.doorButton.style.top = '20px';
-    this.doorButton.style.right = '20px';
-    this.doorButton.style.padding = '10px 16px';
+    this.doorButton.style.padding = '8px 16px';
     this.doorButton.style.backgroundColor = '#4CAF50';
     this.doorButton.style.color = 'white';
     this.doorButton.style.border = 'none';
-    this.doorButton.style.borderRadius = '4px';
+    this.doorButton.style.borderRadius = '6px';
     this.doorButton.style.cursor = 'pointer';
-    this.doorButton.style.fontWeight = 'bold';
-    this.doorButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
-    this.doorButton.style.transition = 'all 0.3s ease';
+    this.doorButton.style.fontWeight = '500';
+    this.doorButton.style.fontSize = '14px';
+    this.doorButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+    this.doorButton.style.transition = 'all 0.2s ease';
     this.doorButton.style.pointerEvents = 'auto';
     this.doorButton.style.display = 'block'; // Always visible
     this.doorButton.style.opacity = '0.7'; // Semi-transparent when no door selected
     this.doorButton.disabled = true; // Disabled by default
-    this.uiContainer.appendChild(this.doorButton);
-    
-    // Panel lines toggle button
-    this.panelButton = document.createElement('button');
-    this.panelButton.textContent = 'Show Panel Lines';
-    this.panelButton.style.position = 'absolute';
-    this.panelButton.style.top = '20px';
-    this.panelButton.style.right = '200px';
-    this.panelButton.style.padding = '10px 16px';
-    this.panelButton.style.backgroundColor = '#2196F3';
-    this.panelButton.style.color = 'white';
-    this.panelButton.style.border = 'none';
-    this.panelButton.style.borderRadius = '4px';
-    this.panelButton.style.cursor = 'pointer';
-    this.panelButton.style.fontWeight = 'bold';
-    this.panelButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
-    this.panelButton.style.transition = 'all 0.3s ease';
-    this.panelButton.style.pointerEvents = 'auto';
-    this.panelButton.addEventListener('click', () => this.togglePanelLines());
-    this.uiContainer.appendChild(this.panelButton);
+    this.buttonContainer.appendChild(this.doorButton);
     
     // Current door being interacted with
     this.activeDoor = null;
@@ -786,22 +794,23 @@ getModelBounds() {
       this.panelLines = [];
       
       const wallPanelsMap = this.calculateWallPanels();
-              // Panel calculation result
+      
+      let wallsWithPanels = 0;
+      let totalPanelLines = 0;
       
       this.walls.forEach(wall => {
         const panels = wallPanelsMap[wall.id];
         if (!panels || panels.length <= 1) {
-          console.log(`No panels to divide for wall ${wall.id}`);
           return;
         }
+        
+        wallsWithPanels++;
+        totalPanelLines += panels.length - 1; // Each panel division creates one line
         
         // Creating panel lines for wall
         
         // Debug: Log side panel positions
         const sidePanels = panels.filter(p => p.type === 'side');
-        if (sidePanels.length > 0) {
-          // Wall side panels
-        }
         
         const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
         const scale = this.scalingFactor;
@@ -1171,16 +1180,76 @@ getModelBounds() {
         }
       });
       
-              // Panel division lines created
+      // Fallback: If no panels were calculated, create basic wall division lines
+      if (wallsWithPanels === 0) {
+        this.createFallbackPanelLines();
+      }
+      
+      // Panel division lines created
     } catch (error) {
       console.error('Error creating panel division lines:', error);
+    }
+  }
+
+  // Create fallback panel lines when no panels are calculated
+  createFallbackPanelLines() {
+    try {
+      this.walls.forEach((wall, wallIndex) => {
+        const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
+        const scale = this.scalingFactor;
+        
+        // Calculate wall direction and length
+        const dx = end_x - start_x;
+        const dy = end_y - start_y;
+        const wallLength = Math.sqrt(dx * dx + dy * dy);
+        
+        if (wallLength === 0) return;
+        
+        // Create a simple division line at the middle of each wall
+        const midX = (start_x + end_x) / 2;
+        const midY = (start_y + end_y) / 2;
+        
+        // Convert to 3D coordinates
+        const divX3D = midX * scale + this.modelOffset.x;
+        const divZ3D = midY * scale + this.modelOffset.z;
+        
+        // Create line from floor to ceiling
+        const lineGeometry = new this.THREE.BufferGeometry();
+        const vertices = new Float32Array([
+          // Line at wall position
+          divX3D, 0, divZ3D,
+          divX3D, height * scale, divZ3D,
+          // Line offset by wall thickness
+          divX3D + (dy / wallLength) * thickness * scale, 0, divZ3D - (dx / wallLength) * thickness * scale,
+          divX3D + (dy / wallLength) * thickness * scale, height * scale, divZ3D - (dx / wallLength) * thickness * scale
+        ]);
+        
+        lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
+        
+        const lineMaterial = new this.THREE.LineBasicMaterial({ 
+          color: 0x00ff00, 
+          linewidth: 2,
+          transparent: true,
+          opacity: 0.8
+        });
+        
+        const line = new this.THREE.LineSegments(lineGeometry, lineMaterial);
+        line.userData = { isPanelLines: true, wallId: id };
+        line.visible = this.showPanelLines;
+        
+        this.scene.add(line);
+        this.panelLines.push(line);
+      });
+    } catch (error) {
+      console.error('Error creating fallback panel lines:', error);
     }
   }
 
   // Method to toggle panel division lines visibility
   togglePanelLines() {
     this.showPanelLines = !this.showPanelLines;
-    this.panelButton.textContent = this.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines';
+    
+    // Button text is now handled by React component
     
     if (this.showPanelLines && this.panelLines.length === 0) {
       // Create panel lines only when first enabled
@@ -1372,9 +1441,14 @@ getModelBounds() {
   // Method to set panel division lines visibility
   setPanelLinesVisibility(visible) {
     this.showPanelLines = visible;
-    this.panelButton.textContent = visible ? 'Hide Panel Lines' : 'Show Panel Lines';
-    this.panelLines.forEach(line => {
-      line.visible = visible;
-    });
+    // Button text is now handled by React component
+    
+    if (visible && this.panelLines.length === 0) {
+      this.createPanelDivisionLines();
+    } else {
+      this.panelLines.forEach(line => {
+        line.visible = visible;
+      });
+    }
   }
 }

@@ -15,3 +15,192 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Canvas container expansion */
+.canvas-container {
+  min-height: 600px;
+  height: auto;
+  overflow: visible;
+}
+
+.canvas-container canvas {
+  width: 100%;
+  height: auto;
+  min-height: 400px;
+}
+
+/* Ensure material list can expand */
+.material-list-container {
+  height: auto;
+  overflow: visible;
+}
+
+/* Allow page to expand beyond viewport */
+.project-details-container {
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
+}
+
+/* Ensure sidebar can scroll independently */
+.sidebar-scroll {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+/* Edit mode tool buttons */
+.tool-button {
+  @apply flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer;
+  min-height: 90px;
+  background: white;
+  border-color: #e5e7eb;
+}
+
+.tool-button:hover {
+  @apply border-gray-300 bg-gray-50 transform scale-105;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.tool-button.active {
+  @apply border-blue-500 bg-blue-50 text-blue-700;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  transform: scale-1.02;
+  border-width: 3px;
+}
+
+.tool-button.active:hover {
+  @apply border-blue-600 bg-blue-100;
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.2);
+}
+
+.tool-button svg {
+  color: inherit;
+  transition: transform 0.2s ease;
+}
+
+.tool-button:hover svg {
+  transform: scale(1.1);
+}
+
+.tool-button.active svg {
+  transform: scale(1.15);
+}
+
+/* Room creation interface styling */
+.room-creation-interface {
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+}
+
+.room-form-container {
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
+}
+
+/* Canvas switching and visibility */
+#three-canvas-container {
+  display: none;
+}
+
+#three-canvas-container.active {
+  display: block;
+}
+
+.canvas-container canvas {
+  display: block;
+}
+
+.canvas-container:has(#three-canvas-container) canvas {
+  display: none;
+}
+
+/* 3D View Button Positioning */
+#three-canvas-container button {
+  z-index: 10;
+}
+
+#three-canvas-container .button-container {
+  z-index: 20;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+#three-canvas-container .button-container button {
+  pointer-events: auto;
+  margin: 0;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#three-canvas-container .button-container button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* Ensure buttons don't overlap */
+#three-canvas-container .ui-container {
+  position: relative;
+  pointer-events: none;
+}
+
+#three-canvas-container .ui-container button {
+  pointer-events: auto;
+}
+
+/* Homepage Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out;
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+/* Project Details Navigation */
+.project-details-container .bg-white.border-b:first-of-type {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+}

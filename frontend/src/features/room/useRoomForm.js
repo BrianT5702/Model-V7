@@ -62,8 +62,10 @@ export default function useRoomForm({
       };
     });
     setDisplayWalls(wallDetails);
-    
-    // Calculate and set minimum wall height if room height is not set
+  }, [selectedWallIds, walls]);
+
+  // Calculate minimum wall height when selectedWallIds change and room height is not set
+  useEffect(() => {
     if (selectedWallIds.length > 0 && !roomHeight) {
       console.log('Calculating minimum wall height for wall IDs:', selectedWallIds);
       calculateMinWallHeight(selectedWallIds)
@@ -86,7 +88,7 @@ export default function useRoomForm({
           }
         });
     }
-  }, [selectedWallIds, walls, roomHeight]);
+  }, [selectedWallIds, walls]);
 
   // Validation function
   const validateForm = () => {
