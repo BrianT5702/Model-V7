@@ -92,7 +92,7 @@ const HomePage = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center">
                             <FaCube className="w-10 h-10 text-blue-600 mr-4" />
-                            <h1 className="text-3xl font-bold text-gray-900">Model-V6</h1>
+                            <h1 className="text-3xl font-bold text-gray-900">System V7.0</h1>
                         </div>
                         
                         <div className="flex items-center space-x-4">

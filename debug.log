@@ -1749,3 +1749,129 @@ INFO 2025-08-13 18:02:34,778 services 9836 198196 Wall 5917: new height = 8000.0
 INFO 2025-08-13 18:02:34,778 services 9836 198196 Updated 3 walls for room 130
 INFO 2025-08-13 18:02:34,779 views 9836 198196 Successfully created room 130 with height 8000
 INFO 2025-08-13 20:21:05,060 autoreload 3520 14404 Watching for file changes with StatReloader
+WARNING 2025-08-13 20:21:30,698 log 3520 10104 Not Found: /favicon.ico
+WARNING 2025-08-13 20:22:05,354 log 3520 21268 Bad Request: /api/projects/
+INFO 2025-08-13 20:22:51,668 services 3520 21268 calculate_minimum_wall_height called with wall_ids: [5931, 5933]
+INFO 2025-08-13 20:22:51,668 services 3520 21268 Converted wall_ids to integers: [5931, 5933]
+INFO 2025-08-13 20:22:51,713 services 3520 21268 Found 2 walls
+INFO 2025-08-13 20:22:51,714 services 3520 21268 Calculated minimum wall height: 8000.0
+INFO 2025-08-13 20:23:06,622 views 3520 21268 Creating room with data: {'room_name': 'Room 1', 'floor_type': 'None', 'floor_thickness': '75', 'temperature': 20, 'height': 8000, 'remarks': 'Testing', 'walls': [5931, 5933, 5934], 'project': '399', 'room_points': [{'x': 0, 'y': 0}, {'x': 9981, 'y': 0}, {'x': 9981, 'y': 8925}, {'x': 0, 'y': 8925}]}
+INFO 2025-08-13 20:23:06,622 services 3520 21268 create_room_with_height called with room_data: {'room_name': 'Room 1', 'floor_type': 'None', 'floor_thickness': '75', 'temperature': 20, 'height': 8000, 'remarks': 'Testing', 'walls': [5931, 5933, 5934], 'project': '399', 'room_points': [{'x': 0, 'y': 0}, {'x': 9981, 'y': 0}, {'x': 9981, 'y': 8925}, {'x': 0, 'y': 8925}]}
+INFO 2025-08-13 20:23:06,665 services 3520 21268 Created room with ID: 131, height: 8000
+INFO 2025-08-13 20:23:06,666 services 3520 21268 Adding 3 walls to room and updating heights
+INFO 2025-08-13 20:23:06,666 services 3520 21268 Converted wall IDs: [5931, 5933, 5934]
+INFO 2025-08-13 20:23:06,668 services 3520 21268 Found 3 walls to add to room
+INFO 2025-08-13 20:23:06,672 services 3520 21268 Added walls to room 131
+INFO 2025-08-13 20:23:06,673 services 3520 21268 update_wall_heights_for_room called with wall_ids: [5931, 5933, 5934], new_height: 8000
+INFO 2025-08-13 20:23:06,673 services 3520 21268 Converted wall_ids to integers: [5931, 5933, 5934]
+INFO 2025-08-13 20:23:06,674 services 3520 21268 Found 3 walls to update
+INFO 2025-08-13 20:23:06,674 services 3520 21268 Wall 5934: current height = 8000.0
+INFO 2025-08-13 20:23:06,674 services 3520 21268 Wall 5931: current height = 8000.0
+INFO 2025-08-13 20:23:06,675 services 3520 21268 Wall 5933: current height = 8000.0
+INFO 2025-08-13 20:23:06,675 services 3520 21268 Updated 3 walls to height 8000
+INFO 2025-08-13 20:23:06,676 services 3520 21268 Wall 5934: new height = 8000.0
+INFO 2025-08-13 20:23:06,676 services 3520 21268 Wall 5931: new height = 8000.0
+INFO 2025-08-13 20:23:06,676 services 3520 21268 Wall 5933: new height = 8000.0
+INFO 2025-08-13 20:23:06,677 services 3520 21268 Updated 3 walls for room 131
+INFO 2025-08-13 20:23:06,677 views 3520 21268 Successfully created room 131 with height 8000
+INFO 2025-08-13 20:23:24,903 services 3520 21268 calculate_minimum_wall_height called with wall_ids: [5933]
+INFO 2025-08-13 20:23:24,903 services 3520 21268 Converted wall_ids to integers: [5933]
+INFO 2025-08-13 20:23:24,945 services 3520 21268 Found 1 walls
+INFO 2025-08-13 20:23:24,947 services 3520 21268 Calculated minimum wall height: 8000.0
+INFO 2025-08-13 20:23:36,685 services 3520 21268 calculate_minimum_wall_height called with wall_ids: [5933, 5937, 5932]
+INFO 2025-08-13 20:23:36,685 services 3520 21268 Converted wall_ids to integers: [5933, 5937, 5932]
+INFO 2025-08-13 20:23:36,718 services 3520 21268 Found 3 walls
+INFO 2025-08-13 20:23:36,719 services 3520 21268 Calculated minimum wall height: 6000.0
+INFO 2025-08-13 20:23:45,279 views 3520 21268 Creating room with data: {'room_name': 'Room 2 ', 'floor_type': 'Panel', 'floor_thickness': '75', 'temperature': -20, 'height': 6000, 'remarks': 'Testing again', 'walls': [5933, 5937, 5932], 'project': '399', 'room_points': [{'x': 9981, 'y': 0}, {'x': 9981, 'y': 8925}, {'x': 20000, 'y': 8925}, {'x': 20000, 'y': 0}]}
+INFO 2025-08-13 20:23:45,279 services 3520 21268 create_room_with_height called with room_data: {'room_name': 'Room 2 ', 'floor_type': 'Panel', 'floor_thickness': '75', 'temperature': -20, 'height': 6000, 'remarks': 'Testing again', 'walls': [5933, 5937, 5932], 'project': '399', 'room_points': [{'x': 9981, 'y': 0}, {'x': 9981, 'y': 8925}, {'x': 20000, 'y': 8925}, {'x': 20000, 'y': 0}]}
+INFO 2025-08-13 20:23:45,604 services 3520 21268 Created room with ID: 132, height: 6000
+INFO 2025-08-13 20:23:45,604 services 3520 21268 Adding 3 walls to room and updating heights
+INFO 2025-08-13 20:23:45,604 services 3520 21268 Converted wall IDs: [5933, 5937, 5932]
+INFO 2025-08-13 20:23:45,607 services 3520 21268 Found 3 walls to add to room
+INFO 2025-08-13 20:23:45,793 services 3520 21268 Added walls to room 132
+INFO 2025-08-13 20:23:45,793 services 3520 21268 update_wall_heights_for_room called with wall_ids: [5933, 5937, 5932], new_height: 6000
+INFO 2025-08-13 20:23:45,793 services 3520 21268 Converted wall_ids to integers: [5933, 5937, 5932]
+INFO 2025-08-13 20:23:45,794 services 3520 21268 Found 3 walls to update
+INFO 2025-08-13 20:23:45,795 services 3520 21268 Wall 5932: current height = 6000.0
+INFO 2025-08-13 20:23:45,795 services 3520 21268 Wall 5937: current height = 8000.0
+INFO 2025-08-13 20:23:45,795 services 3520 21268 Wall 5933: current height = 8000.0
+INFO 2025-08-13 20:23:46,193 services 3520 21268 Updated 3 walls to height 6000
+INFO 2025-08-13 20:23:46,195 services 3520 21268 Wall 5932: new height = 6000.0
+INFO 2025-08-13 20:23:46,196 services 3520 21268 Wall 5937: new height = 6000.0
+INFO 2025-08-13 20:23:46,196 services 3520 21268 Wall 5933: new height = 6000.0
+INFO 2025-08-13 20:23:46,196 services 3520 21268 Updated 3 walls for room 132
+INFO 2025-08-13 20:23:46,196 views 3520 21268 Successfully created room 132 with height 6000
+INFO 2025-08-13 20:23:57,313 services 3520 21268 calculate_minimum_wall_height called with wall_ids: [5933, 5937, 5932]
+INFO 2025-08-13 20:23:57,313 services 3520 21268 Converted wall_ids to integers: [5933, 5937, 5932]
+INFO 2025-08-13 20:23:57,358 services 3520 21268 Found 3 walls
+INFO 2025-08-13 20:23:57,360 services 3520 21268 Calculated minimum wall height: 6000.0
+INFO 2025-08-13 20:24:26,473 services 3520 21268 calculate_minimum_wall_height called with wall_ids: [5935, 5929]
+INFO 2025-08-13 20:24:26,474 services 3520 21268 Converted wall_ids to integers: [5935, 5929]
+INFO 2025-08-13 20:24:26,516 services 3520 21268 Found 2 walls
+INFO 2025-08-13 20:24:26,517 services 3520 21268 Calculated minimum wall height: 8000.0
+INFO 2025-08-13 20:24:52,752 views 3520 21268 Creating room with data: {'room_name': 'Room 3', 'floor_type': 'Panel', 'floor_thickness': '150', 'temperature': 5, 'height': 8000, 'remarks': 'Testing 3', 'walls': [5935, 5929, 5938, 5940], 'project': '399', 'room_points': [{'x': 0, 'y': 8925}, {'x': 0, 'y': 15000}, {'x': 20000, 'y': 15000}, {'x': 20000, 'y': 8925}]}
+INFO 2025-08-13 20:24:52,752 services 3520 21268 create_room_with_height called with room_data: {'room_name': 'Room 3', 'floor_type': 'Panel', 'floor_thickness': '150', 'temperature': 5, 'height': 8000, 'remarks': 'Testing 3', 'walls': [5935, 5929, 5938, 5940], 'project': '399', 'room_points': [{'x': 0, 'y': 8925}, {'x': 0, 'y': 15000}, {'x': 20000, 'y': 15000}, {'x': 20000, 'y': 8925}]}
+INFO 2025-08-13 20:24:52,792 services 3520 21268 Created room with ID: 133, height: 8000
+INFO 2025-08-13 20:24:52,792 services 3520 21268 Adding 4 walls to room and updating heights
+INFO 2025-08-13 20:24:52,793 services 3520 21268 Converted wall IDs: [5935, 5929, 5938, 5940]
+INFO 2025-08-13 20:24:52,794 services 3520 21268 Found 4 walls to add to room
+INFO 2025-08-13 20:24:52,799 services 3520 21268 Added walls to room 133
+INFO 2025-08-13 20:24:52,799 services 3520 21268 update_wall_heights_for_room called with wall_ids: [5935, 5929, 5938, 5940], new_height: 8000
+INFO 2025-08-13 20:24:52,799 services 3520 21268 Converted wall_ids to integers: [5935, 5929, 5938, 5940]
+INFO 2025-08-13 20:24:52,800 services 3520 21268 Found 4 walls to update
+INFO 2025-08-13 20:24:52,801 services 3520 21268 Wall 5929: current height = 8000.0
+INFO 2025-08-13 20:24:52,801 services 3520 21268 Wall 5938: current height = 8000.0
+INFO 2025-08-13 20:24:52,801 services 3520 21268 Wall 5940: current height = 8000.0
+INFO 2025-08-13 20:24:52,801 services 3520 21268 Wall 5935: current height = 8000.0
+INFO 2025-08-13 20:24:52,802 services 3520 21268 Updated 4 walls to height 8000
+INFO 2025-08-13 20:24:52,803 services 3520 21268 Wall 5929: new height = 8000.0
+INFO 2025-08-13 20:24:52,803 services 3520 21268 Wall 5938: new height = 8000.0
+INFO 2025-08-13 20:24:52,803 services 3520 21268 Wall 5940: new height = 8000.0
+INFO 2025-08-13 20:24:52,803 services 3520 21268 Wall 5935: new height = 8000.0
+INFO 2025-08-13 20:24:52,803 services 3520 21268 Updated 4 walls for room 133
+INFO 2025-08-13 20:24:52,803 views 3520 21268 Successfully created room 133 with height 8000
+INFO 2025-08-13 20:24:54,361 views 3520 21268 Updating room with data: {'id': 131, 'walls': [5934, 5931, 5933], 'ceilings': [], 'room_name': 'Room 1', 'floor_type': 'None', 'floor_thickness': 75, 'temperature': '20.00', 'height': 8000, 'remarks': 'Testing', 'room_points': [{'x': 0, 'y': 0}, {'x': 9981, 'y': 0}, {'x': 9981, 'y': 8925}, {'x': 0, 'y': 8925}], 'label_position': {'x': 4990.5, 'y': 4462.5}, 'project': '399'}
+INFO 2025-08-13 20:24:54,400 views 3520 21268 Found room to update: 131, current height: 8000.0
+INFO 2025-08-13 20:24:54,410 views 3520 21268 Updated room height to: 8000.0
+INFO 2025-08-13 20:24:54,411 views 3520 21268 Updating 3 walls with new height: 8000
+INFO 2025-08-13 20:24:54,411 services 3520 21268 update_wall_heights_for_room called with wall_ids: [5934, 5931, 5933], new_height: 8000
+INFO 2025-08-13 20:24:54,411 services 3520 21268 Converted wall_ids to integers: [5934, 5931, 5933]
+INFO 2025-08-13 20:24:54,412 services 3520 21268 Found 3 walls to update
+INFO 2025-08-13 20:24:54,413 services 3520 21268 Wall 5934: current height = 8000.0
+INFO 2025-08-13 20:24:54,413 services 3520 21268 Wall 5931: current height = 8000.0
+INFO 2025-08-13 20:24:54,413 services 3520 21268 Wall 5933: current height = 8000.0
+INFO 2025-08-13 20:24:54,414 services 3520 21268 Updated 3 walls to height 8000
+INFO 2025-08-13 20:24:54,414 services 3520 21268 Wall 5934: new height = 8000.0
+INFO 2025-08-13 20:24:54,414 services 3520 21268 Wall 5931: new height = 8000.0
+INFO 2025-08-13 20:24:54,414 services 3520 21268 Wall 5933: new height = 8000.0
+INFO 2025-08-13 20:24:54,415 views 3520 21268 Successfully updated 3 walls
+INFO 2025-08-13 20:24:54,800 views 3520 21268 Updating room with data: {'id': 131, 'walls': [5934, 5931, 5933], 'ceilings': [], 'room_name': 'Room 1', 'floor_type': 'None', 'floor_thickness': 75, 'temperature': '20.00', 'height': 8000, 'remarks': 'Testing', 'room_points': [{'x': 0, 'y': 0}, {'x': 9981, 'y': 0}, {'x': 9981, 'y': 8925}, {'x': 0, 'y': 8925}], 'label_position': {'x': 4990.5, 'y': 4462.5}, 'project': '399'}
+INFO 2025-08-13 20:24:54,838 views 3520 21268 Found room to update: 131, current height: 8000.0
+INFO 2025-08-13 20:24:54,846 views 3520 21268 Updated room height to: 8000.0
+INFO 2025-08-13 20:24:54,847 views 3520 21268 Updating 3 walls with new height: 8000
+INFO 2025-08-13 20:24:54,847 services 3520 21268 update_wall_heights_for_room called with wall_ids: [5934, 5931, 5933], new_height: 8000
+INFO 2025-08-13 20:24:54,847 services 3520 21268 Converted wall_ids to integers: [5934, 5931, 5933]
+INFO 2025-08-13 20:24:54,848 services 3520 21268 Found 3 walls to update
+INFO 2025-08-13 20:24:54,848 services 3520 21268 Wall 5934: current height = 8000.0
+INFO 2025-08-13 20:24:54,849 services 3520 21268 Wall 5931: current height = 8000.0
+INFO 2025-08-13 20:24:54,849 services 3520 21268 Wall 5933: current height = 8000.0
+INFO 2025-08-13 20:24:54,849 services 3520 21268 Updated 3 walls to height 8000
+INFO 2025-08-13 20:24:54,849 services 3520 21268 Wall 5934: new height = 8000.0
+INFO 2025-08-13 20:24:54,849 services 3520 21268 Wall 5931: new height = 8000.0
+INFO 2025-08-13 20:24:54,849 services 3520 21268 Wall 5933: new height = 8000.0
+INFO 2025-08-13 20:24:54,850 views 3520 21268 Successfully updated 3 walls
+INFO 2025-08-13 20:24:54,944 views 3520 21268 Updating room with data: {'id': 131, 'walls': [5934, 5931, 5933], 'ceilings': [], 'room_name': 'Room 1', 'floor_type': 'None', 'floor_thickness': 75, 'temperature': '20.00', 'height': 8000, 'remarks': 'Testing', 'room_points': [{'x': 0, 'y': 0}, {'x': 9981, 'y': 0}, {'x': 9981, 'y': 8925}, {'x': 0, 'y': 8925}], 'label_position': {'x': 4990.5, 'y': 4462.5}, 'project': '399'}
+INFO 2025-08-13 20:24:54,991 views 3520 21268 Found room to update: 131, current height: 8000.0
+INFO 2025-08-13 20:24:54,999 views 3520 21268 Updated room height to: 8000.0
+INFO 2025-08-13 20:24:55,000 views 3520 21268 Updating 3 walls with new height: 8000
+INFO 2025-08-13 20:24:55,000 services 3520 21268 update_wall_heights_for_room called with wall_ids: [5934, 5931, 5933], new_height: 8000
+INFO 2025-08-13 20:24:55,000 services 3520 21268 Converted wall_ids to integers: [5934, 5931, 5933]
+INFO 2025-08-13 20:24:55,001 services 3520 21268 Found 3 walls to update
+INFO 2025-08-13 20:24:55,002 services 3520 21268 Wall 5934: current height = 8000.0
+INFO 2025-08-13 20:24:55,002 services 3520 21268 Wall 5931: current height = 8000.0
+INFO 2025-08-13 20:24:55,002 services 3520 21268 Wall 5933: current height = 8000.0
+INFO 2025-08-13 20:24:55,003 services 3520 21268 Updated 3 walls to height 8000
+INFO 2025-08-13 20:24:55,003 services 3520 21268 Wall 5934: new height = 8000.0
+INFO 2025-08-13 20:24:55,003 services 3520 21268 Wall 5931: new height = 8000.0
+INFO 2025-08-13 20:24:55,004 services 3520 21268 Wall 5933: new height = 8000.0
+INFO 2025-08-13 20:24:55,004 views 3520 21268 Successfully updated 3 walls
