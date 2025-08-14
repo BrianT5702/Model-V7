@@ -22,13 +22,21 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'model-builder-v6'),
-        'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', '5702Tci123'),
-        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+        'NAME': os.environ.get('DB_NAME'),
+        'USER': os.environ.get('DB_USER'),
+        'PASSWORD': os.environ.get('DB_PASSWORD'),
+        'HOST': os.environ.get('DB_HOST'),
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
+
+# Validate that required database environment variables are set
+if not all([os.environ.get('DB_NAME'), os.environ.get('DB_USER'), 
+            os.environ.get('DB_PASSWORD'), os.environ.get('DB_HOST')]):
+    raise ValueError(
+        "Database environment variables (DB_NAME, DB_USER, DB_PASSWORD, DB_HOST) "
+        "must be set in production!"
+    )
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
@@ -64,23 +72,28 @@ LOGGING = {
             'style': '{',
         },
     },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'handlers': {
+            'console': {
+                'class': 'django.utils.log.ServerFormatter',
+                'formatter': 'verbose',
+            },
         },
-    },
     'root': {
         'handlers': ['console'],
         'level': 'INFO',
     },
-    'loggers': {
-        'core': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
+            'loggers': {
+            'core': {
+                'handlers': ['console'],
+                'level': 'INFO',
+                'propagate': False,
+            },
+            'django.db.backends': {
+                'handlers': ['console'],
+                'level': 'DEBUG',
+                'propagate': False,
+            },
         },
-    },
 }
 
 # Add whitenoise for static files
