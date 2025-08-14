@@ -85,4 +85,14 @@ LOGGING = {
 
 # Add whitenoise for static files
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+
+# Fix for Railway HTTP/2 issues
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+# Ensure static files are served correctly
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'frontend', 'build'),
+]
