@@ -96,3 +96,7 @@ USE_X_FORWARDED_PORT = True
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'frontend', 'build'),
 ]
+
+# Configure whitenoise to serve files from STATICFILES_DIRS
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_AUTOREFRESH = True
