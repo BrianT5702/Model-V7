@@ -129,8 +129,8 @@ const RoomManager = ({
                                         }`}
                                     >
                                         <option value="">Select mm</option>
-                                        {[50, 75, 100, 125, 150, 175, 200].map(value => (
-                                            <option key={value} value={value}>{value} mm</option>
+                                        {[0, 50, 75, 100, 125, 150, 175, 200].map(value => (
+                                            <option key={value} value={value}>{value === 0 ? 'None' : `${value} mm`}</option>
                                         ))}
                                     </select>
                                     {form.validationErrors.floorThickness && (

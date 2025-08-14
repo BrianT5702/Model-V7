@@ -13,6 +13,7 @@ ROOM_FLOOR_TYPES = [
 
 # Room Floor Thickness Options (in mm)
 ROOM_FLOOR_THICKNESS_CHOICES = [
+    (0, 'None'),
     (50, '50 mm'),
     (75, '75 mm'),
     (100, '100 mm'),

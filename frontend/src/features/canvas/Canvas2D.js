@@ -553,8 +553,8 @@ const Canvas2D = ({
         if (!isEditingMode) return;
         const clickPoint = { x, y };
         
-        // Deselect room label when clicking on empty space
-        if (selectedRoomId !== null) {
+        // Deselect room label when clicking on empty space (but not when actively defining a room)
+        if (selectedRoomId !== null && !(currentMode === 'define-room' && selectedRoomPoints && selectedRoomPoints.length > 0)) {
             setSelectedRoomId(null);
         }
     
@@ -731,8 +731,15 @@ const Canvas2D = ({
             for (const room of rooms) {
                 const polygon = room.room_points?.length >= 3 ? room.room_points : null;
                 if (polygon && isPointInPolygon(clickPoint, polygon)) {
-                    if (typeof onRoomSelect === 'function') onRoomSelect(room.id);
-                    return;
+                    // Only disable room selection if actively defining a room (has polygon points)
+                    if (selectedRoomPoints && selectedRoomPoints.length > 0) {
+                        // Don't select room when actively defining a room
+                        return;
+                    } else {
+                        // Allow room selection when not actively defining a room
+                        if (typeof onRoomSelect === 'function') onRoomSelect(room.id);
+                        return;
+                    }
                 }
             }
             // 2. Snap to intersections, wall segments, endpoints
@@ -1287,6 +1294,8 @@ const Canvas2D = ({
                         onPositionChange={handleRoomLabelPositionChange}
                         isSelected={selectedRoomId === labelData.roomId}
                         onSelect={handleRoomSelect}
+                        currentMode={currentMode}
+                        selectedRoomPoints={selectedRoomPoints}
                     />
                 ))}
             </div>

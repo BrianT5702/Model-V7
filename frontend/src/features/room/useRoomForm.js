@@ -99,10 +99,10 @@ export default function useRoomForm({
     if (!floorType) {
       errors.floorType = 'Floor type is required';
     }
-    if (!floorThickness) {
+    if (floorThickness === '' || floorThickness === null || floorThickness === undefined) {
       errors.floorThickness = 'Floor thickness is required';
     }
-    if (!temperature) {
+    if (temperature === '' || temperature === null || temperature === undefined) {
       errors.temperature = 'Temperature is required';
     }
     if (!roomHeight || roomHeight <= 0) {
@@ -130,8 +130,8 @@ export default function useRoomForm({
   const isFormValid = () => {
     return roomName.trim() && 
            floorType && 
-           floorThickness && 
-           temperature && 
+           (floorThickness !== '' && floorThickness !== null && floorThickness !== undefined) && 
+           (temperature !== '' && temperature !== null && temperature !== undefined) && 
            roomHeight && 
            selectedPolygonPoints.length >= 3;
   };

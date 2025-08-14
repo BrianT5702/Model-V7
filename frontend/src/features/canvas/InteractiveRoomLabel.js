@@ -9,7 +9,9 @@ const InteractiveRoomLabel = ({
     onUpdateRoom,
     onPositionChange,
     isSelected = false,
-    onSelect
+    onSelect,
+    currentMode,
+    selectedRoomPoints = []
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState('');
@@ -39,10 +41,18 @@ const InteractiveRoomLabel = ({
     // Calculate canvas position
     const canvasX = currentPosition.x * scaleFactor + offsetX;
     const canvasY = currentPosition.y * scaleFactor + offsetY;
+    
+    // Check if room selection is disabled
+    // Only disable room selection when actively defining a room (has polygon points)
+    const isSelectionDisabled = currentMode === 'define-room' && selectedRoomPoints && selectedRoomPoints.length > 0;
 
     // Handle double click to start editing
     const handleDoubleClick = (e) => {
         e.stopPropagation();
+        // Disable room editing when in room definition mode
+        if (currentMode === 'define-room') {
+            return;
+        }
         setIsEditing(true);
         setEditName(room.room_name || '');
         setEditHeight(room.height ? room.height.toString() : '');
@@ -58,12 +68,20 @@ const InteractiveRoomLabel = ({
     // Handle single click to select
     const handleClick = (e) => {
         e.stopPropagation();
+        // Disable room selection when in room definition mode
+        if (currentMode === 'define-room') {
+            return;
+        }
         onSelect && onSelect(room.id);
     };
 
     // Handle mouse down for dragging
     const handleMouseDown = (e) => {
         if (isEditing) return;
+        // Disable room label dragging when in room definition mode
+        if (currentMode === 'define-room') {
+            return;
+        }
         e.stopPropagation();
         setIsDragging(true);
         
@@ -206,7 +224,7 @@ const InteractiveRoomLabel = ({
                 left: canvasX,
                 top: canvasY,
                 transform: 'translate(-50%, -50%)',
-                cursor: isDragging ? 'grabbing' : 'grab',
+                cursor: isSelectionDisabled ? 'not-allowed' : (isDragging ? 'grabbing' : 'grab'),
                 zIndex: isSelected ? 40 : 30,
                 userSelect: 'none'
             }}
@@ -214,6 +232,7 @@ const InteractiveRoomLabel = ({
             onDoubleClick={handleDoubleClick}
             onMouseDown={handleMouseDown}
             className={`room-label ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
+            title={isSelectionDisabled ? 'Room selection disabled while defining room points' : 'Click to select room, double-click to edit'}
         >
             {isEditing ? (
                 <div
@@ -286,8 +305,8 @@ const InteractiveRoomLabel = ({
             ) : (
                 <div
                     style={{
-                        background: 'white',
-                        border: isSelected ? '2px solid #007bff' : '1px solid #ccc',
+                        background: isSelectionDisabled ? '#f5f5f5' : 'white',
+                        border: isSelected ? '2px solid #007bff' : (isSelectionDisabled ? '1px solid #ddd' : '1px solid #ccc'),
                         borderRadius: '4px',
                         padding: '6px 10px',
                         fontSize: '12px',
@@ -296,8 +315,9 @@ const InteractiveRoomLabel = ({
                         textAlign: 'center',
                         minWidth: '120px',
                         maxWidth: '200px',
-                        boxShadow: isSelected ? '0 2px 8px rgba(0,123,255,0.3)' : '0 1px 3px rgba(0,0,0,0.1)',
-                        transition: 'all 0.2s ease'
+                        boxShadow: isSelected ? '0 2px 8px rgba(0,123,255,0.3)' : (isSelectionDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.1)'),
+                        transition: 'all 0.2s ease',
+                        opacity: isSelectionDisabled ? 0.6 : 1
                     }}
                     dangerouslySetInnerHTML={{ __html: getDisplayText() }}
                 />

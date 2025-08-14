@@ -1875,3 +1875,37 @@ INFO 2025-08-13 20:24:55,003 services 3520 21268 Wall 5934: new height = 8000.0
 INFO 2025-08-13 20:24:55,003 services 3520 21268 Wall 5931: new height = 8000.0
 INFO 2025-08-13 20:24:55,004 services 3520 21268 Wall 5933: new height = 8000.0
 INFO 2025-08-13 20:24:55,004 views 3520 21268 Successfully updated 3 walls
+INFO 2025-08-14 11:12:39,826 autoreload 17244 3100 Watching for file changes with StatReloader
+INFO 2025-08-14 12:16:52,014 services 17244 16016 calculate_minimum_wall_height called with wall_ids: [5875, 5858]
+INFO 2025-08-14 12:16:52,014 services 17244 16016 Converted wall_ids to integers: [5875, 5858]
+INFO 2025-08-14 12:16:52,064 services 17244 16016 Found 2 walls
+INFO 2025-08-14 12:16:52,065 services 17244 16016 Calculated minimum wall height: 8000.0
+INFO 2025-08-14 12:17:03,873 views 17244 16016 Creating room with data: {'room_name': 'Testing ', 'floor_type': 'Slab', 'floor_thickness': '100', 'temperature': 0, 'height': 8000, 'remarks': '', 'walls': [5875, 5858, 5856, 5874], 'project': '393', 'room_points': [{'x': 10131, 'y': 0}, {'x': 10131, 'y': 7000}, {'x': 20000, 'y': 7000}, {'x': 20000, 'y': 0}]}
+INFO 2025-08-14 12:17:03,873 services 17244 16016 create_room_with_height called with room_data: {'room_name': 'Testing ', 'floor_type': 'Slab', 'floor_thickness': '100', 'temperature': 0, 'height': 8000, 'remarks': '', 'walls': [5875, 5858, 5856, 5874], 'project': '393', 'room_points': [{'x': 10131, 'y': 0}, {'x': 10131, 'y': 7000}, {'x': 20000, 'y': 7000}, {'x': 20000, 'y': 0}]}
+INFO 2025-08-14 12:17:03,953 services 17244 16016 Created room with ID: 134, height: 8000
+INFO 2025-08-14 12:17:03,954 services 17244 16016 Adding 4 walls to room and updating heights
+INFO 2025-08-14 12:17:03,954 services 17244 16016 Converted wall IDs: [5875, 5858, 5856, 5874]
+INFO 2025-08-14 12:17:03,956 services 17244 16016 Found 4 walls to add to room
+INFO 2025-08-14 12:17:03,962 services 17244 16016 Added walls to room 134
+INFO 2025-08-14 12:17:03,963 services 17244 16016 update_wall_heights_for_room called with wall_ids: [5875, 5858, 5856, 5874], new_height: 8000
+INFO 2025-08-14 12:17:03,963 services 17244 16016 Converted wall_ids to integers: [5875, 5858, 5856, 5874]
+INFO 2025-08-14 12:17:03,964 services 17244 16016 Found 4 walls to update
+INFO 2025-08-14 12:17:03,964 services 17244 16016 Wall 5856: current height = 8000.0
+INFO 2025-08-14 12:17:03,964 services 17244 16016 Wall 5858: current height = 8000.0
+INFO 2025-08-14 12:17:03,964 services 17244 16016 Wall 5874: current height = 8000.0
+INFO 2025-08-14 12:17:03,965 services 17244 16016 Wall 5875: current height = 8000.0
+INFO 2025-08-14 12:17:03,969 services 17244 16016 Updated 4 walls to height 8000
+INFO 2025-08-14 12:17:03,970 services 17244 16016 Wall 5856: new height = 8000.0
+INFO 2025-08-14 12:17:03,970 services 17244 16016 Wall 5858: new height = 8000.0
+INFO 2025-08-14 12:17:03,971 services 17244 16016 Wall 5874: new height = 8000.0
+INFO 2025-08-14 12:17:03,971 services 17244 16016 Wall 5875: new height = 8000.0
+INFO 2025-08-14 12:17:03,971 services 17244 16016 Updated 4 walls for room 134
+INFO 2025-08-14 12:17:03,971 views 17244 16016 Successfully created room 134 with height 8000
+INFO 2025-08-14 12:17:15,860 services 17244 16016 calculate_minimum_wall_height called with wall_ids: [5875, 5858]
+INFO 2025-08-14 12:17:15,860 services 17244 16016 Converted wall_ids to integers: [5875, 5858]
+INFO 2025-08-14 12:17:15,913 services 17244 16016 Found 2 walls
+INFO 2025-08-14 12:17:15,914 services 17244 16016 Calculated minimum wall height: 8000.0
+INFO 2025-08-14 12:18:31,097 autoreload 17244 3100 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\constants.py changed, reloading.
+INFO 2025-08-14 12:18:31,613 autoreload 20588 22940 Watching for file changes with StatReloader
+INFO 2025-08-14 12:20:00,399 autoreload 20588 22940 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\constants.py changed, reloading.
+INFO 2025-08-14 12:20:01,032 autoreload 13616 22720 Watching for file changes with StatReloader
