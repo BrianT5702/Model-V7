@@ -105,7 +105,7 @@ WHITENOISE_AUTOREFRESH = True
 WHITENOISE_ROOT = os.path.join(BASE_DIR, 'frontend', 'build')
 WHITENOISE_INDEX_FILE = True
 
-# Ensure static files are collected properly
+# Ensure static files are collected to the right place
 STATICFILES_FINDERS = [
     'django.contrib.staticfiles.finders.FileSystemFinder',
     'django.contrib.staticfiles.finders.AppDirectoriesFinder',

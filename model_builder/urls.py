@@ -5,7 +5,6 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from core.views import ProjectViewSet, WallViewSet
-import os
 
 # Create a router for the API endpoints
 router = DefaultRouter()
