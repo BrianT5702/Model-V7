@@ -100,3 +100,7 @@ STATICFILES_DIRS = [
 # Configure whitenoise to serve files from STATICFILES_DIRS
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
+
+# Additional whitenoise settings for better static file serving
+WHITENOISE_ROOT = os.path.join(BASE_DIR, 'frontend', 'build')
+WHITENOISE_INDEX_FILE = True
