@@ -5,7 +5,6 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from core.views import ProjectViewSet, WallViewSet
-from .views import serve_react_app
 
 # Create a router for the API endpoints
 router = DefaultRouter()
@@ -28,9 +27,12 @@ if not settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     
-    # Then serve React app for all other routes using custom view
+    # Also serve files directly from frontend/build directory
+    urlpatterns += static('', document_root=os.path.join(settings.BASE_DIR, 'frontend', 'build'))
+    
+    # Then serve React app for all other routes
     urlpatterns += [
-        re_path(r'^(?!api/).*$', serve_react_app),
+        re_path(r'^(?!api/).*$', TemplateView.as_view(template_name='index.html')),
     ]
 else:
     # In development, serve static files
