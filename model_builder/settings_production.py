@@ -104,3 +104,9 @@ WHITENOISE_AUTOREFRESH = True
 # Additional whitenoise settings for better static file serving
 WHITENOISE_ROOT = os.path.join(BASE_DIR, 'frontend', 'build')
 WHITENOISE_INDEX_FILE = True
+
+# Ensure static files are collected properly
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+]
