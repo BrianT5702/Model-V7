@@ -820,7 +820,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             };
             
             // Title
-            addText('PROJECT SUMMARY & INSTALLATION REPORT', 18, true, 'center');
+            addText('Material List', 18, true, 'center');
             yPos += 5;
             addText(exportData.projectInfo.name, 16, true, 'center');
             yPos += 5;
