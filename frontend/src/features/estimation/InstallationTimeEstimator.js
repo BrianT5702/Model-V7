@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../api/api';
 import PanelCalculator from '../panel/PanelCalculator';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSharedPanelData = null }) => {
     const [projectData, setProjectData] = useState(null);
@@ -777,184 +779,308 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
         
         setIsExporting(true);
         try {
-            // Create PDF content
-            const pdfContent = {
-                content: [
-                    // Title
-                    { text: 'PROJECT SUMMARY & INSTALLATION REPORT', style: 'header' },
-                    { text: exportData.projectInfo.name, style: 'subheader' },
-                    { text: `Generated on: ${exportData.exportDate}`, style: 'caption' },
-                    { text: '', margin: [0, 10] },
-                    
-                    // Project Overview
-                    { text: 'PROJECT OVERVIEW', style: 'sectionHeader' },
-                    {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*'],
-                            body: [
-                                ['Project Dimensions', exportData.projectInfo.dimensions],
-                                ['Total Rooms', exportData.projectInfo.rooms.toString()],
-                                ['Total Walls', exportData.projectInfo.walls.toString()],
-                                ['Total Doors', exportData.projectInfo.doors.toString()]
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    },
-                    
-                    // Room Details
-                    { text: 'ROOM DETAILS', style: 'sectionHeader' },
-                    {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*', '*', '*', '*'],
-                            body: [
-                                ['Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)'],
-                                ...exportData.rooms.map(room => [
-                                    room.room_name || 'Unnamed Room',
-                                    room.floor_type || 'N/A',
-                                    room.floor_thickness || 'N/A',
-                                    room.height || 'N/A',
-                                    room.room_points && room.room_points.length > 0 
-                                        ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
-                                        : 'N/A'
-                                ])
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    },
-                    
-                    // Wall Panels
-                    { text: 'WALL PANELS', style: 'sectionHeader' },
-                    {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*', '*', '*', '*', '*'],
-                            body: [
-                                ['No.', 'Panel Width', 'Panel Length', 'Quantity', 'Type', 'Application'],
-                                ...exportData.wallPanels.map((panel, index) => [
-                                    (index + 1).toString(),
-                                    `${panel.width}mm`,
-                                    `${panel.length}mm`, 
-                                    panel.quantity ? panel.quantity.toString() : '1',
-                                    panel.type || 'N/A',
-                                    panel.application || 'N/A'
-                                ])
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    },
-                    
-                    // Ceiling Panels
-                    { text: 'CEILING PANELS', style: 'sectionHeader' },
-                    {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*', '*', '*'],
-                            body: [
-                                ['Panel Width', 'Panel Length', 'Thickness', 'Quantity'],
-                                ...exportData.ceilingPanels.map(panel => [
-                                    `${panel.width || 'N/A'}mm`,
-                                    `${panel.length || 'N/A'}mm`,
-                                    `${panel.thickness || 'N/A'}mm`,
-                                    panel.quantity ? panel.quantity.toString() : '1'
-                                ])
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    },
-                    
-                    // Floor Panels
-                    { text: 'FLOOR PANELS', style: 'sectionHeader' },
-                    {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*', '*', '*', '*'],
-                            body: [
-                                ['Panel Width', 'Panel Length', 'Thickness', 'Quantity', 'Type'],
-                                ...exportData.floorPanels.map(panel => [
-                                    `${panel.width || 'N/A'}mm`,
-                                    `${panel.length || 'N/A'}mm`,
-                                    `${panel.thickness || 'N/A'}mm`,
-                                    panel.quantity ? panel.quantity.toString() : '1',
-                                    panel.type || 'N/A'
-                                ])
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    },
-                    
-                    // Doors
-                    { text: 'DOORS', style: 'sectionHeader' },
-                    {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*', '*', '*'],
-                            body: [
-                                ['Door Type', 'Width', 'Height', 'Thickness'],
-                                ...exportData.doors.map(door => [
-                                    door.door_type || 'N/A',
-                                    `${door.width || 'N/A'}mm`,
-                                    `${door.height || 'N/A'}mm`,
-                                    `${door.thickness || 'N/A'}mm`
-                                ])
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    },
-                    
-                    // Support Accessories
-                    { text: 'SUPPORT ACCESSORIES', style: 'sectionHeader' },
-                    exportData.supportAccessories.isNeeded ? {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*'],
-                            body: [
-                                ['Support Type', exportData.supportAccessories.type],
-                                ['Include Accessories', exportData.supportAccessories.includeAccessories ? 'Yes' : 'No'],
-                                ['Include Cable', exportData.supportAccessories.includeCable ? 'Yes' : 'No'],
-                                ['Custom Drawing', exportData.supportAccessories.customDrawing ? 'Yes' : 'No']
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    } : {
-                        text: 'Not needed in this project - All ceiling panels are under 6000mm length',
-                        style: 'caption',
-                        margin: [0, 5, 0, 15]
-                    },
-                    
-                    // Installation Estimates
-                    { text: 'INSTALLATION TIME ESTIMATES', style: 'sectionHeader' },
-                    {
-                        table: {
-                            headerRows: 1,
-                            widths: ['*', '*', '*'],
-                            body: [
-                                ['Working Days', 'Working Weeks', 'Working Months'],
-                                [
-                                    exportData.installationEstimates.days.toString(),
-                                    exportData.installationEstimates.weeks.toString(),
-                                    exportData.installationEstimates.months.toString()
-                                ]
-                            ]
-                        },
-                        margin: [0, 5, 0, 15]
-                    }
-                ],
-                styles: {
-                    header: { fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 10] },
-                    subheader: { fontSize: 16, bold: true, alignment: 'center', margin: [0, 0, 0, 5] },
-                    caption: { fontSize: 10, alignment: 'center', margin: [0, 0, 0, 20] },
-                    sectionHeader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] }
+            // Create new PDF document
+            const doc = new jsPDF();
+            
+            // Set initial position
+            let yPos = 20;
+            const pageWidth = doc.internal.pageSize.width;
+            const margin = 20;
+            const contentWidth = pageWidth - (2 * margin);
+            
+            // Helper function to add text with proper positioning
+            const addText = (text, fontSize = 12, isBold = false, alignment = 'left') => {
+                doc.setFontSize(fontSize);
+                if (isBold) doc.setFont(undefined, 'bold');
+                else doc.setFont(undefined, 'normal');
+                
+                let xPos = margin;
+                if (alignment === 'center') {
+                    xPos = pageWidth / 2;
+                    doc.text(text, xPos, yPos, { align: 'center' });
+                } else {
+                    doc.text(text, xPos, yPos);
+                }
+                yPos += fontSize * 0.5;
+            };
+            
+            // Helper function to add section header
+            const addSectionHeader = (text) => {
+                yPos += 10;
+                addText(text, 14, true);
+                yPos += 5;
+            };
+            
+            // Helper function to check if we need a new page
+            const checkNewPage = () => {
+                if (yPos > 250) {
+                    doc.addPage();
+                    yPos = 20;
                 }
             };
             
-            // For now, we'll use a simple approach - in a real implementation,
-            // you'd use a library like jsPDF or pdfmake
-            console.log('PDF Content prepared:', pdfContent);
+            // Title
+            addText('PROJECT SUMMARY & INSTALLATION REPORT', 18, true, 'center');
+            yPos += 5;
+            addText(exportData.projectInfo.name, 16, true, 'center');
+            yPos += 5;
+            addText(`Generated on: ${exportData.exportDate}`, 10, false, 'center');
+            yPos += 15;
+            
+            // Project Overview
+            addSectionHeader('PROJECT OVERVIEW');
+            checkNewPage();
+            
+            const overviewData = [
+                ['Project Dimensions', exportData.projectInfo.dimensions],
+                ['Total Rooms', exportData.projectInfo.rooms.toString()],
+                ['Total Walls', exportData.projectInfo.walls.toString()],
+                ['Total Doors', exportData.projectInfo.doors.toString()]
+            ];
+            
+                         autoTable(doc, {
+                 startY: yPos,
+                 head: [['Property', 'Value']],
+                 body: overviewData,
+                 theme: 'grid',
+                 styles: { fontSize: 10 },
+                 headStyles: { fillColor: [66, 139, 202] },
+                 margin: { left: margin, right: margin }
+             });
+            
+            yPos = doc.lastAutoTable.finalY + 10;
+            checkNewPage();
+            
+            // Room Details
+            if (exportData.rooms && exportData.rooms.length > 0) {
+                addSectionHeader('ROOM DETAILS');
+                checkNewPage();
+                
+                const roomData = exportData.rooms.map(room => [
+                    room.room_name || 'Unnamed Room',
+                    room.floor_type || 'N/A',
+                    room.floor_thickness || 'N/A',
+                    room.height || 'N/A',
+                    room.room_points && room.room_points.length > 0 
+                        ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
+                        : 'N/A'
+                ]);
+                
+                             autoTable(doc, {
+                 startY: yPos,
+                 head: [['Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)']],
+                 body: roomData,
+                 theme: 'grid',
+                 styles: { fontSize: 8 },
+                 headStyles: { fillColor: [66, 139, 202] },
+                 margin: { left: margin, right: margin }
+             });
+                
+                yPos = doc.lastAutoTable.finalY + 10;
+                checkNewPage();
+            }
+            
+            // Wall Panels
+            if (exportData.wallPanels && exportData.wallPanels.length > 0) {
+                addSectionHeader('WALL PANELS');
+                checkNewPage();
+                
+                const wallPanelData = exportData.wallPanels.map((panel, index) => [
+                    (index + 1).toString(),
+                    `${panel.width}mm`,
+                    `${panel.length}mm`,
+                    panel.quantity ? panel.quantity.toString() : '1',
+                    panel.type || 'N/A',
+                    panel.application || 'N/A'
+                ]);
+                
+                                 autoTable(doc, {
+                     startY: yPos,
+                     head: [['No.', 'Panel Width', 'Panel Length', 'Quantity', 'Type', 'Application']],
+                     body: wallPanelData,
+                     theme: 'grid',
+                     styles: { fontSize: 8 },
+                     headStyles: { fillColor: [66, 139, 202] },
+                     margin: { left: margin, right: margin }
+                 });
+                
+                yPos = doc.lastAutoTable.finalY + 10;
+                checkNewPage();
+            }
+            
+            // Ceiling Panels
+            if (exportData.ceilingPanels && exportData.ceilingPanels.length > 0) {
+                addSectionHeader('CEILING PANELS');
+                checkNewPage();
+                
+                const ceilingPanelData = exportData.ceilingPanels.map(panel => [
+                    `${panel.width || 'N/A'}mm`,
+                    `${panel.length || 'N/A'}mm`,
+                    `${panel.thickness || 'N/A'}mm`,
+                    panel.quantity ? panel.quantity.toString() : '1'
+                ]);
+                
+                                 autoTable(doc, {
+                     startY: yPos,
+                     head: [['Panel Width', 'Panel Length', 'Thickness', 'Quantity']],
+                     body: ceilingPanelData,
+                     theme: 'grid',
+                     styles: { fontSize: 8 },
+                     headStyles: { fillColor: [66, 139, 202] },
+                     margin: { left: margin, right: margin }
+                 });
+                
+                yPos = doc.lastAutoTable.finalY + 10;
+                checkNewPage();
+            }
+            
+            // Floor Panels
+            if (exportData.floorPanels && exportData.floorPanels.length > 0) {
+                addSectionHeader('FLOOR PANELS');
+                checkNewPage();
+                
+                const floorPanelData = exportData.floorPanels.map(panel => [
+                    `${panel.width || 'N/A'}mm`,
+                    `${panel.length || 'N/A'}mm`,
+                    `${panel.thickness || 'N/A'}mm`,
+                    panel.quantity ? panel.quantity.toString() : '1',
+                    panel.type || 'N/A'
+                ]);
+                
+                                 autoTable(doc, {
+                     startY: yPos,
+                     head: [['Panel Width', 'Panel Length', 'Thickness', 'Quantity', 'Type']],
+                     body: floorPanelData,
+                     theme: 'grid',
+                     styles: { fontSize: 8 },
+                     headStyles: { fillColor: [66, 139, 202] },
+                     margin: { left: margin, right: margin }
+                 });
+                
+                yPos = doc.lastAutoTable.finalY + 10;
+                checkNewPage();
+            }
+            
+            // Slab Floors
+            if (exportData.slabs && exportData.slabs.length > 0) {
+                addSectionHeader('SLAB FLOORS');
+                checkNewPage();
+                
+                const slabData = exportData.slabs.map(room => [
+                    room.room_name || 'Unnamed Room',
+                    room.room_points && room.room_points.length > 0 
+                        ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
+                        : 'N/A',
+                    '1210 × 3000mm',
+                    room.room_points && room.room_points.length > 0 
+                        ? Math.ceil(calculateRoomArea(room.room_points) / (1210 * 3000)).toString()
+                        : 'N/A'
+                ]);
+                
+                                 autoTable(doc, {
+                     startY: yPos,
+                     head: [['Room Name', 'Room Area (m²)', 'Slab Size (mm)', 'Number of Slabs Needed']],
+                     body: slabData,
+                     theme: 'grid',
+                     styles: { fontSize: 8 },
+                     headStyles: { fillColor: [66, 139, 202] },
+                     margin: { left: margin, right: margin }
+                 });
+                
+                yPos = doc.lastAutoTable.finalY + 10;
+                checkNewPage();
+            }
+            
+            // Doors
+            if (exportData.doors && exportData.doors.length > 0) {
+                addSectionHeader('DOORS');
+                checkNewPage();
+                
+                const doorData = exportData.doors.map(door => [
+                    door.door_type || 'N/A',
+                    `${door.width || 'N/A'}mm`,
+                    `${door.height || 'N/A'}mm`,
+                    `${door.thickness || 'N/A'}mm`
+                ]);
+                
+                                 autoTable(doc, {
+                     startY: yPos,
+                     head: [['Door Type', 'Width', 'Height', 'Thickness']],
+                     body: doorData,
+                     theme: 'grid',
+                     styles: { fontSize: 8 },
+                     headStyles: { fillColor: [66, 139, 202] },
+                     margin: { left: margin, right: margin }
+                 });
+                
+                yPos = doc.lastAutoTable.finalY + 10;
+                checkNewPage();
+            }
+            
+            // Support Accessories
+            addSectionHeader('SUPPORT ACCESSORIES');
+            checkNewPage();
+            
+            if (exportData.supportAccessories.isNeeded) {
+                const supportData = [
+                    ['Support Type', exportData.supportAccessories.type === 'nylon' ? 'Nylon Hanger' : 'Alu Suspension'],
+                    ['Include Accessories', exportData.supportAccessories.includeAccessories ? 'Yes' : 'No'],
+                    ['Include Cable', exportData.supportAccessories.includeCable ? 'Yes' : 'No'],
+                    ['Custom Drawing', exportData.supportAccessories.customDrawing ? 'Yes' : 'No']
+                ];
+                
+                                 autoTable(doc, {
+                     startY: yPos,
+                     head: [['Property', 'Value']],
+                     body: supportData,
+                     theme: 'grid',
+                     styles: { fontSize: 10 },
+                     headStyles: { fillColor: [66, 139, 202] },
+                     margin: { left: margin, right: margin }
+                 });
+                
+                yPos = doc.lastAutoTable.finalY + 10;
+            } else {
+                addText('Not needed in this project - All ceiling panels are under 6000mm length', 10);
+                yPos += 5;
+            }
+            
+            checkNewPage();
+            
+            // Installation Estimates
+            addSectionHeader('INSTALLATION TIME ESTIMATES');
+            checkNewPage();
+            
+            const installationData = [
+                ['Working Days', 'Working Weeks', 'Working Months'],
+                [
+                    exportData.installationEstimates.days.toString(),
+                    exportData.installationEstimates.weeks.toString(),
+                    exportData.installationEstimates.months.toString()
+                ]
+            ];
+            
+                         autoTable(doc, {
+                 startY: yPos,
+                 head: [['Working Days', 'Working Weeks', 'Working Months']],
+                 body: [installationData[1]],
+                 theme: 'grid',
+                 styles: { fontSize: 12, fontStyle: 'bold' },
+                 headStyles: { fillColor: [66, 139, 202] },
+                 margin: { left: margin, right: margin }
+             });
+            
+            yPos = doc.lastAutoTable.finalY + 10;
+            
+            // Add note about installation estimates
+            addText('Note: This estimate assumes parallel work where possible and includes a 20% buffer for coordination and unexpected issues.', 8);
+            
+            // Generate and download the PDF
+            const filename = `${exportData.projectInfo.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_project_summary_${new Date().toISOString().split('T')[0]}.pdf`;
+            doc.save(filename);
             
             // Show success message
-            alert('PDF content prepared! In a real implementation, this would generate and download a PDF file.');
+            alert('PDF generated and downloaded successfully!');
             
         } catch (error) {
             console.error('Error generating PDF:', error);
