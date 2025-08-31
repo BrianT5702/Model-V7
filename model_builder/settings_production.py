@@ -93,16 +93,17 @@ USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
 # Ensure static files are served correctly
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'frontend', 'build'),
-]
+# Remove STATICFILES_DIRS since it's causing issues in Railway
+# STATICFILES_DIRS = [
+#     os.path.join(BASE_DIR, 'frontend', 'build'),
+# ]
 
-# Configure whitenoise to serve files from STATICFILES_DIRS
+# Configure whitenoise to serve files from STATIC_ROOT
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
 
 # Additional whitenoise settings for better static file serving
-WHITENOISE_ROOT = os.path.join(BASE_DIR, 'frontend', 'build')
+WHITENOISE_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 WHITENOISE_INDEX_FILE = True
 
 # Ensure static files are collected to the right place
