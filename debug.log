@@ -16983,3 +16983,6 @@ INFO 2025-08-31 15:51:42,407 autoreload 21980 24848 Watching for file changes wi
 INFO 2025-08-31 17:38:20,775 autoreload 21980 24848 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\model_builder\urls.py changed, reloading.
 INFO 2025-08-31 17:38:21,418 autoreload 25740 6468 Watching for file changes with StatReloader
 INFO 2025-08-31 17:38:30,987 autoreload 25740 6468 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\model_builder\urls.py changed, reloading.
+INFO 2025-08-31 17:38:31,560 autoreload 11084 17116 Watching for file changes with StatReloader
+INFO 2025-08-31 17:41:25,474 autoreload 11084 17116 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\model_builder\urls.py changed, reloading.
+INFO 2025-08-31 17:41:26,104 autoreload 25376 22856 Watching for file changes with StatReloader
