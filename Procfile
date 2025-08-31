@@ -1,1 +1,1 @@
-web: cd frontend && npm install && npm run build && cd .. && python manage.py collectstatic --noinput && gunicorn model_builder.wsgi_production:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+web: gunicorn model_builder.wsgi_production:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
