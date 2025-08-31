@@ -11,7 +11,8 @@ const PanelCalculationControls = ({
     toggleMaterialDetails,
     canvasRef,
     rooms = [],
-    project = null
+    project = null,
+    updateSharedPanelData // Added prop for sharing data
 }) => {
     const [calculatedPanels, setCalculatedPanels] = useState(null);
     const [showTable, setShowTable] = useState(false);
@@ -350,6 +351,27 @@ const PanelCalculationControls = ({
         const analysis = calculator.getPanelAnalysis();
         setPanelAnalysis(analysis);
         setPanelCalculator(calculator);
+
+        // Share panel data with other tabs if updateSharedPanelData is provided
+        if (updateSharedPanelData) {
+            // Group panels by dimensions and application for sharing (matches table structure)
+            const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
+                const key = `${panel.width}-${panel.length}-${panel.application}`;
+                if (!acc[key]) {
+                    acc[key] = {
+                        width: panel.width,
+                        length: panel.length,
+                        application: panel.application,
+                        quantity: 0,
+                        type: panel.type
+                    };
+                }
+                acc[key].quantity += 1;
+                return acc;
+            }, {});
+            
+            updateSharedPanelData('wall-plan', Object.values(groupedPanelsForSharing), analysis);
+        }
 
         // Group panels by dimensions and application
         const groupedPanels = allPanels.reduce((acc, panel) => {

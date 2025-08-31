@@ -6,6 +6,10 @@ import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
 import RoomManager from '../room/RoomManager';
 import DoorManager from '../door/DoorManager';
 import DoorEditorModal from '../door/DoorEditorModal';
+import CeilingManager from '../ceiling/CeilingManager';
+import FloorManager from '../floor/FloorManager';
+import InstallationTimeEstimator from '../estimation/InstallationTimeEstimator';
+
 import { 
     FaPencilAlt, 
     FaCube, 
@@ -17,7 +21,8 @@ import {
     FaCog,
     FaEye,
     FaEyeSlash,
-    FaArrowLeft
+    FaArrowLeft,
+    FaLayerGroup
 } from 'react-icons/fa';
 
 const ProjectDetails = () => {
@@ -27,6 +32,8 @@ const ProjectDetails = () => {
 
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
+    
+
 
     // Memoize the room close handler to prevent unnecessary re-renders
     const handleRoomClose = useCallback(() => {
@@ -151,6 +158,8 @@ const ProjectDetails = () => {
                                     </>
                                 )}
                             </button>
+                            
+
                         </div>
                     </div>
                 </div>
@@ -426,6 +435,14 @@ const ProjectDetails = () => {
                                     <span className="text-blue-700 font-medium">Doors:</span>
                                     <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.doors.length}</span>
                                 </div>
+                                {projectDetails.rooms && projectDetails.rooms.length > 0 && (
+                                    <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
+                                        <span className="text-blue-700 font-medium">Est. Install:</span>
+                                        <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full text-xs">
+                                            {Math.ceil(projectDetails.rooms.length * 2 / 8)} days
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -487,42 +504,152 @@ const ProjectDetails = () => {
                             <div id="three-canvas-container" className="w-full h-[600px] bg-gray-50 active" />
                         ) : (
                             <div className="flex flex-col">
+                                {/* Tab Navigation */}
                                 <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                                    <h2 className="text-lg font-semibold text-gray-900">2D Floor Plan</h2>
-                                    <p className="text-sm text-gray-600 mt-1">Click and drag to navigate, use scroll to zoom</p>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex space-x-1">
+                                            <button
+                                                onClick={() => projectDetails.setCurrentView('wall-plan')}
+                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                    projectDetails.currentView === 'wall-plan'
+                                                        ? 'bg-blue-600 text-white shadow-md'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
+                                            >
+                                                <FaSquare className="inline mr-2" />
+                                                Wall Plan
+                                            </button>
+                                            <button
+                                                onClick={() => projectDetails.setCurrentView('ceiling-plan')}
+                                                disabled={!projectDetails.rooms || projectDetails.rooms.length === 0}
+                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                    (!projectDetails.rooms || projectDetails.rooms.length === 0)
+                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                        : projectDetails.currentView === 'ceiling-plan'
+                                                        ? 'bg-green-600 text-white shadow-md'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
+                                            >
+                                                <FaLayerGroup className="inline mr-2" />
+                                                Ceiling Plan
+                                            </button>
+                                            <button
+                                                onClick={() => projectDetails.setCurrentView('floor-plan')}
+                                                disabled={!projectDetails.rooms || projectDetails.rooms.length === 0 || !projectDetails.rooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel')}
+                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                    (!projectDetails.rooms || projectDetails.rooms.length === 0 || !projectDetails.rooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel'))
+                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                        : projectDetails.currentView === 'floor-plan'
+                                                        ? 'bg-green-600 text-white shadow-md'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
+                                            >
+                                                <FaSquare className="inline mr-2" />
+                                                Floor Plan
+                                                {projectDetails.rooms && projectDetails.rooms.length > 0 && (
+                                                    <span className="ml-1 text-xs">
+                                                        ({projectDetails.rooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel').length} panel rooms)
+                                                    </span>
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => projectDetails.setCurrentView('installation-estimator')}
+                                                disabled={!projectDetails.rooms || projectDetails.rooms.length === 0}
+                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                    (!projectDetails.rooms || projectDetails.rooms.length === 0)
+                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                        : projectDetails.currentView === 'installation-estimator'
+                                                        ? 'bg-orange-600 text-white shadow-md'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
+                                            >
+                                                <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                Project Summary & Installation Time
+                                            </button>
+                                        </div>
+                                        <div className="text-sm text-gray-600">
+                                            {projectDetails.currentView === 'wall-plan' 
+                                                ? 'Click and drag to navigate, use scroll to zoom'
+                                                : projectDetails.currentView === 'ceiling-plan'
+                                                ? 'Generate and manage ceiling panels for optimal coverage'
+                                                : projectDetails.currentView === 'floor-plan'
+                                                ? 'Generate and manage floor panels with wall thickness deduction (only for rooms with floor_type = "panel")'
+                                                : projectDetails.currentView === 'installation-estimator'
+                                                ? 'Comprehensive project overview with installation time calculations'
+                                                : 'Click and drag to navigate, use scroll to zoom'
+                                            }
+                                            {projectDetails.rooms && projectDetails.rooms.length > 0 && !projectDetails.rooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel') && projectDetails.currentView === 'floor-plan' && (
+                                                <span className="text-orange-600 font-medium ml-2">
+                                                    ⚠️ No rooms with panel floors found
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
+                                
+                                {/* Tab Content */}
                                 <div className="relative">
-                                    <Canvas2D
-                                        key={`canvas-${projectDetails.walls.length}`}
-                                        walls={projectDetails.walls}
-                                        setWalls={projectDetails.setWalls}
-                                        joints={projectDetails.joints}
-                                        intersections={projectDetails.joints}
-                                        projectId={projectId}
-                                        onWallTypeSelect={projectDetails.selectedWallType}
-                                        onWallUpdate={projectDetails.handleWallUpdate}
-                                        onNewWall={projectDetails.handleAddWallWithSplitting}
-                                        onWallDelete={projectDetails.handleWallDelete}
-                                        isEditingMode={projectDetails.isEditingMode}
-                                        currentMode={projectDetails.currentMode}
-                                        onWallSelect={projectDetails.handleWallSelect}
-                                        selectedWallsForRoom={projectDetails.selectedWallsForRoom}
-                                        onRoomWallsSelect={projectDetails.setSelectedWallsForRoom}
-                                        rooms={projectDetails.rooms}
-                                        onRoomSelect={projectDetails.handleRoomSelect}
-                                        onRoomUpdate={projectDetails.handleRoomUpdate}
-                                        onRoomLabelPositionUpdate={projectDetails.handleRoomLabelPositionUpdate}
-                                        onJointsUpdate={projectDetails.setJoints}
-                                        doors={projectDetails.doors}
-                                        onDoorSelect={projectDetails.handleDoorSelect}
-                                        onDoorWallSelect={(wall) => {
-                                            projectDetails.setSelectedDoorWall(wall);
-                                            projectDetails.setShowDoorManager(true);
-                                        }}
-                                        project={projectDetails.project}
-                                        selectedRoomPoints={projectDetails.selectedRoomPoints}
-                                        onUpdateRoomPoints={projectDetails.updateRoomPointsAndDetectWalls}
-                                    />
+                                    {projectDetails.currentView === 'wall-plan' ? (
+                                        <Canvas2D
+                                            key={`canvas-${projectDetails.walls.length}`}
+                                            walls={projectDetails.walls}
+                                            setWalls={projectDetails.setWalls}
+                                            joints={projectDetails.joints}
+                                            intersections={projectDetails.joints}
+                                            projectId={projectId}
+                                            onWallTypeSelect={projectDetails.selectedWallType}
+                                            onWallUpdate={projectDetails.handleWallUpdate}
+                                            onNewWall={projectDetails.handleAddWallWithSplitting}
+                                            onWallDelete={projectDetails.handleWallDelete}
+                                            isEditingMode={projectDetails.isEditingMode}
+                                            currentMode={projectDetails.currentMode}
+                                            onWallSelect={projectDetails.handleWallSelect}
+                                            selectedWallsForRoom={projectDetails.selectedWallsForRoom}
+                                            onRoomWallsSelect={projectDetails.setSelectedWallsForRoom}
+                                            rooms={projectDetails.rooms}
+                                            onRoomSelect={projectDetails.handleRoomSelect}
+                                            onRoomUpdate={projectDetails.handleRoomUpdate}
+                                            onRoomLabelPositionUpdate={projectDetails.handleRoomLabelPositionUpdate}
+                                            onJointsUpdate={projectDetails.setJoints}
+                                            doors={projectDetails.doors}
+                                            onDoorSelect={projectDetails.handleDoorSelect}
+                                            onDoorWallSelect={(wall) => {
+                                                projectDetails.setSelectedDoorWall(wall);
+                                                projectDetails.setShowDoorManager(true);
+                                            }}
+                                            project={projectDetails.project}
+                                            selectedRoomPoints={projectDetails.selectedRoomPoints}
+                                            onUpdateRoomPoints={projectDetails.updateRoomPointsAndDetectWalls}
+                                            updateSharedPanelData={projectDetails.updateSharedPanelData}
+                                        />
+                                    ) : projectDetails.currentView === 'floor-plan' ? (
+                                        <FloorManager
+                                            projectId={projectId}
+                                            onClose={() => projectDetails.setCurrentView('wall-plan')}
+                                            onFloorPlanGenerated={(floorPlan) => {
+                                                console.log('Floor plan generated:', floorPlan);
+                                            }}
+                                            updateSharedPanelData={projectDetails.updateSharedPanelData}
+                                        />
+                                    ) : projectDetails.currentView === 'installation-estimator' ? (
+                                        <InstallationTimeEstimator
+                                            projectId={projectId}
+                                            sharedPanelData={projectDetails.getAllPanelData()}
+                                            updateSharedPanelData={projectDetails.updateSharedPanelData}
+                                        />
+                                    ) : (
+                                        <CeilingManager
+                                            projectId={projectId}
+                                            room={projectDetails.rooms && projectDetails.rooms.length > 0 ? projectDetails.rooms[0] : null}
+                                            onClose={() => projectDetails.setCurrentView('wall-plan')}
+                                            onCeilingPlanGenerated={(ceilingPlan) => {
+                                                console.log('Ceiling plan generated:', ceilingPlan);
+                                            }}
+                                            updateSharedPanelData={projectDetails.updateSharedPanelData}
+                                        />
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -834,6 +961,8 @@ const ProjectDetails = () => {
                     </div>
                 </div>
             )}
+
+
         </div>
     );
 };

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project, Wall, Room, Ceiling, Door, Intersection
+from .models import Project, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection
 
 class WallSerializer(serializers.ModelSerializer):
     class Meta:
@@ -23,10 +23,75 @@ class WallSerializer(serializers.ModelSerializer):
         return value
 
 
-class CeilingSerializer(serializers.ModelSerializer):
+class CeilingPanelSerializer(serializers.ModelSerializer):
+    is_cut = serializers.BooleanField(source='is_cut_panel', read_only=True)
+    room_id = serializers.IntegerField(source='room.id', read_only=True)
+    
     class Meta:
-        model = Ceiling
-        fields = ['id', 'room', 'thickness', 'length', 'width']
+        model = CeilingPanel
+        fields = [
+            'id', 'room', 'room_id', 'panel_id', 'start_x', 'start_y', 'end_x', 'end_y',
+            'width', 'length', 'thickness', 'material_type', 'is_cut_panel', 'cut_notes', 'is_cut'
+        ]
+
+    def validate_width(self, value):
+        """Validate that width is not greater than 1150mm"""
+        if value > 1150:
+            raise serializers.ValidationError("Panel width cannot exceed 1150mm")
+        if value <= 0:
+            raise serializers.ValidationError("Width must be greater than 0")
+        return value
+
+    def validate_length(self, value):
+        """Validate that length is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Length must be greater than 0")
+        return value
+
+class FloorPanelSerializer(serializers.ModelSerializer):
+    room_id = serializers.IntegerField(source='room.id', read_only=True)
+    
+    class Meta:
+        model = FloorPanel
+        fields = '__all__'
+
+class FloorPlanSerializer(serializers.ModelSerializer):
+    floor_panels = FloorPanelSerializer(many=True, read_only=True, source='room.floor_panels')
+    room_id = serializers.IntegerField(source='room.id', read_only=True)
+    
+    class Meta:
+        model = FloorPlan
+        fields = [
+            'id', 'room', 'room_id', 'total_area', 'total_panels', 'full_panels', 
+            'cut_panels', 'waste_percentage', 'generation_method', 
+            'orientation_strategy', 'panel_width', 
+            'panel_length', 'custom_panel_length', 
+            'notes', 'floor_panels'
+        ]
+    
+    def to_representation(self, instance):
+        """Custom representation to include floor panels"""
+        data = super().to_representation(instance)
+        
+        # Get the actual floor panels from the room
+        if instance.room:
+            panels = instance.room.floor_panels.all()
+            data['floor_panels'] = FloorPanelSerializer(panels, many=True).data
+        
+        return data
+
+class CeilingPlanSerializer(serializers.ModelSerializer):
+    ceiling_panels = CeilingPanelSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = CeilingPlan
+        fields = [
+            'id', 'room', 'total_area', 'total_panels', 'full_panels', 
+            'cut_panels', 'waste_percentage', 'generation_method', 
+            'ceiling_thickness', 'orientation_strategy', 'panel_width', 
+            'panel_length', 'custom_panel_length', 'support_type', 
+            'support_config', 'notes', 'ceiling_panels'
+        ]
 
 
 class DoorSerializer(serializers.ModelSerializer):
@@ -61,7 +126,7 @@ class IntersectionSerializer(serializers.ModelSerializer):
 
 class RoomSerializer(serializers.ModelSerializer):
     walls = serializers.PrimaryKeyRelatedField(many=True, queryset=Wall.objects.all(), required=False)
-    ceilings = CeilingSerializer(many=True, read_only=True)
+    ceiling_plan = CeilingPlanSerializer(read_only=True)
 
     class Meta:
         model = Room

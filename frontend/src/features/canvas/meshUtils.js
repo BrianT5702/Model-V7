@@ -543,6 +543,12 @@ export function createDoorMesh(instance, door, wall) {
   // 1. Door positions - to maintain correct relative placement along the wall
   // 2. Door opening directions - to maintain correct swing/slide behavior
   // 3. Hinge positions - to maintain correct hinge placement relative to the door opening
+  //
+  // FLOOR PLACEMENT NOTE: 
+  // - Swing doors: Positioned at doorHeight/2 (centered vertically) - working perfectly, DO NOT TOUCH
+  // - Slide doors: Positioned at (doorHeight/2) + floorThickness to avoid floor intersection
+  // Since floors now extend upward from Y=0 to Y=+thickness, slide doors are explicitly positioned above
+  // the floor thickness while swing doors maintain their perfect positioning.
   const { x: doorPosX, z: doorPosZ, angle: wallAngle, width: cutoutWidth, height: doorHeight, depth: wallDepth, wasWallFlipped } = door.calculatedPosition;
   const scale = instance.scalingFactor;
   const { width, thickness, door_type, swing_direction, slide_direction, side, configuration } = door;
@@ -579,7 +585,10 @@ export function createDoorMesh(instance, door, wall) {
       
       // Create a door container
       const doorContainer = new instance.THREE.Object3D();
-      doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+      // For slide doors: position above floor thickness to avoid intersection
+      const floorThickness = instance.project?.rooms?.find(r => r.id === door.room)?.floor_thickness || 150;
+      const adjustedY = (doorHeight/2) + (floorThickness * instance.scalingFactor);
+      doorContainer.position.set(doorPosX, adjustedY, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       
       // Create both door panels
@@ -652,7 +661,10 @@ export function createDoorMesh(instance, door, wall) {
       
       // Create door container to handle rotation and position
       const doorContainer = new instance.THREE.Object3D();
-      doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+      // For slide doors: position above floor thickness to avoid intersection
+      const floorThickness = instance.project?.rooms?.find(r => r.id === door.room)?.floor_thickness || 150;
+      const adjustedY = (doorHeight/2) + (floorThickness * instance.scalingFactor);
+      doorContainer.position.set(doorPosX, adjustedY, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       
       // Position door at wall face
@@ -700,7 +712,7 @@ export function createDoorMesh(instance, door, wall) {
   // === SWING DOOR IMPLEMENTATION ===
   else if (door_type === 'swing') {
     if (configuration === 'double_sided') {
-      const halfWidth = doorWidth * 0.48;
+      const halfWidth = doorWidth * 0.5;
       const doorContainer = new instance.THREE.Object3D();
       doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
       doorContainer.rotation.y = -wallAngle;

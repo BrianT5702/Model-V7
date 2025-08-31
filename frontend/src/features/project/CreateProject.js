@@ -176,7 +176,6 @@ const CreateProject = ({ setProjects, onClose }) => {
                             value={formData.width}
                             onChange={handleChange}
                             min="100"
-                            step="100"
                             required
                             className="mt-1 block w-full rounded-md border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
@@ -190,7 +189,6 @@ const CreateProject = ({ setProjects, onClose }) => {
                             value={formData.length}
                             onChange={handleChange}
                             min="100"
-                            step="100"
                             required
                             className="mt-1 block w-full rounded-md border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
@@ -204,7 +202,6 @@ const CreateProject = ({ setProjects, onClose }) => {
                             value={formData.height}
                             onChange={handleChange}
                             min="100"
-                            step="100"
                             required
                             className="mt-1 block w-full rounded-md border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
@@ -222,7 +219,6 @@ const CreateProject = ({ setProjects, onClose }) => {
                             value={formData.wall_thickness}
                             onChange={handleChange}
                             min="25"
-                            step="25"
                             className="mt-1 block w-full rounded-md border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                     </div>

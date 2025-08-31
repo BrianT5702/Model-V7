@@ -92,15 +92,309 @@ class Room(models.Model):
     def __str__(self):
         return f"{self.room_name} in Project {self.project.name}"
 
-class Ceiling(models.Model):
-    room = models.ForeignKey(Room, related_name='ceilings', on_delete=models.CASCADE)
-    thickness = models.FloatField(help_text="Thickness of the ceiling in mm")
-    length = models.FloatField(help_text="Length of the ceiling in mm")
-    width = models.FloatField(help_text="Width of the ceiling in mm")
+class CeilingPanel(models.Model):
+    """Individual ceiling panel that covers a specific area of a room"""
+    room = models.ForeignKey(Room, related_name='ceiling_panels', on_delete=models.CASCADE)
+    panel_id = models.CharField(max_length=50, help_text="Unique identifier for the panel")
+    start_x = models.FloatField(help_text="X-coordinate of the panel's start point")
+    start_y = models.FloatField(help_text="Y-coordinate of the panel's start point")
+    end_x = models.FloatField(help_text="X-coordinate of the panel's end point")
+    end_y = models.FloatField(help_text="Y-coordinate of the panel's end point")
+    width = models.FloatField(help_text="Width of the panel in mm (max 1150mm)")
+    length = models.FloatField(help_text="Length of the panel in mm")
+    thickness = models.FloatField(default=20.0, help_text="Thickness of the ceiling panel in mm")
+    material_type = models.CharField(
+        max_length=50,
+        default='standard',
+        choices=[
+            ('standard', 'Standard Panel'),
+            ('acoustic', 'Acoustic Panel'),
+            ('fire_rated', 'Fire Rated Panel'),
+            ('moisture_resistant', 'Moisture Resistant Panel')
+        ]
+    )
+    is_cut_panel = models.BooleanField(default=False, help_text="Whether this panel was cut to fit")
+    cut_notes = models.TextField(blank=True, null=True, help_text="Notes about any cuts made to the panel")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('room', 'panel_id')
 
     def __str__(self):
-        return f"Ceiling in {self.room.room_name} of Project {self.room.project.name}"
+        return f"Ceiling Panel {self.panel_id} in {self.room.room_name}"
 
+    def get_area(self):
+        """Calculate the area of the panel in square mm"""
+        return self.width * self.length
+
+    def get_dimensions(self):
+        """Get panel dimensions as a dictionary"""
+        return {
+            'width': self.width,
+            'length': self.length,
+            'thickness': self.thickness
+        }
+
+class CeilingPlan(models.Model):
+    """Represents the complete ceiling plan for a room with automatic panel generation"""
+    room = models.OneToOneField(Room, related_name='ceiling_plan', on_delete=models.CASCADE)
+    total_area = models.FloatField(help_text="Total ceiling area in square mm")
+    total_panels = models.IntegerField(default=0, help_text="Total number of panels used")
+    full_panels = models.IntegerField(default=0, help_text="Number of full panels used")
+    cut_panels = models.IntegerField(default=0, help_text="Number of cut panels used")
+    waste_percentage = models.FloatField(default=0.0, help_text="Percentage of material wasted")
+    generation_method = models.CharField(
+        max_length=50,
+        default='automatic',
+        choices=[
+            ('automatic', 'Automatic Generation'),
+            ('manual', 'Manual Placement'),
+            ('hybrid', 'Hybrid (Auto + Manual)')
+        ]
+    )
+    
+    # CRITICAL: Generation parameters that MUST be saved for consistency and 3D generation
+    ceiling_thickness = models.FloatField(
+        default=150, 
+        help_text="Ceiling thickness used for this plan (critical for 3D generation)"
+    )
+    orientation_strategy = models.CharField(
+        max_length=50, 
+        default='auto', 
+        help_text="Orientation strategy used for panel layout"
+    )
+    panel_width = models.FloatField(
+        default=1150, 
+        help_text="Panel width used for this plan"
+    )
+    panel_length = models.CharField(
+        max_length=20, 
+        default='auto', 
+        help_text="Panel length setting used for this plan"
+    )
+    custom_panel_length = models.FloatField(
+        null=True, 
+        blank=True, 
+        help_text="Custom panel length if not auto"
+    )
+    
+    # Support configuration
+    support_type = models.CharField(
+        max_length=20, 
+        default='nylon', 
+        help_text="Support system type used"
+    )
+    support_config = models.JSONField(
+        default=dict, 
+        help_text="Support configuration options used"
+    )
+    
+    notes = models.TextField(blank=True, null=True, help_text="Additional notes about the ceiling plan")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Ceiling Plan for {self.room.room_name}"
+
+    def update_statistics(self):
+        """Update statistics based on current panels"""
+        panels = self.room.ceiling_panels.all()
+        self.total_panels = panels.count()
+        self.full_panels = panels.filter(is_cut_panel=False).count()
+        self.cut_panels = panels.filter(is_cut_panel=True).count()
+        
+        # Calculate total area
+        total_panel_area = sum(panel.get_area() for panel in panels)
+        self.total_area = total_panel_area
+        
+        # Calculate waste percentage (simplified calculation)
+        room_area = self.calculate_room_area()
+        if room_area > 0:
+            self.waste_percentage = ((total_panel_area - room_area) / total_panel_area) * 100
+        else:
+            self.waste_percentage = 0.0
+        
+        self.save()
+
+    def calculate_room_area(self):
+        """Calculate the actual room area from room points"""
+        if not self.room.room_points:
+            return 0.0
+        
+        # Simple polygon area calculation (shoelace formula)
+        points = self.room.room_points
+        n = len(points)
+        area = 0.0
+        
+        for i in range(n):
+            j = (i + 1) % n
+            area += points[i]['x'] * points[j]['y']
+            area -= points[j]['x'] * points[i]['y']
+        
+        return abs(area) / 2.0
+
+class FloorPanel(models.Model):
+    """Individual floor panel that covers a specific area of a room (excluding walls)"""
+    room = models.ForeignKey(Room, related_name='floor_panels', on_delete=models.CASCADE)
+    panel_id = models.CharField(max_length=50, help_text="Unique identifier for the floor panel")
+    start_x = models.FloatField(help_text="X-coordinate of the panel's start point")
+    start_y = models.FloatField(help_text="Y-coordinate of the panel's start point")
+    end_x = models.FloatField(help_text="X-coordinate of the panel's end point")
+    end_y = models.FloatField(help_text="Y-coordinate of the panel's end point")
+    width = models.FloatField(help_text="Width of the floor panel in mm")
+    length = models.FloatField(help_text="Length of the floor panel in mm")
+    thickness = models.FloatField(default=20.0, help_text="Thickness of the floor panel in mm")
+    material_type = models.CharField(
+        max_length=50,
+        default='standard',
+        choices=[
+            ('standard', 'Standard Floor Panel'),
+            ('waterproof', 'Waterproof Panel'),
+            ('acoustic', 'Acoustic Panel'),
+            ('heated', 'Heated Floor Panel'),
+            ('insulated', 'Insulated Panel')
+        ]
+    )
+    is_cut_panel = models.BooleanField(default=False, help_text="Whether this panel was cut to fit")
+    cut_notes = models.TextField(blank=True, null=True, help_text="Notes about any cuts made to the panel")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('room', 'panel_id')
+
+    def __str__(self):
+        return f"Floor Panel {self.panel_id} in {self.room.room_name}"
+
+    def get_area(self):
+        """Calculate the area of the floor panel in square mm"""
+        return self.width * self.length
+
+    def get_dimensions(self):
+        """Get panel dimensions as a dictionary"""
+        return {
+            'width': self.width,
+            'length': self.length,
+            'thickness': self.thickness
+        }
+
+class FloorPlan(models.Model):
+    """Represents the complete floor plan for a room with automatic panel generation (excluding walls)"""
+    room = models.OneToOneField(Room, related_name='floor_plan', on_delete=models.CASCADE)
+    total_area = models.FloatField(default=0.0, help_text="Total floor area in square mm (excluding walls)")
+    total_panels = models.IntegerField(default=0, help_text="Total number of floor panels used")
+    full_panels = models.IntegerField(default=0, help_text="Number of full floor panels used")
+    cut_panels = models.IntegerField(default=0, help_text="Number of cut floor panels used")
+    waste_percentage = models.FloatField(default=0.0, help_text="Percentage of material wasted")
+    generation_method = models.CharField(
+        max_length=50,
+        default='automatic',
+        choices=[
+            ('automatic', 'Automatic Generation'),
+            ('manual', 'Manual Placement'),
+            ('hybrid', 'Hybrid (Auto + Manual)')
+        ]
+    )
+    
+    # Generation parameters that MUST be saved for consistency and 3D generation
+    orientation_strategy = models.CharField(
+        max_length=50, 
+        default='auto', 
+        help_text="Orientation strategy used for floor panel layout"
+    )
+    panel_width = models.FloatField(
+        default=1150, 
+        help_text="Floor panel width used for this plan"
+    )
+    panel_length = models.CharField(
+        max_length=20, 
+        default='auto', 
+        help_text="Floor panel length setting used for this plan"
+    )
+    custom_panel_length = models.FloatField(
+        null=True, 
+        blank=True, 
+        help_text="Custom floor panel length if not auto"
+    )
+    
+    notes = models.TextField(blank=True, null=True, help_text="Additional notes about the floor plan")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Floor Plan for {self.room.room_name}"
+
+    def update_statistics(self):
+        """Update statistics based on current floor panels"""
+        panels = self.room.floor_panels.all()
+        self.total_panels = panels.count()
+        self.full_panels = panels.filter(is_cut_panel=False).count()
+        self.cut_panels = panels.filter(is_cut_panel=True).count()
+        
+        print(f"      📊 Found {self.total_panels} panels for room {self.room.room_name}")
+        
+        # Calculate total area from panels
+        if panels.exists():
+            total_panel_area = sum(panel.get_area() for panel in panels)
+            self.total_area = total_panel_area
+            print(f"      📊 Panel area: {total_panel_area} mm²")
+        else:
+            # If no panels, calculate from room area
+            room_area = self.calculate_room_floor_area()
+            self.total_area = room_area if room_area > 0 else 0.0
+            print(f"      📊 Room area (no panels): {self.total_area} mm²")
+        
+        # Calculate waste percentage
+        if self.total_area > 0:
+            room_area = self.calculate_room_floor_area()
+            if room_area > 0:
+                self.waste_percentage = ((self.total_area - room_area) / self.total_area) * 100
+            else:
+                self.waste_percentage = 0.0
+        else:
+            self.waste_percentage = 0.0
+        
+        print(f"      📊 Final stats - Area: {self.total_area}, Waste: {self.waste_percentage:.2f}%")
+        
+        self.save()
+
+    def calculate_room_floor_area(self):
+        """Calculate the actual room floor area from room points (excluding walls)"""
+        if not self.room.room_points:
+            return 0.0
+        
+        # Get wall thickness from project
+        wall_thickness = self.room.project.wall_thickness if self.room.project else 200
+        
+        # Calculate floor area by reducing room area by wall thickness
+        # This gives us the area INSIDE the walls where floor panels can be placed
+        points = self.room.room_points
+        n = len(points)
+        area = 0.0
+        
+        for i in range(n):
+            j = (i + 1) % n
+            area += points[i]['x'] * points[j]['y']
+            area -= points[j]['x'] * points[i]['y']
+        
+        room_area = abs(area) / 2.0
+        
+        # Calculate perimeter to estimate wall area
+        perimeter = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            dx = points[j]['x'] - points[i]['x']
+            dy = points[j]['y'] - points[i]['y']
+            perimeter += (dx * dx + dy * dy) ** 0.5
+        
+        # Wall area = perimeter * wall_thickness
+        wall_area = perimeter * wall_thickness
+        
+        # Floor area = room area - wall area
+        floor_area = room_area - wall_area
+        
+        return max(0, floor_area)  # Ensure non-negative
 
 class Door(models.Model):
     project = models.ForeignKey(Project, related_name='doors', on_delete=models.CASCADE)

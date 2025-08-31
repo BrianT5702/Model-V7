@@ -28,6 +28,71 @@ export default function useProjectDetails(projectId) {
   const [editingDoor, setEditingDoor] = useState(null);
   const [showDoorEditor, setShowDoorEditor] = useState(false);
   const [selectedRoomPoints, setSelectedRoomPoints] = useState([]);
+  const [currentView, setCurrentView] = useState('wall-plan'); // 'wall-plan', 'ceiling-plan', or 'floor-plan'
+  
+  // Add shared panel data state for cross-tab communication
+  const [sharedPanelData, setSharedPanelData] = useState({
+    wallPanels: null,        // From wall plan tab
+    ceilingPanels: null,     // From ceiling plan tab
+    floorPanels: null,       // From floor plan tab
+    wallPanelAnalysis: null, // Panel analysis from wall calculations
+    // Support accessories information from ceiling plan
+    supportType: null,
+    includeAccessories: false,
+    includeCable: false,
+    aluSuspensionCustomDrawing: false,
+    panelsNeedSupport: false,
+    lastUpdated: null        // Track when data was last updated
+  });
+  
+  // Function to update shared panel data from any tab
+  const updateSharedPanelData = (tabName, panelData, analysis = null) => {
+    setSharedPanelData(prev => {
+      const baseUpdate = {
+        ...prev,
+        [tabName === 'wall-plan' ? 'wallPanels' : 
+         tabName === 'ceiling-plan' ? 'ceilingPanels' : 
+         tabName === 'floor-plan' ? 'floorPanels' : 'unknown']: panelData,
+        wallPanelAnalysis: tabName === 'wall-plan' ? analysis : prev.wallPanelAnalysis,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      // If ceiling plan is being updated and analysis contains support info, update support data
+      if (tabName === 'ceiling-plan' && analysis && typeof analysis === 'object') {
+        return {
+          ...baseUpdate,
+          supportType: analysis.supportType || prev.supportType,
+          includeAccessories: analysis.includeAccessories || prev.includeAccessories,
+          includeCable: analysis.includeCable || prev.includeCable,
+          aluSuspensionCustomDrawing: analysis.aluSuspensionCustomDrawing || prev.aluSuspensionCustomDrawing,
+          panelsNeedSupport: analysis.panelsNeedSupport || prev.panelsNeedSupport
+        };
+      }
+      
+      return baseUpdate;
+    });
+    console.log(`Updated shared panel data for ${tabName}:`, panelData, analysis);
+  };
+  
+  // Function to get all panel data for the final summary tab
+  const getAllPanelData = () => {
+    return {
+      wallPanels: sharedPanelData.wallPanels,
+      ceilingPanels: sharedPanelData.ceilingPanels,
+      floorPanels: sharedPanelData.floorPanels,
+      wallPanelAnalysis: sharedPanelData.wallPanelAnalysis,
+      // Support accessories information
+      supportType: sharedPanelData.supportType,
+      includeAccessories: sharedPanelData.includeAccessories,
+      includeCable: sharedPanelData.includeCable,
+      aluSuspensionCustomDrawing: sharedPanelData.aluSuspensionCustomDrawing,
+      panelsNeedSupport: sharedPanelData.panelsNeedSupport,
+      totalPanels: (sharedPanelData.wallPanels?.length || 0) + 
+                   (sharedPanelData.ceilingPanels?.length || 0) + 
+                   (sharedPanelData.floorPanels?.length || 0),
+      lastUpdated: sharedPanelData.lastUpdated
+    };
+  };
   
   // Function to update room points and automatically detect walls
   const updateRoomPointsAndDetectWalls = (newPoints) => {
@@ -1144,6 +1209,13 @@ export default function useProjectDetails(projectId) {
     setProjectLoadError,
     showPanelLines,
     setShowPanelLines,
+    currentView,
+    setCurrentView,
+    // Add shared panel data state for cross-tab communication
+    sharedPanelData,
+    setSharedPanelData,
+    updateSharedPanelData,
+    getAllPanelData,
     // Handlers
     fetchProjectDetails,
     handleCreateRoom,

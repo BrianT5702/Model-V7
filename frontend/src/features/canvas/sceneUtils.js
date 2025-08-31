@@ -57,6 +57,10 @@ export function addCeiling(instance) {
   if (vertices.length < 3) {
     return;
   }
+  // Create ceiling geometry with thickness extending downward
+  // Use a reasonable default thickness for fallback ceiling
+  const ceilingThickness = 150 * instance.scalingFactor; // 150mm default thickness
+  
   // Convert vertices to format required by earcut
   const flatVertices = [];
   vertices.forEach(vertex => {
@@ -68,27 +72,93 @@ export function addCeiling(instance) {
   if (triangles.length === 0) {
     return;
   }
-  // Create ceiling geometry using triangulation
-  const geometry = new instance.THREE.BufferGeometry();
-  const positions = new Float32Array(triangles.length * 3);
+  
+  // Create the top surface (flat ceiling)
+  const topGeometry = new instance.THREE.BufferGeometry();
+  const topPositions = new Float32Array(triangles.length * 3);
+  
   for (let i = 0; i < triangles.length; i++) {
     const vertexIndex = triangles[i];
     const x = flatVertices[vertexIndex * 2];
     const z = flatVertices[vertexIndex * 2 + 1];
-    positions[i * 3] = x;
-    positions[i * 3 + 1] = 0;
-    positions[i * 3 + 2] = z;
+    topPositions[i * 3] = x;
+    topPositions[i * 3 + 1] = 0; // Top surface at Y=0
+    topPositions[i * 3 + 2] = z;
   }
-  geometry.setAttribute('position', new instance.THREE.BufferAttribute(positions, 3));
+  topGeometry.setAttribute('position', new instance.THREE.BufferAttribute(topPositions, 3));
+  topGeometry.computeVertexNormals();
+  
+  // Create the bottom surface (thickness bottom)
+  const bottomGeometry = new instance.THREE.BufferGeometry();
+  const bottomPositions = new Float32Array(triangles.length * 3);
+  
+  for (let i = 0; i < triangles.length; i++) {
+    const vertexIndex = triangles[i];
+    const x = flatVertices[vertexIndex * 2];
+    const z = flatVertices[vertexIndex * 2 + 1];
+    bottomPositions[i * 3] = x;
+    bottomPositions[i * 3 + 1] = -ceilingThickness; // Bottom surface at Y=-thickness
+    bottomPositions[i * 3 + 2] = z;
+  }
+  bottomGeometry.setAttribute('position', new instance.THREE.BufferAttribute(bottomPositions, 3));
+  bottomGeometry.computeVertexNormals();
+  
+  // Create side walls to connect top and bottom surfaces
+  const sideGeometry = new instance.THREE.BufferGeometry();
+  const sidePositions = [];
+  
+  // For each edge of the room, create two triangles to form a side wall
+  for (let i = 0; i < vertices.length; i++) {
+    const current = vertices[i];
+    const next = vertices[(i + 1) % vertices.length];
+    
+    // Side wall quad (two triangles)
+    // Triangle 1
+    sidePositions.push(
+      current.x, 0, current.z,                    // Top front
+      next.x, 0, next.z,                          // Top back
+      current.x, -ceilingThickness, current.z      // Bottom front
+    );
+    
+    // Triangle 2
+    sidePositions.push(
+      next.x, 0, next.z,                          // Top back
+      next.x, -ceilingThickness, next.z,           // Bottom back
+      current.x, -ceilingThickness, current.z      // Bottom front
+    );
+  }
+  
+  sideGeometry.setAttribute('position', new instance.THREE.BufferGeometry(new Float32Array(sidePositions), 3));
+  sideGeometry.computeVertexNormals();
+  
+  // Merge all geometries into one
+  const geometry = new instance.THREE.BufferGeometry();
+  const mergedPositions = [];
+  
+  // Add top surface
+  for (let i = 0; i < topPositions.length; i += 3) {
+    mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
+  }
+  
+  // Add bottom surface
+  for (let i = 0; i < bottomPositions.length; i += 3) {
+    mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+  }
+  
+  // Add side walls
+  for (let i = 0; i < sidePositions.length; i += 3) {
+    mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+  }
+  
+  geometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
   geometry.computeVertexNormals();
-  // Create material
+  // Create material to match wall appearance
   const material = new instance.THREE.MeshStandardMaterial({
-    color: 0xcccccc,
+    color: 0xFFFFFFF, // Same white color as walls
     side: instance.THREE.DoubleSide,
-    roughness: 0.7,
-    metalness: 0.2,
-    transparent: true,
-    opacity: 0.9
+    roughness: 0.5,   // Same roughness as walls
+    metalness: 0.7,   // Same metalness as walls
+    transparent: false // Not transparent like walls
   });
   // Create mesh
   const ceiling = new instance.THREE.Mesh(geometry, material);
@@ -96,9 +166,173 @@ export function addCeiling(instance) {
   // Position the ceiling at the top of the walls
   const maxWallHeight = Math.max(...instance.walls.map(wall => wall.height));
   ceiling.position.y = maxWallHeight * instance.scalingFactor;
+  
+  // Add edge lines to match wall appearance
+  const edges = new instance.THREE.EdgesGeometry(geometry);
+  const edgeLines = new instance.THREE.LineSegments(
+    edges, 
+    new instance.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+  );
+  ceiling.add(edgeLines);
+  
+  // Set shadow properties to match walls
   ceiling.castShadow = true;
   ceiling.receiveShadow = true;
+  
+  // Store thickness in userData
+  ceiling.userData = {
+    isCeiling: true,
+    thickness: ceilingThickness
+  };
+  
   instance.scene.add(ceiling);
+}
+
+export function addFloor(instance) {
+  // Remove existing floor
+  const existingFloor = instance.scene.getObjectByName('floor');
+  if (existingFloor) {
+    instance.scene.remove(existingFloor);
+  }
+
+  // Get the building footprint vertices
+  const vertices = getBuildingFootprint(instance);
+  if (vertices.length < 3) {
+    return;
+  }
+  
+  // Create floor geometry with thickness extending upward
+  // Use a reasonable default thickness for fallback floor
+  const floorThickness = 150 * instance.scalingFactor; // 150mm default thickness
+  
+  // Convert vertices to format required by earcut
+  const flatVertices = [];
+  vertices.forEach(vertex => {
+    flatVertices.push(vertex.x);
+    flatVertices.push(vertex.z);
+  });
+  
+  // Triangulate the polygon
+  const triangles = earcut(flatVertices);
+  if (triangles.length === 0) {
+    return;
+  }
+  
+  // Create the top surface (floor top surface - at the top of the floor thickness)
+  const topGeometry = new instance.THREE.BufferGeometry();
+  const topPositions = new Float32Array(triangles.length * 3);
+  
+  for (let i = 0; i < triangles.length; i++) {
+    const vertexIndex = triangles[i];
+    const x = flatVertices[vertexIndex * 2];
+    const z = flatVertices[vertexIndex * 2 + 1];
+    topPositions[i * 3] = x;
+    topPositions[i * 3 + 1] = floorThickness; // Top surface at Y=+thickness
+    topPositions[i * 3 + 2] = z;
+  }
+  topGeometry.setAttribute('position', new instance.THREE.BufferAttribute(topPositions, 3));
+  topGeometry.computeVertexNormals();
+  
+  // Create the bottom surface (ground level)
+  const bottomGeometry = new instance.THREE.BufferGeometry();
+  const bottomPositions = new Float32Array(triangles.length * 3);
+  
+  for (let i = 0; i < triangles.length; i++) {
+    const vertexIndex = triangles[i];
+    const x = flatVertices[vertexIndex * 2];
+    const z = flatVertices[vertexIndex * 2 + 1];
+    bottomPositions[i * 3] = x;
+    bottomPositions[i * 3 + 1] = 0; // Bottom surface at Y=0 (ground level)
+    bottomPositions[i * 3 + 2] = z;
+  }
+  bottomGeometry.setAttribute('position', new instance.THREE.BufferAttribute(bottomPositions, 3));
+  bottomGeometry.computeVertexNormals();
+  
+  // Create side walls to connect top and bottom surfaces
+  const sideGeometry = new instance.THREE.BufferGeometry();
+  const sidePositions = [];
+  
+  // For each edge of the room, create two triangles to form a side wall
+  for (let i = 0; i < vertices.length; i++) {
+    const current = vertices[i];
+    const next = vertices[(i + 1) % vertices.length];
+    
+            // Side wall quad (two triangles)
+        // Triangle 1
+        sidePositions.push(
+          current.x, 0, current.z,                    // Bottom front (ground level)
+          next.x, 0, next.z,                          // Bottom back (ground level)
+          current.x, floorThickness, current.z         // Top front (floor top)
+        );
+        
+        // Triangle 2
+        sidePositions.push(
+          next.x, 0, next.z,                          // Bottom back (ground level)
+          next.x, floorThickness, next.z,              // Top back (floor top)
+          current.x, floorThickness, current.z         // Top front (floor top)
+        );
+  }
+  
+  sideGeometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
+  sideGeometry.computeVertexNormals();
+  
+  // Merge all geometries into one
+  const geometry = new instance.THREE.BufferGeometry();
+  const mergedPositions = [];
+  
+  // Add top surface
+  for (let i = 0; i < topPositions.length; i += 3) {
+    mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
+  }
+  
+  // Add bottom surface
+  for (let i = 0; i < bottomPositions.length; i += 3) {
+    mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+  }
+  
+  // Add side walls
+  for (let i = 0; i < sidePositions.length; i += 3) {
+    mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+  }
+  
+  geometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
+  geometry.computeVertexNormals();
+  
+  // Create material for floor
+  const material = new instance.THREE.MeshStandardMaterial({
+    color: 0xE5E7EB, // Light gray color for floor
+    side: instance.THREE.DoubleSide,
+    roughness: 0.8,   // More rough than walls for floor texture
+    metalness: 0.2,   // Less metallic than walls
+    transparent: false
+  });
+  
+  // Create mesh
+  const floor = new instance.THREE.Mesh(geometry, material);
+  floor.name = 'floor';
+  
+  // Position the floor at ground level
+  floor.position.y = 0;
+  
+  // Add edge lines to match wall appearance
+  const edges = new instance.THREE.EdgesGeometry(geometry);
+  const edgeLines = new instance.THREE.LineSegments(
+    edges, 
+    new instance.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+  );
+  floor.add(edgeLines);
+  
+  // Set shadow properties
+  floor.castShadow = true;
+  floor.receiveShadow = true;
+  
+  // Store floor info in userData
+  floor.userData = {
+    isFloor: true,
+    thickness: floorThickness
+  };
+  
+  instance.scene.add(floor);
 }
 
 function getBuildingFootprint(instance) {
@@ -188,9 +422,9 @@ function getBuildingFootprint(instance) {
 }
 
 export function buildModel(instance) {
-  // Remove existing walls, doors, ceilings, and panel lines from the scene
+  // Remove existing walls, doors, ceilings, floors, and panel lines from the scene
   instance.scene.children = instance.scene.children.filter(child => {
-    return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.userData?.isPanelLines;
+    return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.name?.startsWith('floor') && !child.userData?.isPanelLines;
   });
 
   // Clear door objects array
@@ -229,4 +463,7 @@ export function buildModel(instance) {
 
   // Add ceiling after walls and doors are created
   addCeiling(instance);
+  
+  // Add floor after ceiling is created
+  addFloor(instance);
 } 

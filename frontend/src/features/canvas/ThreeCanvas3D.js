@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry';
 import gsap from 'gsap';
 import earcut from 'earcut';
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
@@ -97,6 +98,23 @@ export default class ThreeCanvas {
     this.doorButton.disabled = true; // Disabled by default
     this.buttonContainer.appendChild(this.doorButton);
     
+         // Test button for ceiling and floor functionality
+     this.testCeilingButton = document.createElement('button');
+     this.testCeilingButton.textContent = 'Test Ceilings & Floors';
+    this.testCeilingButton.style.padding = '8px 16px';
+    this.testCeilingButton.style.backgroundColor = '#FF9800';
+    this.testCeilingButton.style.color = 'white';
+    this.testCeilingButton.style.border = 'none';
+    this.testCeilingButton.style.borderRadius = '6px';
+    this.testCeilingButton.style.cursor = 'pointer';
+    this.testCeilingButton.style.fontWeight = '500';
+    this.testCeilingButton.style.fontSize = '14px';
+    this.testCeilingButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+    this.testCeilingButton.style.transition = 'all 0.2s ease';
+    this.testCeilingButton.style.pointerEvents = 'auto';
+    this.testCeilingButton.addEventListener('click', () => this.testCeilingFunctionality());
+    this.buttonContainer.appendChild(this.testCeilingButton);
+    
     // Current door being interacted with
     this.activeDoor = null;
     
@@ -151,33 +169,106 @@ export default class ThreeCanvas {
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerZ = (bounds.minZ + bounds.maxZ) / 2;
 
-    // Handle multiple ceiling levels
+    // Handle multiple ceiling types: room-specific ceilings, level ceilings, and single ceiling
     const ceilingLevels = [];
+    
+    // Check for room-specific ceilings from the new enhanced system
+    // Search for any object with "ceiling_room_" in the name
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.startsWith('ceiling_room_')) {
+        ceilingLevels.push(child);
+      }
+    });
+    
+    // Check for legacy ceiling level naming conventions
     for (let i = 0; i < 10; i++) { // Check for up to 10 ceiling levels
-        const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
-    if (ceiling) {
-            ceilingLevels.push(ceiling);
-        }
+      const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
+      if (ceiling) {
+        ceilingLevels.push(ceiling);
+      }
     }
     
-    // Also check for single ceiling
+    // Check for single ceiling
     const singleCeiling = this.scene.getObjectByName('ceiling');
     if (singleCeiling) {
-        ceilingLevels.push(singleCeiling);
+      ceilingLevels.push(singleCeiling);
+    }
+    
+    // Also search for any objects with "ceiling" in the name or userData
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.toLowerCase().includes('ceiling') && !ceilingLevels.includes(child)) {
+        ceilingLevels.push(child);
+        console.log(`🔍 Found ceiling by name search: ${child.name}`);
+      }
+      if (child.userData && child.userData.isCeiling && !ceilingLevels.includes(child)) {
+        ceilingLevels.push(child);
+        console.log(`🔍 Found ceiling by userData: ${child.name}`);
+      }
+    });
+
+    // Handle floors: room-specific floors and fallback floor
+    const floorLevels = [];
+    
+    // Check for room-specific floors from the new enhanced system
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.startsWith('floor_room_')) {
+        floorLevels.push(child);
+      }
+    });
+    
+    // Check for fallback floor
+    const fallbackFloor = this.scene.getObjectByName('floor');
+    if (fallbackFloor) {
+      floorLevels.push(fallbackFloor);
+    }
+    
+    // Also search for any objects with "floor" in the name or userData
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.toLowerCase().includes('floor') && !floorLevels.includes(child)) {
+        floorLevels.push(child);
+        console.log(`🔍 Found floor by name search: ${child.name}`);
+      }
+      if (child.userData && child.userData.isFloor && !floorLevels.includes(child)) {
+        floorLevels.push(child);
+        console.log(`🔍 Found floor by userData: ${child.name}`);
+      }
+    });
+
+    console.log(`🏠 Interior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors out of view`);
+    
+    // Log what ceilings and floors we found
+    if (ceilingLevels.length === 0) {
+      console.log('🔍 No ceilings found! Check the console for more details.');
+    } else {
+      ceilingLevels.forEach(ceiling => {
+        console.log(`🔍 Found ceiling: ${ceiling.name}, material:`, ceiling.material);
+      });
+    }
+    
+    if (floorLevels.length === 0) {
+      console.log('🔍 No floors found! Check the console for more details.');
+    } else {
+      floorLevels.forEach(floor => {
+        console.log(`🔍 Found floor: ${floor.name}, material:`, floor.material);
+      });
     }
 
     // Animate all ceiling levels
     ceilingLevels.forEach(ceiling => {
-        gsap.to(ceiling.material, {
-            opacity: 0,
-            duration: 1,
-            onStart: () => {
-                ceiling.material.transparent = false;
-            },
-            onComplete: () => {
-                ceiling.visible = false;
-            }
-        });
+      console.log(`🎬 Hiding ceiling ${ceiling.name}`);
+      
+      // Since ceilings are no longer transparent, just hide them directly
+      ceiling.visible = false;
+      console.log(`✅ Ceiling ${ceiling.name} hidden`);
+    });
+    
+    // Animate all floor levels
+    floorLevels.forEach(floor => {
+      console.log(`🎬 Hiding floor ${floor.name}`);
+      
+      // Since floors are no longer transparent, just hide them directly
+      floor.visible = false;
+      console.log(`✅ Floor ${floor.name} hidden`);
     });
 
     // Animate camera position
@@ -208,31 +299,89 @@ animateToExteriorView() {
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerZ = (bounds.minZ + bounds.maxZ) / 2;
 
-    // Handle multiple ceiling levels
+    // Handle multiple ceiling types: room-specific ceilings, level ceilings, and single ceiling
     const ceilingLevels = [];
+    
+    // Check for room-specific ceilings from the new enhanced system
+    // Search for any object with "ceiling_room_" in the name
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.startsWith('ceiling_room_')) {
+        ceilingLevels.push(child);
+      }
+    });
+    
+    // Check for legacy ceiling level naming conventions
     for (let i = 0; i < 10; i++) { // Check for up to 10 ceiling levels
-        const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
-    if (ceiling) {
-            ceilingLevels.push(ceiling);
-        }
+      const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
+      if (ceiling) {
+        ceilingLevels.push(ceiling);
+      }
     }
     
-    // Also check for single ceiling
+    // Check for single ceiling
     const singleCeiling = this.scene.getObjectByName('ceiling');
     if (singleCeiling) {
-        ceilingLevels.push(singleCeiling);
+      ceilingLevels.push(singleCeiling);
     }
+    
+    // Also search for any objects with "ceiling" in the name or userData
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.toLowerCase().includes('ceiling') && !ceilingLevels.includes(child)) {
+        ceilingLevels.push(child);
+        console.log(`🔍 Found ceiling by name search: ${child.name}`);
+      }
+      if (child.userData && child.userData.isCeiling && !ceilingLevels.includes(child)) {
+        ceilingLevels.push(child);
+        console.log(`🔍 Found ceiling by userData: ${child.name}`);
+      }
+    });
+
+    // Handle floors: room-specific floors and fallback floor
+    const floorLevels = [];
+    
+    // Check for room-specific floors from the new enhanced system
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.startsWith('floor_room_')) {
+        floorLevels.push(child);
+      }
+    });
+    
+    // Check for fallback floor
+    const fallbackFloor = this.scene.getObjectByName('floor');
+    if (fallbackFloor) {
+      floorLevels.push(fallbackFloor);
+    }
+    
+    // Also search for any objects with "floor" in the name or userData
+    this.scene.children.forEach(child => {
+      if (child.name && child.name.toLowerCase().includes('floor') && !floorLevels.includes(child)) {
+        floorLevels.push(child);
+        console.log(`🔍 Found floor by name search: ${child.name}`);
+      }
+      if (child.userData && child.userData.isFloor && !floorLevels.includes(child)) {
+        floorLevels.push(child);
+        console.log(`🔍 Found floor by userData: ${child.name}`);
+      }
+    });
+
+    console.log(`🏠 Exterior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors into view`);
 
     // Animate all ceiling levels
     ceilingLevels.forEach(ceiling => {
-        ceiling.visible = true;
-        gsap.to(ceiling.material, {
-            opacity: 100,
-            duration: 1,
-            onComplete: () => {
-                ceiling.material.transparent = false;
-            }
-        });
+      console.log(`🎬 Showing ceiling ${ceiling.name}`);
+      
+      // Since ceilings are no longer transparent, just show them directly
+      ceiling.visible = true;
+      console.log(`✅ Ceiling ${ceiling.name} shown`);
+    });
+    
+    // Animate all floor levels
+    floorLevels.forEach(floor => {
+      console.log(`🎬 Showing floor ${floor.name}`);
+      
+      // Since floors are no longer transparent, just show them directly
+      floor.visible = true;
+      console.log(`✅ Floor ${floor.name} shown`);
     });
 
     // Animate camera position
@@ -341,9 +490,9 @@ getModelBounds() {
   // Method to rebuild the model
   buildModel() {
     try {
-      // Remove existing walls, doors, ceilings, and panel lines from the scene
+      // Remove existing walls, doors, ceilings, floors, and panel lines from the scene
       this.scene.children = this.scene.children.filter(child => {
-        return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.userData?.isPanelLine;
+        return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.name?.startsWith('floor') && !child.userData?.isPanelLine;
       });
 
       // Clear door objects array and panel lines
@@ -378,7 +527,10 @@ getModelBounds() {
       });
 
       // Add ceiling after walls and doors are created
-      this.addCeiling();
+      this.addRoomSpecificCeilings();
+      
+      // Add floor after ceilings are created
+      this.addRoomSpecificFloors();
       
       // Create panel division lines only if they're enabled
       if (this.showPanelLines) {
@@ -419,28 +571,97 @@ getModelBounds() {
         return;
       }
       
-      // Create ceiling geometry using triangulation
-      const geometry = new this.THREE.BufferGeometry();
-      const positions = new Float32Array(triangles.length * 3);
+      // Create ceiling geometry with thickness extending downward
+      // Use a reasonable default thickness for fallback ceiling
+      const ceilingThickness = 150 * this.scalingFactor; // 150mm default thickness
+      
+      // Create the top surface (flat ceiling)
+      const topGeometry = new this.THREE.BufferGeometry();
+      const topPositions = new Float32Array(triangles.length * 3);
+      
       for (let i = 0; i < triangles.length; i++) {
         const vertexIndex = triangles[i];
         const x = flatVertices[vertexIndex * 2];
         const z = flatVertices[vertexIndex * 2 + 1];
-        positions[i * 3] = x;
-        positions[i * 3 + 1] = 0;
-        positions[i * 3 + 2] = z;
+        topPositions[i * 3] = x;
+        topPositions[i * 3 + 1] = 0; // Top surface at Y=0
+        topPositions[i * 3 + 2] = z;
       }
-      geometry.setAttribute('position', new this.THREE.BufferAttribute(positions, 3));
+      topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
+      topGeometry.computeVertexNormals();
+      
+      // Create the bottom surface (thickness bottom)
+      const bottomGeometry = new this.THREE.BufferGeometry();
+      const bottomPositions = new Float32Array(triangles.length * 3);
+      
+      for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        bottomPositions[i * 3] = x;
+        bottomPositions[i * 3 + 1] = -ceilingThickness; // Bottom surface at Y=-thickness
+        bottomPositions[i * 3 + 2] = z;
+      }
+      bottomGeometry.setAttribute('position', new this.THREE.BufferAttribute(bottomPositions, 3));
+      bottomGeometry.computeVertexNormals();
+      
+      // Create side walls to connect top and bottom surfaces
+      const sideGeometry = new this.THREE.BufferGeometry();
+      const sidePositions = [];
+      
+      // For each edge of the room, create two triangles to form a side wall
+      for (let i = 0; i < vertices.length; i++) {
+        const current = vertices[i];
+        const next = vertices[(i + 1) % vertices.length];
+        
+        // Side wall quad (two triangles)
+        // Triangle 1
+        sidePositions.push(
+          current.x, 0, current.z,                    // Top front
+          next.x, 0, next.z,                          // Top back
+          current.x, -ceilingThickness, current.z      // Bottom front
+        );
+        
+        // Triangle 2
+        sidePositions.push(
+          next.x, 0, next.z,                          // Top back
+          next.x, -ceilingThickness, next.z,           // Bottom back
+          current.x, -ceilingThickness, current.z      // Bottom front
+        );
+      }
+      
+      sideGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
+      sideGeometry.computeVertexNormals();
+      
+      // Merge all geometries into one
+      const geometry = new this.THREE.BufferGeometry();
+      const mergedPositions = [];
+      
+      // Add top surface
+      for (let i = 0; i < topPositions.length; i += 3) {
+        mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
+      }
+      
+      // Add bottom surface
+      for (let i = 0; i < bottomPositions.length; i += 3) {
+        mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+      }
+      
+      // Add side walls
+      for (let i = 0; i < sidePositions.length; i += 3) {
+        mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+      }
+      
+      geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
       geometry.computeVertexNormals();
       
-      // Create material
+      // Create material to match wall appearance
       const material = new this.THREE.MeshStandardMaterial({
-        color: 0xcccccc,
+        color: 0xFFFFFFF, // Same white color as walls
         side: this.THREE.DoubleSide,
-        roughness: 0.7,
-        metalness: 0.2,
-        transparent: true,
-        opacity: 0.9
+        roughness: 0.5,   // Same roughness as walls
+        metalness: 0.7,   // Same metalness as walls
+        transparent: false // Not transparent like walls
       });
       
       // Create mesh
@@ -450,8 +671,25 @@ getModelBounds() {
       // Position the ceiling at the top of the walls
       const maxWallHeight = Math.max(...this.walls.map(wall => wall.height));
       ceiling.position.y = maxWallHeight * this.scalingFactor;
+      
+      // Add edge lines to match wall appearance
+      const edges = new this.THREE.EdgesGeometry(geometry);
+      const edgeLines = new this.THREE.LineSegments(
+        edges, 
+        new this.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+      );
+      ceiling.add(edgeLines);
+      
+      // Set shadow properties to match walls
       ceiling.castShadow = true;
       ceiling.receiveShadow = true;
+      
+      // Store thickness in userData
+      ceiling.userData = {
+        isCeiling: true,
+        thickness: ceilingThickness
+      };
+      
       this.scene.add(ceiling);
     } catch (error) {
       console.error('Error creating ceiling:', error);
@@ -548,6 +786,384 @@ getModelBounds() {
       return [];
     }
     return boundary;
+  }
+
+  // Enhanced method to add room-specific ceilings
+  addRoomSpecificCeilings() {
+    try {
+      // Remove existing ceilings
+      const existingCeilings = this.scene.children.filter(child => 
+        child.name && child.name.startsWith('ceiling')
+      );
+      existingCeilings.forEach(ceiling => this.scene.remove(ceiling));
+
+      // If we have room data, create room-specific ceilings
+      if (this.project && this.project.rooms && this.project.rooms.length > 0) {
+        this.createRoomSpecificCeilings();
+      } else {
+        // Fallback to building-wide ceiling for backward compatibility
+        this.addCeiling();
+      }
+    } catch (error) {
+      console.error('Error creating room-specific ceilings:', error);
+      // Fallback to original method
+      this.addCeiling();
+    }
+  }
+
+  // Create room-specific ceilings at correct heights
+  createRoomSpecificCeilings() {
+    console.log('🏠 Creating room-specific ceilings for', this.project.rooms.length, 'rooms');
+    
+    // Get ceiling thickness from project settings or use default
+    // Note: ceiling_thickness is stored in individual room ceiling plans, not at project level
+    const defaultCeilingThickness = 150; // Default fallback
+    
+    // First, analyze wall heights and room relationships
+    const wallHeightMap = new Map();
+    const roomWallMap = new Map();
+    
+    // Build wall height mapping
+    this.walls.forEach(wall => {
+      wallHeightMap.set(wall.id, wall.height);
+    });
+    
+    // Build room-wall relationship mapping
+    this.project.rooms.forEach(room => {
+      if (room.walls && room.walls.length > 0) {
+        roomWallMap.set(room.id, room.walls);
+      }
+    });
+    
+    this.project.rooms.forEach((room, roomIndex) => {
+      try {
+        if (!room.room_points || room.room_points.length < 3) {
+          console.log(`⚠️ Room ${room.id} has insufficient points, skipping ceiling`);
+          return;
+        }
+
+        // Determine the correct ceiling height for this room
+        let roomCeilingHeight = this.determineRoomCeilingHeight(room, wallHeightMap, roomWallMap);
+        
+        if (!roomCeilingHeight) {
+          console.log(`⚠️ Could not determine ceiling height for room ${room.id}, skipping`);
+          return;
+        }
+
+        console.log(`🏠 Room ${room.id} (${room.room_name || 'Unnamed'}) - Ceiling Height: ${roomCeilingHeight}mm`);
+        
+        // Log ceiling thickness information
+        if (room.ceiling_plan?.ceiling_thickness) {
+          console.log(`🏠 Room ${room.id} using ceiling thickness from plan: ${room.ceiling_plan.ceiling_thickness}mm`);
+        } else {
+          console.log(`🏠 Room ${room.id} using default ceiling thickness: ${defaultCeilingThickness}mm`);
+        }
+
+        // Convert room points to 3D coordinates
+        const roomVertices = room.room_points.map(point => ({
+          x: point.x * this.scalingFactor + this.modelOffset.x,
+          z: point.y * this.scalingFactor + this.modelOffset.z
+        }));
+
+        // Get ceiling thickness from room's ceiling plan or use default
+        const roomCeilingThickness = (room.ceiling_plan?.ceiling_thickness || defaultCeilingThickness) * this.scalingFactor;
+        
+        // Create ceiling geometry for this room
+        const ceilingMesh = this.createRoomCeilingMesh(roomVertices, roomCeilingHeight, room, roomCeilingThickness);
+        
+        if (ceilingMesh) {
+          // Position ceiling at the correct height
+          ceilingMesh.position.y = roomCeilingHeight * this.scalingFactor;
+          ceilingMesh.name = `ceiling_room_${room.id}`;
+          ceilingMesh.userData = {
+            isCeiling: true,
+            roomId: room.id,
+            roomName: room.room_name || `Room ${room.id}`,
+            height: roomCeilingHeight,
+            thickness: roomCeilingThickness
+          };
+          
+          this.scene.add(ceilingMesh);
+          console.log(`✅ Created ceiling for room ${room.id} at height ${roomCeilingHeight}mm`);
+        }
+      } catch (error) {
+        console.error(`❌ Error creating ceiling for room ${room.id}:`, error);
+      }
+    });
+  }
+
+  // Determine the correct ceiling height for a room based on its walls
+  determineRoomCeilingHeight(room, wallHeightMap, roomWallMap) {
+    try {
+      // If room has a specific height defined, use it
+      if (room.height && room.height > 0) {
+        return room.height;
+      }
+      
+      // Get walls that belong to this room
+      const roomWalls = roomWallMap.get(room.id);
+      if (!roomWalls || roomWalls.length === 0) {
+        // If no walls defined for room, try to find walls by proximity
+        return this.findRoomHeightByProximity(room);
+      }
+      
+      // Get heights of walls that belong to this room
+      const roomWallHeights = roomWalls
+        .map(wallId => wallHeightMap.get(wallId))
+        .filter(height => height && height > 0);
+      
+      if (roomWallHeights.length === 0) {
+        // Fallback to proximity-based height detection
+        return this.findRoomHeightByProximity(room);
+      }
+      
+      // For rooms with shared walls, use the LOWEST height to ensure proper coverage
+      // This prevents the ceiling from extending beyond the lower room's walls
+      const minWallHeight = Math.min(...roomWallHeights);
+      
+      console.log(`🏠 Room ${room.id} walls: ${roomWalls.join(', ')}`);
+      console.log(`🏠 Room ${room.id} wall heights: ${roomWallHeights.join(', ')}mm`);
+      console.log(`🏠 Room ${room.id} using minimum height: ${minWallHeight}mm`);
+      
+      return minWallHeight;
+      
+    } catch (error) {
+      console.error(`❌ Error determining ceiling height for room ${room.id}:`, error);
+      return null;
+    }
+  }
+
+  // Find room height by analyzing nearby walls when room-wall mapping is not available
+  findRoomHeightByProximity(room) {
+    try {
+      // Calculate room center
+      const roomCenter = {
+        x: room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length,
+        y: room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length
+      };
+      
+      // Find walls that are close to this room's center
+      const nearbyWalls = this.walls.filter(wall => {
+        const wallCenter = {
+          x: (wall.start_x + wall.end_x) / 2,
+          y: (wall.start_y + wall.end_y) / 2
+        };
+        
+        const distance = Math.sqrt(
+          Math.pow(wallCenter.x - roomCenter.x, 2) + 
+          Math.pow(wallCenter.y - roomCenter.y, 2)
+        );
+        
+        // Consider walls within 1000mm (1 meter) of room center
+        return distance < 1000;
+      });
+      
+      if (nearbyWalls.length > 0) {
+        const heights = nearbyWalls.map(wall => wall.height).filter(h => h > 0);
+        if (heights.length > 0) {
+          const minHeight = Math.min(...heights);
+          console.log(`🏠 Room ${room.id} using proximity-based height: ${minHeight}mm`);
+          return minHeight;
+        }
+      }
+      
+      // Final fallback to default height
+      console.log(`🏠 Room ${room.id} using default height: 3000mm`);
+      return 3000; // 3 meters default
+      
+    } catch (error) {
+      console.error(`❌ Error finding room height by proximity for room ${room.id}:`, error);
+      return 3000; // 3 meters default
+    }
+  }
+
+  // Create individual room ceiling mesh with thickness
+  createRoomCeilingMesh(roomVertices, roomHeight, room, ceilingThickness) {
+    try {
+      // Convert vertices to format required by earcut
+      const flatVertices = [];
+      roomVertices.forEach(vertex => {
+        flatVertices.push(vertex.x);
+        flatVertices.push(vertex.z);
+      });
+      
+      // Triangulate the room polygon
+      const triangles = earcut(flatVertices);
+      if (triangles.length === 0) {
+        console.log(`⚠️ Failed to triangulate room ${room.id}, skipping`);
+        return null;
+      }
+      
+      // Use the passed ceiling thickness parameter
+      
+      // Create the top surface (flat ceiling)
+      const topGeometry = new this.THREE.BufferGeometry();
+      const topPositions = new Float32Array(triangles.length * 3);
+      
+      for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        topPositions[i * 3] = x;
+        topPositions[i * 3 + 1] = 0; // Top surface at Y=0
+        topPositions[i * 3 + 2] = z;
+      }
+      topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
+      topGeometry.computeVertexNormals();
+      
+      // Create the bottom surface (thickness bottom)
+      const bottomGeometry = new this.THREE.BufferGeometry();
+      const bottomPositions = new Float32Array(triangles.length * 3);
+      
+      for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        bottomPositions[i * 3] = x;
+        bottomPositions[i * 3 + 1] = -ceilingThickness; // Bottom surface at Y=-thickness
+        bottomPositions[i * 3 + 2] = z;
+      }
+      bottomGeometry.setAttribute('position', new this.THREE.BufferAttribute(bottomPositions, 3));
+      bottomGeometry.computeVertexNormals();
+      
+      // Create side walls to connect top and bottom surfaces
+      const sideGeometry = new this.THREE.BufferGeometry();
+      const sidePositions = [];
+      
+      // For each edge of the room, create two triangles to form a side wall
+      for (let i = 0; i < roomVertices.length; i++) {
+        const current = roomVertices[i];
+        const next = roomVertices[(i + 1) % roomVertices.length];
+        
+        // Side wall quad (two triangles)
+        // Triangle 1
+        sidePositions.push(
+          current.x, 0, current.z,                    // Top front
+          next.x, 0, next.z,                          // Top back
+          current.x, -ceilingThickness, current.z      // Bottom front
+        );
+        
+        // Triangle 2
+        sidePositions.push(
+          next.x, 0, next.z,                          // Top back
+          next.x, -ceilingThickness, next.z,           // Bottom back
+          current.x, -ceilingThickness, current.z      // Bottom front
+        );
+      }
+      
+      sideGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
+      sideGeometry.computeVertexNormals();
+      
+      // Merge all geometries into one
+      const geometry = new this.THREE.BufferGeometry();
+      const mergedPositions = [];
+      
+      // Add top surface
+      for (let i = 0; i < topPositions.length; i += 3) {
+        mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
+      }
+      
+      // Add bottom surface
+      for (let i = 0; i < bottomPositions.length; i += 3) {
+        mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+      }
+      
+      // Add side walls
+      for (let i = 0; i < sidePositions.length; i += 3) {
+        mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+      }
+      
+      geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
+      geometry.computeVertexNormals();
+      
+      // Create material to match wall appearance
+      const material = new this.THREE.MeshStandardMaterial({
+        color: 0xFFFFFFF, // Same white color as walls
+        side: this.THREE.DoubleSide,
+        roughness: 0.5,   // Same roughness as walls
+        metalness: 0.7,   // Same metalness as walls
+        transparent: false // Not transparent like walls
+      });
+      
+      // Create mesh
+      const ceiling = new this.THREE.Mesh(geometry, material);
+      
+      // Add edge lines to match wall appearance
+      const edges = new this.THREE.EdgesGeometry(geometry);
+      const edgeLines = new this.THREE.LineSegments(
+        edges, 
+        new this.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+      );
+      ceiling.add(edgeLines);
+      
+      // Set shadow properties to match walls
+      ceiling.castShadow = true;
+      ceiling.receiveShadow = true;
+      
+      // Add room label on the ceiling
+      this.addRoomLabelToCeiling(ceiling, room, roomVertices);
+      
+      return ceiling;
+    } catch (error) {
+      console.error(`❌ Error creating room ceiling mesh for room ${room.id}:`, error);
+      return null;
+    }
+  }
+
+  // Get unique color for each room ceiling (now using wall-like appearance)
+  getRoomCeilingColor(roomId) {
+    // All ceilings now use the same white color to match walls
+    return 0xFFFFFFF;
+  }
+
+  // Add room label on the ceiling
+  addRoomLabelToCeiling(ceiling, room, roomVertices) {
+    try {
+      // Calculate room center
+      const centerX = roomVertices.reduce((sum, v) => sum + v.x, 0) / roomVertices.length;
+      const centerZ = roomVertices.reduce((sum, v) => sum + v.z, 0) / roomVertices.length;
+      
+      // Create text geometry for room label
+      const textGeometry = new TextGeometry(room.room_name || `Room ${room.id}`, {
+        font: undefined, // Will use default font
+        size: 50 * this.scalingFactor,
+        height: 5 * this.scalingFactor,
+        curveSegments: 12,
+        bevelEnabled: false
+      });
+      
+      // Center the text geometry
+      textGeometry.computeBoundingBox();
+      const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+      const textHeight = textGeometry.boundingBox.max.y - textGeometry.boundingBox.min.y;
+      
+      // Create text mesh
+      const textMaterial = new this.THREE.MeshBasicMaterial({ 
+        color: 0x000000, // Black text for better visibility on white ceiling
+        transparent: true,
+        opacity: 0.8
+      });
+      
+      const textMesh = new this.THREE.Mesh(textGeometry, textMaterial);
+      
+      // Position text on ceiling
+      textMesh.position.set(
+        centerX - textWidth / 2,
+        5 * this.scalingFactor, // Slightly above ceiling surface
+        centerZ - textHeight / 2
+      );
+      
+      // Rotate text to face up
+      textMesh.rotation.x = -Math.PI / 2;
+      
+      // Add text to ceiling
+      ceiling.add(textMesh);
+      
+      console.log(`🏷️ Added label "${room.room_name || `Room ${room.id}`}" to ceiling`);
+    } catch (error) {
+      console.warn(`⚠️ Could not add room label to ceiling:`, error);
+      // Text geometry might not be available, skip label
+    }
   }
 
   // Method to get wall joint types (copied from Canvas2D logic)
@@ -1449,6 +2065,526 @@ getModelBounds() {
       this.panelLines.forEach(line => {
         line.visible = visible;
       });
+    }
+  }
+
+  // Test method for ceiling and floor functionality
+  testCeilingFunctionality() {
+    console.log('🧪 Testing ceiling and floor functionality...');
+    
+    // Log all scene objects
+    console.log('🔍 All scene objects:', this.scene.children.map(child => ({
+      name: child.name,
+      type: child.type,
+      userData: child.userData,
+      visible: child.visible
+    })));
+    
+    // Find all ceilings
+    const allCeilings = this.scene.children.filter(child => 
+      child.name && child.name.toLowerCase().includes('ceiling')
+    );
+    
+    // Find all floors
+    const allFloors = this.scene.children.filter(child => 
+      child.name && child.name.toLowerCase().includes('floor')
+    );
+    
+    console.log('🔍 Found ceilings by name search:', allCeilings.map(c => c.name));
+    console.log('🔍 Found floors by name search:', allFloors.map(f => f.name));
+    
+    // Test direct opacity change for ceilings
+    allCeilings.forEach(ceiling => {
+      if (ceiling.material) {
+        console.log(`🧪 Testing direct opacity change for ceiling ${ceiling.name}`);
+        console.log(`  - Current opacity: ${ceiling.material.opacity}`);
+        console.log(`  - Material:`, ceiling.material);
+        
+        // Try to change opacity directly
+        ceiling.material.opacity = 0.3;
+        ceiling.material.transparent = true;
+        
+        // Force render update
+        if (this.renderer) {
+          this.renderer.render(this.scene, this.camera);
+        }
+        
+        console.log(`  - New opacity: ${ceiling.material.opacity}`);
+      }
+    });
+    
+    // Test direct opacity change for floors
+    allFloors.forEach(floor => {
+      if (floor.material) {
+        console.log(`🧪 Testing direct opacity change for floor ${floor.name}`);
+        console.log(`  - Current opacity: ${floor.material.opacity}`);
+        console.log(`  - Material:`, floor.material);
+        
+        // Try to change opacity directly
+        floor.material.opacity = 0.3;
+        floor.material.transparent = true;
+        
+        // Force render update
+        if (this.renderer) {
+          this.renderer.render(this.scene, this.camera);
+        }
+        
+        console.log(`  - New opacity: ${floor.material.opacity}`);
+      }
+    });
+    
+    // Test GSAP for ceilings
+    if (allCeilings.length > 0 && allCeilings[0].material) {
+      console.log('🧪 Testing GSAP animation for ceilings...');
+      try {
+        gsap.to(allCeilings[0].material, {
+          opacity: 0,
+          duration: 2,
+          ease: "power2.inOut",
+          onUpdate: () => {
+            console.log(`🔄 GSAP update - ceiling opacity: ${allCeilings[0].material.opacity}`);
+            if (this.renderer) {
+              this.renderer.render(this.scene, this.camera);
+            }
+          },
+          onComplete: () => {
+            console.log('✅ GSAP animation for ceilings completed');
+          }
+        });
+      } catch (error) {
+        console.error('❌ GSAP test for ceilings failed:', error);
+      }
+    }
+    
+    // Test GSAP for floors
+    if (allFloors.length > 0 && allFloors[0].material) {
+      console.log('🧪 Testing GSAP animation for floors...');
+      try {
+        gsap.to(allFloors[0].material, {
+          opacity: 0,
+          duration: 2,
+          ease: "power2.inOut",
+          onUpdate: () => {
+            console.log(`🔄 GSAP update - floor opacity: ${allFloors[0].material.opacity}`);
+            if (this.renderer) {
+              this.renderer.render(this.scene, this.camera);
+            }
+          },
+          onComplete: () => {
+            console.log('✅ GSAP animation for floors completed');
+          }
+        });
+      } catch (error) {
+        console.error('❌ GSAP test for floors failed:', error);
+      }
+    }
+  }
+
+  // Enhanced method to add room-specific floors with thickness
+  addRoomSpecificFloors() {
+    try {
+      // Remove existing floors
+      const existingFloors = this.scene.children.filter(child => 
+        child.name && child.name.startsWith('floor')
+      );
+      existingFloors.forEach(floor => this.scene.remove(floor));
+
+      // If we have room data, create room-specific floors
+      if (this.project && this.project.rooms && this.project.rooms.length > 0) {
+        this.createRoomSpecificFloors();
+      } else {
+        // Fallback to building-wide floor for backward compatibility
+        this.addFloor();
+      }
+    } catch (error) {
+      console.error('Error creating room-specific floors:', error);
+      // Fallback to original method
+      this.addFloor();
+    }
+  }
+
+  // Create room-specific floors at correct heights with thickness
+  createRoomSpecificFloors() {
+    console.log('🏠 Creating room-specific floors for', this.project.rooms.length, 'rooms');
+    
+    // Default floor thickness if not specified
+    const defaultFloorThickness = 150; // 150mm default
+    
+    this.project.rooms.forEach((room, roomIndex) => {
+      try {
+        if (!room.room_points || room.room_points.length < 3) {
+          console.log(`⚠️ Room ${room.id} has insufficient points, skipping floor`);
+          return;
+        }
+
+        // Get floor thickness from room data or use default
+        const roomFloorThickness = (room.floor_thickness || defaultFloorThickness) * this.scalingFactor;
+        
+        console.log(`🏠 Room ${room.id} (${room.room_name || 'Unnamed'}) - Floor Thickness: ${room.floor_thickness || defaultFloorThickness}mm`);
+        
+        // Convert room points to 3D coordinates
+        const roomVertices = room.room_points.map(point => ({
+          x: point.x * this.scalingFactor + this.modelOffset.x,
+          z: point.y * this.scalingFactor + this.modelOffset.z
+        }));
+
+        // Create floor geometry for this room
+        const floorMesh = this.createRoomFloorMesh(roomVertices, room, roomFloorThickness);
+        
+        if (floorMesh) {
+          // Position floor at ground level (Y=0) - floor extends upward from here
+          floorMesh.position.y = 0;
+          floorMesh.name = `floor_room_${room.id}`;
+          floorMesh.userData = {
+            isFloor: true,
+            roomId: room.id,
+            roomName: room.room_name || `Room ${room.id}`,
+            thickness: roomFloorThickness
+          };
+          
+          this.scene.add(floorMesh);
+          console.log(`✅ Created floor for room ${room.id} with thickness ${room.floor_thickness || defaultFloorThickness}mm (extends upward from Y=0 to Y=+${room.floor_thickness || defaultFloorThickness}mm)`);
+        }
+      } catch (error) {
+        console.error(`❌ Error creating floor for room ${room.id}:`, error);
+      }
+    });
+  }
+
+  // Create individual room floor mesh with thickness
+  createRoomFloorMesh(roomVertices, room, floorThickness) {
+    try {
+      // Convert vertices to format required by earcut
+      const flatVertices = [];
+      roomVertices.forEach(vertex => {
+        flatVertices.push(vertex.x);
+        flatVertices.push(vertex.z);
+      });
+      
+      // Triangulate the room polygon
+      const triangles = earcut(flatVertices);
+      if (triangles.length === 0) {
+        console.log(`⚠️ Failed to triangulate room ${room.id}, skipping`);
+        return null;
+      }
+      
+      // Create the top surface (floor surface - at the top of the floor thickness)
+      const topGeometry = new this.THREE.BufferGeometry();
+      const topPositions = new Float32Array(triangles.length * 3);
+      
+      for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        topPositions[i * 3] = x;
+        topPositions[i * 3 + 1] = floorThickness; // Top surface at Y=+thickness
+        topPositions[i * 3 + 2] = z;
+      }
+      topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
+      topGeometry.computeVertexNormals();
+      
+      // Create the bottom surface (ground level)
+      const bottomGeometry = new this.THREE.BufferGeometry();
+      const bottomPositions = new Float32Array(triangles.length * 3);
+      
+      for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        bottomPositions[i * 3] = x;
+        bottomPositions[i * 3 + 1] = 0; // Bottom surface at Y=0 (ground level)
+        bottomPositions[i * 3 + 2] = z;
+      }
+      bottomGeometry.setAttribute('position', new this.THREE.BufferAttribute(bottomPositions, 3));
+      bottomGeometry.computeVertexNormals();
+      
+      // Create side walls to connect top and bottom surfaces
+      const sideGeometry = new this.THREE.BufferGeometry();
+      const sidePositions = [];
+      
+      // For each edge of the room, create two triangles to form a side wall
+      for (let i = 0; i < roomVertices.length; i++) {
+        const current = roomVertices[i];
+        const next = roomVertices[(i + 1) % roomVertices.length];
+        
+        // Side wall quad (two triangles)
+        // Triangle 1
+        sidePositions.push(
+          current.x, 0, current.z,                    // Bottom front (ground level)
+          next.x, 0, next.z,                          // Bottom back (ground level)
+          current.x, floorThickness, current.z         // Top front (floor top)
+        );
+        
+        // Triangle 2
+        sidePositions.push(
+          next.x, 0, next.z,                          // Bottom back (ground level)
+          next.x, floorThickness, next.z,              // Top back (floor top)
+          current.x, floorThickness, current.z         // Top front (floor top)
+        );
+      }
+      
+      sideGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
+      sideGeometry.computeVertexNormals();
+      
+      // Merge all geometries into one
+      const geometry = new this.THREE.BufferGeometry();
+      const mergedPositions = [];
+      
+      // Add top surface
+      for (let i = 0; i < topPositions.length; i += 3) {
+        mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
+      }
+      
+      // Add bottom surface
+      for (let i = 0; i < bottomPositions.length; i += 3) {
+        mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+      }
+      
+      // Add side walls
+      for (let i = 0; i < sidePositions.length; i += 3) {
+        mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+      }
+      
+      geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
+      geometry.computeVertexNormals();
+      
+      // Create material to match wall appearance but with floor-specific color
+      const material = new this.THREE.MeshStandardMaterial({
+        color: 0xE5E7EB, // Light gray color for floors (different from walls)
+        side: this.THREE.DoubleSide,
+        roughness: 0.8,   // More rough than walls for floor texture
+        metalness: 0.2,   // Less metallic than walls
+        transparent: false
+      });
+      
+      // Create mesh
+      const floor = new this.THREE.Mesh(geometry, material);
+      
+      // Add edge lines to match wall appearance
+      const edges = new this.THREE.EdgesGeometry(geometry);
+      const edgeLines = new this.THREE.LineSegments(
+        edges, 
+        new this.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+      );
+      floor.add(edgeLines);
+      
+      // Set shadow properties to match walls
+      floor.castShadow = true;
+      floor.receiveShadow = true;
+      
+      // Add room label on the floor
+      this.addRoomLabelToFloor(floor, room, roomVertices, floorThickness);
+      
+      return floor;
+    } catch (error) {
+      console.error(`❌ Error creating room floor mesh for room ${room.id}:`, error);
+      return null;
+    }
+  }
+
+  // Add room label on the floor
+  addRoomLabelToFloor(floor, room, roomVertices, floorThickness) {
+    try {
+      // Calculate room center
+      const centerX = roomVertices.reduce((sum, v) => sum + v.x, 0) / roomVertices.length;
+      const centerZ = roomVertices.reduce((sum, v) => sum + v.z, 0) / roomVertices.length;
+      
+      // Create text geometry for room label
+      const textGeometry = new TextGeometry(room.room_name || `Room ${room.id}`, {
+        font: undefined, // Will use default font
+        size: 50 * this.scalingFactor,
+        height: 5 * this.scalingFactor,
+        curveSegments: 12,
+        bevelEnabled: false
+      });
+      
+      // Center the text geometry
+      textGeometry.computeBoundingBox();
+      const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+      const textHeight = textGeometry.boundingBox.max.y - textGeometry.boundingBox.min.y;
+      
+      // Create text mesh
+      const textMaterial = new this.THREE.MeshBasicMaterial({ 
+        color: 0x000000, // Black text for better visibility on light gray floor
+        transparent: true,
+        opacity: 0.8
+      });
+      
+      const textMesh = new this.THREE.Mesh(textGeometry, textMaterial);
+      
+      // Position text on top of floor (at the top surface)
+      textMesh.position.set(
+        centerX - textWidth / 2,
+        floorThickness + 5 * this.scalingFactor, // Slightly above floor top surface
+        centerZ - textHeight / 2
+      );
+      
+      // Rotate text to face up
+      textMesh.rotation.x = -Math.PI / 2;
+      
+      // Add text to floor
+      floor.add(textMesh);
+      
+      console.log(`🏷️ Added label "${room.room_name || `Room ${room.id}`}" to floor`);
+    } catch (error) {
+      console.warn(`⚠️ Could not add room label to floor:`, error);
+      // Text geometry might not be available, skip label
+    }
+  }
+
+  // Method to add floor (fallback method)
+  addFloor() {
+    try {
+      // Remove existing floor
+      const existingFloor = this.scene.getObjectByName('floor');
+      if (existingFloor) {
+        this.scene.remove(existingFloor);
+      }
+
+      // Get the building footprint vertices
+      const vertices = this.getBuildingFootprint();
+      if (vertices.length < 3) {
+        console.log('Not enough vertices for floor, skipping...');
+        return;
+      }
+      
+      // Convert vertices to format required by earcut
+      const flatVertices = [];
+      vertices.forEach(vertex => {
+        flatVertices.push(vertex.x);
+        flatVertices.push(vertex.z);
+      });
+      
+      // Triangulate the polygon
+      const triangles = earcut(flatVertices);
+      if (triangles.length === 0) {
+        console.log('Failed to triangulate floor, skipping...');
+        return;
+      }
+      
+      // Create floor geometry with thickness extending upward
+      // Use a reasonable default thickness for fallback floor
+      const floorThickness = 150 * this.scalingFactor; // 150mm default thickness
+      
+      // Create the top surface (floor top surface - at the top of the floor thickness)
+      const topGeometry = new this.THREE.BufferGeometry();
+      const topPositions = new Float32Array(triangles.length * 3);
+      
+      for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        topPositions[i * 3] = x;
+        topPositions[i * 3 + 1] = floorThickness; // Top surface at Y=+thickness
+        topPositions[i * 3 + 2] = z;
+      }
+      topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
+      topGeometry.computeVertexNormals();
+      
+      // Create the bottom surface (ground level)
+      const bottomGeometry = new this.THREE.BufferGeometry();
+      const bottomPositions = new Float32Array(triangles.length * 3);
+      
+      for (let i = 0; i < triangles.length; i++) {
+        const vertexIndex = triangles[i];
+        const x = flatVertices[vertexIndex * 2];
+        const z = flatVertices[vertexIndex * 2 + 1];
+        bottomPositions[i * 3] = x;
+        bottomPositions[i * 3 + 1] = 0; // Bottom surface at Y=0 (ground level)
+        bottomPositions[i * 3 + 2] = z;
+      }
+      bottomGeometry.setAttribute('position', new this.THREE.BufferAttribute(bottomPositions, 3));
+      bottomGeometry.computeVertexNormals();
+      
+      // Create side walls to connect top and bottom surfaces
+      const sideGeometry = new this.THREE.BufferGeometry();
+      const sidePositions = [];
+      
+      // For each edge of the room, create two triangles to form a side wall
+      for (let i = 0; i < vertices.length; i++) {
+        const current = vertices[i];
+        const next = vertices[(i + 1) % vertices.length];
+        
+        // Side wall quad (two triangles)
+        // Triangle 1
+        sidePositions.push(
+          current.x, 0, current.z,                    // Bottom front (ground level)
+          next.x, 0, next.z,                          // Bottom back (ground level)
+          current.x, floorThickness, current.z         // Top front (floor top)
+        );
+        
+        // Triangle 2
+        sidePositions.push(
+          next.x, 0, next.z,                          // Bottom back (ground level)
+          next.x, floorThickness, next.z,              // Top back (floor top)
+          current.x, floorThickness, current.z         // Top front (floor top)
+        );
+      }
+      
+      sideGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
+      sideGeometry.computeVertexNormals();
+      
+      // Merge all geometries into one
+      const geometry = new this.THREE.BufferGeometry();
+      const mergedPositions = [];
+      
+      // Add top surface
+      for (let i = 0; i < topPositions.length; i += 3) {
+        mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
+      }
+      
+      // Add bottom surface
+      for (let i = 0; i < bottomPositions.length; i += 3) {
+        mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+      }
+      
+      // Add side walls
+      for (let i = 0; i < sidePositions.length; i += 3) {
+        mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+      }
+      
+      geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
+      geometry.computeVertexNormals();
+      
+      // Create material for floor
+      const material = new this.THREE.MeshStandardMaterial({
+        color: 0xE5E7EB, // Light gray color for floor
+        side: this.THREE.DoubleSide,
+        roughness: 0.8,   // More rough than walls for floor texture
+        metalness: 0.2,   // Less metallic than walls
+        transparent: false
+      });
+      
+      // Create mesh
+      const floor = new this.THREE.Mesh(geometry, material);
+      floor.name = 'floor';
+      
+      // Position the floor at ground level
+      floor.position.y = 0;
+      
+      // Add edge lines to match wall appearance
+      const edges = new this.THREE.EdgesGeometry(geometry);
+      const edgeLines = new this.THREE.LineSegments(
+        edges, 
+        new this.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+      );
+      floor.add(edgeLines);
+      
+      // Set shadow properties
+      floor.castShadow = true;
+      floor.receiveShadow = true;
+      
+      // Store floor info in userData
+      floor.userData = {
+        isFloor: true,
+        thickness: floorThickness
+      };
+      
+      this.scene.add(floor);
+      console.log('✅ Created fallback floor with thickness extending upward from Y=0 to Y=+150mm');
+    } catch (error) {
+      console.error('Error creating floor:', error);
+      // Don't crash the app if floor creation fails
     }
   }
 }

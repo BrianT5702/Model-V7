@@ -108,8 +108,7 @@ export function drawRooms(context, rooms, walls, scaleFactor, offsetX, offsetY, 
             );
         }
         context.closePath();
-        context.fillStyle = 'rgba(76, 175, 80, 0.5)';
-        context.fill();
+        // Removed room fill - only keeping the outline
         context.strokeStyle = 'rgba(76, 175, 80, 0.8)';
         context.lineWidth = 2;
         context.stroke();
@@ -227,7 +226,7 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     // If modelBounds is provided, use external dimensioning
     if (modelBounds) {
         const { minX, maxX, minY, maxY } = modelBounds;
-        const baseOffset = 30; // Base distance outside the model
+        const baseOffset = 15; // Base distance outside the model (reduced from 30px)
         
         if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
             // Horizontal wall - place on top or bottom
@@ -366,31 +365,44 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             context.stroke();
             context.setLineDash([]);
             
-                         // Add to placed labels for future collision detection (rotated bounding box for vertical text)
-             placedLabels.push({
-                 x: labelX - 8, // Center the rotated text
-                 y: labelY - textWidth / 2 - 2,
-                 width: 16, // Swapped with height for rotated text
-                 height: textWidth + 4, // Swapped with width for rotated text
-                 side: side,
-                 text: text,
-                 angle: angle,
-                 type: 'wall'
-             });
-             
-             // Collect for second pass if needed
-             if (collectOnly) {
-                 allLabels.push({
-                     x: labelX - 8, // Center the rotated text
-                     y: labelY - textWidth / 2 - 2,
-                     width: 16, // Swapped with height for rotated text
-                     height: textWidth + 4, // Swapped with width for rotated text
-                     side: side,
-                     text: text,
-                     angle: angle,
-                     type: 'wall'
-                 });
-             }
+            // Draw vertical dimension text with rotation (like ceiling plan)
+            context.save();
+            context.translate(labelX, labelY);
+            context.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
+            context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
+            context.fillStyle = color;
+            context.font = 'bold 15px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, 0, 0);
+            context.restore();
+            
+            // Add to placed labels for future collision detection (rotated bounding box for vertical text)
+            placedLabels.push({
+                x: labelX - 8, // Center the rotated text
+                y: labelY - textWidth / 2 - 2,
+                width: 16, // Swapped with height for rotated text
+                height: textWidth + 4, // Swapped with width for rotated text
+                side: side,
+                text: text,
+                angle: angle,
+                type: 'wall'
+            });
+            
+            // Collect for second pass if needed
+            if (collectOnly) {
+                allLabels.push({
+                    x: labelX - 8, // Center the rotated text
+                    y: labelY - textWidth / 2 - 2,
+                    width: 16, // Swapped with height for rotated text
+                    height: textWidth + 4, // Swapped with width for rotated text
+                    side: side,
+                    text: text,
+                    angle: angle,
+                    type: 'wall'
+                });
+            }
         }
     } else {
         // Original internal dimensioning (fallback)
@@ -688,18 +700,15 @@ export function drawWalls({
                         // Normally, shouldFlip = dotToCenter > 0, so flip it:
                         const finalOffsetX = dotToCenter > 0 ? offsetX : -offsetX;
                         const finalOffsetY = dotToCenter > 0 ? offsetY : -offsetY;
-                        // Only flip the endpoint in question
-                        if (pt.label === 'start') {
-                            line2[0] = {
-                                x: wall.start_x - finalOffsetX * 2,
-                                y: wall.start_y - finalOffsetY * 2
-                            };
-                        } else {
-                            line2[1] = {
-                                x: wall.end_x - finalOffsetX * 2,
-                                y: wall.end_y - finalOffsetY * 2
-                            };
-                        }
+                        // Flip the entire inner line by updating both endpoints
+                        line2[0] = {
+                            x: wall.start_x - finalOffsetX * 2,
+                            y: wall.start_y - finalOffsetY * 2
+                        };
+                        line2[1] = {
+                            x: wall.end_x - finalOffsetX * 2,
+                            y: wall.end_y - finalOffsetY * 2
+                        };
                     }
                 }
             }
@@ -710,14 +719,28 @@ export function drawWalls({
                 const len = Math.hypot(dx, dy);
                 const ux = len ? dx / len : 0;
                 const uy = len ? dy / len : 0;
-                const adjust = 150 * 0.9;
+                
+                // Scale-aware gap calculation for 45° cut
+                // We want the visual gap to look consistent across all project scales
+                
+                // Target visual gap in pixels (consistent across all scales)
+                const targetVisualGap = 4.5;
+                
+                // Convert visual gap back to model units using scale factor
+                // This ensures the gap looks the same size on screen regardless of project scale
+                const adjust = targetVisualGap / currentScaleFactor;
+                
+                // Ensure the gap is never smaller than a reasonable minimum in model units
+                const minGapInModelUnits = Math.max(wall.thickness * 0.3, 30);
+                const finalAdjust = Math.max(adjust, minGapInModelUnits);
+                
                 line2 = [...line2.map(p => ({ ...p }))];
                 if (pt.label === 'start') {
-                    line2[0].x += ux * adjust;
-                    line2[0].y += uy * adjust;
+                    line2[0].x += ux * finalAdjust;
+                    line2[0].y += uy * finalAdjust;
                 } else {
-                    line2[1].x -= ux * adjust;
-                    line2[1].y -= uy * adjust;
+                    line2[1].x -= ux * finalAdjust;
+                    line2[1].y -= uy * finalAdjust;
                 }
             }
         });
@@ -903,6 +926,90 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
         context.restore();
     }
     
+    // Draw special markers for 1130mm panels (20mm optimization)
+    accumulated = 0;
+    for (let i = 0; i < panels.length; i++) {
+        const panel = panels[i];
+        const panelWidth = panel.actualWidth || panel.width;
+        
+        // Check if this is a 1130mm panel
+        if (panelWidth === 1130 || panel.optimizationType === 'RIGHT_OPTIMIZED') {
+            const panelStart = accumulated;
+            const panelEnd = accumulated + panelWidth;
+            const tStart = panelStart / wallLength;
+            const tEnd = panelEnd / wallLength;
+            
+            // Calculate panel boundaries
+            const cxStart = line1[0].x + (line1[1].x - line1[0].x) * tStart;
+            const cyStart = line1[0].y + (line1[1].y - line1[0].y) * tStart;
+            const c2xStart = line2[0].x + (line2[1].x - line2[0].x) * tStart;
+            const c2yStart = line2[0].y + (line2[1].y - line2[0].y) * tStart;
+            const mxStart = (cxStart + c2xStart) / 2;
+            const myStart = (cyStart + c2yStart) / 2;
+            
+            const cxEnd = line1[0].x + (line1[1].x - line1[0].x) * tEnd;
+            const cyEnd = line1[0].y + (line1[1].y - line1[0].y) * tEnd;
+            const c2xEnd = line2[0].x + (line2[1].x - line2[0].x) * tEnd;
+            const c2yEnd = line2[0].y + (line2[1].y - line2[0].y) * tEnd;
+            const mxEnd = (cxEnd + c2xEnd) / 2;
+            const myEnd = (cyEnd + c2yEnd) / 2;
+            
+            // Draw red highlight box around the 1130mm panel
+            context.save();
+            context.strokeStyle = '#FF0000';
+            context.lineWidth = 3;
+            context.setLineDash([8, 4]);
+            
+            // Calculate perpendicular offset for the highlight box
+            const dx = (line1[1].x - line1[0].x) / wallLength;
+            const dy = (line1[1].y - line1[0].y) / wallLength;
+            const perpX = -dy;
+            const perpY = dx;
+            const highlightOffset = 15; // Extra offset for highlight box
+            
+            // Draw highlight rectangle
+            const points = [
+                { x: mxStart + perpX * highlightOffset, y: myStart + perpY * highlightOffset },
+                { x: mxEnd + perpX * highlightOffset, y: myEnd + perpY * highlightOffset },
+                { x: mxEnd - perpX * highlightOffset, y: myEnd - perpY * highlightOffset },
+                { x: mxStart - perpX * highlightOffset, y: myStart - perpY * highlightOffset }
+            ];
+            
+            context.beginPath();
+            context.moveTo(points[0].x * scaleFactor + offsetX, points[0].y * scaleFactor + offsetY);
+            for (let j = 1; j < points.length; j++) {
+                context.lineTo(points[j].x * scaleFactor + offsetX, points[j].y * scaleFactor + offsetY);
+            }
+            context.closePath();
+            context.stroke();
+            context.restore();
+            
+            // Draw warning triangle at panel center
+            const panelMidX = (mxStart + mxEnd) / 2;
+            const panelMidY = (myStart + myEnd) / 2;
+            const triangleSize = 12;
+            
+            context.save();
+            context.fillStyle = '#FF0000';
+            context.beginPath();
+            context.moveTo(panelMidX * scaleFactor + offsetX, (panelMidY - triangleSize) * scaleFactor + offsetY);
+            context.lineTo((panelMidX - triangleSize) * scaleFactor + offsetX, (panelMidY + triangleSize) * scaleFactor + offsetY);
+            context.lineTo((panelMidX + triangleSize) * scaleFactor + offsetX, (panelMidY + triangleSize) * scaleFactor + offsetY);
+            context.closePath();
+            context.fill();
+            
+            // Add "1130" text inside triangle
+            context.fillStyle = '#FFFFFF';
+            context.font = 'bold 10px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText('1130', panelMidX * scaleFactor + offsetX, panelMidY * scaleFactor + offsetY);
+            context.restore();
+        }
+        
+        accumulated += panelWidth;
+    }
+    
     // Draw side panel length labels
     accumulated = 0;
     for (let i = 0; i < panels.length; i++) {
@@ -926,10 +1033,27 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
         const perpX = -dy;
         const perpY = dx;
         
-                    // Only show labels for side panels (first and last panels) and if this panel should show dimensions
+                    // Show labels for side panels (first and last panels) and if this panel should show dimensions
             if ((i === 0 || i === panels.length - 1) && 
                 (!filteredDimensions || shouldShowPanelDimension(panel, wall.thickness, filteredDimensions.panelDimensions, wall.id, wall))) {
-                const labelText = `${Math.round(panelWidth)} mm`;
+                
+                // For 1130mm panels, show only the actual width, not the original 1150mm
+                let displayWidth = panelWidth;
+                let specialSymbol = '';
+                let specialColor = '#FF6B35'; // Default panel color
+                
+                if (panel.actualWidth && panel.actualWidth === 1130) {
+                    displayWidth = 1130; // Show only 1130mm
+                    specialSymbol = '➡️';
+                    specialColor = '#FF0000'; // Red color for 1130mm panels
+                } else if (panel.optimizationType === 'RIGHT_OPTIMIZED') {
+                    displayWidth = 1130; // Show only 1130mm
+                    specialSymbol = '➡️';
+                    specialColor = '#FF0000'; // Red color for 1130mm panels
+                }
+                
+                const labelText = `${Math.round(displayWidth)} mm`;
+                const fullLabelText = specialSymbol ? `${labelText} ${specialSymbol}` : labelText;
 
             // Start and end t values for the panel
             const tStart = accumulated / wallLength;
@@ -967,8 +1091,8 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
                 maxY: Math.max(wall.start_y, wall.end_y)
             };
 
-            const baseOffset = 30;
-            const text = labelText;
+            const baseOffset = 15; // Reduced from 30px for tighter spacing
+            const text = fullLabelText; // Use the enhanced label text
             const textWidth = context.measureText(text).width;
 
             if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
@@ -1005,8 +1129,8 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
                     
                     if (!hasOverlap) break;
                     
-                    // Increase offset and try again
-                    offset += 20;
+                    // Increase offset and try again (reduced increment for tighter spacing)
+                    offset += 15;
                     attempts++;
                 } while (attempts < maxAttempts);
                 
@@ -1022,7 +1146,7 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
                 // Dimension line connecting the two extension lines
                 context.moveTo(mxStart * scaleFactor + offsetX, labelY);
                 context.lineTo(mxEnd * scaleFactor + offsetX, labelY);
-                context.strokeStyle = '#FF6B35';
+                context.strokeStyle = specialColor; // Use special color for 1130mm panels
                 context.lineWidth = 1.5;
                 context.stroke();
                 context.setLineDash([]);
@@ -1103,7 +1227,7 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
                 // Dimension line connecting the two extension lines
                 context.moveTo(labelX, myStart * scaleFactor + offsetY);
                 context.lineTo(labelX, myEnd * scaleFactor + offsetY);
-                context.strokeStyle = '#FF6B35';
+                context.strokeStyle = specialColor; // Use special color for 1130mm panels
                 context.lineWidth = 1.5;
                 context.stroke();
                 context.setLineDash([]);
@@ -1141,7 +1265,7 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
 } 
 
 // Helper to create label draw function
-function makeLabelDrawFn(label) {
+export function makeLabelDrawFn(label) {
     return function(context) {
         context.save();
         if (label.angle && Math.abs(label.angle) > 45 && Math.abs(label.angle) < 135) {

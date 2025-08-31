@@ -350,7 +350,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
             const px = slashStart.x + (slashEnd.x - slashStart.x) * t;
             const py = 0;
             const slashAngle = Math.PI / 4;
-            const lineLen = doorThickness * 1.5;
+            const lineLen = doorThickness * 0.6;
 
             ctx.beginPath();
             ctx.moveTo(

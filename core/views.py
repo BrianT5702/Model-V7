@@ -1,12 +1,13 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import Project, Wall, Room, Ceiling, Door, Intersection
+from .models import Project, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection
 from .serializers import (
     ProjectSerializer, WallSerializer, RoomSerializer,
-    CeilingSerializer, DoorSerializer, IntersectionSerializer
+    CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
+    DoorSerializer, IntersectionSerializer
 )
-from .services import WallService, RoomService, DoorService, normalize_wall_coordinates
+from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
 from django.db import transaction, IntegrityError
 from django.core.exceptions import PermissionDenied
 from django.db.utils import OperationalError
@@ -70,6 +71,13 @@ class WallViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        
+        # After updating a wall, recalculate room boundaries for all rooms that contain this wall
+        from .services import RoomService
+        rooms_with_wall = instance.rooms.all()
+        for room in rooms_with_wall:
+            RoomService.recalculate_room_boundary_from_walls(room.id)
+        
         return Response(serializer.data)
 
     @action(detail=False, methods=['post'])
@@ -116,6 +124,14 @@ class WallViewSet(viewsets.ModelViewSet):
 
         try:
             split_wall_1, split_wall_2 = WallService.split_wall(wall_id, intersection_x, intersection_y)
+            
+            # After splitting a wall, recalculate room boundaries for all rooms that contained the original wall
+            from .services import RoomService
+            original_wall = Wall.objects.get(pk=wall_id)
+            rooms_with_wall = original_wall.rooms.all()
+            for room in rooms_with_wall:
+                RoomService.recalculate_room_boundary_from_walls(room.id)
+            
             return Response(
                 {
                     'split_wall_1': WallSerializer(split_wall_1).data,
@@ -141,7 +157,19 @@ class WallViewSet(viewsets.ModelViewSet):
         try:
             wall_1 = Wall.objects.get(pk=wall_ids[0])
             wall_2 = Wall.objects.get(pk=wall_ids[1])
+            
+            # Get rooms that contain these walls before merging
+            rooms_with_walls = set()
+            rooms_with_walls.update(wall_1.rooms.all())
+            rooms_with_walls.update(wall_2.rooms.all())
+            
             merged_wall = WallService.merge_walls(wall_1, wall_2)
+            
+            # After merging walls, recalculate room boundaries for all affected rooms
+            from .services import RoomService
+            for room in rooms_with_walls:
+                RoomService.recalculate_room_boundary_from_walls(room.id)
+            
             return Response(WallSerializer(merged_wall).data, status=status.HTTP_201_CREATED)
         except Wall.DoesNotExist:
             return Response({'error': 'One or more walls not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -203,6 +231,9 @@ class RoomViewSet(viewsets.ModelViewSet):
                 updated_count = RoomService.update_wall_heights_for_room(wall_ids, request.data['height'])
                 logger.info(f"Successfully updated {updated_count} walls")
             
+            # Always recalculate room boundaries after any room update to ensure consistency
+            RoomService.recalculate_room_boundary_from_walls(updated_room.id)
+            
             return Response(serializer.data, status=status.HTTP_200_OK)
         except ValueError as e:
             logger.error(f"Validation error updating room: {str(e)}")
@@ -236,16 +267,350 @@ class RoomViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class CeilingViewSet(viewsets.ModelViewSet):
-    queryset = Ceiling.objects.all()
-    serializer_class = CeilingSerializer
+    @action(detail=False, methods=['post'])
+    def recalculate_boundaries(self, request):
+        """Recalculate room boundaries for all rooms in a project"""
+        try:
+            project_id = request.data.get('project_id')
+            if not project_id:
+                return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            updated_count = RoomService.recalculate_all_room_boundaries(project_id)
+            return Response({
+                'message': f'Successfully recalculated boundaries for {updated_count} rooms',
+                'updated_count': updated_count
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class FloorPanelViewSet(viewsets.ModelViewSet):
+    queryset = FloorPanel.objects.all()
+    serializer_class = FloorPanelSerializer
 
     def get_queryset(self):
-        """Optionally filter ceilings by room ID"""
+        """Optionally filter floor panels by room ID or project ID"""
         room_id = self.request.query_params.get('room')
+        project_id = self.request.query_params.get('project')
+        
         if room_id:
-            return Ceiling.objects.filter(room_id=room_id)
+            return FloorPanel.objects.filter(room_id=room_id)
+        elif project_id:
+            # Filter by project by getting rooms that belong to the project
+            from .models import Room
+            project_rooms = Room.objects.filter(project_id=project_id)
+            return FloorPanel.objects.filter(room__in=project_rooms)
+        
         return super().get_queryset()
+
+class FloorPlanViewSet(viewsets.ModelViewSet):
+    queryset = FloorPlan.objects.all()
+    serializer_class = FloorPlanSerializer
+
+    def get_queryset(self):
+        """Optionally filter floor plans by room ID or project ID"""
+        room_id = self.request.query_params.get('room')
+        project_id = self.request.query_params.get('project')
+        
+        if room_id:
+            return FloorPlan.objects.filter(room_id=room_id)
+        elif project_id:
+            # Filter by project by getting rooms that belong to the project
+            from .models import Room
+            project_rooms = Room.objects.filter(project_id=project_id)
+            return FloorPlan.objects.filter(room__in=project_rooms)
+        
+        return super().get_queryset()
+
+    @action(detail=False, methods=['post'])
+    def analyze_floor_orientations(self, request):
+        """Analyze different orientation strategies for floor panels"""
+        project_id = request.data.get('project_id')
+        panel_width = request.data.get('panel_width', 1150)
+        panel_length = request.data.get('panel_length', 'auto')
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            orientation_analysis = FloorService.analyze_floor_orientation_strategies(
+                project_id, panel_width, panel_length
+            )
+            
+            if 'error' in orientation_analysis:
+                return Response({'error': orientation_analysis['error']}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(orientation_analysis, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def generate_floor_plan(self, request):
+        """Generate floor plan with intelligent panel placement (excluding walls)"""
+        project_id = request.data.get('project_id')
+        orientation_strategy = request.data.get('orientation_strategy', 'auto')
+        panel_width = request.data.get('panel_width', 1150)
+        panel_length = request.data.get('panel_length', 'auto')
+        
+        # Extract additional generation parameters
+        custom_panel_length = request.data.get('custom_panel_length')
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Convert project_id to int if it's a string
+            try:
+                project_id = int(project_id)
+            except (ValueError, TypeError):
+                return Response({'error': 'project_id must be a valid integer'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Convert custom_panel_length to float if provided
+            if custom_panel_length is not None:
+                try:
+                    custom_panel_length = float(custom_panel_length)
+                except (ValueError, TypeError):
+                    return Response({'error': 'custom_panel_length must be a valid number'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            floor_plan = FloorService.generate_floor_plan(
+                project_id, 
+                orientation_strategy,
+                panel_width,
+                panel_length,
+                custom_panel_length
+            )
+            
+            if 'error' in floor_plan:
+                return Response({'error': floor_plan['error']}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(floor_plan, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class CeilingPanelViewSet(viewsets.ModelViewSet):
+    queryset = CeilingPanel.objects.all()
+    serializer_class = CeilingPanelSerializer
+
+    def get_queryset(self):
+        """Optionally filter ceiling panels by room ID or project ID"""
+        room_id = self.request.query_params.get('room')
+        project_id = self.request.query_params.get('project')
+        
+        if room_id:
+            return CeilingPanel.objects.filter(room_id=room_id)
+        elif project_id:
+            # Filter by project by getting rooms that belong to the project
+            from .models import Room
+            project_rooms = Room.objects.filter(project_id=project_id)
+            return CeilingPanel.objects.filter(room__in=project_rooms)
+        
+        return super().get_queryset()
+
+class CeilingPlanViewSet(viewsets.ModelViewSet):
+    queryset = CeilingPlan.objects.all()
+    serializer_class = CeilingPlanSerializer
+
+    def get_queryset(self):
+        """Optionally filter ceiling plans by room ID or project ID"""
+        room_id = self.request.query_params.get('room')
+        project_id = self.request.query_params.get('project')
+        
+        if room_id:
+            return CeilingPlan.objects.filter(room_id=room_id)
+        elif project_id:
+            # Filter by project by getting rooms that belong to the project
+            from .models import Room
+            project_rooms = Room.objects.filter(project_id=project_id)
+            return CeilingPlan.objects.filter(room__in=project_rooms)
+        
+        return super().get_queryset()
+
+    @action(detail=False, methods=['post'])
+    def generate_ceiling_plan(self, request):
+        """Automatically generate ceiling plan for a room"""
+        room_id = request.data.get('room_id')
+        panel_length_option = request.data.get('panel_length_option', 1)  # Default to option 1
+        
+        if not room_id:
+            return Response({'error': 'room_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate panel length option
+        if panel_length_option not in [1, 2, 3, 4, 5]:
+            return Response({'error': 'panel_length_option must be 1, 2, 3, 4, or 5'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            ceiling_plan = CeilingService.generate_ceiling_plan(room_id, panel_length_option)
+            return Response(CeilingPlanSerializer(ceiling_plan).data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def analyze_project_heights(self, request):
+        """Analyze project room heights and provide grouping recommendations"""
+        project_id = request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            height_analysis = CeilingService.analyze_project_heights(project_id)
+            return Response(height_analysis, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def analyze_orientations(self, request):
+        """Stage 2: Analyze different panel orientation strategies"""
+        project_id = request.data.get('project_id')
+        panel_width = request.data.get('panel_width', 1150)
+        panel_length = request.data.get('panel_length', 'auto')
+        ceiling_thickness = request.data.get('ceiling_thickness', 150)
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Convert project_id to int if it's a string
+            try:
+                project_id = int(project_id)
+            except (ValueError, TypeError):
+                return Response({'error': 'project_id must be a valid integer'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            orientation_analysis = CeilingService.analyze_orientation_strategies(
+                project_id, 
+                panel_width, 
+                panel_length, 
+                ceiling_thickness
+            )
+            
+            if 'error' in orientation_analysis:
+                return Response({'error': orientation_analysis['error']}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(orientation_analysis, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def generate_enhanced_ceiling_plan(self, request):
+        """Stage 3: Generate enhanced ceiling plan with intelligent panel placement"""
+        project_id = request.data.get('project_id')
+        orientation_strategy = request.data.get('orientation_strategy', 'auto')
+        panel_width = request.data.get('panel_width', 1150)
+        panel_length = request.data.get('panel_length', 'auto')
+        ceiling_thickness = request.data.get('ceiling_thickness', 150)
+        
+        # Extract additional generation parameters
+        custom_panel_length = request.data.get('custom_panel_length')
+        support_type = request.data.get('support_type', 'nylon')
+        support_config = request.data.get('support_config', {})
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Convert project_id to int if it's a string
+            try:
+                project_id = int(project_id)
+            except (ValueError, TypeError):
+                return Response({'error': 'project_id must be a valid integer'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Convert custom_panel_length to float if provided
+            if custom_panel_length is not None:
+                try:
+                    custom_panel_length = float(custom_panel_length)
+                except (ValueError, TypeError):
+                    return Response({'error': 'custom_panel_length must be a valid number'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            enhanced_plan = CeilingService.generate_enhanced_ceiling_plan(
+                project_id, 
+                orientation_strategy,
+                panel_width,
+                panel_length,
+                ceiling_thickness,
+                custom_panel_length,
+                support_type,
+                support_config
+            )
+            
+            if 'error' in enhanced_plan:
+                return Response({'error': enhanced_plan['error']}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(enhanced_plan, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def generate_project_ceiling_plan(self, request):
+        """Generate ceiling plans for entire project using height-based grouping"""
+        project_id = request.data.get('project_id')
+        panel_length_option = request.data.get('panel_length_option', 1)
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate panel length option
+        if panel_length_option not in [1, 2, 3, 4, 5]:
+            return Response({'error': 'panel_length_option must be 1, 2, 3, 4, or 5'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            project_ceiling_plan = CeilingService.generate_project_ceiling_plan(project_id, panel_length_option)
+            return Response(project_ceiling_plan, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def generate_project_report(self, request):
+        """Stage 5: Generate comprehensive project ceiling report"""
+        project_id = request.query_params.get('project_id')
+        include_detailed = request.query_params.get('include_detailed', 'true').lower() == 'true'
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            report = CeilingService.generate_project_ceiling_report(project_id, include_detailed)
+            return Response(report, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def export_report_csv(self, request):
+        """Stage 5: Export ceiling report to CSV format"""
+        project_id = request.query_params.get('project_id')
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            csv_data = CeilingService.export_ceiling_report_to_csv(project_id)
+            if 'error' in csv_data:
+                return Response({'error': csv_data['error']}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Return CSV as downloadable file
+            from django.http import HttpResponse
+            response = HttpResponse(csv_data['csv_content'], content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{csv_data["filename"]}"'
+            return response
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def visualization_data(self, request):
+        """Stage 5: Get ceiling plan visualization data"""
+        project_id = request.query_params.get('project_id')
+        room_id = request.query_params.get('room_id')
+        
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            visualization_data = CeilingService.generate_ceiling_plan_visualization_data(project_id, room_id)
+            return Response(visualization_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class DoorViewSet(viewsets.ModelViewSet):
     queryset = Door.objects.all()

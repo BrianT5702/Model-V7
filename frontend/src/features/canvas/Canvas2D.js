@@ -47,7 +47,8 @@ const Canvas2D = ({
     onUpdateRoomPoints = () => {},
     onRoomSelect,
     onRoomUpdate,
-    onRoomLabelPositionUpdate
+    onRoomLabelPositionUpdate,
+    updateSharedPanelData = null // Add this prop for sharing panel data
 }) => {
 
     const canvasRef = useRef(null);
@@ -1436,6 +1437,7 @@ const Canvas2D = ({
                 canvasRef={canvasRef}
                 rooms={rooms}
                 project={project}
+                updateSharedPanelData={updateSharedPanelData} // Pass the prop
             />
             
             {/* Door Table */}
