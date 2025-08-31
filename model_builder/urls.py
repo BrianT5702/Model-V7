@@ -16,22 +16,13 @@ urlpatterns = [
     path('api/', include('core.urls')),  # Include URLs from the core app
 ]
 
-# Serve static files in development
-if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Always serve static files first (both development and production)
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-# Serve React frontend for all other routes (production)
+# Serve React frontend for all other routes (production only)
 if not settings.DEBUG:
-    # Serve static files first in production
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-    
-    # Then serve React app for all other routes
+    # Serve React app for all non-API, non-static routes
     urlpatterns += [
-        re_path(r'^(?!api/).*$', TemplateView.as_view(template_name='index.html')),
+        re_path(r'^(?!api/|static/|media/|admin/).*$', TemplateView.as_view(template_name='index.html')),
     ]
-else:
-    # In development, serve static files
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
