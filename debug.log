@@ -16973,3 +16973,8 @@ WARNING 2025-08-31 10:10:07,908 log 21476 23380 Not Found: /api/projects/416/flo
 WARNING 2025-08-31 10:11:13,175 log 21476 11000 Not Found: /api/projects/416/wall-panel-list/
 WARNING 2025-08-31 10:11:13,419 log 21476 11000 Not Found: /api/projects/416/ceiling-panels-map/
 WARNING 2025-08-31 10:11:13,430 log 21476 11000 Not Found: /api/projects/416/floor-panels-map/
+INFO 2025-08-31 15:37:44,203 autoreload 26932 22440 Watching for file changes with StatReloader
+INFO 2025-08-31 15:43:37,771 autoreload 26932 22440 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\model_builder\settings.py changed, reloading.
+INFO 2025-08-31 15:43:38,793 autoreload 17304 26524 Watching for file changes with StatReloader
+INFO 2025-08-31 15:43:49,176 autoreload 17304 26524 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\model_builder\settings.py changed, reloading.
+INFO 2025-08-31 15:43:49,957 autoreload 25652 22068 Watching for file changes with StatReloader
