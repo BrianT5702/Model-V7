@@ -17072,3 +17072,5 @@ INFO 2025-09-01 10:27:19,113 autoreload 4164 23320 C:\Users\brian\OneDrive\Deskt
 INFO 2025-09-01 10:27:19,715 autoreload 25200 25540 Watching for file changes with StatReloader
 INFO 2025-09-01 10:27:30,497 autoreload 25200 25540 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
 INFO 2025-09-01 10:27:31,345 autoreload 25528 21516 Watching for file changes with StatReloader
+INFO 2025-09-01 10:29:27,818 autoreload 25528 21516 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:29:28,477 autoreload 5132 23584 Watching for file changes with StatReloader
