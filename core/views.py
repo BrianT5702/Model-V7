@@ -8,9 +8,7 @@ from .serializers import (
     DoorSerializer, IntersectionSerializer
 )
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
-from django.db import transaction, IntegrityError
-from django.core.exceptions import PermissionDenied
-from django.db.utils import OperationalError
+
 
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
@@ -62,7 +60,7 @@ class WallViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
-        wall = serializer.save()
+        serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):

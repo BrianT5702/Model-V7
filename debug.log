@@ -16986,3 +16986,89 @@ INFO 2025-08-31 17:38:30,987 autoreload 25740 6468 C:\Users\brian\OneDrive\Deskt
 INFO 2025-08-31 17:38:31,560 autoreload 11084 17116 Watching for file changes with StatReloader
 INFO 2025-08-31 17:41:25,474 autoreload 11084 17116 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\model_builder\urls.py changed, reloading.
 INFO 2025-08-31 17:41:26,104 autoreload 25376 22856 Watching for file changes with StatReloader
+INFO 2025-09-01 09:14:18,257 autoreload 4252 5936 Watching for file changes with StatReloader
+INFO 2025-09-01 09:59:10,721 autoreload 18104 23516 Watching for file changes with StatReloader
+INFO 2025-09-01 09:59:41,772 services 18104 23412 calculate_minimum_wall_height called with wall_ids: [5980, 5979, 5977]
+INFO 2025-09-01 09:59:41,773 services 18104 23412 Converted wall_ids to integers: [5980, 5979, 5977]
+INFO 2025-09-01 09:59:41,822 services 18104 23412 Found 3 walls
+INFO 2025-09-01 09:59:41,824 services 18104 23412 Calculated minimum wall height: 8000.0
+INFO 2025-09-01 09:59:46,605 views 18104 23412 Updating room with data: {'room_name': 'Testing', 'floor_type': 'None', 'floor_thickness': '150', 'temperature': '0.00', 'height': 8000, 'remarks': '', 'walls': [5980, 5979, 5977], 'project': '409', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 10000}, {'x': 15000, 'y': 10000}, {'x': 15000, 'y': 0}], 'id': 143}
+INFO 2025-09-01 09:59:46,640 views 18104 23412 Found room to update: 143, current height: 8000.0
+INFO 2025-09-01 09:59:46,663 views 18104 23412 Updated room height to: 8000.0
+INFO 2025-09-01 09:59:46,664 views 18104 23412 Updating 3 walls with new height: 8000
+INFO 2025-09-01 09:59:46,664 services 18104 23412 update_wall_heights_for_room called with wall_ids: [5980, 5979, 5977], new_height: 8000
+INFO 2025-09-01 09:59:46,665 services 18104 23412 Converted wall_ids to integers: [5980, 5979, 5977]
+INFO 2025-09-01 09:59:46,665 services 18104 23412 Found 3 walls to update
+INFO 2025-09-01 09:59:46,666 services 18104 23412 Wall 5980: current height = 8000.0
+INFO 2025-09-01 09:59:46,666 services 18104 23412 Wall 5979: current height = 8000.0
+INFO 2025-09-01 09:59:46,666 services 18104 23412 Wall 5977: current height = 8000.0
+INFO 2025-09-01 09:59:46,667 services 18104 23412 Updated 3 walls to height 8000
+INFO 2025-09-01 09:59:46,667 services 18104 23412 Wall 5980: new height = 8000.0
+INFO 2025-09-01 09:59:46,667 services 18104 23412 Wall 5979: new height = 8000.0
+INFO 2025-09-01 09:59:46,667 services 18104 23412 Wall 5977: new height = 8000.0
+INFO 2025-09-01 09:59:46,667 views 18104 23412 Successfully updated 3 walls
+INFO 2025-09-01 09:59:46,668 services 18104 23412 Recalculating room boundary for room 143
+INFO 2025-09-01 09:59:46,672 services 18104 23412 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-01 10:13:00,786 services 18104 22004 calculate_minimum_wall_height called with wall_ids: [6132, 5979, 6133]
+INFO 2025-09-01 10:13:00,786 services 18104 22004 Converted wall_ids to integers: [6132, 5979, 6133]
+INFO 2025-09-01 10:13:00,841 services 18104 22004 Found 3 walls
+INFO 2025-09-01 10:13:00,842 services 18104 22004 Calculated minimum wall height: 8000.0
+INFO 2025-09-01 10:13:04,074 views 18104 22004 Updating room with data: {'room_name': 'Testing', 'floor_type': 'Panel', 'floor_thickness': 150, 'temperature': '0.00', 'height': 8000, 'remarks': '', 'walls': [6132, 5979, 6133], 'project': '409', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 10000}, {'x': 15000, 'y': 10000}, {'x': 15000, 'y': 0}], 'id': 143}
+INFO 2025-09-01 10:13:04,113 views 18104 22004 Found room to update: 143, current height: 8000.0
+INFO 2025-09-01 10:13:04,128 views 18104 22004 Updated room height to: 8000.0
+INFO 2025-09-01 10:13:04,129 views 18104 22004 Updating 3 walls with new height: 8000
+INFO 2025-09-01 10:13:04,129 services 18104 22004 update_wall_heights_for_room called with wall_ids: [6133, 5979, 6132], new_height: 8000
+INFO 2025-09-01 10:13:04,129 services 18104 22004 Converted wall_ids to integers: [6133, 5979, 6132]
+INFO 2025-09-01 10:13:04,130 services 18104 22004 Found 3 walls to update
+INFO 2025-09-01 10:13:04,131 services 18104 22004 Wall 6133: current height = 8000.0
+INFO 2025-09-01 10:13:04,131 services 18104 22004 Wall 5979: current height = 8000.0
+INFO 2025-09-01 10:13:04,131 services 18104 22004 Wall 6132: current height = 8000.0
+INFO 2025-09-01 10:13:04,132 services 18104 22004 Updated 3 walls to height 8000
+INFO 2025-09-01 10:13:04,132 services 18104 22004 Wall 6133: new height = 8000.0
+INFO 2025-09-01 10:13:04,133 services 18104 22004 Wall 5979: new height = 8000.0
+INFO 2025-09-01 10:13:04,133 services 18104 22004 Wall 6132: new height = 8000.0
+INFO 2025-09-01 10:13:04,133 views 18104 22004 Successfully updated 3 walls
+INFO 2025-09-01 10:13:04,133 services 18104 22004 Recalculating room boundary for room 143
+INFO 2025-09-01 10:13:04,136 services 18104 22004 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-01 10:18:28,410 autoreload 18104 23516 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:18:29,525 autoreload 25328 17740 Watching for file changes with StatReloader
+INFO 2025-09-01 10:18:46,991 autoreload 25328 17740 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:18:47,890 autoreload 23584 7332 Watching for file changes with StatReloader
+INFO 2025-09-01 10:19:03,316 autoreload 23584 7332 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:19:03,993 autoreload 21260 21936 Watching for file changes with StatReloader
+INFO 2025-09-01 10:19:43,721 autoreload 21260 21936 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:19:44,336 autoreload 24204 21280 Watching for file changes with StatReloader
+INFO 2025-09-01 10:19:50,433 autoreload 24204 21280 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:19:51,253 autoreload 11952 22744 Watching for file changes with StatReloader
+INFO 2025-09-01 10:20:00,923 autoreload 11952 22744 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:20:01,552 autoreload 22660 21280 Watching for file changes with StatReloader
+INFO 2025-09-01 10:21:16,657 autoreload 22660 21280 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:21:17,299 autoreload 22152 22684 Watching for file changes with StatReloader
+INFO 2025-09-01 10:21:27,266 autoreload 22152 22684 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:21:28,111 autoreload 5304 13416 Watching for file changes with StatReloader
+INFO 2025-09-01 10:21:42,039 autoreload 5304 13416 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:21:42,713 autoreload 15308 21192 Watching for file changes with StatReloader
+INFO 2025-09-01 10:22:26,553 autoreload 15308 21192 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:22:27,357 autoreload 23884 6696 Watching for file changes with StatReloader
+INFO 2025-09-01 10:22:44,339 autoreload 23884 6696 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:22:45,136 autoreload 24896 4012 Watching for file changes with StatReloader
+INFO 2025-09-01 10:23:00,781 autoreload 24896 4012 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:23:01,340 autoreload 1212 22588 Watching for file changes with StatReloader
+INFO 2025-09-01 10:23:18,100 autoreload 1212 22588 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:23:18,584 autoreload 25284 1480 Watching for file changes with StatReloader
+INFO 2025-09-01 10:24:52,688 autoreload 25284 1480 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:24:53,628 autoreload 22660 21544 Watching for file changes with StatReloader
+INFO 2025-09-01 10:25:01,049 autoreload 22660 21544 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:25:01,673 autoreload 11152 14384 Watching for file changes with StatReloader
+INFO 2025-09-01 10:25:13,360 autoreload 11152 14384 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:25:13,866 autoreload 25044 8560 Watching for file changes with StatReloader
+INFO 2025-09-01 10:25:35,834 autoreload 25044 8560 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:25:36,511 autoreload 22620 2280 Watching for file changes with StatReloader
+INFO 2025-09-01 10:26:34,450 autoreload 22620 2280 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:26:35,087 autoreload 12700 21248 Watching for file changes with StatReloader
+INFO 2025-09-01 10:27:06,438 autoreload 12700 21248 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:27:07,204 autoreload 4164 23320 Watching for file changes with StatReloader
+INFO 2025-09-01 10:27:19,113 autoreload 4164 23320 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:27:19,715 autoreload 25200 25540 Watching for file changes with StatReloader
+INFO 2025-09-01 10:27:30,497 autoreload 25200 25540 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-01 10:27:31,345 autoreload 25528 21516 Watching for file changes with StatReloader

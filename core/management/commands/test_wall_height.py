@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from core.models import Project, Wall, Room
+from core.models import Project, Wall
 from core.services import RoomService
 
 

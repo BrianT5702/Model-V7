@@ -681,7 +681,7 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
 `;
 
     // Add grid lines
-    const gridSize = 50 * scale;
+    // const gridSize = 50 * scale; // Unused variable
     const gridStartX = Math.floor(minX / 50) * 50;
     const gridStartY = Math.floor(minY / 50) * 50;
     const gridEndX = Math.ceil(maxX / 50) * 50;
@@ -720,10 +720,10 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
         const wall = walls.find(w => w.id === door.wall);
         if (wall) {
             // Calculate door position along the wall
-            const wallLength = Math.sqrt(
-                Math.pow(wall.end_x - wall.start_x, 2) + 
-                Math.pow(wall.end_y - wall.start_y, 2)
-            );
+            // const wallLength = Math.sqrt( // Unused variable
+            //     Math.pow(wall.end_x - wall.start_x, 2) + 
+            //     Math.pow(wall.end_y - wall.start_y, 2)
+            // );
             const doorPosition = door.position_along_wall || 0.5;
             
             const doorX = wall.start_x + (wall.end_x - wall.start_x) * doorPosition;

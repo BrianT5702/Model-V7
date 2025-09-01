@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import api from '../../api/api';
-import { drawDimensions, makeLabelDrawFn, calculateOffsetPoints, drawWallLinePair } from './drawing.js';
-import { filterDimensions, shouldShowPanelDimension } from './dimensionFilter.js';
+import { calculateOffsetPoints } from './drawing.js';
 
 const CeilingCanvas = ({ 
     // Multi-room props
@@ -73,7 +71,6 @@ const CeilingCanvas = ({
     // Canvas dimensions - match wall plan for consistent focus
     const CANVAS_WIDTH = 800;
     const CANVAS_HEIGHT = 600;
-    const GRID_SIZE = 50;
     const PADDING = 50;
 
     // Calculate project bounds for dimension positioning (project boundary)
@@ -163,21 +160,7 @@ const CeilingCanvas = ({
         };
     }, [ceilingPlan, effectiveCeilingPanelsMap, ceilingPanels]);
 
-    // Helper function to get accurate generation parameters from saved ceilingPlan
-    const getGenerationParameters = useMemo(() => {
-        if (ceilingPlan) {
-            return {
-                ceiling_thickness: ceilingPlan.ceiling_thickness || 150,
-                orientation_strategy: ceilingPlan.orientation_strategy || 'auto',
-                panel_width: ceilingPlan.panel_width || 1150,
-                panel_length: ceilingPlan.panel_length || 'auto',
-                custom_panel_length: ceilingPlan.custom_panel_length,
-                support_type: ceilingPlan.support_type || 'nylon',
-                support_config: ceilingPlan.support_config || {}
-            };
-        }
-        return null;
-    }, [ceilingPlan]);
+
 
     // Initialize and draw canvas
     useEffect(() => {
@@ -386,7 +369,7 @@ const CeilingCanvas = ({
         console.log('Center point for walls:', center);
 
         // Create empty joints array (not used in ceiling plan but required by drawWallCaps)
-        const joints = [];
+        // const joints = []; // Unused variable
         
         walls.forEach(wall => {
             console.log('Drawing wall:', wall);
@@ -407,10 +390,10 @@ const CeilingCanvas = ({
                 );
 
                 // Check for 45° joint at endpoints and possibly flip inner wall side
-                const endpoints = [
-                    { label: 'start', x: wall.start_x, y: wall.start_y },
-                    { label: 'end', x: wall.end_x, y: wall.end_y }
-                ];
+                // const endpoints = [ // Unused variable
+                //     { label: 'start', x: wall.start_x, y: wall.start_y },
+                //     { label: 'end', x: wall.end_x, y: wall.end_y }
+                // ];
                 
                 // Check if this wall is involved in any 45° cut intersections
                 let has45 = false;
@@ -1294,7 +1277,7 @@ const CeilingCanvas = ({
                 // Use project bounds to ensure labels start outside project area
                 const projectMidY = avoidArea ? (avoidArea.minY + avoidArea.maxY) / 2 : (minY + maxY) / 2;
                 const isTopHalf = midY < projectMidY;
-                const side = isTopHalf ? 'top' : 'bottom';
+                // const side = isTopHalf ? 'top' : 'bottom'; // Unused variable
                 
                 if (avoidArea) {
                     // Position relative to project boundary
@@ -1315,7 +1298,7 @@ const CeilingCanvas = ({
                 // Use project bounds to ensure labels start outside project area
                 const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
                 const isLeftHalf = midX < projectMidX;
-                const side = isLeftHalf ? 'left' : 'right';
+                // const side = isLeftHalf ? 'left' : 'right'; // Unused variable
                 
                 if (avoidArea) {
                     // Position relative to project boundary
@@ -2007,71 +1990,7 @@ const CeilingCanvas = ({
         ctx.fillRect(canvasX + lineLength / 2 - squareSize / 2, canvasY - squareSize / 2, squareSize, squareSize);
     };
 
-    // Draw ALU suspension at panel edges (for auto-generated supports)
-    const drawAluSuspensionAtEdges = (ctx, panel, scaleFactor, offsetX, offsetY) => {
-        // Calculate panel boundaries
-        const x = panel.start_x * scaleFactor + offsetX;
-        const y = panel.start_y * scaleFactor + offsetY;
-        const width = panel.width * scaleFactor;
-        const height = panel.length * scaleFactor;
-        
-        // Place * symbols at ALL panel edges (middle of each edge)
-        ctx.fillStyle = '#8b5cf6';
-        ctx.font = `bold ${Math.max(16, 18 * scaleFactor)}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        // Top edge (middle)
-        const topX = x + width / 2;
-        const topY = y;
-        ctx.fillText('*', topX, topY);
-        
-        // Right edge (middle)
-        const rightX = x + width;
-        const rightY = y + height / 2;
-        ctx.fillText('*', rightX, rightY);
-        
-        // Bottom edge (middle)
-        const bottomX = x + width / 2;
-        const bottomY = y + height;
-        ctx.fillText('*', bottomX, bottomY);
-        
-        // Left edge (middle)
-        const leftX = x;
-        const leftY = y + height / 2;
-        ctx.fillText('*', leftX, leftY);
-        
-        // Draw support lines connecting all edges (optional - creates a support frame)
-        ctx.strokeStyle = '#8b5cf6';
-        ctx.lineWidth = 2 * scaleFactor;
-        ctx.setLineDash([5, 5]); // Dashed lines for support frame
-        
-        // Top to right
-        ctx.beginPath();
-        ctx.moveTo(topX, topY);
-        ctx.lineTo(rightX, rightY);
-        ctx.stroke();
-        
-        // Right to bottom
-        ctx.beginPath();
-        ctx.moveTo(rightX, rightY);
-        ctx.lineTo(bottomX, bottomY);
-        ctx.stroke();
-        
-        // Bottom to left
-        ctx.beginPath();
-        ctx.moveTo(bottomX, bottomY);
-        ctx.lineTo(leftX, leftY);
-        ctx.stroke();
-        
-        // Left to top
-        ctx.beginPath();
-        ctx.moveTo(leftX, leftY);
-        ctx.lineTo(topX, topY);
-        ctx.stroke();
-        
-        ctx.setLineDash([]); // Reset line dash
-    };
+
 
     const drawPanelSupports = (ctx, roomPanels, scaleFactor, offsetX, offsetY) => {
         // Determine panel orientation by checking if panels are wider than tall

@@ -1,5 +1,5 @@
 from django.db import transaction
-from .models import Project, Wall, Room, Door, Intersection
+from .models import Wall, Room, Door
 from django.utils import timezone
 
 def normalize_wall_coordinates(start_x, start_y, end_x, end_y):
@@ -159,7 +159,7 @@ class RoomService:
         This ensures room_points are always in sync with the actual wall positions.
         IMPORTANT: This function preserves the original polygon point order to maintain
         proper clockwise/counterclockwise arrangement."""
-        from .models import Room, Wall
+        from .models import Room
         import logging
         
         logger = logging.getLogger(__name__)
@@ -485,7 +485,7 @@ class FloorService:
     def analyze_floor_orientation_strategies(project_id, panel_width=1150, panel_length='auto'):
         """Analyze different orientation strategies for floor panels (excluding walls)"""
         try:
-            from .models import Project, Room, Wall
+            from .models import Project, Room
             
             # Get project and rooms
             project = Project.objects.get(id=project_id)
@@ -705,104 +705,114 @@ class FloorService:
         if orientation == 'horizontal':
             # Generate horizontal panels with 1150mm width constraint
             # For horizontal: panels are placed horizontally, width constraint applies to room height
-            current_y = bounding_box['min_y']
             panel_id = 1
             
-            while current_y < bounding_box['max_y']:
-                # Calculate how many panels we need across the HEIGHT (room height)
-                room_height = bounding_box['max_y'] - bounding_box['min_y']
-                panels_needed = max(1, int(room_height / panel_width))
+            # Calculate panel length (room width for horizontal orientation)
+            panel_length_actual = panel_length if panel_length != 'auto' else (bounding_box['max_x'] - bounding_box['min_x'])
+            panel_length_actual = min(panel_length_actual, bounding_box['max_x'] - bounding_box['min_x'])
+            
+            # Use nested loops to fill the entire area (like ceiling plan)
+            current_x = bounding_box['min_x']
+            
+            while current_x < bounding_box['max_x']:
+                current_panel_width = min(panel_length_actual, bounding_box['max_x'] - current_x)
+                current_y = bounding_box['min_y']
                 
-                # Check if we need a cut panel for the remaining height
-                remaining_height = room_height % panel_width
-                if remaining_height > 0:
-                    panels_needed += 1
+                # Create panels for this column
+                while current_y < bounding_box['max_y']:
+                    panel_height = min(panel_width, bounding_box['max_y'] - current_y)
+                    
+                    if panel_height > 0 and current_panel_width > 0:
+                        # Check if this panel will be a cut panel (like ceiling plan logic)
+                        is_cut = False
+                        cut_notes = ""
+                        
+                        # If panel extends beyond the bounding box, mark as cut
+                        if (current_x + current_panel_width > bounding_box['max_x'] or 
+                            current_y + panel_height > bounding_box['max_y']):
+                            is_cut = True
+                            cut_notes = "Boundary extension"
+                        
+                        # If panel is smaller than standard size, mark as cut (compare with standard 1150mm width)
+                        if current_panel_width < panel_width or panel_height < panel_width:
+                            is_cut = True
+                            cut_notes = "Non-standard size"
+                        
+                        # Create panel
+                        panel = {
+                            'panel_id': f'FP_{panel_id:03d}',
+                            'start_x': current_x,
+                            'start_y': current_y,
+                            'end_x': current_x + current_panel_width,
+                            'end_y': current_y + panel_height,
+                            'width': current_panel_width,
+                            'length': panel_height,
+                            'is_cut': is_cut,
+                            'cut_notes': cut_notes
+                        }
+                        
+                        panels.append(panel)
+                        panel_id += 1
+                    
+                    current_y += panel_height
                 
-                # Generate panels across the height
-                current_y_panel = bounding_box['min_y']
-                for i in range(panels_needed):
-                    # Calculate panel width for this specific panel (height constraint)
-                    if i == panels_needed - 1:  # Last panel
-                        panel_width_actual = bounding_box['max_y'] - current_y_panel
-                    else:
-                        panel_width_actual = panel_width
-                    
-                    # Calculate panel length (room width for horizontal orientation)
-                    panel_length_actual = panel_length if panel_length != 'auto' else (bounding_box['max_x'] - bounding_box['min_x'])
-                    panel_length_actual = min(panel_length_actual, bounding_box['max_x'] - bounding_box['min_x'])
-                    
-                    if panel_length_actual <= 0:
-                        break
-                    
-                    # Create panel
-                    panel = {
-                        'panel_id': f'FP_{panel_id:03d}',
-                        'start_x': bounding_box['min_x'],
-                        'start_y': current_y_panel,
-                        'end_x': bounding_box['min_x'] + panel_length_actual,
-                        'end_y': current_y_panel + panel_width_actual,
-                        'width': panel_length_actual,
-                        'length': panel_width_actual,
-                        'is_cut': panel_width_actual < panel_width
-                    }
-                    
-                    panels.append(panel)
-                    panel_id += 1
-                    current_y_panel += panel_width_actual
-                
-                # Move to next row (if we had multiple rows, but we don't for now)
-                break
+                current_x += panel_length_actual
                 
         elif orientation == 'vertical':
             # Generate vertical panels with 1150mm width constraint
             # For vertical orientation: panels are placed vertically, width constraint applies to room width
-            current_x = bounding_box['min_x']
             panel_id = 1
             
-            while current_x < bounding_box['max_x']:
-                # Calculate how many panels we need across the WIDTH
-                room_width = bounding_box['max_x'] - bounding_box['min_x']
-                panels_needed = max(1, int(room_width / panel_width))
+            # Calculate panel length (height for vertical orientation)
+            panel_length_actual = panel_length if panel_length != 'auto' else (bounding_box['max_y'] - bounding_box['min_y'])
+            panel_length_actual = min(panel_length_actual, bounding_box['max_y'] - bounding_box['min_y'])
+            
+            # Use nested loops to fill the entire area (like ceiling plan)
+            current_y = bounding_box['min_y']
+            
+            while current_y < bounding_box['max_y']:
+                current_panel_height = min(panel_length_actual, bounding_box['max_y'] - current_y)
+                current_x = bounding_box['min_x']
                 
-                # Check if we need a cut panel for the remaining width
-                remaining_width = room_width % panel_width
-                if remaining_width > 0:
-                    panels_needed += 1
+                # Create panels for this row
+                while current_x < bounding_box['max_x']:
+                    panel_width_actual = min(panel_width, bounding_box['max_x'] - current_x)
+                    
+                    if panel_width_actual > 0 and current_panel_height > 0:
+                        # Check if this panel will be a cut panel (like ceiling plan logic)
+                        is_cut = False
+                        cut_notes = ""
+                        
+                        # If panel extends beyond the bounding box, mark as cut
+                        if (current_x + panel_width_actual > bounding_box['max_x'] or 
+                            current_y + current_panel_height > bounding_box['max_y']):
+                            is_cut = True
+                            cut_notes = "Boundary extension"
+                        
+                        # If panel is smaller than standard size, mark as cut (compare with standard 1150mm width)
+                        if panel_width_actual < panel_width or current_panel_height < panel_width:
+                            is_cut = True
+                            cut_notes = "Non-standard size"
+                        
+                        # Create panel
+                        panel = {
+                            'panel_id': f'FP_{panel_id:03d}',
+                            'start_x': current_x,
+                            'start_y': current_y,
+                            'end_x': current_x + panel_width_actual,
+                            'end_y': current_y + current_panel_height,
+                            'width': panel_width_actual,
+                            'length': current_panel_height,
+                            'is_cut': is_cut,
+                            'cut_notes': cut_notes
+                        }
+                        
+                        panels.append(panel)
+                        panel_id += 1
+                    
+                    current_x += panel_width_actual
                 
-                # Generate panels across the width
-                current_x_panel = bounding_box['min_x']
-                for i in range(panels_needed):
-                    # Calculate panel width for this specific panel
-                    if i == panels_needed - 1:  # Last panel
-                        panel_width_actual = bounding_box['max_x'] - current_x_panel
-                    else:
-                        panel_width_actual = panel_width
-                    
-                    # Calculate panel length (height for vertical orientation)
-                    panel_length_actual = panel_length if panel_length != 'auto' else (bounding_box['max_y'] - bounding_box['min_y'])
-                    panel_length_actual = min(panel_length_actual, bounding_box['max_y'] - bounding_box['min_y'])
-                    
-                    if panel_length_actual <= 0:
-                        break
-                    
-                    # Create panel
-                    panel = {
-                        'panel_id': f'FP_{panel_id:03d}',
-                        'start_x': current_x_panel,
-                        'start_y': bounding_box['min_y'],
-                        'end_x': current_x_panel + panel_width_actual,
-                        'end_y': bounding_box['min_y'] + panel_length_actual,
-                        'width': panel_width_actual,
-                        'length': panel_length_actual,
-                        'is_cut': panel_width_actual < panel_width
-                    }
-                    
-                    panels.append(panel)
-                    panel_id += 1
-                    current_x_panel += panel_width_actual
-                
-                # Move to next row (if we had multiple rows, but we don't for now)
-                break
+                current_y += current_panel_height
         
         print(f"      📊 Generated {len(panels)} {orientation} panels")
         return panels
@@ -1419,7 +1429,6 @@ class FloorService:
             print(f"📊 Floor plan generation completed for {len(created_plans)} rooms")
             
             # Get all actual FloorPanel objects from the database
-            from django.core import serializers as django_serializers
             from .serializers import FloorPanelSerializer
             
             # Collect all FloorPanel objects for the project
@@ -2428,7 +2437,7 @@ class CeilingService:
         room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
         
         room_width = room_bounding_box['width']
-        room_height = room_bounding_box['height']
+        # room_height = room_bounding_box['height']  # Unused variable
         
         # Calculate panel width based on user's choice
         if panel_length == 'auto':
@@ -2454,16 +2463,18 @@ class CeilingService:
         # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
         room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
         
-        room_width = room_bounding_box['width']
-        room_height = room_bounding_box['height']
+        # room_width = room_bounding_box['width']  # Unused variable
+        # room_height = room_bounding_box['height']  # Unused variable
         
         # Calculate panel height based on user's choice
         if panel_length == 'auto':
             # Use full room height when auto (equivalent to panel_length_option = 1)
-            panel_height = room_height
+            # panel_height = room_height  # Unused variable
+            pass
         else:
             # Use user's custom panel length
-            panel_height = float(panel_length)
+            # panel_height = float(panel_length)  # Unused variable
+            pass
         
         # Use advanced L-shaped room aware algorithm with room-specific bounding box
         panels = CeilingService._generate_shape_aware_panels(
@@ -3017,8 +3028,8 @@ class CeilingService:
             # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
             room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
             
-            room_width = room_bounding_box['width']
-            room_height = room_bounding_box['height']
+            # room_width = room_bounding_box['width']  # Unused variable
+            # room_height = room_bounding_box['height']  # Unused variable
             
             # Calculate panel width based on user's choice
             if panel_length == 'auto':
@@ -3080,8 +3091,8 @@ class CeilingService:
             # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
             room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
             
-            room_width = room_bounding_box['width']
-            room_height = room_bounding_box['height']
+            # room_width = room_bounding_box['width']  # Unused variable
+            # room_height = room_bounding_box['height']  # Unused variable
             
             # Calculate panel height based on user's choice
             if panel_length == 'auto':
@@ -3191,8 +3202,8 @@ class CeilingService:
         panel_center_y = (panel['start_y'] + panel['end_y']) / 2
         
         # Calculate room center
-        room_center_x = sum(p['x'] for p in room_info['points']) / len(room_info['points'])
-        room_center_y = sum(p['y'] for p in room_info['points']) / len(room_info['points'])
+        # room_center_x = sum(p['x'] for p in room_info['points']) / len(room_info['points'])  # Unused variable
+        # room_center_y = sum(p['y'] for p in room_info['points']) / len(room_info['points'])  # Unused variable
         
         # Check if panel center is within room's bounding box
         if panel_center_x >= room_info['bounding_box']['min_x'] and \
@@ -3240,7 +3251,7 @@ class CeilingService:
     def _calculate_merged_waste(merged_panels, rooms, merged_bounding_box):
         """Calculate the total waste area for the merged project approach"""
         try:
-            total_waste_area = 0.0
+            # total_waste_area = 0.0  # Unused variable
             total_room_area = sum(room_info['area'] for room_info in rooms)
             
             # Calculate total panel area
@@ -3293,7 +3304,7 @@ class CeilingService:
     @staticmethod
     def generate_project_ceiling_plan(project_id):
         """Generate ceiling plans for an entire project using height-based grouping"""
-        from .models import Project, Room, CeilingPlan, CeilingPanel
+        from .models import Project
         
         try:
             project = Project.objects.get(id=project_id)
@@ -3481,7 +3492,7 @@ class CeilingService:
     @staticmethod
     def _generate_height_group_ceiling_plan(project, height, group_data):
         """Generate ceiling plan for a specific height group"""
-        from .models import CeilingPlan, CeilingPanel
+
         
         # Generate ceiling plans for each room in the height group
         created_plans = []

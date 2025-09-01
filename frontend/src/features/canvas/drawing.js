@@ -1023,15 +1023,15 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
         const cy = line1[0].y + (line1[1].y - line1[0].y) * t;
         const c2x = line2[0].x + (line2[1].x - line2[0].x) * t;
         const c2y = line2[0].y + (line2[1].y - line2[0].y) * t;
-        const mx = (cx + c2x) / 2;
-        const my = (cy + c2y) / 2;
+        // const mx = (cx + c2x) / 2; // Unused variable
+        // const my = (cy + c2y) / 2; // Unused variable
         
         // Direction vector along the wall
         const dx = (line1[1].x - line1[0].x) / wallLength;
         const dy = (line1[1].y - line1[0].y) / wallLength;
         // Perpendicular vector for label offset
-        const perpX = -dy;
-        const perpY = dx;
+        // const perpX = -dy; // Unused variable
+        // const perpY = dx; // Unused variable
         
                     // Show labels for side panels (first and last panels) and if this panel should show dimensions
             if ((i === 0 || i === panels.length - 1) && 

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useProjectDetails from './useProjectDetails';
 import Canvas2D from '../canvas/Canvas2D';
-import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
 import RoomManager from '../room/RoomManager';
 import DoorManager from '../door/DoorManager';
 import DoorEditorModal from '../door/DoorEditorModal';
@@ -800,7 +799,7 @@ const ProjectDetails = () => {
                                                 // 2. For each changed endpoint, update all other walls sharing that endpoint
                                                 const updates = [];
                                                 for (const endpoint of changedEndpoints) {
-                                                    for (const [idx, wall] of projectDetails.walls.entries()) {
+                                                    for (const wall of projectDetails.walls) {
                                                         if (wall.id === edited.id) continue;
                                                         // Check start
                                                         if (Math.abs(endpoint.old.x - wall.start_x) < 0.001 && Math.abs(endpoint.old.y - wall.start_y) < 0.001) {

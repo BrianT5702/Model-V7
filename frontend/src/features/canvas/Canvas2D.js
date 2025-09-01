@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
-import PanelCalculator from '../panel/PanelCalculator';
 import DoorTable from '../door/DoorTable';
-import { calculatePolygonArea, getOrderedPoints, calculateInsetPoints, calculatePolygonVisualCenter, isPointInPolygon, findIntersectionPointsBetweenWalls, calculateIntersection } from './utils';
+import { calculatePolygonArea, findIntersectionPointsBetweenWalls } from './utils';
 import {
   drawGrid,
   drawRooms,
@@ -12,10 +11,9 @@ import {
   drawPartitionSlashes,
   drawEndpoints,
   drawDimensions,
-  calculateOffsetPoints,
   drawWallLinePair,
   drawWallCaps,
-  drawPanelDivisions, // <-- add this
+  drawPanelDivisions,
   normalizeWallCoordinates,
   getRoomLabelPositions
 } from './drawing';
@@ -60,12 +58,9 @@ const Canvas2D = ({
     const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
     const [intersections, setIntersections] = useState([]);
     const [selectedIntersection, setSelectedIntersection] = useState(null);
-    const [joiningMethod, setJoiningMethod] = useState("butt_in");
     const [highlightWalls, setHighlightWalls] = useState([]);
     const [selectedJointPair, setSelectedJointPair] = useState(null);
-    const [selectedDoorId, setSelectedDoorId] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
-    const [showPanelTable, setShowPanelTable] = useState(false);
     const [showMaterialDetails, setShowMaterialDetails] = useState(false);
 
 
@@ -104,36 +99,7 @@ const Canvas2D = ({
         setShowMaterialDetails(prev => !prev);
     };
 
-    // Handle room updates
-    const handleRoomUpdate = async (roomId, updates) => {
-        try {
-            // Find the current room
-            const currentRoom = rooms.find(room => room.id === roomId);
-            if (!currentRoom) {
-                console.error('Room not found:', roomId);
-                return;
-            }
-            
-            // Create updated room data
-            const updatedRoomData = { ...currentRoom, ...updates };
-            
-            // Use the parent's room update function
-            if (onRoomUpdate) {
-                await onRoomUpdate(updatedRoomData);
-            } else {
-                // Fallback to direct API call if no parent function provided
-                const response = await api.put(`/rooms/${roomId}/`, updates);
-                if (response.status === 200) {
-                    console.log('Room updated successfully:', response.data);
-                }
-            }
-        } catch (error) {
-            console.error('Error updating room:', error);
-            if (isDatabaseConnectionError(error)) {
-                showDatabaseError();
-            }
-        }
-    };
+
 
     // Handle room label position changes (optimized to avoid unnecessary re-renders)
     const handleRoomLabelPositionChange = (roomId, newPosition) => {
@@ -552,7 +518,6 @@ const Canvas2D = ({
         const { x, y } = getMousePos(event);
         console.log('Canvas clicked! Screen:', event.clientX, event.clientY, 'Model:', x, y, 'currentMode:', currentMode);
         if (!isEditingMode) return;
-        const clickPoint = { x, y };
         
         // Deselect room label when clicking on empty space (but not when actively defining a room)
         if (selectedRoomId !== null && !(currentMode === 'define-room' && selectedRoomPoints && selectedRoomPoints.length > 0)) {
@@ -569,7 +534,7 @@ const Canvas2D = ({
                 const distance = Math.hypot(inter.x - x, inter.y - y);
                 if (distance < dynamicThreshold) {
                     setSelectedIntersection(inter);
-                    setJoiningMethod(inter.joining_method || "butt_in");
+                    // setJoiningMethod(inter.joining_method || "butt_in"); // Unused variable
                     return;
                 }
             }
@@ -791,43 +756,16 @@ const Canvas2D = ({
                 x, y, doors, walls, scaleFactor.current, offsetX.current, offsetY.current
             );
             if (clickedDoor) {
-                setSelectedDoorId(clickedDoor.id);
+                // setSelectedDoorId(clickedDoor.id); // Unused variable
                 onDoorSelect(clickedDoor);
             } else {
-                setSelectedDoorId(null);
+                // setSelectedDoorId(null); // Unused variable
             }
             return;
         }
     };
 
-    // Helper for wall hover detection
-    function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
-        const A = px - x1;
-        const B = py - y1;
-        const C = x2 - x1;
-        const D = y2 - y1;
 
-        const dot = A * C + B * D;
-        const len_sq = C * C + D * D;
-        let param = -1;
-        if (len_sq !== 0) param = dot / len_sq;
-
-        let xx, yy;
-        if (param < 0) {
-            xx = x1;
-            yy = y1;
-        } else if (param > 1) {
-            xx = x2;
-            yy = y2;
-            } else {
-            xx = x1 + param * C;
-            yy = y1 + param * D;
-        }
-
-        const dx = px - xx;
-        const dy = py - yy;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
 
     const handleMouseMove = (event) => {
         if (!isEditingMode) return;

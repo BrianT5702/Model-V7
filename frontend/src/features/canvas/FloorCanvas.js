@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
-import { calculateOffsetPoints, drawDimensions, drawWallLinePair } from './drawing.js';
+import { calculateOffsetPoints } from './drawing.js';
 
 const FloorCanvas = ({ 
     rooms, 
@@ -26,7 +26,6 @@ const FloorCanvas = ({
     // Canvas dimensions - match CeilingCanvas for consistency
     const CANVAS_WIDTH = 800;
     const CANVAS_HEIGHT = 600;
-    const GRID_SIZE = 50;
     const PADDING = 50;
 
     // Calculate project bounds for dimension positioning (project boundary)
@@ -365,7 +364,7 @@ const FloorCanvas = ({
         console.log('Center point for walls:', center);
 
         // Create empty joints array (not used in floor plan but required by drawWallCaps)
-        const joints = [];
+        // const joints = []; // Unused variable
         
         walls.forEach(wall => {
             console.log('Drawing wall:', wall);
@@ -386,10 +385,10 @@ const FloorCanvas = ({
                 );
 
                 // Check for 45° joint at endpoints and possibly flip inner wall side
-                const endpoints = [
-                    { label: 'start', x: wall.start_x, y: wall.start_y },
-                    { label: 'end', x: wall.end_x, y: wall.end_y }
-                ];
+                // const endpoints = [ // Unused variable
+                //     { label: 'start', x: wall.start_x, y: wall.start_y },
+                //     { label: 'end', x: wall.end_x, y: wall.end_y }
+                // ];
                 
                                 // Check if this wall is involved in any 45° cut intersections
                 let has45 = false;
