@@ -334,7 +334,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             <option value="all_vertical">⬇️ All Vertical (Up/Down)</option>
                             <option value="all_horizontal">➡️ All Horizontal (Left/Right)</option>
                             <option value="room_optimal">🏠 Room Optimal (Best per room)</option>
-                            <option value="project_merged">🔗 Project Merged (Same height)</option>
+                            {/* <option value="project_merged">🔗 Project Merged (Same height)</option> */}
                         </select>
                     </div>
 
