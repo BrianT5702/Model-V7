@@ -362,9 +362,6 @@ const FloorCanvas = ({
         }
 
         console.log('Center point for walls:', center);
-
-        // Create empty joints array (not used in floor plan but required by drawWallCaps)
-        // const joints = []; // Unused variable
         
         walls.forEach(wall => {
             console.log('Drawing wall:', wall);
@@ -578,53 +575,53 @@ const FloorCanvas = ({
         
         // For panel rooms, check if panels exist
         const roomPanels = effectiveFloorPanelsMap[room.id] || [];
-        console.log(`  - Room panels found:`, roomPanels);
-        console.log(`  - effectiveFloorPanelsMap keys:`, Object.keys(effectiveFloorPanelsMap));
-        console.log(`  - Looking for room ID:`, room.id);
-        console.log(`  - All room IDs:`, rooms?.map(r => r.id));
-        console.log(`  - All panel room IDs:`, floorPanels?.map(p => p.room_id || p.room));
+        // console.log(`  - Room panels found:`, roomPanels);
+        // console.log(`  - effectiveFloorPanelsMap keys:`, Object.keys(effectiveFloorPanelsMap));
+        // console.log(`  - Looking for room ID:`, room.id);
+        // console.log(`  - All room IDs:`, rooms?.map(r => r.id));
+        // console.log(`  - All panel room IDs:`, floorPanels?.map(p => p.room_id || p.room));
         
         if (!roomPanels || roomPanels.length === 0) {
-            console.log(`  - No floor panels found for room ${room.id} - showing no floor plan message`);
-            console.log(`  - This might mean: 1) No panels generated, 2) Panel data not loaded, 3) Room ID mismatch`);
-            console.log(`  - Available panels:`, floorPanels);
+            // console.log(`  - No floor panels found for room ${room.id} - showing no floor plan message`);
+            // console.log(`  - This might mean: 1) No panels generated, 2) Panel data not loaded, 3) Room ID mismatch`);
+            // console.log(`  - Available panels:`, floorPanels);
             drawNoFloorPlanMessage(ctx, room);
             return;
         }
 
-        console.log(`  - Drawing ${roomPanels.length} panels for room ${room.id}`);
-        console.log(`  - All panels for this room:`, roomPanels);
+        // console.log(`  - Drawing ${roomPanels.length} panels for room ${room.id}`);
+        // console.log(`  - All panels for this room:`, roomPanels);
         
         // Draw all panels for this room
         roomPanels.forEach((panel, index) => {
-            console.log(`  - Panel ${index + 1}:`, panel);
-            console.log(`  - Panel properties:`, {
-                start_x: panel.start_x,
-                start_y: panel.start_y,
-                width: panel.width,
-                length: panel.length,
-                is_cut_panel: panel.is_cut_panel,
-                panel_id: panel.panel_id
-            });
+            // console.log(`  - Panel ${index + 1}:`, panel);
+            // console.log(`  - Panel properties:`, {
+            //     start_x: panel.start_x,
+            //     start_y: panel.start_y,
+            //     width: panel.width,
+            //     length: panel.length,
+            //     is_cut_panel: panel.is_cut_panel,
+            //     panel_id: panel.panel_id
+            // });
             
             // Check if panel has required properties
-            console.log(`  - Panel ${index + 1} full object:`, JSON.stringify(panel, null, 2));
+            // console.log(`  - Panel ${index + 1} full object:`, JSON.stringify(panel, null, 2));
             if (panel.start_x === null || panel.start_x === undefined || 
                 panel.start_y === null || panel.start_y === undefined || 
                 panel.width === null || panel.width === undefined || 
                 panel.length === null || panel.length === undefined) {
-                console.log(`  - ⚠️ Panel ${index + 1} missing required properties:`, {
-                    start_x: panel.start_x,
-                    start_y: panel.start_y,
-                    width: panel.width,
-                    length: panel.length
-                });
-                console.log(`  - Panel ${index + 1} property types:`, {
-                    start_x: typeof panel.start_x,
-                    start_y: typeof panel.start_y,
-                    width: typeof panel.width,
-                    length: typeof panel.length
-                });
+                // console.log(`  - ⚠️ Panel ${index + 1} missing required properties:`, {
+                //     start_x: panel.start_x,
+                //     start_y: panel.start_y,
+                //     width: panel.width,
+                //     length: panel.length
+                // });
+                // console.log(`  - Panel ${index + 1} property types:`, {
+                //     start_x: typeof panel.start_x,
+                //     start_y: typeof panel.start_y,
+                //     width: typeof panel.width,
+                //     length: typeof panel.length
+                // });
                 return;
             }
             
@@ -641,14 +638,9 @@ const FloorCanvas = ({
             const panelWidth = panel.width * scaleFactor.current;
             const panelLength = panel.length * scaleFactor.current;
             
-            console.log(`  - Panel ${index + 1} position: x=${panelX}, y=${panelY}, w=${panelWidth}, h=${panelLength}`);
-            console.log(`  - Panel ${index + 1} raw coordinates: start_x=${panel.start_x}, start_y=${panel.start_y}, width=${panel.width}, length=${panel.length}`);
-            console.log(`  - Panel ${index + 1} scaled coordinates: scale=${scaleFactor.current}, offsetX=${offsetX.current}, offsetY=${offsetY.current}`);
-            
-            // Check if panel is within canvas bounds
-            const isVisible = panelX >= -panelWidth && panelX <= CANVAS_WIDTH && 
-                             panelY >= -panelLength && panelY <= CANVAS_HEIGHT;
-            console.log(`  - Panel ${index + 1} visible: ${isVisible} (canvas: ${CANVAS_WIDTH}x${CANVAS_HEIGHT})`);
+            // console.log(`  - Panel ${index + 1} position: x=${panelX}, y=${panelY}, w=${panelWidth}, h=${panelLength}`);
+            // console.log(`  - Panel ${index + 1} raw coordinates: start_x=${panel.start_x}, start_y=${panel.start_y}, width=${panel.width}, length=${panel.length}`);
+            // console.log(`  - Panel ${index + 1} scaled coordinates: scale=${scaleFactor.current}, offsetX=${offsetX.current}, offsetY=${offsetY.current}`);
             
             // Draw panel
             ctx.beginPath();
@@ -657,15 +649,15 @@ const FloorCanvas = ({
             ctx.stroke();
             
             // Panel ID
-            ctx.fillStyle = '#1f2937';
-            ctx.font = `${Math.max(10, 12 * scaleFactor.current)}px Arial`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            const centerX = panelX + (panelWidth / 2);
-            const centerY = panelY + (panelLength / 2);
-            ctx.fillText(panel.panel_id, centerX, centerY);
+            // ctx.fillStyle = '#1f2937';
+            // ctx.font = `${Math.max(10, 12 * scaleFactor.current)}px Arial`;
+            // ctx.textAlign = 'center';
+            // ctx.textBaseline = 'middle';
+            // const centerX = panelX + (panelWidth / 2);
+            // const centerY = panelY + (panelLength / 2);
+            // ctx.fillText(panel.panel_id, centerX, centerY);
             
-            console.log(`  - Panel ${index + 1} drawn successfully`);
+            // console.log(`  - Panel ${index + 1} drawn successfully`);
         });
     };
     
@@ -709,8 +701,6 @@ const FloorCanvas = ({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(messageText, messageX, messageY);
-        
-        console.log(`  - Drew "No floor plan available" message for room ${room.id}`);
     };
 
     // Draw slab calculation message for slab floor rooms
@@ -761,8 +751,6 @@ const FloorCanvas = ({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(messageText, messageX, messageY);
-        
-        console.log(`  - Drew slab calculation message for room ${room.id}: ${slabsNeeded} slabs needed for ${(roomArea/1000000).toFixed(2)} m²`);
     };
 
     // Draw title and info
@@ -776,11 +764,6 @@ const FloorCanvas = ({
         // Draw scale info
         ctx.font = `${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         ctx.fillText(`Scale: ${scaleFactor.current.toFixed(2)}x`, 20, 50);
-    };
-
-    // Helper function to create unique dimension keys
-    const createDimensionKey = (type, roomId, dimension, orientation = '') => {
-        return `${type}_${roomId}_${Math.round(dimension)}_${orientation}`;
     };
 
     // Helper function to calculate room area using shoelace formula
@@ -799,32 +782,6 @@ const FloorCanvas = ({
         
         // Return absolute value and divide by 2 (shoelace formula)
         return Math.abs(area) / 2;
-    };
-    
-    // Helper function to check for spatial duplicates (dimensions very close to each other)
-    const isSpatialDuplicate = (newDimension, existingDimensions) => {
-        const tolerance = 5; // 5mm tolerance for considering dimensions as duplicates
-        
-        for (const existing of existingDimensions) {
-            // Check if dimensions are similar in value
-            if (Math.abs(newDimension.dimension - existing.dimension) < tolerance) {
-                // Check if dimensions are in similar positions
-                const newMidX = (newDimension.startX + newDimension.endX) / 2;
-                const newMidY = (newDimension.startY + newDimension.endY) / 2;
-                const existingMidX = (existing.startX + existing.endX) / 2;
-                const existingMidY = (existing.startY + existing.endY) / 2;
-                
-                const distance = Math.sqrt(
-                    Math.pow(newMidX - existingMidX, 2) + 
-                    Math.pow(newMidY - existingMidY, 2)
-                );
-                
-                if (distance < tolerance * 2) { // 10mm tolerance for position
-                    return true; // This is a spatial duplicate
-                }
-            }
-        }
-        return false;
     };
 
     // Draw floor dimensions (cut panels and room dimensions only)
@@ -884,10 +841,6 @@ const FloorCanvas = ({
                     isHorizontal: false // Force vertical dimension line
                 };
 
-                // Create unique keys for room dimensions
-                const widthKey = createDimensionKey('room_width', room.id, roomWidth);
-                const heightKey = createDimensionKey('room_height', room.id, roomHeight);
-                
                 // Check if these dimensions are already drawn globally
                 const widthGlobalKey = `room_width_${Math.round(roomWidth)}`;
                 const heightGlobalKey = `room_height_${Math.round(roomHeight)}`;
@@ -921,7 +874,7 @@ const FloorCanvas = ({
 
     // Draw room dimensions (helper function)
     const drawRoomDimensions = (ctx, dimension, bounds, placedLabels, allLabels) => {
-        const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea } = dimension;
+        const { startX, endX, startY, endY, dimension: length, color, avoidArea } = dimension;
         const { minX, maxX, minY, maxY } = bounds || modelBounds || {};
         
         if (!bounds && !modelBounds) return;
@@ -1126,9 +1079,6 @@ const FloorCanvas = ({
         // For rooms with many panels, only show grouped dimensions to avoid clutter
         const shouldShowIndividual = roomPanels.length <= 20; // Same limit as ceiling plan
         
-        // Determine panel orientation by checking if panels are wider than tall
-        // For horizontal panels: width < length (e.g., 1150mm < 15000mm) - panels run left-to-right
-        // For vertical panels: width < length (e.g., 1150mm < 10000mm) - panels run up-to-down
         const isHorizontalOrientation = roomPanels.length > 0 && 
             roomPanels[0].width < roomPanels[0].length;
         
@@ -1340,35 +1290,19 @@ const FloorCanvas = ({
         }
     };
 
-    // Draw cut panel dimension (helper function)
-    const drawCutPanelDimension = (ctx, dimension, placedLabels, allLabels) => {
-        const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea } = dimension;
-        
-        // Use the same dimension drawing logic as room dimensions
-        drawRoomDimensions(ctx, dimension, projectBounds, placedLabels, allLabels);
-    };
-
     // Zoom to center of canvas
     const zoomToCenter = (newScale) => {
-        console.log('🎯 zoomToCenter called with newScale:', newScale);
-        console.log('Canvas ref exists:', !!canvasRef.current);
-        console.log('BEFORE update - scaleFactor.current:', scaleFactor.current);
         
         const canvasCenterX = CANVAS_WIDTH / 2;
         const canvasCenterY = CANVAS_HEIGHT / 2;
         
         const scaleRatio = newScale / scaleFactor.current;
-        console.log('Scale ratio:', scaleRatio);
         
         offsetX.current = canvasCenterX - (canvasCenterX - offsetX.current) * scaleRatio;
         offsetY.current = canvasCenterY - (canvasCenterY - offsetY.current) * scaleRatio;
         
-        console.log('New offsets:', { x: offsetX.current, y: offsetY.current });
-        
         // Update the scale factor FIRST
         scaleFactor.current = newScale;
-        console.log('AFTER update - scaleFactor.current:', scaleFactor.current);
-        
         // Mark that user has manually zoomed
         isZoomed.current = true;
         
@@ -1381,9 +1315,8 @@ const FloorCanvas = ({
             console.log('Got canvas context, clearing and redrawing...');
             ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
             drawCanvas(ctx);
-            console.log('Canvas redrawn!');
         } else {
-            console.error('❌ Could not get canvas context!');
+            //console.error('❌ Could not get canvas context!');
         }
     };
 
@@ -1483,14 +1416,6 @@ const FloorCanvas = ({
                 }
             }
         }
-        
-        // Clicked on empty space
-        console.log('Clicked on empty space');
-    };
-
-    // Reset zoom (kept for backward compatibility)
-    const resetZoom = () => {
-        handleResetZoom();
     };
 
     const panelCounts = getAccuratePanelCounts();
@@ -1773,7 +1698,7 @@ const FloorCanvas = ({
                             </div>
                         )}
                         
-                                                 <div className="pt-4 border-t border-gray-200">
+                            <div className="pt-4 border-t border-gray-200">
                              <div className="text-sm text-gray-600">Panel Floor Area</div>
                              <div className="text-lg font-semibold text-gray-900">
                                  {(() => {

@@ -145,7 +145,14 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     setPanelWidth(existingPlan.panel_width);
                 }
                 if (existingPlan.panel_length) {
-                    setPanelLength(existingPlan.panel_length);
+                    // Check if panel_length is 'auto' or a numeric value
+                    if (existingPlan.panel_length === 'auto') {
+                        setPanelLength('auto');
+                    } else {
+                        // It's a custom value, set dropdown to 'custom' and use the value
+                        setPanelLength('custom');
+                        setCustomPanelLength(existingPlan.panel_length);
+                    }
                 }
                 if (existingPlan.custom_panel_length) {
                     setCustomPanelLength(existingPlan.custom_panel_length);
@@ -629,7 +636,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             panelsNeedSupport={panelsNeedSupport}
                         />
                         {/* Debug info */}
-                        <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
+                        {/* <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
                             <div>Debug Info:</div>
                             <div>Rooms: {allRooms.length}</div>
                             <div>Walls: {allWalls.length}</div>
@@ -650,7 +657,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                 <div>Standard panel widths used (no optimization)</div>
                                 <div>All panels maintain original dimensions</div>
                             </div>
-                        </div>
+                        </div> */}
                     </div>
                 ) : (
                     <div className="text-center py-12">

@@ -17075,3 +17075,23 @@ INFO 2025-09-01 10:27:31,345 autoreload 25528 21516 Watching for file changes wi
 INFO 2025-09-01 10:29:27,818 autoreload 25528 21516 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
 INFO 2025-09-01 10:29:28,477 autoreload 5132 23584 Watching for file changes with StatReloader
 INFO 2025-09-02 09:55:08,004 autoreload 6772 11588 Watching for file changes with StatReloader
+WARNING 2025-09-02 09:55:33,400 log 6772 21696 Not Found: /favicon.ico
+WARNING 2025-09-02 10:04:16,671 log 6772 14388 Not Found: /favicon.ico
+INFO 2025-09-02 15:01:25,877 autoreload 4172 3432 Watching for file changes with StatReloader
+WARNING 2025-09-02 15:01:35,940 log 4172 6988 Not Found: /favicon.ico
+INFO 2025-09-03 10:46:20,740 autoreload 13168 8504 Watching for file changes with StatReloader
+INFO 2025-09-03 10:57:31,168 autoreload 13168 8504 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-03 10:57:31,752 autoreload 9428 16100 Watching for file changes with StatReloader
+INFO 2025-09-03 10:57:56,642 autoreload 9428 16100 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-03 10:57:57,172 autoreload 22208 10784 Watching for file changes with StatReloader
+INFO 2025-09-03 11:02:12,079 autoreload 22208 10784 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-03 11:02:12,636 autoreload 12424 17744 Watching for file changes with StatReloader
+INFO 2025-09-03 11:04:37,965 autoreload 12424 17744 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-03 11:04:38,472 autoreload 5740 12544 Watching for file changes with StatReloader
+INFO 2025-09-03 11:09:21,244 autoreload 5740 12544 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-03 11:09:21,772 autoreload 1516 14232 Watching for file changes with StatReloader
+INFO 2025-09-03 11:12:23,324 autoreload 1516 14232 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-09-03 11:12:23,923 autoreload 14912 20252 Watching for file changes with StatReloader
+INFO 2025-09-03 11:13:21,627 services 14912 15036 Recalculating room boundary for room 143
+INFO 2025-09-03 11:13:21,633 services 14912 15036 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-03 12:53:27,673 autoreload 18348 12876 Watching for file changes with StatReloader

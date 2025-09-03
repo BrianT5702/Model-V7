@@ -367,9 +367,6 @@ const CeilingCanvas = ({
         }
 
         console.log('Center point for walls:', center);
-
-        // Create empty joints array (not used in ceiling plan but required by drawWallCaps)
-        // const joints = []; // Unused variable
         
         walls.forEach(wall => {
             console.log('Drawing wall:', wall);
@@ -388,12 +385,6 @@ const CeilingCanvas = ({
                     center,
                     scaleFactor.current
                 );
-
-                // Check for 45° joint at endpoints and possibly flip inner wall side
-                // const endpoints = [ // Unused variable
-                //     { label: 'start', x: wall.start_x, y: wall.start_y },
-                //     { label: 'end', x: wall.end_x, y: wall.end_y }
-                // ];
                 
                 // Check if this wall is involved in any 45° cut intersections
                 let has45 = false;
@@ -655,7 +646,7 @@ const CeilingCanvas = ({
             drawEnhancedCeilingDimensions(ctx, room, roomPanels, modelBounds, placedLabels, allLabels);
         }
 
-                    // Draw default supports (nylon hangers only) and custom supports
+        // Draw default supports (nylon hangers only) and custom supports
         if (!aluSuspensionCustomDrawing) {
             // Draw default nylon hanger supports
             drawPanelSupports(ctx, roomPanels, scaleFactor.current, offsetX.current, offsetY.current);
@@ -675,15 +666,10 @@ const CeilingCanvas = ({
         if (isPlacingSupport && supportPreview && supportPreview.mousePosition && supportPreview.distances) {
             drawMousePositionDimensions(ctx, supportPreview.mousePosition, supportPreview.distances, scaleFactor.current, offsetX.current, offsetY.current);
         }
-
-        // Dimensions are now drawn directly in drawEnhancedCeilingDimensions
-        // No need for second pass label drawing
     };
 
     // Enhanced ceiling dimension drawing function
     const drawEnhancedCeilingDimensions = (ctx, room, roomPanels, roomModelBounds, placedLabels, allLabels) => {
-        // DON'T reset placed labels - we need global collision detection across all rooms
-        // placedLabels.length = 0; // REMOVED - This was breaking collision detection between rooms!
         
         const roomWidth = Math.abs(Math.max(...room.room_points.map(p => p.x)) - Math.min(...room.room_points.map(p => p.x)));
         const roomHeight = Math.abs(Math.max(...room.room_points.map(p => p.y)) - Math.min(...room.room_points.map(p => p.y)));
@@ -712,36 +698,31 @@ const CeilingCanvas = ({
             maxY: panelBounds.maxY * scaleFactor.current + offsetY.current
         };
         
-        console.log(`🔍 Panel bounds conversion:`, {
-            model: panelBounds,
-            canvas: canvasPanelBounds,
-            scale: scaleFactor.current,
-            offset: { x: offsetX.current, y: offsetY.current }
-        });
+        // console.log(`🔍 Panel bounds conversion:`, {
+        //     model: panelBounds,
+        //     canvas: canvasPanelBounds,
+        //     scale: scaleFactor.current,
+        //     offset: { x: offsetX.current, y: offsetY.current }
+        // });
         
-        console.log(`🏠 Room bounds:`, {
-            room: room.id,
-            roomBounds: roomBounds,
-            roomWidth: roomWidth,
-            roomHeight: roomHeight
-        });
+        // console.log(`🏠 Room bounds:`, {
+        //     room: room.id,
+        //     roomBounds: roomBounds,
+        //     roomWidth: roomWidth,
+        //     roomHeight: roomHeight
+        // });
         
         // Draw room-level dimensions first (most important) - well outside panel area
         // These have highest priority and should be drawn first
         drawRoomDimensions(ctx, room, roomWidth, roomHeight, roomBounds, canvasPanelBounds, placedLabels, allLabels);
         
-        // Wait a bit to ensure room dimensions are processed before panel dimensions
-        // This helps with collision detection priority
-        
         // Draw panel-level dimensions - handle any number of panels intelligently
         if (roomPanels.length > 0) {
             // Group panels by their dimension to show grouped dimensions (EXCLUDE cut panels)
             const panelsByDimension = new Map();
-            const totalPanels = roomPanels.length;
             const cutPanels = roomPanels.filter(p => p.is_cut);
-            const fullPanels = roomPanels.filter(p => !p.is_cut);
             
-            console.log(`🔍 Panel grouping: ${totalPanels} total, ${fullPanels.length} full, ${cutPanels.length} cut`);
+            // console.log(`🔍 Panel grouping: ${totalPanels} total, ${fullPanels.length} full, ${cutPanels.length} cut`);
             
             roomPanels.forEach(panel => {
                 // Skip cut panels - they get individual dimensions later
@@ -760,17 +741,13 @@ const CeilingCanvas = ({
                 panelsByDimension.get(dimensionValue).push(panel);
             });
             
-            console.log(`🔍 Grouping results:`, Array.from(panelsByDimension.entries()).map(([dim, panels]) => 
-                `${dim}mm: ${panels.length} panels (${panels.map(p => p.is_cut ? 'CUT' : 'FULL').join(', ')})`
-            ));
+            // console.log(`🔍 Grouping results:`, Array.from(panelsByDimension.entries()).map(([dim, panels]) => 
+            //     `${dim}mm: ${panels.length} panels (${panels.map(p => p.is_cut ? 'CUT' : 'FULL').join(', ')})`
+            // ));
             
             // For rooms with many panels, only show grouped dimensions to avoid clutter
             const shouldShowIndividual = roomPanels.length <= 20; // Increased limit
             
-            // Determine panel orientation by checking if panels are wider than tall
-            // For horizontal panels: width < length (e.g., 1150mm < 15000mm) - panels run left-to-right
-            // For vertical panels: width < length (e.g., 1150mm < 10000mm) - panels run up-to-down
-            // The key is: panels are always oriented so their width is the smaller dimension
             const isHorizontalOrientation = roomPanels.length > 0 && 
                 roomPanels[0].width < roomPanels[0].length;
             
@@ -844,7 +821,7 @@ const CeilingCanvas = ({
             
             // Draw cut panel dimensions with RED color
             if (cutPanels.length > 0) {
-                console.log(`🔍 Drawing dimensions for ${cutPanels.length} cut panels with RED color`);
+                //console.log(`🔍 Drawing dimensions for ${cutPanels.length} cut panels with RED color`);
                 
                 cutPanels.forEach(panel => {
                     // For cut panels, show the correct dimension based on orientation
@@ -852,9 +829,8 @@ const CeilingCanvas = ({
                     // Vertical orientation: show panel LENGTH (perpendicular to panel direction)
                     const isHorizontal = panel.width < panel.length;
                     const dimensionValue = isHorizontal ? panel.width : panel.length; // Use width for horizontal, length for vertical
-                    const dimensionType = isHorizontal ? 'Width' : 'Length';
                     
-                    console.log(`🔍 Cut panel ${panel.id}: ${dimensionValue}mm (${dimensionType}) - ${isHorizontal ? 'Horizontal' : 'Vertical'} orientation`);
+                    //console.log(`🔍 Cut panel ${panel.id}: ${dimensionValue}mm (${dimensionType}) - ${isHorizontal ? 'Horizontal' : 'Vertical'} orientation`);
                     
                     // Create unique key for cut panel dimension
                     const cutDimensionKey = `cut_${panel.id}`;
@@ -866,14 +842,9 @@ const CeilingCanvas = ({
                     drawnDimensions.add(cutDimensionKey);
                     drawnValues.add(cutValueKey);
                     
-                    // Cut panel: show individual dimension with RED color
-                    // Use same placement logic as grouped dimensions (n × A)
                     let cutPanelDimension;
                     
-                    // Use EXACT same placement logic as grouped dimensions (n × A)
-                    // The key insight: isHorizontal parameter in grouped dimensions refers to the DIMENSION LINE orientation
-                    // - isHorizontal = true → VERTICAL dimension line (for vertical panels)
-                    // - isHorizontal = false → HORIZONTAL dimension line (for horizontal panels)
+                   
                     if (isHorizontal) {
                         // Horizontal panel: should create HORIZONTAL dimension line (same as grouped dimensions)
                         // Same as grouped dimensions: horizontal line spanning minX to maxX, at centerY
@@ -1037,8 +1008,6 @@ const CeilingCanvas = ({
             roomId: room.id // Assign room ID
         };
         
-
-        
         // Draw room dimensions with optimal positioning
         drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
         drawCeilingDimension(ctx, heightDimension, projectBounds, placedLabels, allLabels);
@@ -1111,7 +1080,7 @@ const CeilingCanvas = ({
 
     // Generate panel list for ceiling plan
     const generatePanelList = () => {
-        console.log('🔧 generatePanelList called with effectiveCeilingPanelsMap:', effectiveCeilingPanelsMap);
+        //console.log('🔧 generatePanelList called with effectiveCeilingPanelsMap:', effectiveCeilingPanelsMap);
         
         if (!effectiveCeilingPanelsMap || Object.keys(effectiveCeilingPanelsMap).length === 0) {
             console.log('📋 No ceiling panels found for project');
@@ -1761,44 +1730,31 @@ const CeilingCanvas = ({
 
     // Zoom to center of canvas
     const zoomToCenter = (newScale) => {
-        console.log('🎯 zoomToCenter called with newScale:', newScale);
-        console.log('Canvas ref exists:', !!canvasRef.current);
-        console.log('BEFORE update - scaleFactor.current:', scaleFactor.current);
         
         const canvasCenterX = CANVAS_WIDTH / 2;
         const canvasCenterY = CANVAS_HEIGHT / 2;
         
         const scaleRatio = newScale / scaleFactor.current;
-        console.log('Scale ratio:', scaleRatio);
         
         offsetX.current = canvasCenterX - (canvasCenterX - offsetX.current) * scaleRatio;
         offsetY.current = canvasCenterY - (canvasCenterY - offsetY.current) * scaleRatio;
         
-        console.log('New offsets:', { x: offsetX.current, y: offsetY.current });
-        
         // Update the scale factor FIRST
         scaleFactor.current = newScale;
-        console.log('AFTER update - scaleFactor.current:', scaleFactor.current);
-        
         // Mark that user has manually zoomed
         isZoomed.current = true;
         
         // Update the state
         setCurrentScale(newScale);
         
-        console.log('Updated scaleFactor to:', scaleFactor.current);
-        console.log('Updated currentScale state to:', newScale);
-        console.log('isZoomed set to:', isZoomed.current);
-        
         // Redraw
         const ctx = canvasRef.current.getContext('2d');
         if (ctx) {
             console.log('Got canvas context, clearing and redrawing...');
             ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        drawCanvas(ctx);
-            console.log('Canvas redrawn!');
+            drawCanvas(ctx);
         } else {
-            console.error('❌ Could not get canvas context!');
+            //console.error('❌ Could not get canvas context!');
         }
     };
 

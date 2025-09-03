@@ -504,7 +504,6 @@ class FloorService:
                 
                 # Check floor type - only analyze panel floors
                 if not hasattr(room, 'floor_type') or room.floor_type not in ['panel', 'Panel']:
-                    print(f"🏠 Skipping room {room.room_name} in orientation analysis - floor type is '{getattr(room, 'floor_type', 'none')}' (only 'panel' type needs floor plans)")
                     continue
                 
                 # Calculate floor area (excluding walls)
@@ -592,8 +591,6 @@ class FloorService:
         if not bounding_box:
             return strategies
         
-        print(f"      📐 Analyzing room with {bounding_box['point_count']} points")
-        
         # Strategy 1: All Horizontal
         horizontal_panels = FloorService._generate_floor_panels(
             bounding_box, room.room_points, 'horizontal', panel_width, panel_length, room.project.wall_thickness
@@ -656,7 +653,6 @@ class FloorService:
         
         # Ensure valid dimensions
         if min_x >= max_x or min_y >= max_y:
-            print(f"      ⚠️ Invalid bounding box dimensions: min_x={min_x}, max_x={max_x}, min_y={min_y}, max_y={max_y}")
             return None
         
         bounding_box = {
@@ -671,9 +667,6 @@ class FloorService:
         # Add room point count information
         bounding_box['point_count'] = len(room.room_points)
         
-        print(f"      📐 Bounding box: {bounding_box['width']} x {bounding_box['height']} mm")
-        print(f"      📐 Room has {bounding_box['point_count']} points")
-        
         return bounding_box
     
     @staticmethod
@@ -683,16 +676,13 @@ class FloorService:
         
         # Use the same approach as ceiling plan: shape-aware panel generation
         # This properly handles L-shaped rooms by splitting them into rectangular regions
-        print(f"      📐 Generating panels using shape-aware approach (works for all room shapes)")
-        
+       
         # Check if room is L-shaped and split into regions if needed
         if len(room_points) > 4:
-            print(f"      🔺 Room has {len(room_points)} points - may be L-shaped, using shape-aware generation")
             return FloorService._generate_shape_aware_floor_panels(
                 bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
             )
         else:
-            print(f"      📐 Room has {len(room_points)} points - using standard rectangular generation")
             return FloorService._generate_standard_floor_panels(
                 bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
             )
@@ -813,8 +803,6 @@ class FloorService:
                     current_x += panel_width_actual
                 
                 current_y += current_panel_height
-        
-        print(f"      📊 Generated {len(panels)} {orientation} panels")
         return panels
     
     @staticmethod
@@ -824,15 +812,10 @@ class FloorService:
             panels = []
             panel_id = 1
             
-            print(f"      🔺 Generating shape-aware panels for {orientation} orientation")
-            print(f"        Room bounding box: {bounding_box['width']:.0f}mm x {bounding_box['height']:.0f}mm")
-            
             # Analyze room shape to identify distinct rectangular regions
             room_regions = FloorService._analyze_floor_room_shape(room_points, bounding_box, orientation)
-            print(f"        Room shape analysis: {len(room_regions)} regions identified")
             
             if not room_regions:
-                print(f"        ⚠️  No regions found, using fallback approach")
                 # Fallback to standard approach if shape analysis fails
                 return FloorService._generate_standard_floor_panels(
                     bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
@@ -840,20 +823,16 @@ class FloorService:
             
             # Generate panels for each region based on orientation
             for i, region in enumerate(room_regions):
-                print(f"        📐 Region {i+1}: {region['width']:.0f}mm x {region['height']:.0f}mm ({region['type']})")
                 region_panels = FloorService._generate_panels_for_floor_region(
                     region, orientation, panel_width, panel_id, panel_length
                 )
-                print(f"          Generated {len(region_panels)} panels")
                 
                 panels.extend(region_panels)
                 panel_id += len(region_panels)
             
-            print(f"        📐 Total panels generated: {len(panels)}")
             return panels
             
         except Exception as e:
-            print(f"      ❌ Error in shape-aware panel generation: {str(e)}")
             # Fallback to standard approach
             return FloorService._generate_standard_floor_panels(
                 bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
@@ -864,25 +843,19 @@ class FloorService:
         """Analyze floor room shape to identify distinct rectangular regions (like ceiling plan does)"""
         try:
             if not room_points or len(room_points) < 3:
-                print(f"        ⚠️  Invalid room points for shape analysis")
                 return []
             
             # Convert room points to a more manageable format
             points = [(p['x'], p['y']) for p in room_points]
-            print(f"        📐 Analyzing {len(points)} room points for {orientation} orientation")
             
             # Detect if room is L-shaped by analyzing convexity and finding corners
             is_l_shaped = FloorService._detect_floor_l_shape(points)
-            print(f"        🔍 L-shape detection result: {is_l_shaped}")
             
             if is_l_shaped:
-                print(f"        📐 L-shaped room detected, splitting into regions for {orientation} orientation")
                 # Split L-shaped room into rectangular regions with orientation optimization
                 regions = FloorService._split_floor_l_shaped_room(points, bounding_box, orientation)
-                print(f"        📐 Split into {len(regions)} regions")
                 return regions
             else:
-                print(f"        📐 Rectangular room detected, using single region")
                 # Room is roughly rectangular - treat as single region
                 regions = [{
                     'min_x': bounding_box['min_x'],
@@ -896,7 +869,6 @@ class FloorService:
                 return regions
                 
         except Exception as e:
-            print(f"        ❌ Error analyzing floor room shape: {str(e)}")
             return []
     
     @staticmethod
@@ -929,7 +901,6 @@ class FloorService:
             return area_ratio < 0.8
             
         except Exception as e:
-            print(f"        ❌ Error detecting floor L-shape: {str(e)}")
             return False
     
     @staticmethod
@@ -955,18 +926,10 @@ class FloorService:
     def _split_floor_l_shaped_room(points, bounding_box, orientation='horizontal'):
         """Split L-shaped floor room into rectangular regions optimized for given orientation (like ceiling plan does)"""
         try:
-            print(f"          🔍 Splitting L-shaped floor room for {orientation} orientation")
             
             # Convert points to find coordinates
             x_coords = [p[0] for p in points]
             y_coords = [p[1] for p in points]
-            
-            # Sort coordinates to find potential split points
-            unique_x = sorted(set(x_coords))
-            unique_y = sorted(set(y_coords))
-            
-            print(f"            Unique X coordinates: {unique_x}")
-            print(f"            Unique Y coordinates: {unique_y}")
             
             # Find the cutout coordinates (inner corner of L)
             cutout_x = None
@@ -980,29 +943,23 @@ class FloorService:
                     if cutout_x is None or (x > cutout_x and y > cutout_y):
                         cutout_x = x
                         cutout_y = y
-            
-            print(f"            Inner corner (cutout) found at: ({cutout_x}, {cutout_y})")
-            
+
             if not cutout_x or not cutout_y:
-                print(f"            ⚠️  Could not find cutout coordinates, using fallback")
                 return []
             
             # Choose split strategy based on orientation
             if orientation == 'vertical':
                 # VERTICAL SPLIT: Split at x=cutout_x to maximize panel length (height)
-                print(f"            Using VERTICAL split at x={cutout_x} for maximum panel length")
                 return FloorService._create_floor_vertical_split_regions(
                     x_coords, y_coords, cutout_x, cutout_y
                 )
             else:
-                # HORIZONTAL SPLIT: Split at y=cutout_y
-                print(f"            Using HORIZONTAL split at y={cutout_y}")
+                # HORIZONTAL SPLIT: Split at y=cutout_y 
                 return FloorService._create_floor_horizontal_split_regions(
                     x_coords, y_coords, cutout_x, cutout_y
                 )
             
-        except Exception as e:
-            print(f"          ❌ Error splitting floor L-shaped room: {str(e)}")
+        except Exception as e:  
             return []
     
     @staticmethod
@@ -1022,7 +979,6 @@ class FloorService:
                 'type': 'bottom_left_vertical_arm'
             }
             regions.append(region1)
-            print(f"            Region 1 (bottom-left): {region1['width']:.0f}mm x {region1['height']:.0f}mm")
             
             # Region 2: Right side (the right arm of L-shape)
             region2 = {
@@ -1035,13 +991,10 @@ class FloorService:
                 'type': 'right_vertical_arm'
             }
             regions.append(region2)
-            print(f"            Region 2 (right): {region2['width']:.0f}mm x {region2['height']:.0f}mm")
-            print(f"            🎯 Region 2 gets FULL panel length: {region2['height']:.0f}mm!")
             
             return regions
             
         except Exception as e:
-            print(f"            ❌ Error creating floor vertical split regions: {str(e)}")
             return []
     
     @staticmethod
@@ -1061,8 +1014,6 @@ class FloorService:
                 'type': 'top_right_arm'
             }
             regions.append(region1)
-            print(f"            Region 1 (top-right): {region1['width']:.0f}mm x {region1['height']:.0f}mm")
-            
             # Region 2: Bottom horizontal strip (full width, below the cutout)
             region2 = {
                 'min_x': min(x_coords),
@@ -1074,23 +1025,16 @@ class FloorService:
                 'type': 'bottom_arm'
             }
             regions.append(region2)
-            print(f"            Region 2 (bottom): {region2['width']:.0f}mm x {region2['height']:.0f}mm")
-            
             return regions
             
         except Exception as e:
-            print(f"            ❌ Error creating floor horizontal split regions: {str(e)}")
             return []
     
     @staticmethod
     def _generate_panels_for_floor_region(region, orientation, panel_width, start_panel_id, panel_length):
         """Generate panels for a specific floor region (like ceiling plan does)"""
         try:
-            panels = []
             panel_id = start_panel_id
-            
-            print(f"              🔨 Generating panels for {region['type']} region")
-            print(f"                Region dimensions: {region['width']:.0f}mm x {region['height']:.0f}mm")
             
             # Create a bounding box for this region
             region_bounding_box = {
@@ -1112,11 +1056,9 @@ class FloorService:
                 panel['panel_id'] = f'FP_{panel_id:03d}'
                 panel_id += 1
             
-            print(f"                Generated {len(region_panels)} panels for {region['type']} region")
             return region_panels
             
         except Exception as e:
-            print(f"                ❌ Error generating panels for floor region: {str(e)}")
             return []
     
     @staticmethod
@@ -1188,7 +1130,6 @@ class FloorService:
         horizontal_waste = FloorService._calculate_floor_waste(horizontal_panels, None, wall_thickness)
         vertical_waste = FloorService._calculate_floor_waste(vertical_panels, None, wall_thickness)
         
-        print(f"      📊 Mixed strategy - Horizontal: {len(horizontal_panels)} panels, Vertical: {len(vertical_panels)} panels")
         return horizontal_panels if horizontal_waste <= vertical_waste else vertical_panels
     
     @staticmethod
@@ -1216,12 +1157,6 @@ class FloorService:
         try:
             from .models import Project, Room, FloorPlan, FloorPanel
             
-            print(f"🚀 Starting floor plan generation for project {project_id}")
-            print(f"   Panel width: {panel_width}mm")
-            print(f"   Panel length: {panel_length}")
-            print(f"   Custom panel length: {custom_panel_length}mm" if custom_panel_length else "   Custom panel length: Not set")
-            print(f"   Orientation strategy: {orientation_strategy}")
-            
             # Get project and rooms
             project = Project.objects.get(id=project_id)
             rooms = Room.objects.filter(project=project)
@@ -1230,24 +1165,18 @@ class FloorService:
                 return {'error': 'No rooms found for this project'}
             
             # Get orientation analysis
-            print(f"📊 Getting floor orientation analysis...")
             orientation_analysis = FloorService.analyze_floor_orientation_strategies(
                 project_id, panel_width, panel_length
             )
             if 'error' in orientation_analysis:
-                print(f"❌ Floor orientation analysis failed: {orientation_analysis['error']}")
-                return {'error': orientation_analysis['error']}
+               return {'error': orientation_analysis['error']}
             
-            print(f"✅ Floor orientation analysis completed")
             
             # Determine which strategy to use
-            print(f"🔍 Received orientation_strategy parameter: '{orientation_strategy}'")
             if orientation_strategy == 'auto':
                 strategy_name = orientation_analysis['recommended_strategy']
-                print(f"🎯 Using recommended strategy: {strategy_name}")
             else:
                 strategy_name = orientation_strategy
-                print(f"🎯 Using specified strategy: {strategy_name}")
             
             # Find the selected strategy
             selected_strategy = None
@@ -1257,18 +1186,7 @@ class FloorService:
                     break
             
             if not selected_strategy:
-                print(f"❌ Strategy {strategy_name} not found")
                 return {'error': f'Strategy {strategy_name} not found'}
-            
-            print(f"📐 Selected strategy details:")
-            print(f"   - Type: {selected_strategy['orientation_type']}")
-            print(f"   - Waste: {selected_strategy['total_waste_percentage']:.2f}%")
-            print(f"   - Panels: {selected_strategy['total_panels']}")
-            
-            # Show all available strategies for comparison
-            print(f"📊 All available strategies:")
-            for strategy in orientation_analysis['strategies']:
-                print(f"   - {strategy['strategy_name']}: {strategy['orientation_type']} ({strategy['total_panels']} panels, {strategy['total_waste_percentage']:.2f}% waste)")
             
             # Generate floor panels for all rooms
             all_floor_panels = []
@@ -1280,21 +1198,13 @@ class FloorService:
                 
                 # Check floor type - only generate floor plans for panel floors
                 if not hasattr(room, 'floor_type') or room.floor_type not in ['panel', 'Panel']:
-                    print(f"🏠 Skipping room {room.room_name} - floor type is '{getattr(room, 'floor_type', 'none')}' (only 'panel' type needs floor plans)")
                     continue
                 
-                print(f"🏠 Generating floor panels for room: {room.room_name} (floor type: {room.floor_type})")
                 
                 # Get room's floor bounding box (excluding walls)
                 bounding_box = FloorService._calculate_room_floor_bounding_box(room)
                 if not bounding_box:
-                    print(f"   ⚠️ Skipping room {room.room_name} - invalid bounding box")
                     continue
-                
-                print(f"   📐 Room {room.room_name} has {bounding_box['point_count']} points")
-                
-                # Generate panels based on selected strategy
-                print(f"   🎯 Generating panels for room {room.room_name} using strategy: {selected_strategy['strategy_name']} (type: {selected_strategy['orientation_type']})")
                 
                 if selected_strategy['orientation_type'] == 'horizontal':
                     room_panels = FloorService._generate_floor_panels(
@@ -1308,10 +1218,7 @@ class FloorService:
                     room_panels = FloorService._generate_mixed_floor_panels(
                         bounding_box, room.room_points, panel_width, panel_length, project.wall_thickness
                     )
-                
-                # Log panel generation results
-                print(f"   📐 Room {room.room_name} generated {len(room_panels)} panels")
-                
+                    
                 # Add room info to panels
                 for panel in room_panels:
                     panel['room_id'] = room.id
@@ -1343,14 +1250,11 @@ class FloorService:
                 FloorPanel.objects.filter(room=room).delete()
                 
                 # Create floor panel objects
-                print(f"   🔨 Creating {len(room_panels)} floor panels...")
-                print(f"   🔍 First panel data sample: {room_panels[0] if room_panels else 'No panels'}")
                 created_panels = []
                 for panel_data in room_panels:
                     # Validate panel data
                     if not all(key in panel_data for key in ['panel_id', 'start_x', 'start_y', 'end_x', 'end_y', 'width', 'length']):
-                        print(f"   ⚠️ Warning: Invalid panel data: {panel_data}")
-                        continue
+                       continue
                     
                     try:
                         panel = FloorPanel.objects.create(
@@ -1368,31 +1272,24 @@ class FloorService:
                             cut_notes=panel_data.get('cut_notes', '')
                         )
                         created_panels.append(panel)
-                        print(f"   ✅ Created panel {panel.panel_id} at ({panel.start_x}, {panel.start_y}) with size {panel.width}x{panel.length}")
                     except Exception as e:
-                        print(f"   ❌ Error creating panel {panel_data['panel_id']}: {str(e)}")
                         continue
                 
-                print(f"   📊 Successfully created {len(created_panels)} panels out of {len(room_panels)} planned")
                 
                 # Update statistics
-                print(f"   📊 Updating statistics for room {room.room_name}...")
                 try:
                     floor_plan.update_statistics()
                     
                     # Refresh the floor_plan object to get updated statistics
                     floor_plan.refresh_from_db()
                     
-                    print(f"   📊 Statistics updated - Total Area: {floor_plan.total_area}, Panels: {floor_plan.total_panels}")
                     
                     # Ensure total_area is not null
                     if floor_plan.total_area is None:
-                        print(f"   ⚠️ Warning: total_area is None, setting to 0")
                         floor_plan.total_area = 0.0
                         floor_plan.save()
                         
                 except Exception as e:
-                    print(f"   ❌ Error updating statistics: {str(e)}")
                     # Set default values if statistics update fails
                     floor_plan.total_area = 0.0
                     floor_plan.total_panels = len(room_panels)
@@ -1400,7 +1297,6 @@ class FloorService:
                     floor_plan.cut_panels = len([p for p in room_panels if p.get('is_cut', False)])
                     floor_plan.waste_percentage = 0.0
                     floor_plan.save()
-                    print(f"   ✅ Set default statistics values")
                 
                 # Add to created plans
                 created_plans.append({
@@ -1422,12 +1318,6 @@ class FloorService:
                     'updated_at': floor_plan.updated_at.isoformat() if floor_plan.updated_at else None
                 })
                 
-                print(f"   ✅ Created {len(room_panels)} floor panels")
-            
-            print(f"🎉 Floor plan generation completed successfully!")
-            
-            print(f"📊 Floor plan generation completed for {len(created_plans)} rooms")
-            
             # Get all actual FloorPanel objects from the database
             from .serializers import FloorPanelSerializer
             
@@ -1435,15 +1325,13 @@ class FloorService:
             actual_floor_panels = []
             for room in rooms:
                 room_panels = FloorPanel.objects.filter(room=room)
-                print(f"🔍 Room {room.room_name}: Found {room_panels.count()} floor panels in database")
                 for panel in room_panels:
                     # Serialize each panel to get the proper format
                     panel_data = FloorPanelSerializer(panel).data
                     print(f"🔍 Panel {panel.panel_id}: {panel_data}")
                     actual_floor_panels.append(panel_data)
             
-            print(f"📊 Returning {len(actual_floor_panels)} actual floor panel objects")
-            
+           
             return {
                 'project_id': project_id,
                 'strategy_used': strategy_name,
@@ -1460,7 +1348,6 @@ class FloorService:
         except Project.DoesNotExist:
             return {'error': 'Project not found'}
         except Exception as e:
-            print(f"❌ Floor plan generation failed: {str(e)}")
             return {'error': f'Floor plan generation failed: {str(e)}'}
 
 class CeilingService:
@@ -1591,8 +1478,6 @@ class CeilingService:
             
             return abs(area) / 2.0
         except Exception as e:
-            # Log the error and return 0.0 to prevent crashes
-            print(f"Error calculating room area: {str(e)}")
             return 0.0
     
     @staticmethod
@@ -1644,9 +1529,6 @@ class CeilingService:
         standard_panels_needed = int(room_width / max_width)
         remaining_width = room_width % max_width
         
-        print(f"DEBUG: Room width: {room_width}mm, max panel width: {max_width}mm")
-        print(f"DEBUG: Standard panels needed: {standard_panels_needed}, remaining width: {remaining_width}mm")
-        
         # Start from top-left corner (normalized to room origin)
         start_x = 0  # Normalized: bounding_box['min_x'] - bounding_box['min_x']
         start_y = bounding_box['height']  # Normalized: bounding_box['max_y'] - bounding_box['min_y']
@@ -1695,8 +1577,6 @@ class CeilingService:
                 panel_width = remaining_width
                 panel_height = min(panel_length, current_y - bounding_box['min_y'])
                 
-                print(f"DEBUG: Creating cut panel with width: {panel_width}mm, height: {panel_height}mm")
-                
                 panel_coverage = CeilingService._calculate_panel_coverage([
                     {'x': current_x, 'y': current_y},
                     {'x': current_x + panel_width, 'y': current_y},
@@ -1704,14 +1584,10 @@ class CeilingService:
                     {'x': current_x, 'y': current_y}  # Same Y for horizontal panels
                 ], room_points, bounding_box)
                 
-                print(f"DEBUG: Cut panel coverage: {panel_coverage}")
-                
                 if panel_coverage > 0.1:
                     is_cut = True  # This is a cut panel
                     cut_notes = f"Custom width: {panel_width:.0f}mm"
-                    
-                    print(f"DEBUG: Adding cut panel to list")
-                    
+                     
                     panels.append({
                         'start_x': current_x,
                         'start_y': current_y,
@@ -1731,10 +1607,6 @@ class CeilingService:
             
             # Move to next row using user-selected panel length
             current_y -= panel_length
-        
-        print(f"DEBUG: Total panels generated: {len(panels)}")
-        print(f"DEBUG: Full panels: {len([p for p in panels if not p['is_cut']])}")
-        print(f"DEBUG: Cut panels: {len([p for p in panels if p['is_cut']])}")
         
         return panels
     
@@ -1997,7 +1869,6 @@ class CeilingService:
             return False
             
         except Exception as e:
-            print(f"Error in geometric connectivity check: {str(e)}")
             return False
 
     @staticmethod
@@ -2063,7 +1934,6 @@ class CeilingService:
             }
             
         except Exception as e:
-            print(f"Error calculating optimization metrics: {str(e)}")
             return {
                 'area_efficiency': 0,
                 'shape_complexity': 0,
@@ -2241,7 +2111,6 @@ class CeilingService:
             }
             
         except Exception as e:
-            print(f"Error evaluating strategy {strategy_name}: {str(e)}")
             return {
                 'strategy_name': strategy_name,
                 'orientation_type': orientation_type,
@@ -2400,7 +2269,6 @@ class CeilingService:
             }
             
         except Exception as e:
-            print(f"Error evaluating merged strategy: {str(e)}")
             return {
                 'total_panels': 0,
                 'waste_percentage': 100.0,
@@ -2424,7 +2292,6 @@ class CeilingService:
                 return CeilingService._generate_vertical_panels(bounding_box, room_info['points'], panel_width, panel_length)
                 
         except Exception as e:
-            print(f"Error generating panels with orientation {orientation}: {str(e)}")
             return []
 
     @staticmethod
@@ -2490,15 +2357,10 @@ class CeilingService:
             panels = []
             panel_id = 1
             
-            print(f"🔍 Generating shape-aware panels for {orientation} orientation")
-            print(f"   Room bounding box: {bounding_box['width']:.0f}mm x {bounding_box['height']:.0f}mm")
-            
             # Analyze room shape to identify distinct rectangular regions
             room_regions = CeilingService._analyze_room_shape(room_points, bounding_box, orientation)
-            print(f"   Room shape analysis: {len(room_regions)} regions identified")
             
             if not room_regions:
-                print(f"   ⚠️  No regions found, using fallback approach")
                 # Fallback to simple approach if shape analysis fails
                 return CeilingService._generate_simple_panels_fallback(
                     bounding_box, room_points, orientation, max_panel_width, panel_length
@@ -2506,26 +2368,20 @@ class CeilingService:
             
             # Generate panels for each region based on orientation
             for i, region in enumerate(room_regions):
-                print(f"   📐 Region {i+1}: {region['width']:.0f}mm x {region['height']:.0f}mm ({region['type']})")
                 region_panels = CeilingService._generate_panels_for_region(
                     region, orientation, max_panel_width, panel_id, panel_length
                 )
-                print(f"     Generated {len(region_panels)} panels")
                 
                 panels.extend(region_panels)
                 panel_id += len(region_panels)
-            
-            print(f"   📐 Total panels before optimization: {len(panels)}")
             
             # Optimize panel placement within the actual room boundaries
             optimized_panels = CeilingService._optimize_panels_for_room_shape(
                 panels, room_points, bounding_box
             )
-            print(f"   📐 Final optimized panels: {len(optimized_panels)}")
             return optimized_panels
             
         except Exception as e:
-            print(f"Error in shape-aware panel generation: {str(e)}")
             # Fallback to simple approach
             return CeilingService._generate_simple_panels_fallback(
                 bounding_box, room_points, orientation, max_panel_width, panel_length
@@ -2536,25 +2392,19 @@ class CeilingService:
         """Analyze room shape to identify distinct rectangular regions (for L-shaped, U-shaped rooms)"""
         try:
             if not room_points or len(room_points) < 3:
-                print(f"   ⚠️  Invalid room points for shape analysis")
                 return []
             
             # Convert room points to a more manageable format
             points = [(p['x'], p['y']) for p in room_points]
-            print(f"   📐 Analyzing {len(points)} room points for {orientation} orientation")
             
             # Detect if room is L-shaped by analyzing convexity and finding corners
             is_l_shaped = CeilingService._detect_l_shape(points)
-            print(f"   🔍 L-shape detection result: {is_l_shaped}")
             
             if is_l_shaped:
-                print(f"   📐 L-shaped room detected, splitting into regions for {orientation} orientation")
                 # Split L-shaped room into rectangular regions with orientation optimization
                 regions = CeilingService._split_l_shaped_room(points, bounding_box, orientation)
-                print(f"   📐 Split into {len(regions)} regions")
                 return regions
             else:
-                print(f"   📐 Rectangular room detected, using single region")
                 # Room is roughly rectangular - treat as single region
                 regions = [{
                     'min_x': bounding_box['min_x'],
@@ -2601,7 +2451,6 @@ class CeilingService:
             return area_ratio < 0.8
             
         except Exception as e:
-            print(f"Error detecting L-shape: {str(e)}")
             return False
 
     @staticmethod
@@ -2627,18 +2476,10 @@ class CeilingService:
     def _split_l_shaped_room(points, bounding_box, orientation='horizontal'):
         """Split L-shaped room into rectangular regions optimized for given orientation"""
         try:
-            print(f"     🔍 Splitting L-shaped room for {orientation} orientation")
             
             # Convert points to find coordinates
             x_coords = [p[0] for p in points]
             y_coords = [p[1] for p in points]
-            
-            # Sort coordinates to find potential split points
-            unique_x = sorted(set(x_coords))
-            unique_y = sorted(set(y_coords))
-            
-            print(f"       Unique X coordinates: {unique_x}")
-            print(f"       Unique Y coordinates: {unique_y}")
             
             # Find the cutout coordinates (inner corner of L)
             cutout_x = None
@@ -2653,28 +2494,23 @@ class CeilingService:
                         cutout_x = x
                         cutout_y = y
             
-            print(f"       Inner corner (cutout) found at: ({cutout_x}, {cutout_y})")
             
             if not cutout_x or not cutout_y:
-                print(f"       ⚠️  Could not find cutout coordinates, using fallback")
                 return []
             
             # Choose split strategy based on orientation
             if orientation == 'vertical':
                 # VERTICAL SPLIT: Split at x=cutout_x to maximize panel length (height)
-                print(f"       Using VERTICAL split at x={cutout_x} for maximum panel length")
                 return CeilingService._create_vertical_split_regions(
                     x_coords, y_coords, cutout_x, cutout_y
                 )
             else:
                 # HORIZONTAL SPLIT: Split at y=cutout_y (current approach)
-                print(f"       Using HORIZONTAL split at y={cutout_y} (current approach)")
                 return CeilingService._create_horizontal_split_regions(
                     x_coords, y_coords, cutout_x, cutout_y
                 )
             
         except Exception as e:
-            print(f"Error splitting L-shaped room: {str(e)}")
             return []
 
     @staticmethod
@@ -2695,7 +2531,6 @@ class CeilingService:
                 'type': 'bottom_left_vertical_arm'
             }
             regions.append(region1)
-            print(f"       Region 1 (bottom-left): {region1['width']:.0f}mm x {region1['height']:.0f}mm")
             
             # Region 2: Right side (the right arm of L-shape)
             # From x=cutout_x to x=max, full height - THIS GETS 10000mm LENGTH!
@@ -2709,13 +2544,10 @@ class CeilingService:
                 'type': 'right_vertical_arm'
             }
             regions.append(region2)
-            print(f"       Region 2 (right): {region2['width']:.0f}mm x {region2['height']:.0f}mm")
-            print(f"       🎯 Region 2 gets FULL panel length: {region2['height']:.0f}mm!")
             
             return regions
             
         except Exception as e:
-            print(f"Error creating vertical split regions: {str(e)}")
             return []
 
     @staticmethod
@@ -2735,7 +2567,6 @@ class CeilingService:
                 'type': 'top_right_arm'
             }
             regions.append(region1)
-            print(f"       Region 1 (top-right): {region1['width']:.0f}mm x {region1['height']:.0f}mm")
             
             # Region 2: Bottom horizontal strip (full width, below Room 144)
             region2 = {
@@ -2748,12 +2579,10 @@ class CeilingService:
                 'type': 'bottom_arm'
             }
             regions.append(region2)
-            print(f"       Region 2 (bottom): {region2['width']:.0f}mm x {region2['height']:.0f}mm")
             
             return regions
             
         except Exception as e:
-            print(f"Error creating horizontal split regions: {str(e)}")
             return []
 
     @staticmethod
@@ -2783,7 +2612,6 @@ class CeilingService:
             return corner_point
             
         except Exception as e:
-            print(f"Error finding L-shape corner: {str(e)}")
             return None
 
     @staticmethod
@@ -2834,8 +2662,7 @@ class CeilingService:
                     panel_width = region['width']
                 else:
                     panel_width = float(panel_length)
-                    print(f"DEBUG: Using custom panel width: {panel_width:.0f}mm for horizontal orientation")
-                
+                    
                 current_x = region['min_x']
                 
                 while current_x < region['max_x']:
@@ -2889,8 +2716,7 @@ class CeilingService:
                     panel_height = region['height']
                 else:
                     panel_height = float(panel_length)
-                    print(f"DEBUG: Using custom panel height: {panel_height:.0f}mm for simple vertical panels")
-                
+                    
                 current_y = region['min_y']
                 
                 while current_y < region['max_y']:
@@ -2941,7 +2767,6 @@ class CeilingService:
             return panels
             
         except Exception as e:
-            print(f"Error generating panels for region: {str(e)}")
             return []
 
     @staticmethod
@@ -2969,7 +2794,6 @@ class CeilingService:
             return optimized_panels
             
         except Exception as e:
-            print(f"Error optimizing panels for room shape: {str(e)}")
             return panels
 
     @staticmethod
@@ -2998,7 +2822,6 @@ class CeilingService:
                 return None
                 
         except Exception as e:
-            print(f"Error adjusting panel to room boundaries: {str(e)}")
             return panel
 
     @staticmethod
@@ -3015,7 +2838,6 @@ class CeilingService:
                     bounding_box, room_points, max_panel_width, panel_length
                 )
         except Exception as e:
-            print(f"Error in fallback panel generation: {str(e)}")
             return []
 
     @staticmethod
@@ -3028,9 +2850,6 @@ class CeilingService:
             # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
             room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
             
-            # room_width = room_bounding_box['width']  # Unused variable
-            # room_height = room_bounding_box['height']  # Unused variable
-            
             # Calculate panel width based on user's choice
             if panel_length == 'auto':
                 # Use full room width when auto (equivalent to panel_length_option = 1)
@@ -3038,8 +2857,7 @@ class CeilingService:
             else:
                 # Use user's custom panel length
                 panel_width = float(panel_length)
-                print(f"DEBUG: Using custom panel width: {panel_width:.0f}mm for simple horizontal panels")
-            
+                
             # Simple grid-based approach using room-specific bounding box
             current_x = room_bounding_box['min_x']
             while current_x < room_bounding_box['max_x']:
@@ -3078,7 +2896,6 @@ class CeilingService:
             return panels
             
         except Exception as e:
-            print(f"Error in simple horizontal panel generation: {str(e)}")
             return []
 
     @staticmethod
@@ -3091,9 +2908,6 @@ class CeilingService:
             # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
             room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
             
-            # room_width = room_bounding_box['width']  # Unused variable
-            # room_height = room_bounding_box['height']  # Unused variable
-            
             # Calculate panel height based on user's choice
             if panel_length == 'auto':
                 # Use full room height when auto (equivalent to panel_length_option = 1)
@@ -3101,8 +2915,7 @@ class CeilingService:
             else:
                 # Use user's custom panel length
                 panel_height = float(panel_length)
-                print(f"DEBUG: Using custom panel height: {panel_height:.0f}mm for simple vertical panels")
-            
+                
             # Simple grid-based approach using room-specific bounding box
             current_y = room_bounding_box['min_y']
             while current_y < room_bounding_box['max_y']:
@@ -3141,7 +2954,6 @@ class CeilingService:
             return panels
             
         except Exception as e:
-            print(f"Error in simple vertical panel generation: {str(e)}")
             return []
 
     @staticmethod
@@ -3192,18 +3004,10 @@ class CeilingService:
     @staticmethod
     def _panel_covers_room(panel, room_info):
         """Check if a panel covers a specific room's area"""
-        # This is a simplified check. A more accurate overlap calculation
-        # would involve polygon intersection or ray casting.
-        # For now, we'll assume a panel covers a room if its center is within the room's bounding box.
-        # This is a heuristic and might need refinement.
         
         # Calculate panel center
         panel_center_x = (panel['start_x'] + panel['end_x']) / 2
         panel_center_y = (panel['start_y'] + panel['end_y']) / 2
-        
-        # Calculate room center
-        # room_center_x = sum(p['x'] for p in room_info['points']) / len(room_info['points'])  # Unused variable
-        # room_center_y = sum(p['y'] for p in room_info['points']) / len(room_info['points'])  # Unused variable
         
         # Check if panel center is within room's bounding box
         if panel_center_x >= room_info['bounding_box']['min_x'] and \
@@ -3232,7 +3036,6 @@ class CeilingService:
             return waste_area
             
         except Exception as e:
-            print(f"Error calculating room waste: {str(e)}")
             return 0.0
 
     @staticmethod
@@ -3244,7 +3047,6 @@ class CeilingService:
             return CeilingService._generate_horizontal_panels(bounding_box, all_points, 1150, 'auto')
             
         except Exception as e:
-            print(f"Error generating panels for merged area: {str(e)}")
             return []
 
     @staticmethod
@@ -3263,7 +3065,6 @@ class CeilingService:
             return waste_area
             
         except Exception as e:
-            print(f"Error calculating merged waste: {str(e)}")
             return 0.0
 
     @staticmethod
@@ -3291,7 +3092,6 @@ class CeilingService:
             }
             
         except Exception as e:
-            print(f"Error calculating merge benefits: {str(e)}")
             return {
                 'merged_total_area': 0,
                 'total_individual_rooms_area': 0,
@@ -3406,7 +3206,6 @@ class CeilingService:
             return distance < 1000  # 1 meter threshold
         except Exception as e:
             # Log the error and return False to prevent crashes
-            print(f"Error checking room adjacency: {str(e)}")
             return False
 
     @staticmethod
@@ -3492,8 +3291,6 @@ class CeilingService:
     @staticmethod
     def _generate_height_group_ceiling_plan(project, height, group_data):
         """Generate ceiling plan for a specific height group"""
-
-        
         # Generate ceiling plans for each room in the height group
         created_plans = []
         
@@ -3573,7 +3370,6 @@ class CeilingService:
             }
             
         except Exception as e:
-            print(f"Error calculating merge benefits: {str(e)}")
             return {
                 'merged_total_area': 0,
                 'total_individual_rooms_area': 0,
@@ -3595,12 +3391,7 @@ class CeilingService:
         - Supports different orientation strategies
         """
         try:
-            print(f"🚀 Starting enhanced ceiling plan generation for project {project_id}")
-            print(f"   Panel length: {panel_length}")
-            print(f"   Orientation strategy: {orientation_strategy}")
-            
             # Get orientation analysis first
-            print(f"📊 Getting orientation analysis...")
             orientation_analysis = CeilingService.analyze_orientation_strategies(
                 project_id, 
                 panel_width, 
@@ -3608,21 +3399,16 @@ class CeilingService:
                 ceiling_thickness
             )
             if 'error' in orientation_analysis:
-                print(f"❌ Orientation analysis failed: {orientation_analysis['error']}")
                 return {'error': orientation_analysis['error']}
-            
-            print(f"✅ Orientation analysis completed")
             
             # Determine which strategy to use
             if orientation_strategy == 'auto':
                 # Use the recommended strategy
                 strategy_name = orientation_analysis['recommended_strategy']
-                print(f"🎯 Using recommended strategy: {strategy_name}")
             else:
                 # Use the specified strategy
                 strategy_name = orientation_strategy
-                print(f"🎯 Using specified strategy: {strategy_name}")
-            
+                
             # Find the selected strategy
             selected_strategy = None
             for strategy in orientation_analysis['strategies']:
@@ -3631,37 +3417,22 @@ class CeilingService:
                     break
             
             if not selected_strategy:
-                print(f"❌ Strategy {strategy_name} not found")
                 return {'error': f'Strategy {strategy_name} not found'}
             
-            print(f"📐 Selected strategy details:")
-            print(f"   - Type: {selected_strategy['orientation_type']}")
-            print(f"   - Waste: {selected_strategy['total_waste_percentage']:.2f}%")
-            print(f"   - Panels: {selected_strategy['total_panels']}")
-            
             # Generate enhanced panels based on the selected strategy
-            print(f"🔨 Generating enhanced panels...")
             enhanced_panels = CeilingService._generate_enhanced_panels_for_strategy(
                 selected_strategy, project_id, panel_width, panel_length
             )
-            print(f"✅ Generated {len(enhanced_panels)} enhanced panels")
             
             # Calculate enhanced waste analysis
-            print(f"📊 Calculating waste analysis...")
             waste_analysis = CeilingService._analyze_enhanced_waste(enhanced_panels, selected_strategy)
-            print(f"✅ Waste analysis completed")
             
             # Create or update ceiling plans with ALL generation parameters
-            print(f"💾 Creating ceiling plans...")
             ceiling_plans = CeilingService._create_enhanced_ceiling_plans(
                 enhanced_panels, project_id, selected_strategy, ceiling_thickness,
                 panel_width, panel_length, custom_panel_length, orientation_strategy,
                 support_type, support_config
             )
-            print(f"✅ Created {len(ceiling_plans)} ceiling plans")
-            
-            print(f"🎉 Enhanced ceiling plan generation completed successfully!")
-            
             return {
                 'project_id': project_id,
                 'strategy_used': strategy_name,
@@ -3679,7 +3450,6 @@ class CeilingService:
             }
             
         except Exception as e:
-            print(f"❌ Enhanced ceiling plan generation failed: {str(e)}")
             return {'error': f'Enhanced ceiling plan generation failed: {str(e)}'}
 
     @staticmethod
@@ -3705,41 +3475,30 @@ class CeilingService:
             return enhanced_panels
             
         except Exception as e:
-            print(f"Error generating enhanced panels: {str(e)}")
             return []
 
     @staticmethod
     def _generate_enhanced_merged_panels(project_id, panel_width=1150, panel_length='auto'):
         """Generate enhanced panels for merged project approach"""
         try:
-            print(f"     🔨 Generating enhanced merged panels for project {project_id}")
-            
             # Get height analysis
             height_analysis = CeilingService.analyze_project_heights(project_id)
             if 'error' in height_analysis:
-                print(f"     ❌ Height analysis failed: {height_analysis['error']}")
                 return []
             
             # Get all rooms from the single height group
             height_group = list(height_analysis['height_groups'].values())[0]
-            print(f"     📐 Processing {len(height_group['rooms'])} rooms in height group")
             
             # FIXED: Generate panels for each room individually instead of using project-wide bounding box
             all_panels = []
             
             for i, room_info in enumerate(height_group['rooms']):
-                print(f"       🏠 Room {i+1}: {room_info['name']} (ID: {room_info['id']})")
-                
                 # Use room-specific bounding box instead of project-wide
                 room_bounding_box = CeilingService._calculate_room_bounding_box(room_info['points'])
-                print(f"         Bounding box: {room_bounding_box['width']:.0f}mm x {room_bounding_box['height']:.0f}mm")
-                
                 # Generate panels for this specific room using its own bounding box
                 room_panels = CeilingService._generate_advanced_panels(
                     room_bounding_box, room_info['points'], 'horizontal', panel_width, panel_length
                 )
-                print(f"         Generated {len(room_panels)} panels")
-                
                 # Add room identifier to panels
                 for panel in room_panels:
                     panel['room_id'] = room_info['id']
@@ -3747,11 +3506,9 @@ class CeilingService:
                 
                 all_panels.extend(room_panels)
             
-            print(f"     ✅ Total panels generated: {len(all_panels)}")
             return all_panels
             
         except Exception as e:
-            print(f"Error generating enhanced merged panels: {str(e)}")
             return []
 
     @staticmethod
@@ -3782,40 +3539,31 @@ class CeilingService:
             return all_panels
             
         except Exception as e:
-            print(f"Error generating enhanced room panels: {str(e)}")
             return []
 
     @staticmethod
     def _generate_advanced_panels(bounding_box, room_points, orientation, panel_width=1150, panel_length='auto'):
         """Generate advanced panels with better irregular shape handling"""
         try:
-            print(f"         🔨 Generating advanced panels with {orientation} orientation")
-            print(f"           Input bounding box: {bounding_box['width']:.0f}mm x {bounding_box['height']:.0f}mm")
-            
             if orientation == 'vertical':
                 # Vertical orientation: panels run up and down (vertical strips)
-                print(f"           Using enhanced horizontal panels (vertical strips)")
-                return CeilingService._generate_enhanced_horizontal_panels(
+               return CeilingService._generate_enhanced_horizontal_panels(
                     bounding_box, room_points, panel_width, panel_length
                 )
             elif orientation == 'horizontal':
                 # Horizontal orientation: panels run left to right (horizontal strips)
-                print(f"           Using enhanced vertical panels (horizontal strips)")
                 return CeilingService._generate_enhanced_vertical_panels(
                     bounding_box, room_points, panel_width, panel_length
                 )
             elif orientation == 'merged':
                 # For merged approach, use horizontal orientation as default
-                print(f"           Using enhanced vertical panels (horizontal strips)")
                 return CeilingService._generate_enhanced_vertical_panels(
                     bounding_box, room_points, panel_width, panel_length
                 )
             else:
-                print(f"           ❌ Unknown orientation: {orientation}")
                 return []
                 
         except Exception as e:
-            print(f"Error generating advanced panels: {str(e)}")
             return []
 
     @staticmethod
@@ -3824,32 +3572,24 @@ class CeilingService:
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
         
-        print(f"           📐 Generating enhanced vertical panels (horizontal strips)")
-        
         # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
         room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
         
         room_width = room_bounding_box['width']
         room_height = room_bounding_box['height']
         
-        print(f"             Room dimensions: {room_width:.0f}mm x {room_height:.0f}mm")
-        
         # Calculate panel width based on user's choice
         if panel_length == 'auto':
             # Use full room width when auto (equivalent to panel_length_option = 1)
             panel_width = room_width
-            print(f"             Using auto panel width: {panel_width:.0f}mm (full room width)")
         else:
             # Use user's custom panel length
             panel_width = float(panel_length)
-            print(f"             Using custom panel width: {panel_width:.0f}mm")
         
         # Use advanced L-shaped room aware algorithm with room-specific bounding box
         panels = CeilingService._generate_shape_aware_panels(
             room_bounding_box, room_points, 'horizontal', max_panel_width, panel_length
         )
-        
-        print(f"             Generated {len(panels)} panels using shape-aware algorithm")
         
         # Panel width optimization removed as requested - return panels as-is
         return panels
@@ -3860,32 +3600,24 @@ class CeilingService:
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
         
-        print(f"           📐 Generating enhanced horizontal panels (vertical strips)")
-        
         # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
         room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
         
         room_width = room_bounding_box['width']
         room_height = room_bounding_box['height']
         
-        print(f"             Room dimensions: {room_width:.0f}mm x {room_height:.0f}mm")
-        
         # Calculate panel height based on user's choice
         if panel_length == 'auto':
             # Use full room height when auto (equivalent to panel_length_option = 1)
             panel_height = room_height
-            print(f"             Using auto panel height: {panel_height:.0f}mm (full room height)")
         else:
             # Use user's custom panel length
             panel_height = float(panel_length)
-            print(f"             Using custom panel height: {panel_height:.0f}mm")
         
         # Use advanced L-shaped room aware algorithm with room-specific bounding box
         panels = CeilingService._generate_shape_aware_panels(
             room_bounding_box, room_points, 'vertical', max_panel_width, panel_length
         )
-        
-        print(f"             Generated {len(panels)} panels using shape-aware algorithm")
         
         # Panel width optimization removed as requested - return panels as-is
         return panels
@@ -3926,7 +3658,6 @@ class CeilingService:
                 return corners_in_room / 4.0
                 
         except Exception as e:
-            print(f"Error calculating enhanced panel coverage: {str(e)}")
             return 0.0
 
     @staticmethod
@@ -3950,7 +3681,6 @@ class CeilingService:
             return panels
             
         except Exception as e:
-            print(f"Error optimizing panel placement: {str(e)}")
             return panels
 
     @staticmethod
@@ -4010,7 +3740,6 @@ class CeilingService:
             }
             
         except Exception as e:
-            print(f"Error analyzing enhanced waste: {str(e)}")
             return {
                 'total_waste_area': 0,
                 'total_waste_percentage': 0,
@@ -4143,7 +3872,6 @@ class CeilingService:
             return created_plans
             
         except Exception as e:
-            print(f"Error creating enhanced ceiling plans: {str(e)}")
             return []
 
     @staticmethod
@@ -4175,7 +3903,6 @@ class CeilingService:
         except Room.DoesNotExist:
             return None
         except Exception as e:
-            print(f"Error getting room info for ID {room_id}: {str(e)}")
             return None
 
     @staticmethod
@@ -4357,7 +4084,6 @@ class CeilingService:
             return report
             
         except Exception as e:
-            print(f"Error compiling project report: {str(e)}")
             return {'error': f'Report compilation failed: {str(e)}'}
 
     @staticmethod
@@ -4434,7 +4160,6 @@ class CeilingService:
             return recommendations
             
         except Exception as e:
-            print(f"Error generating recommendations: {str(e)}")
             return []
 
     @staticmethod
@@ -4605,9 +4330,8 @@ class CeilingService:
         
         Rules:
         1. No panel should be less than min_panel_width (350mm)
-        2. First and last panels max width is edge_panel_max_width (1130mm)
-        3. Middle panels max width is max_panel_width (1150mm)
-        4. Redistribute excess width from narrow panels to wider panels
+        2. Panels max width is max_panel_width (1150mm)
+        3. Redistribute excess width from narrow panels to wider panels
         """
         try:
             if not panels or len(panels) <= 1:
@@ -4757,5 +4481,4 @@ class CeilingService:
             return optimized_panels
             
         except Exception as e:
-            print(f"Error optimizing panel widths: {str(e)}")
             return panels

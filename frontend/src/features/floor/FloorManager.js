@@ -198,7 +198,14 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                     setPanelWidth(existingPlan.panel_width);
                 }
                 if (existingPlan.panel_length) {
-                    setPanelLength(existingPlan.panel_length);
+                    // Check if panel_length is 'auto' or a numeric value
+                    if (existingPlan.panel_length === 'auto') {
+                        setPanelLength('auto');
+                    } else {
+                        // It's a custom value, set dropdown to 'custom' and use the value
+                        setPanelLength('custom');
+                        setCustomPanelLength(existingPlan.panel_length);
+                    }
                 }
                 if (existingPlan.custom_panel_length) {
                     setCustomPanelLength(existingPlan.custom_panel_length);
@@ -555,7 +562,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                         />
                         
                         {/* Debug info */}
-                        <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
+                        {/* <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
                             <div>Debug Info:</div>
                             <div>Rooms: {allRooms.length}</div>
                             <div>Walls: {allWalls.length}</div>
@@ -580,7 +587,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                                 <div>All panels maintain original dimensions</div>
                                 <div className="text-blue-700 font-medium">Only rooms with floor_type = "panel" generate floor plans</div>
                             </div>
-                        </div>
+                        </div> */}
                     </div>
                 ) : (
                     <div className="text-center py-12">
