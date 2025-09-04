@@ -626,11 +626,11 @@ const FloorCanvas = ({
             }
             
             // Panel fill
-            ctx.fillStyle = panel.is_cut_panel ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+            ctx.fillStyle = panel.is_cut_panel ? 'rgba(34, 197, 94, 0.5)' : 'rgba(59, 130, 246, 0.5)';
             
             // Panel border
             ctx.strokeStyle = panel.is_cut_panel ? '#22c55e' : '#3b82f6';
-            ctx.lineWidth = 1 * scaleFactor.current;
+            ctx.lineWidth = 10 * scaleFactor.current; // Increased from 1 to 3 for better visibility
             
             // Calculate panel position and dimensions
             const panelX = panel.start_x * scaleFactor.current + offsetX.current;

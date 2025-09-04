@@ -288,10 +288,28 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         setPlanNeedsRegeneration(false);
     };
 
-    // Check if any panels need support (over 6000mm)
+    // Check if any panels need support (over 6000mm) - matches CeilingCanvas logic
     const panelsNeedSupport = useMemo(() => {
         if (!ceilingPanels || ceilingPanels.length === 0) return false;
-        return ceilingPanels.some(panel => panel.length > 6000);
+
+        // Determine panel orientation from the first available panel
+        let isHorizontalOrientation = false;
+        if (ceilingPanels.length > 0) {
+            isHorizontalOrientation = ceilingPanels[0].width > ceilingPanels[0].length;
+        }
+
+        // Check if any panels need support based on orientation
+        for (const panel of ceilingPanels) {
+            const needsSupport = isHorizontalOrientation ? 
+                panel.width > 6000 :  // Horizontal: check width
+                panel.length > 6000;  // Vertical: check length
+            
+            if (needsSupport) {
+                return true;
+            }
+        }
+        
+        return false;
     }, [ceilingPanels]);
 
     if (!projectId) {
@@ -515,7 +533,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                 <span>No support configuration needed</span>
                             </div>
                             <p className="text-xs text-green-600 mt-1">
-                                All panels are under 6000mm and can be installed without additional support systems.
+                                All panels are under 6000mm in their critical dimension and can be installed without additional support systems.
                             </p>
                         </div>
                     </div>

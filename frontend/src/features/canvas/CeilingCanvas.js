@@ -603,17 +603,17 @@ const CeilingCanvas = ({
             if (isSelected) {
                 ctx.fillStyle = 'rgba(59, 130, 246, 0.8)'; // Bright blue for selected
                 ctx.strokeStyle = '#3b82f6';
-                ctx.lineWidth = 5 * scaleFactor.current;
+                ctx.lineWidth = 10 * scaleFactor.current; // Increased from 5 to 6 for better visibility
             } else {
                 // Use same colors as FloorCanvas: blue for full panels, green for cut panels
                 if (panel.is_cut) {
-                    ctx.fillStyle = 'rgba(34, 197, 94, 0.3)'; // Green for cut panels (same as FloorCanvas)
+                    ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'; // Green for cut panels (same as FloorCanvas)
                     ctx.strokeStyle = '#22c55e'; // Green border for cut panels
                 } else {
-                    ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; // Blue for full panels (same as FloorCanvas)
+                    ctx.fillStyle = 'rgba(59, 130, 246, 0.5)'; // Blue for full panels (same as FloorCanvas)
                     ctx.strokeStyle = '#3b82f6'; // Blue border for full panels
                 }
-                ctx.lineWidth = 2 * scaleFactor.current;
+                ctx.lineWidth = 10 * scaleFactor.current; // Increased from 2 to 4 for better visibility
             }
 
             // Draw panel
@@ -623,7 +623,7 @@ const CeilingCanvas = ({
             // Draw cut panel indicator with dashed border (same as FloorCanvas)
             if (panel.is_cut) {
                 ctx.strokeStyle = '#22c55e'; // Green dashed border for cut panels
-                ctx.lineWidth = 2 * scaleFactor.current;
+                ctx.lineWidth = 10 * scaleFactor.current; // Increased from 2 to 3 for better visibility
                 ctx.setLineDash([8 * scaleFactor.current, 4 * scaleFactor.current]);
                 ctx.strokeRect(x + 2, y + 2, width - 4, height - 4);
                 ctx.setLineDash([]);
