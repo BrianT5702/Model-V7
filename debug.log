@@ -17098,3 +17098,29 @@ INFO 2025-09-03 12:53:27,673 autoreload 18348 12876 Watching for file changes wi
 INFO 2025-09-04 12:25:51,953 autoreload 24292 11788 Watching for file changes with StatReloader
 INFO 2025-09-04 13:06:46,392 services 24292 20632 Recalculating room boundary for room 143
 INFO 2025-09-04 13:06:46,400 services 24292 20632 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-07 10:01:00,670 autoreload 23260 8068 Watching for file changes with StatReloader
+INFO 2025-09-07 10:05:47,670 services 23260 6972 calculate_minimum_wall_height called with wall_ids: [6141, 6140]
+INFO 2025-09-07 10:05:47,670 services 23260 6972 Converted wall_ids to integers: [6141, 6140]
+INFO 2025-09-07 10:05:47,720 services 23260 6972 Found 2 walls
+INFO 2025-09-07 10:05:47,721 services 23260 6972 Calculated minimum wall height: 3000.0
+INFO 2025-09-07 10:05:57,442 views 23260 6972 Creating room with data: {'room_name': 'Test 1', 'floor_type': 'Panel', 'floor_thickness': '75', 'temperature': 20, 'height': 3000, 'remarks': '', 'walls': [6141, 6140, 6139, 6138], 'project': '425', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 20000}, {'x': 15000, 'y': 20000}, {'x': 15000, 'y': 0}]}
+INFO 2025-09-07 10:05:57,443 services 23260 6972 create_room_with_height called with room_data: {'room_name': 'Test 1', 'floor_type': 'Panel', 'floor_thickness': '75', 'temperature': 20, 'height': 3000, 'remarks': '', 'walls': [6141, 6140, 6139, 6138], 'project': '425', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 20000}, {'x': 15000, 'y': 20000}, {'x': 15000, 'y': 0}]}
+INFO 2025-09-07 10:05:57,591 services 23260 6972 Created room with ID: 171, height: 3000
+INFO 2025-09-07 10:05:57,591 services 23260 6972 Adding 4 walls to room and updating heights
+INFO 2025-09-07 10:05:57,591 services 23260 6972 Converted wall IDs: [6141, 6140, 6139, 6138]
+INFO 2025-09-07 10:05:57,593 services 23260 6972 Found 4 walls to add to room
+INFO 2025-09-07 10:05:57,599 services 23260 6972 Added walls to room 171
+INFO 2025-09-07 10:05:57,599 services 23260 6972 update_wall_heights_for_room called with wall_ids: [6141, 6140, 6139, 6138], new_height: 3000
+INFO 2025-09-07 10:05:57,600 services 23260 6972 Converted wall_ids to integers: [6141, 6140, 6139, 6138]
+INFO 2025-09-07 10:05:57,600 services 23260 6972 Found 4 walls to update
+INFO 2025-09-07 10:05:57,601 services 23260 6972 Wall 6138: current height = 3000.0
+INFO 2025-09-07 10:05:57,601 services 23260 6972 Wall 6139: current height = 3000.0
+INFO 2025-09-07 10:05:57,601 services 23260 6972 Wall 6140: current height = 3000.0
+INFO 2025-09-07 10:05:57,602 services 23260 6972 Wall 6141: current height = 3000.0
+INFO 2025-09-07 10:05:57,602 services 23260 6972 Updated 4 walls to height 3000
+INFO 2025-09-07 10:05:57,603 services 23260 6972 Wall 6138: new height = 3000.0
+INFO 2025-09-07 10:05:57,603 services 23260 6972 Wall 6139: new height = 3000.0
+INFO 2025-09-07 10:05:57,603 services 23260 6972 Wall 6140: new height = 3000.0
+INFO 2025-09-07 10:05:57,603 services 23260 6972 Wall 6141: new height = 3000.0
+INFO 2025-09-07 10:05:57,604 services 23260 6972 Updated 4 walls for room 171
+INFO 2025-09-07 10:05:57,604 views 23260 6972 Successfully created room 171 with height 3000

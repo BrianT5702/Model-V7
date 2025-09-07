@@ -54,17 +54,31 @@ class PanelCalculator {
             if (remainingLength <= (wallThickness * 2)) {
                 // console.log(`- Remaining length <= 2 * wall thickness, creating single side panel`);
                 
-                // Apply 20mm optimization: deduct from the LAST full panel, add to side panel
+                // Determine side panel position based on joint types
+                let sidePanelPosition;
+                if (typeof jointType === 'object') {
+                    // Mixed joints - prioritize 45_cut side for side panel
+                    sidePanelPosition = jointType.left === '45_cut' ? 'left' : 'right';
+                } else {
+                    // Uniform joints - default to right side
+                    sidePanelPosition = 'right';
+                }
+                
+                // Apply 1130mm optimization to the OPPOSITE END of the side panel
                 if (fullPanelsCount > 0) {
-                    // console.log(`- Applying 20mm optimization: deducting from last full panel, adding to side panel`);
-                    const lastFullPanel = panels[panels.length - 1];
-                    lastFullPanel.actualWidth = this.MAX_PANEL_WIDTH - 20; // 1130mm for installation
-                    lastFullPanel.optimizationNote = '20mm deducted for side panel fit';
-                    lastFullPanel.optimizationSymbol = '➡️'; // Right arrow symbol
-                    lastFullPanel.optimizationType = 'RIGHT_OPTIMIZED'; // Special identifier
-                    lastFullPanel.placementNote = 'RIGHT SIDE - 20mm deducted for left side panel fit';
+                    // console.log(`- Applying 1130mm optimization: side panel goes ${sidePanelPosition}, optimizing opposite end`);
+                    const oppositeEndIndex = sidePanelPosition === 'left' ? 
+                        panels.length - 1 :  // Rightmost panel if side panel goes left
+                        0;                  // Leftmost panel if side panel goes right
                     
-                    remainingLength += 20; // Add 20mm to remaining length for side panel
+                    const oppositePanel = panels[oppositeEndIndex];
+                    oppositePanel.actualWidth = this.MAX_PANEL_WIDTH - 20; // 1130mm
+                    oppositePanel.optimizationNote = `20mm deducted for ${sidePanelPosition} side panel fit`;
+                    oppositePanel.optimizationSymbol = sidePanelPosition === 'left' ? '⬅️' : '➡️';
+                    oppositePanel.optimizationType = `${sidePanelPosition.toUpperCase()}_OPTIMIZED`;
+                    oppositePanel.placementNote = `${sidePanelPosition.toUpperCase()} END - 20mm deducted for ${sidePanelPosition} side panel fit`;
+                    
+                    remainingLength += 20; // Add 20mm to side panel
                     // console.log(`- Adjusted remaining length: ${remainingLength}mm (includes 20mm from full panel)`);
                 }
                 
@@ -98,20 +112,20 @@ class PanelCalculator {
                         panels.push(sidePanel);
                     }
                 } else {
-                    // For uniform joint types, use the original logic
+                    // For uniform joint types, use the determined position
                     if (typeof jointType === 'object') {
                         const sidePanel = this.createSidePanelWithCut(
                             remainingLength, 
                             wallThickness, 
-                            jointType.left === '45_cut' ? 'left' : 'right',
-                            jointType.left  // Pass the actual joint type
+                            sidePanelPosition,
+                            jointType[sidePanelPosition]  // Use the joint type for the determined side
                         );
                         panels.push(sidePanel);
                     } else {
                         const sidePanel = this.createSidePanelWithCut(
                             remainingLength, 
                             wallThickness, 
-                            jointType,
+                            sidePanelPosition,
                             jointType  // Pass the actual joint type
                         );
                         panels.push(sidePanel);
@@ -216,12 +230,12 @@ class PanelCalculator {
         console.log(`Difference: ${wallLength - totalLength}mm`);
         
         // Special 20mm optimization summary
-        const optimizedPanels = panels.filter(p => p.optimizationType === 'RIGHT_OPTIMIZED');
+        const optimizedPanels = panels.filter(p => p.optimizationType && p.optimizationType.includes('_OPTIMIZED'));
         if (optimizedPanels.length > 0) {
             console.log(`\n🔴 --- 20MM OPTIMIZATION SUMMARY --- 🔴`);
             optimizedPanels.forEach((panel, index) => {
                 console.log(`🔴 Panel ${panels.indexOf(panel) + 1}: ${panel.width}mm → ${panel.actualWidth}mm`);
-                console.log(`   Position: RIGHT SIDE of wall (opposite from side panel)`);
+                console.log(`   Position: ${panel.placementNote}`);
                 console.log(`   Purpose: 20mm deducted for better side panel fit`);
                 console.log(`   Symbol: ${panel.optimizationSymbol}`);
             });
