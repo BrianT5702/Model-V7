@@ -84,37 +84,6 @@ export function drawGrid(context, canvasWidth, canvasHeight, gridSize, isDrawing
     }
 }
 
-// Additional drawing functions (drawRooms, drawWalls, etc.) can be added here as you extract them from Canvas2D.js. 
-
-// Draw rooms on the canvas (without labels - labels are now handled by InteractiveRoomLabel component)
-export function drawRooms(context, rooms, walls, scaleFactor, offsetX, offsetY, calculateRoomArea, calculatePolygonVisualCenter) {
-    rooms.forEach(room => {
-        const roomWalls = room.walls.map(wallId => 
-            walls.find(w => w.id === wallId)
-        ).filter(Boolean);
-        const areaPoints = (room.room_points && room.room_points.length >= 3)
-            ? { insetPoints: room.room_points }
-            : calculateRoomArea(roomWalls);
-        if (!areaPoints || !areaPoints.insetPoints || areaPoints.insetPoints.length < 3) return;
-        context.beginPath();
-        context.moveTo(
-            areaPoints.insetPoints[0].x * scaleFactor + offsetX,
-            areaPoints.insetPoints[0].y * scaleFactor + offsetY
-        );
-        for (let i = 1; i < areaPoints.insetPoints.length; i++) {
-            context.lineTo(
-                areaPoints.insetPoints[i].x * scaleFactor + offsetX,
-                areaPoints.insetPoints[i].y * scaleFactor + offsetY
-            );
-        }
-        context.closePath();
-        // Removed room fill - only keeping the outline
-        context.strokeStyle = 'rgba(76, 175, 80, 0.8)';
-        context.lineWidth = 2;
-        context.stroke();
-    });
-}
-
 // Get room label positions for interactive labels
 export function getRoomLabelPositions(rooms, walls, scaleFactor, offsetX, offsetY, calculateRoomArea, calculatePolygonVisualCenter) {
     const labelPositions = [];
@@ -1015,23 +984,6 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
     for (let i = 0; i < panels.length; i++) {
         const panel = panels[i];
         const panelWidth = panel.width;
-        const panelCenter = accumulated + panelWidth / 2;
-        const t = panelCenter / wallLength;
-        
-        // Calculate position for the label
-        const cx = line1[0].x + (line1[1].x - line1[0].x) * t;
-        const cy = line1[0].y + (line1[1].y - line1[0].y) * t;
-        const c2x = line2[0].x + (line2[1].x - line2[0].x) * t;
-        const c2y = line2[0].y + (line2[1].y - line2[0].y) * t;
-        // const mx = (cx + c2x) / 2; // Unused variable
-        // const my = (cy + c2y) / 2; // Unused variable
-        
-        // Direction vector along the wall
-        const dx = (line1[1].x - line1[0].x) / wallLength;
-        const dy = (line1[1].y - line1[0].y) / wallLength;
-        // Perpendicular vector for label offset
-        // const perpX = -dy; // Unused variable
-        // const perpY = dx; // Unused variable
         
                     // Show labels for side panels (first and last panels) and if this panel should show dimensions
             if ((i === 0 || i === panels.length - 1) && 

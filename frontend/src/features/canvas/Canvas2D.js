@@ -5,7 +5,6 @@ import DoorTable from '../door/DoorTable';
 import { calculatePolygonArea, findIntersectionPointsBetweenWalls } from './utils';
 import {
   drawGrid,
-  drawRooms,
   drawRoomPreview,
   drawWalls,
   drawPartitionSlashes,
@@ -1131,7 +1130,6 @@ const Canvas2D = ({
         // Draw doors
         drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
         // Draw rooms
-        drawRooms(context, rooms, walls, scaleFactor.current, offsetX.current, offsetY.current, calculateRoomArea, calculatePolygonVisualCenter);
         // Draw room preview
         drawRoomPreview(context, selectedRoomPoints, scaleFactor.current, offsetX.current, offsetY.current);
         

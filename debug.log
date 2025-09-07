@@ -17124,3 +17124,109 @@ INFO 2025-09-07 10:05:57,603 services 23260 6972 Wall 6140: new height = 3000.0
 INFO 2025-09-07 10:05:57,603 services 23260 6972 Wall 6141: new height = 3000.0
 INFO 2025-09-07 10:05:57,604 services 23260 6972 Updated 4 walls for room 171
 INFO 2025-09-07 10:05:57,604 views 23260 6972 Successfully created room 171 with height 3000
+INFO 2025-09-07 10:23:50,765 autoreload 20752 23760 Watching for file changes with StatReloader
+INFO 2025-09-07 10:24:32,449 services 20752 17932 calculate_minimum_wall_height called with wall_ids: [6132, 5979, 6133]
+INFO 2025-09-07 10:24:32,449 services 20752 17932 Converted wall_ids to integers: [6132, 5979, 6133]
+INFO 2025-09-07 10:24:32,512 services 20752 17932 Found 3 walls
+INFO 2025-09-07 10:24:32,514 services 20752 17932 Calculated minimum wall height: 8000.0
+INFO 2025-09-07 10:25:36,070 services 20752 17932 calculate_minimum_wall_height called with wall_ids: [6132, 5979, 6133]
+INFO 2025-09-07 10:25:36,070 services 20752 17932 Converted wall_ids to integers: [6132, 5979, 6133]
+INFO 2025-09-07 10:25:36,127 services 20752 17932 Found 3 walls
+INFO 2025-09-07 10:25:36,128 services 20752 17932 Calculated minimum wall height: 8000.0
+INFO 2025-09-07 10:25:40,065 views 20752 17932 Updating room with data: {'id': 143, 'walls': [6133, 5979, 6132], 'ceiling_plan': {'id': 6, 'room': 143, 'total_area': 150000000, 'total_panels': 9, 'full_panels': 8, 'cut_panels': 1, 'waste_percentage': 0, 'generation_method': 'enhanced_automatic', 'ceiling_thickness': 150, 'orientation_strategy': 'all_horizontal', 'panel_width': 1150, 'panel_length': 'auto', 'custom_panel_length': None, 'support_type': 'nylon', 'support_config': {'includeCable': False, 'includeAccessories': True, 'aluSuspensionCustomDrawing': False}, 'notes': None}, 'room_name': 'Testing', 'floor_type': 'Panel', 'floor_thickness': 150, 'temperature': '0.00', 'height': 8000, 'remarks': '', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 10000}, {'x': 15000, 'y': 10000}, {'x': 14850, 'y': 0}], 'label_position': {'x': 7600, 'y': 4775}, 'project': 409}
+INFO 2025-09-07 10:25:40,107 views 20752 17932 Found room to update: 143, current height: 8000.0
+INFO 2025-09-07 10:25:40,120 views 20752 17932 Updated room height to: 8000.0
+INFO 2025-09-07 10:25:40,121 views 20752 17932 Updating 3 walls with new height: 8000
+INFO 2025-09-07 10:25:40,121 services 20752 17932 update_wall_heights_for_room called with wall_ids: [6133, 5979, 6132], new_height: 8000
+INFO 2025-09-07 10:25:40,121 services 20752 17932 Converted wall_ids to integers: [6133, 5979, 6132]
+INFO 2025-09-07 10:25:40,123 services 20752 17932 Found 3 walls to update
+INFO 2025-09-07 10:25:40,124 services 20752 17932 Wall 6133: current height = 8000.0
+INFO 2025-09-07 10:25:40,124 services 20752 17932 Wall 5979: current height = 8000.0
+INFO 2025-09-07 10:25:40,124 services 20752 17932 Wall 6132: current height = 8000.0
+INFO 2025-09-07 10:25:40,125 services 20752 17932 Updated 3 walls to height 8000
+INFO 2025-09-07 10:25:40,126 services 20752 17932 Wall 6133: new height = 8000.0
+INFO 2025-09-07 10:25:40,126 services 20752 17932 Wall 5979: new height = 8000.0
+INFO 2025-09-07 10:25:40,126 services 20752 17932 Wall 6132: new height = 8000.0
+INFO 2025-09-07 10:25:40,126 views 20752 17932 Successfully updated 3 walls
+INFO 2025-09-07 10:25:40,127 services 20752 17932 Recalculating room boundary for room 143
+INFO 2025-09-07 10:25:40,130 services 20752 17932 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-07 10:25:41,537 views 20752 17932 Updating room with data: {'id': 143, 'walls': [6133, 5979, 6132], 'ceiling_plan': {'id': 6, 'room': 143, 'total_area': 150000000, 'total_panels': 9, 'full_panels': 8, 'cut_panels': 1, 'waste_percentage': 0, 'generation_method': 'enhanced_automatic', 'ceiling_thickness': 150, 'orientation_strategy': 'all_horizontal', 'panel_width': 1150, 'panel_length': 'auto', 'custom_panel_length': None, 'support_type': 'nylon', 'support_config': {'includeCable': False, 'includeAccessories': True, 'aluSuspensionCustomDrawing': False}, 'notes': None}, 'room_name': 'Testing', 'floor_type': 'Panel', 'floor_thickness': 150, 'temperature': '0.00', 'height': 8000, 'remarks': '', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 10000}, {'x': 15000, 'y': 10000}, {'x': 14850, 'y': 0}], 'label_position': {'x': 7650, 'y': 5050}, 'project': 409}
+INFO 2025-09-07 10:25:41,575 views 20752 17932 Found room to update: 143, current height: 8000.0
+INFO 2025-09-07 10:25:41,584 views 20752 17932 Updated room height to: 8000.0
+INFO 2025-09-07 10:25:41,585 views 20752 17932 Updating 3 walls with new height: 8000
+INFO 2025-09-07 10:25:41,585 services 20752 17932 update_wall_heights_for_room called with wall_ids: [6133, 5979, 6132], new_height: 8000
+INFO 2025-09-07 10:25:41,585 services 20752 17932 Converted wall_ids to integers: [6133, 5979, 6132]
+INFO 2025-09-07 10:25:41,586 services 20752 17932 Found 3 walls to update
+INFO 2025-09-07 10:25:41,587 services 20752 17932 Wall 6133: current height = 8000.0
+INFO 2025-09-07 10:25:41,587 services 20752 17932 Wall 5979: current height = 8000.0
+INFO 2025-09-07 10:25:41,587 services 20752 17932 Wall 6132: current height = 8000.0
+INFO 2025-09-07 10:25:41,588 services 20752 17932 Updated 3 walls to height 8000
+INFO 2025-09-07 10:25:41,589 services 20752 17932 Wall 6133: new height = 8000.0
+INFO 2025-09-07 10:25:41,589 services 20752 17932 Wall 5979: new height = 8000.0
+INFO 2025-09-07 10:25:41,589 services 20752 17932 Wall 6132: new height = 8000.0
+INFO 2025-09-07 10:25:41,589 views 20752 17932 Successfully updated 3 walls
+INFO 2025-09-07 10:25:41,589 services 20752 17932 Recalculating room boundary for room 143
+INFO 2025-09-07 10:25:41,592 services 20752 17932 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-07 10:25:42,301 views 20752 17932 Updating room with data: {'id': 143, 'walls': [6133, 5979, 6132], 'ceiling_plan': {'id': 6, 'room': 143, 'total_area': 150000000, 'total_panels': 9, 'full_panels': 8, 'cut_panels': 1, 'waste_percentage': 0, 'generation_method': 'enhanced_automatic', 'ceiling_thickness': 150, 'orientation_strategy': 'all_horizontal', 'panel_width': 1150, 'panel_length': 'auto', 'custom_panel_length': None, 'support_type': 'nylon', 'support_config': {'includeCable': False, 'includeAccessories': True, 'aluSuspensionCustomDrawing': False}, 'notes': None}, 'room_name': 'Testing', 'floor_type': 'Panel', 'floor_thickness': 150, 'temperature': '0.00', 'height': 8000, 'remarks': '', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 10000}, {'x': 15000, 'y': 10000}, {'x': 14850, 'y': 0}], 'label_position': {'x': 12375, 'y': 7750}, 'project': 409}
+INFO 2025-09-07 10:25:42,339 views 20752 17932 Found room to update: 143, current height: 8000.0
+INFO 2025-09-07 10:25:42,348 views 20752 17932 Updated room height to: 8000.0
+INFO 2025-09-07 10:25:42,349 views 20752 17932 Updating 3 walls with new height: 8000
+INFO 2025-09-07 10:25:42,349 services 20752 17932 update_wall_heights_for_room called with wall_ids: [6133, 5979, 6132], new_height: 8000
+INFO 2025-09-07 10:25:42,349 services 20752 17932 Converted wall_ids to integers: [6133, 5979, 6132]
+INFO 2025-09-07 10:25:42,350 services 20752 17932 Found 3 walls to update
+INFO 2025-09-07 10:25:42,351 services 20752 17932 Wall 6133: current height = 8000.0
+INFO 2025-09-07 10:25:42,351 services 20752 17932 Wall 5979: current height = 8000.0
+INFO 2025-09-07 10:25:42,352 services 20752 17932 Wall 6132: current height = 8000.0
+INFO 2025-09-07 10:25:42,353 services 20752 17932 Updated 3 walls to height 8000
+INFO 2025-09-07 10:25:42,353 services 20752 17932 Wall 6133: new height = 8000.0
+INFO 2025-09-07 10:25:42,354 services 20752 17932 Wall 5979: new height = 8000.0
+INFO 2025-09-07 10:25:42,354 services 20752 17932 Wall 6132: new height = 8000.0
+INFO 2025-09-07 10:25:42,354 views 20752 17932 Successfully updated 3 walls
+INFO 2025-09-07 10:25:42,354 services 20752 17932 Recalculating room boundary for room 143
+INFO 2025-09-07 10:25:42,357 services 20752 17932 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-07 10:25:46,239 views 20752 17932 Updating room with data: {'id': 143, 'walls': [6133, 5979, 6132], 'ceiling_plan': {'id': 6, 'room': 143, 'total_area': 150000000, 'total_panels': 9, 'full_panels': 8, 'cut_panels': 1, 'waste_percentage': 0, 'generation_method': 'enhanced_automatic', 'ceiling_thickness': 150, 'orientation_strategy': 'all_horizontal', 'panel_width': 1150, 'panel_length': 'auto', 'custom_panel_length': None, 'support_type': 'nylon', 'support_config': {'includeCable': False, 'includeAccessories': True, 'aluSuspensionCustomDrawing': False}, 'notes': None}, 'room_name': 'Testing', 'floor_type': 'Panel', 'floor_thickness': 150, 'temperature': '0.00', 'height': 8000, 'remarks': '', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 10000}, {'x': 15000, 'y': 10000}, {'x': 14850, 'y': 0}], 'label_position': {'x': 7650, 'y': 5200}, 'project': 409}
+INFO 2025-09-07 10:25:46,288 views 20752 17932 Found room to update: 143, current height: 8000.0
+INFO 2025-09-07 10:25:46,303 views 20752 17932 Updated room height to: 8000.0
+INFO 2025-09-07 10:25:46,306 views 20752 17932 Updating 3 walls with new height: 8000
+INFO 2025-09-07 10:25:46,306 services 20752 17932 update_wall_heights_for_room called with wall_ids: [6133, 5979, 6132], new_height: 8000
+INFO 2025-09-07 10:25:46,306 services 20752 17932 Converted wall_ids to integers: [6133, 5979, 6132]
+INFO 2025-09-07 10:25:46,308 services 20752 17932 Found 3 walls to update
+INFO 2025-09-07 10:25:46,309 services 20752 17932 Wall 6133: current height = 8000.0
+INFO 2025-09-07 10:25:46,310 services 20752 17932 Wall 5979: current height = 8000.0
+INFO 2025-09-07 10:25:46,310 services 20752 17932 Wall 6132: current height = 8000.0
+INFO 2025-09-07 10:25:46,311 services 20752 17932 Updated 3 walls to height 8000
+INFO 2025-09-07 10:25:46,313 services 20752 17932 Wall 6133: new height = 8000.0
+INFO 2025-09-07 10:25:46,313 services 20752 17932 Wall 5979: new height = 8000.0
+INFO 2025-09-07 10:25:46,313 services 20752 17932 Wall 6132: new height = 8000.0
+INFO 2025-09-07 10:25:46,313 views 20752 17932 Successfully updated 3 walls
+INFO 2025-09-07 10:25:46,313 services 20752 17932 Recalculating room boundary for room 143
+INFO 2025-09-07 10:25:46,318 services 20752 17932 Updated room 143 boundary with 4 points (order preserved)
+INFO 2025-09-07 10:25:51,066 services 20752 17932 calculate_minimum_wall_height called with wall_ids: [6132, 5979, 6133]
+INFO 2025-09-07 10:25:51,067 services 20752 17932 Converted wall_ids to integers: [6132, 5979, 6133]
+INFO 2025-09-07 10:25:51,115 services 20752 17932 Found 3 walls
+INFO 2025-09-07 10:25:51,116 services 20752 17932 Calculated minimum wall height: 8000.0
+INFO 2025-09-07 10:27:09,766 services 20752 17932 calculate_minimum_wall_height called with wall_ids: [6056, 6055]
+INFO 2025-09-07 10:27:09,766 services 20752 17932 Converted wall_ids to integers: [6056, 6055]
+INFO 2025-09-07 10:27:09,808 services 20752 17932 Found 2 walls
+INFO 2025-09-07 10:27:09,809 services 20752 17932 Calculated minimum wall height: 2750.0
+INFO 2025-09-07 10:27:19,210 views 20752 17932 Creating room with data: {'room_name': '2525', 'floor_type': 'Panel', 'floor_thickness': '50', 'temperature': 25, 'height': 2750, 'remarks': '', 'walls': [6056, 6055, 6054, 6053], 'project': '418', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 15000}, {'x': 30000, 'y': 15000}, {'x': 30000, 'y': 0}]}
+INFO 2025-09-07 10:27:19,211 services 20752 17932 create_room_with_height called with room_data: {'room_name': '2525', 'floor_type': 'Panel', 'floor_thickness': '50', 'temperature': 25, 'height': 2750, 'remarks': '', 'walls': [6056, 6055, 6054, 6053], 'project': '418', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 15000}, {'x': 30000, 'y': 15000}, {'x': 30000, 'y': 0}]}
+INFO 2025-09-07 10:27:19,248 services 20752 17932 Created room with ID: 172, height: 2750
+INFO 2025-09-07 10:27:19,248 services 20752 17932 Adding 4 walls to room and updating heights
+INFO 2025-09-07 10:27:19,248 services 20752 17932 Converted wall IDs: [6056, 6055, 6054, 6053]
+INFO 2025-09-07 10:27:19,250 services 20752 17932 Found 4 walls to add to room
+INFO 2025-09-07 10:27:19,256 services 20752 17932 Added walls to room 172
+INFO 2025-09-07 10:27:19,256 services 20752 17932 update_wall_heights_for_room called with wall_ids: [6056, 6055, 6054, 6053], new_height: 2750
+INFO 2025-09-07 10:27:19,256 services 20752 17932 Converted wall_ids to integers: [6056, 6055, 6054, 6053]
+INFO 2025-09-07 10:27:19,257 services 20752 17932 Found 4 walls to update
+INFO 2025-09-07 10:27:19,258 services 20752 17932 Wall 6054: current height = 2750.0
+INFO 2025-09-07 10:27:19,258 services 20752 17932 Wall 6055: current height = 2750.0
+INFO 2025-09-07 10:27:19,258 services 20752 17932 Wall 6056: current height = 2750.0
+INFO 2025-09-07 10:27:19,258 services 20752 17932 Wall 6053: current height = 2750.0
+INFO 2025-09-07 10:27:19,260 services 20752 17932 Updated 4 walls to height 2750
+INFO 2025-09-07 10:27:19,260 services 20752 17932 Wall 6054: new height = 2750.0
+INFO 2025-09-07 10:27:19,260 services 20752 17932 Wall 6055: new height = 2750.0
+INFO 2025-09-07 10:27:19,260 services 20752 17932 Wall 6056: new height = 2750.0
+INFO 2025-09-07 10:27:19,261 services 20752 17932 Wall 6053: new height = 2750.0
+INFO 2025-09-07 10:27:19,261 services 20752 17932 Updated 4 walls for room 172
+INFO 2025-09-07 10:27:19,261 views 20752 17932 Successfully created room 172 with height 2750
