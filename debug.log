@@ -17230,3 +17230,9 @@ INFO 2025-09-07 10:27:19,260 services 20752 17932 Wall 6056: new height = 2750.0
 INFO 2025-09-07 10:27:19,261 services 20752 17932 Wall 6053: new height = 2750.0
 INFO 2025-09-07 10:27:19,261 services 20752 17932 Updated 4 walls for room 172
 INFO 2025-09-07 10:27:19,261 views 20752 17932 Successfully created room 172 with height 2750
+INFO 2025-09-19 21:46:30,510 autoreload 20388 17944 Watching for file changes with StatReloader
+WARNING 2025-09-19 21:46:46,067 log 20388 26404 Not Found: /favicon.ico
+INFO 2025-09-19 21:55:25,627 services 20388 26524 calculate_minimum_wall_height called with wall_ids: [6145, 6144]
+INFO 2025-09-19 21:55:25,628 services 20388 26524 Converted wall_ids to integers: [6145, 6144]
+INFO 2025-09-19 21:55:25,675 services 20388 26524 Found 2 walls
+INFO 2025-09-19 21:55:25,675 services 20388 26524 Calculated minimum wall height: 3000.0

@@ -553,11 +553,8 @@ const ProjectDetails = () => {
                                             </button>
                                             <button
                                                 onClick={() => projectDetails.setCurrentView('installation-estimator')}
-                                                disabled={!projectDetails.rooms || projectDetails.rooms.length === 0}
                                                 className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                                                    (!projectDetails.rooms || projectDetails.rooms.length === 0)
-                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                        : projectDetails.currentView === 'installation-estimator'
+                                                    projectDetails.currentView === 'installation-estimator'
                                                         ? 'bg-orange-600 text-white shadow-md'
                                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                                 }`}
