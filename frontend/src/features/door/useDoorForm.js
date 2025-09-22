@@ -40,6 +40,16 @@ export default function useDoorForm({
   const [dbConnectionError, setDbConnectionError] = useState(false);
   const [validationError, setValidationError] = useState("");
 
+  // Derived: wall length in mm
+  const getWallLength = () => {
+    if (!wall) return 0;
+    const dx = (wall.end_x || 0) - (wall.start_x || 0);
+    const dy = (wall.end_y || 0) - (wall.start_y || 0);
+    return Math.hypot(dx, dy);
+  };
+
+  const wallLength = getWallLength();
+
   // Sync state when editing a different door
   useEffect(() => {
     if (initialDoor) {
@@ -108,6 +118,23 @@ export default function useDoorForm({
 
   const handlePositionChange = (e) => {
     setLocalPosition(parseFloat(e.target.value));
+  };
+
+  // Bi-directional controls for left/right distances (to door center)
+  const leftDistance = Math.max(0, Math.min(wallLength, (localPosition || 0) * wallLength));
+  const rightDistance = Math.max(0, wallLength - leftDistance);
+
+  const setLeftDistance = (value) => {
+    const v = Math.max(0, Math.min(wallLength, Number(value) || 0));
+    const newPos = wallLength > 0 ? v / wallLength : 0;
+    setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
+  };
+
+  const setRightDistance = (value) => {
+    const v = Math.max(0, Math.min(wallLength, Number(value) || 0));
+    const left = Math.max(0, wallLength - v);
+    const newPos = wallLength > 0 ? left / wallLength : 0;
+    setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
   };
 
   // Add these handlers for height and thickness changes
@@ -228,6 +255,11 @@ export default function useDoorForm({
     handleFlipDirection,
     handleFlipSide,
     handlePositionChange,
+    wallLength,
+    leftDistance,
+    rightDistance,
+    setLeftDistance,
+    setRightDistance,
     handleSave,
     handleDelete,
     handleConfirmDelete,

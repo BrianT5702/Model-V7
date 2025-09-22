@@ -314,7 +314,8 @@ const PanelCalculationControls = ({
             const panels = calculator.calculatePanels(
                 wallLength,
                 wall.thickness,
-                { left: leftJointType, right: rightJointType }
+                { left: leftJointType, right: rightJointType },
+                wall.height
             );
 
             // Validate panels array

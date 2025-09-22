@@ -1,13 +1,14 @@
 import React from 'react';
 import useDoorForm from './useDoorForm';
 
-const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
+const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
   const form = useDoorForm({
     initialDoor: door,
     isEditMode: true,
     onUpdate,
     onDelete,
-    onClose
+    onClose,
+    wall
   });
 
   return (
@@ -83,11 +84,38 @@ const DoorEditorModal = ({ door, onUpdate, onDelete, onClose }) => {
               min="0"
               max="1"
               step="0.01"
-              value={form.position_x}
+              value={form.localPosition}
               onChange={form.handlePositionChange}
               className="w-full"
             />
           </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs text-gray-600">Distance from left (mm)</span>
+              <input
+                type="number"
+                value={Math.round(form.leftDistance) || 0}
+                onChange={(e) => form.setLeftDistance(e.target.value)}
+                min="0"
+                max={Math.max(0, Math.round(form.wallLength))}
+                step="1"
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-600">Distance from right (mm)</span>
+              <input
+                type="number"
+                value={Math.round(form.rightDistance) || 0}
+                onChange={(e) => form.setRightDistance(e.target.value)}
+                min="0"
+                max={Math.max(0, Math.round(form.wallLength))}
+                step="1"
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </label>
+          </div>
 
           <div className="flex gap-3">
             <button

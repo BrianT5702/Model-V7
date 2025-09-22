@@ -30,12 +30,18 @@ class PanelCalculator {
     }
 
     // Enhanced panel calculation with 45-degree cut handling and 20mm optimization
-    calculatePanels(wallLength, wallThickness, jointType) {
+    calculatePanels(wallLength, wallThickness, jointType, wallHeight = 3000) {
         // console.log(`\n=== Starting calculation for wall length: ${wallLength}mm, thickness: ${wallThickness}mm ===`);
         // console.log(`Joint type:`, jointType);
+        // console.log(`Wall height: ${wallHeight}mm`);
         
         const panels = [];
         let remainingLength = wallLength;
+        
+        // Determine threshold and minimum panel width based on wall height
+        const threshold = wallHeight < 5000 ? 600 : 1000;
+        const minPanelWidth = wallHeight < 5000 ? 300 : 500;
+        // console.log(`Threshold for panel splitting: ${threshold}mm, Minimum panel width: ${minPanelWidth}mm (wall height: ${wallHeight}mm)`);
 
         // Calculate full panels needed
         const fullPanelsCount = Math.floor(remainingLength / this.MAX_PANEL_WIDTH);
@@ -51,8 +57,100 @@ class PanelCalculator {
         // Handle remaining length
         if (remainingLength > 0) {
             // console.log(`\nHandling remaining length: ${remainingLength}mm`);
-            if (remainingLength <= (wallThickness * 2)) {
-                // console.log(`- Remaining length <= 2 * wall thickness, creating single side panel`);
+            
+            // Check if remaining length is too small for a minimum panel
+            if (remainingLength < minPanelWidth) {
+                if (fullPanelsCount > 0) {
+                    // console.log(`- Remaining length (${remainingLength}mm) < minimum panel width (${minPanelWidth}mm)`);
+                    // console.log(`- Adding remaining length to last full panel and splitting into two`);
+                    
+                    // Remove the last full panel
+                    const lastFullPanel = panels.pop();
+                    
+                    // Calculate the total length to be split
+                    // Use the actual width of the last panel (could be 1150mm or 1130mm if optimized)
+                    const lastPanelActualWidth = lastFullPanel.actualWidth || lastFullPanel.width;
+                    const totalLengthToSplit = lastPanelActualWidth + remainingLength;
+                    const halfLength = Math.floor(totalLengthToSplit / 2);
+                    
+                    // console.log(`- Last panel actual width: ${lastPanelActualWidth}mm`);
+                    // console.log(`- Total length to split: ${totalLengthToSplit}mm`);
+                    // console.log(`- Split lengths: ${halfLength}mm and ${totalLengthToSplit - halfLength}mm`);
+                    
+                    // Create two side panels from the split length
+                    if (typeof jointType === 'object') {
+                        const firstSidePanel = this.createSidePanelWithCut(
+                            halfLength, 
+                            wallThickness, 
+                            'left',
+                            jointType.left
+                        );
+                        const secondSidePanel = this.createSidePanelWithCut(
+                            totalLengthToSplit - halfLength, 
+                            wallThickness, 
+                            'right',
+                            jointType.right
+                        );
+                        
+                        // Add optimization notes
+                        firstSidePanel.optimizationNote = `Split from last full panel + remaining length to avoid panel < ${minPanelWidth}mm`;
+                        firstSidePanel.optimizationSymbol = '✂️';
+                        firstSidePanel.optimizationType = 'SPLIT_OPTIMIZATION';
+                        firstSidePanel.placementNote = `LEFT SIDE - Split from ${totalLengthToSplit}mm total`;
+                        
+                        secondSidePanel.optimizationNote = `Split from last full panel + remaining length to avoid panel < ${minPanelWidth}mm`;
+                        secondSidePanel.optimizationSymbol = '✂️';
+                        secondSidePanel.optimizationType = 'SPLIT_OPTIMIZATION';
+                        secondSidePanel.placementNote = `RIGHT SIDE - Split from ${totalLengthToSplit}mm total`;
+                        
+                        panels.push(firstSidePanel, secondSidePanel);
+                    } else {
+                        const firstSidePanel = this.createSidePanelWithCut(
+                            halfLength, 
+                            wallThickness, 
+                            'left',
+                            jointType
+                        );
+                        const secondSidePanel = this.createSidePanelWithCut(
+                            totalLengthToSplit - halfLength, 
+                            wallThickness, 
+                            'right',
+                            jointType
+                        );
+                        
+                        // Add optimization notes
+                        firstSidePanel.optimizationNote = `Split from last full panel + remaining length to avoid panel < ${minPanelWidth}mm`;
+                        firstSidePanel.optimizationSymbol = '✂️';
+                        firstSidePanel.optimizationType = 'SPLIT_OPTIMIZATION';
+                        firstSidePanel.placementNote = `LEFT SIDE - Split from ${totalLengthToSplit}mm total`;
+                        
+                        secondSidePanel.optimizationNote = `Split from last full panel + remaining length to avoid panel < ${minPanelWidth}mm`;
+                        secondSidePanel.optimizationSymbol = '✂️';
+                        secondSidePanel.optimizationType = 'SPLIT_OPTIMIZATION';
+                        secondSidePanel.placementNote = `RIGHT SIDE - Split from ${totalLengthToSplit}mm total`;
+                        
+                        panels.push(firstSidePanel, secondSidePanel);
+                    }
+                    
+                    return panels;
+                } else {
+                    // console.log(`- Wall length (${remainingLength}mm) < minimum panel width (${minPanelWidth}mm)`);
+                    // console.log(`- Creating minimum size panel to meet requirements`);
+                    
+                    // Create a panel with minimum required width
+                    const minPanel = this.createSidePanel(minPanelWidth, 'center', jointType);
+                    minPanel.optimizationNote = `Minimum size panel created (${minPanelWidth}mm) to meet requirements`;
+                    minPanel.optimizationSymbol = '⚠️';
+                    minPanel.optimizationType = 'MINIMUM_SIZE_PANEL';
+                    minPanel.placementNote = `MINIMUM SIZE - Required ${minPanelWidth}mm, actual wall ${remainingLength}mm`;
+                    panels.push(minPanel);
+                    
+                    return panels;
+                }
+            }
+            
+            if (remainingLength <= threshold) {
+                // console.log(`- Remaining length <= threshold (${threshold}mm), creating single side panel`);
                 
                 // Determine side panel position based on joint types
                 let sidePanelPosition;
@@ -132,7 +230,7 @@ class PanelCalculator {
                     }
                 }
             } else {
-                // console.log(`- Remaining length > 2 * wall thickness, splitting into two side panels`);
+                // console.log(`- Remaining length > threshold (${threshold}mm), splitting into two side panels`);
                 const halfLength = Math.floor(remainingLength / 2);
                 // console.log(`- Split lengths: ${halfLength}mm and ${remainingLength - halfLength}mm`);
                 
@@ -170,7 +268,8 @@ class PanelCalculator {
 
         // Add panel placement analysis logs
         console.log(`\n=== PANEL PLACEMENT ANALYSIS ===`);
-        console.log(`Wall length: ${wallLength}mm | Wall thickness: ${wallThickness}mm`);
+        console.log(`Wall length: ${wallLength}mm | Wall thickness: ${wallThickness}mm | Wall height: ${wallHeight}mm`);
+        console.log(`Threshold: ${threshold}mm | Minimum panel width: ${minPanelWidth}mm`);
         console.log(`Joint types: ${typeof jointType === 'object' ? `Left: ${jointType.left}, Right: ${jointType.right}` : `Uniform: ${jointType}`}`);
         console.log(`Total panels created: ${panels.length}`);
         
@@ -229,14 +328,14 @@ class PanelCalculator {
         console.log(`Total panel length: ${totalLength}mm`);
         console.log(`Difference: ${wallLength - totalLength}mm`);
         
-        // Special 20mm optimization summary
-        const optimizedPanels = panels.filter(p => p.optimizationType && p.optimizationType.includes('_OPTIMIZED'));
+        // Special optimization summary
+        const optimizedPanels = panels.filter(p => p.optimizationType && (p.optimizationType.includes('_OPTIMIZED') || p.optimizationType === 'SPLIT_OPTIMIZATION' || p.optimizationType === 'MINIMUM_SIZE_PANEL'));
         if (optimizedPanels.length > 0) {
-            console.log(`\n🔴 --- 20MM OPTIMIZATION SUMMARY --- 🔴`);
+            console.log(`\n🔴 --- OPTIMIZATION SUMMARY --- 🔴`);
             optimizedPanels.forEach((panel, index) => {
-                console.log(`🔴 Panel ${panels.indexOf(panel) + 1}: ${panel.width}mm → ${panel.actualWidth}mm`);
-                console.log(`   Position: ${panel.placementNote}`);
-                console.log(`   Purpose: 20mm deducted for better side panel fit`);
+                console.log(`🔴 Panel ${panels.indexOf(panel) + 1}: ${panel.width}mm → ${panel.actualWidth || panel.width}mm`);
+                console.log(`   Type: ${panel.optimizationType}`);
+                console.log(`   Note: ${panel.optimizationNote}`);
                 console.log(`   Symbol: ${panel.optimizationSymbol}`);
             });
         }
@@ -447,42 +546,42 @@ class PanelCalculator {
     calculateTestDataset() {
         const calculator = new PanelCalculator();
         
-        // Wall 4542 (4800mm)
-        console.log("Wall 4542 (4800mm):");
+        // Wall 4542 (4800mm, height 3000mm - below threshold)
+        console.log("Wall 4542 (4800mm, height 3000mm):");
         // Wall 4542 has butt_in joints on both sides
-        const wall4542Panels = calculator.calculatePanels(4800, 100, {left: 'butt_in', right: 'butt_in'});
+        const wall4542Panels = calculator.calculatePanels(4800, 100, {left: 'butt_in', right: 'butt_in'}, 3000);
         console.log("Panels:", wall4542Panels);
         console.log("Leftovers after Wall 4542:", calculator.leftovers);
         console.log("Analysis:", calculator.getPanelAnalysis());
         
-        // Wall 4544 (10000mm)
-        console.log("\nWall 4544 (10000mm):");
+        // Wall 4544 (10000mm, height 6000mm - above threshold)
+        console.log("\nWall 4544 (10000mm, height 6000mm):");
         // Wall 4544 has 45_cut joints on both sides
-        const wall4544Panels = calculator.calculatePanels(10000, 100, {left: '45_cut', right: '45_cut'});
+        const wall4544Panels = calculator.calculatePanels(10000, 100, {left: '45_cut', right: '45_cut'}, 6000);
         console.log("Panels:", wall4544Panels);
         console.log("Leftovers after Wall 4544:", calculator.leftovers);
         console.log("Analysis:", calculator.getPanelAnalysis());
         
-        // Wall 4543 (10000mm)
-        console.log("\nWall 4543 (10000mm):");
+        // Wall 4543 (10000mm, height 6000mm - above threshold)
+        console.log("\nWall 4543 (10000mm, height 6000mm):");
         // Wall 4543 has 45_cut joints on both sides
-        const wall4543Panels = calculator.calculatePanels(10000, 100, {left: '45_cut', right: '45_cut'});
+        const wall4543Panels = calculator.calculatePanels(10000, 100, {left: '45_cut', right: '45_cut'}, 6000);
         console.log("Panels:", wall4543Panels);
         console.log("Leftovers after Wall 4543:", calculator.leftovers);
         console.log("Analysis:", calculator.getPanelAnalysis());
         
-        // Wall 4534 (5000mm)
-        console.log("\nWall 4534 (5000mm):");
+        // Wall 4534 (5000mm, height 3000mm - below threshold)
+        console.log("\nWall 4534 (5000mm, height 3000mm):");
         // Wall 4534 has 45_cut joints on both sides
-        const wall4534Panels = calculator.calculatePanels(5000, 100, {left: '45_cut', right: '45_cut'});
+        const wall4534Panels = calculator.calculatePanels(5000, 100, {left: '45_cut', right: '45_cut'}, 3000);
         console.log("Panels:", wall4534Panels);
         console.log("Leftovers after Wall 4534:", calculator.leftovers);
         console.log("Analysis:", calculator.getPanelAnalysis());
         
-        // Wall 4536 (5000mm)
-        console.log("\nWall 4536 (5000mm):");
+        // Wall 4536 (5000mm, height 5500mm - above threshold)
+        console.log("\nWall 4536 (5000mm, height 5500mm):");
         // Wall 4536 has 45_cut joints on both sides
-        const wall4536Panels = calculator.calculatePanels(5000, 100, {left: '45_cut', right: '45_cut'});
+        const wall4536Panels = calculator.calculatePanels(5000, 100, {left: '45_cut', right: '45_cut'}, 5500);
         console.log("Panels:", wall4536Panels);
         console.log("Leftovers after Wall 4536:", calculator.leftovers);
         console.log("Analysis:", calculator.getPanelAnalysis());

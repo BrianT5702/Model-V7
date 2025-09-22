@@ -24,6 +24,15 @@ const DoorManager = ({
   const [dbConnectionError, setDbConnectionError] = useState(false);
   const [validationError, setValidationError] = useState("");
 
+  // Derived wall length to support distance inputs
+  const getWallLength = () => {
+    if (!wall) return 0;
+    const dx = (wall.end_x || 0) - (wall.start_x || 0);
+    const dy = (wall.end_y || 0) - (wall.start_y || 0);
+    return Math.hypot(dx, dy);
+  };
+  const wallLength = getWallLength();
+
   // Pre-fill in edit mode, reset in add mode
   useEffect(() => {
     if (isEditMode && editingDoor) {
@@ -227,6 +236,41 @@ const DoorManager = ({
             onChange={e => setLocalPosition(parseFloat(e.target.value))}
             className="w-full mt-1"
           />
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <label className="block">
+              <span className="text-xs text-gray-600">Distance from left (mm)</span>
+              <input
+                type="number"
+                value={Math.round((localPosition || 0) * wallLength) || 0}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(wallLength, Number(e.target.value) || 0));
+                  const newPos = wallLength > 0 ? v / wallLength : 0;
+                  setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
+                }}
+                min="0"
+                max={Math.max(0, Math.round(wallLength))}
+                step="1"
+                className="input"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-600">Distance from right (mm)</span>
+              <input
+                type="number"
+                value={Math.max(0, Math.round(wallLength - (localPosition || 0) * wallLength)) || 0}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(wallLength, Number(e.target.value) || 0));
+                  const left = Math.max(0, wallLength - v);
+                  const newPos = wallLength > 0 ? left / wallLength : 0;
+                  setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
+                }}
+                min="0"
+                max={Math.max(0, Math.round(wallLength))}
+                step="1"
+                className="input"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="flex justify-end gap-3">

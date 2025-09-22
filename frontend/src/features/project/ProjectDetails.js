@@ -862,6 +862,7 @@ const ProjectDetails = () => {
                 {projectDetails.showDoorEditor && projectDetails.editingDoor && (
                     <DoorEditorModal
                         door={projectDetails.editingDoor}
+                        wall={projectDetails.walls.find(w => w.id === (projectDetails.editingDoor.linked_wall || projectDetails.editingDoor.wall_id))}
                         onUpdate={projectDetails.handleUpdateDoor}
                         onDelete={async (doorId) => {
                             await projectDetails.handleDeleteDoor(doorId);
