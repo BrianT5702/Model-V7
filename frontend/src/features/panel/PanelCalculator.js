@@ -148,7 +148,7 @@ class PanelCalculator {
                     return panels;
                 }
             }
-            
+            //
             if (remainingLength <= threshold) {
                 // console.log(`- Remaining length <= threshold (${threshold}mm), creating single side panel`);
                 
