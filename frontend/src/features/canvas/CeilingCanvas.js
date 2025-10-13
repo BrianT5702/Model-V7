@@ -25,6 +25,8 @@ const CeilingCanvas = ({
     
     // Project data for boundary calculations
     projectData = null,
+    // Latest project-wide waste % from POST (immediate UI updates after room edits)
+    projectWastePercentage = null,
     
     // Additional props
     orientationAnalysis = null,
@@ -2785,61 +2787,25 @@ const CeilingCanvas = ({
                                             <span className="text-gray-600">Waste %:</span>
                                             <span className="font-bold text-red-600">
                                                 {(() => {
-                                                    console.log('🔍 [UI] Calculating waste percentage...');
+                                                    console.log('🔍 [UI] Displaying project-wide waste percentage...');
+                                                    console.log('🔍 [UI] projectWastePercentage (prop):', projectWastePercentage);
                                                     console.log('🔍 [UI] ceilingPlan:', ceilingPlan);
                                                     
-                                                    // Try to get waste percentage from various sources
-                                                    if (ceilingPlan?.summary?.project_waste_percentage) {
-                                                        console.log('✅ [UI] Using ceilingPlan.summary.project_waste_percentage:', ceilingPlan.summary.project_waste_percentage);
+                                                    // 1) Prefer the latest project-wide waste provided by manager (from POST)
+                                                    if (projectWastePercentage !== undefined && projectWastePercentage !== null) {
+                                                        return Number(projectWastePercentage).toFixed(1);
+                                                    }
+                                                    
+                                                    // 2) Fallback to value embedded in the plan object if present
+                                                    if (ceilingPlan?.summary?.project_waste_percentage !== undefined && ceilingPlan?.summary?.project_waste_percentage !== null) {
                                                         return ceilingPlan.summary.project_waste_percentage.toFixed(1);
                                                     }
-                                                    if (ceilingPlan?.waste_percentage) {
-                                                        console.log('✅ [UI] Using ceilingPlan.waste_percentage:', ceilingPlan.waste_percentage);
+                                                    
+                                                    // 3) Legacy fallback for older responses
+                                                    if (ceilingPlan?.waste_percentage !== undefined && ceilingPlan?.waste_percentage !== null) {
                                                         return ceilingPlan.waste_percentage.toFixed(1);
                                                     }
-                                                    if (ceilingPlan?.analysis?.total_waste_percentage) {
-                                                        console.log('✅ [UI] Using ceilingPlan.analysis.total_waste_percentage:', ceilingPlan.analysis.total_waste_percentage);
-                                                        return ceilingPlan.analysis.total_waste_percentage.toFixed(1);
-                                                    }
-                                                    if (ceilingPlan?.summary?.average_waste_percentage) {
-                                                        console.log('✅ [UI] Using ceilingPlan.summary.average_waste_percentage:', ceilingPlan.summary.average_waste_percentage);
-                                                        return ceilingPlan.summary.average_waste_percentage.toFixed(1);
-                                                    }
                                                     
-                                                    // Calculate waste percentage from panel data if available
-                                                    if (ceilingPlan?.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels) && ceilingPlan.enhanced_panels.length > 0) {
-                                                        const totalPanelArea = ceilingPlan.enhanced_panels.reduce((sum, panel) => sum + (panel.width * panel.length), 0);
-                                                        console.log('📊 [UI] Total panel area:', totalPanelArea);
-                                                        
-                                                        // Calculate room area from room dimensions if available
-                                                        let totalRoomArea = 0;
-                                                        if (effectiveRooms && effectiveRooms.length > 0) {
-                                                            totalRoomArea = effectiveRooms.reduce((sum, room) => {
-                                                                // Calculate room area using room_points (polygon area)
-                                                                if (room.room_points && room.room_points.length >= 3) {
-                                                                    let area = 0;
-                                                                    for (let i = 0; i < room.room_points.length; i++) {
-                                                                        const j = (i + 1) % room.room_points.length;
-                                                                        area += room.room_points[i].x * room.room_points[j].y;
-                                                                        area -= room.room_points[j].x * room.room_points[i].y;
-                                                                    }
-                                                                    const roomArea = Math.abs(area) / 2;
-                                                                    console.log(`📊 [UI] Room ${room.id} area:`, roomArea);
-                                                                    return sum + roomArea;
-                                                                }
-                                                                return sum;
-                                                            }, 0);
-                                                        }
-                                                        console.log('📊 [UI] Total room area:', totalRoomArea);
-                                                        
-                                                        if (totalPanelArea > 0 && totalRoomArea > 0) {
-                                                            const wastePercentage = ((totalPanelArea - totalRoomArea) / totalPanelArea) * 100;
-                                                            console.log('🧮 [UI] Calculated waste percentage:', wastePercentage.toFixed(1) + '%');
-                                                            return Math.max(0, wastePercentage).toFixed(1);
-                                                        }
-                                                    }
-                                                    
-                                                    console.log('❌ [UI] No valid data found, returning 0.0%');
                                                     return '0.0';
                                                 })()}%
                                             </span>

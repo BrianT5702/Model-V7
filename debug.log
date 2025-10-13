@@ -21132,3 +21132,566 @@ INFO 2025-10-13 13:53:32,410 services 2932 25708 [GENERATION] Compatible leftove
 INFO 2025-10-13 13:53:32,410 services 2932 25708 [GENERATION] Using leftover 1760334812392_0: 410.0mm from 750.0mm, remaining: 340.0mm
 INFO 2025-10-13 13:53:51,706 autoreload 2932 23444 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
 INFO 2025-10-13 13:53:52,267 autoreload 23400 14556 Watching for file changes with StatReloader
+INFO 2025-10-13 13:54:43,649 autoreload 23400 14556 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\models.py changed, reloading.
+INFO 2025-10-13 13:54:44,453 autoreload 6900 4048 Watching for file changes with StatReloader
+INFO 2025-10-13 13:58:08,089 autoreload 6900 4048 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 13:58:08,859 autoreload 10532 11636 Watching for file changes with StatReloader
+INFO 2025-10-13 13:58:22,313 autoreload 10532 11636 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 13:58:22,975 autoreload 24864 25524 Watching for file changes with StatReloader
+INFO 2025-10-13 13:58:57,750 services 24864 12408 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:57,750 services 24864 12408 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:57,750 services 24864 12408 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:57,750 services 24864 12408 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:57,751 services 24864 12408 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:57,751 services 24864 12408 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:57,751 services 24864 12408 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:57,751 services 24864 12408 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:58:59,058 autoreload 24864 25524 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 13:58:59,576 autoreload 11532 19252 Watching for file changes with StatReloader
+INFO 2025-10-13 13:59:15,696 services 11532 8360 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:15,696 services 11532 8360 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:15,696 services 11532 8360 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:15,696 services 11532 8360 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:15,697 services 11532 8360 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:15,697 services 11532 8360 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:15,697 services 11532 8360 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:15,697 services 11532 8360 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,012 services 11532 8360 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 13:59:22,048 services 11532 8360 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 13:59:22,049 services 11532 8360   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+ERROR 2025-10-13 13:59:22,049 services 11532 8360 Error in _generate_panels_with_room_specific_orientation: CeilingService._generate_panels_for_single_room() takes 4 positional arguments but 6 were given
+ERROR 2025-10-13 13:59:22,050 services 11532 8360 Traceback (most recent call last):
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py", line 3846, in _generate_panels_with_room_specific_orientation
+    room_panels = CeilingService._generate_panels_for_single_room(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: CeilingService._generate_panels_for_single_room() takes 4 positional arguments but 6 were given
+
+INFO 2025-10-13 13:59:22,050 services 11532 8360 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 0, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 0.0, 'current_leftovers_count': 0, 'current_leftovers': []}
+INFO 2025-10-13 13:59:22,053 services 11532 8360 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,053 services 11532 8360 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,054 services 11532 8360 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,054 services 11532 8360 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,054 services 11532 8360 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,054 services 11532 8360 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,054 services 11532 8360 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:22,054 services 11532 8360 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,658 services 11532 8360 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,658 services 11532 8360 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,658 services 11532 8360 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,658 services 11532 8360 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,659 services 11532 8360 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,659 services 11532 8360 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,659 services 11532 8360 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,659 services 11532 8360 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:26,659 services 11532 8360 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 13:59:26,659 services 11532 8360 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-13 13:59:26,659 services 11532 8360   Processing room 157: Prep Room (MEAT)
+INFO 2025-10-13 13:59:26,660 services 11532 8360   Generating vertical panels for room 157
+INFO 2025-10-13 13:59:26,661 services 11532 8360 [GENERATION] Leftover created: 550.0mm × 4020.0mm (thickness: 150mm)
+INFO 2025-10-13 13:59:26,661 services 11532 8360   Generated 3 panels for room 157
+INFO 2025-10-13 13:59:26,661 services 11532 8360   Processing room 156: Freezer 1(RAW MATERIAL)
+INFO 2025-10-13 13:59:26,661 services 11532 8360   Generating vertical panels for room 156
+INFO 2025-10-13 13:59:26,662 services 11532 8360 [GENERATION] Leftover created: 540.0mm × 3740.0mm (thickness: 150mm)
+INFO 2025-10-13 13:59:26,662 services 11532 8360   Generated 4 panels for room 156
+INFO 2025-10-13 13:59:26,662 services 11532 8360 _generate_enhanced_room_panels: Total panels generated: 7
+INFO 2025-10-13 13:59:26,662 services 11532 8360 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 4230600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760335166660_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760335166.6604252}, {'id': '1760335166662_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760335166.662425}]}
+INFO 2025-10-13 13:59:32,269 services 11532 8360 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 13:59:32,304 services 11532 8360 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 13:59:32,305 services 11532 8360   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+ERROR 2025-10-13 13:59:32,305 services 11532 8360 Error in _generate_panels_with_room_specific_orientation: CeilingService._generate_panels_for_single_room() takes 4 positional arguments but 6 were given
+ERROR 2025-10-13 13:59:32,305 services 11532 8360 Traceback (most recent call last):
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py", line 3846, in _generate_panels_with_room_specific_orientation
+    room_panels = CeilingService._generate_panels_for_single_room(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: CeilingService._generate_panels_for_single_room() takes 4 positional arguments but 6 were given
+
+INFO 2025-10-13 13:59:32,305 services 11532 8360 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 0, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 0.0, 'current_leftovers_count': 0, 'current_leftovers': []}
+INFO 2025-10-13 13:59:32,308 services 11532 8360 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:32,308 services 11532 8360 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:32,308 services 11532 8360 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:32,309 services 11532 8360 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:32,309 services 11532 8360 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:32,309 services 11532 8360 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:32,309 services 11532 8360 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:32,310 services 11532 8360 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 13:59:38,739 autoreload 11532 19252 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 13:59:39,535 autoreload 1444 25728 Watching for file changes with StatReloader
+INFO 2025-10-13 14:15:00,095 autoreload 1444 25728 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:15:00,607 autoreload 26292 1636 Watching for file changes with StatReloader
+INFO 2025-10-13 14:15:40,605 autoreload 26292 1636 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:15:41,091 autoreload 20340 14840 Watching for file changes with StatReloader
+INFO 2025-10-13 14:15:52,233 autoreload 20340 14840 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:15:52,755 autoreload 6248 27476 Watching for file changes with StatReloader
+INFO 2025-10-13 14:16:18,369 autoreload 6248 27476 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:16:19,103 autoreload 25412 9164 Watching for file changes with StatReloader
+INFO 2025-10-13 14:17:05,237 autoreload 25412 9164 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:17:05,768 autoreload 22488 26484 Watching for file changes with StatReloader
+INFO 2025-10-13 14:27:23,850 services 22488 25036 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,850 services 22488 25036 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,851 services 22488 25036 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,851 services 22488 25036 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,851 services 22488 25036 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,851 services 22488 25036 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,851 services 22488 25036 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,851 services 22488 25036 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:23,851 services 22488 25036 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 14:27:23,851 services 22488 25036 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-13 14:27:23,851 services 22488 25036   Processing room 157: Prep Room (MEAT)
+INFO 2025-10-13 14:27:23,852 services 22488 25036   Generating vertical panels for room 157
+INFO 2025-10-13 14:27:23,852 services 22488 25036 [GENERATION] Leftover created: 550.0mm × 4020.0mm (thickness: 150mm)
+INFO 2025-10-13 14:27:23,853 services 22488 25036   Generated 3 panels for room 157
+INFO 2025-10-13 14:27:23,853 services 22488 25036   Processing room 156: Freezer 1(RAW MATERIAL)
+INFO 2025-10-13 14:27:23,853 services 22488 25036   Generating vertical panels for room 156
+INFO 2025-10-13 14:27:23,854 services 22488 25036 [GENERATION] Leftover created: 540.0mm × 3740.0mm (thickness: 150mm)
+INFO 2025-10-13 14:27:23,854 services 22488 25036   Generated 4 panels for room 156
+INFO 2025-10-13 14:27:23,854 services 22488 25036 _generate_enhanced_room_panels: Total panels generated: 7
+INFO 2025-10-13 14:27:23,854 services 22488 25036 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 4230600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760336843852_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760336843.8528576}, {'id': '1760336843853_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760336843.8538606}]}
+INFO 2025-10-13 14:27:31,302 services 22488 25036 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 14:27:31,337 services 22488 25036 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:27:31,338 services 22488 25036   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 14:27:31,338 services 22488 25036 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 14:27:31,347 services 22488 25036   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = auto
+INFO 2025-10-13 14:27:31,347 services 22488 25036 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 14:27:31,351 services 22488 25036 Total panels generated: 8
+INFO 2025-10-13 14:27:31,351 services 22488 25036 Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760336851338_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760336851.3385386}, {'id': '1760336851347_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760336851.3478022}]}
+INFO 2025-10-13 14:27:31,351 services 22488 25036 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760336851338_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760336851.3385386}, {'id': '1760336851347_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760336851.3478022}]}
+INFO 2025-10-13 14:27:31,354 services 22488 25036 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:31,354 services 22488 25036 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:31,354 services 22488 25036 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:31,354 services 22488 25036 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:31,355 services 22488 25036 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:31,355 services 22488 25036 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:31,355 services 22488 25036 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:27:31,355 services 22488 25036 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,683 services 22488 25036 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,684 services 22488 25036 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,684 services 22488 25036 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,684 services 22488 25036 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,684 services 22488 25036 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,684 services 22488 25036 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,685 services 22488 25036 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:47,685 services 22488 25036 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,220 services 22488 25036 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 14:29:51,256 services 22488 25036 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:29:51,257 services 22488 25036   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 14:29:51,257 services 22488 25036 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 14:29:51,263 services 22488 25036   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = auto
+INFO 2025-10-13 14:29:51,263 services 22488 25036 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 14:29:51,267 services 22488 25036 Total panels generated: 8
+INFO 2025-10-13 14:29:51,267 services 22488 25036 Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760336991257_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760336991.2577994}, {'id': '1760336991263_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760336991.2638056}]}
+INFO 2025-10-13 14:29:51,267 services 22488 25036 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760336991257_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760336991.2577994}, {'id': '1760336991263_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760336991.2638056}]}
+INFO 2025-10-13 14:29:51,269 services 22488 25036 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,270 services 22488 25036 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,270 services 22488 25036 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,270 services 22488 25036 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,270 services 22488 25036 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,271 services 22488 25036 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,271 services 22488 25036 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:29:51,271 services 22488 25036 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,875 services 22488 25036 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 14:30:00,915 services 22488 25036 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:30:00,916 services 22488 25036   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 14:30:00,916 services 22488 25036 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 14:30:00,922 services 22488 25036   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = auto
+INFO 2025-10-13 14:30:00,922 services 22488 25036 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 14:30:00,925 services 22488 25036 Total panels generated: 8
+INFO 2025-10-13 14:30:00,926 services 22488 25036 Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760337000916_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760337000.9160972}, {'id': '1760337000922_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760337000.9220967}]}
+INFO 2025-10-13 14:30:00,926 services 22488 25036 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760337000916_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760337000.9160972}, {'id': '1760337000922_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760337000.9220967}]}
+INFO 2025-10-13 14:30:00,929 services 22488 25036 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,929 services 22488 25036 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,929 services 22488 25036 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,929 services 22488 25036 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,930 services 22488 25036 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,930 services 22488 25036 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,930 services 22488 25036 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:00,930 services 22488 25036 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,654 services 22488 25036 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,654 services 22488 25036 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,655 services 22488 25036 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,655 services 22488 25036 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,655 services 22488 25036 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,655 services 22488 25036 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,655 services 22488 25036 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:09,656 services 22488 25036 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:12,963 autoreload 22488 26484 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:30:13,933 autoreload 24864 10244 Watching for file changes with StatReloader
+INFO 2025-10-13 14:30:15,216 services 24864 26784 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:15,216 services 24864 26784 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:15,217 services 24864 26784 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:15,217 services 24864 26784 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:15,217 services 24864 26784 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:15,217 services 24864 26784 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:15,218 services 24864 26784 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:15,218 services 24864 26784 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,424 services 24864 26784 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,424 services 24864 26784 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,424 services 24864 26784 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,425 services 24864 26784 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,425 services 24864 26784 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,425 services 24864 26784 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,425 services 24864 26784 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:22,425 services 24864 26784 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,812 services 24864 26784 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 14:30:26,950 services 24864 26784 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:30:26,951 services 24864 26784   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 14:30:26,952 services 24864 26784 Successfully generated 4 panels for room 157 (Prep Room (MEAT)) with horizontal orientation
+INFO 2025-10-13 14:30:26,963 services 24864 26784   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = auto
+ERROR 2025-10-13 14:30:26,963 services 24864 26784 Error analyzing room shape: object of type 'int' has no len()
+ERROR 2025-10-13 14:30:26,963 services 24864 26784 Error analyzing room shape: object of type 'int' has no len()
+INFO 2025-10-13 14:30:26,963 services 24864 26784 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with vertical orientation
+INFO 2025-10-13 14:30:26,967 services 24864 26784 Total panels generated: 8
+INFO 2025-10-13 14:30:26,969 services 24864 26784 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,970 services 24864 26784 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,970 services 24864 26784 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,970 services 24864 26784 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,970 services 24864 26784 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,970 services 24864 26784 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,971 services 24864 26784 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:30:26,971 services 24864 26784 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:31:02,235 autoreload 24864 10244 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:31:02,757 autoreload 14264 5620 Watching for file changes with StatReloader
+INFO 2025-10-13 14:31:13,899 autoreload 14264 5620 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:31:14,463 autoreload 8180 10748 Watching for file changes with StatReloader
+INFO 2025-10-13 14:31:24,606 autoreload 8180 10748 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:31:25,265 autoreload 15588 24032 Watching for file changes with StatReloader
+INFO 2025-10-13 14:31:43,756 autoreload 15588 24032 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:31:45,321 autoreload 21632 13412 Watching for file changes with StatReloader
+INFO 2025-10-13 14:32:18,280 autoreload 21632 13412 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:32:18,934 autoreload 20312 23824 Watching for file changes with StatReloader
+INFO 2025-10-13 14:32:33,516 services 20312 7992 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:33,518 services 20312 7992 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:33,518 services 20312 7992 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:33,518 services 20312 7992 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:33,518 services 20312 7992 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:33,519 services 20312 7992 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:33,519 services 20312 7992 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:33,519 services 20312 7992 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,865 services 20312 7992 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,865 services 20312 7992 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,866 services 20312 7992 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,866 services 20312 7992 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,866 services 20312 7992 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,866 services 20312 7992 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,866 services 20312 7992 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,866 services 20312 7992 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:34,867 services 20312 7992 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 14:32:34,867 services 20312 7992 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-13 14:32:34,867 services 20312 7992   Processing room 157: Prep Room (MEAT)
+INFO 2025-10-13 14:32:34,867 services 20312 7992   Generating vertical panels for room 157
+INFO 2025-10-13 14:32:34,868 services 20312 7992 [GENERATION] Leftover created: 550.0mm × 4020.0mm (thickness: 150mm)
+INFO 2025-10-13 14:32:34,868 services 20312 7992   Generated 3 panels for room 157
+INFO 2025-10-13 14:32:34,868 services 20312 7992   Processing room 156: Freezer 1(RAW MATERIAL)
+INFO 2025-10-13 14:32:34,868 services 20312 7992   Generating vertical panels for room 156
+INFO 2025-10-13 14:32:34,869 services 20312 7992 [GENERATION] Leftover created: 540.0mm × 3740.0mm (thickness: 150mm)
+INFO 2025-10-13 14:32:34,869 services 20312 7992   Generated 4 panels for room 156
+INFO 2025-10-13 14:32:34,869 services 20312 7992 _generate_enhanced_room_panels: Total panels generated: 7
+INFO 2025-10-13 14:32:34,869 services 20312 7992 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 4230600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760337154868_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760337154.8689055}, {'id': '1760337154869_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760337154.8699052}]}
+INFO 2025-10-13 14:32:40,231 services 20312 7992 Room-specific ceiling configuration detected for room 156
+INFO 2025-10-13 14:32:40,268 services 20312 7992 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:32:40,272 services 20312 7992   Room 157 (Prep Room (MEAT)): Using SAVED orientation = all_vertical
+ERROR 2025-10-13 14:32:40,272 services 20312 7992 Error in _generate_panels_with_room_specific_orientation: CeilingService._generate_panels_for_single_room() takes 4 positional arguments but 6 were given
+ERROR 2025-10-13 14:32:40,273 services 20312 7992 Traceback (most recent call last):
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py", line 3845, in _generate_panels_with_room_specific_orientation
+    room_panels = CeilingService._generate_panels_for_single_room(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: CeilingService._generate_panels_for_single_room() takes 4 positional arguments but 6 were given
+
+INFO 2025-10-13 14:32:40,273 services 20312 7992 ROOM-SPECIFIC PATH - Leftover stats: {'leftovers_created': 0, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 0.0, 'current_leftovers_count': 0, 'current_leftovers': []}
+INFO 2025-10-13 14:32:40,277 services 20312 7992 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:40,277 services 20312 7992 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:40,277 services 20312 7992 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:40,277 services 20312 7992 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:40,277 services 20312 7992 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:40,278 services 20312 7992 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:40,278 services 20312 7992 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:40,278 services 20312 7992 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:32:49,890 autoreload 20312 23824 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:32:50,594 autoreload 5772 19564 Watching for file changes with StatReloader
+INFO 2025-10-13 14:40:06,203 autoreload 5772 19564 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:40:06,863 autoreload 24288 15312 Watching for file changes with StatReloader
+INFO 2025-10-13 14:40:18,118 autoreload 24288 15312 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:40:18,610 autoreload 22892 8048 Watching for file changes with StatReloader
+INFO 2025-10-13 14:40:28,730 autoreload 22892 8048 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:40:29,303 autoreload 27068 1900 Watching for file changes with StatReloader
+INFO 2025-10-13 14:40:41,474 autoreload 27068 1900 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:40:42,054 autoreload 21912 5880 Watching for file changes with StatReloader
+INFO 2025-10-13 14:41:05,563 autoreload 21912 5880 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:41:06,058 autoreload 25336 23352 Watching for file changes with StatReloader
+INFO 2025-10-13 14:41:21,333 autoreload 25336 23352 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:41:21,945 autoreload 25864 10196 Watching for file changes with StatReloader
+INFO 2025-10-13 14:42:01,904 autoreload 25864 10196 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:42:02,565 autoreload 22484 24124 Watching for file changes with StatReloader
+INFO 2025-10-13 14:43:14,373 autoreload 22484 24124 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:43:14,875 autoreload 22500 6976 Watching for file changes with StatReloader
+INFO 2025-10-13 14:46:41,930 services 22500 21692 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 14:46:41,930 services 22500 21692 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 14:46:41,966 services 22500 21692 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:46:41,966 services 22500 21692   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 14:46:41,967 services 22500 21692 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 14:46:41,967 services 22500 21692 Successfully generated 4 panels for room 157 (Prep Room (MEAT)) with horizontal orientation
+INFO 2025-10-13 14:46:41,977 services 22500 21692   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = all_vertical
+INFO 2025-10-13 14:46:41,977 services 22500 21692 [GENERATION] Leftover created: 540.0mm × 3740.0mm (thickness: 150mm)
+INFO 2025-10-13 14:46:41,978 services 22500 21692 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with vertical orientation
+INFO 2025-10-13 14:46:41,981 services 22500 21692 Total panels generated: 8
+INFO 2025-10-13 14:46:41,981 services 22500 21692 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 3701600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338001967_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760338001.9678488}, {'id': '1760338001977_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760338001.977354}]}
+INFO 2025-10-13 14:46:41,981 services 22500 21692 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 3701600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338001967_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760338001.9678488}, {'id': '1760338001977_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760338001.977354}]}
+INFO 2025-10-13 14:46:41,984 services 22500 21692 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:46:41,985 services 22500 21692 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:46:41,985 services 22500 21692 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:46:41,985 services 22500 21692 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:46:41,985 services 22500 21692 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:46:41,985 services 22500 21692 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:46:41,986 services 22500 21692 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:46:41,986 services 22500 21692 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,011 services 22500 21692 Room-specific ceiling configuration detected for room 156
+INFO 2025-10-13 14:50:09,012 services 22500 21692 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 14:50:09,047 services 22500 21692 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:50:09,050 services 22500 21692   Room 157 (Prep Room (MEAT)): Using SAVED orientation = all_horizontal
+INFO 2025-10-13 14:50:09,050 services 22500 21692 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 14:50:09,051 services 22500 21692 Successfully generated 4 panels for room 157 (Prep Room (MEAT)) with horizontal orientation
+INFO 2025-10-13 14:50:09,053 services 22500 21692   Room 156 (Freezer 1(RAW MATERIAL)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 14:50:09,053 services 22500 21692 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 14:50:09,053 services 22500 21692 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with horizontal orientation
+INFO 2025-10-13 14:50:09,056 services 22500 21692 Total panels generated: 8
+INFO 2025-10-13 14:50:09,056 services 22500 21692 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338209050_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760338209.0503435}, {'id': '1760338209053_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760338209.0533478}]}
+INFO 2025-10-13 14:50:09,056 services 22500 21692 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338209050_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760338209.0503435}, {'id': '1760338209053_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760338209.0533478}]}
+INFO 2025-10-13 14:50:09,059 services 22500 21692 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,060 services 22500 21692 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,060 services 22500 21692 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,060 services 22500 21692 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,060 services 22500 21692 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,061 services 22500 21692 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,061 services 22500 21692 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:09,061 services 22500 21692 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,820 services 22500 21692 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 14:50:22,820 services 22500 21692 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 14:50:22,855 services 22500 21692 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:50:22,856 services 22500 21692   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_vertical
+INFO 2025-10-13 14:50:22,856 services 22500 21692 [GENERATION] Leftover created: 550.0mm × 4020.0mm (thickness: 150mm)
+INFO 2025-10-13 14:50:22,856 services 22500 21692 Successfully generated 3 panels for room 157 (Prep Room (MEAT)) with vertical orientation
+INFO 2025-10-13 14:50:22,861 services 22500 21692   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = all_horizontal
+INFO 2025-10-13 14:50:22,862 services 22500 21692 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 14:50:22,862 services 22500 21692 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with horizontal orientation
+INFO 2025-10-13 14:50:22,865 services 22500 21692 Total panels generated: 7
+INFO 2025-10-13 14:50:22,865 services 22500 21692 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5702600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338222856_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760338222.8569462}, {'id': '1760338222862_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760338222.862984}]}
+INFO 2025-10-13 14:50:22,865 services 22500 21692 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5702600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338222856_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760338222.8569462}, {'id': '1760338222862_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760338222.862984}]}
+INFO 2025-10-13 14:50:22,869 services 22500 21692 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,869 services 22500 21692 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,869 services 22500 21692 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,869 services 22500 21692 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,870 services 22500 21692 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,870 services 22500 21692 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,870 services 22500 21692 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:50:22,870 services 22500 21692 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:03,148 autoreload 22500 6976 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:52:03,823 autoreload 24316 24816 Watching for file changes with StatReloader
+INFO 2025-10-13 14:52:38,595 autoreload 24316 24816 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-13 14:52:39,096 autoreload 12316 13156 Watching for file changes with StatReloader
+INFO 2025-10-13 14:52:54,633 services 12316 19336 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,634 services 12316 19336 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,634 services 12316 19336 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,634 services 12316 19336 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,634 services 12316 19336 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,634 services 12316 19336 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,634 services 12316 19336 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,635 services 12316 19336 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:52:54,635 services 12316 19336 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 14:52:54,635 services 12316 19336 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-13 14:52:54,635 services 12316 19336   Processing room 157: Prep Room (MEAT)
+INFO 2025-10-13 14:52:54,636 services 12316 19336   Generating vertical panels for room 157
+INFO 2025-10-13 14:52:54,636 services 12316 19336 [GENERATION] Leftover created: 550.0mm × 4020.0mm (thickness: 150mm)
+INFO 2025-10-13 14:52:54,636 services 12316 19336   Generated 3 panels for room 157
+INFO 2025-10-13 14:52:54,636 services 12316 19336   Processing room 156: Freezer 1(RAW MATERIAL)
+INFO 2025-10-13 14:52:54,637 services 12316 19336   Generating vertical panels for room 156
+INFO 2025-10-13 14:52:54,637 services 12316 19336 [GENERATION] Leftover created: 540.0mm × 3740.0mm (thickness: 150mm)
+INFO 2025-10-13 14:52:54,637 services 12316 19336   Generated 4 panels for room 156
+INFO 2025-10-13 14:52:54,637 services 12316 19336 _generate_enhanced_room_panels: Total panels generated: 7
+INFO 2025-10-13 14:52:54,637 services 12316 19336 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 4230600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338374636_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760338374.6369088}, {'id': '1760338374637_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760338374.6379085}]}
+INFO 2025-10-13 14:53:04,839 services 12316 19336 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 14:53:04,840 services 12316 19336 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 14:53:04,875 services 12316 19336 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 14:53:04,876 services 12316 19336   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 14:53:04,876 services 12316 19336 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 14:53:04,876 services 12316 19336 Successfully generated 4 panels for room 157 (Prep Room (MEAT)) with horizontal orientation
+INFO 2025-10-13 14:53:04,876 services 12316 19336   > Generated 4 panels for room 157
+INFO 2025-10-13 14:53:04,879 services 12316 19336   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = all_vertical
+INFO 2025-10-13 14:53:04,880 services 12316 19336 [GENERATION] Leftover created: 540.0mm × 3740.0mm (thickness: 150mm)
+INFO 2025-10-13 14:53:04,880 services 12316 19336 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with vertical orientation
+INFO 2025-10-13 14:53:04,880 services 12316 19336   > Generated 4 panels for room 156
+INFO 2025-10-13 14:53:04,880 services 12316 19336 Total panels generated: 8
+INFO 2025-10-13 14:53:04,880 services 12316 19336 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 3701600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338384876_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760338384.8766549}, {'id': '1760338384880_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760338384.8801644}]}
+INFO 2025-10-13 14:53:04,880 services 12316 19336 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 3701600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760338384876_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760338384.8766549}, {'id': '1760338384880_1', 'length': 3740.0, 'thickness': 150, 'width': 540.0, 'created_at': 1760338384.8801644}]}
+INFO 2025-10-13 14:53:04,883 services 12316 19336 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:53:04,883 services 12316 19336 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:53:04,883 services 12316 19336 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:53:04,884 services 12316 19336 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:53:04,884 services 12316 19336 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:53:04,884 services 12316 19336 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:53:04,884 services 12316 19336 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 14:53:04,884 services 12316 19336 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,115 services 12316 6444 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,115 services 12316 6444 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,115 services 12316 6444 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,116 services 12316 6444 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,116 services 12316 6444 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,116 services 12316 6444 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,116 services 12316 6444 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,117 services 12316 6444 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:27:55,117 services 12316 6444 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 16:27:55,117 services 12316 6444 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-13 16:27:55,117 services 12316 6444   Processing room 157: Prep Room (MEAT)
+INFO 2025-10-13 16:27:55,118 services 12316 6444   Generating horizontal panels for room 157
+INFO 2025-10-13 16:27:55,118 services 12316 6444 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 16:27:55,118 services 12316 6444   Generated 4 panels for room 157
+INFO 2025-10-13 16:27:55,118 services 12316 6444   Processing room 156: Freezer 1(RAW MATERIAL)
+INFO 2025-10-13 16:27:55,120 services 12316 6444   Generating horizontal panels for room 156
+INFO 2025-10-13 16:27:55,120 services 12316 6444 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 16:27:55,120 services 12316 6444   Generated 4 panels for room 156
+INFO 2025-10-13 16:27:55,120 services 12316 6444 _generate_enhanced_room_panels: Total panels generated: 8
+INFO 2025-10-13 16:27:55,121 services 12316 6444 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760344075118_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760344075.11888}, {'id': '1760344075120_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760344075.1208808}]}
+INFO 2025-10-13 16:28:03,471 services 12316 6444 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 16:28:03,471 services 12316 6444 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 16:28:03,511 services 12316 6444 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 16:28:03,512 services 12316 6444   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_vertical
+INFO 2025-10-13 16:28:03,513 services 12316 6444 [GENERATION] Leftover created: 550.0mm × 4020.0mm (thickness: 150mm)
+INFO 2025-10-13 16:28:03,513 services 12316 6444 Successfully generated 3 panels for room 157 (Prep Room (MEAT)) with vertical orientation
+INFO 2025-10-13 16:28:03,513 services 12316 6444   > Generated 3 panels for room 157
+INFO 2025-10-13 16:28:03,516 services 12316 6444   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = all_horizontal
+INFO 2025-10-13 16:28:03,516 services 12316 6444 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 16:28:03,517 services 12316 6444 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with horizontal orientation
+INFO 2025-10-13 16:28:03,517 services 12316 6444   > Generated 4 panels for room 156
+INFO 2025-10-13 16:28:03,517 services 12316 6444 Total panels generated: 7
+INFO 2025-10-13 16:28:03,517 services 12316 6444 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5702600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760344083513_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760344083.5134861}, {'id': '1760344083516_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760344083.5164804}]}
+INFO 2025-10-13 16:28:03,517 services 12316 6444 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5702600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760344083513_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760344083.5134861}, {'id': '1760344083516_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760344083.5164804}]}
+INFO 2025-10-13 16:28:03,520 services 12316 6444 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:28:03,520 services 12316 6444 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:28:03,521 services 12316 6444 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:28:03,521 services 12316 6444 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:28:03,521 services 12316 6444 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:28:03,521 services 12316 6444 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:28:03,521 services 12316 6444 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:28:03,522 services 12316 6444 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,626 services 12316 13168 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,627 services 12316 13168 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,627 services 12316 13168 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,627 services 12316 13168 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,627 services 12316 13168 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,628 services 12316 13168 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,628 services 12316 13168 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:33:42,628 services 12316 13168 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,356 services 12316 11996 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,357 services 12316 11996 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,357 services 12316 11996 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,357 services 12316 11996 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,357 services 12316 11996 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,357 services 12316 11996 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,358 services 12316 11996 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:45:46,358 services 12316 11996 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,480 services 12316 11996 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 16:46:19,480 services 12316 11996 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 16:46:19,618 services 12316 11996 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 16:46:19,619 services 12316 11996   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 16:46:19,620 services 12316 11996 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 16:46:19,620 services 12316 11996 Successfully generated 4 panels for room 157 (Prep Room (MEAT)) with horizontal orientation
+INFO 2025-10-13 16:46:19,620 services 12316 11996   > Generated 4 panels for room 157
+INFO 2025-10-13 16:46:19,622 services 12316 11996   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = all_horizontal
+INFO 2025-10-13 16:46:19,622 services 12316 11996 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 16:46:19,623 services 12316 11996 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with horizontal orientation
+INFO 2025-10-13 16:46:19,623 services 12316 11996   > Generated 4 panels for room 156
+INFO 2025-10-13 16:46:19,623 services 12316 11996 Total panels generated: 8
+INFO 2025-10-13 16:46:19,623 services 12316 11996 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345179620_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760345179.620497}, {'id': '1760345179622_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345179.6224945}]}
+INFO 2025-10-13 16:46:19,623 services 12316 11996 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345179620_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760345179.620497}, {'id': '1760345179622_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345179.6224945}]}
+INFO 2025-10-13 16:46:19,625 services 12316 11996 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,626 services 12316 11996 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,626 services 12316 11996 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,626 services 12316 11996 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,626 services 12316 11996 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,626 services 12316 11996 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,627 services 12316 11996 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:19,627 services 12316 11996 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,520 services 12316 11996 Room-specific ceiling configuration detected for room 156
+INFO 2025-10-13 16:46:26,521 services 12316 11996 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 16:46:26,555 services 12316 11996 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 16:46:26,558 services 12316 11996   Room 157 (Prep Room (MEAT)): Using SAVED orientation = all_horizontal
+INFO 2025-10-13 16:46:26,559 services 12316 11996 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 16:46:26,559 services 12316 11996 Successfully generated 4 panels for room 157 (Prep Room (MEAT)) with horizontal orientation
+INFO 2025-10-13 16:46:26,559 services 12316 11996   > Generated 4 panels for room 157
+INFO 2025-10-13 16:46:26,559 services 12316 11996   Room 156 (Freezer 1(RAW MATERIAL)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 16:46:26,559 services 12316 11996 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 16:46:26,559 services 12316 11996 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with horizontal orientation
+INFO 2025-10-13 16:46:26,560 services 12316 11996   > Generated 4 panels for room 156
+INFO 2025-10-13 16:46:26,560 services 12316 11996 Total panels generated: 8
+INFO 2025-10-13 16:46:26,560 services 12316 11996 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345186559_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760345186.5596478}, {'id': '1760345186559_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345186.5596478}]}
+INFO 2025-10-13 16:46:26,560 services 12316 11996 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345186559_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760345186.5596478}, {'id': '1760345186559_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345186.5596478}]}
+INFO 2025-10-13 16:46:26,562 services 12316 11996 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,563 services 12316 11996 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,563 services 12316 11996 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,563 services 12316 11996 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,563 services 12316 11996 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,564 services 12316 11996 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,564 services 12316 11996 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:26,564 services 12316 11996 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,611 services 12316 11996 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,611 services 12316 11996 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,612 services 12316 11996 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,612 services 12316 11996 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,612 services 12316 11996 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,612 services 12316 11996 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,612 services 12316 11996 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,612 services 12316 11996 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:46:30,613 services 12316 11996 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 16:46:30,613 services 12316 11996 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-13 16:46:30,613 services 12316 11996   Processing room 157: Prep Room (MEAT)
+INFO 2025-10-13 16:46:30,614 services 12316 11996   Generating horizontal panels for room 157
+INFO 2025-10-13 16:46:30,614 services 12316 11996 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 16:46:30,614 services 12316 11996   Generated 4 panels for room 157
+INFO 2025-10-13 16:46:30,614 services 12316 11996   Processing room 156: Freezer 1(RAW MATERIAL)
+INFO 2025-10-13 16:46:30,615 services 12316 11996   Generating horizontal panels for room 156
+INFO 2025-10-13 16:46:30,615 services 12316 11996 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 16:46:30,615 services 12316 11996   Generated 4 panels for room 156
+INFO 2025-10-13 16:46:30,615 services 12316 11996 _generate_enhanced_room_panels: Total panels generated: 8
+INFO 2025-10-13 16:46:30,615 services 12316 11996 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345190614_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760345190.6145756}, {'id': '1760345190615_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345190.6155753}]}
+INFO 2025-10-13 16:47:14,685 services 12316 11996 Room-specific ceiling configuration detected for room 156
+INFO 2025-10-13 16:47:14,685 services 12316 11996 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 16:47:14,719 services 12316 11996 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 16:47:14,723 services 12316 11996   Room 157 (Prep Room (MEAT)): Using SAVED orientation = all_horizontal
+INFO 2025-10-13 16:47:14,723 services 12316 11996 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 150mm)
+INFO 2025-10-13 16:47:14,723 services 12316 11996 Successfully generated 4 panels for room 157 (Prep Room (MEAT)) with horizontal orientation
+INFO 2025-10-13 16:47:14,723 services 12316 11996   > Generated 4 panels for room 157
+INFO 2025-10-13 16:47:14,724 services 12316 11996   Room 156 (Freezer 1(RAW MATERIAL)): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-13 16:47:14,724 services 12316 11996 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 16:47:14,724 services 12316 11996 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with horizontal orientation
+INFO 2025-10-13 16:47:14,724 services 12316 11996   > Generated 4 panels for room 156
+INFO 2025-10-13 16:47:14,724 services 12316 11996 Total panels generated: 8
+INFO 2025-10-13 16:47:14,725 services 12316 11996 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345234723_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760345234.7239692}, {'id': '1760345234724_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345234.7249694}]}
+INFO 2025-10-13 16:47:14,725 services 12316 11996 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5173600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345234723_0', 'length': 2900.0, 'thickness': 150, 'width': 580.0, 'created_at': 1760345234.7239692}, {'id': '1760345234724_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345234.7249694}]}
+INFO 2025-10-13 16:47:14,728 services 12316 11996 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:47:14,728 services 12316 11996 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:47:14,728 services 12316 11996 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:47:14,729 services 12316 11996 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:47:14,729 services 12316 11996 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:47:14,729 services 12316 11996 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:47:14,729 services 12316 11996 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:47:14,729 services 12316 11996 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,540 services 12316 11996 Room-specific ceiling configuration detected for room 157
+INFO 2025-10-13 16:50:17,540 services 12316 11996 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-13 16:50:17,575 services 12316 11996 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-13 16:50:17,576 services 12316 11996   Room 157 (Prep Room (MEAT)): Using CUSTOM orientation = all_vertical
+INFO 2025-10-13 16:50:17,576 services 12316 11996 [GENERATION] Leftover created: 550.0mm × 4020.0mm (thickness: 150mm)
+INFO 2025-10-13 16:50:17,576 services 12316 11996 Successfully generated 3 panels for room 157 (Prep Room (MEAT)) with vertical orientation
+INFO 2025-10-13 16:50:17,576 services 12316 11996   > Generated 3 panels for room 157
+INFO 2025-10-13 16:50:17,579 services 12316 11996   Room 156 (Freezer 1(RAW MATERIAL)): Using SAVED orientation = all_horizontal
+INFO 2025-10-13 16:50:17,580 services 12316 11996 [GENERATION] Leftover created: 860.0mm × 4060.0mm (thickness: 150mm)
+INFO 2025-10-13 16:50:17,580 services 12316 11996 Successfully generated 4 panels for room 156 (Freezer 1(RAW MATERIAL)) with horizontal orientation
+INFO 2025-10-13 16:50:17,580 services 12316 11996   > Generated 4 panels for room 156
+INFO 2025-10-13 16:50:17,580 services 12316 11996 Total panels generated: 7
+INFO 2025-10-13 16:50:17,580 services 12316 11996 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5702600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345417576_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760345417.5766666}, {'id': '1760345417580_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345417.580666}]}
+INFO 2025-10-13 16:50:17,580 services 12316 11996 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5702600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760345417576_0', 'length': 4020.0, 'thickness': 150, 'width': 550.0, 'created_at': 1760345417.5766666}, {'id': '1760345417580_1', 'length': 4060.0, 'thickness': 150, 'width': 860.0, 'created_at': 1760345417.580666}]}
+INFO 2025-10-13 16:50:17,583 services 12316 11996 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,583 services 12316 11996 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,583 services 12316 11996 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,583 services 12316 11996 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,584 services 12316 11996 [ANALYSIS-IND] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,584 services 12316 11996 [ANALYSIS-IND] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,584 services 12316 11996 [ANALYSIS-IND] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-13 16:50:17,584 services 12316 11996 [ANALYSIS-IND] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)

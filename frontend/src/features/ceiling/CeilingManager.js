@@ -15,6 +15,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const [ceilingPlan, setCeilingPlan] = useState(null);
     const [ceilingPanels, setCeilingPanels] = useState([]);
     const [projectData, setProjectData] = useState(null);
+    // Cached project-wide waste % from latest POST, to ensure immediate UI update
+    const [projectWastePercentage, setProjectWastePercentage] = useState(null);
     
     // Orientation strategy
     const [selectedOrientationStrategy, setSelectedOrientationStrategy] = useState('auto');
@@ -300,6 +302,12 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 const newPanels = response.data.enhanced_panels || [];
                 console.log(`📦 Received ${newPanels.length} panels`);
                 
+                // NEW: cache project-wide waste percentage for immediate UI update
+                if (response?.data?.summary?.project_waste_percentage !== undefined && response?.data?.summary?.project_waste_percentage !== null) {
+                    setProjectWastePercentage(response.data.summary.project_waste_percentage);
+                    console.log('📊 [UI] Cached project-wide waste % from POST:', response.data.summary.project_waste_percentage);
+                }
+                
                 // Update ceiling plan (take the first one or the one for this room)
                 if (response.data.ceiling_plans && response.data.ceiling_plans.length > 0) {
                     // Try to find the ceiling plan for the selected room
@@ -393,6 +401,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             if (response.data && !response.data.error) {
                 setCeilingPlan(response.data);
                 setCeilingPanels(response.data.enhanced_panels || []);
+                if (response?.data?.summary?.project_waste_percentage !== undefined && response?.data?.summary?.project_waste_percentage !== null) {
+                    setProjectWastePercentage(response.data.summary.project_waste_percentage);
+                    console.log('📊 [UI] Cached project-wide waste % from POST (full generate):', response.data.summary.project_waste_percentage);
+                }
                 clearRegenerationFlag(); // Clear the regeneration flag
                 
                 if (onCeilingPlanGenerated) {
@@ -839,6 +851,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             ceilingPlan={ceilingPlan}
                             ceilingPanels={ceilingPanels}
                             projectData={projectData}
+                            projectWastePercentage={projectWastePercentage}
                             ceilingThickness={ceilingThickness}
                             ceilingPanelsMap={(() => {
                                 // Convert ceilingPanels array to ceilingPanelsMap format

@@ -2590,7 +2590,7 @@ class CeilingService:
         except Exception as e:
             # Fallback to simple approach
             return CeilingService._generate_simple_panels_fallback(
-                bounding_box, room_points, orientation, max_panel_width, panel_length
+                bounding_box, room_points, orientation, max_panel_width, panel_length, leftover_tracker, ceiling_thickness
             )
 
     @staticmethod
@@ -3730,8 +3730,8 @@ class CeilingService:
             return {'error': f'Failed to analyze room orientation: {str(e)}'}
     
     @staticmethod
-    def _generate_panels_for_single_room(room, orientation_strategy, panel_width, panel_length):
-        """Generate panels for a single room with specified orientation"""
+    def _generate_panels_for_single_room(room, orientation_strategy, panel_width, panel_length, leftover_tracker=None, ceiling_thickness=150):
+        """Generate panels for a single room with specified orientation, with optional leftover tracking and reuse"""
         try:
             # Convert room_points to proper format if needed
             if not room.room_points:
@@ -3781,14 +3781,20 @@ class CeilingService:
                 orientation_type = 'vertical'  # Default
                 logger.warning(f"  → DEFAULTED to VERTICAL (unknown strategy: {orientation_strategy})")
             
-            # Generate panels for this room only
+            # Generate panels for this room only (with leftover tracking if provided)
             logger.debug(f"  Generating panels: {bounding_box['width']}x{bounding_box['height']}mm, {len(room_points)} points, {orientation_type}")
             
             panels = CeilingService._generate_shape_aware_panels(
-                bounding_box, room_points, orientation_type, panel_width, panel_length
+                bounding_box, room_points, orientation_type, panel_width, panel_length, 
+                leftover_tracker, ceiling_thickness
             )
             
             logger.debug(f"  Generated {len(panels)} raw panels")
+            
+            # Log leftover usage if tracker is provided
+            if leftover_tracker:
+                stats = leftover_tracker.get_stats()
+                logger.debug(f"  Leftover stats after room {room.id}: {stats['leftovers_created']} created, {stats['leftovers_reused']} reused")
             
             # Assign room_id to all panels
             for panel in panels:
@@ -3809,10 +3815,14 @@ class CeilingService:
     
     @staticmethod
     def _generate_panels_with_room_specific_orientation(project_id, global_panel_width, global_panel_length, 
-                                                         global_ceiling_thickness, global_orientation_strategy, room_specific_config):
-        """Generate panels for all rooms, with each room using its own orientation"""
+                                                          global_ceiling_thickness, global_orientation_strategy, room_specific_config):
+        """Generate panels for all rooms, with each room using its own orientation, with leftover tracking and reuse"""
         try:
             from .models import Room
+            
+            # Create leftover tracker for cross-room leftover reuse
+            leftover_tracker = LeftoverTracker(context='GENERATION')
+            logger.info("ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker")
             
             all_panels = []
             rooms = Room.objects.filter(project_id=project_id)
@@ -3838,25 +3848,30 @@ class CeilingService:
                         room_orientation = global_orientation_strategy
                         logger.info(f"  Room {room.id} ({room.room_name}): Using GLOBAL orientation = {room_orientation}")
                 
-                # Generate panels for this room with its specific orientation
+                # Generate panels for this room with its specific orientation (with leftover tracking)
                 room_panels = CeilingService._generate_panels_for_single_room(
-                    room, room_orientation, global_panel_width, global_panel_length
+                    room, room_orientation, global_panel_width, global_panel_length, 
+                    leftover_tracker, global_ceiling_thickness
                 )
                 
-                logger.info(f"  → Generated {len(room_panels)} panels for room {room.id}")
+                logger.info(f"  > Generated {len(room_panels)} panels for room {room.id}")
                 
                 # Add to all panels
                 all_panels.extend(room_panels)
             
             logger.info(f"Total panels generated: {len(all_panels)}")
             
-            return all_panels
+            # Log leftover statistics
+            leftover_stats = leftover_tracker.get_stats()
+            logger.info(f"ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {leftover_stats}")
+            
+            return all_panels, leftover_tracker
             
         except Exception as e:
             logger.error(f"Error in _generate_panels_with_room_specific_orientation: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            return []
+            return [], LeftoverTracker(context='GENERATION')
     
     @staticmethod
     def generate_enhanced_ceiling_plan(project_id, orientation_strategy='auto', panel_width=1150, panel_length='auto', 
@@ -3875,21 +3890,15 @@ class CeilingService:
                 logger.info(f"Room-specific ceiling configuration detected for room {room_specific_config.get('room_id')}")
                 logger.debug(f"Config: {room_specific_config}")
                 
-                # Room-specific generation: generate each room with its own orientation
-                enhanced_panels = CeilingService._generate_panels_with_room_specific_orientation(
+                # Room-specific generation: generate each room with its own orientation (with leftover tracking)
+                enhanced_panels, project_leftover_tracker = CeilingService._generate_panels_with_room_specific_orientation(
                     project_id, panel_width, panel_length, ceiling_thickness,
                     orientation_strategy, room_specific_config
                 )
                 
-                # Initialize leftover_stats with default values for room-specific path
-                leftover_stats = {
-                    'leftovers_created': 0,
-                    'leftovers_reused': 0,
-                    'full_panels_saved': 0,
-                    'total_leftover_area': 0.0,
-                    'current_leftovers_count': 0,
-                    'current_leftovers': []
-                }
+                # Get leftover stats from tracker
+                leftover_stats = project_leftover_tracker.get_stats()
+                logger.info(f"ROOM-SPECIFIC GENERATION - Leftover stats: {leftover_stats}")
                 
                 # Use a dummy strategy for metadata
                 orientation_analysis = CeilingService.analyze_orientation_strategies(
