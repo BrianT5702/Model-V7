@@ -1349,24 +1349,23 @@ class FloorService:
     
     @staticmethod
     def _calculate_floor_waste(panels, room, wall_thickness, leftover_tracker=None):
-        """Calculate waste percentage for floor panels
+        """Calculate waste percentage for floor panels using leftover area
         
-        Note: Leftover reuse reduces the number of full panels needed,
-        which is reflected in the total_panel_area. The waste is simply
-        the difference between total panel area used and room area.
+        New formula: waste% = Leftover Area / Room Area × 100%
+        This represents "what percentage of the room area is wasted material"
         """
         if not panels:
             return 100.0
         
-        total_panel_area = sum(p['width'] * p['length'] for p in panels)
-        
-        if room:
+        if room and leftover_tracker:
             floor_area = FloorService._calculate_room_floor_area(room, wall_thickness)
             if floor_area > 0:
-                # Calculate waste: Total panels used - Room area
-                # The leftover reuse benefit is already reflected in the panel count
-                waste_area = max(0, total_panel_area - floor_area)
-                waste_percentage = (waste_area / floor_area) * 100
+                # Get leftover area from tracker
+                leftover_stats = leftover_tracker.get_stats()
+                leftover_area = leftover_stats.get('total_leftover_area', 0)
+                
+                # Calculate waste percentage using leftover area
+                waste_percentage = (leftover_area / floor_area) * 100
                 
                 return waste_percentage
         
@@ -1544,6 +1543,36 @@ class FloorService:
                     'updated_at': floor_plan.updated_at.isoformat() if floor_plan.updated_at else None
                 })
                 
+            # Calculate project-wide waste percentage using leftover area
+            # Formula: waste% = Leftover Area / Total Room Area × 100%
+            leftover_stats = project_leftover_tracker.get_stats()
+            leftover_area = leftover_stats.get('total_leftover_area', 0)
+            
+            # Calculate total room area for all rooms with floor panels
+            total_room_area = 0
+            for room in rooms:
+                if room.room_points and len(room.room_points) >= 3:
+                    # Check if room has panel floor
+                    if hasattr(room, 'floor_type') and room.floor_type in ['panel', 'Panel']:
+                        # Calculate room area using Shoelace formula
+                        area = 0
+                        for i in range(len(room.room_points)):
+                            j = (i + 1) % len(room.room_points)
+                            area += room.room_points[i]['x'] * room.room_points[j]['y']
+                            area -= room.room_points[j]['x'] * room.room_points[i]['y']
+                        room_area = abs(area) / 2
+                        total_room_area += room_area
+            
+            if total_room_area > 0 and leftover_area > 0:
+                project_waste_percentage = (leftover_area / total_room_area) * 100
+                print(f"🎯 [PROJECT] Floor Plan Project-wide waste calculation:")
+                print(f"🎯 [PROJECT] Total Room Area: {total_room_area:,.0f} mm²")
+                print(f"🎯 [PROJECT] Total Leftover Area: {leftover_area:,.0f} mm²")
+                print(f"🎯 [PROJECT] Project Waste Percentage: {project_waste_percentage:.1f}%")
+            else:
+                project_waste_percentage = 0.0
+                print(f"⚠️ [PROJECT] Cannot calculate floor plan project waste: room_area={total_room_area}, leftover_area={leftover_area}")
+            
             # Get all actual FloorPanel objects from the database
             from .serializers import FloorPanelSerializer
             
@@ -1565,14 +1594,16 @@ class FloorService:
                 'strategy_details': selected_strategy,
                 'floor_panels': actual_floor_panels,  # Return actual FloorPanel objects
                 'floor_plans': created_plans,
-                'leftover_stats': project_leftover_tracker.get_stats(),  # Include leftover reuse statistics
+                'leftover_stats': leftover_stats,  # Include leftover reuse statistics
                 'summary': {
                     'total_panels': len(actual_floor_panels),
                     'total_rooms': len(created_plans),
                     'average_waste_percentage': sum(p['waste_percentage'] for p in created_plans) / len(created_plans) if created_plans else 0,
-                    'leftovers_created': project_leftover_tracker.stats['leftovers_created'],
-                    'leftovers_reused': project_leftover_tracker.stats['leftovers_reused'],
-                    'full_panels_saved': project_leftover_tracker.stats['full_panels_saved']
+                    'project_waste_percentage': project_waste_percentage,  # Add project-wide waste percentage
+                    'recommended_strategy': orientation_analysis.get('recommended_strategy', strategy_name),  # Add to summary too
+                    'leftovers_created': leftover_stats['leftovers_created'],
+                    'leftovers_reused': leftover_stats['leftovers_reused'],
+                    'full_panels_saved': leftover_stats['full_panels_saved']
                 }
             }
             
@@ -2229,6 +2260,7 @@ class CeilingService:
                 }
             
             # Evaluate per-room or per-height-group strategies
+            total_leftover_area = 0.0
             for height, group_data in height_analysis['height_groups'].items():
                 if orientation_type == 'independent':
                     # Each room gets its optimal orientation
@@ -2244,10 +2276,12 @@ class CeilingService:
                 total_panels += group_result['total_panels']
                 total_waste_area += group_result['total_waste_area']
                 total_room_area += group_result['total_room_area']
+                total_leftover_area += group_result.get('leftover_area', 0)
                 room_results.extend(group_result['room_results'])
             
-            # Calculate overall waste percentage
-            total_waste_percentage = (total_waste_area / total_room_area * 100) if total_room_area > 0 else 0
+            # Calculate overall waste percentage using leftover area (new method)
+            # Formula: waste% = Leftover Area / Total Room Area × 100%
+            total_waste_percentage = (total_leftover_area / total_room_area * 100) if total_room_area > 0 else 0
             
             return {
                 'strategy_name': strategy_name,
@@ -2255,6 +2289,7 @@ class CeilingService:
                 'total_panels': total_panels,
                 'total_waste_percentage': total_waste_percentage,
                 'total_waste_area': total_waste_area,
+                'total_leftover_area': total_leftover_area,
                 'total_room_area': total_room_area,
                 'room_results': room_results,
                 'height_groups_analyzed': len(height_analysis['height_groups'])
@@ -2299,21 +2334,34 @@ class CeilingService:
             total_waste_area += room_waste
             total_panels += len(panels)
             
+            # Calculate total panel area for this room for percentage calculation
+            room_panel_area = sum(panel['width'] * panel['length'] for panel in panels)
+            
             room_results.append({
                 'room_id': room_info['id'],
                 'room_name': room_info['name'],
                 'orientation': orientation,
                 'panels': len(panels),
                 'waste_area': room_waste,
-                'waste_percentage': (room_waste / room_area * 100) if room_area > 0 else 0,
+                'waste_percentage': (room_waste / room_panel_area * 100) if room_panel_area > 0 else 0,  # New formula
                 'area': room_area
             })
+        
+        # Get leftover stats for this strategy
+        leftover_stats = strategy_tracker.get_stats()
+        leftover_area = leftover_stats.get('total_leftover_area', 0)
+        
+        # Calculate waste percentage using leftover area (new method)
+        # Formula: waste% = Leftover Area / Total Room Area × 100%
+        leftover_waste_percentage = (leftover_area / total_room_area * 100) if total_room_area > 0 else 0
         
         return {
             'total_panels': total_panels,
             'total_waste_area': total_waste_area,
             'total_room_area': total_room_area,
-            'room_results': room_results
+            'room_results': room_results,
+            'leftover_area': leftover_area,
+            'leftover_waste_percentage': leftover_waste_percentage
         }
 
     @staticmethod
@@ -2357,13 +2405,16 @@ class CeilingService:
             total_waste_area += best_waste
             total_panels += len(best_panels)
             
+            # Calculate total panel area for percentage calculation
+            best_panel_area = sum(panel['width'] * panel['length'] for panel in best_panels)
+            
             room_results.append({
                 'room_id': room_info['id'],
                 'room_name': room_info['name'],
                 'orientation': best_orientation,
                 'panels': len(best_panels),
                 'waste_area': best_waste,
-                'waste_percentage': (best_waste / room_area * 100) if room_area > 0 else 0,
+                'waste_percentage': (best_waste / best_panel_area * 100) if best_panel_area > 0 else 0,  # New formula
                 'area': room_area,
                 'alternatives': {
                     'vertical': {'panels': len(vertical_panels), 'waste': vertical_waste},
@@ -2371,11 +2422,21 @@ class CeilingService:
                 }
             })
         
+        # Get leftover stats for this strategy
+        leftover_stats = strategy_tracker.get_stats()
+        leftover_area = leftover_stats.get('total_leftover_area', 0)
+        
+        # Calculate waste percentage using leftover area (new method)
+        # Formula: waste% = Leftover Area / Total Room Area × 100%
+        leftover_waste_percentage = (leftover_area / total_room_area * 100) if total_room_area > 0 else 0
+        
         return {
             'total_panels': total_panels,
             'total_waste_area': total_waste_area,
             'total_room_area': total_room_area,
-            'room_results': room_results
+            'room_results': room_results,
+            'leftover_area': leftover_area,
+            'leftover_waste_percentage': leftover_waste_percentage
         }
 
     @staticmethod
@@ -3236,11 +3297,13 @@ class CeilingService:
 
     @staticmethod
     def _calculate_room_waste(panels, room_info, orientation, leftover_tracker=None):
-        """Calculate waste area for a room with given panels and orientation
+        """Calculate waste AREA for a room with given panels and orientation
+        
+        Returns the waste area in mm². Callers should calculate percentage using:
+        waste% = (waste_area / total_panel_area) × 100%
         
         Note: Leftover reuse reduces the number of full panels needed,
-        which is reflected in the panel count. The waste is simply
-        the difference between total panel area used and room area.
+        which is reflected in the panel count.
         """
         try:
             if not panels:
@@ -3252,8 +3315,7 @@ class CeilingService:
             # Calculate room area
             room_area = room_info['area']
             
-            # Waste is the difference between panel area and room area
-            # The benefit of leftover reuse is already reflected in the panel count
+            # Calculate waste area (NOT percentage)
             waste_area = max(0, total_panel_area - room_area)
             
             return waste_area
@@ -3819,6 +3881,16 @@ class CeilingService:
                     orientation_strategy, room_specific_config
                 )
                 
+                # Initialize leftover_stats with default values for room-specific path
+                leftover_stats = {
+                    'leftovers_created': 0,
+                    'leftovers_reused': 0,
+                    'full_panels_saved': 0,
+                    'total_leftover_area': 0.0,
+                    'current_leftovers_count': 0,
+                    'current_leftovers': []
+                }
+                
                 # Use a dummy strategy for metadata
                 orientation_analysis = CeilingService.analyze_orientation_strategies(
                     project_id, panel_width, panel_length, ceiling_thickness
@@ -3865,15 +3937,31 @@ class CeilingService:
             # Calculate enhanced waste analysis
             waste_analysis = CeilingService._analyze_enhanced_waste(enhanced_panels, selected_strategy)
             
+            # Calculate project-wide waste percentage using leftover area
+            # Formula: waste% = Leftover Area / Total Room Area × 100%
+            total_room_area = selected_strategy.get('total_room_area', 0)
+            leftover_area = leftover_stats.get('total_leftover_area', 0)
+            
+            if total_room_area > 0 and leftover_area > 0:
+                project_waste_percentage = (leftover_area / total_room_area) * 100
+                print(f"🎯 [PROJECT] Project-wide waste calculation:")
+                print(f"🎯 [PROJECT] Total Room Area: {total_room_area:,.0f} mm²")
+                print(f"🎯 [PROJECT] Total Leftover Area: {leftover_area:,.0f} mm²")
+                print(f"🎯 [PROJECT] Project Waste Percentage: {project_waste_percentage:.1f}%")
+            else:
+                project_waste_percentage = 0.0
+                print(f"⚠️ [PROJECT] Cannot calculate project waste: room_area={total_room_area}, leftover_area={leftover_area}")
+            
             # Create or update ceiling plans with ALL generation parameters
             ceiling_plans = CeilingService._create_enhanced_ceiling_plans(
                 enhanced_panels, project_id, selected_strategy, ceiling_thickness,
                 panel_width, panel_length, custom_panel_length, orientation_strategy,
-                support_type, support_config, room_specific_config
+                support_type, support_config, room_specific_config, leftover_stats
             )
             return {
                 'project_id': project_id,
                 'strategy_used': strategy_name,
+                'recommended_strategy': orientation_analysis.get('recommended_strategy', strategy_name),  # Always include system recommendation
                 'strategy_details': selected_strategy,
                 'enhanced_panels': enhanced_panels,
                 'leftover_stats': leftover_stats,  # Include leftover statistics
@@ -3882,6 +3970,8 @@ class CeilingService:
                 'summary': {
                     'total_panels': len(enhanced_panels),
                     'total_waste_percentage': waste_analysis['total_waste_percentage'],
+                    'project_waste_percentage': project_waste_percentage,  # Add project-wide waste percentage
+                    'recommended_strategy': orientation_analysis.get('recommended_strategy', strategy_name),  # Add to summary too
                     'reusable_cut_panels': waste_analysis['reusable_cut_panels'],
                     'actual_waste_percentage': waste_analysis['actual_waste_percentage'],
                     'efficiency_improvement': waste_analysis['efficiency_improvement'],
@@ -4165,10 +4255,25 @@ class CeilingService:
 
     @staticmethod
     def _analyze_enhanced_waste(enhanced_panels, strategy):
-        """Analyze waste with distinction between actual waste and reusable cut panels"""
+        """Analyze waste with distinction between actual waste and reusable cut panels
+        
+        New formula: waste% = (Total Panel Area - Room Area) / Total Panel Area × 100%
+        This represents "what percentage of the panels purchased is wasted"
+        """
         try:
             total_panel_area = sum(panel.get('area', 0) for panel in enhanced_panels)
             total_room_area = strategy.get('total_room_area', 0)
+            
+            if total_panel_area == 0:
+                return {
+                    'total_waste_area': 0,
+                    'total_waste_percentage': 0,
+                    'actual_waste_area': 0,
+                    'actual_waste_percentage': 0,
+                    'reusable_cut_panels': 0,
+                    'reusable_cut_area': 0,
+                    'efficiency_improvement': 0
+                }
             
             # Calculate total waste area
             total_waste_area = max(0, total_panel_area - total_room_area)
@@ -4184,9 +4289,9 @@ class CeilingService:
                     else:
                         actual_waste_area += panel.get('area', 0)
             
-            # Calculate waste percentages
-            total_waste_percentage = (total_waste_area / total_room_area * 100) if total_room_area > 0 else 0
-            actual_waste_percentage = (actual_waste_area / total_room_area * 100) if total_room_area > 0 else 0
+            # Calculate waste percentages using new formula: (waste / total_panels) × 100
+            total_waste_percentage = (total_waste_area / total_panel_area * 100)
+            actual_waste_percentage = (actual_waste_area / total_panel_area * 100)
             
             # Calculate efficiency improvement
             efficiency_improvement = max(0, total_waste_percentage - actual_waste_percentage)
@@ -4215,7 +4320,7 @@ class CeilingService:
     @staticmethod
     def _create_enhanced_ceiling_plans(enhanced_panels, project_id, strategy, ceiling_thickness=150, 
                                       panel_width=1150, panel_length='auto', custom_panel_length=None,
-                                      orientation_strategy='auto', support_type='nylon', support_config=None, room_specific_config=None):
+                                      orientation_strategy='auto', support_type='nylon', support_config=None, room_specific_config=None, leftover_stats=None):
         """Create or update ceiling plans with enhanced panel information and generation parameters"""
         try:
             from .models import CeilingPlan, CeilingPanel, Room
@@ -4309,6 +4414,8 @@ class CeilingService:
                             cut_notes=panel_data.get('cut_notes', '')
                         )
                     
+                    # Create a dummy leftover tracker for individual room calculations
+                    # The project-wide waste calculation is done at the service level
                     ceiling_plan.update_statistics()
                     
                     # Convert to serializable dictionary with ALL parameters
@@ -4459,9 +4566,9 @@ class CeilingService:
                         room_panels = [p for p in enhanced_plan['enhanced_panels'] if p.get('room_id') == room.id]
                         if room_panels:
                             room_orientation = room_panels[0].get('orientation', 'unknown')
-                            # Calculate waste percentage for this room
+                            # Calculate waste percentage for this room using new formula
                             room_total_panel_area = sum(p.get('area', 0) for p in room_panels)
-                            room_waste_percentage = ((room_total_panel_area - room_area) / room_area * 100) if room_area > 0 else 0
+                            room_waste_percentage = ((room_total_panel_area - room_area) / room_total_panel_area * 100) if room_total_panel_area > 0 else 0
                     
                     # Determine if this orientation is recommended
                     is_recommended_orientation = False

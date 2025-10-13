@@ -208,22 +208,23 @@ class CeilingPlan(models.Model):
         total_panel_area = sum(panel.get_area() for panel in panels)
         self.total_area = total_panel_area
         
-        # Calculate waste percentage
+        # Calculate waste percentage per room (for individual room display)
+        # Note: Project-wide waste is calculated at the service level using leftover area
         room_area = self.calculate_room_area()
-        if room_area > 0:
+        if room_area > 0 and total_panel_area > 0:
             waste_area = max(0, total_panel_area - room_area)
-            self.waste_percentage = (waste_area / room_area) * 100
-            
-            # Log leftover statistics for information (doesn't change waste calculation)
-            if leftover_tracker:
-                import logging
-                logger = logging.getLogger(__name__)
-                stats = leftover_tracker.get_stats()
-                logger.info(f"Ceiling - Leftover stats: {stats['leftovers_created']} created, "
-                           f"{stats['leftovers_reused']} reused, "
-                           f"{stats['full_panels_saved']} panels saved")
+            self.waste_percentage = (waste_area / total_panel_area) * 100
         else:
             self.waste_percentage = 0.0
+            
+        # Log leftover statistics for information (doesn't change waste calculation)
+        if leftover_tracker:
+            import logging
+            logger = logging.getLogger(__name__)
+            stats = leftover_tracker.get_stats()
+            logger.info(f"Ceiling - Leftover stats: {stats['leftovers_created']} created, "
+                       f"{stats['leftovers_reused']} reused, "
+                       f"{stats['full_panels_saved']} panels saved")
         
         self.save()
 
@@ -336,51 +337,33 @@ class FloorPlan(models.Model):
         return f"Floor Plan for {self.room.room_name}"
 
     def update_statistics(self, leftover_tracker=None):
-        """Update statistics based on current floor panels, accounting for reusable leftovers"""
+        """Update statistics based on current floor panels
+        Note: Project-wide waste is calculated at the service level using leftover area
+        """
         panels = self.room.floor_panels.all()
         self.total_panels = panels.count()
         self.full_panels = panels.filter(is_cut_panel=False).count()
         self.cut_panels = panels.filter(is_cut_panel=True).count()
         
-        print(f"      📊 Found {self.total_panels} panels for room {self.room.room_name}")
-        
         # Calculate total area from panels
         if panels.exists():
             total_panel_area = sum(panel.get_area() for panel in panels)
             self.total_area = total_panel_area
-            print(f"      📊 Panel area: {total_panel_area} mm²")
         else:
             # If no panels, calculate from room area
             room_area = self.calculate_room_floor_area()
             self.total_area = room_area if room_area > 0 else 0.0
-            print(f"      📊 Room area (no panels): {self.total_area} mm²")
         
-        # Calculate waste percentage accounting for leftover reuse
+        # Calculate waste percentage per room (for individual room display)
         if self.total_area > 0:
             room_area = self.calculate_room_floor_area()
             if room_area > 0:
-                # Calculate waste: panels ordered vs room area
-                # Total panel area already accounts for panels used (including those from leftovers)
                 waste_area = max(0, self.total_area - room_area)
-                self.waste_percentage = (waste_area / room_area) * 100
-                
-                # Log leftover statistics for information (doesn't change waste calculation)
-                if leftover_tracker:
-                    stats = leftover_tracker.get_stats()
-                    reusable_leftover_area = sum(
-                        lo['width'] * lo['length'] 
-                        for lo in stats['current_leftovers']
-                    )
-                    print(f"      📊 Leftover stats: {stats['leftovers_created']} created, "
-                          f"{stats['leftovers_reused']} reused, "
-                          f"{stats['full_panels_saved']} panels saved")
-                    print(f"      📊 Remaining leftover area: {reusable_leftover_area:.0f} mm² (can be used in other projects)")
+                self.waste_percentage = (waste_area / self.total_area) * 100
             else:
                 self.waste_percentage = 0.0
         else:
             self.waste_percentage = 0.0
-        
-        print(f"      📊 Final stats - Area: {self.total_area}, Waste: {self.waste_percentage:.2f}%")
         
         self.save()
 

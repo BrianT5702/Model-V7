@@ -1726,25 +1726,64 @@ const FloorCanvas = ({
                             <div>
                                 <div className="text-sm text-gray-600">Waste %</div>
                                 <div className="text-xl font-semibold text-red-600">
-                                    {floorPlan?.waste_percentage ? `${floorPlan.waste_percentage.toFixed(1)}%` : '0%'}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-sm text-gray-600">Current Strategy</div>
-                                <div className="text-lg font-semibold text-purple-600">
-                                    {floorPlan?.orientation_strategy || 'Auto'}
+                                    {(() => {
+                                        console.log('🔍 [UI] Floor Plan - Calculating waste percentage...');
+                                        console.log('🔍 [UI] floorPlan:', floorPlan);
+                                        
+                                        // Try to get project-wide waste percentage first
+                                        if (floorPlan?.summary?.project_waste_percentage) {
+                                            console.log('✅ [UI] Using floorPlan.summary.project_waste_percentage:', floorPlan.summary.project_waste_percentage);
+                                            return `${floorPlan.summary.project_waste_percentage.toFixed(1)}%`;
+                                        }
+                                        
+                                        // Fallback to individual room waste percentage
+                                        if (floorPlan?.waste_percentage) {
+                                            console.log('✅ [UI] Using floorPlan.waste_percentage:', floorPlan.waste_percentage);
+                                            return `${floorPlan.waste_percentage.toFixed(1)}%`;
+                                        }
+                                        
+                                        console.log('❌ [UI] No valid waste data found, returning 0%');
+                                        return '0%';
+                                    })()}
                                 </div>
                             </div>
                         </div>
                         
-                        {floorPlan?.orientation_strategy && floorPlan.orientation_strategy !== 'auto' && (
-                            <div>
-                                <div className="text-sm text-gray-600">Recommended</div>
-                                <div className="text-lg font-semibold text-green-600">
-                                    {orientationAnalysis?.recommended_strategy || 'Auto'}
-                                </div>
+                        <div>
+                            <div className="text-sm text-gray-600">Recommended</div>
+                            <div className="text-lg font-semibold text-green-600">
+                                {(() => {
+                                    // Get recommended strategy from system analysis (NOT current selection)
+                                    // Priority: Use the system's recommendation, never use strategy_used
+                                    const recommended = floorPlan?.summary?.recommended_strategy || 
+                                                      floorPlan?.recommended_strategy || 
+                                                      orientationAnalysis?.recommended_strategy || 
+                                                      'auto';
+                                    
+                                    console.log('🎯 [UI] Floor Plan System Recommended Strategy:', recommended);
+                                    console.log('🎯 [UI] Floor Plan Currently Selected Strategy:', floorPlan?.strategy_used);
+                                    
+                                    // Format strategy name for display
+                                    const formatStrategy = (strategy) => {
+                                        if (!strategy) return 'Auto';
+                                        
+                                        const strategyMap = {
+                                            'all_horizontal': 'Horizontal',
+                                            'all_vertical': 'Vertical',
+                                            'mixed_optimal': 'Mixed',
+                                            'auto': 'Auto'
+                                        };
+                                        
+                                        return strategyMap[strategy] || strategy
+                                            .split('_')
+                                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                            .join(' ');
+                                    };
+                                    
+                                    return formatStrategy(recommended);
+                                })()}
                             </div>
-                        )}
+                        </div>
                         
                             <div className="pt-4 border-t border-gray-200">
                              <div className="text-sm text-gray-600">Panel Floor Area</div>
