@@ -14,6 +14,8 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
     const [floorPlan, setFloorPlan] = useState(null);
     const [floorPanels, setFloorPanels] = useState([]);
     const [projectData, setProjectData] = useState(null);
+    // Cached project-wide waste % from latest POST, to ensure immediate UI update
+    const [projectWastePercentage, setProjectWastePercentage] = useState(null);
     
     // Orientation strategy
     const [selectedOrientationStrategy, setSelectedOrientationStrategy] = useState('auto');
@@ -65,6 +67,63 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
             
             // Load existing floor plan if any
             await loadExistingFloorPlan();
+            
+            // Load floor panels and calculate project waste after floor plan is loaded
+            console.log('🔄 [FLOOR INITIAL LOAD] Starting to load floor panels...');
+            try {
+                const panelsResponse = await api.get(`/floor-panels/?project=${parseInt(projectId)}`);
+                const loadedPanels = panelsResponse.data || [];
+                
+                console.log('📦 [FLOOR INITIAL LOAD] Loaded panels:', loadedPanels.length, loadedPanels);
+                console.log('📦 [FLOOR INITIAL LOAD] Loaded rooms:', rooms.length, rooms);
+                
+                // Calculate waste using leftover-based approach (estimate from cut panels)
+                if (loadedPanels.length > 0 && rooms.length > 0) {
+                    const MAX_PANEL_WIDTH = 1150;
+                    let estimatedLeftoverArea = 0;
+                    
+                    loadedPanels.forEach(panel => {
+                        if (panel.is_cut_panel) {
+                            if (panel.width < MAX_PANEL_WIDTH) {
+                                const leftoverWidth = MAX_PANEL_WIDTH - panel.width;
+                                const leftoverArea = leftoverWidth * panel.length;
+                                estimatedLeftoverArea += leftoverArea;
+                                console.log(`📊 [FLOOR INITIAL LOAD] Cut panel ${panel.panel_id}: leftover ~${leftoverWidth}mm × ${panel.length}mm = ${leftoverArea} mm²`);
+                            }
+                        }
+                    });
+                    
+                    // Calculate total room area (for floor, we include wall exclusion)
+                    const totalRoomArea = rooms.reduce((sum, room) => {
+                        if (room.room_points && room.room_points.length >= 3) {
+                            // Only count rooms with panel floors
+                            if (room.floor_type === 'panel' || room.floor_type === 'Panel') {
+                                let area = 0;
+                                for (let i = 0; i < room.room_points.length; i++) {
+                                    const j = (i + 1) % room.room_points.length;
+                                    area += room.room_points[i].x * room.room_points[j].y;
+                                    area -= room.room_points[j].x * room.room_points[i].y;
+                                }
+                                return sum + Math.abs(area) / 2;
+                            }
+                        }
+                        return sum;
+                    }, 0);
+                    
+                    if (estimatedLeftoverArea > 0 && totalRoomArea > 0) {
+                        const estimatedWaste = (estimatedLeftoverArea / totalRoomArea) * 100;
+                        setProjectWastePercentage(estimatedWaste);
+                        console.log('📊 [FLOOR INITIAL LOAD] Estimated leftover area:', estimatedLeftoverArea);
+                        console.log('📊 [FLOOR INITIAL LOAD] Total room area:', totalRoomArea);
+                        console.log('✅ [FLOOR INITIAL LOAD] Estimated waste %:', estimatedWaste.toFixed(1) + '%');
+                    } else {
+                        console.log('ℹ️ [FLOOR INITIAL LOAD] No waste to display (no cut panels or perfect fit)');
+                        setProjectWastePercentage(0);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ [FLOOR INITIAL LOAD] Error calculating initial waste percentage:', error);
+            }
             
             // Load orientation analysis
             await loadOrientationAnalysis();
@@ -283,6 +342,12 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                 };
                 
                 setFloorPlan(unifiedFloorPlan);
+                
+                // Cache project-wide waste percentage for immediate UI update
+                if (response?.data?.summary?.project_waste_percentage !== undefined && response?.data?.summary?.project_waste_percentage !== null) {
+                    setProjectWastePercentage(response.data.summary.project_waste_percentage);
+                    console.log('📊 [FLOOR UI] Cached project-wide waste % from POST:', response.data.summary.project_waste_percentage);
+                }
                 
                 // Set floor panels from response
                 const panels = response.data.floor_panels || [];
@@ -555,6 +620,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                             floorPlan={floorPlan}
                             floorPanels={floorPanels}
                             projectData={projectData}
+                            projectWastePercentage={projectWastePercentage}
 
                             floorPanelsMap={(() => {
                                 // Convert floorPanels array to floorPanelsMap format

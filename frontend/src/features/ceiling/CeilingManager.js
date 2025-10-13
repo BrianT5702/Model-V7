@@ -109,7 +109,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             
             // Load rooms
             const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
-            setAllRooms(roomsResponse.data || []);
+            const loadedRooms = roomsResponse.data || [];
+            setAllRooms(loadedRooms);
             
             // Load walls
             const wallsResponse = await api.get(`/walls/?project=${parseInt(projectId)}`);
@@ -123,6 +124,64 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             
             // Load existing ceiling plan if any
             await loadExistingCeilingPlan();
+            
+            // Load ceiling panels and calculate project waste after ceiling plan is loaded
+            try {
+                const panelsResponse = await api.get(`/ceiling-panels/?project=${parseInt(projectId)}`);
+                const loadedPanels = panelsResponse.data || [];
+                
+                console.log('📦 [INITIAL LOAD] Loaded panels:', loadedPanels.length, loadedPanels);
+                console.log('📦 [INITIAL LOAD] Loaded rooms:', loadedRooms.length, loadedRooms);
+                
+                // Calculate waste using leftover-based approach
+                // We need to estimate leftover area from cut panels since database only stores used dimensions
+                if (loadedPanels.length > 0 && loadedRooms.length > 0) {
+                    // Estimate leftover area from cut panels
+                    // For each cut panel, estimate the leftover based on standard panel width (1150mm)
+                    const MAX_PANEL_WIDTH = 1150;
+                    let estimatedLeftoverArea = 0;
+                    
+                    loadedPanels.forEach(panel => {
+                        if (panel.is_cut_panel) {
+                            // If panel is cut, the leftover is approximately (MAX_WIDTH - actual_width) * length
+                            if (panel.width < MAX_PANEL_WIDTH) {
+                                const leftoverWidth = MAX_PANEL_WIDTH - panel.width;
+                                const leftoverArea = leftoverWidth * panel.length;
+                                estimatedLeftoverArea += leftoverArea;
+                                console.log(`📊 [INITIAL LOAD] Cut panel ${panel.panel_id}: leftover ~${leftoverWidth}mm × ${panel.length}mm = ${leftoverArea} mm²`);
+                            }
+                        }
+                    });
+                    
+                    // Calculate total room area
+                    const totalRoomArea = loadedRooms.reduce((sum, room) => {
+                        if (room.room_points && room.room_points.length >= 3) {
+                            let area = 0;
+                            for (let i = 0; i < room.room_points.length; i++) {
+                                const j = (i + 1) % room.room_points.length;
+                                area += room.room_points[i].x * room.room_points[j].y;
+                                area -= room.room_points[j].x * room.room_points[i].y;
+                            }
+                            return sum + Math.abs(area) / 2;
+                        }
+                        return sum;
+                    }, 0);
+                    
+                    if (estimatedLeftoverArea > 0 && totalRoomArea > 0) {
+                        // Formula: waste% = Leftover Area / Total Room Area × 100%
+                        const estimatedWaste = (estimatedLeftoverArea / totalRoomArea) * 100;
+                        setProjectWastePercentage(estimatedWaste);
+                        console.log('📊 [INITIAL LOAD] Estimated leftover area:', estimatedLeftoverArea);
+                        console.log('📊 [INITIAL LOAD] Total room area:', totalRoomArea);
+                        console.log('✅ [INITIAL LOAD] Estimated waste %:', estimatedWaste.toFixed(1) + '%');
+                    } else {
+                        console.log('ℹ️ [INITIAL LOAD] No waste to display (no cut panels or perfect fit)');
+                        setProjectWastePercentage(0);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ [INITIAL LOAD] Error calculating initial waste percentage:', error);
+            }
             
             // Load orientation analysis
             await loadOrientationAnalysis();

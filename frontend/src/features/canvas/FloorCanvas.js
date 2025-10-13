@@ -11,7 +11,8 @@ const FloorCanvas = ({
     floorPanels, 
     projectData, 
     floorPanelsMap,
-    orientationAnalysis 
+    orientationAnalysis,
+    projectWastePercentage = null
 }) => {
     const canvasRef = useRef(null);
     const [currentScale, setCurrentScale] = useState(1);
@@ -1727,22 +1728,30 @@ const FloorCanvas = ({
                                 <div className="text-sm text-gray-600">Waste %</div>
                                 <div className="text-xl font-semibold text-red-600">
                                     {(() => {
-                                        console.log('🔍 [UI] Floor Plan - Calculating waste percentage...');
-                                        console.log('🔍 [UI] floorPlan:', floorPlan);
+                                        console.log('🔍 [FLOOR UI] Displaying project-wide waste percentage...');
+                                        console.log('🔍 [FLOOR UI] projectWastePercentage (prop):', projectWastePercentage);
+                                        console.log('🔍 [FLOOR UI] floorPlan:', floorPlan);
+                                        console.log('🔍 [FLOOR UI] floorPlan.summary:', floorPlan?.summary);
                                         
-                                        // Try to get project-wide waste percentage first
-                                        if (floorPlan?.summary?.project_waste_percentage) {
-                                            console.log('✅ [UI] Using floorPlan.summary.project_waste_percentage:', floorPlan.summary.project_waste_percentage);
+                                        // 1) Prefer the latest project-wide waste provided by manager (from POST or initial load)
+                                        if (projectWastePercentage !== undefined && projectWastePercentage !== null) {
+                                            console.log('✅ [FLOOR UI] Using projectWastePercentage prop:', projectWastePercentage);
+                                            return `${Number(projectWastePercentage).toFixed(1)}%`;
+                                        }
+                                        
+                                        // 2) Fallback to value embedded in the plan summary
+                                        if (floorPlan?.summary?.project_waste_percentage !== undefined && floorPlan?.summary?.project_waste_percentage !== null) {
+                                            console.log('✅ [FLOOR UI] Using floorPlan.summary.project_waste_percentage:', floorPlan.summary.project_waste_percentage);
                                             return `${floorPlan.summary.project_waste_percentage.toFixed(1)}%`;
                                         }
                                         
-                                        // Fallback to individual room waste percentage
-                                        if (floorPlan?.waste_percentage) {
-                                            console.log('✅ [UI] Using floorPlan.waste_percentage:', floorPlan.waste_percentage);
+                                        // 3) Legacy fallback to individual room waste percentage
+                                        if (floorPlan?.waste_percentage !== undefined && floorPlan?.waste_percentage !== null) {
+                                            console.log('⚠️ [FLOOR UI] Fallback to floorPlan.waste_percentage:', floorPlan.waste_percentage);
                                             return `${floorPlan.waste_percentage.toFixed(1)}%`;
                                         }
                                         
-                                        console.log('❌ [UI] No valid waste data found, returning 0%');
+                                        console.log('❌ [FLOOR UI] No valid waste data found, returning 0%');
                                         return '0%';
                                     })()}
                                 </div>

@@ -501,7 +501,6 @@ const CeilingCanvas = ({
 
     // Draw walls with dashed lines (inner face)
     const drawWalls = (ctx) => {
-        console.log('drawWalls called with walls:', walls);
         if (!walls || walls.length === 0) {
             console.log('No walls to draw');
             return;
@@ -516,11 +515,8 @@ const CeilingCanvas = ({
                 center.y = allPoints.reduce((sum, p) => sum + p.y, 0) / allPoints.length;
             }
         }
-
-        console.log('Center point for walls:', center);
         
         walls.forEach(wall => {
-            console.log('Drawing wall:', wall);
             
             try {
                 // Use fixed gap for consistent double-line wall appearance (same as wall plan)
@@ -549,18 +545,13 @@ const CeilingCanvas = ({
                         has45 = true;
                         // Find the joining wall id
                         joiningWallId = inter.wall_1 === wall.id ? inter.wall_2 : inter.wall_1;
-                        console.log(`🔍 45° cut detected! Wall ${wall.id} joins with wall ${joiningWallId} at intersection ${inter.id}`);
                     }
                 });
                 
-                console.log(`🔍 Wall ${wall.id} 45° cut check: has45=${has45}, joiningWallId=${joiningWallId}`);
-                
                 // If 45_cut, check if joining wall is on same side as model center
                 if (has45 && joiningWallId) {
-                    console.log(`🔍 Processing 45° cut for wall ${wall.id} with joining wall ${joiningWallId}`);
                     joiningWall = walls.find(w => w.id === joiningWallId);
                     if (joiningWall) {
-                        console.log(`🔍 Found joining wall:`, joiningWall);
                         // Calculate normal for this wall
                         const dx = wall.end_x - wall.start_x;
                         const dy = wall.end_y - wall.start_y;
@@ -586,10 +577,8 @@ const CeilingCanvas = ({
                         
                         // If dotToCenter and dotToJoin have opposite signs, flip the side for line2
                         const shouldFlip = (dotToCenter > 0 && dotToJoin < 0) || (dotToCenter < 0 && dotToJoin > 0);
-                        console.log(`🔍 Flip calculation: dotToCenter=${dotToCenter.toFixed(2)}, dotToJoin=${dotToJoin.toFixed(2)}, shouldFlip=${shouldFlip}`);
                         
                         if (shouldFlip) {
-                            console.log(`🔍 FLIPPING inner face for wall ${wall.id}!`);
                             // Recalculate line2 with flipped offset
                             const offsetX = (FIXED_GAP * normalX) / scaleFactor.current;
                             const offsetY = (FIXED_GAP * normalY) / scaleFactor.current;
@@ -632,8 +621,6 @@ const CeilingCanvas = ({
                     line2[1].x -= ux * finalAdjust;
                     line2[1].y -= uy * finalAdjust;
                 }
-
-                console.log('Wall lines calculated:', { line1, line2 });
 
                 // Store the calculated lines for wall caps
                 wall._line1 = line1;
@@ -683,7 +670,6 @@ const CeilingCanvas = ({
                 // Reset line dash
                 ctx.setLineDash([]);
             } catch (error) {
-                console.error('Error drawing wall:', error, wall);
                 
                 // Fallback: draw simple wall line (inner face approximation)
                 ctx.strokeStyle = '#6b7280';
@@ -716,8 +702,6 @@ const CeilingCanvas = ({
                     ctx.stroke();
                 }
                 ctx.setLineDash([]);
-                
-                console.log('Drew fallback inner wall face');
             }
         });
     };
@@ -1289,31 +1273,31 @@ const CeilingCanvas = ({
         //console.log('🔧 generatePanelList called with effectiveCeilingPanelsMap:', effectiveCeilingPanelsMap);
         
         if (!effectiveCeilingPanelsMap || Object.keys(effectiveCeilingPanelsMap).length === 0) {
-            console.log('📋 No ceiling panels found for project');
+            // console.log('📋 No ceiling panels found for project');
             return [];
         }
 
         // Collect all panels from all rooms
         const allProjectPanels = [];
         Object.values(effectiveCeilingPanelsMap).forEach(roomPanels => {
-            console.log('🔧 Adding room panels:', roomPanels);
+            // console.log('🔧 Adding room panels:', roomPanels);
             allProjectPanels.push(...roomPanels);
         });
         
-        console.log('🔧 Total project panels collected:', allProjectPanels.length);
+        // console.log('🔧 Total project panels collected:', allProjectPanels.length);
 
         // Group panels by dimensions (width, length, thickness)
         const panelsByDimension = new Map();
         allProjectPanels.forEach(panel => {
             // Use panel thickness if available, otherwise use the current ceiling thickness setting
             const panelThickness = panel.thickness || ceilingThickness;
-            console.log('🔧 Panel thickness debug:', { 
-                panelId: panel.id, 
-                thickness: panel.thickness, 
-                fallbackThickness: panelThickness,
-                hasThickness: panel.hasOwnProperty('thickness'),
-                thicknessType: typeof panel.thickness
-            });
+            // console.log('🔧 Panel thickness debug:', { 
+            //     panelId: panel.id, 
+            //     thickness: panel.thickness, 
+            //     fallbackThickness: panelThickness,
+            //     hasThickness: panel.hasOwnProperty('thickness'),
+            //     thicknessType: typeof panel.thickness
+            // });
             
             // SWAP: For vertical panels, swap width and length values (keep horizontal unchanged)
             const isVertical = panel.width >= panel.length;
@@ -1344,19 +1328,19 @@ const CeilingCanvas = ({
         const panelList = Array.from(panelsByDimension.values())
             .sort((a, b) => b.quantity - a.quantity);
 
-        console.log('📋 Ceiling Panel List Generated:', panelList);
+        // console.log('📋 Ceiling Panel List Generated:', panelList);
         return panelList;
     };
 
     // Helper function to get dimension text
     const getDimensionText = (dimension, length, quantity) => {
-        console.log(`🔍 getDimensionText called with:`, {
-            type: dimension.type,
-            panelLabel: dimension.panelLabel,
-            dimension: dimension.dimension,
-            length: length,
-            quantity: quantity
-        });
+        // console.log(`🔍 getDimensionText called with:`, {
+        //     type: dimension.type,
+        //     panelLabel: dimension.panelLabel,
+        //     dimension: dimension.dimension,
+        //     length: length,
+        //     quantity: quantity
+        // });
         
         // For grouped dimensions, show "n × dimension" format
         if ((dimension.type === 'grouped_width' || dimension.type === 'grouped_width_horizontal' || dimension.type === 'grouped_width_vertical' || 
@@ -1637,15 +1621,15 @@ const CeilingCanvas = ({
             isHorizontal: isHorizontal
         });
         
-        console.log(`✅ Dimension drawn successfully:`, {
-            type,
-            priority,
-            text,
-            position: { x: finalLabelBounds.x, y: finalLabelBounds.y },
-            isHorizontal,
-            angle: angle.toFixed(1),
-            roomId: dimension.roomId || 'unknown'
-        });
+        // console.log(`✅ Dimension drawn successfully:`, {
+        //     type,
+        //     priority,
+        //     text,
+        //     position: { x: finalLabelBounds.x, y: finalLabelBounds.y },
+        //     isHorizontal,
+        //     angle: angle.toFixed(1),
+        //     roomId: dimension.roomId || 'unknown'
+        // });
         
         // Validate final position is within canvas bounds
         const isValidPosition = finalLabelBounds.x >= 0 && 
@@ -1654,7 +1638,7 @@ const CeilingCanvas = ({
                                finalLabelBounds.y + finalLabelBounds.height <= CANVAS_HEIGHT;
         
         if (!isValidPosition) {
-            console.log(`⚠️ Dimension ${type} position invalid, skipping:`, finalLabelBounds);
+            // console.log(`⚠️ Dimension ${type} position invalid, skipping:`, finalLabelBounds);
             return; // Skip drawing this dimension
         }
         

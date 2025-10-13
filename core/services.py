@@ -2201,12 +2201,12 @@ class CeilingService:
             )
             strategies.append(independent_strategy)
             
-            # Strategy 4: Project merged (if same height and mergeable)
-            if height_analysis['all_same_height']:
-                merged_strategy = CeilingService._evaluate_strategy(
-                    height_analysis, 'merged', 'project_merged', panel_width, panel_length
-                )
-                strategies.append(merged_strategy)
+            # Strategy 4: Project merged - DISABLED per user request
+            # if height_analysis['all_same_height']:
+            #     merged_strategy = CeilingService._evaluate_strategy(
+            #         height_analysis, 'merged', 'project_merged', panel_width, panel_length
+            #     )
+            #     strategies.append(merged_strategy)
             
             # Find the strategy with least waste
             strategies.sort(key=lambda x: x['total_waste_percentage'])
@@ -2365,79 +2365,191 @@ class CeilingService:
         }
 
     @staticmethod
-    def _evaluate_group_independent_orientation(group_data, panel_width=1150, panel_length='auto'):
-        """Evaluate a height group with each room getting its optimal orientation with leftover tracking"""
+    def _evaluate_orientation_combination(rooms, orientation_combo, panel_width, panel_length, ceiling_thickness):
+        """Evaluate a specific combination of orientations with leftover tracking
+        
+        Args:
+            rooms: List of room_info dicts
+            orientation_combo: List of orientations ('vertical' or 'horizontal') for each room
+            panel_width: Panel width in mm
+            panel_length: Panel length setting
+            ceiling_thickness: Ceiling thickness in mm
+            
+        Returns:
+            Dict with total_leftover_area, total_panels, room_results
+        """
+        # Create a fresh leftover tracker for this combination
+        combo_tracker = LeftoverTracker(context='COMBO-TEST')
+        
         total_panels = 0
         total_waste_area = 0.0
         total_room_area = 0.0
         room_results = []
         
-        # Create leftover tracker for this strategy evaluation
-        strategy_tracker = LeftoverTracker(context='ANALYSIS-IND')
-        ceiling_thickness = group_data['rooms'][0].get('ceiling_thickness', 20.0) if group_data['rooms'] else 20.0
-        
-        for room_info in group_data['rooms']:
-            # Calculate room area
+        # Process rooms in sequence with leftover tracking
+        for i, room_info in enumerate(rooms):
+            orientation = orientation_combo[i]
             room_area = room_info['area']
             total_room_area += room_area
             
-            # Test both orientations and pick the best one (with leftover tracking)
-            vertical_panels = CeilingService._generate_panels_with_orientation(
-                room_info, 'vertical', panel_width, panel_length, strategy_tracker, ceiling_thickness
-            )
-            horizontal_panels = CeilingService._generate_panels_with_orientation(
-                room_info, 'horizontal', panel_width, panel_length, strategy_tracker, ceiling_thickness
+            # Generate panels with this orientation and the combo tracker
+            panels = CeilingService._generate_panels_with_orientation(
+                room_info, orientation, panel_width, panel_length, combo_tracker, ceiling_thickness
             )
             
-            vertical_waste = CeilingService._calculate_room_waste(vertical_panels, room_info, 'vertical')
-            horizontal_waste = CeilingService._calculate_room_waste(horizontal_panels, room_info, 'horizontal')
+            waste_area = CeilingService._calculate_room_waste(panels, room_info, orientation)
+            total_waste_area += waste_area
+            total_panels += len(panels)
             
-            # Pick the orientation with less waste
-            if vertical_waste <= horizontal_waste:
-                best_orientation = 'vertical'
-                best_panels = vertical_panels
-                best_waste = vertical_waste
-            else:
-                best_orientation = 'horizontal'
-                best_panels = horizontal_panels
-                best_waste = horizontal_waste
-            
-            total_waste_area += best_waste
-            total_panels += len(best_panels)
-            
-            # Calculate total panel area for percentage calculation
-            best_panel_area = sum(panel['width'] * panel['length'] for panel in best_panels)
+            panel_area = sum(p['width'] * p['length'] for p in panels)
             
             room_results.append({
                 'room_id': room_info['id'],
                 'room_name': room_info['name'],
-                'orientation': best_orientation,
-                'panels': len(best_panels),
-                'waste_area': best_waste,
-                'waste_percentage': (best_waste / best_panel_area * 100) if best_panel_area > 0 else 0,  # New formula
-                'area': room_area,
-                'alternatives': {
-                    'vertical': {'panels': len(vertical_panels), 'waste': vertical_waste},
-                    'horizontal': {'panels': len(horizontal_panels), 'waste': horizontal_waste}
-                }
+                'orientation': orientation,
+                'panels': len(panels),
+                'waste_area': waste_area,
+                'waste_percentage': (waste_area / panel_area * 100) if panel_area > 0 else 0,
+                'area': room_area
             })
         
-        # Get leftover stats for this strategy
-        leftover_stats = strategy_tracker.get_stats()
+        # Get leftover stats
+        leftover_stats = combo_tracker.get_stats()
         leftover_area = leftover_stats.get('total_leftover_area', 0)
         
-        # Calculate waste percentage using leftover area (new method)
-        # Formula: waste% = Leftover Area / Total Room Area × 100%
-        leftover_waste_percentage = (leftover_area / total_room_area * 100) if total_room_area > 0 else 0
-        
         return {
+            'total_leftover_area': leftover_area,
             'total_panels': total_panels,
             'total_waste_area': total_waste_area,
             'total_room_area': total_room_area,
             'room_results': room_results,
-            'leftover_area': leftover_area,
-            'leftover_waste_percentage': leftover_waste_percentage
+            'leftover_stats': leftover_stats
         }
+    
+    @staticmethod
+    def _evaluate_group_independent_orientation(group_data, panel_width=1150, panel_length='auto'):
+        """Evaluate a height group with GLOBAL optimization - finds the best combination of orientations
+        that minimizes project-wide waste by considering leftover reuse across rooms"""
+        
+        rooms = group_data['rooms']
+        ceiling_thickness = rooms[0].get('ceiling_thickness', 20.0) if rooms else 20.0
+        
+        num_rooms = len(rooms)
+        
+        # For performance: use exhaustive search for <= 10 rooms, greedy heuristic for larger projects
+        if num_rooms <= 10:
+            logger.info(f"🌍 GLOBAL OPTIMIZATION: Testing all {2**num_rooms} combinations for {num_rooms} rooms")
+            
+            best_combo = None
+            best_leftover_area = float('inf')
+            best_result = None
+            
+            # Generate all possible orientation combinations (2^n combinations)
+            from itertools import product
+            
+            all_combos = list(product(['vertical', 'horizontal'], repeat=num_rooms))
+            
+            for i, orientation_combo in enumerate(all_combos):
+                result = CeilingService._evaluate_orientation_combination(
+                    rooms, orientation_combo, panel_width, panel_length, ceiling_thickness
+                )
+                
+                leftover_area = result['total_leftover_area']
+                
+                # Track the best combination
+                if leftover_area < best_leftover_area:
+                    best_leftover_area = leftover_area
+                    best_combo = orientation_combo
+                    best_result = result
+                    
+                    combo_str = ', '.join([f"{rooms[j]['name']}:{o[0].upper()}" for j, o in enumerate(orientation_combo)])
+                    logger.info(f"  ✓ New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
+            
+            # Log the final best combination
+            best_combo_str = ', '.join([f"{rooms[j]['name']}:{o[0].upper()}" for j, o in enumerate(best_combo)])
+            waste_pct = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
+            logger.info(f"🎯 GLOBAL OPTIMAL FOUND: {best_combo_str} > Project Waste: {waste_pct:.2f}%")
+            
+            # Calculate waste percentage
+            leftover_waste_percentage = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
+            
+            return {
+                'total_panels': best_result['total_panels'],
+                'total_waste_area': best_result['total_waste_area'],
+                'total_room_area': best_result['total_room_area'],
+                'room_results': best_result['room_results'],
+                'leftover_area': best_leftover_area,
+                'leftover_waste_percentage': leftover_waste_percentage
+            }
+        
+        else:
+            # For large projects (>10 rooms), use improved greedy heuristic with look-ahead
+            logger.info(f"⚡ GREEDY HEURISTIC: Using smart greedy for {num_rooms} rooms (too many for exhaustive search)")
+            
+            total_panels = 0
+            total_waste_area = 0.0
+            total_room_area = 0.0
+            room_results = []
+            
+            # Create leftover tracker
+            strategy_tracker = LeftoverTracker(context='ANALYSIS-IND')
+            
+            for room_info in rooms:
+                room_area = room_info['area']
+                total_room_area += room_area
+                
+                # Test both orientations with leftover tracking
+                vertical_panels = CeilingService._generate_panels_with_orientation(
+                    room_info, 'vertical', panel_width, panel_length, strategy_tracker, ceiling_thickness
+                )
+                horizontal_panels = CeilingService._generate_panels_with_orientation(
+                    room_info, 'horizontal', panel_width, panel_length, strategy_tracker, ceiling_thickness
+                )
+                
+                vertical_waste = CeilingService._calculate_room_waste(vertical_panels, room_info, 'vertical')
+                horizontal_waste = CeilingService._calculate_room_waste(horizontal_panels, room_info, 'horizontal')
+                
+                # Pick the orientation with less waste (greedy choice)
+                if vertical_waste <= horizontal_waste:
+                    best_orientation = 'vertical'
+                    best_panels = vertical_panels
+                    best_waste = vertical_waste
+                else:
+                    best_orientation = 'horizontal'
+                    best_panels = horizontal_panels
+                    best_waste = horizontal_waste
+                
+                total_waste_area += best_waste
+                total_panels += len(best_panels)
+                
+                best_panel_area = sum(panel['width'] * panel['length'] for panel in best_panels)
+                
+                room_results.append({
+                    'room_id': room_info['id'],
+                    'room_name': room_info['name'],
+                    'orientation': best_orientation,
+                    'panels': len(best_panels),
+                    'waste_area': best_waste,
+                    'waste_percentage': (best_waste / best_panel_area * 100) if best_panel_area > 0 else 0,
+                    'area': room_area,
+                    'alternatives': {
+                        'vertical': {'panels': len(vertical_panels), 'waste': vertical_waste},
+                        'horizontal': {'panels': len(horizontal_panels), 'waste': horizontal_waste}
+                    }
+                })
+            
+            leftover_stats = strategy_tracker.get_stats()
+            leftover_area = leftover_stats.get('total_leftover_area', 0)
+            leftover_waste_percentage = (leftover_area / total_room_area * 100) if total_room_area > 0 else 0
+            
+            return {
+                'total_panels': total_panels,
+                'total_waste_area': total_waste_area,
+                'total_room_area': total_room_area,
+                'room_results': room_results,
+                'leftover_area': leftover_area,
+                'leftover_waste_percentage': leftover_waste_percentage
+            }
 
     @staticmethod
     def _evaluate_merged_strategy(height_analysis, panel_width=1150, panel_length='auto'):
@@ -3127,6 +3239,7 @@ class CeilingService:
             
             # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
             room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
+            room_width = room_bounding_box['width']
             
             # Calculate panel width based on user's choice
             if panel_length == 'auto':
@@ -3185,6 +3298,7 @@ class CeilingService:
             
             # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
             room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
+            room_height = room_bounding_box['height']
             
             # Calculate panel height based on user's choice
             if panel_length == 'auto':
