@@ -69,6 +69,7 @@ const Canvas2D = ({
     const [roomLabelPositions, setRoomLabelPositions] = useState([]);
     const [forceRefresh, setForceRefresh] = useState(0);
     const lastRoomDataRef = useRef({ rooms: [], walls: [] });
+    const [thicknessColorMap, setThicknessColorMap] = useState(new Map());
 
     const offsetX = useRef(0);
     const offsetY = useRef(0);
@@ -1096,8 +1097,8 @@ const Canvas2D = ({
         context.clearRect(0, 0, canvas.width, canvas.height);
         // Draw grid
         drawGrid(context, canvas.width, canvas.height, gridSize, isDrawing);
-        // Draw walls
-        drawWalls({
+        // Draw walls and get thickness color map
+        const colorMap = drawWalls({
             context,
             walls,
             highlightWalls,
@@ -1127,6 +1128,8 @@ const Canvas2D = ({
             drawPanelDivisions,
             filteredDimensions
         });
+        // Store thickness color map for the legend
+        setThicknessColorMap(colorMap);
         // Draw doors
         drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
         // Draw rooms
@@ -1208,33 +1211,64 @@ const Canvas2D = ({
                 </div>
             )}
             
-            <div className="relative">
-                <canvas
-                    ref={canvasRef}
-                    onClick={handleCanvasClick}
-                    onMouseMove={handleMouseMove}
-                    
-                    tabIndex={0}
-                    className="border border-gray-300 bg-gray-50"
-                />
-                
-                {/* Interactive Room Labels */}
-                {roomLabelPositions.map((labelData) => (
-                    <InteractiveRoomLabel
-                        key={labelData.roomId}
-                        room={labelData.room}
-                        position={labelData.position}
-                        scaleFactor={scaleFactor.current}
-                        offsetX={offsetX.current}
-                        offsetY={offsetY.current}
-                        onUpdateRoom={handleRoomUpdateOptimized}
-                        onPositionChange={handleRoomLabelPositionChange}
-                        isSelected={selectedRoomId === labelData.roomId}
-                        onSelect={handleRoomSelect}
-                        currentMode={currentMode}
-                        selectedRoomPoints={selectedRoomPoints}
+            <div className="flex gap-6 items-start">
+                {/* Canvas Container */}
+                <div className="relative">
+                    <canvas
+                        ref={canvasRef}
+                        onClick={handleCanvasClick}
+                        onMouseMove={handleMouseMove}
+                        
+                        tabIndex={0}
+                        className="border border-gray-300 bg-gray-50"
                     />
-                ))}
+                    
+                    {/* Interactive Room Labels */}
+                    {roomLabelPositions.map((labelData) => (
+                        <InteractiveRoomLabel
+                            key={labelData.roomId}
+                            room={labelData.room}
+                            position={labelData.position}
+                            scaleFactor={scaleFactor.current}
+                            offsetX={offsetX.current}
+                            offsetY={offsetY.current}
+                            onUpdateRoom={handleRoomUpdateOptimized}
+                            onPositionChange={handleRoomLabelPositionChange}
+                            isSelected={selectedRoomId === labelData.roomId}
+                            onSelect={handleRoomSelect}
+                            currentMode={currentMode}
+                            selectedRoomPoints={selectedRoomPoints}
+                        />
+                    ))}
+                </div>
+
+                {/* Sidebar with Legend */}
+                {thicknessColorMap && thicknessColorMap.size > 1 && (
+                    <div className="flex-shrink-0 w-72">
+                        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm sticky top-4">
+                            <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
+                                <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                                </svg>
+                                Wall Thickness Legend
+                            </h5>
+                            <div className="space-y-3">
+                                {Array.from(thicknessColorMap.entries()).map(([thickness, colors]) => (
+                                    <div key={thickness} className="flex items-center">
+                                        <div 
+                                            className="w-8 h-4 rounded mr-3 border border-gray-300" 
+                                            style={{ backgroundColor: colors.wall }}
+                                        ></div>
+                                        <span className="text-sm text-gray-700 font-medium">{colors.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
+                                💡 <strong>Tip:</strong> Different colors represent different wall thicknesses for easy identification
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
             {selectedIntersection && (
             <div className="fixed inset-0 bg-black bg-opacity-10 flex justify-end items-start z-50"> {/* Changed to items-start and justify-end */}

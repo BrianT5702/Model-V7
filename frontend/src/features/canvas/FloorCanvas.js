@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { calculateOffsetPoints } from './drawing.js';
+import { DIMENSION_CONFIG } from './DimensionConfig.js';
+import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds } from './collisionDetection.js';
 
 const FloorCanvas = ({ 
     rooms, 
@@ -263,8 +265,15 @@ const FloorCanvas = ({
                 drawFloorPanels(ctx, room);
             });
             
-            // Draw dimensions for walls and rooms
-            drawFloorDimensions(ctx);
+            // PASS 1: Draw dimensions (lines only) and collect text box info
+            const dimensionTextBoxes = drawFloorDimensions(ctx);
+            
+            // PASS 2: Draw all dimension text BOXES on top (highest layer)
+            if (dimensionTextBoxes && dimensionTextBoxes.length > 0) {
+                dimensionTextBoxes.forEach(label => {
+                    drawDimensionTextBox(ctx, label);
+                });
+            }
         }
 
         // Draw title and info
@@ -330,16 +339,30 @@ const FloorCanvas = ({
         ctx.fill();
         ctx.stroke();
 
-        // Add room name label
+        // Add room name label (using stored label_position from wall plan if available)
         if (room.room_name) {
-            const centerX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
-            const centerY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
+            let labelX, labelY;
+            
+            // Use stored label position from wall plan if available, otherwise calculate center
+            if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
+                // Use stored position from wall plan (Canvas2D)
+                labelX = room.label_position.x;
+                labelY = room.label_position.y;
+            } else {
+                // Fallback: calculate geometric center
+                labelX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
+                labelY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
+            }
+            
+            // Convert to canvas coordinates
+            const canvasX = labelX * scaleFactor.current + offsetX.current;
+            const canvasY = labelY * scaleFactor.current + offsetY.current;
             
             ctx.fillStyle = '#6b7280';
             ctx.font = `bold ${Math.max(14, 16 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(room.room_name, centerX * scaleFactor.current + offsetX.current, centerY * scaleFactor.current + offsetY.current);
+            ctx.fillText(room.room_name, canvasX, canvasY);
         }
     };
 
@@ -705,12 +728,23 @@ const FloorCanvas = ({
 
     // Draw slab calculation message for slab floor rooms
     const drawSlabCalculationMessage = (ctx, room) => {
-        // Calculate room center for message placement
-        const centerX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
-        const centerY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
+        // Use stored label position from wall plan if available, otherwise calculate center
+        let labelX, labelY;
         
-        const messageX = centerX * scaleFactor.current + offsetX.current;
-        const messageY = centerY * scaleFactor.current + offsetY.current;
+        if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
+            // Use stored position from wall plan (Canvas2D) - same as room name
+            labelX = room.label_position.x;
+            labelY = room.label_position.y;
+        } else {
+            // Fallback: calculate geometric center
+            labelX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
+            labelY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
+        }
+        
+        // Position slab message below room name (offset by line height)
+        const messageX = labelX * scaleFactor.current + offsetX.current;
+        const lineHeight = Math.max(16, 18 * scaleFactor.current); // Line spacing
+        const messageY = labelY * scaleFactor.current + offsetY.current + lineHeight;
         
         // Calculate room area
         const roomArea = calculateRoomArea(room);
@@ -722,28 +756,32 @@ const FloorCanvas = ({
         // Create message text
         const messageText = `Est. ${slabsNeeded} pieces of slab needed`;
         
-        ctx.font = `bold ${Math.max(18, 22 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        // Use smaller font size (matching room name: 14-16px instead of 18-22px)
+        ctx.font = `bold ${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         const textMetrics = ctx.measureText(messageText);
         const textWidth = textMetrics.width;
-        const textHeight = 20 * scaleFactor.current;
+        const textHeight = 16 * scaleFactor.current;
         
-        // Background rectangle
+        // Background rectangle with consistent padding (8px like dimension labels)
+        const paddingH = 8 * scaleFactor.current;
+        const paddingV = 6 * scaleFactor.current;
+        
         ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.fillRect(
-            messageX - textWidth/2 - 10 * scaleFactor.current,
-            messageY - textHeight/2 - 5 * scaleFactor.current,
-            textWidth + 20 * scaleFactor.current,
-            textHeight + 10 * scaleFactor.current
+            messageX - textWidth/2 - paddingH,
+            messageY - textHeight/2 - paddingV,
+            textWidth + paddingH * 2,
+            textHeight + paddingV * 2
         );
         
         // Border
         ctx.strokeStyle = '#10b981'; // Green border for slab rooms
         ctx.lineWidth = 1 * scaleFactor.current;
         ctx.strokeRect(
-            messageX - textWidth/2 - 10 * scaleFactor.current,
-            messageY - textHeight/2 - 5 * scaleFactor.current,
-            textWidth + 20 * scaleFactor.current,
-            textHeight + 10 * scaleFactor.current
+            messageX - textWidth/2 - paddingH,
+            messageY - textHeight/2 - paddingV,
+            textWidth + paddingH * 2,
+            textHeight + paddingV * 2
         );
         
         // Text
@@ -789,10 +827,11 @@ const FloorCanvas = ({
         if (!modelBounds) return;
 
         const placedLabels = [];
-        const allLabels = [];
+        const allLabels = []; // Will store labels for PASS 2 (text boxes)
         const drawnDimensions = new Set(); // Track drawn dimensions to avoid duplicates
         const globalDimensionTracker = new Map(); // Track dimensions globally across all rooms
 
+        // PASS 1: Draw dimension LINES and collect text box info
         // Draw room dimensions (project room dimensions)
         if (rooms && rooms.length > 0) {
             rooms.forEach(room => {
@@ -870,9 +909,53 @@ const FloorCanvas = ({
                 drawPanelDimensions(ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker);
             });
         }
+        
+        // Return allLabels for PASS 2 (drawing text boxes on top)
+        return allLabels;
     };
 
-    // Draw room dimensions (helper function)
+    // PASS 2: Draw dimension text box (called after all lines are drawn)
+    const drawDimensionTextBox = (ctx, label) => {
+        if (!label) return;
+        
+        ctx.save();
+        
+        const { x, y, width, height, text, color, labelX, labelY, isHorizontal } = label;
+        
+        // Draw background
+        ctx.fillStyle = `rgba(255, 255, 255, ${DIMENSION_CONFIG.BACKGROUND_OPACITY})`;
+        ctx.fillRect(x, y, width, height);
+        
+        // Draw border
+        ctx.strokeStyle = color;
+        ctx.lineWidth = DIMENSION_CONFIG.LABEL_BORDER_WIDTH;
+        ctx.strokeRect(x, y, width, height);
+        
+        // Draw text
+        ctx.fillStyle = color;
+        const fontSize = Math.max(DIMENSION_CONFIG.FONT_SIZE_MIN, DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current);
+        ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+        
+        if (isHorizontal) {
+            // Horizontal text
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, labelX, labelY);
+        } else {
+            // Vertical text - rotate 90 degrees
+            ctx.save();
+            ctx.translate(labelX, labelY);
+            ctx.rotate(-Math.PI / 2);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 0, 0);
+            ctx.restore();
+        }
+        
+        ctx.restore();
+    };
+
+    // PASS 1: Draw dimension LINES (helper function) - text boxes drawn later
     const drawRoomDimensions = (ctx, dimension, bounds, placedLabels, allLabels) => {
         const { startX, endX, startY, endY, dimension: length, color, avoidArea } = dimension;
         const { minX, maxX, minY, maxY } = bounds || modelBounds || {};
@@ -898,10 +981,10 @@ const FloorCanvas = ({
         
         // Determine optimal label position
         let labelX, labelY;
-        let baseOffset = 25; // Increased base offset for better visibility
+        let baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Use config for consistency
         let offset = baseOffset;
         let attempts = 0;
-        const maxAttempts = 10;
+        const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
         
         // Initialize text and labelBounds variables
         let text;
@@ -933,7 +1016,7 @@ const FloorCanvas = ({
                 labelX = midX * scaleFactor.current + offsetX.current;
             } else {
                 // Vertical dimension: place to LEFT or RIGHT
-                const verticalOffset = Math.max(offset, 40); // Increased minimum vertical offset
+                const verticalOffset = Math.max(offset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET); // Use config for consistency
                 const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
                 const isLeftHalf = midX < projectMidX;
                 
@@ -952,44 +1035,29 @@ const FloorCanvas = ({
             // Update text width and label bounds for this iteration
             textWidth = ctx.measureText(text).width;
             
-            if (isHorizontal) {
-                labelBounds = {
-                    x: labelX - textWidth / 2 - 4,
-                    y: labelY - 8,
-                    width: textWidth + 8,
-                    height: 16
-                };
-            } else {
-                labelBounds = {
-                    x: labelX - 8,
-                    y: labelY - textWidth / 2 - 4,
-                    width: 16,
-                    height: textWidth + 8
-                };
-            }
+            // Calculate label bounds using shared utility
+            labelBounds = isHorizontal 
+                ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8)
+                : calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8);
             
-            const hasOverlap = placedLabels.some(existing => {
-                return !(labelBounds.x + labelBounds.width < existing.x || 
-                       existing.x + existing.width < labelBounds.x ||
-                       labelBounds.y + labelBounds.height < existing.y ||
-                       existing.y + existing.height < labelBounds.y);
-            });
+            // Check for overlaps using shared utility
+            const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
             
             if (!hasOverlap) break;
             
-            offset += 15;
+            offset += DIMENSION_CONFIG.OFFSET_INCREMENT;
             attempts++;
         } while (attempts < maxAttempts);
         
         // Draw dimension lines
         ctx.save();
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
         
         if (isHorizontal) {
             // Extension lines (vertical)
             ctx.beginPath();
-            ctx.setLineDash([5, 5]);
+            ctx.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
             ctx.moveTo(startX * scaleFactor.current + offsetX.current, startY * scaleFactor.current + offsetY.current);
             ctx.lineTo(startX * scaleFactor.current + offsetX.current, labelY);
             ctx.moveTo(endX * scaleFactor.current + offsetX.current, endY * scaleFactor.current + offsetY.current);
@@ -999,14 +1067,14 @@ const FloorCanvas = ({
             
             // Main dimension line (horizontal)
             ctx.beginPath();
-            ctx.lineWidth = 2;
+            ctx.lineWidth = DIMENSION_CONFIG.DIMENSION_LINE_WIDTH;
             ctx.moveTo(startX * scaleFactor.current + offsetX.current, labelY);
             ctx.lineTo(endX * scaleFactor.current + offsetX.current, labelY);
             ctx.stroke();
         } else {
             // Extension lines (horizontal)
             ctx.beginPath();
-            ctx.setLineDash([5, 5]);
+            ctx.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
             ctx.moveTo(startX * scaleFactor.current + offsetX.current, startY * scaleFactor.current + offsetY.current);
             ctx.lineTo(labelX, startY * scaleFactor.current + offsetY.current);
             ctx.moveTo(endX * scaleFactor.current + offsetX.current, endY * scaleFactor.current + offsetY.current);
@@ -1016,40 +1084,26 @@ const FloorCanvas = ({
             
             // Main dimension line (vertical)
             ctx.beginPath();
-            ctx.lineWidth = 2;
+            ctx.lineWidth = DIMENSION_CONFIG.DIMENSION_LINE_WIDTH;
             ctx.moveTo(labelX, startY * scaleFactor.current + offsetY.current);
             ctx.lineTo(labelX, endY * scaleFactor.current + offsetY.current);
             ctx.stroke();
         }
         
-        // Draw dimension text with proper rotation for vertical dimensions
-        ctx.fillStyle = color;
-        ctx.font = 'bold 15px Arial';
+        // Store text box info for PASS 2 (draw text boxes AFTER all dimension lines)
+        allLabels.push({
+            x: labelBounds.x,
+            y: labelBounds.y,
+            width: labelBounds.width,
+            height: labelBounds.height,
+            text: text,
+            color: color,
+            labelX: labelX,
+            labelY: labelY,
+            isHorizontal: isHorizontal
+        });
         
-        if (isHorizontal) {
-            // Horizontal text
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, labelX, labelY);
-        } else {
-            // Vertical text - rotate 90 degrees (like ceiling plan)
-            ctx.save();
-            ctx.translate(labelX, labelY);
-            ctx.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
-            
-            // Draw white background for vertical text (like ceiling plan)
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-            ctx.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
-            
-            // Draw the text
-            ctx.fillStyle = color;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 0, 0);
-            ctx.restore();
-        }
-        
-        // Add to placed labels
+        // Add to placed labels for collision detection
         placedLabels.push(labelBounds);
         
         ctx.restore();
@@ -1128,14 +1182,14 @@ const FloorCanvas = ({
                     drawnValues.add(fullValueKey);
                     
                     // Full panel: show normal individual dimension
-                    const individualDimension = {
-                        startX: panel.start_x,
-                        endX: panel.start_x + panel.width,
-                        startY: panel.start_y,
-                        endY: panel.start_y + panel.length,
-                        dimension: panelWidth,
-                        type: 'individual_panel',
-                        color: '#3b82f6', // Blue for full panels (matches panel color)
+                    const                         individualDimension = {
+                            startX: panel.start_x,
+                            endX: panel.start_x + panel.width,
+                            startY: panel.start_y,
+                            endY: panel.start_y + panel.length,
+                            dimension: panelWidth,
+                            type: 'individual_panel',
+                            color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
                         priority: 3,
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
@@ -1228,65 +1282,108 @@ const FloorCanvas = ({
 
     // Draw grouped panel dimensions (for both horizontal and vertical panels) - exactly like ceiling plan
     const drawGroupedPanelDimensions = (ctx, panels, width, placedLabels, allLabels, isHorizontal = false, globalDimensionTracker) => {
-        // For grouped panel dimensions, we want to show the WIDTH dimension
-        // This means for horizontal panels, show width dimension vertically (perpendicular to panel direction)
-        // For vertical panels, show width dimension horizontally (perpendicular to panel direction)
+        // For grouped panel dimensions, we want to show BOTH WIDTH and LENGTH dimensions
+        // This means for horizontal panels, show both width (horizontally) and length (vertically)
+        // For vertical panels, show both width (horizontally) and length (vertically)
         
         if (isHorizontal) {
-            // Horizontal panels: show LENGTH dimension vertically (perpendicular to panel direction)
-            // Find the center of the panel group
+            // Horizontal panels: show BOTH dimensions
+            // Find the center and bounds of the panel group
             const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.start_x + p.width))) / 2;
+            const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.start_y + p.length))) / 2;
+            const minX = Math.min(...panels.map(p => p.start_x));
+            const maxX = Math.max(...panels.map(p => p.start_x + p.width));
             const minY = Math.min(...panels.map(p => p.start_y));
             const maxY = Math.max(...panels.map(p => p.start_y + p.length));
             
-            // Create vertical dimension line (perpendicular to horizontal panels)
-            // For horizontal panels, we want to show the PANEL LENGTH, not panel width
-            const panelLength = panels[0].length; // Use panel length for horizontal panels
+            // 1. Panel LENGTH dimension (vertical) - shows how tall each panel is
+            const panelLength = panels[0].length;
             const lengthDimension = {
                 startX: centerX,
                 endX: centerX,
                 startY: minY,
                 endY: maxY,
-                dimension: panelLength, // Use panel length instead of width
+                dimension: panelLength,
                 type: 'grouped_length_horizontal',
-                color: '#3b82f6', // Blue for full panels (matches panel color)
+                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
                 priority: 2,
                 avoidArea: projectBounds,
                 quantity: panels.length,
                 drawnPositions: new Set(),
                 roomId: 'unknown',
-                isHorizontal: false // This dimension line is vertical (perpendicular to panels)
+                isHorizontal: false // This dimension line is vertical
             };
             
-            drawRoomDimensions(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
-        } else {
-            // Vertical panels: show width dimension horizontally (perpendicular to panel direction)
-            // Find the center of the panel group
-            const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.start_y + p.length))) / 2;
-            const minX = Math.min(...panels.map(p => p.start_x));
-            const maxX = Math.max(...panels.map(p => p.start_x + p.width));
-            
-            // For vertical panels, use the actual panel width (not the grouping dimension)
-            const actualPanelWidth = panels[0].width; // Use actual panel width (e.g., 1150mm)
-            
-            // Create horizontal dimension line (perpendicular to vertical panels)
+            // 2. Panel WIDTH dimension (horizontal) - shows how wide each panel is
+            const panelWidth = panels[0].width;
             const widthDimension = {
                 startX: minX,
                 endX: maxX,
                 startY: centerY,
                 endY: centerY,
-                dimension: actualPanelWidth, // Use actual panel width instead of grouping dimension
-                type: 'grouped_width_vertical',
-                color: '#3b82f6', // Blue for full panels (matches panel color)
+                dimension: panelWidth,
+                type: 'grouped_width_horizontal',
+                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
                 priority: 2,
                 avoidArea: projectBounds,
                 quantity: panels.length,
                 drawnPositions: new Set(),
                 roomId: 'unknown',
-                isHorizontal: true // This dimension line is horizontal (perpendicular to panels)
+                isHorizontal: true // This dimension line is horizontal
             };
             
+            // Draw both dimensions
+            drawRoomDimensions(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
             drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+        } else {
+            // Vertical panels: show BOTH dimensions
+            // Find the center and bounds of the panel group
+            const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.start_x + p.width))) / 2;
+            const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.start_y + p.length))) / 2;
+            const minX = Math.min(...panels.map(p => p.start_x));
+            const maxX = Math.max(...panels.map(p => p.start_x + p.width));
+            const minY = Math.min(...panels.map(p => p.start_y));
+            const maxY = Math.max(...panels.map(p => p.start_y + p.length));
+            
+            // 1. Panel WIDTH dimension (horizontal) - shows how wide each panel is
+            const actualPanelWidth = panels[0].width;
+            const widthDimension = {
+                startX: minX,
+                endX: maxX,
+                startY: centerY,
+                endY: centerY,
+                dimension: actualPanelWidth,
+                type: 'grouped_width_vertical',
+                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                priority: 2,
+                avoidArea: projectBounds,
+                quantity: panels.length,
+                drawnPositions: new Set(),
+                roomId: 'unknown',
+                isHorizontal: true // This dimension line is horizontal
+            };
+            
+            // 2. Panel LENGTH dimension (vertical) - shows how long each panel is
+            const panelLength = panels[0].length;
+            const lengthDimension = {
+                startX: centerX,
+                endX: centerX,
+                startY: minY,
+                endY: maxY,
+                dimension: panelLength,
+                type: 'grouped_length_vertical',
+                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                priority: 2,
+                avoidArea: projectBounds,
+                quantity: panels.length,
+                drawnPositions: new Set(),
+                roomId: 'unknown',
+                isHorizontal: false // This dimension line is vertical
+            };
+            
+            // Draw both dimensions
+            drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+            drawRoomDimensions(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
         }
     };
 
@@ -1525,55 +1622,6 @@ const FloorCanvas = ({
 
     return (
         <div className="floor-canvas-container">
-            {/* Plan Summary Header */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-6">
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-blue-600">{panelCounts.total}</div>
-                            <div className="text-sm text-gray-600">Total Panels</div>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-xl font-semibold text-green-600">{panelCounts.full}</div>
-                            <div className="text-sm text-gray-600">Full Panels</div>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-xl font-semibold text-orange-600">{panelCounts.cut}</div>
-                            <div className="text-sm text-gray-600">Cut Panels</div>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-xl font-semibold text-purple-600">
-                                {floorPlan?.waste_percentage ? `${floorPlan.waste_percentage.toFixed(1)}%` : '0%'}
-                            </div>
-                            <div className="text-sm text-gray-600">Waste</div>
-                        </div>
-                    </div>
-                    
-                    <div className="text-right">
-                        <div className="text-sm text-gray-600">Panel Floor Area (excl. walls)</div>
-                        <div className="text-lg font-semibold text-gray-900">
-                            {(() => {
-                                // Calculate area from actual panel data (more reliable than floorPlan.total_area)
-                                const calculatedArea = calculatePanelFloorArea();
-                                
-                                if (calculatedArea === 0) return '0.00 m²';
-                                
-                                return `${calculatedArea.toFixed(2)} m²`;
-                            })()}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                            {(() => {
-                                const panelRooms = rooms?.filter(room => 
-                                    room.floor_type === 'panel' || room.floor_type === 'Panel'
-                                ) || [];
-                                const totalRooms = rooms?.length || 0;
-                                return `${panelRooms.length} of ${totalRooms} rooms have panel floors`;
-                            })()}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             {/* Canvas Container with Right Side Summary */}
             <div className="flex gap-6">
                 {/* Main Canvas */}

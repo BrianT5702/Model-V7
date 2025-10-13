@@ -567,7 +567,7 @@ const ProjectDetails = () => {
                                         </div>
                                         <div className="text-sm text-gray-600">
                                             {projectDetails.currentView === 'wall-plan' 
-                                                ? 'Click and drag to navigate, use scroll to zoom'
+                                                ? ''
                                                 : projectDetails.currentView === 'ceiling-plan'
                                                 ? 'Generate and manage ceiling panels for optimal coverage'
                                                 : projectDetails.currentView === 'floor-plan'

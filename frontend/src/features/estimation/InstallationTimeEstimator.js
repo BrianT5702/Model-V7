@@ -620,26 +620,24 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
 
     // Calculate total quantities from all sources
     const totalQuantities = useMemo(() => {
-        if (!rooms.length) return { panels: 0, doors: 0, slabs: 0 };
-
-        // Count ceiling panels from generated ceiling plans
-        const ceilingPanels = ceilingPlans.reduce((total, plan) => {
+        // Count ceiling panels from generated ceiling plans (only if rooms exist)
+        const ceilingPanels = rooms.length > 0 ? ceilingPlans.reduce((total, plan) => {
             return total + (plan.total_panels || 0);
-        }, 0);
+        }, 0) : 0;
 
-        // Count floor panels from generated floor plans
-        const floorPanels = floorPlans.reduce((total, plan) => {
+        // Count floor panels from generated floor plans (only if rooms exist)
+        const floorPanels = rooms.length > 0 ? floorPlans.reduce((total, plan) => {
             return total + (plan.total_panels || 0);
-        }, 0);
+        }, 0) : 0;
 
-        // Calculate wall panels using PanelCalculator
+        // Calculate wall panels using PanelCalculator (independent of rooms)
         const wallPanelsCount = calculateWallPanels(walls);
 
-        // Count doors from actual project data
+        // Count doors from actual project data (independent of rooms)
         const totalDoors = doors.length;
 
         // Calculate slabs needed based on room area (only for rooms with slab floors)
-        const totalSlabs = rooms.reduce((total, room) => {
+        const totalSlabs = rooms.length > 0 ? rooms.reduce((total, room) => {
             if (room.room_points && room.room_points.length > 0 && 
                 (room.floor_type === 'slab' || room.floor_type === 'Slab')) {
                 const roomArea = calculateRoomArea(room.room_points);
@@ -648,7 +646,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                 return total + slabsNeeded;
             }
             return total;
-        }, 0);
+        }, 0) : 0;
 
         return {
             panels: ceilingPanels + floorPanels + wallPanelsCount,
@@ -667,8 +665,8 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
         const doorDays = Math.ceil(totalQuantities.doors / doorsPerDay);
         const slabDays = Math.ceil(totalQuantities.slabs / slabsPerDay);
 
-        // Total days needed (assuming parallel work where possible)
-        const totalDays = Math.max(panelDays, doorDays, slabDays);
+        // Total days needed (sequential work - all tasks added together)
+        const totalDays = panelDays + doorDays + slabDays;
         
         // Add some buffer for coordination and unexpected issues
         const daysWithBuffer = Math.ceil(totalDays * 1.2);
@@ -1422,7 +1420,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                 
                 <div className="mt-4 p-3 bg-indigo-100 rounded-lg">
                     <p className="text-sm text-indigo-800">
-                        <strong>Note:</strong> This estimate assumes parallel work where possible and includes a 20% buffer for coordination and unexpected issues. 
+                        <strong>Note:</strong> This estimate assumes sequential work (panels, doors, and slabs installed one after another) and includes a 20% buffer for coordination and unexpected issues. 
                         Actual installation time may vary based on site conditions, crew size, and other factors.
                     </p>
                 </div>

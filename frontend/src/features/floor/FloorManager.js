@@ -227,7 +227,10 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
             
             if (response.data && !response.data.error) {
                 setOrientationAnalysis(response.data);
-                setSelectedOrientationStrategy(response.data.recommended_strategy);
+                // Only update strategy if no floor plan exists yet
+                if (!floorPlan) {
+                    setSelectedOrientationStrategy(response.data.recommended_strategy);
+                }
             }
         } catch (error) {
             console.error('Error loading orientation analysis:', error);
@@ -257,8 +260,29 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                 console.log('   - floor_panels field:', response.data.floor_panels);
                 console.log('   - floor_plans field:', response.data.floor_plans);
                 
-                // Set the floor plan data
-                setFloorPlan(response.data);
+                // Extract the floor plan summary for the project
+                // Create a unified floor plan object with PROJECT-LEVEL statistics
+                const unifiedFloorPlan = {
+                    // From the generation response
+                    ...response.data,
+                    
+                    // Use PROJECT-LEVEL statistics (aggregate of all rooms), NOT first room only!
+                    total_panels: response.data.summary?.total_panels || response.data.floor_panels?.length || 0,
+                    full_panels: response.data.floor_panels?.filter(p => !p.is_cut_panel).length || 0,
+                    cut_panels: response.data.floor_panels?.filter(p => p.is_cut_panel).length || 0,
+                    waste_percentage: response.data.summary?.average_waste_percentage || 0,
+                    
+                    // Ensure we have the correct strategy fields for UI display
+                    orientation_strategy: response.data.strategy_used || response.data.recommended_strategy || 'auto',
+                    
+                    // Keep the generation response data
+                    floor_panels: response.data.floor_panels,
+                    floor_plans: response.data.floor_plans,  // Keep individual room plans
+                    leftover_stats: response.data.leftover_stats,
+                    summary: response.data.summary
+                };
+                
+                setFloorPlan(unifiedFloorPlan);
                 
                 // Set floor panels from response
                 const panels = response.data.floor_panels || [];

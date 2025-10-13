@@ -37,11 +37,67 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     // Track if current plan needs regeneration due to dimension changes
     const [planNeedsRegeneration, setPlanNeedsRegeneration] = useState(false);
 
+    // Room selection state
+    const [selectedRoomId, setSelectedRoomId] = useState(null);
+    const [showAllRooms, setShowAllRooms] = useState(true);
+    const [showRoomDetails, setShowRoomDetails] = useState(false);
+    
+    // Handle room selection from canvas click
+    const handleRoomSelection = (roomId) => {
+        setSelectedRoomId(roomId);
+        setShowAllRooms(false); // Switch to single room view
+        setShowRoomDetails(true); // Auto-expand details
+    };
+    
+    // Handle deselection (return to all rooms view)
+    const handleRoomDeselection = () => {
+        setSelectedRoomId(null);
+        setShowAllRooms(true);
+        setShowRoomDetails(false);
+    };
+    
+    // Room-specific editing state
+    const [roomEditConfig, setRoomEditConfig] = useState({
+        ceilingThickness: ceilingThickness,
+        panelWidth: panelWidth,
+        panelLength: panelLength,
+        customPanelLength: customPanelLength,
+        orientationStrategy: selectedOrientationStrategy
+    });
+    const [isRegeneratingRoom, setIsRegeneratingRoom] = useState(false);
+    const [roomRegenerationSuccess, setRoomRegenerationSuccess] = useState(false);
+
     useEffect(() => {
         if (projectId) {
             loadProjectData();
         }
     }, [projectId]);
+    
+    // Sync room edit config when room is selected - use room's current ceiling plan settings if available
+    useEffect(() => {
+        if (selectedRoomId) {
+            const selectedRoom = allRooms.find(r => r.id === selectedRoomId);
+            if (selectedRoom && selectedRoom.ceiling_plan) {
+                // Use the room's current ceiling plan settings
+                setRoomEditConfig({
+                    ceilingThickness: selectedRoom.ceiling_plan.ceiling_thickness || ceilingThickness,
+                    panelWidth: selectedRoom.ceiling_plan.panel_width || panelWidth,
+                    panelLength: selectedRoom.ceiling_plan.panel_length || panelLength,
+                    customPanelLength: selectedRoom.ceiling_plan.custom_panel_length || customPanelLength,
+                    orientationStrategy: selectedRoom.ceiling_plan.orientation_strategy || selectedOrientationStrategy
+                });
+            } else {
+                // Use global settings as fallback
+                setRoomEditConfig({
+                    ceilingThickness: ceilingThickness,
+                    panelWidth: panelWidth,
+                    panelLength: panelLength,
+                    customPanelLength: customPanelLength,
+                    orientationStrategy: selectedOrientationStrategy
+                });
+            }
+        }
+    }, [selectedRoomId, allRooms, ceilingThickness, panelWidth, panelLength, customPanelLength, selectedOrientationStrategy]);
 
     const loadProjectData = async () => {
         try {
@@ -194,6 +250,122 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         }
     };
 
+    // Generate ceiling plan for a specific room only
+    const generateCeilingPlanForRoom = async (roomId, config) => {
+        setIsRegeneratingRoom(true);
+        setError(null);
+        setRoomRegenerationSuccess(false);
+
+        console.log('🔄 Regenerating ceiling plan for room:', roomId);
+        console.log('📊 Configuration:', config);
+
+        try {
+            // Send room-specific configuration to backend
+            const response = await api.post('/ceiling-plans/generate_enhanced_ceiling_plan/', {
+                project_id: parseInt(projectId),
+                orientation_strategy: selectedOrientationStrategy,
+                panel_width: panelWidth,  // Global panel width (for other rooms)
+                panel_length: panelLength,  // Global panel length (for other rooms)
+                ceiling_thickness: ceilingThickness,  // Global thickness (for other rooms)
+                custom_panel_length: customPanelLength,  // Global custom length (for other rooms)
+                support_type: supportType,
+                support_config: {
+                    ...nylonHangerOptions,
+                    aluSuspensionCustomDrawing
+                },
+                // Room-specific configuration - ONLY this room will use these settings
+                room_specific_config: {
+                    room_id: roomId,
+                    panel_width: config.panelWidth,
+                    panel_length: config.panelLength === 'auto' ? 'auto' : config.customPanelLength,
+                    ceiling_thickness: config.ceilingThickness,
+                    custom_panel_length: config.panelLength === 'auto' ? null : config.customPanelLength,
+                    orientation_strategy: config.orientationStrategy,
+                    support_type: supportType,
+                    support_config: {
+                        ...nylonHangerOptions,
+                        aluSuspensionCustomDrawing
+                    }
+                }
+            });
+            
+            console.log('✅ API Response:', response.data);
+
+            // Check if we have the expected data structure
+            // Backend returns: enhanced_panels, ceiling_plans, strategy_used, etc.
+            if (response.data.enhanced_panels || response.data.ceiling_plans) {
+                console.log('✅ Ceiling plan generated successfully');
+                
+                // The backend returns enhanced_panels (with room assignments)
+                const newPanels = response.data.enhanced_panels || [];
+                console.log(`📦 Received ${newPanels.length} panels`);
+                
+                // Update ceiling plan (take the first one or the one for this room)
+                if (response.data.ceiling_plans && response.data.ceiling_plans.length > 0) {
+                    // Try to find the ceiling plan for the selected room
+                    const roomCeilingPlan = response.data.ceiling_plans.find(cp => cp.room_id === roomId);
+                    setCeilingPlan(roomCeilingPlan || response.data.ceiling_plans[0]);
+                }
+                
+                // Update all panels
+                setCeilingPanels(newPanels);
+                
+                // Reload project data to ensure we have the latest data
+                await loadExistingCeilingPlan();
+                
+                // Update shared panel data if callback provided
+                if (updateSharedPanelData) {
+                    const processedPanels = processCeilingPanelsForSharing(newPanels, allRooms);
+                    updateSharedPanelData('ceiling', processedPanels);
+                }
+
+                // Notify parent if callback provided
+                if (onCeilingPlanGenerated) {
+                    onCeilingPlanGenerated({
+                        ceiling_plans: response.data.ceiling_plans,
+                        ceiling_panels: newPanels,
+                        room_id: roomId
+                    });
+                }
+                
+                console.log('✅ State updated successfully');
+                
+                // Reload the room data to get updated ceiling plan details
+                const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
+                setAllRooms(roomsResponse.data || []);
+                console.log('✅ Room data reloaded');
+                
+                // Update the roomEditConfig to reflect the new values from the database
+                const updatedRoom = roomsResponse.data.find(r => r.id === roomId);
+                if (updatedRoom && updatedRoom.ceiling_plan) {
+                    setRoomEditConfig({
+                        ceilingThickness: updatedRoom.ceiling_plan.ceiling_thickness,
+                        panelWidth: updatedRoom.ceiling_plan.panel_width,
+                        panelLength: updatedRoom.ceiling_plan.panel_length,
+                        customPanelLength: updatedRoom.ceiling_plan.custom_panel_length,
+                        orientationStrategy: updatedRoom.ceiling_plan.orientation_strategy
+                    });
+                    console.log('✅ Room edit config updated with new values from database');
+                }
+                
+                // Show success message
+                setRoomRegenerationSuccess(true);
+                setTimeout(() => setRoomRegenerationSuccess(false), 3000);
+            } else {
+                console.error('❌ API returned unexpected response structure:', response.data);
+                setError('Failed to generate ceiling plan. Please try again.');
+            }
+        } catch (error) {
+            console.error('❌ Error regenerating ceiling plan for room:', error);
+            console.error('Error details:', error.response?.data);
+            const errorMessage = error.response?.data?.error || error.message || 'Failed to regenerate ceiling plan for this room. Please try again.';
+            setError(errorMessage);
+        } finally {
+            console.log('🏁 Finished regeneration process');
+            setIsRegeneratingRoom(false);
+        }
+    };
+
     const generateCeilingPlan = async () => {
         if (!projectId) {
             setError('No project selected');
@@ -238,7 +410,11 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         includeAccessories: nylonHangerOptions.includeAccessories,
                         includeCable: nylonHangerOptions.includeCable,
                         aluSuspensionCustomDrawing: aluSuspensionCustomDrawing,
-                        panelsNeedSupport: panelsNeedSupport
+                        panelsNeedSupport: panelsNeedSupport,
+                        // Room selection information
+                        selectedRoomId: selectedRoomId,
+                        showAllRooms: showAllRooms,
+                        roomCount: allRooms.length
                     });
                 }
             } else {
@@ -335,6 +511,41 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             Generate optimal ceiling panel layout for the entire project
                         </p>
                     </div>
+                    
+                    {/* Room Selection Controls */}
+                    {allRooms.length > 1 && (
+                        <div className="flex items-center space-x-4">
+                            <div className="flex items-center space-x-2">
+                                <label className="text-sm font-medium text-gray-700">View:</label>
+                                <select
+                                    value={showAllRooms ? 'all' : selectedRoomId || ''}
+                                    onChange={(e) => {
+                                        if (e.target.value === 'all') {
+                                            setShowAllRooms(true);
+                                            setSelectedRoomId(null);
+                                        } else {
+                                            setShowAllRooms(false);
+                                            setSelectedRoomId(parseInt(e.target.value));
+                                        }
+                                    }}
+                                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="all">All Rooms</option>
+                                    {allRooms.map(room => (
+                                        <option key={room.id} value={room.id}>
+                                            {room.room_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {!showAllRooms && selectedRoomId && (
+                                <div className="text-sm text-gray-600">
+                                    <span className="font-medium">Selected:</span> {allRooms.find(r => r.id === selectedRoomId)?.room_name}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -622,7 +833,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     <div className="space-y-6">
                         {/* Canvas */}
                         <CeilingCanvas
-                            rooms={allRooms}
+                            rooms={showAllRooms ? allRooms : allRooms.filter(room => room.id === selectedRoomId)}
                             walls={allWalls}
                             intersections={allIntersections}
                             ceilingPlan={ceilingPlan}
@@ -636,10 +847,13 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                     ceilingPanels.forEach(panel => {
                                         const roomId = panel.room_id;
                                         if (roomId) {
+                                            // Filter panels based on room selection
+                                            if (showAllRooms || roomId === selectedRoomId) {
                                             if (!panelsMap[roomId]) {
                                                 panelsMap[roomId] = [];
                                             }
                                             panelsMap[roomId].push(panel);
+                                            }
                                         }
                                     });
                                 }
@@ -652,7 +866,216 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             nylonHangerOptions={nylonHangerOptions}
                             aluSuspensionCustomDrawing={aluSuspensionCustomDrawing}
                             panelsNeedSupport={panelsNeedSupport}
+                            // Room selection props
+                            selectedRoomId={selectedRoomId}
+                            showAllRooms={showAllRooms}
+                            onRoomSelect={handleRoomSelection}
+                            onRoomDeselect={handleRoomDeselection}
                         />
+                        
+                        {/* Success Message */}
+                        {roomRegenerationSuccess && (
+                            <div className="mt-4 bg-green-100 border-2 border-green-500 rounded-lg p-4 flex items-center gap-3 animate-pulse">
+                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                <div>
+                                    <p className="font-semibold text-green-800">Success!</p>
+                                    <p className="text-sm text-green-700">Ceiling plan regenerated for this room only.</p>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Room Details Panel */}
+                        {selectedRoomId && !showAllRooms && (
+                            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-semibold text-blue-900">
+                                        Room Details: {allRooms.find(r => r.id === selectedRoomId)?.room_name}
+                                    </h3>
+                                    <button
+                                        onClick={() => setShowRoomDetails(!showRoomDetails)}
+                                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                                    >
+                                        {showRoomDetails ? 'Hide Details' : 'Show Details'}
+                                    </button>
+                                </div>
+                                
+                                {showRoomDetails && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Room Information */}
+                                        <div className="bg-white p-4 rounded-lg border">
+                                            <h4 className="font-semibold text-gray-800 mb-3">Room Information</h4>
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-600">Room Name:</span>
+                                                    <span className="font-medium">{allRooms.find(r => r.id === selectedRoomId)?.room_name}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-600">Room Height:</span>
+                                                    <span className="font-medium">{allRooms.find(r => r.id === selectedRoomId)?.height || 'Default'} mm</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-600">Panel Count:</span>
+                                                    <span className="font-medium">
+                                                        {ceilingPanels.filter(p => p.room_id === selectedRoomId).length} panels
+                                                    </span>
+                                                </div>
+                                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                                    <h5 className="font-semibold text-gray-700 mb-2">Current Ceiling Settings</h5>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-600">Ceiling Thickness:</span>
+                                                        <span className="font-medium text-blue-600">
+                                                            {allRooms.find(r => r.id === selectedRoomId)?.ceiling_plan?.ceiling_thickness || 'Not set'} mm
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-600">Panel Width:</span>
+                                                        <span className="font-medium text-blue-600">
+                                                            {allRooms.find(r => r.id === selectedRoomId)?.ceiling_plan?.panel_width || 'Not set'} mm
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-600">Orientation:</span>
+                                                        <span className="font-medium text-blue-600 capitalize">
+                                                            {(() => {
+                                                                const strategy = allRooms.find(r => r.id === selectedRoomId)?.ceiling_plan?.orientation_strategy;
+                                                                if (!strategy) return 'Not set';
+                                                                if (strategy === 'all_vertical') return 'Vertical';
+                                                                if (strategy === 'all_horizontal') return 'Horizontal';
+                                                                if (strategy === 'auto') return 'Auto';
+                                                                return strategy.replace(/_/g, ' ');
+                                                            })()}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                         {/* Ceiling Configuration */}
+                                        <div className="bg-white p-4 rounded-lg border">
+                                            <h4 className="font-semibold text-gray-800 mb-3">Edit Ceiling Settings</h4>
+                                            <div className="space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-sm text-gray-600">Ceiling Thickness:</label>
+                                                    <input
+                                                        type="number"
+                                                        min="50"
+                                                        max="500"
+                                                        step="10"
+                                                        value={roomEditConfig.ceilingThickness}
+                                                        onChange={(e) => setRoomEditConfig({...roomEditConfig, ceilingThickness: parseInt(e.target.value)})}
+                                                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span className="text-xs text-gray-500">mm</span>
+                                                </div>
+                                                
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-sm text-gray-600">Panel Width:</label>
+                                                    <input
+                                                        type="number"
+                                                        min="100"
+                                                        max="3000"
+                                                        step="50"
+                                                        value={roomEditConfig.panelWidth}
+                                                        onChange={(e) => setRoomEditConfig({...roomEditConfig, panelWidth: parseInt(e.target.value)})}
+                                                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span className="text-xs text-gray-500">mm</span>
+                                                </div>
+                                                
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-sm text-gray-600">Orientation:</label>
+                                                    <select
+                                                        value={roomEditConfig.orientationStrategy}
+                                                        onChange={(e) => setRoomEditConfig({...roomEditConfig, orientationStrategy: e.target.value})}
+                                                        className="flex-1 ml-2 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                    >
+                                                        <option value="auto">Auto (Best)</option>
+                                                        <option value="all_vertical">Vertical</option>
+                                                        <option value="all_horizontal">Horizontal</option>
+                                                        <option value="room_optimal">Room Optimal</option>
+                                                    </select>
+                                                </div>
+                                                
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-sm text-gray-600">Panel Length:</label>
+                                                    <select
+                                                        value={roomEditConfig.panelLength}
+                                                        onChange={(e) => setRoomEditConfig({...roomEditConfig, panelLength: e.target.value})}
+                                                        className="px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                    >
+                                                        <option value="auto">Auto</option>
+                                                        <option value="custom">Custom</option>
+                                                    </select>
+                                                </div>
+                                                
+                                                {roomEditConfig.panelLength === 'custom' && (
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-sm text-gray-600">Custom Length:</label>
+                                                        <input
+                                                            type="number"
+                                                            min="1000"
+                                                            max="20000"
+                                                            step="100"
+                                                            value={roomEditConfig.customPanelLength}
+                                                            onChange={(e) => setRoomEditConfig({...roomEditConfig, customPanelLength: parseInt(e.target.value)})}
+                                                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                        <span className="text-xs text-gray-500">mm</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Action Buttons */}
+                                {showRoomDetails && (
+                                    <div className="mt-4 flex items-center justify-between">
+                                        <div className="text-xs text-gray-600 italic">
+                                            💡 Changes will apply only to this room. Other rooms keep their current settings.
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setRoomEditConfig({
+                                                    ceilingThickness: ceilingThickness,
+                                                    panelWidth: panelWidth,
+                                                    panelLength: panelLength,
+                                                    customPanelLength: customPanelLength,
+                                                    orientationStrategy: selectedOrientationStrategy
+                                                })}
+                                                className="px-4 py-2 bg-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-400 transition-colors font-medium"
+                                            >
+                                                Reset to Global
+                                            </button>
+                                            <button
+                                                onClick={() => generateCeilingPlanForRoom(selectedRoomId, roomEditConfig)}
+                                                disabled={isRegeneratingRoom}
+                                                className={`px-6 py-2 text-sm rounded-lg font-medium transition-colors shadow-md ${
+                                                    isRegeneratingRoom
+                                                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                                        : 'bg-green-600 text-white hover:bg-green-700'
+                                                }`}
+                                            >
+                                                {isRegeneratingRoom ? (
+                                                    <span className="flex items-center gap-2">
+                                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                                                        </svg>
+                                                        Applying...
+                                                    </span>
+                                                ) : (
+                                                    '✓ Apply Settings to this room only'
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
                         {/* Debug info */}
                         {/* <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
                             <div>Debug Info:</div>

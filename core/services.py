@@ -1,6 +1,135 @@
 from django.db import transaction
 from .models import Wall, Room, Door
 from django.utils import timezone
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
+
+class LeftoverTracker:
+    """
+    Tracks leftover panels from cutting operations for reuse in ceiling and floor plans.
+    Similar to the wall panel leftover tracking system.
+    """
+    def __init__(self, context='ACTUAL'):
+        """
+        Args:
+            context: 'ACTUAL' for real generation, 'ANALYSIS' for strategy evaluation
+        """
+        self.leftovers = []  # Array to store leftover panels
+        self.context = context  # Track whether this is for actual generation or just analysis
+        self.stats = {
+            'leftovers_created': 0,
+            'leftovers_reused': 0,
+            'full_panels_saved': 0,
+            'total_leftover_area': 0.0
+        }
+    
+    def add_leftover(self, length, thickness, width_remaining):
+        """
+        Add a leftover panel to the tracker.
+        
+        Args:
+            length: Panel length in mm (e.g., 5000mm)
+            thickness: Panel thickness in mm (e.g., 150mm)
+            width_remaining: Remaining width after cut in mm (e.g., 550mm from 1150mm)
+        """
+        if width_remaining > 0:
+            leftover = {
+                'id': f"{int(time.time() * 1000)}_{len(self.leftovers)}",
+                'length': length,
+                'thickness': thickness,
+                'width': width_remaining,
+                'created_at': time.time()
+            }
+            self.leftovers.append(leftover)
+            self.stats['leftovers_created'] += 1
+            self.stats['total_leftover_area'] += length * width_remaining
+            
+            # Log with context prefix
+            prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
+            logger.info(f"{prefix} Leftover created: {width_remaining}mm × {length}mm (thickness: {thickness}mm)")
+    
+    def find_compatible_leftover(self, needed_width, needed_length, needed_thickness):
+        """
+        Find a compatible leftover panel that can be used.
+        
+        Args:
+            needed_width: Required panel width in mm
+            needed_length: Required panel length in mm
+            needed_thickness: Required panel thickness in mm
+            
+        Returns:
+            Compatible leftover dict or None
+        """
+        for leftover in self.leftovers:
+            # Check if leftover matches requirements
+            # Allow leftover length >= needed length (we can cut longer panels to shorter length)
+            if (leftover['length'] >= needed_length and 
+                leftover['thickness'] == needed_thickness and 
+                leftover['width'] >= needed_width):
+                
+                prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
+                logger.info(f"{prefix} Compatible leftover found: {leftover['width']}mm × {leftover['length']}mm "
+                           f"(needed: {needed_width}mm × {needed_length}mm)")
+                return leftover
+        
+        return None
+    
+    def use_leftover(self, leftover, width_used):
+        """
+        Use part of a leftover panel and update its remaining width.
+        
+        Args:
+            leftover: The leftover dict to use
+            width_used: Width being used from the leftover in mm
+        """
+        remaining_width = leftover['width'] - width_used
+        
+        prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
+        logger.info(f"{prefix} Using leftover {leftover['id']}: {width_used}mm from {leftover['width']}mm, "
+                   f"remaining: {remaining_width}mm")
+        
+        if remaining_width > 0:
+            # Update leftover width
+            leftover['width'] = remaining_width
+        else:
+            # Leftover fully used, remove it
+            self.leftovers.remove(leftover)
+            prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
+            logger.info(f"{prefix} Leftover {leftover['id']} fully consumed")
+        
+        self.stats['leftovers_reused'] += 1
+        self.stats['full_panels_saved'] += 1  # Each leftover use saves a full panel cut
+    
+    def cleanup_leftovers(self):
+        """Remove leftovers with zero or negative width."""
+        before_count = len(self.leftovers)
+        self.leftovers = [lo for lo in self.leftovers if lo['width'] > 0]
+        after_count = len(self.leftovers)
+        
+        if before_count != after_count:
+            logger.info(f"Cleaned up {before_count - after_count} exhausted leftovers")
+    
+    def get_stats(self):
+        """Get statistics about leftover usage."""
+        return {
+            **self.stats,
+            'current_leftovers_count': len(self.leftovers),
+            'current_leftovers': self.leftovers.copy()
+        }
+    
+    def reset(self):
+        """Reset the tracker for a new calculation."""
+        self.leftovers = []
+        self.stats = {
+            'leftovers_created': 0,
+            'leftovers_reused': 0,
+            'full_panels_saved': 0,
+            'total_leftover_area': 0.0
+        }
+
 
 def normalize_wall_coordinates(start_x, start_y, end_x, end_y):
     """
@@ -591,46 +720,56 @@ class FloorService:
         if not bounding_box:
             return strategies
         
-        # Strategy 1: All Horizontal
+        # Strategy 1: All Horizontal (with leftover tracking for analysis)
+        horizontal_tracker = LeftoverTracker(context='ANALYSIS-H')  # Mark as analysis
+        floor_thickness = float(room.floor_thickness) if hasattr(room, 'floor_thickness') and room.floor_thickness else 20.0
         horizontal_panels = FloorService._generate_floor_panels(
-            bounding_box, room.room_points, 'horizontal', panel_width, panel_length, room.project.wall_thickness
+            bounding_box, room.room_points, 'horizontal', panel_width, panel_length, room.project.wall_thickness, horizontal_tracker, floor_thickness
         )
-        horizontal_waste = FloorService._calculate_floor_waste(horizontal_panels, room, room.project.wall_thickness)
+        horizontal_waste = FloorService._calculate_floor_waste(horizontal_panels, room, room.project.wall_thickness, horizontal_tracker)
+        horizontal_stats = horizontal_tracker.get_stats()
         
         strategies.append({
             'strategy_name': 'all_horizontal',
             'orientation_type': 'horizontal',
             'total_panels': len(horizontal_panels),
             'total_waste_percentage': horizontal_waste,
-            'panels': horizontal_panels
+            'panels': horizontal_panels,
+            'leftover_stats': horizontal_stats
         })
         
-        # Strategy 2: All Vertical
+        # Strategy 2: All Vertical (with leftover tracking for analysis)
+        vertical_tracker = LeftoverTracker(context='ANALYSIS-V')  # Mark as analysis
         vertical_panels = FloorService._generate_floor_panels(
-            bounding_box, room.room_points, 'vertical', panel_width, panel_length, room.project.wall_thickness
+            bounding_box, room.room_points, 'vertical', panel_width, panel_length, room.project.wall_thickness, vertical_tracker, floor_thickness
         )
-        vertical_waste = FloorService._calculate_floor_waste(vertical_panels, room, room.project.wall_thickness)
+        vertical_waste = FloorService._calculate_floor_waste(vertical_panels, room, room.project.wall_thickness, vertical_tracker)
+        vertical_stats = vertical_tracker.get_stats()
         
         strategies.append({
             'strategy_name': 'all_vertical',
             'orientation_type': 'vertical',
             'total_panels': len(vertical_panels),
             'total_waste_percentage': vertical_waste,
-            'panels': vertical_panels
+            'panels': vertical_panels,
+            'leftover_stats': vertical_stats
         })
         
-        # Strategy 3: Mixed (best of both)
+        # Strategy 3: Mixed (best of both) with leftover tracking for analysis
+        mixed_tracker = LeftoverTracker(context='ANALYSIS-M')  # Mark as analysis
         mixed_panels = FloorService._generate_mixed_floor_panels(
-            bounding_box, room.room_points, panel_width, panel_length, room.project.wall_thickness
+            bounding_box, room.room_points, panel_width, panel_length, room.project.wall_thickness, mixed_tracker, floor_thickness
         )
-        mixed_waste = FloorService._calculate_floor_waste(mixed_panels, room, room.project.wall_thickness)
+        mixed_waste = FloorService._calculate_floor_waste(mixed_panels, room, room.project.wall_thickness, mixed_tracker)
+        mixed_stats = mixed_tracker.get_stats()
         
         strategies.append({
             'strategy_name': 'mixed_optimal',
             'orientation_type': 'mixed',
             'total_panels': len(mixed_panels),
             'total_waste_percentage': mixed_waste,
-            'panels': mixed_panels
+            'panels': mixed_panels,
+            'leftover_stats': mixed_stats
         })
         
         return strategies
@@ -670,8 +809,8 @@ class FloorService:
         return bounding_box
     
     @staticmethod
-    def _generate_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness):
-        """Generate floor panels for a specific orientation (excluding wall areas)"""
+    def _generate_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+        """Generate floor panels for a specific orientation (excluding wall areas) with leftover tracking"""
         panels = []
         
         # Use the same approach as ceiling plan: shape-aware panel generation
@@ -680,17 +819,20 @@ class FloorService:
         # Check if room is L-shaped and split into regions if needed
         if len(room_points) > 4:
             return FloorService._generate_shape_aware_floor_panels(
-                bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
+                bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
             )
         else:
             return FloorService._generate_standard_floor_panels(
-                bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
+                bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
             )
     
     @staticmethod
-    def _generate_standard_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness):
-        """Generate standard floor panels for rectangular rooms"""
+    def _generate_standard_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+        """Generate standard floor panels for rectangular rooms with leftover tracking"""
         panels = []
+        MAX_PANEL_WIDTH = 1150  # Standard maximum panel width in mm
+        # Use actual floor thickness from room, not hardcoded value
+        PANEL_THICKNESS = floor_thickness
         
         if orientation == 'horizontal':
             # Generate horizontal panels with 1150mm width constraint
@@ -716,17 +858,51 @@ class FloorService:
                         # Check if this panel will be a cut panel (like ceiling plan logic)
                         is_cut = False
                         cut_notes = ""
+                        from_leftover = False
                         
-                        # If panel extends beyond the bounding box, mark as cut
+                        # LEFTOVER TRACKING: Check if we need a cut panel
+                        if panel_height < MAX_PANEL_WIDTH:
+                            # This panel needs to be cut
+                            if leftover_tracker:
+                                # Try to find a compatible leftover
+                                compatible_leftover = leftover_tracker.find_compatible_leftover(
+                                    needed_width=panel_height,
+                                    needed_length=current_panel_width,
+                                    needed_thickness=PANEL_THICKNESS
+                                )
+                                
+                                if compatible_leftover:
+                                    # Use the leftover
+                                    leftover_tracker.use_leftover(compatible_leftover, panel_height)
+                                    is_cut = True
+                                    cut_notes = f"From leftover {compatible_leftover['id']}"
+                                    from_leftover = True
+                                else:
+                                    # No leftover available, cut from full panel
+                                    is_cut = True
+                                    cut_notes = "Cut from full panel"
+                                    
+                                    # Create leftover from the cut
+                                    leftover_width = MAX_PANEL_WIDTH - panel_height
+                                    if leftover_width > 0:
+                                        leftover_tracker.add_leftover(
+                                            length=current_panel_width,
+                                            thickness=PANEL_THICKNESS,
+                                            width_remaining=leftover_width
+                                        )
+                            else:
+                                # No tracker, just mark as cut
+                                is_cut = True
+                                cut_notes = "Non-standard size"
+                        
+                        # Additional cut checks
                         if (current_x + current_panel_width > bounding_box['max_x'] or 
                             current_y + panel_height > bounding_box['max_y']):
                             is_cut = True
-                            cut_notes = "Boundary extension"
-                        
-                        # If panel is smaller than standard size, mark as cut (compare with standard 1150mm width)
-                        if current_panel_width < panel_width or panel_height < panel_width:
-                            is_cut = True
-                            cut_notes = "Non-standard size"
+                            if cut_notes:
+                                cut_notes += ", Boundary extension"
+                            else:
+                                cut_notes = "Boundary extension"
                         
                         # Create panel
                         panel = {
@@ -738,7 +914,8 @@ class FloorService:
                             'width': current_panel_width,
                             'length': panel_height,
                             'is_cut': is_cut,
-                            'cut_notes': cut_notes
+                            'cut_notes': cut_notes,
+                            'from_leftover': from_leftover
                         }
                         
                         panels.append(panel)
@@ -772,17 +949,51 @@ class FloorService:
                         # Check if this panel will be a cut panel (like ceiling plan logic)
                         is_cut = False
                         cut_notes = ""
+                        from_leftover = False
                         
-                        # If panel extends beyond the bounding box, mark as cut
+                        # LEFTOVER TRACKING: Check if we need a cut panel
+                        if panel_width_actual < MAX_PANEL_WIDTH:
+                            # This panel needs to be cut
+                            if leftover_tracker:
+                                # Try to find a compatible leftover
+                                compatible_leftover = leftover_tracker.find_compatible_leftover(
+                                    needed_width=panel_width_actual,
+                                    needed_length=current_panel_height,
+                                    needed_thickness=PANEL_THICKNESS
+                                )
+                                
+                                if compatible_leftover:
+                                    # Use the leftover
+                                    leftover_tracker.use_leftover(compatible_leftover, panel_width_actual)
+                                    is_cut = True
+                                    cut_notes = f"From leftover {compatible_leftover['id']}"
+                                    from_leftover = True
+                                else:
+                                    # No leftover available, cut from full panel
+                                    is_cut = True
+                                    cut_notes = "Cut from full panel"
+                                    
+                                    # Create leftover from the cut
+                                    leftover_width = MAX_PANEL_WIDTH - panel_width_actual
+                                    if leftover_width > 0:
+                                        leftover_tracker.add_leftover(
+                                            length=current_panel_height,
+                                            thickness=PANEL_THICKNESS,
+                                            width_remaining=leftover_width
+                                        )
+                            else:
+                                # No tracker, just mark as cut
+                                is_cut = True
+                                cut_notes = "Non-standard size"
+                        
+                        # Additional cut checks
                         if (current_x + panel_width_actual > bounding_box['max_x'] or 
                             current_y + current_panel_height > bounding_box['max_y']):
                             is_cut = True
-                            cut_notes = "Boundary extension"
-                        
-                        # If panel is smaller than standard size, mark as cut (compare with standard 1150mm width)
-                        if panel_width_actual < panel_width or current_panel_height < panel_width:
-                            is_cut = True
-                            cut_notes = "Non-standard size"
+                            if cut_notes:
+                                cut_notes += ", Boundary extension"
+                            else:
+                                cut_notes = "Boundary extension"
                         
                         # Create panel
                         panel = {
@@ -794,7 +1005,8 @@ class FloorService:
                             'width': panel_width_actual,
                             'length': current_panel_height,
                             'is_cut': is_cut,
-                            'cut_notes': cut_notes
+                            'cut_notes': cut_notes,
+                            'from_leftover': from_leftover
                         }
                         
                         panels.append(panel)
@@ -806,8 +1018,8 @@ class FloorService:
         return panels
     
     @staticmethod
-    def _generate_shape_aware_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness):
-        """Generate shape-aware floor panels for L-shaped or complex rooms (like ceiling plan does)"""
+    def _generate_shape_aware_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+        """Generate shape-aware floor panels for L-shaped or complex rooms (like ceiling plan does) with leftover tracking"""
         try:
             panels = []
             panel_id = 1
@@ -818,7 +1030,7 @@ class FloorService:
             if not room_regions:
                 # Fallback to standard approach if shape analysis fails
                 return FloorService._generate_standard_floor_panels(
-                    bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
+                    bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
                 )
             
             # Generate panels for each region based on orientation
@@ -1117,14 +1329,17 @@ class FloorService:
         return inside
     
     @staticmethod
-    def _generate_mixed_floor_panels(bounding_box, room_points, panel_width, panel_length, wall_thickness):
-        """Generate mixed orientation floor panels for optimal coverage"""
+    def _generate_mixed_floor_panels(bounding_box, room_points, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+        """Generate mixed orientation floor panels for optimal coverage with leftover tracking"""
         # For now, use the better of horizontal or vertical
+        horizontal_tracker = leftover_tracker or LeftoverTracker()
         horizontal_panels = FloorService._generate_floor_panels(
-            bounding_box, room_points, 'horizontal', panel_width, panel_length, wall_thickness
+            bounding_box, room_points, 'horizontal', panel_width, panel_length, wall_thickness, horizontal_tracker, floor_thickness
         )
+        
+        vertical_tracker = leftover_tracker or LeftoverTracker()
         vertical_panels = FloorService._generate_floor_panels(
-            bounding_box, room_points, 'vertical', panel_width, panel_length, wall_thickness
+            bounding_box, room_points, 'vertical', panel_width, panel_length, wall_thickness, vertical_tracker, floor_thickness
         )
         
         horizontal_waste = FloorService._calculate_floor_waste(horizontal_panels, None, wall_thickness)
@@ -1133,8 +1348,13 @@ class FloorService:
         return horizontal_panels if horizontal_waste <= vertical_waste else vertical_panels
     
     @staticmethod
-    def _calculate_floor_waste(panels, room, wall_thickness):
-        """Calculate waste percentage for floor panels"""
+    def _calculate_floor_waste(panels, room, wall_thickness, leftover_tracker=None):
+        """Calculate waste percentage for floor panels
+        
+        Note: Leftover reuse reduces the number of full panels needed,
+        which is reflected in the total_panel_area. The waste is simply
+        the difference between total panel area used and room area.
+        """
         if not panels:
             return 100.0
         
@@ -1143,9 +1363,11 @@ class FloorService:
         if room:
             floor_area = FloorService._calculate_room_floor_area(room, wall_thickness)
             if floor_area > 0:
-                # Calculate waste as percentage of floor area, not panel area
-                # This gives a more accurate comparison between strategies
-                waste_percentage = ((total_panel_area - floor_area) / floor_area) * 100
+                # Calculate waste: Total panels used - Room area
+                # The leftover reuse benefit is already reflected in the panel count
+                waste_area = max(0, total_panel_area - floor_area)
+                waste_percentage = (waste_area / floor_area) * 100
+                
                 return waste_percentage
         
         return 0.0
@@ -1188,9 +1410,10 @@ class FloorService:
             if not selected_strategy:
                 return {'error': f'Strategy {strategy_name} not found'}
             
-            # Generate floor panels for all rooms
+            # Generate floor panels for all rooms with leftover tracking
             all_floor_panels = []
             created_plans = []
+            project_leftover_tracker = LeftoverTracker(context='GENERATION')  # Mark as actual generation - shared across all rooms
             
             for room in rooms:
                 if not room.room_points or len(room.room_points) < 3:
@@ -1206,17 +1429,20 @@ class FloorService:
                 if not bounding_box:
                     continue
                 
+                # Get floor thickness from room
+                floor_thickness = float(room.floor_thickness) if hasattr(room, 'floor_thickness') and room.floor_thickness else 20.0
+                
                 if selected_strategy['orientation_type'] == 'horizontal':
                     room_panels = FloorService._generate_floor_panels(
-                        bounding_box, room.room_points, 'horizontal', panel_width, panel_length, project.wall_thickness
+                        bounding_box, room.room_points, 'horizontal', panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
                     )
                 elif selected_strategy['orientation_type'] == 'vertical':
                     room_panels = FloorService._generate_floor_panels(
-                        bounding_box, room.room_points, 'vertical', panel_width, panel_length, project.wall_thickness
+                        bounding_box, room.room_points, 'vertical', panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
                     )
                 else:  # mixed
                     room_panels = FloorService._generate_mixed_floor_panels(
-                        bounding_box, room.room_points, panel_width, panel_length, project.wall_thickness
+                        bounding_box, room.room_points, panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
                     )
                     
                 # Add room info to panels
@@ -1266,7 +1492,7 @@ class FloorService:
                             end_y=panel_data['end_y'],
                             width=panel_data['width'],
                             length=panel_data['length'],
-                            thickness=20.0,
+                            thickness=floor_thickness,  # Use actual floor thickness, not hardcoded!
                             material_type='standard',
                             is_cut_panel=panel_data.get('is_cut', False),
                             cut_notes=panel_data.get('cut_notes', '')
@@ -1276,9 +1502,9 @@ class FloorService:
                         continue
                 
                 
-                # Update statistics
+                # Update statistics with leftover tracker
                 try:
-                    floor_plan.update_statistics()
+                    floor_plan.update_statistics(project_leftover_tracker)
                     
                     # Refresh the floor_plan object to get updated statistics
                     floor_plan.refresh_from_db()
@@ -1335,13 +1561,18 @@ class FloorService:
             return {
                 'project_id': project_id,
                 'strategy_used': strategy_name,
+                'recommended_strategy': orientation_analysis.get('recommended_strategy', strategy_name),  # Include recommended strategy
                 'strategy_details': selected_strategy,
                 'floor_panels': actual_floor_panels,  # Return actual FloorPanel objects
                 'floor_plans': created_plans,
+                'leftover_stats': project_leftover_tracker.get_stats(),  # Include leftover reuse statistics
                 'summary': {
                     'total_panels': len(actual_floor_panels),
                     'total_rooms': len(created_plans),
-                    'average_waste_percentage': sum(p['waste_percentage'] for p in created_plans) / len(created_plans) if created_plans else 0
+                    'average_waste_percentage': sum(p['waste_percentage'] for p in created_plans) / len(created_plans) if created_plans else 0,
+                    'leftovers_created': project_leftover_tracker.stats['leftovers_created'],
+                    'leftovers_reused': project_leftover_tracker.stats['leftovers_reused'],
+                    'full_panels_saved': project_leftover_tracker.stats['full_panels_saved']
                 }
             }
             
@@ -1393,9 +1624,14 @@ class CeilingService:
             bounding_box = CeilingService._calculate_room_bounding_box(room.room_points)
             logger.info(f"Room bounding box: {bounding_box}")
             
-            # Generate optimal panel layout with user-selected length option
-            panels = CeilingService._generate_panel_layout(bounding_box, room.room_points, 1150, 'auto')
+            # Create leftover tracker for this ceiling plan
+            ceiling_leftover_tracker = LeftoverTracker(context='GENERATION')
+            ceiling_thickness = float(room.ceiling_thickness) if hasattr(room, 'ceiling_thickness') and room.ceiling_thickness else 20.0
+            
+            # Generate optimal panel layout with leftover tracking
+            panels = CeilingService._generate_panel_layout(bounding_box, room.room_points, 1150, 'auto', ceiling_leftover_tracker, ceiling_thickness)
             logger.info(f"Generated {len(panels)} panels")
+            logger.info(f"Leftover stats: {ceiling_leftover_tracker.get_stats()}")
             
             # Calculate total area from room points
             total_area = CeilingService._calculate_room_area(room.room_points)
@@ -1434,15 +1670,15 @@ class CeilingService:
                     end_y=panel_data['end_y'],
                     width=panel_data['width'],
                     length=panel_data['length'],
-                    thickness=20.0,  # Default thickness
+                    thickness=ceiling_thickness,  # Use actual ceiling thickness
                     material_type='standard',
                     is_cut_panel=panel_data['is_cut'],
                     cut_notes=panel_data.get('cut_notes', '')
                 )
                 created_panels.append(panel)
             
-            # Update ceiling plan statistics
-            ceiling_plan.update_statistics()
+            # Update ceiling plan statistics with leftover tracker
+            ceiling_plan.update_statistics(ceiling_leftover_tracker)
             logger.info(f"Successfully created ceiling plan with {len(created_panels)} panels")
             
             return ceiling_plan
@@ -1499,14 +1735,16 @@ class CeilingService:
         }
     
     @staticmethod
-    def _generate_panel_layout(bounding_box, room_points, panel_width=1150, panel_length='auto'):
-        """Generate optimal panel layout to cover the room with professional precision
+    def _generate_panel_layout(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+        """Generate optimal panel layout to cover the room with professional precision and leftover tracking
         
         Args:
             bounding_box: Room bounding box
             room_points: Room boundary points
             panel_width: Maximum panel width in mm
             panel_length: Panel length ('auto' or custom value in mm)
+            leftover_tracker: LeftoverTracker instance for reuse tracking
+            ceiling_thickness: Ceiling panel thickness in mm
         """
         panels = []
         max_width = panel_width  # Use user-specified panel width
@@ -1514,99 +1752,11 @@ class CeilingService:
         room_width = bounding_box['width']
         room_height = bounding_box['height']
         
-        # Calculate panel length based on user's choice
-        if panel_length == 'auto':
-            # Use full room height when auto (equivalent to panel_length_option = 1)
-            panel_length = room_height  # Full side length
-            print(f"DEBUG: Using auto panel length: {panel_length:.0f}mm (full room height)")
-        else:
-            # Use user's custom panel length
-            panel_length = float(panel_length)
-            print(f"DEBUG: Using custom panel length: {panel_length:.0f}mm")
-        
-        # Calculate optimal panel arrangement
-        # Use standard 1150mm panels where possible, with custom cuts for edges
-        standard_panels_needed = int(room_width / max_width)
-        remaining_width = room_width % max_width
-        
-        # Start from top-left corner (normalized to room origin)
-        start_x = 0  # Normalized: bounding_box['min_x'] - bounding_box['min_x']
-        start_y = bounding_box['height']  # Normalized: bounding_box['max_y'] - bounding_box['min_y']
-        
-        panel_id = 1
-        
-        # Generate panels row by row (top to bottom)
-        current_y = start_y
-        while current_y > bounding_box['min_y']:
-            current_x = start_x
-            
-            # Create full-width panels (1150mm) with user-selected length
-            for i in range(standard_panels_needed):
-                panel_width = max_width
-                panel_height = min(panel_length, current_y - bounding_box['min_y'])
-                
-                # Check if this panel is within room boundaries (using normalized coordinates)
-                panel_coverage = CeilingService._calculate_panel_coverage([
-                    {'x': current_x, 'y': current_y},
-                    {'x': current_x + panel_width, 'y': current_y},
-                    {'x': current_x + panel_width, 'y': current_y},  # Same Y for horizontal panels
-                    {'x': current_x, 'y': current_y}  # Same Y for horizontal panels
-                ], room_points, bounding_box)
-                
-                if panel_coverage > 0.1:  # Only create panels with significant coverage
-                    is_cut = False  # Full panels are not cut
-                    cut_notes = ""
-                    
-                    panels.append({
-                        'start_x': current_x,
-                        'start_y': current_y,
-                        'end_x': current_x + panel_width,
-                        'end_y': current_y,  # Same Y-coordinate for horizontal panels
-                        'width': panel_width,
-                        'length': panel_height,
-                        'is_cut': is_cut,
-                        'cut_notes': cut_notes,
-                        'panel_id': f"CP_{panel_id:03d}"
-                    })
-                    panel_id += 1
-                
-                current_x += panel_width
-            
-            # Create custom-width panel for remaining space (if any)
-            if remaining_width > 0:  # Create cut panel for any remaining space
-                panel_width = remaining_width
-                panel_height = min(panel_length, current_y - bounding_box['min_y'])
-                
-                panel_coverage = CeilingService._calculate_panel_coverage([
-                    {'x': current_x, 'y': current_y},
-                    {'x': current_x + panel_width, 'y': current_y},
-                    {'x': current_x + panel_width, 'y': current_y},  # Same Y for horizontal panels
-                    {'x': current_x, 'y': current_y}  # Same Y for horizontal panels
-                ], room_points, bounding_box)
-                
-                if panel_coverage > 0.1:
-                    is_cut = True  # This is a cut panel
-                    cut_notes = f"Custom width: {panel_width:.0f}mm"
-                     
-                    panels.append({
-                        'start_x': current_x,
-                        'start_y': current_y,
-                        'end_x': current_x + panel_width,
-                        'end_y': current_y,  # Same Y-coordinate for horizontal panels
-                        'width': panel_width,
-                        'length': panel_height,
-                        'is_cut': is_cut,
-                        'cut_notes': cut_notes,
-                        'panel_id': f"CP_{panel_id:03d}"
-                    })
-                    panel_id += 1
-                else:
-                    print(f"DEBUG: Cut panel rejected due to low coverage: {panel_coverage}")
-            else:
-                print(f"DEBUG: No remaining width for cut panel")
-            
-            # Move to next row using user-selected panel length
-            current_y -= panel_length
+        # Use the advanced shape-aware panel generation with leftover tracking
+        # This properly handles L-shaped rooms and tracks leftover reuse
+        panels = CeilingService._generate_shape_aware_panels(
+            bounding_box, room_points, 'vertical', max_width, panel_length, leftover_tracker, ceiling_thickness
+        )
         
         return panels
     
@@ -2124,20 +2274,24 @@ class CeilingService:
 
     @staticmethod
     def _evaluate_group_fixed_orientation(group_data, orientation, panel_width=1150, panel_length='auto'):
-        """Evaluate a height group with fixed orientation for all rooms"""
+        """Evaluate a height group with fixed orientation for all rooms with leftover tracking"""
         total_panels = 0
         total_waste_area = 0.0
         total_room_area = 0.0
         room_results = []
+        
+        # Create leftover tracker for this strategy evaluation
+        strategy_tracker = LeftoverTracker(context=f'ANALYSIS-{orientation[0].upper()}')
+        ceiling_thickness = group_data['rooms'][0].get('ceiling_thickness', 20.0) if group_data['rooms'] else 20.0
         
         for room_info in group_data['rooms']:
             # Calculate room area
             room_area = room_info['area']
             total_room_area += room_area
             
-            # Generate panels with fixed orientation
+            # Generate panels with fixed orientation and leftover tracking
             panels = CeilingService._generate_panels_with_orientation(
-                room_info, orientation, panel_width, panel_length
+                room_info, orientation, panel_width, panel_length, strategy_tracker, ceiling_thickness
             )
             
             # Calculate waste for this room
@@ -2164,23 +2318,27 @@ class CeilingService:
 
     @staticmethod
     def _evaluate_group_independent_orientation(group_data, panel_width=1150, panel_length='auto'):
-        """Evaluate a height group with each room getting its optimal orientation"""
+        """Evaluate a height group with each room getting its optimal orientation with leftover tracking"""
         total_panels = 0
         total_waste_area = 0.0
         total_room_area = 0.0
         room_results = []
+        
+        # Create leftover tracker for this strategy evaluation
+        strategy_tracker = LeftoverTracker(context='ANALYSIS-IND')
+        ceiling_thickness = group_data['rooms'][0].get('ceiling_thickness', 20.0) if group_data['rooms'] else 20.0
         
         for room_info in group_data['rooms']:
             # Calculate room area
             room_area = room_info['area']
             total_room_area += room_area
             
-            # Test both orientations and pick the best one
+            # Test both orientations and pick the best one (with leftover tracking)
             vertical_panels = CeilingService._generate_panels_with_orientation(
-                room_info, 'vertical', panel_width, panel_length
+                room_info, 'vertical', panel_width, panel_length, strategy_tracker, ceiling_thickness
             )
             horizontal_panels = CeilingService._generate_panels_with_orientation(
-                room_info, 'horizontal', panel_width, panel_length
+                room_info, 'horizontal', panel_width, panel_length, strategy_tracker, ceiling_thickness
             )
             
             vertical_waste = CeilingService._calculate_room_waste(vertical_panels, room_info, 'vertical')
@@ -2279,24 +2437,24 @@ class CeilingService:
             }
 
     @staticmethod
-    def _generate_panels_with_orientation(room_info, orientation, panel_width=1150, panel_length='auto'):
-        """Generate panels for a room with specific orientation"""
+    def _generate_panels_with_orientation(room_info, orientation, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+        """Generate panels for a room with specific orientation with leftover tracking"""
         try:
             bounding_box = room_info['bounding_box']
             
             if orientation == 'vertical':
                 # Vertical orientation: panels run up and down (vertical strips)
-                return CeilingService._generate_horizontal_panels(bounding_box, room_info['points'], panel_width, panel_length)
+                return CeilingService._generate_horizontal_panels(bounding_box, room_info['points'], panel_width, panel_length, leftover_tracker, ceiling_thickness)
             else:
                 # Horizontal orientation: panels run left to right (horizontal strips)
-                return CeilingService._generate_vertical_panels(bounding_box, room_info['points'], panel_width, panel_length)
+                return CeilingService._generate_vertical_panels(bounding_box, room_info['points'], panel_width, panel_length, leftover_tracker, ceiling_thickness)
                 
         except Exception as e:
             return []
 
     @staticmethod
-    def _generate_vertical_panels(bounding_box, room_points, panel_width=1150, panel_length='auto'):
-        """Generate panels that run left to right (horizontal strips) - used for horizontal orientation"""
+    def _generate_vertical_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+        """Generate panels that run left to right (horizontal strips) - used for horizontal orientation with leftover tracking"""
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
         
@@ -2316,43 +2474,30 @@ class CeilingService:
         
         # Use advanced L-shaped room aware algorithm with room-specific bounding box
         panels = CeilingService._generate_shape_aware_panels(
-            room_bounding_box, room_points, 'horizontal', max_panel_width, panel_length
+            room_bounding_box, room_points, 'horizontal', max_panel_width, panel_length, leftover_tracker, ceiling_thickness
         )
         
         return panels
 
     @staticmethod
-    def _generate_horizontal_panels(bounding_box, room_points, panel_width=1150, panel_length='auto'):
-        """Generate panels that run up and down (vertical strips) - used for vertical orientation"""
+    def _generate_horizontal_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+        """Generate panels that run up and down (vertical strips) - used for vertical orientation with leftover tracking"""
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
         
         # FIXED: Calculate room-specific bounding box instead of using the passed bounding_box
         room_bounding_box = CeilingService._calculate_room_bounding_box(room_points)
         
-        # room_width = room_bounding_box['width']  # Unused variable
-        # room_height = room_bounding_box['height']  # Unused variable
-        
-        # Calculate panel height based on user's choice
-        if panel_length == 'auto':
-            # Use full room height when auto (equivalent to panel_length_option = 1)
-            # panel_height = room_height  # Unused variable
-            pass
-        else:
-            # Use user's custom panel length
-            # panel_height = float(panel_length)  # Unused variable
-            pass
-        
         # Use advanced L-shaped room aware algorithm with room-specific bounding box
         panels = CeilingService._generate_shape_aware_panels(
-            room_bounding_box, room_points, 'vertical', max_panel_width, panel_length
+            room_bounding_box, room_points, 'vertical', max_panel_width, panel_length, leftover_tracker, ceiling_thickness
         )
         
         return panels
 
     @staticmethod
-    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto'):
-        """Generate panels that respect the actual room shape (L-shaped, U-shaped, etc.)"""
+    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+        """Generate panels that respect the actual room shape (L-shaped, U-shaped, etc.) with leftover tracking"""
         try:
             panels = []
             panel_id = 1
@@ -2363,13 +2508,13 @@ class CeilingService:
             if not room_regions:
                 # Fallback to simple approach if shape analysis fails
                 return CeilingService._generate_simple_panels_fallback(
-                    bounding_box, room_points, orientation, max_panel_width, panel_length
+                    bounding_box, room_points, orientation, max_panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
             
             # Generate panels for each region based on orientation
             for i, region in enumerate(room_regions):
                 region_panels = CeilingService._generate_panels_for_region(
-                    region, orientation, max_panel_width, panel_id, panel_length
+                    region, orientation, max_panel_width, panel_id, panel_length, leftover_tracker, ceiling_thickness
                 )
                 
                 panels.extend(region_panels)
@@ -2418,7 +2563,7 @@ class CeilingService:
                 return regions
                 
         except Exception as e:
-            print(f"Error analyzing room shape: {str(e)}")
+            logger.error(f"Error analyzing room shape: {str(e)}")
             return []
 
     @staticmethod
@@ -2649,11 +2794,13 @@ class CeilingService:
             return 0
 
     @staticmethod
-    def _generate_panels_for_region(region, orientation, max_panel_width, start_panel_id, panel_length='auto'):
-        """Generate panels for a specific rectangular region"""
+    def _generate_panels_for_region(region, orientation, max_panel_width, start_panel_id, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+        """Generate panels for a specific rectangular region with leftover tracking"""
         try:
             panels = []
             panel_id = start_panel_id
+            MAX_PANEL_WIDTH = 1150  # Standard maximum panel width
+            PANEL_THICKNESS = ceiling_thickness  # Use actual ceiling thickness
             
             if orientation == 'horizontal':
                 # Panels run left to right (horizontal strips)
@@ -2677,17 +2824,52 @@ class CeilingService:
                             # Check if this panel will be a cut panel (extends beyond room boundaries)
                             is_cut = False
                             cut_notes = ""
+                            from_leftover = False
                             
-                            # If panel extends beyond the region, mark as cut
+                            # LEFTOVER TRACKING: Check if we need a cut panel
+                            if panel_height < MAX_PANEL_WIDTH:
+                                # This panel needs to be cut
+                                if leftover_tracker:
+                                    # Try to find a compatible leftover
+                                    compatible_leftover = leftover_tracker.find_compatible_leftover(
+                                        needed_width=panel_height,
+                                        needed_length=current_panel_width,
+                                        needed_thickness=PANEL_THICKNESS
+                                    )
+                                    
+                                    if compatible_leftover:
+                                        # Use the leftover
+                                        leftover_tracker.use_leftover(compatible_leftover, panel_height)
+                                        is_cut = True
+                                        cut_notes = f"From leftover {compatible_leftover['id']}"
+                                        from_leftover = True
+                                    else:
+                                        # No leftover available, cut from full panel
+                                        is_cut = True
+                                        cut_notes = "Cut from full panel"
+                                        
+                                        # Create leftover from the cut
+                                        leftover_width = MAX_PANEL_WIDTH - panel_height
+                                        if leftover_width > 0:
+                                            leftover_tracker.add_leftover(
+                                                length=current_panel_width,
+                                                thickness=PANEL_THICKNESS,
+                                                width_remaining=leftover_width
+                                            )
+                                else:
+                                    # No tracker, just mark as cut
+                                    if panel_height < max_panel_width:
+                                        is_cut = True
+                                        cut_notes = "Non-standard size"
+                            
+                            # Additional cut checks
                             if (current_x + current_panel_width > region['max_x'] or 
                                 current_y + panel_height > region['max_y']):
                                 is_cut = True
-                                cut_notes = "Boundary extension"
-                            
-                            # If panel is smaller than standard size, mark as cut
-                            if current_panel_width < panel_width or panel_height < max_panel_width:
-                                is_cut = True
-                                cut_notes = "Non-standard size"
+                                if cut_notes and cut_notes != "Non-standard size":
+                                    cut_notes += ", Boundary extension"
+                                else:
+                                    cut_notes = "Boundary extension"
                             
                             panels.append({
                                 'start_x': current_x,
@@ -2731,17 +2913,52 @@ class CeilingService:
                             # Check if this panel will be a cut panel (extends beyond room boundaries)
                             is_cut = False
                             cut_notes = ""
+                            from_leftover = False
                             
-                            # If panel extends beyond the region, mark as cut
+                            # LEFTOVER TRACKING: Check if we need a cut panel
+                            if panel_width < MAX_PANEL_WIDTH:
+                                # This panel needs to be cut
+                                if leftover_tracker:
+                                    # Try to find a compatible leftover
+                                    compatible_leftover = leftover_tracker.find_compatible_leftover(
+                                        needed_width=panel_width,
+                                        needed_length=current_panel_height,
+                                        needed_thickness=PANEL_THICKNESS
+                                    )
+                                    
+                                    if compatible_leftover:
+                                        # Use the leftover
+                                        leftover_tracker.use_leftover(compatible_leftover, panel_width)
+                                        is_cut = True
+                                        cut_notes = f"From leftover {compatible_leftover['id']}"
+                                        from_leftover = True
+                                    else:
+                                        # No leftover available, cut from full panel
+                                        is_cut = True
+                                        cut_notes = "Cut from full panel"
+                                        
+                                        # Create leftover from the cut
+                                        leftover_width = MAX_PANEL_WIDTH - panel_width
+                                        if leftover_width > 0:
+                                            leftover_tracker.add_leftover(
+                                                length=current_panel_height,
+                                                thickness=PANEL_THICKNESS,
+                                                width_remaining=leftover_width
+                                            )
+                                else:
+                                    # No tracker, just mark as cut
+                                    if panel_width < max_panel_width:
+                                        is_cut = True
+                                        cut_notes = "Non-standard size"
+                            
+                            # Additional cut checks
                             if (current_x + panel_width > region['max_x'] or 
                                 current_y + current_panel_height > region['max_y']):
                                 is_cut = True
-                                cut_notes = "Boundary extension"
-                            
-                            # If panel is smaller than standard size, mark as cut
-                            if current_panel_height < panel_height or panel_width < max_panel_width:
-                                is_cut = True
-                                cut_notes = "Non-standard size"
+                                if cut_notes and cut_notes != "Non-standard size":
+                                    cut_notes += ", Boundary extension"
+                                else:
+                                    cut_notes = "Boundary extension"
                             
                             panels.append({
                                 'start_x': current_x,
@@ -3018,8 +3235,13 @@ class CeilingService:
         return False
 
     @staticmethod
-    def _calculate_room_waste(panels, room_info, orientation):
-        """Calculate waste area for a room with given panels and orientation"""
+    def _calculate_room_waste(panels, room_info, orientation, leftover_tracker=None):
+        """Calculate waste area for a room with given panels and orientation
+        
+        Note: Leftover reuse reduces the number of full panels needed,
+        which is reflected in the panel count. The waste is simply
+        the difference between total panel area used and room area.
+        """
         try:
             if not panels:
                 return 0.0
@@ -3031,6 +3253,7 @@ class CeilingService:
             room_area = room_info['area']
             
             # Waste is the difference between panel area and room area
+            # The benefit of leftover reuse is already reflected in the panel count
             waste_area = max(0, total_panel_area - room_area)
             
             return waste_area
@@ -3380,8 +3603,202 @@ class CeilingService:
             }
 
     @staticmethod
+    def _analyze_single_room_orientation_strategies(room, panel_width=1150, panel_length='auto', ceiling_thickness=150):
+        """Analyze orientation strategies for a single room"""
+        try:
+            if not room.room_points or len(room.room_points) < 3:
+                return {'error': 'Invalid room geometry'}
+            
+            strategies = []
+            room_info = {
+                'id': room.id,
+                'name': room.room_name,
+                'area': CeilingService._calculate_room_area(room.room_points),
+                'room_points': room.room_points
+            }
+            
+            # Calculate room bounding box
+            xs = [p['x'] if isinstance(p, dict) else p.x for p in room.room_points]
+            ys = [p['y'] if isinstance(p, dict) else p.y for p in room.room_points]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            room_width = max_x - min_x
+            room_height = max_y - min_y
+            
+            # Generate vertical panels for this room
+            vertical_panels = CeilingService._generate_shape_aware_panels(
+                [room_info], panel_width, panel_length, 'vertical'
+            )
+            vertical_count = len([p for p in vertical_panels if p.get('room_id') == room.id])
+            
+            # Generate horizontal panels for this room
+            horizontal_panels = CeilingService._generate_shape_aware_panels(
+                [room_info], panel_width, panel_length, 'horizontal'
+            )
+            horizontal_count = len([p for p in horizontal_panels if p.get('room_id') == room.id])
+            
+            # Add strategies
+            strategies.append({
+                'strategy_name': 'all_vertical',
+                'orientation_type': 'vertical',
+                'total_panels': vertical_count,
+                'room_width': room_width,
+                'room_height': room_height
+            })
+            
+            strategies.append({
+                'strategy_name': 'all_horizontal',
+                'orientation_type': 'horizontal',
+                'total_panels': horizontal_count,
+                'room_width': room_width,
+                'room_height': room_height
+            })
+            
+            # Recommend based on panel count (fewer panels = less waste typically)
+            recommended = 'all_vertical' if vertical_count <= horizontal_count else 'all_horizontal'
+            
+            return {
+                'room_id': room.id,
+                'room_name': room.room_name,
+                'strategies': strategies,
+                'recommended_strategy': recommended
+            }
+            
+        except Exception as e:
+            return {'error': f'Failed to analyze room orientation: {str(e)}'}
+    
+    @staticmethod
+    def _generate_panels_for_single_room(room, orientation_strategy, panel_width, panel_length):
+        """Generate panels for a single room with specified orientation"""
+        try:
+            # Convert room_points to proper format if needed
+            if not room.room_points:
+                return []
+            
+            # Ensure room_points is a list of dicts
+            room_points = room.room_points
+            if isinstance(room_points, list) and len(room_points) > 0:
+                # Convert to list of dicts if needed
+                if not isinstance(room_points[0], dict):
+                    room_points = [{'x': p.x, 'y': p.y} if hasattr(p, 'x') else {'x': p[0], 'y': p[1]} for p in room_points]
+            else:
+                return []
+            
+            if len(room_points) < 3:
+                return []
+            
+            # Calculate bounding box for this room
+            xs = [p['x'] for p in room_points]
+            ys = [p['y'] for p in room_points]
+            bounding_box = {
+                'min_x': min(xs),
+                'max_x': max(xs),
+                'min_y': min(ys),
+                'max_y': max(ys),
+                'width': max(xs) - min(xs),
+                'height': max(ys) - min(ys)
+            }
+            
+            # Determine orientation type
+            logger.debug(f"Processing room {room.id} ({room.room_name}) with orientation_strategy: {orientation_strategy}")
+            
+            if orientation_strategy == 'all_vertical':
+                orientation_type = 'vertical'
+                logger.debug(f"  → Set to VERTICAL")
+            elif orientation_strategy == 'all_horizontal':
+                orientation_type = 'horizontal'
+                logger.debug(f"  → Set to HORIZONTAL")
+            elif orientation_strategy == 'auto':
+                # Analyze and pick best
+                analysis = CeilingService._analyze_single_room_orientation_strategies(
+                    room, panel_width, panel_length, 150
+                )
+                orientation_type = 'vertical' if analysis.get('recommended_strategy') == 'all_vertical' else 'horizontal'
+                logger.debug(f"  → AUTO chose {orientation_type.upper()}")
+            else:
+                orientation_type = 'vertical'  # Default
+                logger.warning(f"  → DEFAULTED to VERTICAL (unknown strategy: {orientation_strategy})")
+            
+            # Generate panels for this room only
+            logger.debug(f"  Generating panels: {bounding_box['width']}x{bounding_box['height']}mm, {len(room_points)} points, {orientation_type}")
+            
+            panels = CeilingService._generate_shape_aware_panels(
+                bounding_box, room_points, orientation_type, panel_width, panel_length
+            )
+            
+            logger.debug(f"  Generated {len(panels)} raw panels")
+            
+            # Assign room_id to all panels
+            for panel in panels:
+                panel['room_id'] = room.id
+                panel['room_name'] = room.room_name
+            
+            logger.info(f"Successfully generated {len(panels)} panels for room {room.id} ({room.room_name}) with {orientation_type} orientation")
+            
+            return panels
+            
+        except Exception as e:
+            logger.error(f"Error generating panels for room {room.id}: {str(e)}")
+            logger.error(f"  room_points type: {type(room.room_points)}")
+            logger.error(f"  room_points value: {room.room_points}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+    
+    @staticmethod
+    def _generate_panels_with_room_specific_orientation(project_id, global_panel_width, global_panel_length, 
+                                                         global_ceiling_thickness, global_orientation_strategy, room_specific_config):
+        """Generate panels for all rooms, with each room using its own orientation"""
+        try:
+            from .models import Room
+            
+            all_panels = []
+            rooms = Room.objects.filter(project_id=project_id)
+            
+            # Get the room ID that has custom configuration
+            custom_room_id = room_specific_config.get('room_id')
+            custom_orientation = room_specific_config.get('orientation_strategy', global_orientation_strategy)
+            
+            logger.info(f"Generating ceiling panels for {rooms.count()} rooms (room-specific mode)")
+            
+            for room in rooms:
+                # Determine orientation for this room
+                if str(room.id) == str(custom_room_id):
+                    # This is the room being updated - use custom orientation
+                    room_orientation = custom_orientation
+                    logger.info(f"  Room {room.id} ({room.room_name}): Using CUSTOM orientation = {room_orientation}")
+                else:
+                    # Check if room has existing ceiling plan with orientation
+                    if hasattr(room, 'ceiling_plan') and room.ceiling_plan and room.ceiling_plan.orientation_strategy:
+                        room_orientation = room.ceiling_plan.orientation_strategy
+                        logger.info(f"  Room {room.id} ({room.room_name}): Using SAVED orientation = {room_orientation}")
+                    else:
+                        room_orientation = global_orientation_strategy
+                        logger.info(f"  Room {room.id} ({room.room_name}): Using GLOBAL orientation = {room_orientation}")
+                
+                # Generate panels for this room with its specific orientation
+                room_panels = CeilingService._generate_panels_for_single_room(
+                    room, room_orientation, global_panel_width, global_panel_length
+                )
+                
+                logger.info(f"  → Generated {len(room_panels)} panels for room {room.id}")
+                
+                # Add to all panels
+                all_panels.extend(room_panels)
+            
+            logger.info(f"Total panels generated: {len(all_panels)}")
+            
+            return all_panels
+            
+        except Exception as e:
+            logger.error(f"Error in _generate_panels_with_room_specific_orientation: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+    
+    @staticmethod
     def generate_enhanced_ceiling_plan(project_id, orientation_strategy='auto', panel_width=1150, panel_length='auto', 
-                                      ceiling_thickness=150, custom_panel_length=None, support_type='nylon', support_config=None):
+                                      ceiling_thickness=150, custom_panel_length=None, support_type='nylon', support_config=None, room_specific_config=None):
         """Stage 3: Generate enhanced ceiling plan with intelligent panel placement
         
         Features:
@@ -3391,38 +3808,59 @@ class CeilingService:
         - Supports different orientation strategies
         """
         try:
-            # Get orientation analysis first
-            orientation_analysis = CeilingService.analyze_orientation_strategies(
-                project_id, 
-                panel_width, 
-                panel_length, 
-                ceiling_thickness
-            )
-            if 'error' in orientation_analysis:
-                return {'error': orientation_analysis['error']}
-            
-            # Determine which strategy to use
-            if orientation_strategy == 'auto':
-                # Use the recommended strategy
-                strategy_name = orientation_analysis['recommended_strategy']
-            else:
-                # Use the specified strategy
-                strategy_name = orientation_strategy
+            # Check if we have room-specific configuration
+            if room_specific_config and room_specific_config.get('room_id'):
+                logger.info(f"Room-specific ceiling configuration detected for room {room_specific_config.get('room_id')}")
+                logger.debug(f"Config: {room_specific_config}")
                 
-            # Find the selected strategy
-            selected_strategy = None
-            for strategy in orientation_analysis['strategies']:
-                if strategy['strategy_name'] == strategy_name:
-                    selected_strategy = strategy
-                    break
-            
-            if not selected_strategy:
-                return {'error': f'Strategy {strategy_name} not found'}
-            
-            # Generate enhanced panels based on the selected strategy
-            enhanced_panels = CeilingService._generate_enhanced_panels_for_strategy(
-                selected_strategy, project_id, panel_width, panel_length
-            )
+                # Room-specific generation: generate each room with its own orientation
+                enhanced_panels = CeilingService._generate_panels_with_room_specific_orientation(
+                    project_id, panel_width, panel_length, ceiling_thickness,
+                    orientation_strategy, room_specific_config
+                )
+                
+                # Use a dummy strategy for metadata
+                orientation_analysis = CeilingService.analyze_orientation_strategies(
+                    project_id, panel_width, panel_length, ceiling_thickness
+                )
+                if 'error' in orientation_analysis:
+                    return {'error': orientation_analysis['error']}
+                selected_strategy = orientation_analysis['strategies'][0] if orientation_analysis['strategies'] else {}
+                strategy_name = 'mixed'
+            else:
+                # Original logic: single orientation for all rooms
+                # Get orientation analysis first
+                orientation_analysis = CeilingService.analyze_orientation_strategies(
+                    project_id, 
+                    panel_width, 
+                    panel_length, 
+                    ceiling_thickness
+                )
+                if 'error' in orientation_analysis:
+                    return {'error': orientation_analysis['error']}
+                
+                # Determine which strategy to use
+                if orientation_strategy == 'auto':
+                    # Use the recommended strategy
+                    strategy_name = orientation_analysis['recommended_strategy']
+                else:
+                    # Use the specified strategy
+                    strategy_name = orientation_strategy
+                    
+                # Find the selected strategy
+                selected_strategy = None
+                for strategy in orientation_analysis['strategies']:
+                    if strategy['strategy_name'] == strategy_name:
+                        selected_strategy = strategy
+                        break
+                
+                if not selected_strategy:
+                    return {'error': f'Strategy {strategy_name} not found'}
+                
+                # Generate enhanced panels based on the selected strategy with leftover tracking
+                enhanced_panels, leftover_stats = CeilingService._generate_enhanced_panels_for_strategy(
+                    selected_strategy, project_id, panel_width, panel_length, ceiling_thickness
+                )
             
             # Calculate enhanced waste analysis
             waste_analysis = CeilingService._analyze_enhanced_waste(enhanced_panels, selected_strategy)
@@ -3431,13 +3869,14 @@ class CeilingService:
             ceiling_plans = CeilingService._create_enhanced_ceiling_plans(
                 enhanced_panels, project_id, selected_strategy, ceiling_thickness,
                 panel_width, panel_length, custom_panel_length, orientation_strategy,
-                support_type, support_config
+                support_type, support_config, room_specific_config
             )
             return {
                 'project_id': project_id,
                 'strategy_used': strategy_name,
                 'strategy_details': selected_strategy,
                 'enhanced_panels': enhanced_panels,
+                'leftover_stats': leftover_stats,  # Include leftover statistics
                 'waste_analysis': waste_analysis,
                 'ceiling_plans': ceiling_plans,
                 'summary': {
@@ -3445,7 +3884,10 @@ class CeilingService:
                     'total_waste_percentage': waste_analysis['total_waste_percentage'],
                     'reusable_cut_panels': waste_analysis['reusable_cut_panels'],
                     'actual_waste_percentage': waste_analysis['actual_waste_percentage'],
-                    'efficiency_improvement': waste_analysis['efficiency_improvement']
+                    'efficiency_improvement': waste_analysis['efficiency_improvement'],
+                    'leftovers_created': leftover_stats.get('leftovers_created', 0),
+                    'leftovers_reused': leftover_stats.get('leftovers_reused', 0),
+                    'full_panels_saved': leftover_stats.get('full_panels_saved', 0)
                 }
             }
             
@@ -3453,33 +3895,41 @@ class CeilingService:
             return {'error': f'Enhanced ceiling plan generation failed: {str(e)}'}
 
     @staticmethod
-    def _generate_enhanced_panels_for_strategy(strategy, project_id, panel_width=1150, panel_length='auto'):
-        """Generate enhanced panels for the selected strategy with better shape handling"""
+    def _generate_enhanced_panels_for_strategy(strategy, project_id, panel_width=1150, panel_length='auto', ceiling_thickness=20):
+        """Generate enhanced panels for the selected strategy with better shape handling and leftover tracking"""
         try:
             enhanced_panels = []
             
+            # Create project-wide leftover tracker for actual generation
+            project_leftover_tracker = LeftoverTracker(context='GENERATION')
+            logger.info(f"ACTUAL CEILING GENERATION STARTING - Created project leftover tracker")
+            
             if strategy['orientation_type'] == 'merged':
-                # Generate panels for merged approach
+                # Generate panels for merged approach with leftover tracking
                 enhanced_panels = CeilingService._generate_enhanced_merged_panels(
-                    project_id, panel_width, panel_length
+                    project_id, panel_width, panel_length, project_leftover_tracker, ceiling_thickness
                 )
             else:
-                # Generate panels for individual rooms
+                # Generate panels for individual rooms with leftover tracking
                 enhanced_panels = CeilingService._generate_enhanced_room_panels(
-                    strategy, panel_width, panel_length
+                    strategy, panel_width, panel_length, project_leftover_tracker, ceiling_thickness
                 )
             
             # Apply advanced optimization
             enhanced_panels = CeilingService._optimize_panel_placement(enhanced_panels)
             
-            return enhanced_panels
+            # Get leftover statistics
+            leftover_stats = project_leftover_tracker.get_stats()
+            logger.info(f"CEILING GENERATION COMPLETE - Leftover stats: {leftover_stats}")
+            
+            return enhanced_panels, leftover_stats
             
         except Exception as e:
-            return []
+            return [], {}
 
     @staticmethod
-    def _generate_enhanced_merged_panels(project_id, panel_width=1150, panel_length='auto'):
-        """Generate enhanced panels for merged project approach"""
+    def _generate_enhanced_merged_panels(project_id, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20):
+        """Generate enhanced panels for merged project approach with leftover tracking"""
         try:
             # Get height analysis
             height_analysis = CeilingService.analyze_project_heights(project_id)
@@ -3495,9 +3945,9 @@ class CeilingService:
             for i, room_info in enumerate(height_group['rooms']):
                 # Use room-specific bounding box instead of project-wide
                 room_bounding_box = CeilingService._calculate_room_bounding_box(room_info['points'])
-                # Generate panels for this specific room using its own bounding box
+                # Generate panels for this specific room using its own bounding box with leftover tracking
                 room_panels = CeilingService._generate_advanced_panels(
-                    room_bounding_box, room_info['points'], 'horizontal', panel_width, panel_length
+                    room_bounding_box, room_info['points'], 'horizontal', panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
                 # Add room identifier to panels
                 for panel in room_panels:
@@ -3512,53 +3962,65 @@ class CeilingService:
             return []
 
     @staticmethod
-    def _generate_enhanced_room_panels(strategy, panel_width=1150, panel_length='auto'):
-        """Generate enhanced panels for individual rooms"""
+    def _generate_enhanced_room_panels(strategy, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20):
+        """Generate enhanced panels for individual rooms with leftover tracking"""
         try:
             all_panels = []
             
-            for room_result in strategy['room_results']:
+            logger.info(f"_generate_enhanced_room_panels: Processing {len(strategy.get('room_results', []))} rooms")
+            
+            for room_result in strategy.get('room_results', []):
+                room_id = room_result.get('room_id')
+                logger.info(f"  Processing room {room_id}: {room_result.get('room_name')}")
+                
                 # Get room info from height analysis
-                room_info = CeilingService._get_room_info_by_id(room_result['room_id'])
+                room_info = CeilingService._get_room_info_by_id(room_id)
                 if not room_info:
+                    logger.warning(f"  Could not get room info for room {room_id}")
                     continue
                 
-                # Generate panels with the specified orientation
+                # Generate panels with the specified orientation and leftover tracking
                 orientation = room_result['orientation']
+                logger.info(f"  Generating {orientation} panels for room {room_id}")
+                
                 panels = CeilingService._generate_advanced_panels(
-                    room_info['bounding_box'], room_info['points'], orientation, panel_width, panel_length
+                    room_info['bounding_box'], room_info['points'], orientation, panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
+                
+                logger.info(f"  Generated {len(panels)} panels for room {room_id}")
                 
                 # Add room identifier to panels
                 for panel in panels:
-                    panel['room_id'] = room_result['room_id']
+                    panel['room_id'] = room_id
                     panel['room_name'] = room_result['room_name']
                 
                 all_panels.extend(panels)
             
+            logger.info(f"_generate_enhanced_room_panels: Total panels generated: {len(all_panels)}")
             return all_panels
             
         except Exception as e:
+            logger.error(f"Error in _generate_enhanced_room_panels: {e}")
             return []
 
     @staticmethod
-    def _generate_advanced_panels(bounding_box, room_points, orientation, panel_width=1150, panel_length='auto'):
-        """Generate advanced panels with better irregular shape handling"""
+    def _generate_advanced_panels(bounding_box, room_points, orientation, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20):
+        """Generate advanced panels with better irregular shape handling and leftover tracking"""
         try:
             if orientation == 'vertical':
                 # Vertical orientation: panels run up and down (vertical strips)
-               return CeilingService._generate_enhanced_horizontal_panels(
-                    bounding_box, room_points, panel_width, panel_length
+                return CeilingService._generate_horizontal_panels(
+                    bounding_box, room_points, panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
             elif orientation == 'horizontal':
                 # Horizontal orientation: panels run left to right (horizontal strips)
-                return CeilingService._generate_enhanced_vertical_panels(
-                    bounding_box, room_points, panel_width, panel_length
+                return CeilingService._generate_vertical_panels(
+                    bounding_box, room_points, panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
             elif orientation == 'merged':
                 # For merged approach, use horizontal orientation as default
-                return CeilingService._generate_enhanced_vertical_panels(
-                    bounding_box, room_points, panel_width, panel_length
+                return CeilingService._generate_vertical_panels(
+                    bounding_box, room_points, panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
             else:
                 return []
@@ -3753,7 +4215,7 @@ class CeilingService:
     @staticmethod
     def _create_enhanced_ceiling_plans(enhanced_panels, project_id, strategy, ceiling_thickness=150, 
                                       panel_width=1150, panel_length='auto', custom_panel_length=None,
-                                      orientation_strategy='auto', support_type='nylon', support_config=None):
+                                      orientation_strategy='auto', support_type='nylon', support_config=None, room_specific_config=None):
         """Create or update ceiling plans with enhanced panel information and generation parameters"""
         try:
             from .models import CeilingPlan, CeilingPanel, Room
@@ -3775,9 +4237,21 @@ class CeilingService:
                     # Calculate room area
                     room_area = CeilingService._calculate_room_area(room.room_points)
                     
+                    # Get room-specific config or use defaults
+                    room_config = room_specific_config if room_specific_config and str(room_id) == str(room_specific_config.get('room_id')) else None
+                    
+                    # Use room-specific config if available, otherwise use global params
+                    room_ceiling_thickness = room_config.get('ceiling_thickness', ceiling_thickness) if room_config else ceiling_thickness
+                    room_panel_width = room_config.get('panel_width', panel_width) if room_config else panel_width
+                    room_panel_length = room_config.get('panel_length', panel_length) if room_config else panel_length
+                    room_custom_panel_length = room_config.get('custom_panel_length', custom_panel_length) if room_config else custom_panel_length
+                    room_orientation_strategy = room_config.get('orientation_strategy', orientation_strategy) if room_config else orientation_strategy
+                    room_support_type = room_config.get('support_type', support_type) if room_config else support_type
+                    room_support_config = room_config.get('support_config', support_config) if room_config else support_config
+                    
                     # Prepare support configuration
-                    if support_config is None:
-                        support_config = {}
+                    if room_support_config is None:
+                        room_support_config = {}
                     
                     # Create or update ceiling plan with ALL generation parameters
                     ceiling_plan, created = CeilingPlan.objects.get_or_create(
@@ -3788,31 +4262,31 @@ class CeilingService:
                             'total_panels': len(panels),
                             'full_panels': len([p for p in panels if not p.get('is_cut', False)]),
                             'cut_panels': len([p for p in panels if p.get('is_cut', False)]),
-                            # CRITICAL: Save all generation parameters
-                            'ceiling_thickness': ceiling_thickness,
-                            'orientation_strategy': orientation_strategy,
-                            'panel_width': panel_width,
-                            'panel_length': panel_length,
-                            'custom_panel_length': custom_panel_length,
-                            'support_type': support_type,
-                            'support_config': support_config
+                            # CRITICAL: Save all generation parameters (room-specific or global)
+                            'ceiling_thickness': room_ceiling_thickness,
+                            'orientation_strategy': room_orientation_strategy,
+                            'panel_width': room_panel_width,
+                            'panel_length': room_panel_length,
+                            'custom_panel_length': room_custom_panel_length,
+                            'support_type': room_support_type,
+                            'support_config': room_support_config
                         }
                     )
                     
                     if not created:
-                        # Update existing plan with new parameters
+                        # Update existing plan with new parameters (room-specific or global)
                         ceiling_plan.generation_method = 'enhanced_automatic'
                         ceiling_plan.total_panels = len(panels)
                         ceiling_plan.full_panels = len([p for p in panels if not p.get('is_cut', False)])
                         ceiling_plan.cut_panels = len([p for p in panels if p.get('is_cut', False)])
-                        # CRITICAL: Update generation parameters
-                        ceiling_plan.ceiling_thickness = ceiling_thickness
-                        ceiling_plan.orientation_strategy = orientation_strategy
-                        ceiling_plan.panel_width = panel_width
-                        ceiling_plan.panel_length = panel_length
-                        ceiling_plan.custom_panel_length = custom_panel_length
-                        ceiling_plan.support_type = support_type
-                        ceiling_plan.support_config = support_config
+                        # CRITICAL: Update generation parameters (room-specific or global)
+                        ceiling_plan.ceiling_thickness = room_ceiling_thickness
+                        ceiling_plan.orientation_strategy = room_orientation_strategy
+                        ceiling_plan.panel_width = room_panel_width
+                        ceiling_plan.panel_length = room_panel_length
+                        ceiling_plan.custom_panel_length = room_custom_panel_length
+                        ceiling_plan.support_type = room_support_type
+                        ceiling_plan.support_config = room_support_config
                         ceiling_plan.save()
                     
                     # Clear existing panels and create new ones
@@ -3829,7 +4303,7 @@ class CeilingService:
                             end_y=panel_data['end_y'],
                             width=panel_data['width'],
                             length=panel_data['length'],
-                            thickness=ceiling_thickness,  # Use the ceiling_thickness parameter
+                            thickness=room_ceiling_thickness,  # Use room-specific or global thickness
                             material_type='standard',
                             is_cut_panel=panel_data.get('is_cut', False),
                             cut_notes=panel_data.get('cut_notes', '')

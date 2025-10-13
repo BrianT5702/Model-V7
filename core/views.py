@@ -503,6 +503,9 @@ class CeilingPlanViewSet(viewsets.ModelViewSet):
         support_type = request.data.get('support_type', 'nylon')
         support_config = request.data.get('support_config', {})
         
+        # Extract room-specific configuration (if provided)
+        room_specific_config = request.data.get('room_specific_config')
+        
         if not project_id:
             return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -528,7 +531,8 @@ class CeilingPlanViewSet(viewsets.ModelViewSet):
                 ceiling_thickness,
                 custom_panel_length,
                 support_type,
-                support_config
+                support_config,
+                room_specific_config
             )
             
             if 'error' in enhanced_plan:
