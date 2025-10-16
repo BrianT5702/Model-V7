@@ -28,11 +28,103 @@ const ProjectDetails = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
     const projectDetails = useProjectDetails(projectId);
+    
+    // Modal state for image capture
+    const [isCapturingImages, setIsCapturingImages] = useState(false);
+    const [captureSuccess, setCaptureSuccess] = useState(false);
 
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
     
-
+    // Capture canvas images when switching tabs
+    useEffect(() => {
+        // Helper function to remove grid lines from canvas
+        const removeGridFromCanvas = (sourceCanvas) => {
+            console.log('🎨 Removing grid lines from canvas...');
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = sourceCanvas.width;
+            tempCanvas.height = sourceCanvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Fill with white background first
+            tempCtx.fillStyle = '#FFFFFF';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            // Copy original canvas on top
+            tempCtx.drawImage(sourceCanvas, 0, 0);
+            
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const data = imageData.data;
+            
+            // Grid color: #ddd = rgb(221, 221, 221)
+            const gridR = 221, gridG = 221, gridB = 221;
+            const bgR = 255, bgG = 255, bgB = 255; // Pure white
+            const tolerance = 20; // Increased tolerance
+            
+            let pixelsChanged = 0;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                const a = data[i + 3];
+                
+                if (Math.abs(r - gridR) < tolerance && 
+                    Math.abs(g - gridG) < tolerance && 
+                    Math.abs(b - gridB) < tolerance &&
+                    a > 200) {
+                    data[i] = bgR;
+                    data[i + 1] = bgG;
+                    data[i + 2] = bgB;
+                    pixelsChanged++;
+                }
+            }
+            
+            console.log(`✅ Removed ${pixelsChanged / 4} grid pixels`);
+            
+            tempCtx.putImageData(imageData, 0, 0);
+            return tempCanvas;
+        };
+        
+        const captureCanvasImage = async () => {
+            // Wait for canvas to render
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            let canvas = null;
+            let planType = null;
+            
+            if (projectDetails.currentView === 'wall-plan') {
+                canvas = document.querySelector('canvas[data-plan-type="wall"]');
+                planType = 'wall';
+            } else if (projectDetails.currentView === 'ceiling-plan') {
+                canvas = document.querySelector('canvas[data-plan-type="ceiling"]');
+                planType = 'ceiling';
+            } else if (projectDetails.currentView === 'floor-plan') {
+                canvas = document.querySelector('canvas[data-plan-type="floor"]');
+                planType = 'floor';
+            }
+            
+            if (canvas && planType) {
+                try {
+                    // Remove grid lines before capturing
+                    const cleanCanvas = removeGridFromCanvas(canvas);
+                    const imageData = cleanCanvas.toDataURL('image/png', 0.9);
+                    console.log(`📸 Captured ${planType} plan image (without grid)`);
+                    
+                    // Store in shared data - use special method for canvas images
+                    projectDetails.updateCanvasImage(planType, imageData);
+                } catch (error) {
+                    console.warn(`Failed to capture ${planType} plan:`, error);
+                }
+            }
+        };
+        
+        // Only capture when on a canvas tab
+        if (['wall-plan', 'ceiling-plan', 'floor-plan'].includes(projectDetails.currentView)) {
+            captureCanvasImage();
+        }
+    }, [projectDetails.currentView, projectDetails.walls, projectDetails.rooms]);
 
     // Memoize the room close handler to prevent unnecessary re-renders
     const handleRoomClose = useCallback(() => {
@@ -69,6 +161,71 @@ const ProjectDetails = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 project-details-container">
+            {/* Full-Screen Loading Modal for Image Capture */}
+            {isCapturingImages && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md mx-4">
+                        <div className="text-center">
+                            {captureSuccess ? (
+                                <>
+                                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-gray-800 mb-3">Success!</h3>
+                                    <p className="text-gray-600 mb-4">
+                                        All plan images have been captured successfully.
+                                    </p>
+                                    <div className="space-y-2 text-sm text-green-600">
+                                        <div className="flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                            <span>Wall Plan ✓</span>
+                                        </div>
+                                        <div className="flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                            <span>Ceiling Plan ✓</span>
+                                        </div>
+                                        <div className="flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                            <span>Floor Plan ✓</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-4">
+                                        You can now export your project report with images.
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
+                                    <h3 className="text-xl font-bold text-gray-800 mb-3">Auto-Fetching Data & Images</h3>
+                                    <p className="text-gray-600 mb-4">
+                                        Capturing plan images from all tabs...
+                                    </p>
+                                    <div className="space-y-2 text-sm text-gray-500">
+                                        <div className="flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
+                                            <span>Switching to Wall Plan...</span>
+                                        </div>
+                                        <div className="flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
+                                            <span>Switching to Ceiling Plan...</span>
+                                        </div>
+                                        <div className="flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
+                                            <span>Switching to Floor Plan...</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-4">
+                                        Please wait while we capture all plan images...
+                                    </p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Navigation Bar */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
                 <div className="max-w-7xl mx-auto px-6 py-3">
@@ -634,6 +791,12 @@ const ProjectDetails = () => {
                                             projectId={projectId}
                                             sharedPanelData={projectDetails.getAllPanelData()}
                                             updateSharedPanelData={projectDetails.updateSharedPanelData}
+                                            updateCanvasImage={projectDetails.updateCanvasImage}
+                                            setCurrentView={projectDetails.setCurrentView}
+                                            isCapturingImages={isCapturingImages}
+                                            setIsCapturingImages={setIsCapturingImages}
+                                            captureSuccess={captureSuccess}
+                                            setCaptureSuccess={setCaptureSuccess}
                                         />
                                     ) : (
                                         <CeilingManager

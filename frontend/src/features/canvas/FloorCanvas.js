@@ -581,6 +581,8 @@ const FloorCanvas = ({
         const isPanelFloor = room.floor_type === 'panel' || room.floor_type === 'Panel';
         // Check if room has slab floor type
         const isSlabFloor = room.floor_type === 'slab' || room.floor_type === 'Slab';
+        // Check if room has none floor type (no plan needed)
+        const isNoneFloor = room.floor_type === 'none' || room.floor_type === 'None';
         console.log(`  - Room ${room.id} floor type check: '${room.floor_type}' -> isPanelFloor: ${isPanelFloor}, isSlabFloor: ${isSlabFloor}`);
         
         if (isSlabFloor) {
@@ -591,9 +593,16 @@ const FloorCanvas = ({
         }
         
         if (!isPanelFloor) {
-            // For non-panel rooms, show "No floor plan available" message
-            console.log(`  - Room ${room.id} has floor type '${room.floor_type}' - showing no floor plan message`);
-            drawNoFloorPlanMessage(ctx, room);
+            // For non-panel rooms
+            if (isNoneFloor) {
+                // Show a specific "No floor plan needed" message placed like slab text
+                console.log(`  - Room ${room.id} has floor type 'None' - showing no plan needed message`);
+                drawNoPlanNeededMessage(ctx, room);
+            } else {
+                // Generic message for other types
+                console.log(`  - Room ${room.id} has floor type '${room.floor_type}' - showing no floor plan message`);
+                drawNoFloorPlanMessage(ctx, room);
+            }
             return;
         }
         
@@ -787,6 +796,62 @@ const FloorCanvas = ({
         
         // Text
         ctx.fillStyle = '#10b981'; // Green text for slab rooms
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(messageText, messageX, messageY);
+    };
+
+    // Draw "No floor plan needed" message for rooms with floor_type None
+    const drawNoPlanNeededMessage = (ctx, room) => {
+        // Use stored label position from wall plan if available, otherwise calculate center
+        let labelX, labelY;
+        
+        if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
+            // Use stored position from wall plan (Canvas2D) - same as room name
+            labelX = room.label_position.x;
+            labelY = room.label_position.y;
+        } else {
+            // Fallback: calculate geometric center
+            labelX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
+            labelY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
+        }
+        
+        // Position message below room name (offset by line height), same as slab text
+        const messageX = labelX * scaleFactor.current + offsetX.current;
+        const lineHeight = Math.max(16, 18 * scaleFactor.current); // Line spacing
+        const messageY = labelY * scaleFactor.current + offsetY.current + lineHeight;
+        
+        const messageText = 'No floor plan needed';
+        
+        // Use similar styling as slab message
+        ctx.font = `bold ${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        const textMetrics = ctx.measureText(messageText);
+        const textWidth = textMetrics.width;
+        const textHeight = 16 * scaleFactor.current;
+        
+        const paddingH = 8 * scaleFactor.current;
+        const paddingV = 6 * scaleFactor.current;
+        
+        // Background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(
+            messageX - textWidth/2 - paddingH,
+            messageY - textHeight/2 - paddingV,
+            textWidth + paddingH * 2,
+            textHeight + paddingV * 2
+        );
+        
+        // Border and text color: use a neutral gray to distinguish from slab (green)
+        ctx.strokeStyle = '#9ca3af';
+        ctx.lineWidth = 1 * scaleFactor.current;
+        ctx.strokeRect(
+            messageX - textWidth/2 - paddingH,
+            messageY - textHeight/2 - paddingV,
+            textWidth + paddingH * 2,
+            textHeight + paddingV * 2
+        );
+        
+        ctx.fillStyle = '#6b7280';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(messageText, messageX, messageY);
@@ -989,7 +1054,10 @@ const FloorCanvas = ({
         
         // Initialize text and labelBounds variables
         let text;
-        if (dimension.quantity && dimension.quantity > 1) {
+        if (dimension.type === 'cut_panel' || dimension.isCut) {
+            // Cut panel dimension label should match ceiling plan format: "320mm (CUT)"
+            text = `${Math.round(length)}mm (CUT)`;
+        } else if (dimension.quantity && dimension.quantity > 1) {
             // Grouped panel dimension: show "n × A" format
             text = `${dimension.quantity} × ${Math.round(length)}mm`;
         } else {
@@ -1250,7 +1318,8 @@ const FloorCanvas = ({
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
-                        isHorizontal: true // This dimension line is HORIZONTAL (same as grouped dimensions for horizontal panels)
+                        isHorizontal: true, // This dimension line is HORIZONTAL (same as grouped dimensions for horizontal panels)
+                        isCut: true
                     };
                 } else {
                     // Vertical panel: should create VERTICAL dimension line (same as grouped dimensions)
@@ -1271,7 +1340,8 @@ const FloorCanvas = ({
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
-                        isHorizontal: false // This dimension line is VERTICAL (same as grouped dimensions for vertical panels)
+                        isHorizontal: false, // This dimension line is VERTICAL (same as grouped dimensions for vertical panels)
+                        isCut: true
                     };
                 }
                 
@@ -1662,6 +1732,7 @@ const FloorCanvas = ({
 
                     <canvas
                         ref={canvasRef}
+                        data-plan-type="floor"
                         className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
                         style={{
                             width: `${CANVAS_WIDTH}px`,
@@ -1779,7 +1850,8 @@ const FloorCanvas = ({
                                         const strategyMap = {
                                             'all_horizontal': 'Horizontal',
                                             'all_vertical': 'Vertical',
-                                            'mixed_optimal': 'Mixed',
+                                            'room_optimal': 'Room Optimal',
+                                            'best_orientation': 'Best',
                                             'auto': 'Auto'
                                         };
                                         

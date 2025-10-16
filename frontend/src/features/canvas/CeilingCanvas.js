@@ -2652,6 +2652,7 @@ const CeilingCanvas = ({
 
                         <canvas
                             ref={canvasRef}
+                            data-plan-type="ceiling"
                             className="ceiling-canvas cursor-grab active:cursor-grabbing block w-full"
                             style={{
                                 width: `${CANVAS_WIDTH}px`,

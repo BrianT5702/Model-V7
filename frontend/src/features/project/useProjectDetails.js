@@ -33,7 +33,11 @@ export default function useProjectDetails(projectId) {
   // Add shared panel data state for cross-tab communication
   const [sharedPanelData, setSharedPanelData] = useState({
     wallPanels: null,        // From wall plan tab
-    ceilingPanels: null,     // From ceiling plan tab
+    ceilingPanels: null,
+    // Canvas images for export
+    wallPlanImage: null,
+    ceilingPlanImage: null,
+    floorPlanImage: null,     // From ceiling plan tab
     floorPanels: null,       // From floor plan tab
     wallPanelAnalysis: null, // Panel analysis from wall calculations
     // Support accessories information from ceiling plan
@@ -74,6 +78,15 @@ export default function useProjectDetails(projectId) {
     console.log(`Updated shared panel data for ${tabName}:`, panelData, analysis);
   };
   
+  // Function to update canvas images
+  const updateCanvasImage = (planType, imageData) => {
+    setSharedPanelData(prev => ({
+      ...prev,
+      [`${planType}PlanImage`]: imageData
+    }));
+    console.log(`📸 Stored ${planType} plan image in shared data`);
+  };
+  
   // Function to get all panel data for the final summary tab
   const getAllPanelData = () => {
     return {
@@ -90,7 +103,11 @@ export default function useProjectDetails(projectId) {
       totalPanels: (sharedPanelData.wallPanels?.length || 0) + 
                    (sharedPanelData.ceilingPanels?.length || 0) + 
                    (sharedPanelData.floorPanels?.length || 0),
-      lastUpdated: sharedPanelData.lastUpdated
+      lastUpdated: sharedPanelData.lastUpdated,
+      // Canvas images for export
+      wallPlanImage: sharedPanelData.wallPlanImage,
+      ceilingPlanImage: sharedPanelData.ceilingPlanImage,
+      floorPlanImage: sharedPanelData.floorPlanImage
     };
   };
   
@@ -244,8 +261,14 @@ export default function useProjectDetails(projectId) {
 
   // Sync panel lines visibility with 3D canvas
   useEffect(() => {
-    if (is3DView && threeCanvasInstance.current && threeCanvasInstance.current.setPanelLinesVisibility) {
-      threeCanvasInstance.current.setPanelLinesVisibility(showPanelLines);
+    if (is3DView && threeCanvasInstance.current) {
+      // Set both wall and ceiling panel lines visibility
+      if (threeCanvasInstance.current.setAllPanelLinesVisibility) {
+        threeCanvasInstance.current.setAllPanelLinesVisibility(showPanelLines);
+      } else if (threeCanvasInstance.current.setPanelLinesVisibility) {
+        // Fallback to just wall panel lines if combined method not available
+        threeCanvasInstance.current.setPanelLinesVisibility(showPanelLines);
+      }
     }
   }, [is3DView, showPanelLines]);
 
@@ -1232,7 +1255,13 @@ export default function useProjectDetails(projectId) {
     handleDeleteDoor,
     handleAddWallWithSplitting,
     handleViewToggle,
-    togglePanelLines: () => setShowPanelLines(prev => !prev),
+    togglePanelLines: () => {
+      setShowPanelLines(prev => !prev);
+      // Also toggle ceiling panel lines when toggling wall panel lines
+      if (is3DView && threeCanvasInstance.current && threeCanvasInstance.current.toggleAllPanelLines) {
+        threeCanvasInstance.current.toggleAllPanelLines();
+      }
+    },
     // Utility
     isDatabaseConnectionError,
     areCollinearWalls,
@@ -1246,5 +1275,7 @@ export default function useProjectDetails(projectId) {
     handleWallUpdateNoMerge,
     handleRoomSelect,
     forceCleanup3D,
+    // Canvas image methods
+    updateCanvasImage,
   };
 } 

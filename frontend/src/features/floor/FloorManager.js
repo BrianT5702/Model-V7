@@ -249,6 +249,14 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                 setFloorPanels(panels);
                 
                 // CRITICAL: Load saved generation parameters to restore UI state
+                // Load waste percentage from existing plan
+                if (existingPlan.summary?.project_waste_percentage !== undefined && existingPlan.summary?.project_waste_percentage !== null) {
+                    setProjectWastePercentage(existingPlan.summary.project_waste_percentage);
+                    console.log('📊 [FLOOR INITIAL LOAD] Loaded existing waste % from floor plan:', existingPlan.summary.project_waste_percentage);
+                } else if (existingPlan.waste_percentage !== undefined && existingPlan.waste_percentage !== null) {
+                    setProjectWastePercentage(existingPlan.waste_percentage);
+                    console.log('📊 [FLOOR INITIAL LOAD] Loaded legacy waste % from floor plan:', existingPlan.waste_percentage);
+                }
 
                 if (existingPlan.orientation_strategy) {
                     setSelectedOrientationStrategy(existingPlan.orientation_strategy);
@@ -476,7 +484,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                                     <option value="auto">🔄 Auto (Recommended)</option>
                                     <option value="all_horizontal">➡️ All Horizontal</option>
                                     <option value="all_vertical">⬇️ All Vertical</option>
-                                    <option value="mixed_optimal">🔄 Mixed Optimal</option>
+                                    <option value="room_optimal">🎯 Room Optimal</option>
                                 </select>
                             </div>
                         </div>

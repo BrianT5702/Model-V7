@@ -23001,3 +23001,1499 @@ INFO 2025-10-14 00:14:36,543 services 17576 22404 [GENERATION] Using leftover 17
 INFO 2025-10-14 00:14:36,543 services 17576 22404   Generated 8 panels for room 175
 INFO 2025-10-14 00:14:36,543 services 17576 22404 _generate_enhanced_room_panels: Total panels generated: 22
 INFO 2025-10-14 00:14:36,543 services 17576 22404 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 7178066.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760372076541_0', 'length': 1294.0, 'thickness': 150, 'width': 439.0, 'created_at': 1760372076.5413907}, {'id': '1760372076541_1', 'length': 10000.0, 'thickness': 150, 'width': 5.0, 'created_at': 1760372076.5413907}]}
+INFO 2025-10-15 06:58:24,164 autoreload 13096 5160 Watching for file changes with StatReloader
+INFO 2025-10-15 06:58:42,978 services 13096 23808 [ANALYSIS-V] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:42,978 services 13096 23808 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:42,979 services 13096 23808 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:42,979 services 13096 23808 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:42,979 services 13096 23808 [ANALYSIS-H] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:58:42,979 services 13096 23808 [ANALYSIS-H] Using leftover 1760482722979_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:58:42,980 services 13096 23808 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:43,166 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:43,166 services 13096 23808 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:43,170 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:43,171 services 13096 23808 [COMBO-TEST] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:58:43,171 services 13096 23808 [COMBO-TEST] Using leftover 1760482723170_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:58:43,176 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:43,176 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 580.0mm × 10500.0mm)
+INFO 2025-10-15 06:58:43,176 services 13096 23808 [COMBO-TEST] Using leftover 1760482723176_0: 580.0mm from 850.0mm, remaining: 270.0mm
+INFO 2025-10-15 06:58:43,177 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:43,177 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:58:43,177 services 13096 23808 [COMBO-TEST] Using leftover 1760482723177_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:58:43,187 services 13096 23808 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:43,192 services 13096 23808 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,898 services 13096 23808 Room-specific ceiling configuration detected for room 178
+INFO 2025-10-15 06:58:54,898 services 13096 23808 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 06:58:54,952 services 13096 23808 Generating ceiling panels for 3 rooms (room-specific mode)
+INFO 2025-10-15 06:58:54,953 services 13096 23808   Room 178 (Room 3): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-15 06:58:54,953 services 13096 23808 [GENERATION] Leftover created: 850.0mm × 15000.0mm (thickness: 150mm)
+INFO 2025-10-15 06:58:54,954 services 13096 23808 Successfully generated 9 panels for room 178 (Room 3) with horizontal orientation
+INFO 2025-10-15 06:58:54,954 services 13096 23808   > Generated 9 panels for room 178
+INFO 2025-10-15 06:58:54,957 services 13096 23808   Room 177 (Room 2): Using SAVED orientation = all_vertical
+INFO 2025-10-15 06:58:54,957 services 13096 23808 [GENERATION] Compatible leftover found: 850.0mm × 15000.0mm (needed: 580.0mm × 10500.0mm)
+INFO 2025-10-15 06:58:54,957 services 13096 23808 [GENERATION] Using leftover 1760482734953_0: 580.0mm from 850.0mm, remaining: 270.0mm
+INFO 2025-10-15 06:58:54,958 services 13096 23808 Successfully generated 7 panels for room 177 (Room 2) with vertical orientation
+INFO 2025-10-15 06:58:54,958 services 13096 23808   > Generated 7 panels for room 177
+INFO 2025-10-15 06:58:54,959 services 13096 23808   Room 176 (ROOM 1): Using SAVED orientation = all_vertical
+INFO 2025-10-15 06:58:54,960 services 13096 23808 [GENERATION] Leftover created: 530.0mm × 10500.0mm (thickness: 150mm)
+INFO 2025-10-15 06:58:54,960 services 13096 23808 Successfully generated 7 panels for room 176 (ROOM 1) with vertical orientation
+INFO 2025-10-15 06:58:54,960 services 13096 23808   > Generated 7 panels for room 176
+INFO 2025-10-15 06:58:54,960 services 13096 23808 Total panels generated: 23
+INFO 2025-10-15 06:58:54,960 services 13096 23808 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 18315000.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760482734953_0', 'length': 15000.0, 'thickness': 150, 'width': 270.0, 'created_at': 1760482734.9535167}, {'id': '1760482734960_1', 'length': 10500.0, 'thickness': 150, 'width': 530.0, 'created_at': 1760482734.9605243}]}
+INFO 2025-10-15 06:58:54,961 services 13096 23808 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 18315000.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760482734953_0', 'length': 15000.0, 'thickness': 150, 'width': 270.0, 'created_at': 1760482734.9535167}, {'id': '1760482734960_1', 'length': 10500.0, 'thickness': 150, 'width': 530.0, 'created_at': 1760482734.9605243}]}
+INFO 2025-10-15 06:58:54,965 services 13096 23808 [ANALYSIS-V] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,965 services 13096 23808 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,966 services 13096 23808 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,966 services 13096 23808 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,966 services 13096 23808 [ANALYSIS-H] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:58:54,966 services 13096 23808 [ANALYSIS-H] Using leftover 1760482734966_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:58:54,967 services 13096 23808 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,971 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,971 services 13096 23808 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,975 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,976 services 13096 23808 [COMBO-TEST] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:58:54,976 services 13096 23808 [COMBO-TEST] Using leftover 1760482734975_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:58:54,982 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,982 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 580.0mm × 10500.0mm)
+INFO 2025-10-15 06:58:54,982 services 13096 23808 [COMBO-TEST] Using leftover 1760482734982_0: 580.0mm from 850.0mm, remaining: 270.0mm
+INFO 2025-10-15 06:58:54,983 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,983 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:58:54,983 services 13096 23808 [COMBO-TEST] Using leftover 1760482734983_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:58:54,992 services 13096 23808 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:58:54,998 services 13096 23808 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,595 services 13096 23808 [ANALYSIS-V] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,596 services 13096 23808 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,596 services 13096 23808 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,596 services 13096 23808 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,597 services 13096 23808 [ANALYSIS-H] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:00,597 services 13096 23808 [ANALYSIS-H] Using leftover 1760482740596_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:59:00,597 services 13096 23808 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,601 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,602 services 13096 23808 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,606 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,607 services 13096 23808 [COMBO-TEST] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:00,607 services 13096 23808 [COMBO-TEST] Using leftover 1760482740606_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:59:00,611 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,611 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 580.0mm × 10500.0mm)
+INFO 2025-10-15 06:59:00,611 services 13096 23808 [COMBO-TEST] Using leftover 1760482740611_0: 580.0mm from 850.0mm, remaining: 270.0mm
+INFO 2025-10-15 06:59:00,611 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,612 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:00,612 services 13096 23808 [COMBO-TEST] Using leftover 1760482740611_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:59:00,620 services 13096 23808 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,623 services 13096 23808 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:00,627 services 13096 23808 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 06:59:00,628 services 13096 23808 _generate_enhanced_room_panels: Processing 3 rooms
+INFO 2025-10-15 06:59:00,628 services 13096 23808   Processing room 178: Room 3
+INFO 2025-10-15 06:59:00,629 services 13096 23808   Generating vertical panels for room 178
+INFO 2025-10-15 06:59:00,629 services 13096 23808 [GENERATION] Leftover created: 1100.0mm × 9500.0mm (thickness: 150mm)
+INFO 2025-10-15 06:59:00,629 services 13096 23808   Generated 14 panels for room 178
+INFO 2025-10-15 06:59:00,629 services 13096 23808   Processing room 177: Room 2
+INFO 2025-10-15 06:59:00,630 services 13096 23808   Generating horizontal panels for room 177
+INFO 2025-10-15 06:59:00,630 services 13096 23808 [GENERATION] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:00,630 services 13096 23808 [GENERATION] Using leftover 1760482740629_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:59:00,630 services 13096 23808   Generated 10 panels for room 177
+INFO 2025-10-15 06:59:00,631 services 13096 23808   Processing room 176: ROOM 1
+INFO 2025-10-15 06:59:00,631 services 13096 23808   Generating vertical panels for room 176
+INFO 2025-10-15 06:59:00,632 services 13096 23808 [GENERATION] Leftover created: 530.0mm × 10500.0mm (thickness: 150mm)
+INFO 2025-10-15 06:59:00,632 services 13096 23808   Generated 7 panels for room 176
+INFO 2025-10-15 06:59:00,632 services 13096 23808 _generate_enhanced_room_panels: Total panels generated: 31
+INFO 2025-10-15 06:59:00,632 services 13096 23808 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 16015000.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760482740629_0', 'length': 9500.0, 'thickness': 150, 'width': 950.0, 'created_at': 1760482740.6291933}, {'id': '1760482740632_1', 'length': 10500.0, 'thickness': 150, 'width': 530.0, 'created_at': 1760482740.6321938}]}
+INFO 2025-10-15 06:59:05,153 services 13096 23808 [ANALYSIS-V] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,154 services 13096 23808 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,154 services 13096 23808 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,154 services 13096 23808 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,154 services 13096 23808 [ANALYSIS-H] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:05,154 services 13096 23808 [ANALYSIS-H] Using leftover 1760482745154_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:59:05,154 services 13096 23808 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,158 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,159 services 13096 23808 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,162 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,163 services 13096 23808 [COMBO-TEST] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:05,163 services 13096 23808 [COMBO-TEST] Using leftover 1760482745162_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:59:05,167 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,167 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 580.0mm × 10500.0mm)
+INFO 2025-10-15 06:59:05,167 services 13096 23808 [COMBO-TEST] Using leftover 1760482745167_0: 580.0mm from 850.0mm, remaining: 270.0mm
+INFO 2025-10-15 06:59:05,167 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,168 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:05,168 services 13096 23808 [COMBO-TEST] Using leftover 1760482745167_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:59:05,175 services 13096 23808 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,179 services 13096 23808 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:05,183 services 13096 23808 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 06:59:05,183 services 13096 23808 _generate_enhanced_room_panels: Processing 3 rooms
+INFO 2025-10-15 06:59:05,183 services 13096 23808   Processing room 178: Room 3
+INFO 2025-10-15 06:59:05,185 services 13096 23808   Generating vertical panels for room 178
+INFO 2025-10-15 06:59:05,185 services 13096 23808 [GENERATION] Leftover created: 1100.0mm × 9500.0mm (thickness: 150mm)
+INFO 2025-10-15 06:59:05,185 services 13096 23808   Generated 14 panels for room 178
+INFO 2025-10-15 06:59:05,185 services 13096 23808   Processing room 177: Room 2
+INFO 2025-10-15 06:59:05,187 services 13096 23808   Generating horizontal panels for room 177
+INFO 2025-10-15 06:59:05,188 services 13096 23808 [GENERATION] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:05,188 services 13096 23808 [GENERATION] Using leftover 1760482745185_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:59:05,188 services 13096 23808   Generated 10 panels for room 177
+INFO 2025-10-15 06:59:05,188 services 13096 23808   Processing room 176: ROOM 1
+INFO 2025-10-15 06:59:05,190 services 13096 23808   Generating vertical panels for room 176
+INFO 2025-10-15 06:59:05,190 services 13096 23808 [GENERATION] Leftover created: 530.0mm × 10500.0mm (thickness: 150mm)
+INFO 2025-10-15 06:59:05,190 services 13096 23808   Generated 7 panels for room 176
+INFO 2025-10-15 06:59:05,191 services 13096 23808 _generate_enhanced_room_panels: Total panels generated: 31
+INFO 2025-10-15 06:59:05,191 services 13096 23808 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 16015000.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760482745185_0', 'length': 9500.0, 'thickness': 150, 'width': 950.0, 'created_at': 1760482745.1857414}, {'id': '1760482745190_1', 'length': 10500.0, 'thickness': 150, 'width': 530.0, 'created_at': 1760482745.19074}]}
+INFO 2025-10-15 06:59:11,640 services 13096 23808 [ANALYSIS-V] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,641 services 13096 23808 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,641 services 13096 23808 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,641 services 13096 23808 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,642 services 13096 23808 [ANALYSIS-H] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:11,642 services 13096 23808 [ANALYSIS-H] Using leftover 1760482751641_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:59:11,642 services 13096 23808 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,647 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,647 services 13096 23808 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,651 services 13096 23808 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,651 services 13096 23808 [COMBO-TEST] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:11,651 services 13096 23808 [COMBO-TEST] Using leftover 1760482751651_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:59:11,655 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,656 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 580.0mm × 10500.0mm)
+INFO 2025-10-15 06:59:11,656 services 13096 23808 [COMBO-TEST] Using leftover 1760482751655_0: 580.0mm from 850.0mm, remaining: 270.0mm
+INFO 2025-10-15 06:59:11,656 services 13096 23808 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,656 services 13096 23808 [COMBO-TEST] Compatible leftover found: 850.0mm × 15000.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:11,657 services 13096 23808 [COMBO-TEST] Using leftover 1760482751656_0: 150.0mm from 850.0mm, remaining: 700.0mm
+INFO 2025-10-15 06:59:11,666 services 13096 23808 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,673 services 13096 23808 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 06:59:11,678 services 13096 23808 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 06:59:11,678 services 13096 23808 _generate_enhanced_room_panels: Processing 3 rooms
+INFO 2025-10-15 06:59:11,678 services 13096 23808   Processing room 178: Room 3
+INFO 2025-10-15 06:59:11,680 services 13096 23808   Generating vertical panels for room 178
+INFO 2025-10-15 06:59:11,680 services 13096 23808 [GENERATION] Leftover created: 1100.0mm × 9500.0mm (thickness: 150mm)
+INFO 2025-10-15 06:59:11,680 services 13096 23808   Generated 14 panels for room 178
+INFO 2025-10-15 06:59:11,681 services 13096 23808   Processing room 177: Room 2
+INFO 2025-10-15 06:59:11,682 services 13096 23808   Generating horizontal panels for room 177
+INFO 2025-10-15 06:59:11,682 services 13096 23808 [GENERATION] Compatible leftover found: 1100.0mm × 9500.0mm (needed: 150.0mm × 7480.0mm)
+INFO 2025-10-15 06:59:11,682 services 13096 23808 [GENERATION] Using leftover 1760482751680_0: 150.0mm from 1100.0mm, remaining: 950.0mm
+INFO 2025-10-15 06:59:11,682 services 13096 23808   Generated 10 panels for room 177
+INFO 2025-10-15 06:59:11,683 services 13096 23808   Processing room 176: ROOM 1
+INFO 2025-10-15 06:59:11,683 services 13096 23808   Generating vertical panels for room 176
+INFO 2025-10-15 06:59:11,684 services 13096 23808 [GENERATION] Leftover created: 530.0mm × 10500.0mm (thickness: 150mm)
+INFO 2025-10-15 06:59:11,684 services 13096 23808   Generated 7 panels for room 176
+INFO 2025-10-15 06:59:11,684 services 13096 23808 _generate_enhanced_room_panels: Total panels generated: 31
+INFO 2025-10-15 06:59:11,684 services 13096 23808 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 16015000.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760482751680_0', 'length': 9500.0, 'thickness': 150, 'width': 950.0, 'created_at': 1760482751.6807728}, {'id': '1760482751684_1', 'length': 10500.0, 'thickness': 150, 'width': 530.0, 'created_at': 1760482751.6847703}]}
+INFO 2025-10-15 06:59:23,497 services 13096 23808 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 06:59:23,498 services 13096 23808 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 06:59:23,498 services 13096 23808 [ANALYSIS-M] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 06:59:23,498 services 13096 23808 [ANALYSIS-M] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:09:47,486 autoreload 13096 5160 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:09:48,592 autoreload 26504 12932 Watching for file changes with StatReloader
+INFO 2025-10-15 07:10:05,172 autoreload 26504 12932 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:10:05,890 autoreload 23676 26416 Watching for file changes with StatReloader
+INFO 2025-10-15 07:10:19,553 autoreload 23676 26416 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:10:20,176 autoreload 1236 25440 Watching for file changes with StatReloader
+INFO 2025-10-15 07:10:58,831 autoreload 1236 25440 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:10:59,559 autoreload 4684 1504 Watching for file changes with StatReloader
+INFO 2025-10-15 07:11:28,633 autoreload 4684 1504 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:11:29,257 autoreload 25532 15716 Watching for file changes with StatReloader
+INFO 2025-10-15 07:11:55,485 autoreload 25532 15716 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:11:56,247 autoreload 5160 26488 Watching for file changes with StatReloader
+INFO 2025-10-15 07:12:10,925 services 5160 18012 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:12:10,926 services 5160 18012 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:12:10,926 services 5160 18012 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:12:10,926 services 5160 18012 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:12:10,927 services 5160 18012 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:14:47,554 autoreload 5160 26488 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:14:48,189 autoreload 14768 17492 Watching for file changes with StatReloader
+INFO 2025-10-15 07:19:15,940 services 14768 23644 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:15,941 services 14768 23644 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:15,941 services 14768 23644 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:15,941 services 14768 23644 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:15,941 services 14768 23644 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:15,943 services 14768 23644 [GENERATION] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:20,035 services 14768 23644 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:20,036 services 14768 23644 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:20,036 services 14768 23644 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:20,036 services 14768 23644 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:20,037 services 14768 23644 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:20,039 services 14768 23644 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:25,554 services 14768 23644 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:25,554 services 14768 23644 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:25,554 services 14768 23644 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:25,554 services 14768 23644 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:25,555 services 14768 23644 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:19:25,555 log 14768 23644 Bad Request: /api/floor-plans/generate_floor_plan/
+INFO 2025-10-15 07:19:26,757 services 14768 23644 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:26,758 services 14768 23644 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:26,758 services 14768 23644 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:26,758 services 14768 23644 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:19:26,758 services 14768 23644 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:19:26,759 log 14768 23644 Bad Request: /api/floor-plans/generate_floor_plan/
+INFO 2025-10-15 07:20:20,141 autoreload 14768 17492 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:20:20,794 autoreload 26228 10224 Watching for file changes with StatReloader
+INFO 2025-10-15 07:20:34,277 autoreload 26228 10224 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:20:34,827 autoreload 11076 24172 Watching for file changes with StatReloader
+INFO 2025-10-15 07:21:17,375 autoreload 11076 24172 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-15 07:21:17,961 autoreload 26800 3164 Watching for file changes with StatReloader
+INFO 2025-10-15 07:21:18,851 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:18,851 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:18,852 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:18,852 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:18,852 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:21:19,045 services 26800 1228 room_optimal not available (need 2+ panel floor rooms), using auto instead
+INFO 2025-10-15 07:21:19,046 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:23,694 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:23,695 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:23,695 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:23,695 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:23,695 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:21:23,699 services 26800 1228 room_optimal not available (need 2+ panel floor rooms), using auto instead
+INFO 2025-10-15 07:21:23,701 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,327 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,327 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,328 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,328 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,328 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:21:24,331 services 26800 1228 room_optimal not available (need 2+ panel floor rooms), using auto instead
+INFO 2025-10-15 07:21:24,333 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,885 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,885 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,885 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,886 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:24,886 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:21:24,889 services 26800 1228 room_optimal not available (need 2+ panel floor rooms), using auto instead
+INFO 2025-10-15 07:21:24,891 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,444 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,444 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,445 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,445 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,445 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:21:25,448 services 26800 1228 room_optimal not available (need 2+ panel floor rooms), using auto instead
+INFO 2025-10-15 07:21:25,450 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,941 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,941 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,942 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,942 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:25,942 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+WARNING 2025-10-15 07:21:25,946 services 26800 1228 room_optimal not available (need 2+ panel floor rooms), using auto instead
+INFO 2025-10-15 07:21:25,948 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:29,578 services 26800 1228 calculate_minimum_wall_height called with wall_ids: [6187, 6184, 6178, 6186]
+INFO 2025-10-15 07:21:29,579 services 26800 1228 Converted wall_ids to integers: [6187, 6184, 6178, 6186]
+INFO 2025-10-15 07:21:29,622 services 26800 1228 Found 4 walls
+INFO 2025-10-15 07:21:29,625 services 26800 1228 Calculated minimum wall height: 8000.0
+INFO 2025-10-15 07:21:34,508 views 26800 1228 Updating room with data: {'room_name': 'Room 2', 'floor_type': 'Panel', 'floor_thickness': '75', 'temperature': '20.00', 'height': 8000, 'remarks': '', 'walls': [6187, 6184, 6178, 6186], 'project': '431', 'room_points': [{'x': 7520, 'y': 0}, {'x': 7520, 'y': 10500}, {'x': 15000, 'y': 10500}, {'x': 15000, 'y': 0}], 'id': 177}
+INFO 2025-10-15 07:21:34,657 views 26800 1228 Found room to update: 177, current height: 8000.0
+INFO 2025-10-15 07:21:34,675 views 26800 1228 Updated room height to: 8000.0
+INFO 2025-10-15 07:21:34,677 views 26800 1228 Updating 4 walls with new height: 8000
+INFO 2025-10-15 07:21:34,677 services 26800 1228 update_wall_heights_for_room called with wall_ids: [6178, 6186, 6184, 6187], new_height: 8000
+INFO 2025-10-15 07:21:34,677 services 26800 1228 Converted wall_ids to integers: [6178, 6186, 6184, 6187]
+INFO 2025-10-15 07:21:34,678 services 26800 1228 Found 4 walls to update
+INFO 2025-10-15 07:21:34,679 services 26800 1228 Wall 6178: current height = 8000.0
+INFO 2025-10-15 07:21:34,679 services 26800 1228 Wall 6186: current height = 8000.0
+INFO 2025-10-15 07:21:34,679 services 26800 1228 Wall 6184: current height = 8000.0
+INFO 2025-10-15 07:21:34,679 services 26800 1228 Wall 6187: current height = 8000.0
+INFO 2025-10-15 07:21:34,681 services 26800 1228 Updated 4 walls to height 8000
+INFO 2025-10-15 07:21:34,681 services 26800 1228 Wall 6178: new height = 8000.0
+INFO 2025-10-15 07:21:34,682 services 26800 1228 Wall 6186: new height = 8000.0
+INFO 2025-10-15 07:21:34,682 services 26800 1228 Wall 6184: new height = 8000.0
+INFO 2025-10-15 07:21:34,682 services 26800 1228 Wall 6187: new height = 8000.0
+INFO 2025-10-15 07:21:34,682 views 26800 1228 Successfully updated 4 walls
+INFO 2025-10-15 07:21:34,682 services 26800 1228 Recalculating room boundary for room 177
+INFO 2025-10-15 07:21:34,685 services 26800 1228 Updated room 177 boundary with 4 points (order preserved)
+INFO 2025-10-15 07:21:41,219 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,220 services 26800 1228 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,220 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,220 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,220 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,221 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,221 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,222 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,222 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,222 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,229 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,229 services 26800 1228 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 07:21:41,230 services 26800 1228 [COMBO-TEST-FLOOR] Using leftover 1760484101229_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 07:21:41,233 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,233 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,233 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,233 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,234 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:41,234 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,700 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,701 services 26800 1228 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,701 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,702 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,702 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,703 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,703 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,703 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,704 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,704 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,710 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,710 services 26800 1228 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 07:21:43,710 services 26800 1228 [COMBO-TEST-FLOOR] Using leftover 1760484103710_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 07:21:43,713 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,713 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,713 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,713 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,714 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,714 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,725 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:43,749 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,408 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,408 services 26800 1228 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,408 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,409 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,409 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,410 services 26800 1228 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,410 services 26800 1228 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,410 services 26800 1228 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,411 services 26800 1228 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,411 services 26800 1228 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,418 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,418 services 26800 1228 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 07:21:51,418 services 26800 1228 [COMBO-TEST-FLOOR] Using leftover 1760484111418_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 07:21:51,422 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,423 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,423 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,423 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,423 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,423 services 26800 1228 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,436 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 07:21:51,461 services 26800 1228 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:31,770 services 26800 13024 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,770 services 26800 13024 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 08:34:31,770 services 26800 13024 [ANALYSIS-V] Using leftover 1760488471770_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 08:34:31,771 services 26800 13024 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,771 services 26800 13024 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,771 services 26800 13024 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,772 services 26800 13024 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,775 services 26800 13024 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,775 services 26800 13024 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 08:34:31,775 services 26800 13024 [COMBO-TEST] Using leftover 1760488471775_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 08:34:31,778 services 26800 13024 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,778 services 26800 13024 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,778 services 26800 13024 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,778 services 26800 13024 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,779 services 26800 13024 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,779 services 26800 13024 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,784 services 26800 13024 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:31,787 services 26800 13024 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:34:32,623 services 26800 13024 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,623 services 26800 13024 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,623 services 26800 13024 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,624 services 26800 13024 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,624 services 26800 13024 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,625 services 26800 13024 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,625 services 26800 13024 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,625 services 26800 13024 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,625 services 26800 13024 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,626 services 26800 13024 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,632 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,633 services 26800 13024 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 08:34:32,633 services 26800 13024 [COMBO-TEST-FLOOR] Using leftover 1760488472632_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 08:34:32,636 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,636 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,636 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,636 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,637 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:34:32,637 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:26,230 services 26800 13024 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,230 services 26800 13024 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 08:38:26,231 services 26800 13024 [ANALYSIS-V] Using leftover 1760488706230_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 08:38:26,231 services 26800 13024 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,231 services 26800 13024 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,231 services 26800 13024 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,232 services 26800 13024 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,235 services 26800 13024 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,236 services 26800 13024 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 08:38:26,236 services 26800 13024 [COMBO-TEST] Using leftover 1760488706235_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 08:38:26,240 services 26800 13024 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,240 services 26800 13024 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,241 services 26800 13024 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,241 services 26800 13024 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,241 services 26800 13024 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,242 services 26800 13024 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,250 services 26800 13024 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:26,255 services 26800 13024 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:27,824 services 26800 13024 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,825 services 26800 13024 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,825 services 26800 13024 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,825 services 26800 13024 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,825 services 26800 13024 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,826 services 26800 13024 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,827 services 26800 13024 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,827 services 26800 13024 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,827 services 26800 13024 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,827 services 26800 13024 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,840 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,841 services 26800 13024 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 08:38:27,841 services 26800 13024 [COMBO-TEST-FLOOR] Using leftover 1760488707840_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 08:38:27,845 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,846 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,846 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,846 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,847 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:27,847 services 26800 13024 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 08:38:47,756 services 26800 28124 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,758 services 26800 28124 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 08:38:47,758 services 26800 28124 [ANALYSIS-V] Using leftover 1760488727756_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 08:38:47,759 services 26800 28124 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,769 services 26800 28124 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,770 services 26800 28124 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,770 services 26800 28124 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,775 services 26800 28124 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,775 services 26800 28124 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 08:38:47,775 services 26800 28124 [COMBO-TEST] Using leftover 1760488727775_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 08:38:47,780 services 26800 28124 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,781 services 26800 28124 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,781 services 26800 28124 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,781 services 26800 28124 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,782 services 26800 28124 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,782 services 26800 28124 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,798 services 26800 28124 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 08:38:47,804 services 26800 28124 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,148 services 26800 15944 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,148 services 26800 15944 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 09:26:53,148 services 26800 15944 [ANALYSIS-V] Using leftover 1760491613148_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 09:26:53,149 services 26800 15944 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,149 services 26800 15944 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,149 services 26800 15944 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,149 services 26800 15944 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,152 services 26800 15944 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,152 services 26800 15944 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 09:26:53,153 services 26800 15944 [COMBO-TEST] Using leftover 1760491613152_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 09:26:53,156 services 26800 15944 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,156 services 26800 15944 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,156 services 26800 15944 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,156 services 26800 15944 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,157 services 26800 15944 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,157 services 26800 15944 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,164 services 26800 15944 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,167 services 26800 15944 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:26:53,840 services 26800 15944 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,840 services 26800 15944 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,840 services 26800 15944 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,840 services 26800 15944 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,841 services 26800 15944 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,842 services 26800 15944 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,842 services 26800 15944 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,842 services 26800 15944 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,843 services 26800 15944 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,843 services 26800 15944 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,854 services 26800 15944 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,855 services 26800 15944 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 09:26:53,855 services 26800 15944 [COMBO-TEST-FLOOR] Using leftover 1760491613854_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 09:26:53,859 services 26800 15944 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,860 services 26800 15944 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,860 services 26800 15944 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,860 services 26800 15944 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,860 services 26800 15944 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:26:53,861 services 26800 15944 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:03,457 services 26800 24704 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,457 services 26800 24704 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 09:27:03,457 services 26800 24704 [ANALYSIS-V] Using leftover 1760491623457_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 09:27:03,458 services 26800 24704 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,458 services 26800 24704 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,458 services 26800 24704 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,458 services 26800 24704 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,462 services 26800 24704 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,462 services 26800 24704 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 09:27:03,462 services 26800 24704 [COMBO-TEST] Using leftover 1760491623462_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 09:27:03,466 services 26800 24704 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,466 services 26800 24704 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,467 services 26800 24704 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,467 services 26800 24704 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,467 services 26800 24704 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,467 services 26800 24704 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,476 services 26800 24704 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:03,480 services 26800 24704 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 09:27:04,301 services 26800 24704 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,302 services 26800 24704 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,302 services 26800 24704 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,302 services 26800 24704 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,302 services 26800 24704 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,302 services 26800 24704 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,303 services 26800 24704 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,303 services 26800 24704 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,303 services 26800 24704 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,303 services 26800 24704 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,309 services 26800 24704 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,309 services 26800 24704 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 09:27:04,309 services 26800 24704 [COMBO-TEST-FLOOR] Using leftover 1760491624309_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 09:27:04,313 services 26800 24704 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,313 services 26800 24704 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,314 services 26800 24704 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,314 services 26800 24704 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,314 services 26800 24704 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 09:27:04,314 services 26800 24704 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:37,805 services 26800 5876 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,806 services 26800 5876 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 10:19:37,806 services 26800 5876 [ANALYSIS-V] Using leftover 1760494777805_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 10:19:37,806 services 26800 5876 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,806 services 26800 5876 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,807 services 26800 5876 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,807 services 26800 5876 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,810 services 26800 5876 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,811 services 26800 5876 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 10:19:37,811 services 26800 5876 [COMBO-TEST] Using leftover 1760494777810_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 10:19:37,815 services 26800 5876 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,815 services 26800 5876 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,815 services 26800 5876 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,816 services 26800 5876 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,816 services 26800 5876 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,816 services 26800 5876 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,824 services 26800 5876 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:37,828 services 26800 5876 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:19:38,895 services 26800 5876 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,895 services 26800 5876 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,895 services 26800 5876 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,896 services 26800 5876 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,896 services 26800 5876 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,897 services 26800 5876 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,897 services 26800 5876 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,897 services 26800 5876 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,897 services 26800 5876 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,897 services 26800 5876 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,905 services 26800 5876 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,906 services 26800 5876 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 10:19:38,906 services 26800 5876 [COMBO-TEST-FLOOR] Using leftover 1760494778905_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 10:19:38,910 services 26800 5876 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,910 services 26800 5876 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,910 services 26800 5876 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,910 services 26800 5876 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,910 services 26800 5876 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:19:38,910 services 26800 5876 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:16,430 services 26800 21196 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,431 services 26800 21196 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 10:34:16,431 services 26800 21196 [ANALYSIS-V] Using leftover 1760495656430_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 10:34:16,431 services 26800 21196 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,431 services 26800 21196 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,432 services 26800 21196 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,432 services 26800 21196 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,436 services 26800 21196 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,436 services 26800 21196 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 10:34:16,436 services 26800 21196 [COMBO-TEST] Using leftover 1760495656436_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 10:34:16,440 services 26800 21196 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,441 services 26800 21196 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,441 services 26800 21196 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,441 services 26800 21196 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,441 services 26800 21196 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,442 services 26800 21196 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,448 services 26800 21196 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:16,452 services 26800 21196 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 10:34:17,116 services 26800 21196 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,116 services 26800 21196 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,116 services 26800 21196 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,116 services 26800 21196 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,117 services 26800 21196 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,118 services 26800 21196 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,118 services 26800 21196 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,118 services 26800 21196 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,118 services 26800 21196 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,118 services 26800 21196 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,127 services 26800 21196 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,128 services 26800 21196 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 10:34:17,128 services 26800 21196 [COMBO-TEST-FLOOR] Using leftover 1760495657127_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 10:34:17,132 services 26800 21196 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,132 services 26800 21196 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,133 services 26800 21196 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,133 services 26800 21196 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,133 services 26800 21196 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 10:34:17,133 services 26800 21196 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:49,870 services 26800 20080 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,871 services 26800 20080 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 11:31:49,871 services 26800 20080 [ANALYSIS-V] Using leftover 1760499109870_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 11:31:49,871 services 26800 20080 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,871 services 26800 20080 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,872 services 26800 20080 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,872 services 26800 20080 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,875 services 26800 20080 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,875 services 26800 20080 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 11:31:49,875 services 26800 20080 [COMBO-TEST] Using leftover 1760499109875_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 11:31:49,879 services 26800 20080 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,879 services 26800 20080 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,879 services 26800 20080 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,879 services 26800 20080 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,880 services 26800 20080 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,880 services 26800 20080 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,891 services 26800 20080 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:49,895 services 26800 20080 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:31:50,835 services 26800 20080 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,835 services 26800 20080 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,835 services 26800 20080 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,836 services 26800 20080 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,836 services 26800 20080 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,836 services 26800 20080 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,836 services 26800 20080 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,837 services 26800 20080 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,837 services 26800 20080 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,837 services 26800 20080 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,842 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,842 services 26800 20080 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 11:31:50,842 services 26800 20080 [COMBO-TEST-FLOOR] Using leftover 1760499110842_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 11:31:50,846 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,846 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,846 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,846 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,846 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:31:50,847 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:26,646 services 26800 20080 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,646 services 26800 20080 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 11:43:26,647 services 26800 20080 [ANALYSIS-V] Using leftover 1760499806646_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 11:43:26,647 services 26800 20080 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,647 services 26800 20080 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,647 services 26800 20080 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,649 services 26800 20080 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,654 services 26800 20080 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,654 services 26800 20080 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 11:43:26,654 services 26800 20080 [COMBO-TEST] Using leftover 1760499806654_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 11:43:26,658 services 26800 20080 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,658 services 26800 20080 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,658 services 26800 20080 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,659 services 26800 20080 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,659 services 26800 20080 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,659 services 26800 20080 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,667 services 26800 20080 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:26,671 services 26800 20080 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 11:43:27,190 services 26800 20080 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,190 services 26800 20080 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,190 services 26800 20080 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,190 services 26800 20080 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,190 services 26800 20080 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,191 services 26800 20080 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,191 services 26800 20080 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,191 services 26800 20080 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,192 services 26800 20080 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,192 services 26800 20080 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,197 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,197 services 26800 20080 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 11:43:27,197 services 26800 20080 [COMBO-TEST-FLOOR] Using leftover 1760499807197_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 11:43:27,200 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,200 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,200 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,200 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,200 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 11:43:27,200 services 26800 20080 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:57,796 services 26800 12928 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,797 services 26800 12928 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 14:40:57,797 services 26800 12928 [ANALYSIS-V] Using leftover 1760510457796_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 14:40:57,797 services 26800 12928 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,797 services 26800 12928 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,798 services 26800 12928 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,798 services 26800 12928 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,805 services 26800 12928 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,805 services 26800 12928 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 14:40:57,805 services 26800 12928 [COMBO-TEST] Using leftover 1760510457805_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 14:40:57,808 services 26800 12928 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,808 services 26800 12928 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,810 services 26800 12928 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,810 services 26800 12928 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,810 services 26800 12928 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,810 services 26800 12928 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,816 services 26800 12928 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:57,818 services 26800 12928 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 14:40:58,595 services 26800 12928 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,595 services 26800 12928 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,595 services 26800 12928 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,595 services 26800 12928 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,595 services 26800 12928 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,596 services 26800 12928 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,596 services 26800 12928 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,597 services 26800 12928 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,597 services 26800 12928 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,597 services 26800 12928 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,603 services 26800 12928 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,603 services 26800 12928 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 14:40:58,603 services 26800 12928 [COMBO-TEST-FLOOR] Using leftover 1760510458603_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 14:40:58,606 services 26800 12928 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,606 services 26800 12928 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,606 services 26800 12928 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,607 services 26800 12928 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,607 services 26800 12928 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 14:40:58,607 services 26800 12928 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:56,385 services 26800 29616 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,385 services 26800 29616 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:00:56,385 services 26800 29616 [ANALYSIS-V] Using leftover 1760511656385_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:00:56,385 services 26800 29616 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,386 services 26800 29616 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,386 services 26800 29616 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,386 services 26800 29616 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,390 services 26800 29616 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,390 services 26800 29616 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:00:56,390 services 26800 29616 [COMBO-TEST] Using leftover 1760511656390_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:00:56,393 services 26800 29616 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,393 services 26800 29616 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,394 services 26800 29616 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,394 services 26800 29616 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,394 services 26800 29616 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,394 services 26800 29616 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,400 services 26800 29616 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:56,403 services 26800 29616 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:00:57,204 services 26800 29616 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,204 services 26800 29616 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,205 services 26800 29616 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,205 services 26800 29616 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,205 services 26800 29616 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,205 services 26800 29616 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,205 services 26800 29616 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,206 services 26800 29616 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,206 services 26800 29616 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,206 services 26800 29616 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,212 services 26800 29616 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,213 services 26800 29616 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 15:00:57,213 services 26800 29616 [COMBO-TEST-FLOOR] Using leftover 1760511657212_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 15:00:57,216 services 26800 29616 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,216 services 26800 29616 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,216 services 26800 29616 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,216 services 26800 29616 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,216 services 26800 29616 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:00:57,216 services 26800 29616 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:30,905 services 26800 26332 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,905 services 26800 26332 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:05:30,905 services 26800 26332 [ANALYSIS-V] Using leftover 1760511930905_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:05:30,906 services 26800 26332 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,906 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,906 services 26800 26332 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,906 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,909 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,910 services 26800 26332 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:05:30,910 services 26800 26332 [COMBO-TEST] Using leftover 1760511930909_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:05:30,913 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,914 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,914 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,914 services 26800 26332 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,914 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,914 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,920 services 26800 26332 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:30,923 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:05:31,634 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,635 services 26800 26332 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,635 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,635 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,635 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,636 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,636 services 26800 26332 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,636 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,636 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,636 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,641 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,641 services 26800 26332 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 15:05:31,641 services 26800 26332 [COMBO-TEST-FLOOR] Using leftover 1760511931641_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 15:05:31,644 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,644 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,645 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,645 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,645 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:05:31,645 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:00,628 services 26800 26332 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,628 services 26800 26332 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:07:00,628 services 26800 26332 [ANALYSIS-V] Using leftover 1760512020627_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:07:00,628 services 26800 26332 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,628 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,628 services 26800 26332 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,628 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,632 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,632 services 26800 26332 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:07:00,632 services 26800 26332 [COMBO-TEST] Using leftover 1760512020632_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:07:00,635 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,635 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,635 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,635 services 26800 26332 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,636 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,636 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,642 services 26800 26332 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:00,646 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:01,561 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,561 services 26800 26332 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,562 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,562 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,562 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,564 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,564 services 26800 26332 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,564 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,564 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,564 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,575 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,575 services 26800 26332 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 15:07:01,575 services 26800 26332 [COMBO-TEST-FLOOR] Using leftover 1760512021575_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 15:07:01,581 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,582 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,582 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,582 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,583 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:01,583 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,249 services 26800 26332 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,250 services 26800 26332 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:07:16,250 services 26800 26332 [ANALYSIS-V] Using leftover 1760512036249_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:07:16,250 services 26800 26332 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,251 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,251 services 26800 26332 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,251 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,255 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,255 services 26800 26332 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:07:16,255 services 26800 26332 [COMBO-TEST] Using leftover 1760512036255_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:07:16,259 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,259 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,259 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,259 services 26800 26332 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,260 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,260 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,267 services 26800 26332 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,271 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:16,733 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,733 services 26800 26332 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,734 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,734 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,734 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,735 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,735 services 26800 26332 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,735 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,736 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,736 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,744 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,744 services 26800 26332 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 15:07:16,744 services 26800 26332 [COMBO-TEST-FLOOR] Using leftover 1760512036743_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 15:07:16,747 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,747 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,749 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,749 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,749 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:16,749 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:26,592 services 26800 24280 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,592 services 26800 24280 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:07:26,592 services 26800 24280 [ANALYSIS-V] Using leftover 1760512046592_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:07:26,593 services 26800 24280 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,593 services 26800 24280 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,593 services 26800 24280 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,593 services 26800 24280 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,598 services 26800 24280 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,598 services 26800 24280 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:07:26,598 services 26800 24280 [COMBO-TEST] Using leftover 1760512046598_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:07:26,603 services 26800 24280 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,603 services 26800 24280 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,604 services 26800 24280 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,604 services 26800 24280 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,605 services 26800 24280 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,605 services 26800 24280 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,614 services 26800 24280 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:26,619 services 26800 24280 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:07:27,799 services 26800 24280 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,799 services 26800 24280 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,799 services 26800 24280 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,799 services 26800 24280 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,799 services 26800 24280 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,800 services 26800 24280 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,800 services 26800 24280 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,800 services 26800 24280 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,800 services 26800 24280 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,800 services 26800 24280 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,806 services 26800 24280 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,806 services 26800 24280 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 15:07:27,806 services 26800 24280 [COMBO-TEST-FLOOR] Using leftover 1760512047806_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 15:07:27,809 services 26800 24280 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,809 services 26800 24280 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,809 services 26800 24280 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,809 services 26800 24280 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,809 services 26800 24280 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:07:27,809 services 26800 24280 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:51,170 services 26800 29040 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,170 services 26800 29040 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:08:51,170 services 26800 29040 [ANALYSIS-V] Using leftover 1760512131170_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:08:51,170 services 26800 29040 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,171 services 26800 29040 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,171 services 26800 29040 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,171 services 26800 29040 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,174 services 26800 29040 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,175 services 26800 29040 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:08:51,175 services 26800 29040 [COMBO-TEST] Using leftover 1760512131174_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:08:51,178 services 26800 29040 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,178 services 26800 29040 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,178 services 26800 29040 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,178 services 26800 29040 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,178 services 26800 29040 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,178 services 26800 29040 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,185 services 26800 29040 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,188 services 26800 29040 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:51,998 services 26800 29040 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:51,998 services 26800 29040 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:51,998 services 26800 29040 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:51,998 services 26800 29040 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:51,999 services 26800 29040 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:51,999 services 26800 29040 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:51,999 services 26800 29040 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,000 services 26800 29040 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,000 services 26800 29040 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,000 services 26800 29040 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,006 services 26800 29040 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,006 services 26800 29040 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 15:08:52,006 services 26800 29040 [COMBO-TEST-FLOOR] Using leftover 1760512132006_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 15:08:52,010 services 26800 29040 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,010 services 26800 29040 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,010 services 26800 29040 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,010 services 26800 29040 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,010 services 26800 29040 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:52,011 services 26800 29040 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:56,718 services 26800 26332 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,718 services 26800 26332 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:08:56,718 services 26800 26332 [ANALYSIS-V] Using leftover 1760512136718_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:08:56,719 services 26800 26332 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,719 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,719 services 26800 26332 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,719 services 26800 26332 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,724 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,724 services 26800 26332 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 15:08:56,725 services 26800 26332 [COMBO-TEST] Using leftover 1760512136724_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 15:08:56,728 services 26800 26332 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,728 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,729 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,729 services 26800 26332 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,729 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,729 services 26800 26332 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,737 services 26800 26332 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:56,741 services 26800 26332 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 15:08:57,537 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,537 services 26800 26332 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,538 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,538 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,538 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,539 services 26800 26332 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,539 services 26800 26332 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,539 services 26800 26332 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,539 services 26800 26332 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,539 services 26800 26332 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,545 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,545 services 26800 26332 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 15:08:57,545 services 26800 26332 [COMBO-TEST-FLOOR] Using leftover 1760512137545_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 15:08:57,548 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,548 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,549 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,549 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,549 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 15:08:57,549 services 26800 26332 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,440 services 26800 2244 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,440 services 26800 2244 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,440 services 26800 2244 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,441 services 26800 2244 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,441 services 26800 2244 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,441 services 26800 2244 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,441 services 26800 2244 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,442 services 26800 2244 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,442 services 26800 2244 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,442 services 26800 2244 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,447 services 26800 2244 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,447 services 26800 2244 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 16:15:01,447 services 26800 2244 [COMBO-TEST-FLOOR] Using leftover 1760516101447_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 16:15:01,450 services 26800 2244 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,450 services 26800 2244 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,450 services 26800 2244 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,450 services 26800 2244 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,450 services 26800 2244 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 16:15:01,451 services 26800 2244 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:16:12,121 services 26800 25324 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,122 services 26800 25324 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 18:16:12,122 services 26800 25324 [ANALYSIS-V] Using leftover 1760523372121_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 18:16:12,122 services 26800 25324 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,122 services 26800 25324 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,122 services 26800 25324 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,122 services 26800 25324 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,131 services 26800 25324 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,131 services 26800 25324 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 18:16:12,131 services 26800 25324 [COMBO-TEST] Using leftover 1760523372131_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 18:16:12,135 services 26800 25324 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,135 services 26800 25324 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,135 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,136 services 26800 25324 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,136 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,136 services 26800 25324 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,144 services 26800 25324 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:16:12,150 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:51,024 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,024 services 26800 25324 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,024 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,024 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,024 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,026 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,026 services 26800 25324 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,026 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,026 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,026 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,032 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,032 services 26800 25324 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 18:17:51,032 services 26800 25324 [COMBO-TEST-FLOOR] Using leftover 1760523471032_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 18:17:51,035 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,035 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,036 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,036 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,036 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:51,036 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:54,684 services 26800 25324 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,684 services 26800 25324 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 18:17:54,684 services 26800 25324 [ANALYSIS-V] Using leftover 1760523474684_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 18:17:54,684 services 26800 25324 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,684 services 26800 25324 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,685 services 26800 25324 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,685 services 26800 25324 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,688 services 26800 25324 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,688 services 26800 25324 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 18:17:54,688 services 26800 25324 [COMBO-TEST] Using leftover 1760523474688_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 18:17:54,693 services 26800 25324 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,693 services 26800 25324 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,693 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,694 services 26800 25324 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,694 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,694 services 26800 25324 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,699 services 26800 25324 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:54,702 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:17:59,142 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,142 services 26800 25324 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,142 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,142 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,142 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,143 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,143 services 26800 25324 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,143 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,143 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,143 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,148 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,148 services 26800 25324 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 18:17:59,149 services 26800 25324 [COMBO-TEST-FLOOR] Using leftover 1760523479148_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 18:17:59,152 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,152 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,152 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,152 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,152 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:17:59,152 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,552 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,552 services 26800 25324 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,553 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,553 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,553 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,553 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,554 services 26800 25324 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,554 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,554 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,554 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,560 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,561 services 26800 25324 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 18:21:35,561 services 26800 25324 [COMBO-TEST-FLOOR] Using leftover 1760523695560_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 18:21:35,564 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,564 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,564 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,564 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,564 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,565 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,574 services 26800 25324 [GENERATION] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:35,629 services 26800 25324 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:38,256 services 26800 25324 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,256 services 26800 25324 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 18:21:38,256 services 26800 25324 [ANALYSIS-V] Using leftover 1760523698256_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 18:21:38,256 services 26800 25324 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,256 services 26800 25324 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,256 services 26800 25324 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,257 services 26800 25324 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,261 services 26800 25324 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,261 services 26800 25324 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-10-15 18:21:38,261 services 26800 25324 [COMBO-TEST] Using leftover 1760523698261_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-10-15 18:21:38,265 services 26800 25324 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,265 services 26800 25324 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,266 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,266 services 26800 25324 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,266 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,266 services 26800 25324 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,274 services 26800 25324 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:38,277 services 26800 25324 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:21:40,929 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,929 services 26800 25324 [ANALYSIS-V] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,929 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,930 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,930 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,930 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,930 services 26800 25324 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,931 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,931 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,931 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,937 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,937 services 26800 25324 [COMBO-TEST-FLOOR] Compatible leftover found: 870.0mm × 10200.0mm (needed: 320.0mm × 10200.0mm)
+INFO 2025-10-15 18:21:40,937 services 26800 25324 [COMBO-TEST-FLOOR] Using leftover 1760523700936_0: 320.0mm from 870.0mm, remaining: 550.0mm
+INFO 2025-10-15 18:21:40,940 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 870.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,940 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,941 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,941 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,941 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7180.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:21:40,941 services 26800 25324 [COMBO-TEST-FLOOR] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:02,504 services 26800 25324 calculate_minimum_wall_height called with wall_ids: [6187, 6184, 6178, 6186]
+INFO 2025-10-15 18:26:02,504 services 26800 25324 Converted wall_ids to integers: [6187, 6184, 6178, 6186]
+INFO 2025-10-15 18:26:02,543 services 26800 25324 Found 4 walls
+INFO 2025-10-15 18:26:02,544 services 26800 25324 Calculated minimum wall height: 8000.0
+INFO 2025-10-15 18:26:07,979 views 26800 25324 Updating room with data: {'room_name': 'Room 2', 'floor_type': 'None', 'floor_thickness': '0', 'temperature': '20.00', 'height': 8000, 'remarks': '', 'walls': [6187, 6184, 6178, 6186], 'project': '431', 'room_points': [{'x': 7520, 'y': 0}, {'x': 7520, 'y': 10500}, {'x': 15000, 'y': 10500}, {'x': 15000, 'y': 0}], 'id': 177}
+INFO 2025-10-15 18:26:08,011 views 26800 25324 Found room to update: 177, current height: 8000.0
+INFO 2025-10-15 18:26:08,027 views 26800 25324 Updated room height to: 8000.0
+INFO 2025-10-15 18:26:08,028 views 26800 25324 Updating 4 walls with new height: 8000
+INFO 2025-10-15 18:26:08,028 services 26800 25324 update_wall_heights_for_room called with wall_ids: [6178, 6186, 6184, 6187], new_height: 8000
+INFO 2025-10-15 18:26:08,028 services 26800 25324 Converted wall_ids to integers: [6178, 6186, 6184, 6187]
+INFO 2025-10-15 18:26:08,029 services 26800 25324 Found 4 walls to update
+INFO 2025-10-15 18:26:08,029 services 26800 25324 Wall 6178: current height = 8000.0
+INFO 2025-10-15 18:26:08,029 services 26800 25324 Wall 6186: current height = 8000.0
+INFO 2025-10-15 18:26:08,029 services 26800 25324 Wall 6184: current height = 8000.0
+INFO 2025-10-15 18:26:08,029 services 26800 25324 Wall 6187: current height = 8000.0
+INFO 2025-10-15 18:26:08,031 services 26800 25324 Updated 4 walls to height 8000
+INFO 2025-10-15 18:26:08,031 services 26800 25324 Wall 6178: new height = 8000.0
+INFO 2025-10-15 18:26:08,031 services 26800 25324 Wall 6186: new height = 8000.0
+INFO 2025-10-15 18:26:08,031 services 26800 25324 Wall 6184: new height = 8000.0
+INFO 2025-10-15 18:26:08,031 services 26800 25324 Wall 6187: new height = 8000.0
+INFO 2025-10-15 18:26:08,031 views 26800 25324 Successfully updated 4 walls
+INFO 2025-10-15 18:26:08,032 services 26800 25324 Recalculating room boundary for room 177
+INFO 2025-10-15 18:26:08,035 services 26800 25324 Updated room 177 boundary with 4 points (order preserved)
+INFO 2025-10-15 18:26:09,991 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:09,992 services 26800 25324 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:09,992 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:09,992 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:09,992 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:10,940 services 26800 25324 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:10,940 services 26800 25324 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:10,940 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:10,940 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:10,940 services 26800 25324 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:26:10,944 services 26800 25324 [GENERATION] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-10-15 18:27:55,516 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,516 services 26800 25324 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,516 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,516 services 26800 25324 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,516 services 26800 25324 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,517 services 26800 25324 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:27:55,517 services 26800 25324 [ANALYSIS-H] Using leftover 1760524075516_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:27:55,519 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,519 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,520 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,523 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,523 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,523 services 26800 25324 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:27:55,523 services 26800 25324 [COMBO-TEST] Using leftover 1760524075523_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 18:27:55,526 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,526 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,526 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 18:27:55,526 services 26800 25324 [COMBO-TEST] Using leftover 1760524075526_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 18:27:55,527 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,527 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:55,527 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:27:55,527 services 26800 25324 [COMBO-TEST] Using leftover 1760524075527_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:27:56,527 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,527 services 26800 25324 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,528 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,528 services 26800 25324 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,528 services 26800 25324 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,528 services 26800 25324 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:27:56,528 services 26800 25324 [ANALYSIS-H] Using leftover 1760524076528_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:27:56,532 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,532 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,532 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,535 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,536 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,536 services 26800 25324 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:27:56,536 services 26800 25324 [COMBO-TEST] Using leftover 1760524076535_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 18:27:56,539 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,539 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,540 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 18:27:56,540 services 26800 25324 [COMBO-TEST] Using leftover 1760524076539_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 18:27:56,540 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,540 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:27:56,540 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:27:56,540 services 26800 25324 [COMBO-TEST] Using leftover 1760524076540_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:27:56,544 services 26800 25324 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 18:27:56,544 services 26800 25324 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-15 18:27:56,545 services 26800 25324   Processing room 155: Test 1
+INFO 2025-10-15 18:27:56,546 services 26800 25324   Generating vertical panels for room 155
+INFO 2025-10-15 18:27:56,546 services 26800 25324 [GENERATION] Leftover created: 439.0mm × 1294.0mm (thickness: 150mm)
+INFO 2025-10-15 18:27:56,546 services 26800 25324 [GENERATION] Leftover created: 661.0mm × 10000.0mm (thickness: 150mm)
+INFO 2025-10-15 18:27:56,547 services 26800 25324   Generated 14 panels for room 155
+INFO 2025-10-15 18:27:56,547 services 26800 25324   Processing room 175: Room 2
+INFO 2025-10-15 18:27:56,548 services 26800 25324   Generating horizontal panels for room 175
+INFO 2025-10-15 18:27:56,548 services 26800 25324 [GENERATION] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:27:56,548 services 26800 25324 [GENERATION] Using leftover 1760524076546_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 18:27:56,548 services 26800 25324   Generated 8 panels for room 175
+INFO 2025-10-15 18:27:56,549 services 26800 25324 _generate_enhanced_room_panels: Total panels generated: 22
+INFO 2025-10-15 18:27:56,549 services 26800 25324 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 7178066.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760524076546_0', 'length': 1294.0, 'thickness': 150, 'width': 439.0, 'created_at': 1760524076.5460782}, {'id': '1760524076546_1', 'length': 10000.0, 'thickness': 150, 'width': 5.0, 'created_at': 1760524076.5460782}]}
+INFO 2025-10-15 18:28:04,104 services 26800 25324 Room-specific ceiling configuration detected for room 155
+INFO 2025-10-15 18:28:04,104 services 26800 25324 ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 18:28:04,139 services 26800 25324 Generating ceiling panels for 2 rooms (room-specific mode)
+INFO 2025-10-15 18:28:04,140 services 26800 25324   Room 155 (Test 1): Using CUSTOM orientation = all_horizontal
+INFO 2025-10-15 18:28:04,140 services 26800 25324 [GENERATION] Leftover created: 494.0mm × 7389.0mm (thickness: 150mm)
+INFO 2025-10-15 18:28:04,140 services 26800 25324 [GENERATION] Leftover created: 1006.0mm × 15000.0mm (thickness: 150mm)
+INFO 2025-10-15 18:28:04,140 services 26800 25324 Successfully generated 10 panels for room 155 (Test 1) with horizontal orientation
+INFO 2025-10-15 18:28:04,141 services 26800 25324   > Generated 10 panels for room 155
+INFO 2025-10-15 18:28:04,143 services 26800 25324   Room 175 (Room 2): Using SAVED orientation = room_optimal
+INFO 2025-10-15 18:28:04,147 services 26800 25324 [GENERATION] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 18:28:04,147 services 26800 25324 [GENERATION] Using leftover 1760524084140_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 18:28:04,147 services 26800 25324 Successfully generated 7 panels for room 175 (Room 2) with vertical orientation
+INFO 2025-10-15 18:28:04,147 services 26800 25324   > Generated 7 panels for room 175
+INFO 2025-10-15 18:28:04,147 services 26800 25324 Total panels generated: 17
+INFO 2025-10-15 18:28:04,147 services 26800 25324 ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 18740166.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760524084140_0', 'length': 7389.0, 'thickness': 150, 'width': 494.0, 'created_at': 1760524084.1408708}, {'id': '1760524084140_1', 'length': 15000.0, 'thickness': 150, 'width': 295.0, 'created_at': 1760524084.1408708}]}
+INFO 2025-10-15 18:28:04,148 services 26800 25324 ROOM-SPECIFIC GENERATION - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 18740166.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760524084140_0', 'length': 7389.0, 'thickness': 150, 'width': 494.0, 'created_at': 1760524084.1408708}, {'id': '1760524084140_1', 'length': 15000.0, 'thickness': 150, 'width': 295.0, 'created_at': 1760524084.1408708}]}
+INFO 2025-10-15 18:28:04,151 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,151 services 26800 25324 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,152 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,152 services 26800 25324 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,152 services 26800 25324 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,152 services 26800 25324 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:28:04,152 services 26800 25324 [ANALYSIS-H] Using leftover 1760524084152_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:28:04,157 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,157 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,157 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,161 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,161 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,161 services 26800 25324 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:28:04,162 services 26800 25324 [COMBO-TEST] Using leftover 1760524084161_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 18:28:04,166 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,166 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,166 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 18:28:04,167 services 26800 25324 [COMBO-TEST] Using leftover 1760524084166_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 18:28:04,167 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,167 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:04,167 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:28:04,167 services 26800 25324 [COMBO-TEST] Using leftover 1760524084167_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:28:11,086 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,086 services 26800 25324 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,086 services 26800 25324 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,087 services 26800 25324 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,087 services 26800 25324 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,087 services 26800 25324 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:28:11,087 services 26800 25324 [ANALYSIS-H] Using leftover 1760524091087_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:28:11,090 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,090 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,091 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,094 services 26800 25324 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,094 services 26800 25324 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,094 services 26800 25324 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:28:11,094 services 26800 25324 [COMBO-TEST] Using leftover 1760524091094_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 18:28:11,097 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,098 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,098 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 18:28:11,098 services 26800 25324 [COMBO-TEST] Using leftover 1760524091098_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 18:28:11,098 services 26800 25324 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,098 services 26800 25324 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 18:28:11,098 services 26800 25324 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:28:11,099 services 26800 25324 [COMBO-TEST] Using leftover 1760524091098_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 18:28:11,102 services 26800 25324 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 18:28:11,103 services 26800 25324 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-15 18:28:11,103 services 26800 25324   Processing room 155: Test 1
+INFO 2025-10-15 18:28:11,104 services 26800 25324   Generating vertical panels for room 155
+INFO 2025-10-15 18:28:11,104 services 26800 25324 [GENERATION] Leftover created: 439.0mm × 1294.0mm (thickness: 150mm)
+INFO 2025-10-15 18:28:11,104 services 26800 25324 [GENERATION] Leftover created: 661.0mm × 10000.0mm (thickness: 150mm)
+INFO 2025-10-15 18:28:11,105 services 26800 25324   Generated 14 panels for room 155
+INFO 2025-10-15 18:28:11,105 services 26800 25324   Processing room 175: Room 2
+INFO 2025-10-15 18:28:11,105 services 26800 25324   Generating horizontal panels for room 175
+INFO 2025-10-15 18:28:11,106 services 26800 25324 [GENERATION] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 18:28:11,106 services 26800 25324 [GENERATION] Using leftover 1760524091104_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 18:28:11,106 services 26800 25324   Generated 8 panels for room 175
+INFO 2025-10-15 18:28:11,106 services 26800 25324 _generate_enhanced_room_panels: Total panels generated: 22
+INFO 2025-10-15 18:28:11,106 services 26800 25324 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 7178066.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760524091104_0', 'length': 1294.0, 'thickness': 150, 'width': 439.0, 'created_at': 1760524091.1045842}, {'id': '1760524091104_1', 'length': 10000.0, 'thickness': 150, 'width': 5.0, 'created_at': 1760524091.1045842}]}
+INFO 2025-10-15 18:28:16,638 services 26800 25324 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:16,638 services 26800 25324 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:16,639 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:16,639 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:16,639 services 26800 25324 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:33,433 services 26800 25324 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:33,433 services 26800 25324 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:33,433 services 26800 25324 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:33,433 services 26800 25324 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 18:28:33,433 services 26800 25324 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:15,667 services 26800 15844 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:15,667 services 26800 15844 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:15,667 services 26800 15844 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:15,668 services 26800 15844 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:15,668 services 26800 15844 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:15,674 services 26800 15844 [GENERATION] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:25,308 services 26800 15844 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:25,308 services 26800 15844 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:25,308 services 26800 15844 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:25,308 services 26800 15844 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:25,308 services 26800 15844 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:31,612 services 26800 15844 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:31,612 services 26800 15844 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:31,613 services 26800 15844 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:31,613 services 26800 15844 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:31,613 services 26800 15844 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:31,617 services 26800 15844 [GENERATION] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:34,315 services 26800 15844 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:34,315 services 26800 15844 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:34,316 services 26800 15844 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:34,316 services 26800 15844 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:34,316 services 26800 15844 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:34,319 services 26800 15844 [GENERATION] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:36,699 services 26800 15844 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:36,699 services 26800 15844 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:36,699 services 26800 15844 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:36,699 services 26800 15844 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:36,700 services 26800 15844 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:36,704 services 26800 15844 [GENERATION] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:37,548 services 26800 15844 [ANALYSIS-H] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:37,548 services 26800 15844 [ANALYSIS-V] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:37,549 services 26800 15844 [ANALYSIS-H-EVAL] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:37,549 services 26800 15844 [ANALYSIS-V-EVAL] Leftover created: 739.0mm × 8406.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:37,549 services 26800 15844 [ANALYSIS-BEST] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:37,553 services 26800 15844 [GENERATION] Leftover created: 794.0mm × 7311.0mm (thickness: 50.0mm)
+INFO 2025-10-15 19:53:39,612 services 26800 15844 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,612 services 26800 15844 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,613 services 26800 15844 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,613 services 26800 15844 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,613 services 26800 15844 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,613 services 26800 15844 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:39,613 services 26800 15844 [ANALYSIS-H] Using leftover 1760529219613_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 19:53:39,616 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,616 services 26800 15844 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,617 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,620 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,620 services 26800 15844 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,621 services 26800 15844 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:39,621 services 26800 15844 [COMBO-TEST] Using leftover 1760529219620_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 19:53:39,624 services 26800 15844 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,624 services 26800 15844 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,624 services 26800 15844 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 19:53:39,624 services 26800 15844 [COMBO-TEST] Using leftover 1760529219624_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 19:53:39,624 services 26800 15844 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,624 services 26800 15844 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:39,625 services 26800 15844 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:39,625 services 26800 15844 [COMBO-TEST] Using leftover 1760529219624_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 19:53:46,059 services 26800 15844 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,060 services 26800 15844 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,060 services 26800 15844 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,060 services 26800 15844 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,060 services 26800 15844 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,061 services 26800 15844 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:46,061 services 26800 15844 [ANALYSIS-H] Using leftover 1760529226060_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 19:53:46,065 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,065 services 26800 15844 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,065 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,069 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,069 services 26800 15844 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,069 services 26800 15844 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:46,069 services 26800 15844 [COMBO-TEST] Using leftover 1760529226069_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 19:53:46,073 services 26800 15844 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,073 services 26800 15844 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,073 services 26800 15844 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 19:53:46,073 services 26800 15844 [COMBO-TEST] Using leftover 1760529226073_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 19:53:46,074 services 26800 15844 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,074 services 26800 15844 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:46,074 services 26800 15844 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:46,074 services 26800 15844 [COMBO-TEST] Using leftover 1760529226074_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 19:53:46,077 services 26800 15844 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-15 19:53:46,077 services 26800 15844 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-15 19:53:46,078 services 26800 15844   Processing room 155: Test 1
+INFO 2025-10-15 19:53:46,079 services 26800 15844   Generating vertical panels for room 155
+INFO 2025-10-15 19:53:46,079 services 26800 15844 [GENERATION] Leftover created: 439.0mm × 1294.0mm (thickness: 150mm)
+INFO 2025-10-15 19:53:46,079 services 26800 15844 [GENERATION] Leftover created: 661.0mm × 10000.0mm (thickness: 150mm)
+INFO 2025-10-15 19:53:46,079 services 26800 15844   Generated 14 panels for room 155
+INFO 2025-10-15 19:53:46,079 services 26800 15844   Processing room 175: Room 2
+INFO 2025-10-15 19:53:46,080 services 26800 15844   Generating horizontal panels for room 175
+INFO 2025-10-15 19:53:46,080 services 26800 15844 [GENERATION] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:46,080 services 26800 15844 [GENERATION] Using leftover 1760529226079_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 19:53:46,081 services 26800 15844   Generated 8 panels for room 175
+INFO 2025-10-15 19:53:46,081 services 26800 15844 _generate_enhanced_room_panels: Total panels generated: 22
+INFO 2025-10-15 19:53:46,081 services 26800 15844 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 1, 'full_panels_saved': 1, 'total_leftover_area': 7178066.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1760529226079_0', 'length': 1294.0, 'thickness': 150, 'width': 439.0, 'created_at': 1760529226.0798392}, {'id': '1760529226079_1', 'length': 10000.0, 'thickness': 150, 'width': 5.0, 'created_at': 1760529226.0798392}]}
+INFO 2025-10-15 19:53:52,231 services 26800 15844 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,232 services 26800 15844 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,232 services 26800 15844 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,232 services 26800 15844 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,232 services 26800 15844 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,233 services 26800 15844 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:52,233 services 26800 15844 [ANALYSIS-H] Using leftover 1760529232232_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 19:53:52,237 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,237 services 26800 15844 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,237 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,240 services 26800 15844 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,240 services 26800 15844 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,241 services 26800 15844 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:52,241 services 26800 15844 [COMBO-TEST] Using leftover 1760529232240_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-15 19:53:52,243 services 26800 15844 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,243 services 26800 15844 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,244 services 26800 15844 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-15 19:53:52,244 services 26800 15844 [COMBO-TEST] Using leftover 1760529232243_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-15 19:53:52,244 services 26800 15844 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,244 services 26800 15844 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-15 19:53:52,244 services 26800 15844 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-15 19:53:52,244 services 26800 15844 [COMBO-TEST] Using leftover 1760529232244_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-15 20:47:10,539 services 26800 19844 Recalculating room boundary for room 157
+INFO 2025-10-15 20:47:10,547 services 26800 19844 Updated room 157 boundary with 4 points (order preserved)
+INFO 2025-10-15 20:47:10,601 services 26800 3932 Recalculating room boundary for room 156
+INFO 2025-10-15 20:47:10,609 services 26800 3932 Updated room 156 boundary with 4 points (order preserved)
+INFO 2025-10-15 20:47:10,653 services 26800 19844 Recalculating room boundary for room 157
+INFO 2025-10-15 20:47:10,657 services 26800 19844 Updated room 157 boundary with 4 points (order preserved)
+INFO 2025-10-15 21:44:16,788 autoreload 17152 12980 Watching for file changes with StatReloader
+INFO 2025-10-15 23:15:41,820 services 17152 26516 [ANALYSIS-H] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,826 services 17152 26516 [ANALYSIS-V] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,826 services 17152 26516 [ANALYSIS-H-EVAL] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,826 services 17152 26516 [ANALYSIS-V-EVAL] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,826 services 17152 26516 [ANALYSIS-BEST] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,828 services 17152 26516 [ANALYSIS-H] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,828 services 17152 26516 [ANALYSIS-V] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,828 services 17152 26516 [ANALYSIS-H-EVAL] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,828 services 17152 26516 [ANALYSIS-V-EVAL] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:41,828 services 17152 26516 [ANALYSIS-BEST] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:42,117 services 17152 26516 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:42,117 services 17152 26516 [COMBO-TEST-FLOOR] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:42,121 services 17152 26516 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:42,121 services 17152 26516 [COMBO-TEST-FLOOR] Compatible leftover found: 740.0mm × 3540.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-15 23:15:42,122 services 17152 26516 [COMBO-TEST-FLOOR] Using leftover 1760541342121_0: 370.0mm from 740.0mm, remaining: 370.0mm
+INFO 2025-10-15 23:15:42,124 services 17152 26516 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:42,125 services 17152 26516 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 400.0mm × 3820.0mm)
+INFO 2025-10-15 23:15:42,125 services 17152 26516 [COMBO-TEST-FLOOR] Using leftover 1760541342124_0: 400.0mm from 1060.0mm, remaining: 660.0mm
+INFO 2025-10-15 23:15:42,125 services 17152 26516 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-15 23:15:42,125 services 17152 26516 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-15 23:15:42,125 services 17152 26516 [COMBO-TEST-FLOOR] Using leftover 1760541342125_0: 370.0mm from 1060.0mm, remaining: 690.0mm
+WARNING 2025-10-16 00:23:26,867 log 17152 21956 Not Found: /favicon.ico
+INFO 2025-10-16 07:58:52,642 autoreload 17152 12980 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 07:58:53,548 autoreload 3136 29984 Watching for file changes with StatReloader
+INFO 2025-10-16 07:59:19,254 autoreload 3136 29984 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 07:59:19,743 autoreload 31220 29656 Watching for file changes with StatReloader
+INFO 2025-10-16 07:59:41,613 services 31220 17356 [ANALYSIS-V] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,614 services 31220 17356 [ANALYSIS-V] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,614 services 31220 17356 [ANALYSIS-V] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,615 services 31220 17356 [ANALYSIS-H] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,615 services 31220 17356 [ANALYSIS-H] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,615 services 31220 17356 [ANALYSIS-H] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-16 07:59:41,615 services 31220 17356 [ANALYSIS-H] Using leftover 1760572781615_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-16 07:59:41,638 services 31220 17356 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,638 services 31220 17356 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,639 services 31220 17356 [COMBO-TEST] Leftover created: 439.0mm × 8706.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,643 services 31220 17356 [COMBO-TEST] Leftover created: 439.0mm × 1294.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,649 services 31220 17356 [COMBO-TEST] Leftover created: 661.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,650 services 31220 17356 [COMBO-TEST] Compatible leftover found: 661.0mm × 10000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-16 07:59:41,650 services 31220 17356 [COMBO-TEST] Using leftover 1760572781649_1: 656.0mm from 661.0mm, remaining: 5.0mm
+INFO 2025-10-16 07:59:41,655 services 31220 17356 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,655 services 31220 17356 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,656 services 31220 17356 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 711.0mm × 8706.0mm)
+INFO 2025-10-16 07:59:41,656 services 31220 17356 [COMBO-TEST] Using leftover 1760572781655_1: 711.0mm from 1006.0mm, remaining: 295.0mm
+INFO 2025-10-16 07:59:41,656 services 31220 17356 [COMBO-TEST] Leftover created: 494.0mm × 7389.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,656 services 31220 17356 [COMBO-TEST] Leftover created: 1006.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-10-16 07:59:41,657 services 31220 17356 [COMBO-TEST] Compatible leftover found: 1006.0mm × 15000.0mm (needed: 656.0mm × 7611.0mm)
+INFO 2025-10-16 07:59:41,657 services 31220 17356 [COMBO-TEST] Using leftover 1760572781656_1: 656.0mm from 1006.0mm, remaining: 350.0mm
+INFO 2025-10-16 08:05:43,745 autoreload 31220 29656 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 08:05:44,395 autoreload 27280 25968 Watching for file changes with StatReloader
+INFO 2025-10-16 11:30:39,082 services 27280 21680 calculate_minimum_wall_height called with wall_ids: [6027, 6029, 6026, 6024]
+INFO 2025-10-16 11:30:39,086 services 27280 21680 Converted wall_ids to integers: [6027, 6029, 6026, 6024]
+INFO 2025-10-16 11:30:39,280 services 27280 21680 Found 4 walls
+INFO 2025-10-16 11:30:39,283 services 27280 21680 Calculated minimum wall height: 8000.0
+INFO 2025-10-16 11:30:43,078 views 27280 21680 Updating room with data: {'room_name': 'Room 2', 'floor_type': 'Panel', 'floor_thickness': '150', 'temperature': '12.00', 'height': 8000, 'remarks': '', 'walls': [6027, 6029, 6026, 6024], 'project': '414', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 8706}, {'x': 7611, 'y': 8706}, {'x': 7611, 'y': 0}], 'id': 175}
+INFO 2025-10-16 11:30:43,148 views 27280 21680 Found room to update: 175, current height: 8000.0
+INFO 2025-10-16 11:30:43,221 views 27280 21680 Updated room height to: 8000.0
+INFO 2025-10-16 11:30:43,225 views 27280 21680 Updating 4 walls with new height: 8000
+INFO 2025-10-16 11:30:43,225 services 27280 21680 update_wall_heights_for_room called with wall_ids: [6027, 6029, 6024, 6026], new_height: 8000
+INFO 2025-10-16 11:30:43,226 services 27280 21680 Converted wall_ids to integers: [6027, 6029, 6024, 6026]
+INFO 2025-10-16 11:30:43,228 services 27280 21680 Found 4 walls to update
+INFO 2025-10-16 11:30:43,229 services 27280 21680 Wall 6027: current height = 8000.0
+INFO 2025-10-16 11:30:43,229 services 27280 21680 Wall 6029: current height = 8000.0
+INFO 2025-10-16 11:30:43,230 services 27280 21680 Wall 6024: current height = 8000.0
+INFO 2025-10-16 11:30:43,230 services 27280 21680 Wall 6026: current height = 8000.0
+INFO 2025-10-16 11:30:43,235 services 27280 21680 Updated 4 walls to height 8000
+INFO 2025-10-16 11:30:43,238 services 27280 21680 Wall 6027: new height = 8000.0
+INFO 2025-10-16 11:30:43,238 services 27280 21680 Wall 6029: new height = 8000.0
+INFO 2025-10-16 11:30:43,238 services 27280 21680 Wall 6024: new height = 8000.0
+INFO 2025-10-16 11:30:43,238 services 27280 21680 Wall 6026: new height = 8000.0
+INFO 2025-10-16 11:30:43,239 views 27280 21680 Successfully updated 4 walls
+INFO 2025-10-16 11:30:43,239 services 27280 21680 Recalculating room boundary for room 175
+INFO 2025-10-16 11:30:43,243 services 27280 21680 Updated room 175 boundary with 4 points (order preserved)
+INFO 2025-10-16 11:33:52,839 autoreload 27280 25968 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 11:33:54,426 autoreload 6948 17900 Watching for file changes with StatReloader
+INFO 2025-10-16 11:40:00,151 autoreload 6948 17900 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 11:40:01,146 autoreload 384 21040 Watching for file changes with StatReloader
+INFO 2025-10-16 11:46:04,927 autoreload 384 21040 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 11:46:06,036 autoreload 21052 25196 Watching for file changes with StatReloader
+INFO 2025-10-16 12:24:13,782 autoreload 21052 25196 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 12:24:14,698 autoreload 4256 14240 Watching for file changes with StatReloader
+INFO 2025-10-16 13:14:19,600 autoreload 4256 14240 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 13:14:20,485 autoreload 29700 30984 Watching for file changes with StatReloader
+INFO 2025-10-16 13:22:18,281 autoreload 29700 30984 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 13:22:19,120 autoreload 27772 32652 Watching for file changes with StatReloader
+INFO 2025-10-16 14:18:52,400 autoreload 27772 32652 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-16 14:18:53,274 autoreload 7128 2004 Watching for file changes with StatReloader

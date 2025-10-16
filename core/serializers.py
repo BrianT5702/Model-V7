@@ -81,7 +81,7 @@ class FloorPlanSerializer(serializers.ModelSerializer):
         return data
 
 class CeilingPlanSerializer(serializers.ModelSerializer):
-    ceiling_panels = CeilingPanelSerializer(many=True, read_only=True)
+    ceiling_panels = CeilingPanelSerializer(many=True, read_only=True, source='room.ceiling_panels')
     
     class Meta:
         model = CeilingPlan

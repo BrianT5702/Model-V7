@@ -6,6 +6,10 @@ import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './t
 import { addGrid, adjustModelScale, addLighting, addControls, calculateModelOffset } from './sceneUtils';
 import { createWallMesh, createDoorMesh } from './meshUtils';
 import PanelCalculator from '../panel/PanelCalculator';
+import { THREE_CONFIG } from './threeConfig';
+import WallRenderer from './components/WallRenderer';
+import DoorRenderer from './components/DoorRenderer';
+import AnimationManager from './managers/AnimationManager';
 
 window.gsap = gsap;
 
@@ -15,21 +19,26 @@ export default class ThreeCanvas {
     this.THREE = THREE;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(
-      75,
+      THREE_CONFIG.CAMERA.FOV,
       this.container.clientWidth / this.container.clientHeight,
-      0.1,
-      2000
+      THREE_CONFIG.CAMERA.NEAR,
+      THREE_CONFIG.CAMERA.FAR
     );
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.walls = walls;
     this.joints = joints;
     this.doors = doors;
-    this.scalingFactor = scalingFactor;
+    this.scalingFactor = scalingFactor || THREE_CONFIG.SCALING_FACTOR;
     this.modelOffset = { x: 0, z: 0 };
     this.buildingHeight = 3;
-    this.gridSize = 1000;
+    this.gridSize = THREE_CONFIG.GRID.SIZE;
     this.isInteriorView = false;
     this.project = project;
+
+    // Initialize renderer modules
+    this.wallRenderer = new WallRenderer(this);
+    this.doorRenderer = new DoorRenderer(this);
+    this.animationManager = new AnimationManager(this);
 
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
@@ -39,6 +48,10 @@ export default class ThreeCanvas {
     // Panel division lines
     this.panelLines = []; // Store panel division line objects
     this.showPanelLines = false; // Toggle for panel lines visibility
+    
+    // Ceiling panel division lines
+    this.ceilingPanelLines = []; // Store ceiling panel division line objects
+    this.showCeilingPanelLines = false; // Toggle for ceiling panel lines visibility
     
     // Store HTML container for UI elements
     this.uiContainer = document.createElement('div');
@@ -62,23 +75,6 @@ export default class ThreeCanvas {
     this.buttonContainer.style.alignItems = 'center';
     this.uiContainer.appendChild(this.buttonContainer);
     
-    // Panel lines toggle button - now handled by React component
-    // this.panelButton = document.createElement('button');
-    // this.panelButton.textContent = 'Show Panel Lines';
-    // this.panelButton.style.padding = '8px 16px';
-    // this.panelButton.style.backgroundColor = '#2196F3';
-    // this.panelButton.style.color = 'white';
-    // this.panelButton.style.border = 'none';
-    // this.panelButton.style.borderRadius = '6px';
-    // this.panelButton.style.cursor = 'pointer';
-    // this.panelButton.style.fontWeight = '500';
-    // this.panelButton.style.fontSize = '14px';
-    // this.panelButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-    // this.panelButton.style.transition = 'all 0.2s ease';
-    // this.panelButton.style.pointerEvents = 'auto';
-    // this.panelButton.addEventListener('click', () => this.togglePanelLines());
-    // this.buttonContainer.appendChild(this.panelButton);
-    
     // Door button
     this.doorButton = document.createElement('button');
     this.doorButton.textContent = 'No Door Selected';
@@ -97,23 +93,6 @@ export default class ThreeCanvas {
     this.doorButton.style.opacity = '0.7'; // Semi-transparent when no door selected
     this.doorButton.disabled = true; // Disabled by default
     this.buttonContainer.appendChild(this.doorButton);
-    
-         // Test button for ceiling and floor functionality
-     this.testCeilingButton = document.createElement('button');
-     this.testCeilingButton.textContent = 'Test Ceilings & Floors';
-    this.testCeilingButton.style.padding = '8px 16px';
-    this.testCeilingButton.style.backgroundColor = '#FF9800';
-    this.testCeilingButton.style.color = 'white';
-    this.testCeilingButton.style.border = 'none';
-    this.testCeilingButton.style.borderRadius = '6px';
-    this.testCeilingButton.style.cursor = 'pointer';
-    this.testCeilingButton.style.fontWeight = '500';
-    this.testCeilingButton.style.fontSize = '14px';
-    this.testCeilingButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-    this.testCeilingButton.style.transition = 'all 0.2s ease';
-    this.testCeilingButton.style.pointerEvents = 'auto';
-    this.testCeilingButton.addEventListener('click', () => this.testCeilingFunctionality());
-    this.buttonContainer.appendChild(this.testCeilingButton);
     
     // Current door being interacted with
     this.activeDoor = null;
@@ -142,7 +121,11 @@ export default class ThreeCanvas {
     });
   
     // Adjust initial camera position for better view
-    this.camera.position.set(200, 200, 200);
+    this.camera.position.set(
+      THREE_CONFIG.CAMERA.DEFAULT_POSITION.x,
+      THREE_CONFIG.CAMERA.DEFAULT_POSITION.y,
+      THREE_CONFIG.CAMERA.DEFAULT_POSITION.z
+    );
     this.camera.lookAt(0, 0, 0);
   
     addGrid(this);
@@ -198,11 +181,9 @@ export default class ThreeCanvas {
     this.scene.children.forEach(child => {
       if (child.name && child.name.toLowerCase().includes('ceiling') && !ceilingLevels.includes(child)) {
         ceilingLevels.push(child);
-        console.log(`🔍 Found ceiling by name search: ${child.name}`);
       }
       if (child.userData && child.userData.isCeiling && !ceilingLevels.includes(child)) {
         ceilingLevels.push(child);
-        console.log(`🔍 Found ceiling by userData: ${child.name}`);
       }
     });
 
@@ -226,70 +207,32 @@ export default class ThreeCanvas {
     this.scene.children.forEach(child => {
       if (child.name && child.name.toLowerCase().includes('floor') && !floorLevels.includes(child)) {
         floorLevels.push(child);
-        console.log(`🔍 Found floor by name search: ${child.name}`);
       }
       if (child.userData && child.userData.isFloor && !floorLevels.includes(child)) {
         floorLevels.push(child);
-        console.log(`🔍 Found floor by userData: ${child.name}`);
       }
     });
 
-    console.log(`🏠 Interior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors out of view`);
-    
-    // Log what ceilings and floors we found
-    if (ceilingLevels.length === 0) {
-      console.log('🔍 No ceilings found! Check the console for more details.');
-    } else {
-      ceilingLevels.forEach(ceiling => {
-        console.log(`🔍 Found ceiling: ${ceiling.name}, material:`, ceiling.material);
-      });
-    }
-    
-    if (floorLevels.length === 0) {
-      console.log('🔍 No floors found! Check the console for more details.');
-    } else {
-      floorLevels.forEach(floor => {
-        console.log(`🔍 Found floor: ${floor.name}, material:`, floor.material);
-      });
-    }
+    // Debug: Interior view animation
+    // console.log(`🏠 Interior view: Hiding ${ceilingLevels.length} ceilings, keeping ${floorLevels.length} floors visible`);
 
-    // Animate all ceiling levels
+    // Hide only ceilings for interior view (keep floors visible)
     ceilingLevels.forEach(ceiling => {
-      console.log(`🎬 Hiding ceiling ${ceiling.name}`);
-      
-      // Since ceilings are no longer transparent, just hide them directly
       ceiling.visible = false;
-      console.log(`✅ Ceiling ${ceiling.name} hidden`);
     });
     
-    // Animate all floor levels
+    // Keep all floors visible for interior view
     floorLevels.forEach(floor => {
-      console.log(`🎬 Hiding floor ${floor.name}`);
-      
-      // Since floors are no longer transparent, just hide them directly
-      floor.visible = false;
-      console.log(`✅ Floor ${floor.name} hidden`);
+      floor.visible = true;
     });
 
-    // Animate camera position
-    gsap.to(this.camera.position, {
-        x: centerX + 50,
-        y: 250,
-        z: centerZ + 50,
-        duration: 2,
-        ease: "power2.inOut"
-    });
-
-    // Animate camera target
-    const targetPosition = new THREE.Vector3(centerX, 25, centerZ);
-    gsap.to(this.controls.target, {
-        x: targetPosition.x,
-        y: targetPosition.y,
-        z: targetPosition.z,
-        duration: 2,
-        ease: "power2.inOut",
-        onUpdate: () => this.controls.update()
-    });
+    // Animate camera position using AnimationManager
+    const modelCenter = {
+      x: centerX,
+      y: 0,
+      z: centerZ
+    };
+    this.animationManager.animateToInteriorView(modelCenter);
 
     this.isInteriorView = true;
 }
@@ -328,11 +271,9 @@ animateToExteriorView() {
     this.scene.children.forEach(child => {
       if (child.name && child.name.toLowerCase().includes('ceiling') && !ceilingLevels.includes(child)) {
         ceilingLevels.push(child);
-        console.log(`🔍 Found ceiling by name search: ${child.name}`);
       }
       if (child.userData && child.userData.isCeiling && !ceilingLevels.includes(child)) {
         ceilingLevels.push(child);
-        console.log(`🔍 Found ceiling by userData: ${child.name}`);
       }
     });
 
@@ -356,53 +297,30 @@ animateToExteriorView() {
     this.scene.children.forEach(child => {
       if (child.name && child.name.toLowerCase().includes('floor') && !floorLevels.includes(child)) {
         floorLevels.push(child);
-        console.log(`🔍 Found floor by name search: ${child.name}`);
       }
       if (child.userData && child.userData.isFloor && !floorLevels.includes(child)) {
         floorLevels.push(child);
-        console.log(`🔍 Found floor by userData: ${child.name}`);
       }
     });
 
-    console.log(`🏠 Exterior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors into view`);
+    // Debug: Exterior view animation
+    // console.log(`🏠 Exterior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors into view`);
 
     // Animate all ceiling levels
     ceilingLevels.forEach(ceiling => {
-      console.log(`🎬 Showing ceiling ${ceiling.name}`);
-      
-      // Since ceilings are no longer transparent, just show them directly
+      // Show ceilings for exterior view
       ceiling.visible = true;
-      console.log(`✅ Ceiling ${ceiling.name} shown`);
     });
     
     // Animate all floor levels
     floorLevels.forEach(floor => {
-      console.log(`🎬 Showing floor ${floor.name}`);
-      
-      // Since floors are no longer transparent, just show them directly
+      // Show floors for exterior view
       floor.visible = true;
-      console.log(`✅ Floor ${floor.name} shown`);
     });
 
-    // Animate camera position
-    gsap.to(this.camera.position, {
-        x: centerX + 200,
-        y: 200,
-        z: centerZ + 200,
-        duration: 2,
-        ease: "power2.inOut"
-    });
-
-    // Animate camera target
-    const targetPosition = new THREE.Vector3(centerX, 0, centerZ);
-    gsap.to(this.controls.target, {
-        x: targetPosition.x,
-        y: targetPosition.y,
-        z: targetPosition.z,
-        duration: 2,
-        ease: "power2.inOut",
-        onUpdate: () => this.controls.update()
-    });
+    // Animate camera position using AnimationManager
+    const modelCenter = { x: centerX, y: 0, z: centerZ };
+    this.animationManager.animateToExteriorView(modelCenter);
 
     this.isInteriorView = false;
 }
@@ -446,31 +364,8 @@ getModelBounds() {
     }
   }  
 
-  createBeveledWallShape(length, height, thickness, hasStart45, hasEnd45) {
-    const shape = new THREE.Shape();
-    const bevel = thickness; // Since tan(45°) = 1
-  
-    if (hasStart45) {
-      shape.moveTo(bevel, 0);                // Start from slant point
-      shape.lineTo(0, bevel);                // 45° cut
-      shape.lineTo(0, height);               // Left vertical
-    } else {
-      shape.moveTo(0, 0);
-      shape.lineTo(0, height);
-    }
-  
-    if (hasEnd45) {
-      shape.lineTo(length - bevel, height);  // Right vertical stop early
-      shape.lineTo(length, height - bevel);  // 45° cut
-      shape.lineTo(length, 0);               // Down to base
-    } else {
-      shape.lineTo(length, height);
-      shape.lineTo(length, 0);
-    }
-  
-    shape.lineTo(hasStart45 ? bevel : 0, 0); // Close shape
-    return shape;
-  }
+
+  // Fallback wall mesh creation moved to WallRenderer module
 
   // Animation loop
   animate() {
@@ -490,41 +385,53 @@ getModelBounds() {
   // Method to rebuild the model
   buildModel() {
     try {
-      // Remove existing walls, doors, ceilings, floors, and panel lines from the scene
-      this.scene.children = this.scene.children.filter(child => {
-        return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.name?.startsWith('floor') && !child.userData?.isPanelLine;
+      // Properly dispose of old geometries and materials before removing objects
+      this.scene.traverse((object) => {
+        if (object.userData?.isWall || object.userData?.isDoor || 
+            object.name?.startsWith('ceiling') || object.name?.startsWith('floor') || 
+            object.userData?.isPanelLine || object.userData?.isCeilingPanelLine) {
+          
+          // Dispose of geometry
+          if (object.geometry) {
+            object.geometry.dispose();
+          }
+          
+          // Dispose of materials
+          if (object.material) {
+            if (Array.isArray(object.material)) {
+              object.material.forEach(material => {
+                if (material.map) material.map.dispose();
+                material.dispose();
+              });
+            } else {
+              if (object.material.map) object.material.map.dispose();
+              object.material.dispose();
+            }
+          }
+          
+          // Remove from scene
+          this.scene.remove(object);
+        }
       });
 
       // Clear door objects array and panel lines
       this.doorObjects = [];
       this.panelLines = [];
+      this.ceilingPanelLines = [];
+
+      // Clear GSAP animations to prevent memory leaks
+      this.animationManager.killAllAnimations();
 
       // Normalize door data: map linked_wall → wall
       this.doors.forEach(d => {
         if (d.linked_wall && !d.wall) d.wall = d.linked_wall;
       });
 
-      // Create all walls
-      this.walls.forEach(wall => {
-        try {
-          const wallMesh = this.createWallMesh(this, wall);
-          this.scene.add(wallMesh);
-        } catch (wallError) {
-          console.error(`Error creating wall ${wall.id}:`, wallError);
-        }
-      });
+      // Create all walls using WallRenderer
+      this.wallRenderer.renderWalls(this.walls);
 
-      // Create all doors
-      this.doors.forEach(door => {
-        try {
-          if (door.calculatedPosition) {
-            const doorMesh = this.createDoorMesh(this, door, null);
-            if (doorMesh) this.scene.add(doorMesh);
-          }
-        } catch (doorError) {
-          console.error(`Error creating door ${door.id}:`, doorError);
-        }
-      });
+      // Create all doors using DoorRenderer
+      this.doorRenderer.renderDoors(this.doors);
 
       // Add ceiling after walls and doors are created
       this.addRoomSpecificCeilings();
@@ -535,6 +442,11 @@ getModelBounds() {
       // Create panel division lines only if they're enabled
       if (this.showPanelLines) {
         this.createPanelDivisionLines();
+      }
+      
+      // Create ceiling panel division lines only if they're enabled
+      if (this.showCeilingPanelLines) {
+        this.createCeilingPanelDivisionLines();
       }
     } catch (error) {
       console.error('Error building model:', error);
@@ -553,7 +465,6 @@ getModelBounds() {
       // Get the building footprint vertices
       const vertices = this.getBuildingFootprint();
       if (vertices.length < 3) {
-        console.log('Not enough vertices for ceiling, skipping...');
         return;
       }
       
@@ -567,7 +478,6 @@ getModelBounds() {
       // Triangulate the polygon
       const triangles = earcut(flatVertices);
       if (triangles.length === 0) {
-        console.log('Failed to triangulate ceiling, skipping...');
         return;
       }
       
@@ -813,7 +723,6 @@ getModelBounds() {
 
   // Create room-specific ceilings at correct heights
   createRoomSpecificCeilings() {
-    console.log('🏠 Creating room-specific ceilings for', this.project.rooms.length, 'rooms');
     
     // Get ceiling thickness from project settings or use default
     // Note: ceiling_thickness is stored in individual room ceiling plans, not at project level
@@ -838,7 +747,6 @@ getModelBounds() {
     this.project.rooms.forEach((room, roomIndex) => {
       try {
         if (!room.room_points || room.room_points.length < 3) {
-          console.log(`⚠️ Room ${room.id} has insufficient points, skipping ceiling`);
           return;
         }
 
@@ -846,18 +754,10 @@ getModelBounds() {
         let roomCeilingHeight = this.determineRoomCeilingHeight(room, wallHeightMap, roomWallMap);
         
         if (!roomCeilingHeight) {
-          console.log(`⚠️ Could not determine ceiling height for room ${room.id}, skipping`);
           return;
         }
 
-        console.log(`🏠 Room ${room.id} (${room.room_name || 'Unnamed'}) - Ceiling Height: ${roomCeilingHeight}mm`);
         
-        // Log ceiling thickness information
-        if (room.ceiling_plan?.ceiling_thickness) {
-          console.log(`🏠 Room ${room.id} using ceiling thickness from plan: ${room.ceiling_plan.ceiling_thickness}mm`);
-        } else {
-          console.log(`🏠 Room ${room.id} using default ceiling thickness: ${defaultCeilingThickness}mm`);
-        }
 
         // Convert room points to 3D coordinates
         const roomVertices = room.room_points.map(point => ({
@@ -884,7 +784,6 @@ getModelBounds() {
           };
           
           this.scene.add(ceilingMesh);
-          console.log(`✅ Created ceiling for room ${room.id} at height ${roomCeilingHeight}mm`);
         }
       } catch (error) {
         console.error(`❌ Error creating ceiling for room ${room.id}:`, error);
@@ -921,9 +820,6 @@ getModelBounds() {
       // This prevents the ceiling from extending beyond the lower room's walls
       const minWallHeight = Math.min(...roomWallHeights);
       
-      console.log(`🏠 Room ${room.id} walls: ${roomWalls.join(', ')}`);
-      console.log(`🏠 Room ${room.id} wall heights: ${roomWallHeights.join(', ')}mm`);
-      console.log(`🏠 Room ${room.id} using minimum height: ${minWallHeight}mm`);
       
       return minWallHeight;
       
@@ -962,13 +858,11 @@ getModelBounds() {
         const heights = nearbyWalls.map(wall => wall.height).filter(h => h > 0);
         if (heights.length > 0) {
           const minHeight = Math.min(...heights);
-          console.log(`🏠 Room ${room.id} using proximity-based height: ${minHeight}mm`);
           return minHeight;
         }
       }
       
       // Final fallback to default height
-      console.log(`🏠 Room ${room.id} using default height: 3000mm`);
       return 3000; // 3 meters default
       
     } catch (error) {
@@ -990,7 +884,6 @@ getModelBounds() {
       // Triangulate the room polygon
       const triangles = earcut(flatVertices);
       if (triangles.length === 0) {
-        console.log(`⚠️ Failed to triangulate room ${room.id}, skipping`);
         return null;
       }
       
@@ -1233,8 +1126,8 @@ getModelBounds() {
       }
     });
     
-    leftJointType = leftEndJoints.includes('45_cut') ? '45_cut' : 'butt_in';
-    rightJointType = rightEndJoints.includes('45_cut') ? '45_cut' : 'butt_in';
+    leftJointType = 'butt_in';
+    rightJointType = 'butt_in';
     return { left: leftJointType, right: rightJointType };
   }
 
@@ -1298,64 +1191,7 @@ getModelBounds() {
       const isHorizontal = Math.abs(start_y - end_y) < 1e-6;
       const isVertical = Math.abs(start_x - end_x) < 1e-6;
       
-      if (this.joints && Array.isArray(this.joints)) {
-        for (const joint of this.joints) {
-          if ((joint.wall_1 === id || joint.wall_2 === id) && joint.joining_method === '45_cut') {
-            // Find the connecting wall
-            const connectingWallId = joint.wall_1 === id ? joint.wall_2 : joint.wall_1;
-            const connectingWall = this.walls.find(w => w.id === connectingWallId);
-            
-            if (connectingWall) {
-              // Calculate wall midpoints
-              const wallMidX = (start_x + end_x) / 2;
-              const wallMidY = (start_y + end_y) / 2;
-              const connectMidX = (connectingWall.start_x + connectingWall.end_x) / 2;
-              const connectMidY = (connectingWall.start_y + connectingWall.end_y) / 2;
-              
-              // Calculate model center in database coordinates
-              const modelCenterX = modelCenter.x / scale;
-              const modelCenterY = modelCenter.z / scale;
-              
-              // Determine if connecting wall and model center are on the same side
-              let sameSide = false;
-              
-              if (isHorizontal) {
-                // For horizontal wall, compare Y positions
-                const modelAboveWall = modelCenterY > wallMidY;
-                const connectAboveWall = connectMidY > wallMidY;
-                sameSide = modelAboveWall === connectAboveWall;
-              } else if (isVertical) {
-                // For vertical wall, compare X positions
-                const modelRightOfWall = modelCenterX > wallMidX;
-                const connectRightOfWall = connectMidX > wallMidX;
-                sameSide = modelRightOfWall === connectRightOfWall;
-              } else {
-                // For diagonal walls, use dot product
-                const dx = end_x - start_x;
-                const dy = end_y - start_y;
-                const wallLength = Math.sqrt(dx * dx + dy * dy);
-                const wallNormalX = -dy / wallLength;
-                const wallNormalY = dx / wallLength;
-                const toModelX = modelCenterX - wallMidX;
-                const toModelY = modelCenterY - wallMidY;
-                const toConnectX = connectMidX - wallMidX;
-                const toConnectY = connectMidY - wallMidY;
-                
-                const dotModel = wallNormalX * toModelX + wallNormalY * toModelY;
-                const dotConnect = wallNormalX * toConnectX + wallNormalY * toConnectY;
-                sameSide = (dotModel > 0) === (dotConnect > 0);
-              }
-              
-              // If they're on opposite sides, we need to flip
-              if (!sameSide) {
-                shouldFlipWall = true;
-                // Wall will be flipped in calculateWallPanels due to 45° cut joint
-                break;
-              }
-            }
-          }
-        }
-      }
+      // Removed 45-degree joint logic - using simple butt-in joints only
       
       // Reorder: left side panel (if any), then full panels, then right side panel (if any)
       const leftSide = panels.find(p => p.type === 'side' && p.position === 'left');
@@ -1398,6 +1234,138 @@ getModelBounds() {
     });
     
     return wallPanelsMap;
+  }
+
+  // Calculate ceiling panels for each room based on ceiling plan data
+  calculateCeilingPanels() {
+    const ceilingPanelsMap = {};
+    
+    if (!this.project || !this.project.rooms) {
+      return ceilingPanelsMap;
+    }
+
+    this.project.rooms.forEach(room => {
+      console.log(`🏠 Checking room ${room.id} (${room.room_name}):`, {
+        ceiling_plan: room.ceiling_plan,
+        ceiling_panels_from_plan: room.ceiling_plan?.ceiling_panels,
+        hasCeilingPanels: room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0
+      });
+      
+      // Check for ceiling panels via ceiling_plan.ceiling_panels (correct path)
+      if (room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0) {
+        // Use the actual ceiling panel data from the database
+        console.log(`🏠 Room ${room.id}: Using actual ceiling panel data (${room.ceiling_plan.ceiling_panels.length} panels)`);
+        const panels = room.ceiling_plan.ceiling_panels.map(panel => ({
+          id: panel.panel_id,
+          width: panel.width,
+          length: panel.length,
+          start_x: panel.start_x,
+          start_y: panel.start_y,
+          end_x: panel.end_x,
+          end_y: panel.end_y,
+          is_cut_panel: panel.is_cut_panel,
+          material_type: panel.material_type,
+          thickness: panel.thickness,
+          cut_notes: panel.cut_notes
+        }));
+        
+        ceilingPanelsMap[room.id] = {
+          room: room,
+          panels: panels,
+          ceiling_plan: room.ceiling_plan
+        };
+        
+        console.log(`🏠 Room ${room.id} (${room.room_name}): Found ${panels.length} ceiling panels`);
+      } else {
+        // Fallback: Generate panels using PanelCalculator if no ceiling plan exists
+        console.log(`🏠 Room ${room.id} (${room.room_name}): No ceiling panel data, generating fallback panels`);
+        const fallbackPanels = this.generateFallbackCeilingPanels(room);
+        if (fallbackPanels.length > 0) {
+          ceilingPanelsMap[room.id] = {
+            room: room,
+            panels: fallbackPanels,
+            ceiling_plan: null
+          };
+        }
+      }
+    });
+    
+    return ceilingPanelsMap;
+  }
+
+  // Generate fallback ceiling panels when no ceiling plan data exists
+  generateFallbackCeilingPanels(room) {
+    if (!room.room_points || room.room_points.length < 3) {
+      return [];
+    }
+
+    // Calculate room dimensions
+    const roomBounds = this.calculateRoomBounds(room.room_points);
+    const roomWidth = roomBounds.width;
+    const roomLength = roomBounds.length;
+    
+    // Use PanelCalculator to generate panels for each dimension
+    const calculator = new PanelCalculator();
+    const maxPanelWidth = 1150; // mm
+    
+    const panels = [];
+    
+    // Calculate panels along the width (X-axis)
+    const widthPanels = calculator.calculatePanels(roomWidth, 20, { left: 'butt_in', right: 'butt_in' });
+    const lengthPanels = calculator.calculatePanels(roomLength, 20, { left: 'butt_in', right: 'butt_in' });
+    
+    // Create a grid of panels
+    let accumulatedLength = 0;
+    lengthPanels.forEach((lengthPanel, lengthIndex) => {
+      let accumulatedWidth = 0;
+      widthPanels.forEach((widthPanel, widthIndex) => {
+        const panel = {
+          id: `fallback_${room.id}_${lengthIndex}_${widthIndex}`,
+          width: widthPanel.actualWidth || widthPanel.width,
+          length: lengthPanel.actualWidth || lengthPanel.width,
+          start_x: roomBounds.minX + accumulatedWidth,
+          start_y: roomBounds.minY + accumulatedLength,
+          end_x: roomBounds.minX + accumulatedWidth + (widthPanel.actualWidth || widthPanel.width),
+          end_y: roomBounds.minY + accumulatedLength + (lengthPanel.actualWidth || lengthPanel.width),
+          is_cut_panel: widthPanel.isSidePanel || lengthPanel.isSidePanel,
+          material_type: 'standard',
+          thickness: 20,
+          cut_notes: widthPanel.isSidePanel || lengthPanel.isSidePanel ? 'Generated fallback panel' : null,
+          isFallback: true
+        };
+        
+        panels.push(panel);
+        accumulatedWidth += widthPanel.actualWidth || widthPanel.width;
+      });
+      accumulatedLength += lengthPanel.actualWidth || lengthPanel.width;
+    });
+    
+    console.log(`🏠 Generated ${panels.length} fallback ceiling panels for room ${room.id}`);
+    return panels;
+  }
+
+  // Calculate room bounds from room points
+  calculateRoomBounds(roomPoints) {
+    if (!roomPoints || roomPoints.length === 0) {
+      return { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, length: 0 };
+    }
+    
+    const xs = roomPoints.map(p => p.x);
+    const ys = roomPoints.map(p => p.y);
+    
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    
+    return {
+      minX: minX,
+      maxX: maxX,
+      minY: minY,
+      maxY: maxY,
+      width: maxX - minX,
+      length: maxY - minY
+    };
   }
 
   // Create panel division lines in 3D
@@ -1446,63 +1414,8 @@ getModelBounds() {
         const isHorizontal = Math.abs(start_y - end_y) < 1e-6;
         const isVertical = Math.abs(start_x - end_x) < 1e-6;
         
-        // Check if wall should be flipped due to joint types (same logic as in calculateWallPanels)
+        // Removed 45-degree joint logic - using simple butt-in joints only
         let shouldFlipWall = false;
-        if (this.joints && Array.isArray(this.joints)) {
-          for (const joint of this.joints) {
-            if ((joint.wall_1 === id || joint.wall_2 === id) && joint.joining_method === '45_cut') {
-              // Find the connecting wall
-              const connectingWallId = joint.wall_1 === id ? joint.wall_2 : joint.wall_1;
-              const connectingWall = this.walls.find(w => w.id === connectingWallId);
-              
-              if (connectingWall) {
-                // Calculate wall midpoints
-                const wallMidX = (start_x + end_x) / 2;
-                const wallMidY = (start_y + end_y) / 2;
-                const connectMidX = (connectingWall.start_x + connectingWall.end_x) / 2;
-                const connectMidY = (connectingWall.start_y + connectingWall.end_y) / 2;
-                
-                // Calculate model center in database coordinates
-                const modelCenterX = modelCenter.x / scale;
-                const modelCenterY = modelCenter.z / scale;
-                
-                // Determine if connecting wall and model center are on the same side
-                let sameSide = false;
-                
-                if (isHorizontal) {
-                  // For horizontal wall, compare Y positions
-                  const modelAboveWall = modelCenterY > wallMidY;
-                  const connectAboveWall = connectMidY > wallMidY;
-                  sameSide = modelAboveWall === connectAboveWall;
-                } else if (isVertical) {
-                  // For vertical wall, compare X positions
-                  const modelRightOfWall = modelCenterX > wallMidX;
-                  const connectRightOfWall = connectMidX > wallMidX;
-                  sameSide = modelRightOfWall === connectRightOfWall;
-                } else {
-                  // For diagonal walls, use dot product
-                  const wallNormalX = -dy / wallLength;
-                  const wallNormalY = dx / wallLength;
-                  const toModelX = modelCenterX - wallMidX;
-                  const toModelY = modelCenterY - wallMidY;
-                  const toConnectX = connectMidX - wallMidX;
-                  const toConnectY = connectMidY - wallMidY;
-                  
-                  const dotModel = wallNormalX * toModelX + wallNormalY * toModelY;
-                  const dotConnect = wallNormalX * toConnectX + wallNormalY * toConnectY;
-                  sameSide = (dotModel > 0) === (dotConnect > 0);
-                }
-                
-                // If they're on opposite sides, we need to flip
-                if (!sameSide) {
-                  shouldFlipWall = true;
-                  // Wall will be flipped due to 45° cut joint
-                  break;
-                }
-              }
-            }
-          }
-        }
         
         // Apply wall flipping if needed
         let finalStartX, finalStartY, finalEndX, finalEndY;
@@ -1543,7 +1456,8 @@ getModelBounds() {
         // Calculate wall length in unscaled coordinates (mm) for panel and door calculations
         const finalWallLengthUnscaled = finalWallLength / scale;
         
-        console.log(`Wall ${wall.id} - Scaled length: ${finalWallLength}, Unscaled length: ${finalWallLengthUnscaled}mm, Scale: ${scale}`);
+        // Debug: Wall length calculation
+        // console.log(`Wall ${wall.id} - Scaled length: ${finalWallLength}, Unscaled length: ${finalWallLengthUnscaled}mm, Scale: ${scale}`);
         
         // Calculate wall normal (perpendicular to final wall direction)
         const wallDirX = finalDx / finalWallLength;
@@ -1572,110 +1486,36 @@ getModelBounds() {
         const isFinalHorizontal = Math.abs(finalStartY - finalEndY) < 1e-6;
         const isFinalVertical = Math.abs(finalStartX - finalEndX) < 1e-6;
         
-        if (shouldFlipWall) {
-          // For walls flipped due to joint types, calculate normal based on connecting wall position
-          let connectingWallMidX = 0, connectingWallMidY = 0;
-          let foundConnectingWall = false;
-          
-          // Find the connecting wall that caused the flip
-          for (const joint of this.joints) {
-            if ((joint.wall_1 === wall.id || joint.wall_2 === wall.id) && joint.joining_method === '45_cut') {
-              const connectingWallId = joint.wall_1 === wall.id ? joint.wall_2 : joint.wall_1;
-              const connectingWall = this.walls.find(w => w.id === connectingWallId);
-              
-              if (connectingWall) {
-                connectingWallMidX = (connectingWall.start_x + connectingWall.end_x) / 2;
-                connectingWallMidY = (connectingWall.start_y + connectingWall.end_y) / 2;
-                foundConnectingWall = true;
-                break;
-              }
-            }
-          }
-          
-          if (foundConnectingWall) {
-            // Calculate direction to connecting wall
-            const toConnectingX = connectingWallMidX - wallMidX;
-            const toConnectingY = connectingWallMidY - wallMidY;
-            
-            // Wall flipped - Connecting wall position
-            // Wall flipped - Direction to connecting wall
-            
-            if (isFinalHorizontal) {
-              // Normal is along Y axis (up or down)
-              if (toConnectingY < 0) {
-                finalNormX = 0;
-                finalNormZ = -1;
-              } else {
-                finalNormX = 0;
-                finalNormZ = 1;
-              }
-            } else if (isFinalVertical) {
-              // Normal is along X axis (left or right)
-              if (toConnectingX < 0) {
-                finalNormX = -1;
-                finalNormZ = 0;
-              } else {
-                finalNormX = 1;
-                finalNormZ = 0;
-              }
-            } else {
-              // Diagonal wall: use dot product with final wall normal
-              const dotProduct = normX * toConnectingX + normZ * toConnectingY;
-              finalNormX = dotProduct < 0 ? -normX : normX;
-              finalNormZ = dotProduct < 0 ? -normZ : normZ;
-            }
-            
-            // Wall flipped - Final normal
+        // Simplified wall normal calculation without 45-degree joints
+        if (isFinalHorizontal) {
+          // For horizontal walls: if model center is at < Y position, normal points down
+          if (modelCenter.z / scale < finalStartY) {
+            finalNormX = 0;
+            finalNormZ = -1;
           } else {
-            // Fallback to model center logic if connecting wall not found
-            if (isFinalHorizontal) {
-              if (toCenterY < 0) {
-                finalNormX = 0;
-                finalNormZ = -1;
-              } else {
-                finalNormX = 0;
-                finalNormZ = 1;
-              }
-            } else if (isFinalVertical) {
-              if (toCenterX < 0) {
-                finalNormX = -1;
-                finalNormZ = 0;
-              } else {
-                finalNormX = 1;
-                finalNormZ = 0;
-              }
-            } else {
-              const dotProduct = normX * toCenterX + normZ * toCenterY;
-              finalNormX = dotProduct < 0 ? -normX : normX;
-              finalNormZ = dotProduct < 0 ? -normZ : normZ;
-            }
+            finalNormX = 0;
+            finalNormZ = 1;
+          }
+        } else if (isFinalVertical) {
+          // For vertical walls: if model center is at > X position, normal points right
+          if (modelCenter.x / scale > finalStartX) {
+            finalNormX = 1;
+            finalNormZ = 0;
+          } else {
+            finalNormX = -1;
+            finalNormZ = 0;
           }
         } else {
-          // For non-flipped walls, use model center logic
-          if (isFinalHorizontal) {
-            // Normal is along Y axis (up or down)
-            if (toCenterY < 0) {
-              finalNormX = 0;
-              finalNormZ = -1;
-            } else {
-              finalNormX = 0;
-              finalNormZ = 1;
-            }
-          } else if (isFinalVertical) {
-            // Normal is along X axis (left or right)
-            if (toCenterX < 0) {
-              finalNormX = -1;
-              finalNormZ = 0;
-            } else {
-              finalNormX = 1;
-              finalNormZ = 0;
-            }
-          } else {
-            // Diagonal wall: use dot product with final wall normal
-            const dotProduct = normX * toCenterX + normZ * toCenterY;
-            finalNormX = dotProduct < 0 ? -normX : normX;
-            finalNormZ = dotProduct < 0 ? -normZ : normZ;
-          }
+          // Diagonal wall: use original logic
+          const normX = -finalDy / finalWallLength;
+          const normZ = finalDx / finalWallLength;
+          const wallMidX = (finalStartX + finalEndX) / 2;
+          const wallMidY = (finalStartY + finalEndY) / 2;
+          const toCenterX = (modelCenter.x / scale) - wallMidX;
+          const toCenterY = (modelCenter.z / scale) - wallMidY;
+          const dotProduct = normX * toCenterX + normZ * toCenterY;
+          finalNormX = dotProduct < 0 ? -normX : normX;
+          finalNormZ = dotProduct < 0 ? -normZ : normZ;
         }
         
         // Get doors for this wall and calculate cutouts
@@ -1703,34 +1543,10 @@ getModelBounds() {
             doorInfo: door
           };
           
-          console.log(`🚪 DOOR CUTOUT CREATION - Door ${door.id}:`, {
-            doorType: door.door_type,
-            originalPosition: door.position_x,
-            adjustedPosition: adjustedPositionX,
-            doorPos: doorPos,
-            doorWidth: doorWidth,
-            cutoutWidth: cutoutWidth,
-            doorHeight: doorHeight,
-            wallFlipped: wasWallFlipped,
-            finalWallLength: finalWallLength,
-            cutoutStart: cutout.start,
-            cutoutEnd: cutout.end,
-            cutoutRange: `${cutout.start}mm to ${cutout.end}mm`,
-            cutoutWidth: cutout.end - cutout.start,
-            scale: scale,
-            originalDoorWidth: door.width
-          });
           
           return cutout;
         });
         
-        console.log(`📋 ALL CUTOUTS CREATED:`, cutouts.map(c => ({
-          doorId: c.doorInfo.id,
-          start: c.start,
-          end: c.end,
-          range: `${c.start}mm to ${c.end}mm`,
-          height: c.height
-        })));
         
         let accumulated = 0;
         
@@ -1739,21 +1555,12 @@ getModelBounds() {
         // Create division lines for each panel boundary
         // Note: The panels array from calculateWallPanels() already has the correct flipped positions
         // for side panels when shouldFlipWall is true, so we use them as-is
-        console.log(`🔧 WALL ${wall.id} PANEL DIVISION PROCESSING:`);
-        console.log(`  - Total panels: ${panels.length}`);
-        console.log(`  - Wall length: ${finalWallLength}mm`);
-        console.log(`  - Available cutouts:`, cutouts.map(c => `Door ${c.doorInfo.id}: ${c.start}-${c.end}mm`));
         
         for (let i = 0; i < panels.length - 1; i++) {
           accumulated += panels[i].width;
           const t = accumulated / finalWallLength; // Position along wall (0-1)
           const divisionPosition = accumulated; // Position in wall units (mm)
           
-          console.log(`\n🔧 Panel division ${i + 1}:`);
-          console.log(`  - Panel ${i} width: ${panels[i].width}mm`);
-          console.log(`  - Accumulated: ${accumulated}mm`);
-          console.log(`  - Division position: ${divisionPosition}mm (${(t*100).toFixed(1)}% of wall)`);
-          console.log(`  - Will check against cutouts:`, cutouts.map(c => `${c.start}-${c.end}mm`));
           
           // Panel division created
           
@@ -1779,6 +1586,18 @@ getModelBounds() {
           console.log(`  - 3D coordinates: (${divX3D.toFixed(2)}, ${divZ3D.toFixed(2)})`);
           console.log(`  - Calling createLineSegmentsWithCutouts with position ${divisionPosition}mm`);
           
+          // Get the current panel and next panel to determine if this is a cut panel boundary
+          const currentPanel = panels[i];
+          const nextPanel = panels[i + 1];
+          const isCutPanel = currentPanel.type === 'side' || nextPanel.type === 'side';
+          
+          console.log(`🔨 Wall ${wall.id} panel line ${i + 1}:`, {
+            currentPanel: { type: currentPanel.type, width: currentPanel.width },
+            nextPanel: { type: nextPanel.type, width: nextPanel.width },
+            isCutPanel: isCutPanel,
+            lineColor: isCutPanel ? 'RED (cut)' : 'TEAL (full)'
+          });
+          
           // Create line segments that break at door cutouts
           this.createLineSegmentsWithCutouts(
             dbLinePoint, 
@@ -1791,7 +1610,11 @@ getModelBounds() {
             finalStartY,
             finalEndX,
             finalEndY,
-            scale
+            scale,
+            isCutPanel,
+            wall.id,
+            currentPanel,
+            nextPanel
           );
         }
       });
@@ -1878,11 +1701,96 @@ getModelBounds() {
     }
   }
 
+  // Method to toggle ceiling panel division lines visibility
+  toggleCeilingPanelLines() {
+    this.showCeilingPanelLines = !this.showCeilingPanelLines;
+    console.log('🏠 Toggling ceiling panel lines to:', this.showCeilingPanelLines);
+    
+    if (this.showCeilingPanelLines && this.ceilingPanelLines.length === 0) {
+      // Create ceiling panel lines only when first enabled
+      console.log('🏠 Creating new ceiling panel lines...');
+      this.createCeilingPanelDivisionLines();
+    } else {
+      // Just toggle visibility of existing ceiling panel lines
+      console.log('🏠 Toggling visibility of existing ceiling panel lines:', this.ceilingPanelLines.length);
+      this.ceilingPanelLines.forEach(line => {
+        line.visible = this.showCeilingPanelLines;
+      });
+    }
+  }
+
+  // Method to set ceiling panel division lines visibility
+  setCeilingPanelLinesVisibility(visible) {
+    this.showCeilingPanelLines = visible;
+    
+    if (visible && this.ceilingPanelLines.length === 0) {
+      this.createCeilingPanelDivisionLines();
+    } else {
+      this.ceilingPanelLines.forEach(line => {
+        line.visible = visible;
+      });
+    }
+  }
+
+  // Method to toggle both wall and ceiling panel lines together
+  toggleAllPanelLines() {
+    const newState = !this.showPanelLines;
+    this.showPanelLines = newState;
+    this.showCeilingPanelLines = newState;
+    
+    console.log('🏠 Toggling ALL panel lines to:', newState);
+    console.log('🏠 Wall panel lines count:', this.panelLines.length);
+    console.log('🏠 Ceiling panel lines count:', this.ceilingPanelLines.length);
+    
+    // Handle wall panel lines
+    if (newState && this.panelLines.length === 0) {
+      console.log('🏠 Creating new wall panel lines...');
+      this.createPanelDivisionLines();
+    } else {
+      console.log('🏠 Toggling existing wall panel lines visibility...');
+      this.panelLines.forEach(line => {
+        line.visible = newState;
+      });
+    }
+    
+    // Handle ceiling panel lines
+    if (newState && this.ceilingPanelLines.length === 0) {
+      console.log('🏠 Creating new ceiling panel lines...');
+      this.createCeilingPanelDivisionLines();
+    } else {
+      console.log('🏠 Toggling existing ceiling panel lines visibility...');
+      this.ceilingPanelLines.forEach(line => {
+        line.visible = newState;
+      });
+    }
+  }
+
+  // Method to set both wall and ceiling panel lines visibility
+  setAllPanelLinesVisibility(visible) {
+    this.showPanelLines = visible;
+    this.showCeilingPanelLines = visible;
+    
+    // Handle wall panel lines
+    if (visible && this.panelLines.length === 0) {
+      this.createPanelDivisionLines();
+    } else {
+      this.panelLines.forEach(line => {
+        line.visible = visible;
+      });
+    }
+    
+    // Handle ceiling panel lines
+    if (visible && this.ceilingPanelLines.length === 0) {
+      this.createCeilingPanelDivisionLines();
+    } else {
+      this.ceilingPanelLines.forEach(line => {
+        line.visible = visible;
+      });
+    }
+  }
+
   // Method to create line segments with gaps at door cutouts
-  createLineSegmentsWithCutouts(dbLinePoint, offsetLinePoint, wallHeight, cutouts, divisionPosition, finalWallLength, finalStartX, finalStartY, finalEndX, finalEndY, scale) {
-    console.log(`🔍 LINE DETECTION START - Panel line at position ${divisionPosition}mm`);
-    console.log(`📏 Wall length: ${finalWallLength}mm, Wall height: ${wallHeight}mm`);
-    console.log(`📍 Line position: ${divisionPosition}mm (${(divisionPosition/finalWallLength*100).toFixed(1)}% of wall)`);
+  createLineSegmentsWithCutouts(dbLinePoint, offsetLinePoint, wallHeight, cutouts, divisionPosition, finalWallLength, finalStartX, finalStartY, finalEndX, finalEndY, scale, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
     
     // Check if this division line intersects with any door cutout
     // A door cutout is an area/range, so we check if the panel line falls within that area
@@ -1908,15 +1816,9 @@ getModelBounds() {
       return isWithinCutout;
     });
     
-    // Debug logging
-    console.log(`📊 INTERSECTION RESULTS:`);
-    console.log(`  - Available cutouts:`, cutouts.map(c => `${c.doorInfo.id}: ${c.start}-${c.end}mm`));
-    console.log(`  - Intersecting cutouts:`, intersectingCutouts.length);
-    console.log(`  - Division position: ${divisionPosition}mm`);
     
     if (intersectingCutouts.length === 0) {
-      console.log(`🚫 Creating full line - no door intersection detected`);
-      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight);
+      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, isCutPanel, wallId, currentPanel, nextPanel);
       return;
     }
     
@@ -1926,27 +1828,19 @@ getModelBounds() {
     // Validate cutout data
     if (!cutout || typeof cutout.height !== 'number' || cutout.height < 0) {
       console.error(`❌ Invalid cutout data:`, cutout);
-      console.log(`🔄 Falling back to full line due to invalid cutout data`);
-      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight);
+      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, isCutPanel, wallId, currentPanel, nextPanel);
       return;
     }
     
     const doorHeight = cutout.height; // Use the height stored in the cutout object
     
-    console.log(`✅ Creating partial line - door intersection confirmed`);
-    console.log(`📏 Door height: ${doorHeight}mm, Wall height: ${wallHeight}mm`);
-    console.log(`🔍 Height comparison: doorHeight ${doorHeight >= wallHeight ? '>=' : '<'} wallHeight`);
-    console.log(`🚪 Selected cutout: Door ${cutout.doorInfo.id}, Range: ${cutout.start}-${cutout.end}mm`);
     
     // Create line only from door top to wall top
-    this.createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight);
+    this.createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight, isCutPanel, wallId, currentPanel, nextPanel);
   }
   
   // Method to create lines only from door top to wall top
-  createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight) {
-    console.log(`🎯 Creating door top to wall top line:`);
-    console.log(`  - Door height: ${doorHeight}mm`);
-    console.log(`  - Wall height: ${wallHeight}mm`);
+  createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
     
     // Only create line from door top to wall top (no line from floor to door bottom)
     if (doorHeight < wallHeight) {
@@ -1962,8 +1856,11 @@ getModelBounds() {
       
       lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
       
+      // Use different colors for cut panels vs full panels (same as ceiling panel lines)
+      const lineColor = isCutPanel ? 0xFF6B6B : 0x4ECDC4; // Red for cut panels, teal for full panels
+      
       const lineMaterial = new this.THREE.LineBasicMaterial({
-        color: 0xFFFFFF,
+        color: lineColor,
         linewidth: 3,
         transparent: true,
         opacity: 0.6
@@ -1976,11 +1873,9 @@ getModelBounds() {
       this.scene.add(line);
       this.panelLines.push(line);
       
-      console.log(`✅ Created partial line from door top (${doorHeight}mm) to wall top (${wallHeight}mm)`);
     } else {
       // Handle case where door height >= wall height
       // In this case, the door covers the entire wall height, so no line should be visible
-      console.log(`⚠️ Door height (${doorHeight}mm) >= wall height (${wallHeight}mm) - creating minimal line`);
       
       // Create a very short line at the very top to maintain visual consistency
       const lineGeometry = new this.THREE.BufferGeometry();
@@ -2009,15 +1904,11 @@ getModelBounds() {
       this.scene.add(line);
       this.panelLines.push(line);
       
-      console.log(`✅ Created minimal line at wall top for door that covers entire wall height`);
     }
   }
   
   // Method to create continuous lines (no cutouts)
-  createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight) {
-    console.log(`🎯 Creating continuous line:`);
-    console.log(`  - From floor (0mm) to ceiling (${wallHeight}mm)`);
-    console.log(`  - Position: (${dbLinePoint.x.toFixed(2)}, ${dbLinePoint.z.toFixed(2)})`);
+  createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
     
     // Create the division line geometry - two lines: one at DB position, one offset
     const lineGeometry = new this.THREE.BufferGeometry();
@@ -2032,9 +1923,12 @@ getModelBounds() {
     
     lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
     
+    // Use different colors for cut panels vs full panels (same as ceiling panel lines)
+    const lineColor = isCutPanel ? 0xFF6B6B : 0x4ECDC4; // Red for cut panels, teal for full panels
+    
     // Create line material
     const lineMaterial = new this.THREE.LineBasicMaterial({
-      color: 0xFFFFFF,
+      color: lineColor,
       linewidth: 3,
       transparent: true,
       opacity: 0.6
@@ -2049,11 +1943,8 @@ getModelBounds() {
     this.scene.add(divisionLine);
     this.panelLines.push(divisionLine);
     
-    console.log(`✅ Created continuous line from floor to ceiling. Total panel lines: ${this.panelLines.length}`);
   }
   
-
-
   // Method to set panel division lines visibility
   setPanelLinesVisibility(visible) {
     this.showPanelLines = visible;
@@ -2066,6 +1957,475 @@ getModelBounds() {
         line.visible = visible;
       });
     }
+  }
+
+  // Create ceiling panel division lines in 3D
+  // This method creates visual lines on ceilings showing the actual panel layout
+  // It uses the ceiling plan data from the database to show where panels are placed
+  // Lines are colored differently for cut panels (red) vs full panels (teal)
+  // Grid lines (gray) show the overall panel arrangement
+  createCeilingPanelDivisionLines() {
+    try {
+      console.log('🏠 Starting ceiling panel division lines creation...');
+      
+      // Clear existing ceiling panel lines
+      this.ceilingPanelLines.forEach(line => {
+        this.scene.remove(line);
+      });
+      this.ceilingPanelLines = [];
+      
+      const ceilingPanelsMap = this.calculateCeilingPanels();
+      console.log('🏠 Ceiling panels map:', ceilingPanelsMap);
+      
+      let roomsWithCeilingPanels = 0;
+      let totalCeilingPanelLines = 0;
+      
+      Object.values(ceilingPanelsMap).forEach(({ room, panels }) => {
+        if (!panels || panels.length <= 1) {
+          return;
+        }
+        
+        roomsWithCeilingPanels++;
+        
+        // Get ceiling height for this room
+        const roomCeilingHeight = this.determineRoomCeilingHeight(room, new Map(), new Map());
+        if (!roomCeilingHeight) {
+          return;
+        }
+        
+        console.log(`🏠 Creating ceiling panel lines for room ${room.id} (${room.room_name || 'Unnamed'}) with ${panels.length} panels`);
+        
+        // Convert room points to 3D coordinates
+        const roomVertices = room.room_points.map(point => ({
+          x: point.x * this.scalingFactor + this.modelOffset.x,
+          z: point.y * this.scalingFactor + this.modelOffset.z
+        }));
+        
+        // Create ceiling panel lines
+        this.createCeilingPanelLinesForRoom(room, panels, roomVertices, roomCeilingHeight);
+        
+        totalCeilingPanelLines += this.calculateCeilingPanelLineCount(panels);
+      });
+      
+      console.log(`🏠 Created ceiling panel lines for ${roomsWithCeilingPanels} rooms, ${totalCeilingPanelLines} total lines`);
+      
+    } catch (error) {
+      console.error('Error creating ceiling panel division lines:', error);
+    }
+  }
+
+  // Create ceiling panel lines for a specific room
+  createCeilingPanelLinesForRoom(room, panels, roomVertices, roomCeilingHeight) {
+    const scale = this.scalingFactor;
+    const ceilingY = roomCeilingHeight * scale;
+    
+    // Create panel boundary lines
+    this.createCeilingPanelBoundaryLines(room, panels, roomVertices, ceilingY);
+    
+    // Create panel grid lines (internal panel divisions)
+    this.createCeilingPanelGridLines(room, panels, roomVertices, ceilingY);
+  }
+
+  // Create boundary lines around ceiling panels
+  createCeilingPanelBoundaryLines(room, panels, roomVertices, ceilingY) {
+    const scale = this.scalingFactor;
+    
+    console.log(`🏠 Creating boundary lines for room ${room.id} with ${panels.length} panels`);
+    
+    // Create lines along panel boundaries
+    panels.forEach((panel, panelIndex) => {
+      console.log(`🏠 Panel ${panelIndex + 1} (${panel.id}):`, {
+        start: { x: panel.start_x, y: panel.start_y },
+        end: { x: panel.end_x, y: panel.end_y },
+        width: panel.width,
+        length: panel.length,
+        is_cut_panel: panel.is_cut_panel
+      });
+      
+      // Convert panel coordinates to 3D
+      const panelStartX = panel.start_x * scale + this.modelOffset.x;
+      const panelStartZ = panel.start_y * scale + this.modelOffset.z;
+      const panelEndX = panel.end_x * scale + this.modelOffset.x;
+      const panelEndZ = panel.end_y * scale + this.modelOffset.z;
+      
+      // Create boundary lines for this panel (4 edges)
+      // Top edge
+      this.createCeilingPanelBoundaryLine(
+        panelStartX, panelStartZ, panelEndX, panelStartZ, ceilingY,
+        room.id, panel.id, panel.is_cut_panel
+      );
+      
+      // Right edge
+      this.createCeilingPanelBoundaryLine(
+        panelEndX, panelStartZ, panelEndX, panelEndZ, ceilingY,
+        room.id, panel.id, panel.is_cut_panel
+      );
+      
+      // Bottom edge
+      this.createCeilingPanelBoundaryLine(
+        panelEndX, panelEndZ, panelStartX, panelEndZ, ceilingY,
+        room.id, panel.id, panel.is_cut_panel
+      );
+      
+      // Left edge
+      this.createCeilingPanelBoundaryLine(
+        panelStartX, panelEndZ, panelStartX, panelStartZ, ceilingY,
+        room.id, panel.id, panel.is_cut_panel
+      );
+    });
+  }
+
+  // Create a single ceiling panel boundary line
+  createCeilingPanelBoundaryLine(startX, startZ, endX, endZ, ceilingY, roomId, panelId, isCutPanel) {
+    const scale = this.scalingFactor;
+    
+    console.log(`🏠 Creating ceiling panel line:`, {
+      start: { x: startX, z: startZ },
+      end: { x: endX, z: endZ },
+      ceilingY: ceilingY,
+      roomId: roomId,
+      panelId: panelId,
+      isCutPanel: isCutPanel
+    });
+    
+    // Create line geometry
+    const lineGeometry = new this.THREE.BufferGeometry();
+    const vertices = new Float32Array([
+      // Line at ceiling surface
+      startX, ceilingY, startZ,
+      endX, ceilingY, endZ
+    ]);
+    
+    lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
+    
+    // Create line material with different colors for cut vs full panels
+    const lineMaterial = new this.THREE.LineBasicMaterial({
+      color: isCutPanel ? 0xFF6B6B : 0x4ECDC4, // Red for cut panels, teal for full panels
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.7
+    });
+    
+    // Create line mesh
+    const line = new this.THREE.Line(lineGeometry, lineMaterial);
+    line.userData.isCeilingPanelLine = true;
+    line.userData.roomId = roomId;
+    line.userData.panelId = panelId;
+    line.userData.isCutPanel = isCutPanel;
+    line.visible = this.showCeilingPanelLines;
+    
+    // Add to scene and store reference
+    this.scene.add(line);
+    this.ceilingPanelLines.push(line);
+    
+    console.log(`🏠 Added ceiling panel line to scene. Total ceiling panel lines: ${this.ceilingPanelLines.length}`);
+  }
+
+  // Create grid lines showing internal panel divisions
+  createCeilingPanelGridLines(room, panels, roomVertices, ceilingY) {
+    const scale = this.scalingFactor;
+    
+    // Group panels by their Y position to create horizontal grid lines
+    const panelRows = new Map();
+    const panelCols = new Map();
+    
+    panels.forEach(panel => {
+      const rowKey = Math.round(panel.start_y);
+      const colKey = Math.round(panel.start_x);
+      
+      if (!panelRows.has(rowKey)) {
+        panelRows.set(rowKey, []);
+      }
+      if (!panelCols.has(colKey)) {
+        panelCols.set(colKey, []);
+      }
+      
+      panelRows.get(rowKey).push(panel);
+      panelCols.get(colKey).push(panel);
+    });
+    
+    // Create horizontal grid lines
+    panelRows.forEach((rowPanels, rowKey) => {
+      if (rowPanels.length > 1) {
+        rowPanels.sort((a, b) => a.start_x - b.start_x);
+        
+        // Create line from first panel start to last panel end
+        const firstPanel = rowPanels[0];
+        const lastPanel = rowPanels[rowPanels.length - 1];
+        
+        const startX = firstPanel.start_x * scale + this.modelOffset.x;
+        const startZ = firstPanel.start_y * scale + this.modelOffset.z;
+        const endX = lastPanel.end_x * scale + this.modelOffset.x;
+        const endZ = lastPanel.start_y * scale + this.modelOffset.z;
+        
+        this.createCeilingGridLine(startX, startZ, endX, endZ, ceilingY, room.id, 'horizontal');
+      }
+    });
+    
+    // Create vertical grid lines
+    panelCols.forEach((colPanels, colKey) => {
+      if (colPanels.length > 1) {
+        colPanels.sort((a, b) => a.start_y - b.start_y);
+        
+        // Create line from first panel start to last panel end
+        const firstPanel = colPanels[0];
+        const lastPanel = colPanels[colPanels.length - 1];
+        
+        const startX = firstPanel.start_x * scale + this.modelOffset.x;
+        const startZ = firstPanel.start_y * scale + this.modelOffset.z;
+        const endX = firstPanel.start_x * scale + this.modelOffset.x;
+        const endZ = lastPanel.end_y * scale + this.modelOffset.z;
+        
+        this.createCeilingGridLine(startX, startZ, endX, endZ, ceilingY, room.id, 'vertical');
+      }
+    });
+  }
+
+  // Create a single ceiling grid line
+  createCeilingGridLine(startX, startZ, endX, endZ, ceilingY, roomId, direction) {
+    const lineGeometry = new this.THREE.BufferGeometry();
+    const vertices = new Float32Array([
+      startX, ceilingY, startZ,
+      endX, ceilingY, endZ
+    ]);
+    
+    lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
+    
+    // Create line material for grid lines
+    const lineMaterial = new this.THREE.LineBasicMaterial({
+      color: 0x95A5A6, // Gray color for grid lines
+      linewidth: 1,
+      transparent: true,
+      opacity: 0.5
+    });
+    
+    // Create line mesh
+    const line = new this.THREE.Line(lineGeometry, lineMaterial);
+    line.userData.isCeilingPanelLine = true;
+    line.userData.roomId = roomId;
+    line.userData.isGridLine = true;
+    line.userData.direction = direction;
+    line.visible = this.showCeilingPanelLines;
+    
+    // Add to scene and store reference
+    this.scene.add(line);
+    this.ceilingPanelLines.push(line);
+  }
+
+  // Calculate the number of ceiling panel lines that will be created
+  calculateCeilingPanelLineCount(panels) {
+    // Each panel has 4 boundary lines, but shared boundaries are counted once
+    // This is a simplified calculation - actual count may vary based on panel arrangement
+    return panels.length * 2; // Rough estimate: 2 lines per panel on average
+  }
+
+  // Method to create a simple 3D demonstration of 45-degree joints
+  create45DegreeJointDemo() {
+    try {
+      console.log('🔨 Creating 45-degree joint demonstration...');
+      
+      // Clear existing demo objects
+      this.scene.traverse((object) => {
+        if (object.userData?.isDemo45Joint) {
+          this.scene.remove(object);
+        }
+      });
+      
+      // Create two walls for demonstration
+      // Wall A: Vertical wall (from bottom to top)
+      const wallA = {
+        id: 'demo_wall_a',
+        start_x: 0,
+        start_y: 0,
+        end_x: 0,
+        end_y: 3000, // 3m tall vertical wall
+        height: 2500, // 2.5m high
+        thickness: 150,
+        application_type: 'wall'
+      };
+      
+      // Wall B: Horizontal wall (from left to right)
+      const wallB = {
+        id: 'demo_wall_b', 
+        start_x: 0,
+        start_y: 0,
+        end_x: 3000, // 3m long horizontal wall
+        end_y: 0,
+        height: 2500, // 2.5m high
+        thickness: 150,
+        application_type: 'wall'
+      };
+      
+      // Create intersection data for 45-degree joint
+      const joint = {
+        id: 'demo_joint',
+        wall_1: 'demo_wall_a',
+        wall_2: 'demo_wall_b',
+        joining_method: '45_cut'
+      };
+      
+      // Create the walls using the existing mesh creation logic
+      const wallAMesh = this.createWallMeshWith45Cut(wallA, [joint]);
+      const wallBMesh = this.createWallMeshWith45Cut(wallB, [joint]);
+      
+      if (wallAMesh) {
+        wallAMesh.userData.isDemo45Joint = true;
+        wallAMesh.userData.wallId = 'demo_wall_a';
+        wallAMesh.material.color.setHex(0x4ECDC4); // Teal for Wall A
+        this.scene.add(wallAMesh);
+        console.log('✅ Created demo Wall A (vertical)');
+      }
+      
+      if (wallBMesh) {
+        wallBMesh.userData.isDemo45Joint = true;
+        wallBMesh.userData.wallId = 'demo_wall_b';
+        wallBMesh.material.color.setHex(0xFF6B6B); // Red for Wall B
+        this.scene.add(wallBMesh);
+        console.log('✅ Created demo Wall B (horizontal)');
+      }
+      
+      console.log('🎯 45-degree joint demonstration created!');
+      console.log('   - Wall A (Vertical): Teal color');
+      console.log('   - Wall B (Horizontal): Red color');
+      console.log('   - Joint: 45-degree mitered corner');
+      
+    } catch (error) {
+      console.error('❌ Error creating 45-degree joint demo:', error);
+    }
+  }
+  
+  // Helper method to create wall mesh with 45-degree cuts
+  createWallMeshWith45Cut(wall, joints) {
+    try {
+      const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
+      const scale = this.scalingFactor;
+      
+      // Convert to 3D coordinates
+      const startX = start_x * scale + this.modelOffset.x;
+      const startZ = start_y * scale + this.modelOffset.z;
+      const endX = end_x * scale + this.modelOffset.x;
+      const endZ = end_y * scale + this.modelOffset.z;
+      
+      // Calculate wall direction and length
+      const dx = endX - startX;
+      const dz = endZ - startZ;
+      const wallLength = Math.sqrt(dx * dx + dz * dz);
+      
+      if (wallLength === 0) return null;
+      
+      // Create basic wall geometry
+      const wallGeometry = new this.THREE.BoxGeometry(wallLength, height * scale, thickness * scale);
+      
+      // Position the wall
+      const wallMesh = new this.THREE.Mesh(wallGeometry, new this.THREE.MeshStandardMaterial());
+      wallMesh.position.set(
+        (startX + endX) / 2,
+        (height * scale) / 2,
+        (startZ + endZ) / 2
+      );
+      
+      // Rotate wall to match direction
+      const angle = Math.atan2(dz, dx);
+      wallMesh.rotation.y = angle;
+      
+      // Apply 45-degree cuts if joint exists
+      const has45Joint = joints.some(j => 
+        (j.wall_1 === id || j.wall_2 === id) && j.joining_method === '45_cut'
+      );
+      
+      if (has45Joint) {
+        console.log(`🔨 Applying 45-degree cut to wall ${id}`);
+        // For demo purposes, we'll create a simplified 45-degree cut
+        // In the full implementation, this would use CSG operations
+        
+        // Create a visual indicator of the 45-degree cut
+        const cutGeometry = new this.THREE.ConeGeometry(thickness * scale * 0.3, thickness * scale * 0.8, 4);
+        const cutMaterial = new this.THREE.MeshBasicMaterial({ 
+          color: 0xFFFF00, // Yellow for cut indicator
+          transparent: true,
+          opacity: 0.7
+        });
+        
+        const cutIndicator = new this.THREE.Mesh(cutGeometry, cutMaterial);
+        cutIndicator.userData.isDemo45Joint = true;
+        cutIndicator.userData.isCutIndicator = true;
+        
+        // Position cut indicator at the joint
+        cutIndicator.position.set(endX, height * scale * 0.5, endZ);
+        cutIndicator.rotation.y = angle + Math.PI / 4; // 45 degrees
+        
+        this.scene.add(cutIndicator);
+        console.log(`✅ Added 45-degree cut indicator for wall ${id}`);
+      }
+      
+      return wallMesh;
+      
+    } catch (error) {
+      console.error(`❌ Error creating wall mesh for ${wall.id}:`, error);
+      return null;
+    }
+  }
+
+  // Test method for ceiling panel lines functionality
+  testCeilingPanelLinesFunctionality() {
+    console.log('🧪 Testing ceiling panel lines functionality...');
+    
+    // First, let's check what project data we have
+    console.log('🏠 Project data:', this.project);
+    if (this.project && this.project.rooms) {
+      console.log('🏠 Rooms data:', this.project.rooms);
+      this.project.rooms.forEach(room => {
+        console.log(`🏠 Room ${room.id} (${room.room_name}):`, {
+          ceiling_plan: room.ceiling_plan,
+          ceiling_panels_from_plan: room.ceiling_plan?.ceiling_panels,
+          ceiling_panels_count: room.ceiling_plan?.ceiling_panels ? room.ceiling_plan.ceiling_panels.length : 0,
+          room_points: room.room_points,
+          room_points_count: room.room_points ? room.room_points.length : 0
+        });
+        
+        // If we have ceiling panels, show some sample data
+        if (room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0) {
+          console.log(`🏠 Sample ceiling panels for room ${room.id}:`, room.ceiling_plan.ceiling_panels.slice(0, 3));
+        }
+      });
+    }
+    
+    // Test ceiling panel calculation
+    const ceilingPanelsMap = this.calculateCeilingPanels();
+    console.log('🏠 Ceiling panels map:', ceilingPanelsMap);
+    
+    // Test individual methods
+    Object.values(ceilingPanelsMap).forEach(({ room, panels }) => {
+      console.log(`🏠 Room ${room.id} (${room.room_name}): ${panels.length} panels`);
+      panels.forEach((panel, index) => {
+        console.log(`  Panel ${index + 1}: ${panel.width}x${panel.length}mm at (${panel.start_x}, ${panel.start_y}) - (${panel.end_x}, ${panel.end_y})`);
+        if (panel.is_cut_panel) {
+          console.log(`    ⚠️ Cut panel: ${panel.cut_notes || 'No notes'}`);
+        }
+      });
+    });
+    
+    // Test toggle functionality
+    console.log('🔄 Testing ceiling panel lines toggle...');
+    this.toggleCeilingPanelLines();
+    console.log('✅ Ceiling panel lines toggled ON');
+    
+    setTimeout(() => {
+      this.toggleCeilingPanelLines();
+      console.log('✅ Ceiling panel lines toggled OFF');
+    }, 2000);
+    
+    // Test combined toggle
+    setTimeout(() => {
+      console.log('🔄 Testing combined panel lines toggle...');
+      this.toggleAllPanelLines();
+      console.log('✅ All panel lines toggled ON');
+    }, 4000);
+    
+    setTimeout(() => {
+      this.toggleAllPanelLines();
+      console.log('✅ All panel lines toggled OFF');
+    }, 6000);
   }
 
   // Test method for ceiling and floor functionality
@@ -2090,15 +2450,10 @@ getModelBounds() {
       child.name && child.name.toLowerCase().includes('floor')
     );
     
-    console.log('🔍 Found ceilings by name search:', allCeilings.map(c => c.name));
-    console.log('🔍 Found floors by name search:', allFloors.map(f => f.name));
     
     // Test direct opacity change for ceilings
     allCeilings.forEach(ceiling => {
       if (ceiling.material) {
-        console.log(`🧪 Testing direct opacity change for ceiling ${ceiling.name}`);
-        console.log(`  - Current opacity: ${ceiling.material.opacity}`);
-        console.log(`  - Material:`, ceiling.material);
         
         // Try to change opacity directly
         ceiling.material.opacity = 0.3;
@@ -2116,9 +2471,6 @@ getModelBounds() {
     // Test direct opacity change for floors
     allFloors.forEach(floor => {
       if (floor.material) {
-        console.log(`🧪 Testing direct opacity change for floor ${floor.name}`);
-        console.log(`  - Current opacity: ${floor.material.opacity}`);
-        console.log(`  - Material:`, floor.material);
         
         // Try to change opacity directly
         floor.material.opacity = 0.3;
@@ -2128,14 +2480,11 @@ getModelBounds() {
         if (this.renderer) {
           this.renderer.render(this.scene, this.camera);
         }
-        
-        console.log(`  - New opacity: ${floor.material.opacity}`);
       }
     });
     
     // Test GSAP for ceilings
     if (allCeilings.length > 0 && allCeilings[0].material) {
-      console.log('🧪 Testing GSAP animation for ceilings...');
       try {
         gsap.to(allCeilings[0].material, {
           opacity: 0,
@@ -2264,7 +2613,6 @@ getModelBounds() {
       // Triangulate the room polygon
       const triangles = earcut(flatVertices);
       if (triangles.length === 0) {
-        console.log(`⚠️ Failed to triangulate room ${room.id}, skipping`);
         return null;
       }
       
@@ -2586,5 +2934,12 @@ getModelBounds() {
       console.error('Error creating floor:', error);
       // Don't crash the app if floor creation fails
     }
+  }
+  
+  // Method to test 45-degree joint demonstration
+  test45DegreeJointDemo() {
+    console.log('🧪 Testing 45-degree joint demonstration...');
+    this.create45DegreeJointDemo();
+    console.log('✅ 45-degree joint demo created! Check the 3D view.');
   }
 }

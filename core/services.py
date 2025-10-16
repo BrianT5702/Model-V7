@@ -612,7 +612,10 @@ class FloorService:
     
     @staticmethod
     def analyze_floor_orientation_strategies(project_id, panel_width=1150, panel_length='auto'):
-        """Analyze different orientation strategies for floor panels (excluding walls)"""
+        """Analyze different orientation strategies for floor panels (excluding walls) with room optimal"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             from .models import Project, Room
             
@@ -623,18 +626,22 @@ class FloorService:
             if not rooms.exists():
                 return {'error': 'No rooms found for this project'}
             
+            # Filter to panel floors only
+            panel_floor_rooms = [
+                room for room in rooms 
+                if room.room_points and len(room.room_points) >= 3 
+                and hasattr(room, 'floor_type') and room.floor_type in ['panel', 'Panel']
+            ]
+            
+            if not panel_floor_rooms:
+                return {'error': 'No valid floor strategies found'}
+            
+            # Analyze per-room strategies (horizontal, vertical, best_orientation)
             strategies = []
             total_project_waste = 0
             total_project_panels = 0
             
-            for room in rooms:
-                if not room.room_points or len(room.room_points) < 3:
-                    continue
-                
-                # Check floor type - only analyze panel floors
-                if not hasattr(room, 'floor_type') or room.floor_type not in ['panel', 'Panel']:
-                    continue
-                
+            for room in panel_floor_rooms:
                 # Calculate floor area (excluding walls)
                 floor_area = FloorService._calculate_room_floor_area(room, project.wall_thickness)
                 if floor_area <= 0:
@@ -658,22 +665,72 @@ class FloorService:
                 total_project_waste += best_strategy['total_waste_percentage']
                 total_project_panels += best_strategy['total_panels']
             
+            # Add ROOM OPTIMAL strategy (global optimization across all panel floor rooms)
+            if len(panel_floor_rooms) >= 2:
+                logger.info(f"🎯 Evaluating Room Optimal strategy for {len(panel_floor_rooms)} panel floor rooms")
+                
+                # Prepare rooms_data for room optimal evaluation
+                rooms_data = []
+                for room in panel_floor_rooms:
+                    bounding_box = FloorService._calculate_room_floor_bounding_box(room)
+                    if not bounding_box:
+                        continue
+                    
+                    floor_area = FloorService._calculate_room_floor_area(room, project.wall_thickness)
+                    floor_thickness = float(room.floor_thickness) if hasattr(room, 'floor_thickness') and room.floor_thickness else 20.0
+                    
+                    rooms_data.append({
+                        'id': room.id,
+                        'name': room.room_name,
+                        'area': floor_area,
+                        'bounding_box': bounding_box,
+                        'room_points': room.room_points,
+                        'wall_thickness': project.wall_thickness,
+                        'floor_thickness': floor_thickness
+                    })
+                
+                if len(rooms_data) >= 2:
+                    # Evaluate room optimal strategy with global optimization
+                    room_optimal_result = FloorService._evaluate_room_optimal_strategy(
+                        rooms_data, panel_width, panel_length
+                    )
+                    
+                    # Create a strategy entry for room optimal
+                    strategies.append({
+                        'strategy_name': 'room_optimal',
+                        'orientation_type': 'room_optimal',
+                        'total_panels': room_optimal_result['total_panels'],
+                        'total_waste_percentage': room_optimal_result['leftover_waste_percentage'],
+                        'room_results': room_optimal_result['room_results'],
+                        'leftover_stats': {
+                            'total_leftover_area': room_optimal_result['leftover_area']
+                        },
+                        'description': 'Global optimization across all rooms with leftover reuse'
+                    })
+                    
+                    logger.info(f"✅ Room Optimal strategy added: {room_optimal_result['leftover_waste_percentage']:.2f}% waste")
+                else:
+                    logger.info(f"⏭️  Room Optimal not available: only {len(rooms_data)} valid room(s), need 2+")
+            else:
+                logger.info(f"⏭️  Room Optimal not available: only {len(panel_floor_rooms)} panel floor room(s), need 2+")
+            
             if not strategies:
                 return {'error': 'No valid floor strategies found'}
             
-            # Determine recommended strategy
+            # Determine recommended strategy (lowest waste)
             recommended_strategy = min(strategies, key=lambda x: x['total_waste_percentage'])
             
             return {
                 'strategies': strategies,
                 'recommended_strategy': recommended_strategy['strategy_name'],
-                'total_project_waste': total_project_waste / len(rooms) if rooms else 0,
+                'total_project_waste': total_project_waste / len(panel_floor_rooms) if panel_floor_rooms else 0,
                 'total_project_panels': total_project_panels
             }
             
         except Project.DoesNotExist:
             return {'error': 'Project not found'}
         except Exception as e:
+            logger.error(f"Error analyzing floor orientations: {str(e)}")
             return {'error': f'Error analyzing floor orientations: {str(e)}'}
     
     @staticmethod
@@ -755,21 +812,21 @@ class FloorService:
             'leftover_stats': vertical_stats
         })
         
-        # Strategy 3: Mixed (best of both) with leftover tracking for analysis
-        mixed_tracker = LeftoverTracker(context='ANALYSIS-M')  # Mark as analysis
-        mixed_panels = FloorService._generate_mixed_floor_panels(
-            bounding_box, room.room_points, panel_width, panel_length, room.project.wall_thickness, mixed_tracker, floor_thickness
+        # Strategy 3: Best of both (renamed from mixed_optimal) with leftover tracking for analysis
+        best_tracker = LeftoverTracker(context='ANALYSIS-BEST')  # Mark as analysis
+        best_panels = FloorService._generate_best_orientation_floor_panels(
+            bounding_box, room.room_points, panel_width, panel_length, room.project.wall_thickness, best_tracker, floor_thickness
         )
-        mixed_waste = FloorService._calculate_floor_waste(mixed_panels, room, room.project.wall_thickness, mixed_tracker)
-        mixed_stats = mixed_tracker.get_stats()
+        best_waste = FloorService._calculate_floor_waste(best_panels, room, room.project.wall_thickness, best_tracker)
+        best_stats = best_tracker.get_stats()
         
         strategies.append({
-            'strategy_name': 'mixed_optimal',
-            'orientation_type': 'mixed',
-            'total_panels': len(mixed_panels),
-            'total_waste_percentage': mixed_waste,
-            'panels': mixed_panels,
-            'leftover_stats': mixed_stats
+            'strategy_name': 'best_orientation',
+            'orientation_type': 'best',
+            'total_panels': len(best_panels),
+            'total_waste_percentage': best_waste,
+            'panels': best_panels,
+            'leftover_stats': best_stats
         })
         
         return strategies
@@ -1329,23 +1386,38 @@ class FloorService:
         return inside
     
     @staticmethod
-    def _generate_mixed_floor_panels(bounding_box, room_points, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
-        """Generate mixed orientation floor panels for optimal coverage with leftover tracking"""
-        # For now, use the better of horizontal or vertical
-        horizontal_tracker = leftover_tracker or LeftoverTracker()
+    def _generate_best_orientation_floor_panels(bounding_box, room_points, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+        """Generate floor panels using the optimal orientation (best of horizontal or vertical) with proper leftover tracking"""
+        # Create ANALYSIS trackers for evaluation (temporary)
+        eval_tracker_h = LeftoverTracker(context='ANALYSIS-H-EVAL')
+        eval_tracker_v = LeftoverTracker(context='ANALYSIS-V-EVAL')
+        
+        # Evaluate both orientations
         horizontal_panels = FloorService._generate_floor_panels(
-            bounding_box, room_points, 'horizontal', panel_width, panel_length, wall_thickness, horizontal_tracker, floor_thickness
+            bounding_box, room_points, 'horizontal', panel_width, panel_length, wall_thickness, eval_tracker_h, floor_thickness
         )
         
-        vertical_tracker = leftover_tracker or LeftoverTracker()
         vertical_panels = FloorService._generate_floor_panels(
-            bounding_box, room_points, 'vertical', panel_width, panel_length, wall_thickness, vertical_tracker, floor_thickness
+            bounding_box, room_points, 'vertical', panel_width, panel_length, wall_thickness, eval_tracker_v, floor_thickness
         )
         
-        horizontal_waste = FloorService._calculate_floor_waste(horizontal_panels, None, wall_thickness)
-        vertical_waste = FloorService._calculate_floor_waste(vertical_panels, None, wall_thickness)
+        # Calculate waste properly with room area info
+        room_area = bounding_box['width'] * bounding_box['height']
+        room_info = {'area': room_area}
+        horizontal_waste = FloorService._calculate_floor_waste(horizontal_panels, room_info, wall_thickness, eval_tracker_h)
+        vertical_waste = FloorService._calculate_floor_waste(vertical_panels, room_info, wall_thickness, eval_tracker_v)
         
-        return horizontal_panels if horizontal_waste <= vertical_waste else vertical_panels
+        # Choose best orientation
+        best_orientation = 'horizontal' if horizontal_waste <= vertical_waste else 'vertical'
+        
+        # Regenerate with ACTUAL tracker if provided (preserves leftover continuity)
+        if leftover_tracker:
+            return FloorService._generate_floor_panels(
+                bounding_box, room_points, best_orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
+            )
+        
+        # No tracker: return evaluation result
+        return horizontal_panels if best_orientation == 'horizontal' else vertical_panels
     
     @staticmethod
     def _calculate_floor_waste(panels, room, wall_thickness, leftover_tracker=None):
@@ -1357,19 +1429,257 @@ class FloorService:
         if not panels:
             return 100.0
         
-        if room and leftover_tracker:
+        # Calculate floor area based on room type
+        floor_area = 0
+        if room and hasattr(room, 'room_points'):
+            # Room is a model instance
             floor_area = FloorService._calculate_room_floor_area(room, wall_thickness)
-            if floor_area > 0:
-                # Get leftover area from tracker
-                leftover_stats = leftover_tracker.get_stats()
-                leftover_area = leftover_stats.get('total_leftover_area', 0)
-                
-                # Calculate waste percentage using leftover area
-                waste_percentage = (leftover_area / floor_area) * 100
-                
-                return waste_percentage
+        elif room and isinstance(room, dict) and 'area' in room:
+            # Room is a dict with pre-calculated area
+            floor_area = room['area']
+        elif leftover_tracker:
+            # Fallback: calculate from panel bounding box
+            min_x = min(p['start_x'] for p in panels)
+            max_x = max(p['start_x'] + p['length'] for p in panels)
+            min_y = min(p['start_y'] for p in panels)  
+            max_y = max(p['start_y'] + p['width'] for p in panels)
+            floor_area = (max_x - min_x) * (max_y - min_y)
+        
+        if floor_area > 0 and leftover_tracker:
+            # Get leftover area from tracker
+            leftover_stats = leftover_tracker.get_stats()
+            leftover_area = leftover_stats.get('total_leftover_area', 0)
+            
+            # Calculate waste percentage using leftover area
+            waste_percentage = (leftover_area / floor_area) * 100
+            
+            return waste_percentage
         
         return 0.0
+    
+    @staticmethod
+    def _generate_floor_panels_with_orientation(room_info, orientation, panel_width, panel_length, leftover_tracker, floor_thickness):
+        """Helper function to generate floor panels with a specific orientation for a room_info dict"""
+        return FloorService._generate_floor_panels(
+            room_info['bounding_box'],
+            room_info['room_points'],
+            orientation,
+            panel_width,
+            panel_length,
+            room_info['wall_thickness'],
+            leftover_tracker,
+            floor_thickness
+        )
+    
+    @staticmethod
+    def _evaluate_floor_orientation_combination(rooms, orientation_combo, panel_width, panel_length, floor_thickness):
+        """Evaluate a specific combination of room orientations for floor plans with SHARED leftover tracking
+        
+        Args:
+            rooms: List of room_info dicts with id, name, area, bounding_box, room_points, wall_thickness
+            orientation_combo: Tuple of orientations, one per room (e.g., ('horizontal', 'vertical', 'horizontal'))
+            panel_width: Panel width in mm
+            panel_length: Panel length setting
+            floor_thickness: Floor thickness in mm
+            
+        Returns:
+            Dict with total_leftover_area, total_panels, room_results
+        """
+        # Create a fresh leftover tracker for this combination
+        combo_tracker = LeftoverTracker(context='COMBO-TEST-FLOOR')
+        
+        total_panels = 0
+        total_waste_area = 0.0
+        total_room_area = 0.0
+        room_results = []
+        
+        # Process rooms in sequence with leftover tracking
+        for i, room_info in enumerate(rooms):
+            orientation = orientation_combo[i]
+            room_area = room_info['area']
+            total_room_area += room_area
+            
+            # Generate panels with this orientation and the combo tracker
+            panels = FloorService._generate_floor_panels_with_orientation(
+                room_info, orientation, panel_width, panel_length, combo_tracker, floor_thickness
+            )
+            
+            waste_area = FloorService._calculate_room_floor_waste(panels, room_info, orientation)
+            total_waste_area += waste_area
+            total_panels += len(panels)
+            
+            panel_area = sum(p['width'] * p['length'] for p in panels)
+            
+            room_results.append({
+                'room_id': room_info['id'],
+                'room_name': room_info['name'],
+                'orientation': orientation,
+                'panels': len(panels),
+                'waste_area': waste_area,
+                'waste_percentage': (waste_area / panel_area * 100) if panel_area > 0 else 0,
+                'area': room_area
+            })
+        
+        # Get leftover stats
+        leftover_stats = combo_tracker.get_stats()
+        leftover_area = leftover_stats.get('total_leftover_area', 0)
+        
+        return {
+            'total_leftover_area': leftover_area,
+            'total_panels': total_panels,
+            'total_waste_area': total_waste_area,
+            'total_room_area': total_room_area,
+            'room_results': room_results,
+            'leftover_stats': leftover_stats
+        }
+    
+    @staticmethod
+    def _calculate_room_floor_waste(panels, room_info, orientation):
+        """Calculate waste for a single room during combination evaluation"""
+        if not panels:
+            return 0.0
+        
+        # Simple waste calculation based on cut panels
+        # More sophisticated calculation could be added
+        room_area = room_info['area']
+        panel_area = sum(p['width'] * p['length'] for p in panels)
+        
+        # Waste is the difference between panel material used and room area
+        waste = max(0, panel_area - room_area)
+        return waste
+    
+    @staticmethod
+    def _evaluate_room_optimal_strategy(rooms_data, panel_width=1150, panel_length='auto'):
+        """Evaluate room optimal strategy with GLOBAL optimization for floor plans
+        
+        This tests all possible orientation combinations (for ≤10 rooms) or uses greedy heuristic (for >10 rooms)
+        to find the combination that minimizes waste across all rooms with leftover reuse.
+        
+        Args:
+            rooms_data: List of room_info dicts
+            panel_width: Panel width in mm
+            panel_length: Panel length setting
+            
+        Returns:
+            Dict with strategy results including optimal orientations per room
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        num_rooms = len(rooms_data)
+        floor_thickness = rooms_data[0].get('floor_thickness', 20.0) if rooms_data else 20.0
+        
+        # For performance: use exhaustive search for <= 10 rooms, greedy heuristic for larger projects
+        if num_rooms <= 10:
+            logger.info(f"🌍 FLOOR GLOBAL OPTIMIZATION: Testing all {2**num_rooms} combinations for {num_rooms} rooms")
+            
+            best_combo = None
+            best_leftover_area = float('inf')
+            best_result = None
+            
+            # Generate all possible orientation combinations (2^n combinations)
+            from itertools import product
+            
+            all_combos = list(product(['vertical', 'horizontal'], repeat=num_rooms))
+            
+            for i, orientation_combo in enumerate(all_combos):
+                result = FloorService._evaluate_floor_orientation_combination(
+                    rooms_data, orientation_combo, panel_width, panel_length, floor_thickness
+                )
+                
+                leftover_area = result['total_leftover_area']
+                
+                # Track the best combination
+                if leftover_area < best_leftover_area:
+                    best_leftover_area = leftover_area
+                    best_combo = orientation_combo
+                    best_result = result
+                    
+                    combo_str = ', '.join([f"{rooms_data[j]['name']}:{o[0].upper()}" for j, o in enumerate(orientation_combo)])
+                    logger.info(f"  ✓ New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
+            
+            # Log the final best combination
+            best_combo_str = ', '.join([f"{rooms_data[j]['name']}:{o[0].upper()}" for j, o in enumerate(best_combo)])
+            waste_pct = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
+            logger.info(f"🎯 FLOOR GLOBAL OPTIMAL FOUND: {best_combo_str} > Project Waste: {waste_pct:.2f}%")
+            
+            # Calculate waste percentage
+            leftover_waste_percentage = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
+            
+            return {
+                'total_panels': best_result['total_panels'],
+                'total_waste_area': best_result['total_waste_area'],
+                'total_room_area': best_result['total_room_area'],
+                'room_results': best_result['room_results'],
+                'leftover_area': best_leftover_area,
+                'leftover_waste_percentage': leftover_waste_percentage,
+                'best_combo': best_combo
+            }
+        
+        else:
+            # For large projects (>10 rooms), use greedy heuristic
+            logger.info(f"⚡ FLOOR GREEDY HEURISTIC: Using smart greedy for {num_rooms} rooms (too many for exhaustive search)")
+            
+            total_panels = 0
+            total_waste_area = 0.0
+            total_room_area = 0.0
+            room_results = []
+            
+            # Create leftover tracker
+            strategy_tracker = LeftoverTracker(context='ANALYSIS-ROOM-OPT')
+            
+            for room_info in rooms_data:
+                room_area = room_info['area']
+                total_room_area += room_area
+                
+                # Test both orientations with leftover tracking
+                vertical_panels = FloorService._generate_floor_panels_with_orientation(
+                    room_info, 'vertical', panel_width, panel_length, strategy_tracker, floor_thickness
+                )
+                horizontal_panels = FloorService._generate_floor_panels_with_orientation(
+                    room_info, 'horizontal', panel_width, panel_length, strategy_tracker, floor_thickness
+                )
+                
+                vertical_waste = FloorService._calculate_room_floor_waste(vertical_panels, room_info, 'vertical')
+                horizontal_waste = FloorService._calculate_room_floor_waste(horizontal_panels, room_info, 'horizontal')
+                
+                # Pick the orientation with less waste (greedy choice)
+                if vertical_waste <= horizontal_waste:
+                    best_orientation = 'vertical'
+                    best_panels = vertical_panels
+                    best_waste = vertical_waste
+                else:
+                    best_orientation = 'horizontal'
+                    best_panels = horizontal_panels
+                    best_waste = horizontal_waste
+                
+                total_waste_area += best_waste
+                total_panels += len(best_panels)
+                
+                best_panel_area = sum(panel['width'] * panel['length'] for panel in best_panels)
+                
+                room_results.append({
+                    'room_id': room_info['id'],
+                    'room_name': room_info['name'],
+                    'orientation': best_orientation,
+                    'panels': len(best_panels),
+                    'waste_area': best_waste,
+                    'waste_percentage': (best_waste / best_panel_area * 100) if best_panel_area > 0 else 0,
+                    'area': room_area
+                })
+            
+            leftover_stats = strategy_tracker.get_stats()
+            leftover_area = leftover_stats.get('total_leftover_area', 0)
+            leftover_waste_percentage = (leftover_area / total_room_area * 100) if total_room_area > 0 else 0
+            
+            return {
+                'total_panels': total_panels,
+                'total_waste_area': total_waste_area,
+                'total_room_area': total_room_area,
+                'room_results': room_results,
+                'leftover_area': leftover_area,
+                'leftover_waste_percentage': leftover_waste_percentage
+            }
     
     @staticmethod
     def generate_floor_plan(project_id, orientation_strategy='auto', panel_width=1150, panel_length='auto', 
@@ -1406,13 +1716,30 @@ class FloorService:
                     selected_strategy = strategy
                     break
             
+            # Handle room_optimal fallback if not available (e.g., only 1 panel floor room)
+            if not selected_strategy and strategy_name == 'room_optimal':
+                # Fall back to best_orientation or auto
+                logger.warning(f"room_optimal not available (need 2+ panel floor rooms), using auto instead")
+                strategy_name = orientation_analysis['recommended_strategy']
+                for strategy in orientation_analysis['strategies']:
+                    if strategy['strategy_name'] == strategy_name:
+                        selected_strategy = strategy
+                        break
+            
             if not selected_strategy:
-                return {'error': f'Strategy {strategy_name} not found'}
+                return {'error': f'Strategy {strategy_name} not found. Available strategies: {[s["strategy_name"] for s in orientation_analysis["strategies"]]}'}
             
             # Generate floor panels for all rooms with leftover tracking
             all_floor_panels = []
             created_plans = []
             project_leftover_tracker = LeftoverTracker(context='GENERATION')  # Mark as actual generation - shared across all rooms
+            
+            # Build orientation map for room_optimal strategy
+            orientation_map = {}
+            if selected_strategy['orientation_type'] == 'room_optimal' and 'room_results' in selected_strategy:
+                # Extract orientation for each room from room_optimal results
+                for room_result in selected_strategy['room_results']:
+                    orientation_map[room_result['room_id']] = room_result['orientation']
             
             for room in rooms:
                 if not room.room_points or len(room.room_points) < 3:
@@ -1431,17 +1758,27 @@ class FloorService:
                 # Get floor thickness from room
                 floor_thickness = float(room.floor_thickness) if hasattr(room, 'floor_thickness') and room.floor_thickness else 20.0
                 
+                # Determine orientation for this room
                 if selected_strategy['orientation_type'] == 'horizontal':
-                    room_panels = FloorService._generate_floor_panels(
-                        bounding_box, room.room_points, 'horizontal', panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
-                    )
+                    orientation = 'horizontal'
                 elif selected_strategy['orientation_type'] == 'vertical':
-                    room_panels = FloorService._generate_floor_panels(
-                        bounding_box, room.room_points, 'vertical', panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
-                    )
-                else:  # mixed
-                    room_panels = FloorService._generate_mixed_floor_panels(
+                    orientation = 'vertical'
+                elif selected_strategy['orientation_type'] == 'room_optimal':
+                    # Use the optimal orientation determined by global optimization
+                    orientation = orientation_map.get(room.id, 'horizontal')
+                elif selected_strategy['orientation_type'] == 'best':
+                    # Use best_orientation method (old mixed_optimal)
+                    room_panels = FloorService._generate_best_orientation_floor_panels(
                         bounding_box, room.room_points, panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
+                    )
+                    orientation = None  # Already generated
+                else:
+                    orientation = 'horizontal'  # Default fallback
+                
+                # Generate panels if not already generated
+                if orientation:
+                    room_panels = FloorService._generate_floor_panels(
+                        bounding_box, room.room_points, orientation, panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
                     )
                     
                 # Add room info to panels

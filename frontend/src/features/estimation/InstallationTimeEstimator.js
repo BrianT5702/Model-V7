@@ -1,10 +1,20 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../../api/api';
 import PanelCalculator from '../panel/PanelCalculator';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSharedPanelData = null }) => {
+const InstallationTimeEstimator = ({ 
+    projectId, 
+    sharedPanelData = null, 
+    updateSharedPanelData = null, 
+    updateCanvasImage = null, 
+    setCurrentView = null,
+    isCapturingImages = false,
+    setIsCapturingImages = null,
+    captureSuccess = false,
+    setCaptureSuccess = null
+}) => {
     const [projectData, setProjectData] = useState(null);
     const [rooms, setRooms] = useState([]);
     const [ceilingPlans, setCeilingPlans] = useState([]);
@@ -25,6 +35,30 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
     const [showExportPreview, setShowExportPreview] = useState(false);
     const [exportData, setExportData] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
+    
+    // Canvas image states for export
+    const [planImages, setPlanImages] = useState({
+        wallPlan: null,
+        ceilingPlan: null,
+        floorPlan: null
+    });
+    
+    // Expand/collapse states for panel tables in preview
+    const [expandedTables, setExpandedTables] = useState({
+        wallPanels: false,
+        ceilingPanels: false,
+        floorPanels: false,
+        rooms: false,
+        slabs: false,
+        doors: false
+    });
+    
+    const toggleTableExpansion = (tableName) => {
+        setExpandedTables(prev => ({
+            ...prev,
+            [tableName]: !prev[tableName]
+        }));
+    };
 
     // Log shared panel data when it changes
     useEffect(() => {
@@ -103,8 +137,6 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
         if (!updateSharedPanelData) return;
         
         try {
-            console.log('🔄 Auto-fetching existing panel data...');
-            
             // 1. Auto-fetch existing wall panel data
             await autoFetchWallPanelData(projectId);
             
@@ -117,6 +149,127 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             console.log('✅ Auto-fetch completed');
         } catch (error) {
             console.error('Error auto-fetching panel data:', error);
+        }
+    };
+
+    // Capture canvas images by temporarily switching tabs
+    const captureAllCanvasImages = async (currentViewSetter) => {
+        console.log('🖼️ Starting automatic canvas capture...');
+        const originalView = 'installation-estimator';
+        const capturedImages = {
+            wall: false,
+            ceiling: false,
+            floor: false
+        };
+        
+        try {
+            // Helper function to remove grid lines from canvas image
+            const removeGridFromCanvas = (sourceCanvas) => {
+                console.log('🎨 Removing grid lines from canvas...');
+                
+                // Create temporary canvas with white background
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = sourceCanvas.width;
+                tempCanvas.height = sourceCanvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Fill with white background first
+                tempCtx.fillStyle = '#FFFFFF';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // Copy original canvas on top
+                tempCtx.drawImage(sourceCanvas, 0, 0);
+                
+                // Get image data
+                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                const data = imageData.data;
+                
+                // Grid color from drawing.js: #ddd = rgb(221, 221, 221)
+                const gridR = 221, gridG = 221, gridB = 221;
+                // Background could be: bg-gray-50 = #f9fafb = rgb(249, 250, 251)
+                const bgR = 255, bgG = 255, bgB = 255; // Use pure white for clean export
+                const tolerance = 20; // Increased tolerance to catch anti-aliased grid lines
+                
+                let pixelsChanged = 0;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const a = data[i + 3];
+                    
+                    // Check if pixel matches grid color (including anti-aliasing variations)
+                    if (Math.abs(r - gridR) < tolerance && 
+                        Math.abs(g - gridG) < tolerance && 
+                        Math.abs(b - gridB) < tolerance &&
+                        a > 200) { // Only process visible pixels
+                        // Replace with white background
+                        data[i] = bgR;
+                        data[i + 1] = bgG;
+                        data[i + 2] = bgB;
+                        pixelsChanged++;
+                    }
+                }
+                
+                console.log(`✅ Removed ${pixelsChanged / 4} grid pixels`);
+                
+                // Put cleaned image data back
+                tempCtx.putImageData(imageData, 0, 0);
+                
+                return tempCanvas;
+            };
+            
+            // Helper function to capture after tab switch
+            const captureFromTab = async (viewName, planType) => {
+                console.log(`📸 Switching to ${viewName} to capture ${planType} plan...`);
+                currentViewSetter(viewName);
+                
+                // Wait for canvas to render
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                // Try to capture canvas
+                const canvas = document.querySelector(`canvas[data-plan-type="${planType}"]`);
+                if (canvas) {
+                    try {
+                        // Remove grid lines before capturing
+                        const cleanCanvas = removeGridFromCanvas(canvas);
+                        const imageData = cleanCanvas.toDataURL('image/png', 0.9);
+                        
+                        // Store via updateCanvasImage function
+                        if (updateCanvasImage) {
+                            updateCanvasImage(planType, imageData);
+                        }
+                        console.log(`✅ Captured ${planType} plan image (without grid)`);
+                        capturedImages[planType] = true;
+                        return imageData;
+                    } catch (err) {
+                        console.warn(`Failed to capture ${planType} plan:`, err);
+                    }
+                }
+                return null;
+            };
+            
+            // Capture wall plan
+            await captureFromTab('wall-plan', 'wall');
+            
+            // Capture ceiling plan
+            await captureFromTab('ceiling-plan', 'ceiling');
+            
+            // Capture floor plan
+            await captureFromTab('floor-plan', 'floor');
+            
+            // Return to original view
+            console.log('↩️ Returning to summary tab...');
+            currentViewSetter(originalView);
+            
+            console.log('🎉 Canvas capture complete!', capturedImages);
+            return capturedImages;
+            
+        } catch (error) {
+            console.error('Error during automatic canvas capture:', error);
+            // Make sure we return to original view even if error occurs
+            currentViewSetter(originalView);
+            return capturedImages;
         }
     };
 
@@ -172,6 +325,26 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
 
             // Now trigger auto-fetch with fresh data
             await autoFetchExistingPanelData(projectId, rooms);
+            
+            // Also capture canvas images automatically
+            if (setCurrentView && setIsCapturingImages && setCaptureSuccess) {
+                console.log('🖼️ Auto-capturing canvas images...');
+                setIsCapturingImages(true);
+                setCaptureSuccess(false);
+                try {
+                    await captureAllCanvasImages(setCurrentView);
+                    setCaptureSuccess(true);
+                    // Show success for 2 seconds then hide modal
+                    setTimeout(() => {
+                        setIsCapturingImages(false);
+                        setCaptureSuccess(false);
+                    }, 2000);
+                } catch (error) {
+                    console.error('Error capturing images:', error);
+                    setIsCapturingImages(false);
+                    setCaptureSuccess(false);
+                }
+            }
             
             console.log('✅ Manual auto-fetch completed');
         } catch (error) {
@@ -700,6 +873,37 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
         }
     };
 
+    // Get canvas images from shared data (captured when users visited those tabs)
+    const getCanvasImagesFromSharedData = () => {
+        console.log('🖼️ Retrieving canvas images from shared data...');
+        console.log('🔍 Full sharedPanelData:', sharedPanelData);
+        
+        const images = {
+            wallPlan: sharedPanelData?.wallPlanImage || null,
+            ceilingPlan: sharedPanelData?.ceilingPlanImage || null,
+            floorPlan: sharedPanelData?.floorPlanImage || null
+        };
+        
+        // Log what we found with more detail
+        console.log('🖼️ Retrieved images:', {
+            wallPlan: images.wallPlan ? `Found (${images.wallPlan.substring(0, 50)}...)` : 'Not found',
+            ceilingPlan: images.ceilingPlan ? `Found (${images.ceilingPlan.substring(0, 50)}...)` : 'Not found',
+            floorPlan: images.floorPlan ? `Found (${images.floorPlan.substring(0, 50)}...)` : 'Not found'
+        });
+        
+        if (images.wallPlan) console.log('✅ Wall plan image found in shared data');
+        else console.warn('⚠️ Wall plan image not found - visit Wall Plan tab first');
+        
+        if (images.ceilingPlan) console.log('✅ Ceiling plan image found in shared data');
+        else console.warn('⚠️ Ceiling plan image not found - visit Ceiling Plan tab first');
+        
+        if (images.floorPlan) console.log('✅ Floor plan image found in shared data');
+        else console.warn('⚠️ Floor plan image not found - visit Floor Plan tab first');
+        
+        setPlanImages(images);
+        return images;
+    };
+
     // Prepare export data
     const prepareExportData = async () => {
         console.log('Shared panel data:', sharedPanelData);
@@ -730,6 +934,9 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             }
         }
         
+        // Get canvas images from shared data
+        const capturedImages = getCanvasImagesFromSharedData();
+        
         const data = {
             projectInfo: {
                 name: projectData?.name || 'Unknown Project',
@@ -754,7 +961,9 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                 // Use the panelsNeedSupport from shared data
                 isNeeded: sharedPanelData?.panelsNeedSupport || false
             },
-            exportDate: new Date().toLocaleString()
+            exportDate: new Date().toLocaleString(),
+            // Add captured canvas images
+            planImages: capturedImages
         };
         
         // Debug logging for support accessories
@@ -769,6 +978,16 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
         
         setExportData(data);
         setShowExportPreview(true);
+        
+        // Reset expansion states when opening preview
+        setExpandedTables({
+            wallPanels: false,
+            ceilingPanels: false,
+            floorPanels: false,
+            rooms: false,
+            slabs: false,
+            doors: false
+        });
     };
 
     // Generate PDF export
@@ -799,14 +1018,32 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                 } else {
                     doc.text(text, xPos, yPos);
                 }
-                yPos += fontSize * 0.5;
+                yPos += fontSize * 0.6; // Slightly increased spacing
             };
             
-            // Helper function to add section header
-            const addSectionHeader = (text) => {
-                yPos += 10;
-                addText(text, 14, true);
-                yPos += 5;
+            // Helper function to add section header with background (like preview)
+            const addSectionHeader = (text, color = [66, 139, 202], bgColor = [239, 246, 255]) => {
+                // Check for new page first
+                if (yPos > 230) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                
+                yPos += 12;
+                
+                // Add light colored background box (mimicking preview's bg-blue-50, bg-green-50, etc.)
+                doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+                doc.roundedRect(margin - 2, yPos - 12, contentWidth + 4, 24, 3, 3, 'F');
+                
+                // Add colored header text (not white, but dark color like preview)
+                doc.setTextColor(color[0] - 100, color[1] - 50, color[2] - 50); // Darker shade
+                doc.setFontSize(16); // Larger font like preview
+                doc.setFont(undefined, 'bold');
+                doc.text(text, margin + 4, yPos);
+                
+                // Reset text color to black
+                doc.setTextColor(0, 0, 0);
+                yPos += 16;
             };
             
             // Helper function to check if we need a new page
@@ -817,42 +1054,71 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                 }
             };
             
-            // Title
-            addText('Material List', 18, true, 'center');
-            yPos += 5;
-            addText(exportData.projectInfo.name, 16, true, 'center');
-            yPos += 5;
-            addText(`Generated on: ${exportData.exportDate}`, 10, false, 'center');
-            yPos += 15;
+            // Project Overview - Simple text layout like preview (no table)
+            addText('Project Overview', 11, true); // Simple header, no background
+            yPos += 8;
             
-            // Project Overview
-            addSectionHeader('PROJECT OVERVIEW');
+            // Store starting position for both columns
+            const startY = yPos;
+            const leftColumnX = margin;
+            const rightColumnX = margin + (pageWidth - 2 * margin) * 0.5; // Start at 50% for better balance
+            const lineHeight = 6; // Consistent line spacing
+            
+            doc.setFontSize(10);
+            
+            // Left column - Project info
+            doc.text(`Project: ${exportData.projectInfo.name}`, leftColumnX, startY);
+            doc.text(`Rooms: ${exportData.projectInfo.rooms}`, leftColumnX, startY + lineHeight);
+            doc.text(`Doors: ${exportData.projectInfo.doors}`, leftColumnX, startY + (lineHeight * 2));
+            
+            // Right column - Dimensions and walls
+            doc.text(`Dimensions: ${exportData.projectInfo.dimensions}`, rightColumnX, startY);
+            doc.text(`Walls: ${exportData.projectInfo.walls}`, rightColumnX, startY + lineHeight);
+            
+            yPos = startY + (lineHeight * 3) + 8; // Space after the two-column layout
             checkNewPage();
             
-            const overviewData = [
-                ['Project Dimensions', exportData.projectInfo.dimensions],
-                ['Total Rooms', exportData.projectInfo.rooms.toString()],
-                ['Total Walls', exportData.projectInfo.walls.toString()],
-                ['Total Doors', exportData.projectInfo.doors.toString()]
+            // Material Quantities Summary
+            // Gray theme like preview
+            addSectionHeader('Material Quantities Summary', [55, 65, 81], [249, 250, 251]); // gray-700, bg-gray-50
+            
+            const totalWallPanels = exportData.wallPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
+            const totalCeilingPanels = exportData.ceilingPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
+            const totalFloorPanels = exportData.floorPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
+            const totalPanels = totalWallPanels + totalCeilingPanels + totalFloorPanels;
+            const totalSlabs = exportData.slabs.reduce((sum, room) => {
+                if (room.room_points && room.room_points.length > 0) {
+                    return sum + Math.ceil(calculateRoomArea(room.room_points) / (1210 * 3000));
+                }
+                return sum;
+            }, 0);
+            
+            const summaryData = [
+                ['Total Panels', totalPanels.toString(), `${totalWallPanels} wall + ${totalCeilingPanels} ceiling + ${totalFloorPanels} floor`],
+                ['Total Doors', exportData.doors.length.toString(), 'From project data'],
+                ['Total Slabs', totalSlabs.toString(), 'For rooms with slab floors (1210×3000mm)']
             ];
             
-                         autoTable(doc, {
-                 startY: yPos,
-                 head: [['Property', 'Value']],
-                 body: overviewData,
-                 theme: 'grid',
-                 styles: { fontSize: 10 },
-                 headStyles: { fillColor: [66, 139, 202] },
-                 margin: { left: margin, right: margin }
-             });
+            autoTable(doc, {
+                startY: yPos,
+                head: [['Category', 'Quantity', 'Details']],
+                body: summaryData,
+                theme: 'striped',
+                styles: { fontSize: 11, cellPadding: 5 }, // Larger font
+                headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 12 }, // gray-500
+                alternateRowStyles: { fillColor: [249, 250, 251] }, // bg-gray-50
+                margin: { left: margin, right: margin }
+            });
             
             yPos = doc.lastAutoTable.finalY + 10;
             checkNewPage();
             
             // Room Details
             if (exportData.rooms && exportData.rooms.length > 0) {
-                addSectionHeader('ROOM DETAILS');
-                checkNewPage();
+                // Gray theme like preview
+                addSectionHeader('Room Details', [55, 65, 81], [249, 250, 251]); // gray-700, bg-gray-50
+                addText(`Total: ${exportData.rooms.length} rooms`, 11, false); // Larger total text
+                yPos += 3;
                 
                 const roomData = exportData.rooms.map(room => [
                     room.room_name || 'Unnamed Room',
@@ -868,9 +1134,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                  startY: yPos,
                  head: [['Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)']],
                  body: roomData,
-                 theme: 'grid',
-                 styles: { fontSize: 8 },
-                 headStyles: { fillColor: [66, 139, 202] },
+                 theme: 'striped',
+                 styles: { fontSize: 9, cellPadding: 4 }, // Larger font
+                 headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 10 }, // gray-500
+                 alternateRowStyles: { fillColor: [249, 250, 251] }, // bg-gray-50
                  margin: { left: margin, right: margin }
              });
                 
@@ -880,8 +1147,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             
             // Wall Panels
             if (exportData.wallPanels && exportData.wallPanels.length > 0) {
-                addSectionHeader('WALL PANELS');
-                checkNewPage();
+                // Blue theme like preview
+                addSectionHeader('Wall Panels', [59, 130, 246], [239, 246, 255]); // blue-600, bg-blue-50
+                addText(`Total: ${exportData.wallPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
+                yPos += 3;
                 
                 const wallPanelData = exportData.wallPanels.map((panel, index) => [
                     (index + 1).toString(),
@@ -896,9 +1165,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                      startY: yPos,
                      head: [['No.', 'Panel Width', 'Panel Length', 'Quantity', 'Type', 'Application']],
                      body: wallPanelData,
-                     theme: 'grid',
-                     styles: { fontSize: 8 },
-                     headStyles: { fillColor: [66, 139, 202] },
+                     theme: 'striped',
+                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
+                     headStyles: { fillColor: [59, 130, 246], fontStyle: 'bold', fontSize: 10 }, // blue-600
+                     alternateRowStyles: { fillColor: [239, 246, 255] }, // bg-blue-50
                      margin: { left: margin, right: margin }
                  });
                 
@@ -908,8 +1178,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             
             // Ceiling Panels
             if (exportData.ceilingPanels && exportData.ceilingPanels.length > 0) {
-                addSectionHeader('CEILING PANELS');
-                checkNewPage();
+                // Green theme like preview
+                addSectionHeader('Ceiling Panels', [22, 163, 74], [240, 253, 244]); // green-600, bg-green-50
+                addText(`Total: ${exportData.ceilingPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
+                yPos += 3;
                 
                 const ceilingPanelData = exportData.ceilingPanels.map(panel => [
                     `${panel.width || 'N/A'}mm`,
@@ -922,9 +1194,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                      startY: yPos,
                      head: [['Panel Width', 'Panel Length', 'Thickness', 'Quantity']],
                      body: ceilingPanelData,
-                     theme: 'grid',
-                     styles: { fontSize: 8 },
-                     headStyles: { fillColor: [66, 139, 202] },
+                     theme: 'striped',
+                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
+                     headStyles: { fillColor: [22, 163, 74], fontStyle: 'bold', fontSize: 10 }, // green-600
+                     alternateRowStyles: { fillColor: [240, 253, 244] }, // bg-green-50
                      margin: { left: margin, right: margin }
                  });
                 
@@ -934,8 +1207,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             
             // Floor Panels
             if (exportData.floorPanels && exportData.floorPanels.length > 0) {
-                addSectionHeader('FLOOR PANELS');
-                checkNewPage();
+                // Purple theme like preview
+                addSectionHeader('Floor Panels', [147, 51, 234], [250, 245, 255]); // purple-600, bg-purple-50
+                addText(`Total: ${exportData.floorPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
+                yPos += 3;
                 
                 const floorPanelData = exportData.floorPanels.map(panel => [
                     `${panel.width || 'N/A'}mm`,
@@ -949,9 +1224,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                      startY: yPos,
                      head: [['Panel Width', 'Panel Length', 'Thickness', 'Quantity', 'Type']],
                      body: floorPanelData,
-                     theme: 'grid',
-                     styles: { fontSize: 8 },
-                     headStyles: { fillColor: [66, 139, 202] },
+                     theme: 'striped',
+                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
+                     headStyles: { fillColor: [147, 51, 234], fontStyle: 'bold', fontSize: 10 }, // purple-600
+                     alternateRowStyles: { fillColor: [250, 245, 255] }, // bg-purple-50
                      margin: { left: margin, right: margin }
                  });
                 
@@ -961,8 +1237,16 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             
             // Slab Floors
             if (exportData.slabs && exportData.slabs.length > 0) {
-                addSectionHeader('SLAB FLOORS');
-                checkNewPage();
+                // Yellow theme like preview
+                addSectionHeader('Slab Floors', [234, 179, 8], [254, 252, 232]); // yellow-600, bg-yellow-50
+                const totalSlabs = exportData.slabs.reduce((sum, room) => {
+                    if (room.room_points && room.room_points.length > 0) {
+                        return sum + Math.ceil(calculateRoomArea(room.room_points) / (1210 * 3000));
+                    }
+                    return sum;
+                }, 0);
+                addText(`Total: ${totalSlabs} slabs needed`, 11, false);
+                yPos += 3;
                 
                 const slabData = exportData.slabs.map(room => [
                     room.room_name || 'Unnamed Room',
@@ -979,9 +1263,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                      startY: yPos,
                      head: [['Room Name', 'Room Area (m²)', 'Slab Size (mm)', 'Number of Slabs Needed']],
                      body: slabData,
-                     theme: 'grid',
-                     styles: { fontSize: 8 },
-                     headStyles: { fillColor: [66, 139, 202] },
+                     theme: 'striped',
+                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
+                     headStyles: { fillColor: [234, 179, 8], fontStyle: 'bold', fontSize: 10 }, // yellow-600
+                     alternateRowStyles: { fillColor: [254, 252, 232] }, // bg-yellow-50
                      margin: { left: margin, right: margin }
                  });
                 
@@ -991,8 +1276,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             
             // Doors
             if (exportData.doors && exportData.doors.length > 0) {
-                addSectionHeader('DOORS');
-                checkNewPage();
+                // Indigo theme like preview
+                addSectionHeader('Doors', [79, 70, 229], [238, 242, 255]); // indigo-600, bg-indigo-50
+                addText(`Total: ${exportData.doors.length} doors`, 11, false);
+                yPos += 3;
                 
                 const doorData = exportData.doors.map(door => [
                     door.door_type || 'N/A',
@@ -1005,9 +1292,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                      startY: yPos,
                      head: [['Door Type', 'Width', 'Height', 'Thickness']],
                      body: doorData,
-                     theme: 'grid',
-                     styles: { fontSize: 8 },
-                     headStyles: { fillColor: [66, 139, 202] },
+                     theme: 'striped',
+                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
+                     headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 10 }, // indigo-600
+                     alternateRowStyles: { fillColor: [238, 242, 255] }, // bg-indigo-50
                      margin: { left: margin, right: margin }
                  });
                 
@@ -1016,8 +1304,8 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             }
             
             // Support Accessories
-            addSectionHeader('SUPPORT ACCESSORIES');
-            checkNewPage();
+            // Orange theme like preview
+            addSectionHeader('Support Accessories', [234, 88, 12], [255, 247, 237]); // orange-600, bg-orange-50
             
             if (exportData.supportAccessories.isNeeded) {
                 const supportData = [
@@ -1031,9 +1319,10 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                      startY: yPos,
                      head: [['Property', 'Value']],
                      body: supportData,
-                     theme: 'grid',
-                     styles: { fontSize: 10 },
-                     headStyles: { fillColor: [66, 139, 202] },
+                     theme: 'striped',
+                     styles: { fontSize: 11, cellPadding: 5 }, // Larger font
+                     headStyles: { fillColor: [234, 88, 12], fontStyle: 'bold', fontSize: 12 }, // orange-600
+                     alternateRowStyles: { fillColor: [255, 247, 237] }, // bg-orange-50
                      margin: { left: margin, right: margin }
                  });
                 
@@ -1046,8 +1335,8 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
             checkNewPage();
             
             // Installation Estimates
-            addSectionHeader('INSTALLATION TIME ESTIMATES');
-            checkNewPage();
+            // Indigo theme like preview
+            addSectionHeader('Installation Time Estimates', [79, 70, 229], [238, 242, 255]); // indigo-600, bg-indigo-50
             
             const installationData = [
                 ['Working Days', 'Working Weeks', 'Working Months'],
@@ -1063,18 +1352,141 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                  head: [['Working Days', 'Working Weeks', 'Working Months']],
                  body: [installationData[1]],
                  theme: 'grid',
-                 styles: { fontSize: 12, fontStyle: 'bold' },
-                 headStyles: { fillColor: [66, 139, 202] },
+                 styles: { fontSize: 14, fontStyle: 'bold', cellPadding: 6, halign: 'center' }, // Much larger
+                 headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 13, halign: 'center' }, // indigo-600
                  margin: { left: margin, right: margin }
              });
             
             yPos = doc.lastAutoTable.finalY + 10;
             
             // Add note about installation estimates
-            addText('Note: This estimate assumes parallel work where possible and includes a 20% buffer for coordination and unexpected issues.', 8);
+            addText('Note: This estimate assumes parallel work where possible and includes a 20% buffer for coordination and unexpected issues.', 9);
+            
+            // Add Plan Images Section at the end
+            if (exportData.planImages) {
+                checkNewPage();
+                
+                // Blue theme like preview
+                addSectionHeader('Plan Views', [59, 130, 246], [239, 246, 255]); // blue-600, bg-blue-50
+                
+                const imageWidth = contentWidth * 0.75; // 75% of page width
+                const imageHeight = 70; // Compact size
+                const imageLeftMargin = margin + (contentWidth - imageWidth) / 2; // Center the image
+                
+                // Wall Plan
+                if (exportData.planImages.wallPlan) {
+                    try {
+                        checkNewPage();
+                        
+                        // Add white box background for image (like preview)
+                        doc.setFillColor(255, 255, 255);
+                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'F');
+                        
+                        // Add border around image
+                        doc.setDrawColor(191, 219, 254); // blue-200
+                        doc.setLineWidth(0.5);
+                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'S');
+                        
+                        // Add image label inside the box
+                        doc.setFontSize(10);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(55, 65, 81); // gray-800
+                        doc.text('Wall Plan (2D View)', imageLeftMargin + 3, yPos + 6);
+                        
+                        // Reset
+                        doc.setTextColor(0, 0, 0);
+                        yPos += 10;
+                        
+                        doc.addImage(exportData.planImages.wallPlan, 'PNG', imageLeftMargin + 2, yPos, imageWidth - 4, imageHeight - 8);
+                        yPos += imageHeight + 6;
+                        console.log('✅ Wall plan added to PDF');
+                    } catch (err) {
+                        console.warn('Failed to add wall plan to PDF:', err);
+                        addText('Wall Plan: (Unable to capture image)', 10);
+                        yPos += 10;
+                    }
+                }
+                
+                checkNewPage();
+                
+                // Ceiling Plan
+                if (exportData.planImages.ceilingPlan) {
+                    try {
+                        checkNewPage();
+                        
+                        // Add white box background for image
+                        doc.setFillColor(255, 255, 255);
+                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'F');
+                        
+                        // Add border
+                        doc.setDrawColor(191, 219, 254); // blue-200
+                        doc.setLineWidth(0.5);
+                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'S');
+                        
+                        // Add label
+                        doc.setFontSize(10);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(55, 65, 81);
+                        doc.text('Ceiling Plan', imageLeftMargin + 3, yPos + 6);
+                        doc.setTextColor(0, 0, 0);
+                        yPos += 10;
+                        
+                        doc.addImage(exportData.planImages.ceilingPlan, 'PNG', imageLeftMargin + 2, yPos, imageWidth - 4, imageHeight - 8);
+                        yPos += imageHeight + 6;
+                        console.log('✅ Ceiling plan added to PDF');
+                    } catch (err) {
+                        console.warn('Failed to add ceiling plan to PDF:', err);
+                        addText('Ceiling Plan: (Unable to capture image)', 10);
+                        yPos += 10;
+                    }
+                }
+                
+                checkNewPage();
+                
+                // Floor Plan
+                if (exportData.planImages.floorPlan) {
+                    try {
+                        checkNewPage();
+                        
+                        // Add white box background for image
+                        doc.setFillColor(255, 255, 255);
+                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'F');
+                        
+                        // Add border
+                        doc.setDrawColor(191, 219, 254); // blue-200
+                        doc.setLineWidth(0.5);
+                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'S');
+                        
+                        // Add label
+                        doc.setFontSize(10);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(55, 65, 81);
+                        doc.text('Floor Plan', imageLeftMargin + 3, yPos + 6);
+                        doc.setTextColor(0, 0, 0);
+                        yPos += 10;
+                        
+                        doc.addImage(exportData.planImages.floorPlan, 'PNG', imageLeftMargin + 2, yPos, imageWidth - 4, imageHeight - 8);
+                        yPos += imageHeight + 6;
+                        console.log('✅ Floor plan added to PDF');
+                    } catch (err) {
+                        console.warn('Failed to add floor plan to PDF:', err);
+                        addText('Floor Plan: (Unable to capture image)', 10);
+                        yPos += 10;
+                    }
+                }
+                
+                checkNewPage();
+            }
             
             // Generate and download the PDF
-            const filename = `${exportData.projectInfo.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_project_summary_${new Date().toISOString().split('T')[0]}.pdf`;
+            // Format: "Project Name Project Summary.pdf" with proper capitalization
+            const formatProjectName = (name) => {
+                return name
+                    .split(' ')
+                    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                    .join(' ');
+            };
+            const filename = `${formatProjectName(exportData.projectInfo.name)} Project Summary.pdf`;
             doc.save(filename);
             
             // Show success message
@@ -1131,10 +1543,15 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                 {/* Export Button */}
                 <button
                     onClick={prepareExportData}
-                    disabled={isLoading}
+                    disabled={isLoading || isCapturingImages}
                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-lg flex items-center disabled:opacity-50"
                 >
-                    {isLoading ? (
+                    {isCapturingImages ? (
+                        <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                            Capturing Images...
+                        </>
+                    ) : isLoading ? (
                         <>
                             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                             Auto-Fetching Data...
@@ -1165,26 +1582,39 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                     : '⏳ No project data found - click "Auto-Fetch Data" to load existing plans'
                                 }
                             </p>
+                            {(!sharedPanelData?.wallPlanImage || !sharedPanelData?.ceilingPlanImage || !sharedPanelData?.floorPlanImage) && (
+                                <p className="text-xs text-orange-700 mt-2 flex items-center">
+                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    💡 Tip: Click "Auto-Fetch Data & Images" button to automatically capture plan images for the PDF, or visit each tab manually
+                                </p>
+                            )}
                         </div>
                     </div>
                     
                     {/* Auto-Fetch Button */}
                     <button
                         onClick={() => triggerAutoFetch()}
-                        disabled={isLoading}
+                        disabled={isLoading || isCapturingImages}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center"
                     >
-                        {isLoading ? (
+                        {isCapturingImages ? (
                             <>
                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                Loading...
+                                Capturing Images...
+                            </>
+                        ) : isLoading ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                Loading Data...
                             </>
                         ) : (
                             <>
                                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
-                                Auto-Fetch Data
+                                Fetch Data & Images
                             </>
                         )}
                     </button>
@@ -1504,6 +1934,29 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                         </div>
 
                         <div className="p-6 space-y-6">
+                            {/* Expand/Collapse All Button */}
+                            <div className="flex justify-end mb-4">
+                                <button
+                                    onClick={() => {
+                                        const allExpanded = Object.values(expandedTables).every(v => v);
+                                        setExpandedTables({
+                                            wallPanels: !allExpanded,
+                                            ceilingPanels: !allExpanded,
+                                            floorPanels: !allExpanded,
+                                            rooms: !allExpanded,
+                                            slabs: !allExpanded,
+                                            doors: !allExpanded
+                                        });
+                                    }}
+                                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center"
+                                >
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                    </svg>
+                                    {Object.values(expandedTables).every(v => v) ? 'Collapse All' : 'Expand All'}
+                                </button>
+                            </div>
+                        
                             {/* Project Overview */}
                             <div className="bg-gray-50 rounded-lg p-4">
                                 <h4 className="font-semibold text-gray-800 mb-3">Project Overview</h4>
@@ -1542,7 +1995,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {exportData.rooms.slice(0, 5).map((room, index) => (
+                                                {(expandedTables.rooms ? exportData.rooms : exportData.rooms.slice(0, 5)).map((room, index) => (
                                                     <tr key={index} className="hover:bg-gray-50">
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
                                                             {room.room_name || 'Unnamed Room'}
@@ -1570,9 +2023,26 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                     </tr>
                                 ))}
                                 {exportData.rooms.length > 5 && (
-                                    <tr className="hover:bg-gray-50">
-                                        <td colSpan="5" className="px-4 py-2 border border-gray-300 text-center text-gray-500">
-                                            ... and {exportData.rooms.length - 5} more rooms
+                                    <tr 
+                                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                        onClick={() => toggleTableExpansion('rooms')}
+                                    >
+                                        <td colSpan="5" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                            {expandedTables.rooms ? (
+                                                <>
+                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                                    </svg>
+                                                    Show less
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                    ... and {exportData.rooms.length - 5} more rooms (click to show all)
+                                                </>
+                                            )}
                                         </td>
                                     </tr>
                                 )}
@@ -1585,41 +2055,6 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                     </div>
                 )}
             </div>
-
-                            {/* Auto-Fetch Status */}
-                            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                                <h4 className="font-semibold text-green-800 mb-3">🔄 Auto-Fetch Status</h4>
-                                <div className="grid grid-cols-3 gap-4 text-sm mb-4">
-                                    <div className="flex items-center justify-center p-2 bg-white rounded border">
-                                        <span className={`w-3 h-3 rounded-full mr-2 ${sharedPanelData?.wallPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
-                                        <span>Wall Plan</span>
-                                    </div>
-                                    <div className="flex items-center justify-center p-2 bg-white rounded border">
-                                        <span className={`w-3 h-3 rounded-full mr-2 ${sharedPanelData?.ceilingPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
-                                        <span>Ceiling Plan</span>
-                                    </div>
-                                    <div className="flex items-center justify-center p-2 bg-white rounded border">
-                                        <span className={`w-3 h-3 rounded-full mr-2 ${sharedPanelData?.floorPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
-                                        <span>Floor Plan</span>
-                                    </div>
-                                </div>
-                                
-                                <div className="text-sm text-green-700 mb-3">
-                                    {sharedPanelData?.wallPanels || sharedPanelData?.ceilingPanels || sharedPanelData?.floorPanels ? 
-                                        '✅ Data auto-fetched from existing plans' : 
-                                        '⏳ No existing plans found - manual generation required'
-                                    }
-                                </div>
-                                
-                                <div className="text-xs text-green-600">
-                                    <p className="font-medium mb-1">If tables are empty, make sure to:</p>
-                                    <ul className="list-disc list-inside space-y-1">
-                                        <li>Calculate wall panels in the Wall Plan tab</li>
-                                        <li>Generate ceiling plan in the Ceiling Plan tab</li>
-                                        <li>Generate floor plan in the Floor Plan tab</li>
-                                    </ul>
-                                </div>
-                            </div>
 
                             {/* Wall Panels */}
                             <div className="bg-blue-50 rounded-lg p-4">
@@ -1652,7 +2087,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {exportData.wallPanels.slice(0, 5).map((panel, index) => (
+                                                {(expandedTables.wallPanels ? exportData.wallPanels : exportData.wallPanels.slice(0, 5)).map((panel, index) => (
                                                     <tr key={index} className="hover:bg-gray-50">
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{index + 1}</td>
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{panel.width}</td>
@@ -1663,9 +2098,26 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                     </tr>
                                                 ))}
                                                 {exportData.wallPanels.length > 5 && (
-                                                    <tr className="hover:bg-gray-50">
-                                                        <td colSpan="6" className="px-4 py-2 border border-gray-300 text-center text-gray-500">
-                                                            ... and {exportData.wallPanels.length - 5} more panels
+                                                    <tr 
+                                                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                                        onClick={() => toggleTableExpansion('wallPanels')}
+                                                    >
+                                                        <td colSpan="6" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                            {expandedTables.wallPanels ? (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                                                    </svg>
+                                                                    Show less
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                    </svg>
+                                                                    ... and {exportData.wallPanels.length - 5} more panels (click to show all)
+                                                                </>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 )}
@@ -1704,7 +2156,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {exportData.ceilingPanels.slice(0, 5).map((panel, index) => (
+                                                {(expandedTables.ceilingPanels ? exportData.ceilingPanels : exportData.ceilingPanels.slice(0, 5)).map((panel, index) => (
                                                     <tr key={index} className="hover:bg-gray-50">
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
                                                             {panel.width || 'N/A'}
@@ -1721,9 +2173,26 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                     </tr>
                                                 ))}
                                                 {exportData.ceilingPanels.length > 5 && (
-                                                    <tr className="hover:bg-gray-50">
-                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-gray-500">
-                                                            ... and {exportData.ceilingPanels.length - 5} more panels
+                                                    <tr 
+                                                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                                        onClick={() => toggleTableExpansion('ceilingPanels')}
+                                                    >
+                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                            {expandedTables.ceilingPanels ? (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                                                    </svg>
+                                                                    Show less
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                    </svg>
+                                                                    ... and {exportData.ceilingPanels.length - 5} more panels (click to show all)
+                                                                </>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 )}
@@ -1765,7 +2234,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {exportData.floorPanels.slice(0, 5).map((panel, index) => (
+                                                {(expandedTables.floorPanels ? exportData.floorPanels : exportData.floorPanels.slice(0, 5)).map((panel, index) => (
                                                     <tr key={index} className="hover:bg-gray-50">
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
                                                             {panel.width || 'N/A'}
@@ -1791,9 +2260,26 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                     </tr>
                                                 ))}
                                                 {exportData.floorPanels.length > 5 && (
-                                                    <tr className="hover:bg-gray-50">
-                                                        <td colSpan="5" className="px-4 py-2 border border-gray-300 text-center text-gray-500">
-                                                            ... and {exportData.floorPanels.length - 5} more panels
+                                                    <tr 
+                                                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                                        onClick={() => toggleTableExpansion('floorPanels')}
+                                                    >
+                                                        <td colSpan="5" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                            {expandedTables.floorPanels ? (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                                                    </svg>
+                                                                    Show less
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                    </svg>
+                                                                    ... and {exportData.floorPanels.length - 5} more panels (click to show all)
+                                                                </>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 )}
@@ -1830,7 +2316,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {exportData.slabs.slice(0, 5).map((room, index) => (
+                                                {(expandedTables.slabs ? exportData.slabs : exportData.slabs.slice(0, 5)).map((room, index) => (
                                                     <tr key={index} className="hover:bg-gray-50">
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
                                                             {room.room_name}
@@ -1851,9 +2337,26 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                     </tr>
                                                 ))}
                                                 {exportData.slabs.length > 5 && (
-                                                    <tr className="hover:bg-gray-50">
-                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-gray-500">
-                                                            ... and {exportData.slabs.length - 5} more rooms
+                                                    <tr 
+                                                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                                        onClick={() => toggleTableExpansion('slabs')}
+                                                    >
+                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                            {expandedTables.slabs ? (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                                                    </svg>
+                                                                    Show less
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                    </svg>
+                                                                    ... and {exportData.slabs.length - 5} more rooms (click to show all)
+                                                                </>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 )}
@@ -1888,7 +2391,7 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {exportData.doors.slice(0, 5).map((door, index) => (
+                                                {(expandedTables.doors ? exportData.doors : exportData.doors.slice(0, 5)).map((door, index) => (
                                                     <tr key={index} className="hover:bg-gray-50">
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
                                                             {door.door_type || 'N/A'}
@@ -1905,9 +2408,26 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                                     </tr>
                                                 ))}
                                                 {exportData.doors.length > 5 && (
-                                                    <tr className="hover:bg-gray-50">
-                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-gray-500">
-                                                            ... and {exportData.doors.length - 5} more doors
+                                                    <tr 
+                                                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                                        onClick={() => toggleTableExpansion('doors')}
+                                                    >
+                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                            {expandedTables.doors ? (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                                                    </svg>
+                                                                    Show less
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                    </svg>
+                                                                    ... and {exportData.doors.length - 5} more doors (click to show all)
+                                                                </>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 )}
@@ -2025,12 +2545,117 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Auto-Fetch Status - Moved to end */}
+                            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                                <h4 className="font-semibold text-green-800 mb-3">🔄 Auto-Fetch Status</h4>
+                                <div className="grid grid-cols-3 gap-4 text-sm mb-4">
+                                    <div className="flex items-center justify-center p-2 bg-white rounded border">
+                                        <span className={`w-3 h-3 rounded-full mr-2 ${sharedPanelData?.wallPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                                        <span>Wall Plan</span>
+                                    </div>
+                                    <div className="flex items-center justify-center p-2 bg-white rounded border">
+                                        <span className={`w-3 h-3 rounded-full mr-2 ${sharedPanelData?.ceilingPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                                        <span>Ceiling Plan</span>
+                                    </div>
+                                    <div className="flex items-center justify-center p-2 bg-white rounded border">
+                                        <span className={`w-3 h-3 rounded-full mr-2 ${sharedPanelData?.floorPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                                        <span>Floor Plan</span>
+                                    </div>
+                                </div>
+                                
+                                <div className="text-sm text-green-700 mb-3">
+                                    {sharedPanelData?.wallPanels || sharedPanelData?.ceilingPanels || sharedPanelData?.floorPanels ? 
+                                        '✅ Data auto-fetched from existing plans' : 
+                                        '⏳ No existing plans found - manual generation required'
+                                    }
+                                </div>
+                                
+                                <div className="text-xs text-green-600">
+                                    <p className="font-medium mb-1">If tables are empty, make sure to:</p>
+                                    <ul className="list-disc list-inside space-y-1">
+                                        <li>Calculate wall panels in the Wall Plan tab</li>
+                                        <li>Generate ceiling plan in the Ceiling Plan tab</li>
+                                        <li>Generate floor plan in the Floor Plan tab</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Plan Images Preview - Moved to end */}
+                            {exportData.planImages && (exportData.planImages.wallPlan || exportData.planImages.ceilingPlan || exportData.planImages.floorPlan) && (
+                                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                    <h4 className="font-semibold text-blue-800 mb-3">📸 Captured Plan Views</h4>
+                                    <p className="text-sm text-blue-700 mb-4">These plan views will be included at the end of the PDF export:</p>
+                                    
+                                    <div className="space-y-4">
+                                        {/* Wall Plan Preview */}
+                                        {exportData.planImages.wallPlan && (
+                                            <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                                <h5 className="font-medium text-gray-800 mb-2 flex items-center">
+                                                    <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                    Wall Plan (2D View)
+                                                </h5>
+                                                <img 
+                                                    src={exportData.planImages.wallPlan} 
+                                                    alt="Wall Plan" 
+                                                    className="w-full h-auto rounded border border-gray-300"
+                                                    style={{ maxHeight: '300px', objectFit: 'contain' }}
+                                                />
+                                            </div>
+                                        )}
+                                        
+                                        {/* Ceiling Plan Preview */}
+                                        {exportData.planImages.ceilingPlan && (
+                                            <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                                <h5 className="font-medium text-gray-800 mb-2 flex items-center">
+                                                    <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                                    </svg>
+                                                    Ceiling Plan
+                                                </h5>
+                                                <img 
+                                                    src={exportData.planImages.ceilingPlan} 
+                                                    alt="Ceiling Plan" 
+                                                    className="w-full h-auto rounded border border-gray-300"
+                                                    style={{ maxHeight: '300px', objectFit: 'contain' }}
+                                                />
+                                            </div>
+                                        )}
+                                        
+                                        {/* Floor Plan Preview */}
+                                        {exportData.planImages.floorPlan && (
+                                            <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                                <h5 className="font-medium text-gray-800 mb-2 flex items-center">
+                                                    <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                                    </svg>
+                                                    Floor Plan
+                                                </h5>
+                                                <img 
+                                                    src={exportData.planImages.floorPlan} 
+                                                    alt="Floor Plan" 
+                                                    className="w-full h-auto rounded border border-gray-300"
+                                                    style={{ maxHeight: '300px', objectFit: 'contain' }}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    {!exportData.planImages.wallPlan && !exportData.planImages.ceilingPlan && !exportData.planImages.floorPlan && (
+                                        <div className="text-center py-4 text-gray-500">
+                                            <p className="text-sm">⚠️ No plan views were captured. Make sure you have generated plans before exporting.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <div className="p-6 border-t border-gray-200 bg-gray-50">
                             <div className="flex justify-between items-center">
                                 <p className="text-sm text-gray-600">
-                                    This preview shows the data that will be exported. PNG images of plans will be included in the final PDF.
+                                    This preview shows the data that will be exported. Plan images (without grids) will be included at the end of the PDF.
                                 </p>
                                 <div className="flex space-x-3">
                                     <button
@@ -2041,10 +2666,15 @@ const InstallationTimeEstimator = ({ projectId, sharedPanelData = null, updateSh
                                     </button>
                                     <button
                                         onClick={generatePDF}
-                                        disabled={isExporting}
+                                        disabled={isExporting || isCapturingImages}
                                         className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center"
                                     >
-                                        {isExporting ? (
+                                        {isCapturingImages ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                Capturing Images...
+                                            </>
+                                        ) : isExporting ? (
                                             <>
                                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                                                 Generating PDF...

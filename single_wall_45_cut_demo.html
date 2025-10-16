@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Single Wall with 45° Cut Demo (Corrected)</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        .info, .controls {
+            position: absolute;
+            left: 10px;
+            color: #fff;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            z-index: 10;
+        }
+        .info { top: 10px; }
+        .controls { bottom: 10px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h3>Single Wall with Square End</h3>
+        <p><strong>Wall:</strong> 3000mm × 150mm × 2500mm</p>
+        <p><strong>Right End:</strong> Square end</p>
+        <p><strong>Press SPACE:</strong> Toggle 45° cut</p>
+    </div>
+
+    <div class="controls">
+        <p><strong>Controls:</strong></p>
+        <p>• Left Mouse: Rotate</p>
+        <p>• Right Mouse: Pan</p>
+        <p>• Wheel: Zoom</p>
+        <p>• Space: Toggle 45° cut</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 1, 10000);
+    camera.position.set(3500, 2000, 3500);
+    camera.lookAt(0, 1200, 0);
+
+    const renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(5000, 5000, 3000);
+    scene.add(dirLight);
+
+    // Grid
+    scene.add(new THREE.GridHelper(10000, 50, 0x444444, 0x333333));
+
+    // Wall parameters
+    const wallLength = 3000;
+    const wallThickness = 150;
+    const wallHeight = 2500;
+    let has45Cut = false;
+    let wallA, wallB;
+
+    function createWall() {
+        if (wallA) scene.remove(wallA);
+        if (wallB) scene.remove(wallB);
+
+        // ----- WALL A (Red) -----
+        let geometryA, materialA;
+        if (!has45Cut) {
+            geometryA = new THREE.BoxGeometry(wallLength, wallHeight, wallThickness);
+        } else {
+            const shapeA = new THREE.Shape();
+            shapeA.moveTo(0, 0);
+            shapeA.lineTo(wallLength, 0);
+            shapeA.lineTo(wallLength - wallThickness, wallThickness);
+            shapeA.lineTo(0, wallThickness);
+            shapeA.closePath();
+
+            const extrudeA = { depth: wallHeight, bevelEnabled: false };
+            geometryA = new THREE.ExtrudeGeometry(shapeA, extrudeA);
+            geometryA.rotateX(-Math.PI / 2);
+        }
+
+        materialA = new THREE.MeshStandardMaterial({
+            color: 0xFF6B6B,
+            roughness: 0.3,
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+        wallA = new THREE.Mesh(geometryA, materialA);
+        wallA.position.set(-wallLength/2, wallHeight/2, 0);
+        scene.add(wallA);
+
+        // ----- WALL B (Teal) -----
+        let geometryB, materialB;
+        if (!has45Cut) {
+            geometryB = new THREE.BoxGeometry(wallLength, wallHeight, wallThickness);
+        } else {
+            // Create 45° cut shape for Wall B’s LEFT end (to match Wall A)
+            const shapeB = new THREE.Shape();
+            shapeB.moveTo(0, 0); // outer front
+            shapeB.lineTo(wallLength, 0); // outer back
+            shapeB.lineTo(wallLength, wallThickness); // inner back
+            shapeB.lineTo(wallThickness, wallThickness); // inner front after 45° cut
+            shapeB.closePath();
+
+            const extrudeB = { depth: wallHeight, bevelEnabled: false };
+            geometryB = new THREE.ExtrudeGeometry(shapeB, extrudeB);
+            geometryB.rotateX(-Math.PI / 2);
+            geometryB.rotateY(Math.PI / 2); // Rotate to align perpendicular to Wall A
+        }
+
+        materialB = new THREE.MeshStandardMaterial({
+            color: 0x4ECDC4,
+            roughness: 0.3,
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+
+        wallB = new THREE.Mesh(geometryB, materialB);
+        // Position so Wall B's left edge meets Wall A's right edge exactly
+        wallB.position.set(wallLength/2 + wallThickness/2, wallHeight/2, 0);
+        scene.add(wallB);
+
+        // Update info
+        const infoDiv = document.querySelector('.info');
+        infoDiv.innerHTML = `
+            <h3>Two Walls with ${has45Cut ? '45° Miter Joint' : 'Square Joint'}</h3>
+            <p><strong>Wall A:</strong> Horizontal (Red) — ${has45Cut ? 'Right end 45° cut' : 'Square end'}</p>
+            <p><strong>Wall B:</strong> Perpendicular (Teal) — ${has45Cut ? 'Left end 45° cut' : 'Square end'}</p>
+            <p><strong>Press SPACE:</strong> Toggle 45° cuts</p>
+        `;
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.code === 'Space') {
+            has45Cut = !has45Cut;
+            createWall();
+        }
+    });
+
+    createWall();
+
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>

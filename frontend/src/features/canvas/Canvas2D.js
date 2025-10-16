@@ -1216,6 +1216,7 @@ const Canvas2D = ({
                 <div className="relative">
                     <canvas
                         ref={canvasRef}
+                        data-plan-type="wall"
                         onClick={handleCanvasClick}
                         onMouseMove={handleMouseMove}
                         
