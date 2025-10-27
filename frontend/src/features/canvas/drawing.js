@@ -183,8 +183,260 @@ export function drawEndpoints(context, x, y, scaleFactor, offsetX, offsetY, hove
     context.fill();
 }
 
+// Calculate actual project dimensions from wall boundaries
+export function calculateActualProjectDimensions(walls) {
+    if (!walls || walls.length === 0) {
+        return { width: 0, length: 0, minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    }
+    
+    // Find the bounding box of all walls
+    const minX = Math.min(...walls.map((wall) => Math.min(wall.start_x, wall.end_x)));
+    const maxX = Math.max(...walls.map((wall) => Math.max(wall.start_x, wall.end_x)));
+    const minY = Math.min(...walls.map((wall) => Math.min(wall.start_y, wall.end_y)));
+    const maxY = Math.max(...walls.map((wall) => Math.max(wall.start_y, wall.end_y)));
+    
+    return {
+        width: maxX - minX,
+        length: maxY - minY,
+        minX,
+        maxX,
+        minY,
+        maxY
+    };
+}
+
+// Compare actual dimensions with declared project dimensions
+export function compareDimensions(actualDimensions, declaredProject) {
+    if (!declaredProject || !actualDimensions) {
+        return { exceeds: false, warnings: [] };
+    }
+    
+    const warnings = [];
+    let exceeds = false;
+    
+    // Check if actual width exceeds declared width
+    if (actualDimensions.width > declaredProject.width) {
+        warnings.push(`Actual width (${Math.round(actualDimensions.width)}mm) exceeds declared width (${declaredProject.width}mm)`);
+        exceeds = true;
+    }
+    
+    // Check if actual length exceeds declared length
+    if (actualDimensions.length > declaredProject.length) {
+        warnings.push(`Actual length (${Math.round(actualDimensions.length)}mm) exceeds declared length (${declaredProject.length}mm)`);
+        exceeds = true;
+    }
+    
+    return { exceeds, warnings };
+}
+
+// Draw overall project dimensions (actual dimensions from wall boundaries)
+export function drawOverallProjectDimensions(context, walls, scaleFactor, offsetX, offsetY, placedLabels = [], allLabels = []) {
+    if (!walls || walls.length === 0) return;
+    
+    const actualDimensions = calculateActualProjectDimensions(walls);
+    const { width, length, minX, maxX, minY, maxY } = actualDimensions;
+    
+    // Create model bounds for external dimensioning with larger padding for outermost placement
+    const modelBounds = {
+        minX: minX - 100, // Larger padding to ensure outermost placement
+        maxX: maxX + 100,
+        minY: minY - 100,
+        maxY: maxY + 100
+    };
+    
+    // Use dedicated project base offset for outermost placement
+    const PROJECT_BASE_OFFSET = DIMENSION_CONFIG.PROJECT_BASE_OFFSET;
+    
+    // Draw overall width dimension (top) with enhanced collision detection
+    drawProjectDimension(
+        context,
+        minX, minY, // start point
+        maxX, minY, // end point (horizontal line)
+        scaleFactor, offsetX, offsetY,
+        DIMENSION_CONFIG.COLORS.PROJECT,
+        modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'horizontal'
+    );
+    
+    // Draw overall length dimension (right side) with enhanced collision detection
+    drawProjectDimension(
+        context,
+        maxX, minY, // start point
+        maxX, maxY, // end point (vertical line)
+        scaleFactor, offsetX, offsetY,
+        DIMENSION_CONFIG.COLORS.PROJECT,
+        modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'vertical'
+    );
+}
+
+// Enhanced function to draw project dimensions with better collision detection
+function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color, modelBounds, placedLabels, allLabels, baseOffset, orientation) {
+    const length = Math.sqrt(
+        Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
+    );
+    
+    if (length === 0) return;
+    
+    // Calculate wall midpoint
+    const wallMidX = (startX + endX) / 2;
+    const wallMidY = (startY + endY) / 2;
+    
+    context.save();
+    context.fillStyle = color;
+    const fontSize = Math.max(14, 200 * scaleFactor);
+    context.font = `${fontSize}px Arial`;
+    const text = `${Math.round(length)} mm`;
+    const textWidth = context.measureText(text).width;
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    
+    const { minX, maxX, minY, maxY } = modelBounds;
+    
+    if (orientation === 'horizontal') {
+        // Horizontal dimension - place on top with maximum offset
+        const isTopHalf = wallMidY < (minY + maxY) / 2;
+        const side = isTopHalf ? 'top' : 'bottom';
+        
+        // Find available position with enhanced collision detection
+        let labelY, labelX;
+        let offset = baseOffset;
+        let attempts = 0;
+        const maxAttempts = DIMENSION_CONFIG.PROJECT_MAX_ATTEMPTS;
+        
+        do {
+            labelY = isTopHalf ? 
+                (minY * scaleFactor + offsetY - offset) : 
+                (maxY * scaleFactor + offsetY + offset);
+            labelX = wallMidX * scaleFactor + offsetX;
+            
+            // Check for overlaps with existing labels
+            const labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 10);
+            const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
+            
+            if (!hasOverlap) break;
+            
+            // Increase offset more aggressively for project dimensions
+            offset += DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+            attempts++;
+        } while (attempts < maxAttempts);
+        
+        // Draw dimension lines
+        context.beginPath();
+        context.setLineDash([5, 5]);
+        // Extension line from start of wall (perpendicular to wall)
+        context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
+        context.lineTo(startX * scaleFactor + offsetX, labelY);
+        // Extension line from end of wall (perpendicular to wall)
+        context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
+        context.lineTo(endX * scaleFactor + offsetX, labelY);
+        // Dimension line connecting the two extension lines
+        context.moveTo(startX * scaleFactor + offsetX, labelY);
+        context.lineTo(endX * scaleFactor + offsetX, labelY);
+        context.strokeStyle = color;
+        context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
+        context.stroke();
+        context.setLineDash([]);
+        
+        // Draw text with background
+        context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        context.fillRect(labelX - textWidth / 2 - 4, labelY - 10, textWidth + 8, 20);
+        context.fillStyle = color;
+        context.font = `bold ${fontSize}px Arial`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(text, labelX, labelY);
+        
+        // Add to placed labels for future collision detection
+        placedLabels.push({
+            x: labelX - textWidth / 2 - 4,
+            y: labelY - 10,
+            width: textWidth + 8,
+            height: 20,
+            side: side,
+            text: text,
+            angle: angle,
+            type: 'project'
+        });
+        
+    } else {
+        // Vertical dimension - place on right with maximum offset
+        const isLeftHalf = wallMidX < (minX + maxX) / 2;
+        const side = isLeftHalf ? 'left' : 'right';
+        
+        // Find available position with enhanced collision detection
+        let labelX, labelY;
+        let offset = Math.max(baseOffset, DIMENSION_CONFIG.PROJECT_MIN_VERTICAL_OFFSET);
+        let attempts = 0;
+        const maxAttempts = DIMENSION_CONFIG.PROJECT_MAX_ATTEMPTS;
+        
+        do {
+            labelX = isLeftHalf ? 
+                (minX * scaleFactor + offsetX - offset) : 
+                (maxX * scaleFactor + offsetX + offset);
+            labelY = wallMidY * scaleFactor + offsetY;
+            
+            // Check for overlaps with existing labels (rotated bounding box for vertical text)
+            const labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 10);
+            const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
+            
+            if (!hasOverlap) break;
+            
+            // Increase offset more aggressively for project dimensions
+            offset += DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+            attempts++;
+        } while (attempts < maxAttempts);
+        
+        // Draw dimension lines
+        context.beginPath();
+        context.setLineDash([5, 5]);
+        // Extension line from start of wall (perpendicular to wall)
+        context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
+        context.lineTo(labelX, startY * scaleFactor + offsetY);
+        // Extension line from end of wall (perpendicular to wall)
+        context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
+        context.lineTo(labelX, endY * scaleFactor + offsetY);
+        // Dimension line connecting the two extension lines
+        context.moveTo(labelX, startY * scaleFactor + offsetY);
+        context.lineTo(labelX, endY * scaleFactor + offsetY);
+        context.strokeStyle = color;
+        context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
+        context.stroke();
+        context.setLineDash([]);
+        
+        // Draw vertical dimension text with rotation
+        context.save();
+        context.translate(labelX, labelY);
+        context.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
+        context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        context.fillRect(-textWidth / 2 - 4, -10, textWidth + 8, 20);
+        context.fillStyle = color;
+        context.font = `bold ${fontSize}px Arial`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(text, 0, 0);
+        context.restore();
+        
+        // Add to placed labels for future collision detection (rotated bounding box for vertical text)
+        placedLabels.push({
+            x: labelX - 10, // Center the rotated text
+            y: labelY - textWidth / 2 - 4,
+            width: 20, // Swapped with height for rotated text
+            height: textWidth + 8, // Swapped with width for rotated text
+            side: side,
+            text: text,
+            angle: angle,
+            type: 'project'
+        });
+    }
+    
+    context.restore();
+}
+
 // Draw wall dimensions
 export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false) {
+    // Debug: Log the scale factor being used
+    console.log('🔍 drawDimensions called with scaleFactor:', scaleFactor);
+    
     let midX = 0;
     let midY = 0;
     const length = Math.sqrt(
@@ -197,33 +449,36 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     
     context.save();
     context.fillStyle = color;
-    context.font = '15px Arial';
+    const fontSize = Math.max(14, 200 * scaleFactor); // Changed minimum from 16 to 14
+    console.log('🔍 drawDimensions font size:', fontSize, 'scaleFactor:', scaleFactor);
+    context.font = `${fontSize}px Arial`;
     const text = `${Math.round(length)} mm`;
     const textWidth = context.measureText(text).width;
     const dx = endX - startX;
     const dy = endY - startY;
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
     
-    // If modelBounds is provided, use external dimensioning
+    // If modelBounds is provided, use internal dimensioning (inside project boundaries)
     if (modelBounds) {
         const { minX, maxX, minY, maxY } = modelBounds;
-        const baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Base distance outside the model
+        const baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Base distance inside the model
         
         if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-            // Horizontal wall - place on top or bottom
+            // Horizontal wall - place on top or bottom INSIDE the project boundaries
             const isTopHalf = wallMidY < (minY + maxY) / 2;
             const side = isTopHalf ? 'top' : 'bottom';
             
-            // Find available position to avoid overlaps
+            // Find available position INSIDE the project boundaries
             let labelY, labelX;
             let offset = baseOffset;
             let attempts = 0;
             const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
             
             do {
+                // Place dimensions INSIDE the project boundaries
                 labelY = isTopHalf ? 
-                    (minY * scaleFactor + offsetY - offset) : 
-                    (maxY * scaleFactor + offsetY + offset);
+                    (minY * scaleFactor + offsetY + offset) : // INSIDE from top
+                    (maxY * scaleFactor + offsetY - offset);   // INSIDE from bottom
                 labelX = wallMidX * scaleFactor + offsetX;
                 
                 // Check for overlaps with existing labels
@@ -237,13 +492,13 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 attempts++;
             } while (attempts < maxAttempts);
             
-            // Draw standard architectural dimensioning lines
+            // Draw standard architectural dimensioning lines (internal placement)
             context.beginPath();
             context.setLineDash([5, 5]);
-            // Extension line from start of wall (perpendicular to wall)
+            // Extension line from start of wall (perpendicular to wall) - INSIDE placement
             context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
             context.lineTo(startX * scaleFactor + offsetX, labelY);
-            // Extension line from end of wall (perpendicular to wall)
+            // Extension line from end of wall (perpendicular to wall) - INSIDE placement
             context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
             context.lineTo(endX * scaleFactor + offsetX, labelY);
             // Dimension line connecting the two extension lines
@@ -280,20 +535,21 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                  });
              }
         } else {
-            // Vertical wall - place on left or right
+            // Vertical wall - place on left or right INSIDE the project boundaries
             const isLeftHalf = wallMidX < (minX + maxX) / 2;
             const side = isLeftHalf ? 'left' : 'right';
             
-            // Find available position to avoid overlaps
+            // Find available position INSIDE the project boundaries
             let labelX, labelY;
-            let offset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET); // Ensure minimum vertical offset
+            let offset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
             let attempts = 0;
             const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
             
             do {
+                // Place dimensions INSIDE the project boundaries
                 labelX = isLeftHalf ? 
-                    (minX * scaleFactor + offsetX - offset) : 
-                    (maxX * scaleFactor + offsetX + offset);
+                    (minX * scaleFactor + offsetX + offset) : // INSIDE from left
+                    (maxX * scaleFactor + offsetX - offset);   // INSIDE from right
                 labelY = wallMidY * scaleFactor + offsetY;
                 
                 // Check for overlaps with existing labels (rotated bounding box for vertical text)
@@ -307,13 +563,13 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 attempts++;
             } while (attempts < maxAttempts);
             
-            // Draw standard architectural dimensioning lines
+            // Draw standard architectural dimensioning lines (internal placement)
             context.beginPath();
             context.setLineDash([5, 5]);
-            // Extension line from start of wall (perpendicular to wall)
+            // Extension line from start of wall (perpendicular to wall) - INSIDE placement
             context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
             context.lineTo(labelX, startY * scaleFactor + offsetY);
-            // Extension line from end of wall (perpendicular to wall)
+            // Extension line from end of wall (perpendicular to wall) - INSIDE placement
             context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
             context.lineTo(labelX, endY * scaleFactor + offsetY);
             // Dimension line connecting the two extension lines
@@ -331,7 +587,7 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             context.fillStyle = 'rgba(255, 255, 255, 0.95)';
             context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
             context.fillStyle = color;
-            context.font = 'bold 15px Arial';
+            context.font = `bold ${Math.max(14, 200 * scaleFactor)}px Arial`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(text, 0, 0);
@@ -599,7 +855,9 @@ export function drawWalls({
     drawDimensions,
     wallPanelsMap, // <-- added
     drawPanelDivisions, // <-- added
-    filteredDimensions // <-- added for dimension filtering
+    filteredDimensions, // <-- added for dimension filtering
+    placedLabels = [], // <-- added for shared collision detection
+    allLabels = [] // <-- added for shared collision detection
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
@@ -607,17 +865,17 @@ export function drawWalls({
     const thicknessColorMap = generateThicknessColorMap(walls);
     
     // Calculate model bounds for external dimensioning
+    // Use project dimensions as the boundary to keep wall dimensions inside
+    const actualDimensions = calculateActualProjectDimensions(walls);
     const modelBounds = walls.length > 0 ? {
-        minX: Math.min(...walls.map(w => Math.min(w.start_x, w.end_x))),
-        maxX: Math.max(...walls.map(w => Math.max(w.start_x, w.end_x))),
-        minY: Math.min(...walls.map(w => Math.min(w.start_y, w.end_y))),
-        maxY: Math.max(...walls.map(w => Math.max(w.start_y, w.end_y)))
+        minX: actualDimensions.minX,
+        maxX: actualDimensions.maxX,
+        minY: actualDimensions.minY,
+        maxY: actualDimensions.maxY
     } : null;
     
-    // Track placed labels to prevent overlaps
-    const placedLabels = [];
-    // Collect label info for second pass
-    const allLabels = [];
+    // Use shared label arrays for collision detection (don't create new ones)
+    // placedLabels and allLabels are passed as parameters
     const allPanelLabels = [];
     
     // First pass: draw all dashed lines and collect label info
@@ -853,7 +1111,7 @@ export function drawWalls({
     const allCombinedLabels = [...allLabels, ...allPanelLabels];
     
     // Draw all labels together (prevents panel labels from being covered by wall labels)
-    allCombinedLabels.forEach(label => { label.draw = makeLabelDrawFn(label); });
+    allCombinedLabels.forEach(label => { label.draw = makeLabelDrawFn(label, scaleFactor); });
     allCombinedLabels.forEach(label => { label.draw(context); });
     
     // Return the thickness color map for legend drawing
@@ -1072,7 +1330,7 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
             const text = fullLabelText; // Use the enhanced label text
             
             // IMPORTANT: Set font BEFORE measuring text width!
-            context.font = '15px Arial';
+            context.font = `${Math.max(14, 200 * scaleFactor)}px Arial`;
             const textWidth = context.measureText(text).width;
 
             if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
@@ -1229,7 +1487,7 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
 } 
 
 // Helper to create label draw function (original simple style)
-export function makeLabelDrawFn(label) {
+export function makeLabelDrawFn(label, scaleFactor) {
     return function(context) {
         context.save();
         if (label.angle && Math.abs(label.angle) > 45 && Math.abs(label.angle) < 135) {
@@ -1241,7 +1499,7 @@ export function makeLabelDrawFn(label) {
             context.fillStyle = 'rgba(255, 255, 255, 0.8)';
             context.fillRect(-label.height / 2, -label.width / 2, label.height, label.width);
             context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
-            context.font = '15px Arial';
+            context.font = `${Math.max(14, 200 * scaleFactor)}px Arial`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(label.text, 0, 0);
@@ -1250,7 +1508,7 @@ export function makeLabelDrawFn(label) {
             context.fillStyle = 'rgba(255, 255, 255, 0.8)';
             context.fillRect(label.x, label.y, label.width, label.height);
             context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
-            context.font = '15px Arial';
+            context.font = `${Math.max(14, 200 * scaleFactor)}px Arial`;
             context.textAlign = 'left';
             context.textBaseline = 'top';
             context.fillText(label.text, label.x + 2, label.y + 2);

@@ -39,7 +39,10 @@ const CeilingCanvas = ({
     panelsNeedSupport = false,
     
     // Room selection props
-    showAllRooms = true
+    showAllRooms = true,
+    
+    // Shared panel data update function
+    updateSharedPanelData = null
 }) => {
     // Determine if we're in multi-room mode or single-room mode
     const isMultiRoomMode = rooms.length > 0;
@@ -69,17 +72,46 @@ const CeilingCanvas = ({
         }
     }, [projectData]);
     
+    // Set proper cursor when aluminum suspension drawing mode changes
+    useEffect(() => {
+        if (canvasRef.current) {
+            if (aluSuspensionCustomDrawing) {
+                canvasRef.current.style.cursor = 'crosshair';
+            } else {
+                canvasRef.current.style.cursor = 'grab';
+            }
+        }
+    }, [aluSuspensionCustomDrawing]);
+    
+    // Update shared panel data when support options change
+    useEffect(() => {
+        if (updateSharedPanelData) {
+            updateSharedPanelData('ceiling-support-options', null, {
+                supportType: supportType,
+                includeAccessories: nylonHangerOptions.includeAccessories,
+                includeCable: nylonHangerOptions.includeCable,
+                aluSuspensionCustomDrawing: aluSuspensionCustomDrawing,
+                panelsNeedSupport: panelsNeedSupport
+            });
+        }
+    }, [updateSharedPanelData, supportType, nylonHangerOptions.includeAccessories, nylonHangerOptions.includeCable, aluSuspensionCustomDrawing, panelsNeedSupport]);
+    
     // Canvas state refs
     const scaleFactor = useRef(1);
     const initialScale = useRef(1); // Track the initial scale
     const offsetX = useRef(0);
     const offsetY = useRef(0);
-    const isDragging = useRef(false);
+    const isDragging = useRef(false); // For support placement
     const lastMousePos = useRef({ x: 0, y: 0 });
     const isZoomed = useRef(false); // Track if user has manually zoomed
+    
+    // Canvas dragging state (separate from support dragging)
+    const isDraggingCanvas = useRef(false);
+    const lastCanvasMousePos = useRef({ x: 0, y: 0 });
+    const hasUserPositionedView = useRef(false); // Track if user has manually positioned the view
 
     // Canvas dimensions - match wall plan for consistent focus
-    const CANVAS_WIDTH = 800;
+    const CANVAS_WIDTH = 1000;
     const CANVAS_HEIGHT = 600;
     const PADDING = 50;
 
@@ -184,7 +216,10 @@ const CeilingCanvas = ({
         canvas.height = CANVAS_HEIGHT;
 
         // Calculate optimal scale and offset for all rooms
-        calculateCanvasTransform();
+        // Only recalculate if user hasn't manually positioned the view
+        if (!hasUserPositionedView.current) {
+            calculateCanvasTransform();
+        }
 
         // Draw everything
         drawCanvas(ctx);
@@ -244,12 +279,15 @@ const CeilingCanvas = ({
         }
         initialScale.current = optimalScale; // Always store the initial scale
 
-        // Center all rooms
-        const scaledWidth = totalWidth * optimalScale;
-        const scaledHeight = totalHeight * optimalScale;
-        
-        offsetX.current = (CANVAS_WIDTH - scaledWidth) / 2 - minX * optimalScale;
-        offsetY.current = (CANVAS_HEIGHT - scaledHeight) / 2 - minY * optimalScale;
+        // Only reset offset if user hasn't manually dragged the canvas
+        if (!isDraggingCanvas.current) {
+            // Center all rooms
+            const scaledWidth = totalWidth * optimalScale;
+            const scaledHeight = totalHeight * optimalScale;
+            
+            offsetX.current = (CANVAS_WIDTH - scaledWidth) / 2 - minX * optimalScale;
+            offsetY.current = (CANVAS_HEIGHT - scaledHeight) / 2 - minY * optimalScale;
+        }
     };
 
     // Main drawing function
@@ -450,7 +488,7 @@ const CeilingCanvas = ({
             if (isSelected) {
                 // Add background for selected room label
                 const labelText = room.room_name;
-                ctx.font = `bold ${Math.max(16, 18 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
                 const labelWidth = ctx.measureText(labelText).width;
                 const labelHeight = Math.max(16, 18 * scaleFactor.current);
                 const padding = 8;
@@ -469,7 +507,7 @@ const CeilingCanvas = ({
             } else if (isHovered) {
                 // Add subtle background for hovered room label
                 const labelText = room.room_name;
-                ctx.font = `bold ${Math.max(14, 16 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
                 const labelWidth = ctx.measureText(labelText).width;
                 const labelHeight = Math.max(14, 16 * scaleFactor.current);
                 const padding = 4;
@@ -487,10 +525,10 @@ const CeilingCanvas = ({
                 ctx.fillStyle = '#3b82f6';
             } else if (isRoomMode) {
                 ctx.fillStyle = '#9ca3af';
-                ctx.font = `normal ${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                ctx.font = `normal ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
             } else {
                 ctx.fillStyle = '#6b7280';
-                ctx.font = `bold ${Math.max(14, 16 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
             }
             
             ctx.textAlign = 'center';
@@ -781,7 +819,7 @@ const CeilingCanvas = ({
             // Panel ID label for selected panels (keep this for selection feedback)
             if (isSelected) {
                 ctx.fillStyle = '#3b82f6';
-                ctx.font = `bold ${Math.max(10, 12 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(`P${panel.panel_id || panel.id}`, x + width / 2, y + height / 2);
@@ -1369,7 +1407,7 @@ const CeilingCanvas = ({
         
         // Draw text
         ctx.fillStyle = color;
-        ctx.font = `bold ${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         
         if (isHorizontal) {
             // Horizontal text
@@ -1650,14 +1688,14 @@ const CeilingCanvas = ({
         const title = 'CEILING PLAN';
         
         // Title
-        ctx.font = `bold ${Math.max(20, 28 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#1f2937';
         ctx.fillText(title, CANVAS_WIDTH / 2, 30);
         
         // Scale indicator
-        ctx.font = `${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         ctx.fillStyle = '#9ca3af';
         ctx.textAlign = 'left';
         ctx.fillText(`Scale: ${currentScale.toFixed(2)}x`, 20, CANVAS_HEIGHT - 30);
@@ -1665,6 +1703,16 @@ const CeilingCanvas = ({
 
     // Mouse event handlers
     const handleMouseDown = (e) => {
+        // Check if we should start canvas dragging (when not placing supports)
+        if (!isPlacingSupport) {
+            isDraggingCanvas.current = true;
+            hasUserPositionedView.current = true; // Mark that user has positioned the view
+            lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };
+            e.preventDefault();
+            return;
+        }
+        
+        // Otherwise, handle support dragging (existing functionality)
         isDragging.current = true;
         const rect = canvasRef.current.getBoundingClientRect();
         lastMousePos.current = {
@@ -1675,6 +1723,11 @@ const CeilingCanvas = ({
 
     // Handle mouse move for hover detection
     const handleMouseMoveHover = (e) => {
+        // Disable room hover when aluminum suspension custom drawing is enabled
+        if (aluSuspensionCustomDrawing) {
+            return;
+        }
+        
         const rect = canvasRef.current.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
@@ -1706,8 +1759,12 @@ const CeilingCanvas = ({
             }
         } else if (!hoveredRoom && hoveredRoomId) {
             setHoveredRoomId(null);
-            // Reset cursor
-            canvasRef.current.style.cursor = 'grab';
+            // Reset cursor based on current mode
+            if (aluSuspensionCustomDrawing) {
+                canvasRef.current.style.cursor = 'crosshair';
+            } else {
+                canvasRef.current.style.cursor = 'grab';
+            }
             // Redraw canvas
             const ctx = canvasRef.current.getContext('2d');
             if (ctx) {
@@ -1729,6 +1786,25 @@ const CeilingCanvas = ({
     };
 
     const handleMouseMove = (e) => {
+        // Handle canvas dragging first
+        if (isDraggingCanvas.current) {
+            const deltaX = e.clientX - lastCanvasMousePos.current.x;
+            const deltaY = e.clientY - lastCanvasMousePos.current.y;
+            
+            offsetX.current += deltaX;
+            offsetY.current += deltaY;
+            
+            lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };
+            
+            // Redraw canvas
+            const ctx = canvasRef.current.getContext('2d');
+            if (ctx) {
+                drawCanvas(ctx);
+            }
+            return;
+        }
+        
+        // Handle support dragging (existing functionality)
         if (!isDragging.current) return;
         
         const rect = canvasRef.current.getBoundingClientRect();
@@ -1924,7 +2000,34 @@ const CeilingCanvas = ({
 
     const handleMouseUp = () => {
         isDragging.current = false;
+        isDraggingCanvas.current = false;
     };
+
+    // Canvas dragging functions
+    const handleCanvasMouseDown = (e) => {
+        // Only start dragging if not placing supports
+        if (isPlacingSupport) return;
+        
+        isDraggingCanvas.current = true;
+        lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };
+        e.preventDefault();
+    };
+
+    const handleCanvasMouseUp = () => {
+        isDraggingCanvas.current = false;
+    };
+
+    // Add global mouse up event listener for canvas dragging
+    useEffect(() => {
+        const handleGlobalMouseUp = () => {
+            isDraggingCanvas.current = false;
+        };
+        
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+        return () => {
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, []);
 
     // Zoom functions
     const handleZoomIn = () => {
@@ -1935,7 +2038,7 @@ const CeilingCanvas = ({
         const newScale = Math.min(3.0, scaleFactor.current * 1.2);
         console.log('Calculated new scale:', newScale);
         
-        zoomToCenter(newScale);
+        zoomAtCurrentView(newScale);
     };
 
     const handleZoomOut = () => {
@@ -1948,12 +2051,13 @@ const CeilingCanvas = ({
         const newScale = Math.max(initialScale.current, scaleFactor.current * 0.8);
         console.log('Calculated new scale:', newScale);
         
-        zoomToCenter(newScale);
+        zoomAtCurrentView(newScale);
     };
 
     const handleResetZoom = () => {
         console.log('Reset Zoom clicked, resetting zoom flag');
         isZoomed.current = false; // Reset zoom flag so calculateCanvasTransform can set optimal scale
+        hasUserPositionedView.current = false; // Reset user positioning flag
         calculateCanvasTransform();
         // Redraw after transform calculation
         const ctx = canvasRef.current.getContext('2d');
@@ -1992,8 +2096,49 @@ const CeilingCanvas = ({
         }
     };
 
+    // Zoom at current view position (keeps the point under mouse stationary)
+    const zoomAtCurrentView = (newScale) => {
+        // Calculate the current view center in model coordinates
+        const viewCenterX = CANVAS_WIDTH / 2;
+        const viewCenterY = CANVAS_HEIGHT / 2;
+        
+        // Convert view center to model coordinates
+        const modelCenterX = (viewCenterX - offsetX.current) / scaleFactor.current;
+        const modelCenterY = (viewCenterY - offsetY.current) / scaleFactor.current;
+        
+        // Calculate scale ratio
+        const scaleRatio = newScale / scaleFactor.current;
+        
+        // Calculate new offset to keep the model center point stationary
+        offsetX.current = viewCenterX - modelCenterX * newScale;
+        offsetY.current = viewCenterY - modelCenterY * newScale;
+        
+        // Update the scale factor FIRST
+        scaleFactor.current = newScale;
+        isZoomed.current = true; // Mark as manually zoomed
+        hasUserPositionedView.current = true; // Mark that user has positioned the view
+        
+        // Update state to trigger re-render
+        setCurrentScale(newScale);
+        
+        // Redraw canvas
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+            console.log('Got canvas context, clearing and redrawing...');
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            drawCanvas(ctx);
+        } else {
+            //console.error('❌ Could not get canvas context!');
+        }
+    };
+
     // Panel click detection and custom support placement
     const handleCanvasClick = (e) => {
+        // Don't handle clicks if we were dragging the canvas
+        if (isDraggingCanvas.current) {
+            return;
+        }
+        
         const rect = canvasRef.current.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
@@ -2013,51 +2158,59 @@ const CeilingCanvas = ({
             }
         }
         
-        // If clicked on a room, select it
-        if (clickedRoom && onRoomSelect) {
-            onRoomSelect(clickedRoom.id);
-            return;
-        }
-        
-        // If clicked on empty space (not on a room) and not placing support, deselect room
-        if (!clickedRoom && !aluSuspensionCustomDrawing && !isPlacingSupport && onRoomDeselect) {
-            onRoomDeselect();
-            return;
+        // If aluminum suspension custom drawing is enabled, disable room selection entirely
+        if (aluSuspensionCustomDrawing) {
+            // Room selection is disabled when aluminum suspension drawing is active
+            // Only handle support placement logic below
+        } else {
+            // If clicked on a room, select it (only when aluminum suspension drawing is NOT enabled)
+            if (clickedRoom && onRoomSelect) {
+                onRoomSelect(clickedRoom.id);
+                return;
+            }
+            
+            // If clicked on empty space (not on a room) and not placing support, deselect room
+            if (!clickedRoom && !isPlacingSupport && onRoomDeselect) {
+                onRoomDeselect();
+                return;
+            }
         }
         
         // If custom support placement is enabled, handle support placement
         if (aluSuspensionCustomDrawing && isPlacingSupport) {
             
             // Apply boundary snapping for support placement
+            let snappedModelX = modelX;
+            let snappedModelY = modelY;
             if (projectData) {
                 const snapThreshold = 100; // 100mm threshold for snapping
                 
                 // Snap to left edge
-                if (modelX < snapThreshold) {
-                    modelX = 0;
+                if (snappedModelX < snapThreshold) {
+                    snappedModelX = 0;
                 }
                 // Snap to right edge
-                if (modelX > projectData.width - snapThreshold) {
-                    modelX = projectData.width;
+                if (snappedModelX > projectData.width - snapThreshold) {
+                    snappedModelX = projectData.width;
                 }
                 // Snap to top edge
-                if (modelY < snapThreshold) {
-                    modelY = 0;
+                if (snappedModelY < snapThreshold) {
+                    snappedModelY = 0;
                 }
                 // Snap to bottom edge
-                if (modelY > projectData.length - snapThreshold) {
-                    modelY = projectData.length;
+                if (snappedModelY > projectData.length - snapThreshold) {
+                    snappedModelY = projectData.length;
                 }
             }
             
             if (!supportStartPoint) {
                 // First click - set start point
-                setSupportStartPoint({ x: modelX, y: modelY });
-                setSupportPreview({ startX: modelX, startY: modelY, endX: modelX, endY: modelY });
+                setSupportStartPoint({ x: snappedModelX, y: snappedModelY });
+                setSupportPreview({ startX: snappedModelX, startY: snappedModelY, endX: snappedModelX, endY: snappedModelY });
             } else {
                 // Second click - finish support line and place supports on intersecting panels
                 const intersectingPanels = findIntersectingPanels(
-                    supportStartPoint.x, supportStartPoint.y, modelX, modelY
+                    supportStartPoint.x, supportStartPoint.y, snappedModelX, snappedModelY
                 );
                 
                 // Create supports at each intersection point along the line
@@ -2177,24 +2330,24 @@ const CeilingCanvas = ({
         const canvasX = x + width / 2;
         const canvasY = y + height / 2;
         
-        // Draw support line
-        const lineLength = 30 * scaleFactor;
+        // Draw support line - made bigger
+        const lineLength = 50 * scaleFactor; // Increased from 30 to 50
         ctx.beginPath();
         ctx.moveTo(canvasX - lineLength / 2, canvasY);
         ctx.lineTo(canvasX + lineLength / 2, canvasY);
         ctx.strokeStyle = '#8b5cf6'; // Purple
-        ctx.lineWidth = 3 * scaleFactor;
+        ctx.lineWidth = 5 * scaleFactor; // Increased from 3 to 5
         ctx.stroke();
         
-        // Draw * symbol at panel center
+        // Draw * symbol at panel center - made bigger
         ctx.fillStyle = '#8b5cf6';
-        ctx.font = `bold ${Math.max(12, 14 * scaleFactor)}px Arial`;
+        ctx.font = `bold ${Math.max(16, 30 * scaleFactor)}px Arial`; // Increased from 14 to 20
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('*', canvasX, canvasY);
         
-        // Draw small squares at start and end
-        const squareSize = 6 * scaleFactor;
+        // Draw squares at start and end - made bigger
+        const squareSize = 25 * scaleFactor; // Increased from 6 to 10
         ctx.fillStyle = '#8b5cf6';
         
         // Start square
@@ -2613,7 +2766,7 @@ const CeilingCanvas = ({
 
             </div>
 
-            <div className="flex gap-8">
+            <div className="flex gap-6">
                 {/* Canvas Container */}
                 <div className="ceiling-canvas-wrapper flex-1">
                     <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg relative">
@@ -2653,7 +2806,9 @@ const CeilingCanvas = ({
                         <canvas
                             ref={canvasRef}
                             data-plan-type="ceiling"
-                            className="ceiling-canvas cursor-grab active:cursor-grabbing block w-full"
+                            className={`ceiling-canvas block w-full ${
+                                !isPlacingSupport ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+                            }`}
                             style={{
                                 width: `${CANVAS_WIDTH}px`,
                                 height: `${CANVAS_HEIGHT}px`,
@@ -2729,7 +2884,7 @@ const CeilingCanvas = ({
 
                 {/* Summary Sidebar */}
                 <div className="ceiling-summary-sidebar flex-shrink-0">
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 min-w-[320px] shadow-lg">
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 w-80 shadow-lg">
                         <h4 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
                             <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />

@@ -267,41 +267,41 @@ class PanelCalculator {
         }
 
         // Add panel placement analysis logs
-        console.log(`\n=== PANEL PLACEMENT ANALYSIS ===`);
-        console.log(`Wall length: ${wallLength}mm | Wall thickness: ${wallThickness}mm | Wall height: ${wallHeight}mm`);
-        console.log(`Threshold: ${threshold}mm | Minimum panel width: ${minPanelWidth}mm`);
-        console.log(`Joint types: ${typeof jointType === 'object' ? `Left: ${jointType.left}, Right: ${jointType.right}` : `Uniform: ${jointType}`}`);
-        console.log(`Total panels created: ${panels.length}`);
+        // console.log(`\n=== PANEL PLACEMENT ANALYSIS ===`);
+        // console.log(`Wall length: ${wallLength}mm | Wall thickness: ${wallThickness}mm | Wall height: ${wallHeight}mm`);
+        // console.log(`Threshold: ${threshold}mm | Minimum panel width: ${minPanelWidth}mm`);
+        // console.log(`Joint types: ${typeof jointType === 'object' ? `Left: ${jointType.left}, Right: ${jointType.right}` : `Uniform: ${jointType}`}`);
+        // console.log(`Total panels created: ${panels.length}`);
         
         // Analyze panel arrangement
         const fullPanels = panels.filter(p => p.isFullPanel);
         const sidePanels = panels.filter(p => p.isSidePanel);
         const leftoverPanels = panels.filter(p => p.isLeftover);
         
-        console.log(`\n--- PANEL BREAKDOWN ---`);
-        console.log(`Full panels: ${fullPanels.length}`);
+        // console.log(`\n--- PANEL BREAKDOWN ---`);
+        // console.log(`Full panels: ${fullPanels.length}`);
         fullPanels.forEach((panel, index) => {
             const actualWidth = panel.actualWidth || panel.width;
             const optimization = panel.actualWidth && panel.actualWidth !== panel.width ? 
                 ` (${panel.width}mm → ${panel.actualWidth}mm)` : '';
             const symbol = panel.optimizationSymbol || '';
             const placementNote = panel.placementNote || '';
-            console.log(`  Panel ${index + 1}: ${actualWidth}mm${optimization} ${symbol} ${placementNote}`);
+            // console.log(`  Panel ${index + 1}: ${actualWidth}mm${optimization} ${symbol} ${placementNote}`);
         });
         
-        console.log(`Side panels: ${sidePanels.length}`);
+        // console.log(`Side panels: ${sidePanels.length}`);
         sidePanels.forEach((panel, index) => {
             const position = panel.position || 'N/A';
-            console.log(`  Panel ${index + 1}: ${panel.width}mm at ${position} position`);
+            // console.log(`  Panel ${index + 1}: ${panel.width}mm at ${position} position`);
         });
         
-        console.log(`Leftover panels: ${leftoverPanels.length}`);
+        // console.log(`Leftover panels: ${leftoverPanels.length}`);
         leftoverPanels.forEach((panel, index) => {
-            console.log(`  Panel ${index + 1}: ${panel.width}mm (from leftover ${panel.leftoverId})`);
+            // console.log(`  Panel ${index + 1}: ${panel.width}mm (from leftover ${panel.leftoverId})`);
         });
         
         // Show panel sequence from left to right
-        console.log(`\n--- PANEL SEQUENCE (LEFT TO RIGHT) ---`);
+        // console.log(`\n--- PANEL SEQUENCE (LEFT TO RIGHT) ---`);
         panels.forEach((panel, index) => {
             const width = panel.actualWidth || panel.width;
             const type = panel.isFullPanel ? 'FULL' : panel.isSidePanel ? 'SIDE' : 'LEFTOVER';
@@ -313,37 +313,37 @@ class PanelCalculator {
             
             // Special highlighting for 1130mm panels
             if (panel.optimizationType === 'LEFT_OPTIMIZED') {
-                console.log(`🔴 Panel ${index + 1}: ${width}mm [${type}] ${position}${optimization} ${symbol} ${placementNote}`);
+                // console.log(`🔴 Panel ${index + 1}: ${width}mm [${type}] ${position}${optimization} ${symbol} ${placementNote}`);
             } else if (panel.isSidePanel) {
-                console.log(`🟢 Panel ${index + 1}: ${width}mm [${type}] ${position}${optimization} ${symbol} ${placementNote}`);
+                // console.log(`🟢 Panel ${index + 1}: ${width}mm [${type}] ${position}${optimization} ${symbol} ${placementNote}`);
             } else {
-                console.log(`Panel ${index + 1}: ${width}mm [${type}] ${position}${optimization} ${symbol} ${placementNote}`);
+                // console.log(`Panel ${index + 1}: ${width}mm [${type}] ${position}${optimization} ${symbol} ${placementNote}`);
             }
         });
         
         // Verify total length
         const totalLength = panels.reduce((sum, panel) => sum + (panel.actualWidth || panel.width), 0);
-        console.log(`\n--- LENGTH VERIFICATION ---`);
-        console.log(`Wall length: ${wallLength}mm`);
-        console.log(`Total panel length: ${totalLength}mm`);
-        console.log(`Difference: ${wallLength - totalLength}mm`);
+        // console.log(`\n--- LENGTH VERIFICATION ---`);
+        // console.log(`Wall length: ${wallLength}mm`);
+        // console.log(`Total panel length: ${totalLength}mm`);
+        // console.log(`Difference: ${wallLength - totalLength}mm`);
         
         // Special optimization summary
         const optimizedPanels = panels.filter(p => p.optimizationType && (p.optimizationType.includes('_OPTIMIZED') || p.optimizationType === 'SPLIT_OPTIMIZATION' || p.optimizationType === 'MINIMUM_SIZE_PANEL'));
         if (optimizedPanels.length > 0) {
-            console.log(`\n🔴 --- OPTIMIZATION SUMMARY --- 🔴`);
+            // console.log(`\n🔴 --- OPTIMIZATION SUMMARY --- 🔴`);
             optimizedPanels.forEach((panel, index) => {
-                console.log(`🔴 Panel ${panels.indexOf(panel) + 1}: ${panel.width}mm → ${panel.actualWidth || panel.width}mm`);
-                console.log(`   Type: ${panel.optimizationType}`);
-                console.log(`   Note: ${panel.optimizationNote}`);
-                console.log(`   Symbol: ${panel.optimizationSymbol}`);
+                // console.log(`🔴 Panel ${panels.indexOf(panel) + 1}: ${panel.width}mm → ${panel.actualWidth || panel.width}mm`);
+                // console.log(`   Type: ${panel.optimizationType}`);
+                // console.log(`   Note: ${panel.optimizationNote}`);
+                // console.log(`   Symbol: ${panel.optimizationSymbol}`);
             });
         }
         
-        console.log(`=== END PANEL PLACEMENT ANALYSIS ===\n`);
+        // console.log(`=== END PANEL PLACEMENT ANALYSIS ===\n`);
 
-        console.log(`\nCurrent leftovers after calculation:`, this.leftovers);
-        console.log(`Panel analysis:`, this.getPanelAnalysis());
+        // console.log(`\nCurrent leftovers after calculation:`, this.leftovers);
+        // console.log(`Panel analysis:`, this.getPanelAnalysis());
         return panels;
     }
 

@@ -25,9 +25,13 @@ const FloorCanvas = ({
     const isDragging = useRef(false);
     const lastMousePos = useRef({ x: 0, y: 0 });
     const isZoomed = useRef(false); // Track if user has manually zoomed
+    
+    // Canvas dragging state (separate from other dragging)
+    const isDraggingCanvas = useRef(false);
+    const lastCanvasMousePos = useRef({ x: 0, y: 0 });
 
-    // Canvas dimensions - match CeilingCanvas for consistency
-    const CANVAS_WIDTH = 800;
+    // Canvas dimensions - match wall plan for consistency
+    const CANVAS_WIDTH = 1000;
     const CANVAS_HEIGHT = 600;
     const PADDING = 50;
 
@@ -223,12 +227,15 @@ const FloorCanvas = ({
         }
         initialScale.current = optimalScale; // Always store the initial scale
 
-        // Center all rooms
-        const scaledWidth = totalWidth * optimalScale;
-        const scaledHeight = totalHeight * optimalScale;
-        
-        offsetX.current = (CANVAS_WIDTH - scaledWidth) / 2 - minX * optimalScale;
-        offsetY.current = (CANVAS_HEIGHT - scaledHeight) / 2 - minY * optimalScale;
+        // Only reset offset if user hasn't manually dragged the canvas
+        if (!isDraggingCanvas.current) {
+            // Center all rooms
+            const scaledWidth = totalWidth * optimalScale;
+            const scaledHeight = totalHeight * optimalScale;
+            
+            offsetX.current = (CANVAS_WIDTH - scaledWidth) / 2 - minX * optimalScale;
+            offsetY.current = (CANVAS_HEIGHT - scaledHeight) / 2 - minY * optimalScale;
+        }
     };
 
     // Main drawing function
@@ -360,7 +367,7 @@ const FloorCanvas = ({
             const canvasY = labelY * scaleFactor.current + offsetY.current;
             
             ctx.fillStyle = '#6b7280';
-            ctx.font = `bold ${Math.max(14, 16 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+            ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(room.room_name, canvasX, canvasY);
@@ -705,7 +712,7 @@ const FloorCanvas = ({
         
         // Draw background rectangle for better readability
         const messageText = 'No floor plan available';
-        ctx.font = `bold ${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         const textMetrics = ctx.measureText(messageText);
         const textWidth = textMetrics.width;
         const textHeight = 20 * scaleFactor.current;
@@ -767,7 +774,7 @@ const FloorCanvas = ({
         const messageText = `Est. ${slabsNeeded} pieces of slab needed`;
         
         // Use smaller font size (matching room name: 14-16px instead of 18-22px)
-        ctx.font = `bold ${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         const textMetrics = ctx.measureText(messageText);
         const textWidth = textMetrics.width;
         const textHeight = 16 * scaleFactor.current;
@@ -824,7 +831,7 @@ const FloorCanvas = ({
         const messageText = 'No floor plan needed';
         
         // Use similar styling as slab message
-        ctx.font = `bold ${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         const textMetrics = ctx.measureText(messageText);
         const textWidth = textMetrics.width;
         const textHeight = 16 * scaleFactor.current;
@@ -860,13 +867,13 @@ const FloorCanvas = ({
     // Draw title and info
     const drawTitle = (ctx) => {
         ctx.fillStyle = '#374151';
-        ctx.font = `bold ${Math.max(16, 20 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText('Floor Plan', 20, 20);
         
         // Draw scale info
-        ctx.font = `${Math.max(12, 14 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
         ctx.fillText(`Scale: ${scaleFactor.current.toFixed(2)}x`, 20, 50);
     };
 
@@ -1532,11 +1539,33 @@ const FloorCanvas = ({
 
     // Mouse drag pan
     const handleMouseDown = (e) => {
-        isDragging.current = true;
-        lastMousePos.current = { x: e.clientX, y: e.clientY };
+        // Start canvas dragging by default
+        isDraggingCanvas.current = true;
+        lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };
+        e.preventDefault();
     };
 
     const handleMouseMove = (e) => {
+        // Handle canvas dragging
+        if (isDraggingCanvas.current) {
+            const deltaX = e.clientX - lastCanvasMousePos.current.x;
+            const deltaY = e.clientY - lastCanvasMousePos.current.y;
+            
+            offsetX.current += deltaX;
+            offsetY.current += deltaY;
+            
+            lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };
+            
+            // Redraw canvas
+            const ctx = canvasRef.current.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                drawCanvas(ctx);
+            }
+            return;
+        }
+        
+        // Handle other dragging (existing functionality)
         if (!isDragging.current) return;
         
         const deltaX = e.clientX - lastMousePos.current.x;
@@ -1557,10 +1586,28 @@ const FloorCanvas = ({
 
     const handleMouseUp = () => {
         isDragging.current = false;
+        isDraggingCanvas.current = false;
     };
+
+    // Add global mouse up event listener for canvas dragging
+    useEffect(() => {
+        const handleGlobalMouseUp = () => {
+            isDraggingCanvas.current = false;
+        };
+        
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+        return () => {
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, []);
 
     // Panel click detection
     const handleCanvasClick = (e) => {
+        // Don't handle clicks if we were dragging the canvas
+        if (isDraggingCanvas.current) {
+            return;
+        }
+        
         const rect = canvasRef.current.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;

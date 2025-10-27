@@ -1311,8 +1311,7 @@ const InstallationTimeEstimator = ({
                 const supportData = [
                     ['Support Type', exportData.supportAccessories.type === 'nylon' ? 'Nylon Hanger' : 'Alu Suspension'],
                     ['Include Accessories', exportData.supportAccessories.includeAccessories ? 'Yes' : 'No'],
-                    ['Include Cable', exportData.supportAccessories.includeCable ? 'Yes' : 'No'],
-                    ['Custom Drawing', exportData.supportAccessories.customDrawing ? 'Yes' : 'No']
+                    ['Include Cable', exportData.supportAccessories.includeCable ? 'Yes' : 'No']
                 ];
                 
                                  autoTable(doc, {
@@ -2493,20 +2492,6 @@ const InstallationTimeEstimator = ({
                                                 : 'bg-red-100 text-red-800'
                                         }`}>
                                             {exportData.supportAccessories.includeCable ? 'Yes' : 'No'}
-                                        </span>
-                                    </td>
-                                </tr>
-                                <tr className="hover:bg-gray-50">
-                                    <td className="px-4 py-2 border border-gray-300 text-sm font-medium text-gray-900">
-                                        Custom Drawing
-                                    </td>
-                                    <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                        <span className={`px-4 py-1 rounded text-xs font-medium ${
-                                            exportData.supportAccessories.customDrawing 
-                                                ? 'bg-green-100 text-green-800' 
-                                                : 'bg-red-100 text-red-800'
-                                        }`}>
-                                            {exportData.supportAccessories.customDrawing ? 'Yes' : 'No'}
                                         </span>
                                     </td>
                                 </tr>

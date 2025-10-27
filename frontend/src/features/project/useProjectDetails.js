@@ -62,7 +62,7 @@ export default function useProjectDetails(projectId) {
       };
       
       // If ceiling plan is being updated and analysis contains support info, update support data
-      if (tabName === 'ceiling-plan' && analysis && typeof analysis === 'object') {
+      if ((tabName === 'ceiling-plan' || tabName === 'ceiling-support-options') && analysis && typeof analysis === 'object') {
         return {
           ...baseUpdate,
           supportType: analysis.supportType || prev.supportType,

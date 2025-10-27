@@ -4,13 +4,17 @@
 export const DIMENSION_CONFIG = {
     // Spacing and positioning
     BASE_OFFSET: 15,              // Base distance from model boundary (px)
+    PROJECT_BASE_OFFSET: 55,      // Base distance for project dimensions (px) - outermost layer
     OFFSET_INCREMENT: 20,         // Increment when overlap detected (px)
+    PROJECT_OFFSET_INCREMENT: 30, // Increment for project dimensions (px) - more aggressive
     MIN_VERTICAL_OFFSET: 30,      // Minimum offset for vertical dimensions (px)
+    PROJECT_MIN_VERTICAL_OFFSET: 50, // Minimum offset for project vertical dimensions (px)
     MAX_ATTEMPTS: 10,             // Maximum collision resolution attempts
+    PROJECT_MAX_ATTEMPTS: 15,     // Maximum attempts for project dimensions
     
     // Appearance - Dimensions
-    FONT_SIZE: 14,                // Dimension text base size (px) - will scale
-    FONT_SIZE_MIN: 12,            // Minimum font size when scaled down
+    FONT_SIZE: 200,               // Dimension text scaling multiplier - matches wall plan
+    FONT_SIZE_MIN: 14,            // Minimum font size when scaled down - matches wall plan
     FONT_FAMILY: "'Segoe UI', Arial, sans-serif",  // Modern font with fallbacks
     FONT_WEIGHT: 'bold',          // Font weight for dimensions
     LINE_WIDTH: 1.5,              // Extension line width (px)
@@ -36,6 +40,7 @@ export const DIMENSION_CONFIG = {
     COLORS: {
         WALL: '#2196F3',          // Blue for wall dimensions (2D/wall plan)
         PANEL: '#FF6B35',         // Orange for panel dimensions (2D/wall plan)
+        PROJECT: '#8B5CF6',       // Purple for overall project dimensions
         ROOM: '#1e40af',          // Dark blue for room dimensions (ceiling/floor plan)
         PANEL_GROUP: '#6b7280',   // GREY for panel dimensions - matches legend! (ceiling/floor plan)
         CUT_PANEL: '#dc2626',     // Red for cut panel dimensions (ceiling/floor plan)
@@ -51,7 +56,8 @@ export const DIMENSION_CONFIG = {
     
     // Priority levels (lower number = higher priority, drawn first)
     PRIORITY: {
-        ROOM: 1,                  // Highest - Room dimensions
+        PROJECT: 0,               // Highest - Overall project dimensions
+        ROOM: 1,                  // Room dimensions
         WALL: 2,                  // Wall dimensions
         PANEL_GROUP: 3,           // Grouped panel dimensions
         PANEL: 4,                 // Individual panel dimensions

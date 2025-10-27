@@ -14,7 +14,10 @@ import {
   drawWallCaps,
   drawPanelDivisions,
   normalizeWallCoordinates,
-  getRoomLabelPositions
+  getRoomLabelPositions,
+  drawOverallProjectDimensions,
+  calculateActualProjectDimensions,
+  compareDimensions
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import { drawDoors } from './utils';
@@ -74,6 +77,12 @@ const Canvas2D = ({
     const offsetX = useRef(0);
     const offsetY = useRef(0);
     const scaleFactor = useRef(1);
+    const initialScale = useRef(1); // Track the initial scale
+    const isZoomed = useRef(false); // Track if user has manually zoomed
+    
+    // Canvas dragging state
+    const isDraggingCanvas = useRef(false);
+    const lastMousePos = useRef({ x: 0, y: 0 });
 
     // Utility function to detect database connection errors
     const isDatabaseConnectionError = (error) => {
@@ -99,7 +108,132 @@ const Canvas2D = ({
         setShowMaterialDetails(prev => !prev);
     };
 
+    // Zoom functions
+    const handleZoomIn = () => {
+        console.log('🔍 Zoom In clicked!');
+        console.log('Current scaleFactor:', scaleFactor.current);
+        console.log('Current currentScaleFactor state:', currentScaleFactor);
+        
+        const newScale = Math.min(3.0, scaleFactor.current * 1.2);
+        console.log('Calculated new scale:', newScale);
+        
+        zoomAtCurrentView(newScale);
+    };
 
+    const handleZoomOut = () => {
+        console.log('🔍 Zoom Out clicked!');
+        console.log('Current scaleFactor:', scaleFactor.current);
+        console.log('Current currentScaleFactor state:', currentScaleFactor);
+        console.log('Initial scale:', initialScale.current);
+        
+        // Use the initial scale as the minimum instead of hardcoded 0.1
+        const newScale = Math.max(initialScale.current, scaleFactor.current * 0.8);
+        console.log('Calculated new scale:', newScale);
+        
+        zoomAtCurrentView(newScale);
+    };
+
+    const handleResetZoom = () => {
+        console.log('Reset Zoom clicked, resetting zoom flag');
+        isZoomed.current = false; // Reset zoom flag so scale calculation can set optimal scale
+        // Trigger a re-render to recalculate scale
+        setForceRefresh(prev => prev + 1);
+    };
+
+    // Zoom at current view position (better UX)
+    const zoomAtCurrentView = (newScale) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        // Get the current view center (where the user is currently looking)
+        const canvasCenterX = canvas.width / 2;
+        const canvasCenterY = canvas.height / 2;
+        
+        // Calculate the current view center in model coordinates
+        const currentViewCenterX = (canvasCenterX - offsetX.current) / scaleFactor.current;
+        const currentViewCenterY = (canvasCenterY - offsetY.current) / scaleFactor.current;
+        
+        const scaleRatio = newScale / scaleFactor.current;
+        
+        // Keep the same point in model coordinates at the same screen position
+        offsetX.current = canvasCenterX - currentViewCenterX * newScale;
+        offsetY.current = canvasCenterY - currentViewCenterY * newScale;
+        
+        // Update the scale factor FIRST
+        scaleFactor.current = newScale;
+        // Mark that user has manually zoomed
+        isZoomed.current = true;
+        
+        // Update the state
+        setCurrentScaleFactor(newScale);
+        
+        // Redraw
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            console.log('Got canvas context, clearing and redrawing...');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Trigger a re-render
+            setForceRefresh(prev => prev + 1);
+        }
+    };
+
+    // Zoom to center of canvas
+    const zoomToCenter = (newScale) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const canvasCenterX = canvas.width / 2;
+        const canvasCenterY = canvas.height / 2;
+        
+        const scaleRatio = newScale / scaleFactor.current;
+        
+        offsetX.current = canvasCenterX - (canvasCenterX - offsetX.current) * scaleRatio;
+        offsetY.current = canvasCenterY - (canvasCenterY - offsetY.current) * scaleRatio;
+        
+        // Update the scale factor FIRST
+        scaleFactor.current = newScale;
+        // Mark that user has manually zoomed
+        isZoomed.current = true;
+        
+        // Update the state
+        setCurrentScaleFactor(newScale);
+        
+        // Redraw
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            console.log('Got canvas context, clearing and redrawing...');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Trigger a re-render
+            setForceRefresh(prev => prev + 1);
+        }
+    };
+
+    // Canvas dragging functions
+    const handleCanvasMouseDown = (e) => {
+        // Only start dragging if not in editing mode
+        if (isEditingMode) return;
+        
+        isDraggingCanvas.current = true;
+        isZoomed.current = true; // Mark that user has positioned the view
+        lastMousePos.current = { x: e.clientX, y: e.clientY };
+        e.preventDefault();
+    };
+
+    const handleCanvasMouseUp = () => {
+        isDraggingCanvas.current = false;
+    };
+
+    // Add global mouse up event listener for canvas dragging
+    useEffect(() => {
+        const handleGlobalMouseUp = () => {
+            isDraggingCanvas.current = false;
+        };
+        
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+        return () => {
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, []);
 
     // Handle room label position changes (optimized to avoid unnecessary re-renders)
     const handleRoomLabelPositionChange = (roomId, newPosition) => {
@@ -515,6 +649,11 @@ const Canvas2D = ({
 
     // Enhanced click handling with endpoint detection
     const handleCanvasClick = async (event) => {
+        // Don't handle clicks if we were dragging the canvas
+        if (isDraggingCanvas.current) {
+            return;
+        }
+        
         const { x, y } = getMousePos(event);
         console.log('Canvas clicked! Screen:', event.clientX, event.clientY, 'Model:', x, y, 'currentMode:', currentMode);
         if (!isEditingMode) return;
@@ -768,7 +907,23 @@ const Canvas2D = ({
 
 
     const handleMouseMove = (event) => {
-        if (!isEditingMode) return;
+        // Handle canvas dragging when not in editing mode
+        if (!isEditingMode) {
+            if (isDraggingCanvas.current) {
+                const deltaX = event.clientX - lastMousePos.current.x;
+                const deltaY = event.clientY - lastMousePos.current.y;
+                
+                offsetX.current += deltaX;
+                offsetY.current += deltaY;
+                
+                lastMousePos.current = { x: event.clientX, y: event.clientY };
+                
+                // Trigger a re-render
+                setForceRefresh(prev => prev + 1);
+            }
+            return;
+        }
+        
         if (currentMode === 'define-room') {
             setHoveredPoint(null); // Disable endpoint hover effect
             return;
@@ -1064,11 +1219,21 @@ const Canvas2D = ({
     const filteredDimensions = React.useMemo(() => {
         return filterDimensions(walls, intersections, wallPanelsMap);
     }, [walls, intersections, wallPanelsMap]);
+
+    // Calculate actual project dimensions from wall boundaries
+    const actualProjectDimensions = React.useMemo(() => {
+        return calculateActualProjectDimensions(walls);
+    }, [walls]);
+
+    // Compare actual vs declared dimensions
+    const dimensionComparison = React.useMemo(() => {
+        return compareDimensions(actualProjectDimensions, project);
+    }, [actualProjectDimensions, project]);
     
     useEffect(() => {
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
-        canvas.width = 800;
+        canvas.width = 1000;
         canvas.height = 600;
 
         // === Restore original scale/offset calculation ===
@@ -1087,16 +1252,41 @@ const Canvas2D = ({
             (canvas.height - 4 * padding) / wallHeight
         );
 
-        scaleFactor.current = sf;
-        setCurrentScaleFactor(sf);
+        // Only set the scale if user hasn't manually zoomed
+        if (!isZoomed.current) {
+            scaleFactor.current = sf;
+        }
+        initialScale.current = sf; // Always store the initial scale
+        setCurrentScaleFactor(scaleFactor.current);
 
-        offsetX.current = (canvas.width - wallWidth * sf) / 2 - minX * sf;
-        offsetY.current = (canvas.height - wallHeight * sf) / 2 - minY * sf;
+        // Only reset offset if user hasn't manually dragged the canvas or zoomed
+        if (!isDraggingCanvas.current && !isZoomed.current) {
+            offsetX.current = (canvas.width - wallWidth * sf) / 2 - minX * sf;
+            offsetY.current = (canvas.height - wallHeight * sf) / 2 - minY * sf;
+        }
         // === End scale/offset calculation ===
 
         context.clearRect(0, 0, canvas.width, canvas.height);
         // Draw grid
         drawGrid(context, canvas.width, canvas.height, gridSize, isDrawing);
+        
+        // Initialize label tracking arrays for collision detection
+        const placedLabels = [];
+        const allLabels = [];
+        
+        // Draw overall project dimensions first (highest priority)
+        if (walls.length > 0) {
+            drawOverallProjectDimensions(
+                context,
+                walls,
+                scaleFactor.current,
+                offsetX.current,
+                offsetY.current,
+                placedLabels, // Share the arrays for collision detection
+                allLabels
+            );
+        }
+        
         // Draw walls and get thickness color map
         const colorMap = drawWalls({
             context,
@@ -1126,10 +1316,13 @@ const Canvas2D = ({
             // Add these:
             wallPanelsMap,
             drawPanelDivisions,
-            filteredDimensions
+            filteredDimensions,
+            placedLabels, // Share collision detection arrays
+            allLabels
         });
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);
+        
         // Draw doors
         drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
         // Draw rooms
@@ -1210,6 +1403,28 @@ const Canvas2D = ({
                     </div>
                 </div>
             )}
+
+            {/* Dimension Warning Message */}
+            {dimensionComparison.exceeds && (
+                <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50 bg-orange-100 border border-orange-400 text-orange-700 px-4 py-3 rounded shadow-lg max-w-md">
+                    <div className="flex items-start">
+                        <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <div>
+                            <div className="font-medium mb-1">Project Dimensions Exceeded</div>
+                            <div className="text-sm">
+                                {dimensionComparison.warnings.map((warning, index) => (
+                                    <div key={index}>{warning}</div>
+                                ))}
+                            </div>
+                            <div className="text-xs mt-2 text-orange-600">
+                                💡 Purple dimensions show actual project size
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             
             <div className="flex gap-6 items-start">
                 {/* Canvas Container */}
@@ -1219,10 +1434,46 @@ const Canvas2D = ({
                         data-plan-type="wall"
                         onClick={handleCanvasClick}
                         onMouseMove={handleMouseMove}
+                        onMouseDown={handleCanvasMouseDown}
                         
                         tabIndex={0}
-                        className="border border-gray-300 bg-gray-50"
+                        className={`border border-gray-300 bg-gray-50 ${
+                            !isEditingMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+                        }`}
                     />
+                    
+                    {/* Zoom Controls Overlay */}
+                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                        <button
+                            onClick={handleZoomIn}
+                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                            title="Zoom In"
+                        >
+                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                            </svg>
+                        </button>
+                        
+                        <button
+                            onClick={handleZoomOut}
+                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                            title="Zoom Out"
+                        >
+                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
+                            </svg>
+                        </button>
+                        
+                        <button
+                            onClick={handleResetZoom}
+                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
+                            title="Reset Zoom"
+                        >
+                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
                     
                     {/* Interactive Room Labels */}
                     {roomLabelPositions.map((labelData) => (
@@ -1245,7 +1496,7 @@ const Canvas2D = ({
 
                 {/* Sidebar with Legend */}
                 {thicknessColorMap && thicknessColorMap.size > 1 && (
-                    <div className="flex-shrink-0 w-72">
+                    <div className="flex-shrink-0 w-48">
                         <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm sticky top-4">
                             <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
                                 <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

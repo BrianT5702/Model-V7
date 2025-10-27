@@ -807,6 +807,7 @@ const ProjectDetails = () => {
                                                 console.log('Ceiling plan generated:', ceilingPlan);
                                             }}
                                             updateSharedPanelData={projectDetails.updateSharedPanelData}
+                                            sharedPanelData={projectDetails.sharedPanelData}
                                         />
                                     )}
                                 </div>

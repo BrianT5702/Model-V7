@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import CeilingCanvas from '../canvas/CeilingCanvas';
 import api from '../../api/api';
 
-const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateSharedPanelData = null }) => {
+const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
     // Essential state for project-level ceiling planning
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState(null);
@@ -74,6 +74,45 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             loadProjectData();
         }
     }, [projectId]);
+    
+    // Restore support options from shared panel data when component mounts or shared data changes
+    useEffect(() => {
+        if (sharedPanelData) {
+            // Restore support options from shared panel data
+            if (sharedPanelData.supportType) {
+                setSupportType(sharedPanelData.supportType);
+            }
+            if (sharedPanelData.includeAccessories !== undefined) {
+                setNylonHangerOptions(prev => ({
+                    ...prev,
+                    includeAccessories: sharedPanelData.includeAccessories
+                }));
+            }
+            if (sharedPanelData.includeCable !== undefined) {
+                setNylonHangerOptions(prev => ({
+                    ...prev,
+                    includeCable: sharedPanelData.includeCable
+                }));
+            }
+            if (sharedPanelData.aluSuspensionCustomDrawing !== undefined) {
+                setAluSuspensionCustomDrawing(sharedPanelData.aluSuspensionCustomDrawing);
+            }
+            // panelsNeedSupport is computed from ceiling panels, no need to restore it
+        }
+    }, [sharedPanelData]);
+    
+    // Save support options to shared panel data whenever they change
+    useEffect(() => {
+        if (updateSharedPanelData) {
+            updateSharedPanelData('ceiling-support-options', null, {
+                supportType: supportType,
+                includeAccessories: nylonHangerOptions.includeAccessories,
+                includeCable: nylonHangerOptions.includeCable,
+                aluSuspensionCustomDrawing: aluSuspensionCustomDrawing,
+                panelsNeedSupport: panelsNeedSupport // This is computed, will be recalculated automatically
+            });
+        }
+    }, [updateSharedPanelData, supportType, nylonHangerOptions.includeAccessories, nylonHangerOptions.includeCable, aluSuspensionCustomDrawing]);
     
     // Sync room edit config when room is selected - use room's current ceiling plan settings if available
     useEffect(() => {
@@ -943,6 +982,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             showAllRooms={showAllRooms}
                             onRoomSelect={handleRoomSelection}
                             onRoomDeselect={handleRoomDeselection}
+                            // Add updateSharedPanelData prop to pass support options
+                            updateSharedPanelData={updateSharedPanelData}
                         />
                         
                         {/* Success Message */}

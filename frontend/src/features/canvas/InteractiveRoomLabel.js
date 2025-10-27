@@ -216,6 +216,22 @@ const InteractiveRoomLabel = ({
         }
     }, [isDragging]);
 
+    // Check if label is out of bounds (assuming canvas dimensions)
+    const canvasWidth = 1000; // Match the canvas width from Canvas2D
+    const canvasHeight = 600; // Match the canvas height from Canvas2D
+    const labelWidth = 200; // Approximate label width
+    const labelHeight = 60; // Approximate label height
+    
+    const isOutOfBounds = canvasX < -labelWidth/2 || 
+                         canvasX > canvasWidth + labelWidth/2 || 
+                         canvasY < -labelHeight/2 || 
+                         canvasY > canvasHeight + labelHeight/2;
+    
+    // Don't render if out of bounds
+    if (isOutOfBounds) {
+        return null;
+    }
+
     return (
         <div
             ref={labelRef}
