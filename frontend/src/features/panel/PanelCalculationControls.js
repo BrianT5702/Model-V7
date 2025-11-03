@@ -34,9 +34,9 @@ const PanelCalculationControls = ({
     // Helper to generate CSV string from calculatedPanels
     const getCSVString = () => {
         if (!calculatedPanels) return '';
-        const header = 'Width,Length,Application,Quantity,Type';
+        const header = 'Width,Length,Thickness,Application,Quantity,Type';
         const rows = calculatedPanels.map(panel =>
-            `${panel.width},${panel.length},${panel.application},${panel.quantity},${panel.type}`
+            `${panel.width},${panel.length},${panel.thickness || 'N/A'},${panel.application},${panel.quantity},${panel.type}`
         );
         return [header, ...rows].join('\n');
     };
@@ -50,6 +50,7 @@ const PanelCalculationControls = ({
                     <tr style={{ background: '#f3f3f3' }}>
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Width</th>
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Length</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Thickness</th>
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Application</th>
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Quantity</th>
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Type</th>
@@ -60,6 +61,7 @@ const PanelCalculationControls = ({
                         <tr key={idx}>
                             <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.width}</td>
                             <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.length}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.thickness || 'N/A'}</td>
                             <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.application}</td>
                             <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.quantity}</td>
                             <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.type}</td>
@@ -77,6 +79,7 @@ const PanelCalculationControls = ({
             <tr>
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Width</th>
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Length</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Thickness</th>
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Application</th>
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Quantity</th>
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Type</th>
@@ -86,6 +89,7 @@ const PanelCalculationControls = ({
             <tr>
                 <td style="border:1px solid #ccc;padding:4px;">${panel.width}</td>
                 <td style="border:1px solid #ccc;padding:4px;">${panel.length}</td>
+                <td style="border:1px solid #ccc;padding:4px;">${panel.thickness || 'N/A'}</td>
                 <td style="border:1px solid #ccc;padding:4px;">${panel.application}</td>
                 <td style="border:1px solid #ccc;padding:4px;">${panel.quantity}</td>
                 <td style="border:1px solid #ccc;padding:4px;">${panel.type}</td>
@@ -311,11 +315,16 @@ const PanelCalculationControls = ({
                 return;
             }
             
+            // Use gap_fill_height for calculations if gap-fill mode is enabled
+            const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null) 
+                ? wall.gap_fill_height 
+                : wall.height;
+            
             const panels = calculator.calculatePanels(
                 wallLength,
                 wall.thickness,
                 { left: leftJointType, right: rightJointType },
-                wall.height
+                heightForCalc
             );
 
             // Validate panels array
@@ -338,9 +347,10 @@ const PanelCalculationControls = ({
                 allPanels.push({
                     ...panel,
                     type: panelType,
-                    length: wall.height,
+                    length: heightForCalc, // Use the same height used for calculations
                     application: wall.application_type || 'standard',
                     wallId: wall.id,
+                    thickness: wall.thickness,
                     wallLength: wallLength,
                     wallStart: `(${Math.round(wall.start_x)}, ${Math.round(wall.start_y)})`,
                     wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`
@@ -357,11 +367,12 @@ const PanelCalculationControls = ({
         if (updateSharedPanelData) {
             // Group panels by dimensions and application for sharing (matches table structure)
             const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
-                const key = `${panel.width}-${panel.length}-${panel.application}`;
+                const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}`;
                 if (!acc[key]) {
                     acc[key] = {
                         width: panel.width,
                         length: panel.length,
+                        thickness: panel.thickness,
                         application: panel.application,
                         quantity: 0,
                         type: panel.type
@@ -376,11 +387,12 @@ const PanelCalculationControls = ({
 
         // Group panels by dimensions and application
         const groupedPanels = allPanels.reduce((acc, panel) => {
-            const key = `${panel.width}-${panel.length}-${panel.application}`;
+            const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}`;
             if (!acc[key]) {
                 acc[key] = {
                     width: panel.width,
                     length: panel.length,
+                    thickness: panel.thickness,
                     application: panel.application,
                     quantity: 0,
                     type: panel.type
@@ -640,21 +652,41 @@ const PanelCalculationControls = ({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {panelCalculator.leftovers.map((leftover, index) => (
-                                        <tr key={leftover.id} className="hover:bg-gray-50">
-                                            <td className="px-4 py-2 border text-center">{index + 1}</td>
-                                            <td className="px-4 py-2 border text-center">{leftover.shorter_face}</td>
-                                            <td className="px-4 py-2 border text-center">{leftover.longer_face}</td>
-                                            <td className="px-4 py-2 border text-center">{leftover.panelLength || walls[0]?.height || 'N/A'}</td>
-                                            <td className="px-4 py-2 border text-center">{leftover.wallThickness}</td>
-                                            <td className="px-4 py-2 border text-center">
-                                                {`Left: ${leftover.leftEdgeType === '45_cut' ? '45° Cut' : 'Straight'}, Right: ${leftover.rightEdgeType === '45_cut' ? '45° Cut' : 'Straight'}`}
-                                            </td>
-                                            <td className="px-4 py-2 border text-center">
-                                                {walls[0]?.project_name || 'N/A'}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {panelCalculator.leftovers.map((leftover, index) => {
+                                        // Safely get panel length, with fallback
+                                        // First try leftover.panelLength, then find matching wall and use gap_fill_height if available
+                                        let panelLength = leftover.panelLength;
+                                        if (!panelLength) {
+                                            const matchingWall = walls.find(w => w.thickness === leftover.wallThickness);
+                                            if (matchingWall) {
+                                                panelLength = (matchingWall.fill_gap_mode && matchingWall.gap_fill_height) 
+                                                    ? matchingWall.gap_fill_height 
+                                                    : matchingWall.height;
+                                            }
+                                        }
+                                        panelLength = panelLength || 'N/A';
+                                        const shorterFace = leftover.shorter_face || 0;
+                                        const longerFace = leftover.longer_face || 0;
+                                        const wallThickness = leftover.wallThickness || 'N/A';
+                                        const leftEdge = leftover.leftEdgeType === '45_cut' ? '45° Cut' : 'Straight';
+                                        const rightEdge = leftover.rightEdgeType === '45_cut' ? '45° Cut' : (leftover.rightEdgeType || 'Straight');
+                                        
+                                        return (
+                                            <tr key={leftover.id} className="hover:bg-gray-50">
+                                                <td className="px-4 py-2 border text-center">{index + 1}</td>
+                                                <td className="px-4 py-2 border text-center">{shorterFace}</td>
+                                                <td className="px-4 py-2 border text-center">{longerFace}</td>
+                                                <td className="px-4 py-2 border text-center">{panelLength}</td>
+                                                <td className="px-4 py-2 border text-center">{wallThickness}</td>
+                                                <td className="px-4 py-2 border text-center">
+                                                    {`Left: ${leftEdge}, Right: ${rightEdge}`}
+                                                </td>
+                                                <td className="px-4 py-2 border text-center">
+                                                    {project?.name || 'N/A'}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

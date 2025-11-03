@@ -814,6 +814,10 @@ const Canvas2D = ({
             let closestWallId = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor.current;
             walls.forEach((wall) => {
+                // Skip walls with fill gap mode enabled
+                if (wall.fill_gap_mode) {
+                    return;
+                }
                 const segmentPoint = snapToWallSegment(x, y, wall);
                 if (segmentPoint) {
                     const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
@@ -953,6 +957,10 @@ const Canvas2D = ({
             let minWallDistance = SNAP_THRESHOLD / scaleFactor.current;
             let newHoveredWall = null;
             walls.forEach((wall) => {
+                // Skip walls with fill gap mode enabled when in add-door mode
+                if (currentMode === 'add-door' && wall.fill_gap_mode) {
+                    return;
+                }
                 const segmentPoint = snapToWallSegment(x, y, wall);
                 if (segmentPoint) {
                     const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
@@ -1191,10 +1199,15 @@ const Canvas2D = ({
                 Math.pow(wall.end_x - wall.start_x, 2) + 
                 Math.pow(wall.end_y - wall.start_y, 2)
             );
+            // Use gap_fill_height for calculations if gap-fill mode is enabled
+            const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null) 
+                ? wall.gap_fill_height 
+                : wall.height;
             let panels = calculator.calculatePanels(
                 wallLength,
                 wall.thickness,
-                jointTypes
+                jointTypes,
+                heightForCalc
             );
             // Reorder: left side panel (if any), then full panels, then right side panel (if any)
             const leftSide = panels.find(p => p.type === 'side' && p.position === 'left');
@@ -1229,6 +1242,38 @@ const Canvas2D = ({
     const dimensionComparison = React.useMemo(() => {
         return compareDimensions(actualProjectDimensions, project);
     }, [actualProjectDimensions, project]);
+
+    // Auto-update project dimensions when actual exceeds declared
+    useEffect(() => {
+        const updateProjectDimensions = async () => {
+            if (!project || !dimensionComparison.exceeds || !actualProjectDimensions) return;
+            
+            // Only update width and length (height stays the same)
+            const newWidth = Math.max(project.width, actualProjectDimensions.width);
+            const newLength = Math.max(project.length, actualProjectDimensions.length);
+            
+            // Only update if there's an actual change needed
+            if (newWidth > project.width || newLength > project.length) {
+                try {
+                    console.log('🔄 Auto-updating project dimensions due to wall exceedance');
+                    console.log(`📐 Old: ${project.width}×${project.length}mm → New: ${newWidth}×${newLength}mm`);
+                    
+                    await api.put(`/projects/${projectId}/`, {
+                        ...project,
+                        width: newWidth,
+                        length: newLength,
+                        height: project.height
+                    });
+                    
+                    console.log('✅ Project dimensions updated successfully');
+                } catch (error) {
+                    console.error('❌ Failed to update project dimensions:', error);
+                }
+            }
+        };
+        
+        updateProjectDimensions();
+    }, [dimensionComparison.exceeds, actualProjectDimensions, project, projectId]);
     
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -1652,7 +1697,7 @@ const Canvas2D = ({
             {/* Panel Calculation Controls */}
             <PanelCalculationControls 
                 walls={walls} 
-                intersections={joints}
+                intersections={intersections}
                 doors={doors}
                 showMaterialDetails={showMaterialDetails}
                 toggleMaterialDetails={toggleMaterialDetails}

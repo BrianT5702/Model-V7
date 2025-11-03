@@ -25761,3 +25761,1156 @@ INFO 2025-10-22 12:15:42,691 services 24132 20212 [COMBO-TEST] Leftover created:
 INFO 2025-10-22 12:15:42,691 services 24132 20212 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
 INFO 2025-10-22 12:15:42,700 services 24132 20212 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
 INFO 2025-10-22 12:15:42,705 services 24132 20212 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-10-27 14:59:38,108 autoreload 22448 6136 Watching for file changes with StatReloader
+INFO 2025-10-27 15:00:36,679 services 22448 23112 calculate_minimum_wall_height called with wall_ids: [6277, 6273]
+INFO 2025-10-27 15:00:36,679 services 22448 23112 Converted wall_ids to integers: [6277, 6273]
+INFO 2025-10-27 15:00:36,717 services 22448 23112 Found 2 walls
+INFO 2025-10-27 15:00:36,718 services 22448 23112 Calculated minimum wall height: 3500.0
+INFO 2025-10-27 15:00:49,061 views 22448 23112 Creating room with data: {'room_name': 'Room 1', 'floor_type': 'Panel', 'floor_thickness': '50', 'temperature': 10, 'height': 3500, 'remarks': '', 'walls': [6277, 6273, 6279, 6280], 'project': '440', 'room_points': [{'x': 7513, 'y': 0}, {'x': 15000, 'y': 0}, {'x': 15000, 'y': 10000}, {'x': 7513, 'y': 10000}]}
+INFO 2025-10-27 15:00:49,061 services 22448 23112 create_room_with_height called with room_data: {'room_name': 'Room 1', 'floor_type': 'Panel', 'floor_thickness': '50', 'temperature': 10, 'height': 3500, 'remarks': '', 'walls': [6277, 6273, 6279, 6280], 'project': '440', 'room_points': [{'x': 7513, 'y': 0}, {'x': 15000, 'y': 0}, {'x': 15000, 'y': 10000}, {'x': 7513, 'y': 10000}]}
+INFO 2025-10-27 15:00:49,100 services 22448 23112 Created room with ID: 181, height: 3500
+INFO 2025-10-27 15:00:49,100 services 22448 23112 Adding 4 walls to room and updating heights
+INFO 2025-10-27 15:00:49,100 services 22448 23112 Converted wall IDs: [6277, 6273, 6279, 6280]
+INFO 2025-10-27 15:00:49,102 services 22448 23112 Found 4 walls to add to room
+INFO 2025-10-27 15:00:49,109 services 22448 23112 Added walls to room 181
+INFO 2025-10-27 15:00:49,109 services 22448 23112 update_wall_heights_for_room called with wall_ids: [6277, 6273, 6279, 6280], new_height: 3500
+INFO 2025-10-27 15:00:49,109 services 22448 23112 Converted wall_ids to integers: [6277, 6273, 6279, 6280]
+INFO 2025-10-27 15:00:49,110 services 22448 23112 Found 4 walls to update
+INFO 2025-10-27 15:00:49,111 services 22448 23112 Wall 6273: current height = 3500.0
+INFO 2025-10-27 15:00:49,111 services 22448 23112 Wall 6277: current height = 3500.0
+INFO 2025-10-27 15:00:49,111 services 22448 23112 Wall 6279: current height = 3500.0
+INFO 2025-10-27 15:00:49,112 services 22448 23112 Wall 6280: current height = 3500.0
+INFO 2025-10-27 15:00:49,112 services 22448 23112 Updated 4 walls to height 3500
+INFO 2025-10-27 15:00:49,113 services 22448 23112 Wall 6273: new height = 3500.0
+INFO 2025-10-27 15:00:49,113 services 22448 23112 Wall 6277: new height = 3500.0
+INFO 2025-10-27 15:00:49,113 services 22448 23112 Wall 6279: new height = 3500.0
+INFO 2025-10-27 15:00:49,113 services 22448 23112 Wall 6280: new height = 3500.0
+INFO 2025-10-27 15:00:49,114 services 22448 23112 Updated 4 walls for room 181
+INFO 2025-10-27 15:00:49,114 views 22448 23112 Successfully created room 181 with height 3500
+INFO 2025-10-27 15:01:01,631 services 22448 23112 calculate_minimum_wall_height called with wall_ids: [6276, 6280]
+INFO 2025-10-27 15:01:01,631 services 22448 23112 Converted wall_ids to integers: [6276, 6280]
+INFO 2025-10-27 15:01:01,669 services 22448 23112 Found 2 walls
+INFO 2025-10-27 15:01:01,671 services 22448 23112 Calculated minimum wall height: 3500.0
+INFO 2025-10-27 15:01:17,916 views 22448 23112 Creating room with data: {'room_name': 'Room 2', 'floor_type': 'Panel', 'floor_thickness': '75', 'temperature': -10, 'height': 5000, 'remarks': '', 'walls': [6276, 6280, 6278, 6275], 'project': '440', 'room_points': [{'x': 0, 'y': 0}, {'x': 7513, 'y': 0}, {'x': 7513, 'y': 10000}, {'x': 0, 'y': 10000}]}
+INFO 2025-10-27 15:01:17,917 services 22448 23112 create_room_with_height called with room_data: {'room_name': 'Room 2', 'floor_type': 'Panel', 'floor_thickness': '75', 'temperature': -10, 'height': 5000, 'remarks': '', 'walls': [6276, 6280, 6278, 6275], 'project': '440', 'room_points': [{'x': 0, 'y': 0}, {'x': 7513, 'y': 0}, {'x': 7513, 'y': 10000}, {'x': 0, 'y': 10000}]}
+INFO 2025-10-27 15:01:17,956 services 22448 23112 Created room with ID: 182, height: 5000
+INFO 2025-10-27 15:01:17,957 services 22448 23112 Adding 4 walls to room and updating heights
+INFO 2025-10-27 15:01:17,957 services 22448 23112 Converted wall IDs: [6276, 6280, 6278, 6275]
+INFO 2025-10-27 15:01:17,959 services 22448 23112 Found 4 walls to add to room
+INFO 2025-10-27 15:01:17,964 services 22448 23112 Added walls to room 182
+INFO 2025-10-27 15:01:17,964 services 22448 23112 update_wall_heights_for_room called with wall_ids: [6276, 6280, 6278, 6275], new_height: 5000
+INFO 2025-10-27 15:01:17,964 services 22448 23112 Converted wall_ids to integers: [6276, 6280, 6278, 6275]
+INFO 2025-10-27 15:01:17,965 services 22448 23112 Found 4 walls to update
+INFO 2025-10-27 15:01:17,965 services 22448 23112 Wall 6275: current height = 3500.0
+INFO 2025-10-27 15:01:17,966 services 22448 23112 Wall 6280: current height = 3500.0
+INFO 2025-10-27 15:01:17,966 services 22448 23112 Wall 6276: current height = 3500.0
+INFO 2025-10-27 15:01:17,966 services 22448 23112 Wall 6278: current height = 3500.0
+INFO 2025-10-27 15:01:17,967 services 22448 23112 Updated 4 walls to height 5000
+INFO 2025-10-27 15:01:17,967 services 22448 23112 Wall 6275: new height = 5000.0
+INFO 2025-10-27 15:01:17,967 services 22448 23112 Wall 6280: new height = 5000.0
+INFO 2025-10-27 15:01:17,968 services 22448 23112 Wall 6276: new height = 5000.0
+INFO 2025-10-27 15:01:17,968 services 22448 23112 Wall 6278: new height = 5000.0
+INFO 2025-10-27 15:01:17,968 services 22448 23112 Updated 4 walls for room 182
+INFO 2025-10-27 15:01:17,968 views 22448 23112 Successfully created room 182 with height 5000
+INFO 2025-10-27 15:01:34,010 services 22448 23112 Recalculating room boundary for room 181
+INFO 2025-10-27 15:01:34,014 services 22448 23112 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-10-27 15:01:34,015 services 22448 23112 Recalculating room boundary for room 182
+INFO 2025-10-27 15:01:34,017 services 22448 23112 Updated room 182 boundary with 4 points (order preserved)
+WARNING 2025-10-27 15:03:01,751 log 22448 22824 Not Found: /favicon.ico
+INFO 2025-10-27 15:05:03,240 services 22448 23112 Recalculating room boundary for room 181
+INFO 2025-10-27 15:05:03,244 services 22448 23112 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-10-27 15:05:03,244 services 22448 23112 Recalculating room boundary for room 182
+INFO 2025-10-27 15:05:03,246 services 22448 23112 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-10-27 15:05:18,054 services 22448 23112 Recalculating room boundary for room 181
+INFO 2025-10-27 15:05:18,058 services 22448 23112 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-10-27 15:05:18,058 services 22448 23112 Recalculating room boundary for room 182
+INFO 2025-10-27 15:05:18,060 services 22448 23112 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-10-27 15:09:01,306 services 22448 23112 Recalculating room boundary for room 182
+INFO 2025-10-27 15:09:01,311 services 22448 23112 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-10-27 15:51:21,910 services 22448 24952 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:21,910 services 22448 24952 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:21,911 services 22448 24952 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:21,911 services 22448 24952 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:22,208 services 22448 24952 [COMBO-TEST] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:22,212 services 22448 24952 [COMBO-TEST] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:22,222 services 22448 24952 [COMBO-TEST] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:22,230 services 22448 24952 [COMBO-TEST] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-27 15:51:26,140 services 22448 24952 [ANALYSIS-H] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,140 services 22448 24952 [ANALYSIS-V] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,140 services 22448 24952 [ANALYSIS-H-EVAL] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,141 services 22448 24952 [ANALYSIS-V-EVAL] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,141 services 22448 24952 [ANALYSIS-BEST] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,142 services 22448 24952 [ANALYSIS-H] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,142 services 22448 24952 [ANALYSIS-V] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,142 services 22448 24952 [ANALYSIS-H-EVAL] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,142 services 22448 24952 [ANALYSIS-V-EVAL] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,142 services 22448 24952 [ANALYSIS-BEST] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,148 services 22448 24952 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,148 services 22448 24952 [COMBO-TEST-FLOOR] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,151 services 22448 24952 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,151 services 22448 24952 [COMBO-TEST-FLOOR] Compatible leftover found: 740.0mm × 3540.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-27 15:51:26,151 services 22448 24952 [COMBO-TEST-FLOOR] Using leftover 1761551486151_0: 370.0mm from 740.0mm, remaining: 370.0mm
+INFO 2025-10-27 15:51:26,154 services 22448 24952 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,155 services 22448 24952 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 400.0mm × 3820.0mm)
+INFO 2025-10-27 15:51:26,155 services 22448 24952 [COMBO-TEST-FLOOR] Using leftover 1761551486154_0: 400.0mm from 1060.0mm, remaining: 660.0mm
+INFO 2025-10-27 15:51:26,155 services 22448 24952 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-27 15:51:26,155 services 22448 24952 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-27 15:51:26,155 services 22448 24952 [COMBO-TEST-FLOOR] Using leftover 1761551486155_0: 370.0mm from 1060.0mm, remaining: 690.0mm
+INFO 2025-10-27 16:31:08,080 services 22448 17724 Recalculating room boundary for room 182
+INFO 2025-10-27 16:31:08,087 services 22448 17724 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-10-27 20:09:38,441 services 22448 17008 Recalculating room boundary for room 182
+INFO 2025-10-27 20:09:38,445 services 22448 17008 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-10-27 20:09:46,209 services 22448 21744 Recalculating room boundary for room 181
+INFO 2025-10-27 20:09:46,213 services 22448 21744 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-10-27 20:10:20,609 autoreload 22448 6136 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py changed, reloading.
+INFO 2025-10-27 20:10:22,410 autoreload 17128 24904 Watching for file changes with StatReloader
+INFO 2025-10-27 20:28:30,448 autoreload 17128 24904 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-27 20:28:31,174 autoreload 26388 15364 Watching for file changes with StatReloader
+INFO 2025-10-27 20:32:27,589 autoreload 26388 15364 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-27 20:32:28,604 autoreload 13864 7172 Watching for file changes with StatReloader
+INFO 2025-10-27 20:33:55,983 autoreload 13864 7172 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-27 20:33:56,763 autoreload 19052 17704 Watching for file changes with StatReloader
+INFO 2025-10-27 20:34:18,253 autoreload 19052 17704 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\models.py changed, reloading.
+INFO 2025-10-27 20:34:19,030 autoreload 13564 21204 Watching for file changes with StatReloader
+INFO 2025-10-27 20:34:56,116 autoreload 13564 21204 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-10-27 20:34:56,849 autoreload 7500 19712 Watching for file changes with StatReloader
+INFO 2025-10-27 20:42:23,259 autoreload 7500 19712 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-27 20:42:24,244 autoreload 4800 5884 Watching for file changes with StatReloader
+INFO 2025-10-27 21:07:37,091 autoreload 4800 5884 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py changed, reloading.
+INFO 2025-10-27 21:07:38,213 autoreload 21584 14856 Watching for file changes with StatReloader
+INFO 2025-10-27 21:16:53,829 autoreload 21584 14856 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-10-27 21:16:55,198 autoreload 7488 16580 Watching for file changes with StatReloader
+INFO 2025-10-29 09:01:46,753 autoreload 21080 21160 Watching for file changes with StatReloader
+WARNING 2025-10-29 09:02:13,629 log 21080 19720 Not Found: /favicon.ico
+INFO 2025-10-29 09:19:46,977 services 21080 14900 [ANALYSIS-H] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,977 services 21080 14900 [ANALYSIS-V] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,978 services 21080 14900 [ANALYSIS-H-EVAL] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,978 services 21080 14900 [ANALYSIS-V-EVAL] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,978 services 21080 14900 [ANALYSIS-BEST] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,980 services 21080 14900 [ANALYSIS-H] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,980 services 21080 14900 [ANALYSIS-V] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,980 services 21080 14900 [ANALYSIS-H-EVAL] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,981 services 21080 14900 [ANALYSIS-V-EVAL] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:46,981 services 21080 14900 [ANALYSIS-BEST] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:47,241 services 21080 14900 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:47,241 services 21080 14900 [COMBO-TEST-FLOOR] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:47,245 services 21080 14900 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:47,245 services 21080 14900 [COMBO-TEST-FLOOR] Compatible leftover found: 740.0mm × 3540.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-29 09:19:47,245 services 21080 14900 [COMBO-TEST-FLOOR] Using leftover 1761700787245_0: 370.0mm from 740.0mm, remaining: 370.0mm
+INFO 2025-10-29 09:19:47,249 services 21080 14900 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:47,250 services 21080 14900 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 400.0mm × 3820.0mm)
+INFO 2025-10-29 09:19:47,250 services 21080 14900 [COMBO-TEST-FLOOR] Using leftover 1761700787249_0: 400.0mm from 1060.0mm, remaining: 660.0mm
+INFO 2025-10-29 09:19:47,250 services 21080 14900 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-29 09:19:47,250 services 21080 14900 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-29 09:19:47,251 services 21080 14900 [COMBO-TEST-FLOOR] Using leftover 1761700787250_0: 370.0mm from 1060.0mm, remaining: 690.0mm
+INFO 2025-10-31 12:07:39,522 autoreload 2724 16484 Watching for file changes with StatReloader
+INFO 2025-10-31 12:08:04,851 services 2724 9788 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:04,851 services 2724 9788 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:04,851 services 2724 9788 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:04,852 services 2724 9788 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:05,096 services 2724 9788 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:05,100 services 2724 9788 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:05,113 services 2724 9788 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:05,117 services 2724 9788 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,810 services 2724 9788 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,810 services 2724 9788 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,811 services 2724 9788 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,811 services 2724 9788 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,816 services 2724 9788 [COMBO-TEST] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,821 services 2724 9788 [COMBO-TEST] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,830 services 2724 9788 [COMBO-TEST] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:24,836 services 2724 9788 [COMBO-TEST] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:25,719 services 2724 9788 [ANALYSIS-H] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,719 services 2724 9788 [ANALYSIS-V] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,719 services 2724 9788 [ANALYSIS-H-EVAL] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,719 services 2724 9788 [ANALYSIS-V-EVAL] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,719 services 2724 9788 [ANALYSIS-BEST] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,721 services 2724 9788 [ANALYSIS-H] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,722 services 2724 9788 [ANALYSIS-V] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,722 services 2724 9788 [ANALYSIS-H-EVAL] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,722 services 2724 9788 [ANALYSIS-V-EVAL] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,722 services 2724 9788 [ANALYSIS-BEST] Leftover created: 780.0mm × 2700.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,729 services 2724 9788 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,730 services 2724 9788 [COMBO-TEST-FLOOR] Leftover created: 750.0mm × 3820.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,734 services 2724 9788 [COMBO-TEST-FLOOR] Leftover created: 740.0mm × 3540.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,735 services 2724 9788 [COMBO-TEST-FLOOR] Compatible leftover found: 740.0mm × 3540.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-31 12:08:25,735 services 2724 9788 [COMBO-TEST-FLOOR] Using leftover 1761883705734_0: 370.0mm from 740.0mm, remaining: 370.0mm
+INFO 2025-10-31 12:08:25,739 services 2724 9788 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,739 services 2724 9788 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 400.0mm × 3820.0mm)
+INFO 2025-10-31 12:08:25,739 services 2724 9788 [COMBO-TEST-FLOOR] Using leftover 1761883705739_0: 400.0mm from 1060.0mm, remaining: 660.0mm
+INFO 2025-10-31 12:08:25,739 services 2724 9788 [COMBO-TEST-FLOOR] Leftover created: 1060.0mm × 3860.0mm (thickness: 75.0mm)
+INFO 2025-10-31 12:08:25,740 services 2724 9788 [COMBO-TEST-FLOOR] Compatible leftover found: 1060.0mm × 3860.0mm (needed: 370.0mm × 2700.0mm)
+INFO 2025-10-31 12:08:25,740 services 2724 9788 [COMBO-TEST-FLOOR] Using leftover 1761883705739_0: 370.0mm from 1060.0mm, remaining: 690.0mm
+INFO 2025-10-31 12:08:52,953 services 2724 20276 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:52,955 services 2724 20276 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:52,955 services 2724 20276 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:52,955 services 2724 20276 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:52,958 services 2724 20276 [COMBO-TEST] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:52,962 services 2724 20276 [COMBO-TEST] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:52,971 services 2724 20276 [COMBO-TEST] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:52,974 services 2724 20276 [COMBO-TEST] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,419 services 2724 20276 [ANALYSIS-V] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,419 services 2724 20276 [ANALYSIS-V] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,420 services 2724 20276 [ANALYSIS-H] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,420 services 2724 20276 [ANALYSIS-H] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,424 services 2724 20276 [COMBO-TEST] Leftover created: 540.0mm × 3740.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,429 services 2724 20276 [COMBO-TEST] Leftover created: 860.0mm × 4060.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,438 services 2724 20276 [COMBO-TEST] Leftover created: 550.0mm × 4020.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,442 services 2724 20276 [COMBO-TEST] Leftover created: 580.0mm × 2900.0mm (thickness: 20.0mm)
+INFO 2025-10-31 12:08:56,452 services 2724 20276 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-10-31 12:08:56,452 services 2724 20276 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-10-31 12:08:56,452 services 2724 20276   Processing room 156: Freezer 1(RAW MATERIAL)
+INFO 2025-10-31 12:08:56,453 services 2724 20276   Generating vertical panels for room 156
+INFO 2025-10-31 12:08:56,454 services 2724 20276 [GENERATION] Leftover created: 540.0mm × 3740.0mm (thickness: 250mm)
+INFO 2025-10-31 12:08:56,454 services 2724 20276   Generated 4 panels for room 156
+INFO 2025-10-31 12:08:56,454 services 2724 20276   Processing room 157: Prep Room (MEAT)
+INFO 2025-10-31 12:08:56,455 services 2724 20276   Generating horizontal panels for room 157
+INFO 2025-10-31 12:08:56,455 services 2724 20276 [GENERATION] Leftover created: 580.0mm × 2900.0mm (thickness: 250mm)
+INFO 2025-10-31 12:08:56,456 services 2724 20276   Generated 4 panels for room 157
+INFO 2025-10-31 12:08:56,456 services 2724 20276 _generate_enhanced_room_panels: Total panels generated: 8
+INFO 2025-10-31 12:08:56,456 services 2724 20276 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 3701600.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1761883736454_0', 'length': 3740.0, 'thickness': 250, 'width': 540.0, 'created_at': 1761883736.454245}, {'id': '1761883736455_1', 'length': 2900.0, 'thickness': 250, 'width': 580.0, 'created_at': 1761883736.455748}]}
+INFO 2025-11-01 14:20:25,707 autoreload 11896 19464 Watching for file changes with StatReloader
+INFO 2025-11-01 14:22:49,270 services 11896 22636 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:49,270 services 11896 22636 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:49,270 services 11896 22636 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:49,272 services 11896 22636 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:49,479 services 11896 22636 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:49,483 services 11896 22636 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:49,495 services 11896 22636 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:49,498 services 11896 22636 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:22:50,023 services 11896 22636 [ANALYSIS-H] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,023 services 11896 22636 [ANALYSIS-V] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,024 services 11896 22636 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,024 services 11896 22636 [ANALYSIS-V-EVAL] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,024 services 11896 22636 [ANALYSIS-BEST] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,025 services 11896 22636 [ANALYSIS-H] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-01 14:22:50,025 services 11896 22636 [ANALYSIS-V] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-01 14:22:50,025 services 11896 22636 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-01 14:22:50,025 services 11896 22636 [ANALYSIS-V-EVAL] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-01 14:22:50,025 services 11896 22636 [ANALYSIS-BEST] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-01 14:22:50,032 services 11896 22636 [COMBO-TEST-FLOOR] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,032 services 11896 22636 [COMBO-TEST-FLOOR] Compatible leftover found: 837.0mm × 9700.0mm (needed: 287.0mm × 9700.0mm)
+INFO 2025-11-01 14:22:50,032 services 11896 22636 [COMBO-TEST-FLOOR] Using leftover 1761978170032_0: 287.0mm from 837.0mm, remaining: 550.0mm
+INFO 2025-11-01 14:22:50,036 services 11896 22636 [COMBO-TEST-FLOOR] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,036 services 11896 22636 [COMBO-TEST-FLOOR] Compatible leftover found: 837.0mm × 9700.0mm (needed: 500.0mm × 7187.0mm)
+INFO 2025-11-01 14:22:50,036 services 11896 22636 [COMBO-TEST-FLOOR] Using leftover 1761978170036_0: 500.0mm from 837.0mm, remaining: 337.0mm
+INFO 2025-11-01 14:22:50,037 services 11896 22636 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,037 services 11896 22636 [COMBO-TEST-FLOOR] Leftover created: 863.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,037 services 11896 22636 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-01 14:22:50,037 services 11896 22636 [COMBO-TEST-FLOOR] Compatible leftover found: 650.0mm × 7213.0mm (needed: 500.0mm × 7187.0mm)
+INFO 2025-11-01 14:22:50,037 services 11896 22636 [COMBO-TEST-FLOOR] Using leftover 1761978170037_0: 500.0mm from 650.0mm, remaining: 150.0mm
+INFO 2025-11-01 14:24:47,952 services 11896 22636 [ANALYSIS-V] Leftover created: 1100.0mm × 20000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:24:47,953 services 11896 22636 [ANALYSIS-H] Leftover created: 700.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:24:47,956 services 11896 22636 [COMBO-TEST] Leftover created: 1100.0mm × 20000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:24:47,961 services 11896 22636 [COMBO-TEST] Leftover created: 700.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:38:03,962 services 11896 22636 [ANALYSIS-V] Leftover created: 1100.0mm × 20000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:38:03,962 services 11896 22636 [ANALYSIS-H] Leftover created: 700.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:38:03,966 services 11896 22636 [COMBO-TEST] Leftover created: 1100.0mm × 20000.0mm (thickness: 20.0mm)
+INFO 2025-11-01 14:38:03,970 services 11896 22636 [COMBO-TEST] Leftover created: 700.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:53:01,485 autoreload 18784 18756 Watching for file changes with StatReloader
+INFO 2025-11-03 08:54:12,551 services 18784 20260 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:54:12,552 services 18784 20260 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:54:12,552 services 18784 20260 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:54:12,552 services 18784 20260 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:54:12,777 services 18784 20260 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:54:12,781 services 18784 20260 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:54:12,795 services 18784 20260 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:54:12,800 services 18784 20260 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:57:40,103 views 18784 23912 Updating room with data: {'id': 181, 'walls': [6277, 6279, 6273, 6280], 'ceiling_plan': None, 'room_name': 'Room 1', 'floor_type': 'Panel', 'floor_thickness': 50, 'temperature': '10.00', 'height': 3500, 'remarks': '', 'room_points': [{'x': 7513, 'y': 0}, {'x': 15000, 'y': 0}, {'x': 15000, 'y': 10000}, {'x': 7513, 'y': 10000}], 'label_position': {'x': 11556.5, 'y': 4825}, 'project': 440}
+INFO 2025-11-03 08:57:40,210 views 18784 23912 Found room to update: 181, current height: 3500.0
+INFO 2025-11-03 08:57:40,253 views 18784 23912 Updated room height to: 3500.0
+INFO 2025-11-03 08:57:40,254 views 18784 23912 Updating 4 walls with new height: 3500
+INFO 2025-11-03 08:57:40,254 services 18784 23912 update_wall_heights_for_room called with wall_ids: [6273, 6277, 6279, 6280], new_height: 3500
+INFO 2025-11-03 08:57:40,255 services 18784 23912 Converted wall_ids to integers: [6273, 6277, 6279, 6280]
+INFO 2025-11-03 08:57:40,262 services 18784 23912 Found 4 walls to update
+INFO 2025-11-03 08:57:40,263 services 18784 23912 Wall 6277: current height = 3500.0
+INFO 2025-11-03 08:57:40,263 services 18784 23912 Wall 6279: current height = 3500.0
+INFO 2025-11-03 08:57:40,263 services 18784 23912 Wall 6273: current height = 3500.0
+INFO 2025-11-03 08:57:40,263 services 18784 23912 Wall 6280: current height = 5000.0
+INFO 2025-11-03 08:57:40,264 services 18784 23912 Updated 4 walls to height 3500
+INFO 2025-11-03 08:57:40,267 services 18784 23912 Wall 6277: new height = 3500.0
+INFO 2025-11-03 08:57:40,267 services 18784 23912 Wall 6279: new height = 3500.0
+INFO 2025-11-03 08:57:40,267 services 18784 23912 Wall 6273: new height = 3500.0
+INFO 2025-11-03 08:57:40,267 services 18784 23912 Wall 6280: new height = 3500.0
+INFO 2025-11-03 08:57:40,268 views 18784 23912 Successfully updated 4 walls
+INFO 2025-11-03 08:57:40,268 services 18784 23912 Recalculating room boundary for room 181
+INFO 2025-11-03 08:57:40,272 services 18784 23912 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 08:57:41,422 views 18784 23912 Updating room with data: {'id': 182, 'walls': [6275, 6276, 6280, 6278], 'ceiling_plan': None, 'room_name': 'Room 2', 'floor_type': 'Panel', 'floor_thickness': 75, 'temperature': '-10.00', 'height': 5000, 'remarks': '', 'room_points': [{'x': 0, 'y': 0}, {'x': 7513, 'y': 0}, {'x': 7513, 'y': 10000}, {'x': 0, 'y': 10000}], 'label_position': {'x': 4256.5, 'y': 4550}, 'project': 440}
+INFO 2025-11-03 08:57:41,468 views 18784 23912 Found room to update: 182, current height: 5000.0
+INFO 2025-11-03 08:57:41,482 views 18784 23912 Updated room height to: 5000.0
+INFO 2025-11-03 08:57:41,483 views 18784 23912 Updating 4 walls with new height: 5000
+INFO 2025-11-03 08:57:41,483 services 18784 23912 update_wall_heights_for_room called with wall_ids: [6275, 6276, 6278, 6280], new_height: 5000
+INFO 2025-11-03 08:57:41,483 services 18784 23912 Converted wall_ids to integers: [6275, 6276, 6278, 6280]
+INFO 2025-11-03 08:57:41,484 services 18784 23912 Found 4 walls to update
+INFO 2025-11-03 08:57:41,485 services 18784 23912 Wall 6275: current height = 5000.0
+INFO 2025-11-03 08:57:41,485 services 18784 23912 Wall 6280: current height = 3500.0
+INFO 2025-11-03 08:57:41,486 services 18784 23912 Wall 6276: current height = 5000.0
+INFO 2025-11-03 08:57:41,486 services 18784 23912 Wall 6278: current height = 5000.0
+INFO 2025-11-03 08:57:41,487 services 18784 23912 Updated 4 walls to height 5000
+INFO 2025-11-03 08:57:41,487 services 18784 23912 Wall 6275: new height = 5000.0
+INFO 2025-11-03 08:57:41,488 services 18784 23912 Wall 6280: new height = 5000.0
+INFO 2025-11-03 08:57:41,488 services 18784 23912 Wall 6276: new height = 5000.0
+INFO 2025-11-03 08:57:41,488 services 18784 23912 Wall 6278: new height = 5000.0
+INFO 2025-11-03 08:57:41,488 views 18784 23912 Successfully updated 4 walls
+INFO 2025-11-03 08:57:41,488 services 18784 23912 Recalculating room boundary for room 182
+INFO 2025-11-03 08:57:41,493 services 18784 23912 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 08:57:41,988 views 18784 23912 Updating room with data: {'id': 182, 'walls': [6275, 6276, 6280, 6278], 'ceiling_plan': None, 'room_name': 'Room 2', 'floor_type': 'Panel', 'floor_thickness': 75, 'temperature': '-10.00', 'height': 5000, 'remarks': '', 'room_points': [{'x': 0, 'y': 0}, {'x': 7513, 'y': 0}, {'x': 7513, 'y': 10000}, {'x': 0, 'y': 10000}], 'label_position': {'x': 4256.5, 'y': 4550}, 'project': 440}
+INFO 2025-11-03 08:57:42,031 views 18784 23912 Found room to update: 182, current height: 5000.0
+INFO 2025-11-03 08:57:42,042 views 18784 23912 Updated room height to: 5000.0
+INFO 2025-11-03 08:57:42,044 views 18784 23912 Updating 4 walls with new height: 5000
+INFO 2025-11-03 08:57:42,045 services 18784 23912 update_wall_heights_for_room called with wall_ids: [6275, 6276, 6278, 6280], new_height: 5000
+INFO 2025-11-03 08:57:42,045 services 18784 23912 Converted wall_ids to integers: [6275, 6276, 6278, 6280]
+INFO 2025-11-03 08:57:42,046 services 18784 23912 Found 4 walls to update
+INFO 2025-11-03 08:57:42,047 services 18784 23912 Wall 6275: current height = 5000.0
+INFO 2025-11-03 08:57:42,047 services 18784 23912 Wall 6280: current height = 5000.0
+INFO 2025-11-03 08:57:42,047 services 18784 23912 Wall 6276: current height = 5000.0
+INFO 2025-11-03 08:57:42,047 services 18784 23912 Wall 6278: current height = 5000.0
+INFO 2025-11-03 08:57:42,048 services 18784 23912 Updated 4 walls to height 5000
+INFO 2025-11-03 08:57:42,049 services 18784 23912 Wall 6275: new height = 5000.0
+INFO 2025-11-03 08:57:42,049 services 18784 23912 Wall 6280: new height = 5000.0
+INFO 2025-11-03 08:57:42,049 services 18784 23912 Wall 6276: new height = 5000.0
+INFO 2025-11-03 08:57:42,049 services 18784 23912 Wall 6278: new height = 5000.0
+INFO 2025-11-03 08:57:42,050 views 18784 23912 Successfully updated 4 walls
+INFO 2025-11-03 08:57:42,050 services 18784 23912 Recalculating room boundary for room 182
+INFO 2025-11-03 08:57:42,053 services 18784 23912 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 08:57:45,036 views 18784 23912 Updating room with data: {'id': 182, 'walls': [6275, 6276, 6280, 6278], 'ceiling_plan': None, 'room_name': 'Room 2', 'floor_type': 'Panel', 'floor_thickness': 75, 'temperature': '-10.00', 'height': 5000, 'remarks': '', 'room_points': [{'x': 0, 'y': 0}, {'x': 7513, 'y': 0}, {'x': 7513, 'y': 10000}, {'x': 0, 'y': 10000}], 'label_position': {'x': 4006.5, 'y': 4775}, 'project': 440}
+INFO 2025-11-03 08:57:45,084 views 18784 23912 Found room to update: 182, current height: 5000.0
+INFO 2025-11-03 08:57:45,097 views 18784 23912 Updated room height to: 5000.0
+INFO 2025-11-03 08:57:45,098 views 18784 23912 Updating 4 walls with new height: 5000
+INFO 2025-11-03 08:57:45,100 services 18784 23912 update_wall_heights_for_room called with wall_ids: [6275, 6276, 6278, 6280], new_height: 5000
+INFO 2025-11-03 08:57:45,100 services 18784 23912 Converted wall_ids to integers: [6275, 6276, 6278, 6280]
+INFO 2025-11-03 08:57:45,101 services 18784 23912 Found 4 walls to update
+INFO 2025-11-03 08:57:45,101 services 18784 23912 Wall 6275: current height = 5000.0
+INFO 2025-11-03 08:57:45,102 services 18784 23912 Wall 6280: current height = 5000.0
+INFO 2025-11-03 08:57:45,102 services 18784 23912 Wall 6276: current height = 5000.0
+INFO 2025-11-03 08:57:45,102 services 18784 23912 Wall 6278: current height = 5000.0
+INFO 2025-11-03 08:57:45,103 services 18784 23912 Updated 4 walls to height 5000
+INFO 2025-11-03 08:57:45,104 services 18784 23912 Wall 6275: new height = 5000.0
+INFO 2025-11-03 08:57:45,104 services 18784 23912 Wall 6280: new height = 5000.0
+INFO 2025-11-03 08:57:45,104 services 18784 23912 Wall 6276: new height = 5000.0
+INFO 2025-11-03 08:57:45,105 services 18784 23912 Wall 6278: new height = 5000.0
+INFO 2025-11-03 08:57:45,105 views 18784 23912 Successfully updated 4 walls
+INFO 2025-11-03 08:57:45,105 services 18784 23912 Recalculating room boundary for room 182
+INFO 2025-11-03 08:57:45,109 services 18784 23912 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 08:58:28,578 services 18784 23912 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:28,578 services 18784 23912 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:28,579 services 18784 23912 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:28,579 services 18784 23912 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:28,582 services 18784 23912 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:28,586 services 18784 23912 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:28,599 services 18784 23912 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:28,606 services 18784 23912 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:58:29,238 services 18784 23912 [ANALYSIS-H] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,238 services 18784 23912 [ANALYSIS-V] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,239 services 18784 23912 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,239 services 18784 23912 [ANALYSIS-V-EVAL] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,239 services 18784 23912 [ANALYSIS-BEST] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,240 services 18784 23912 [ANALYSIS-H] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:58:29,240 services 18784 23912 [ANALYSIS-V] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:58:29,240 services 18784 23912 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:58:29,240 services 18784 23912 [ANALYSIS-V-EVAL] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:58:29,242 services 18784 23912 [ANALYSIS-BEST] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:58:29,250 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,251 services 18784 23912 [COMBO-TEST-FLOOR] Compatible leftover found: 863.0mm × 9700.0mm (needed: 313.0mm × 9700.0mm)
+INFO 2025-11-03 08:58:29,251 services 18784 23912 [COMBO-TEST-FLOOR] Using leftover 1762131509250_0: 313.0mm from 863.0mm, remaining: 550.0mm
+INFO 2025-11-03 08:58:29,256 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,256 services 18784 23912 [COMBO-TEST-FLOOR] Compatible leftover found: 863.0mm × 9700.0mm (needed: 500.0mm × 7213.0mm)
+INFO 2025-11-03 08:58:29,256 services 18784 23912 [COMBO-TEST-FLOOR] Using leftover 1762131509256_0: 500.0mm from 863.0mm, remaining: 363.0mm
+INFO 2025-11-03 08:58:29,257 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,257 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 837.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,257 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:58:29,257 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7213.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,363 services 18784 22876 [ANALYSIS-H] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,363 services 18784 22876 [ANALYSIS-V] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,364 services 18784 22876 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,364 services 18784 22876 [ANALYSIS-V-EVAL] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,364 services 18784 22876 [ANALYSIS-BEST] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,365 services 18784 22876 [ANALYSIS-H] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:59:49,365 services 18784 22876 [ANALYSIS-V] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:59:49,365 services 18784 22876 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:59:49,366 services 18784 22876 [ANALYSIS-V-EVAL] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:59:49,366 services 18784 22876 [ANALYSIS-BEST] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 08:59:49,374 services 18784 22876 [COMBO-TEST-FLOOR] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,375 services 18784 22876 [COMBO-TEST-FLOOR] Compatible leftover found: 863.0mm × 9700.0mm (needed: 313.0mm × 9700.0mm)
+INFO 2025-11-03 08:59:49,375 services 18784 22876 [COMBO-TEST-FLOOR] Using leftover 1762131589374_0: 313.0mm from 863.0mm, remaining: 550.0mm
+INFO 2025-11-03 08:59:49,379 services 18784 22876 [COMBO-TEST-FLOOR] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,380 services 18784 22876 [COMBO-TEST-FLOOR] Compatible leftover found: 863.0mm × 9700.0mm (needed: 500.0mm × 7213.0mm)
+INFO 2025-11-03 08:59:49,380 services 18784 22876 [COMBO-TEST-FLOOR] Using leftover 1762131589379_0: 500.0mm from 863.0mm, remaining: 363.0mm
+INFO 2025-11-03 08:59:49,380 services 18784 22876 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,380 services 18784 22876 [COMBO-TEST-FLOOR] Leftover created: 837.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,380 services 18784 22876 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:49,380 services 18784 22876 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7213.0mm (thickness: 50.0mm)
+INFO 2025-11-03 08:59:50,704 services 18784 22876 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:59:50,705 services 18784 22876 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:59:50,705 services 18784 22876 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:59:50,705 services 18784 22876 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:59:50,710 services 18784 22876 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:59:50,714 services 18784 22876 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:59:50,727 services 18784 22876 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 08:59:50,733 services 18784 22876 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+ERROR 2025-11-03 09:03:12,291 log 18784 23912 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:03:13,389 log 18784 23912 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+INFO 2025-11-03 09:03:15,201 services 18784 23912 Recalculating room boundary for room 181
+INFO 2025-11-03 09:03:15,210 services 18784 23912 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:03:15,210 services 18784 23912 Recalculating room boundary for room 182
+INFO 2025-11-03 09:03:15,215 services 18784 23912 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:04:57,217 services 18784 23912 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,217 services 18784 23912 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,217 services 18784 23912 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,218 services 18784 23912 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,222 services 18784 23912 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,225 services 18784 23912 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,240 services 18784 23912 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,245 services 18784 23912 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:04:57,450 services 18784 23912 [ANALYSIS-H] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,452 services 18784 23912 [ANALYSIS-V] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,452 services 18784 23912 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,452 services 18784 23912 [ANALYSIS-V-EVAL] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,452 services 18784 23912 [ANALYSIS-BEST] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,453 services 18784 23912 [ANALYSIS-H] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:04:57,453 services 18784 23912 [ANALYSIS-V] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:04:57,453 services 18784 23912 [ANALYSIS-H-EVAL] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:04:57,453 services 18784 23912 [ANALYSIS-V-EVAL] Leftover created: 837.0mm × 9700.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:04:57,454 services 18784 23912 [ANALYSIS-BEST] Leftover created: 650.0mm × 7213.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:04:57,462 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,462 services 18784 23912 [COMBO-TEST-FLOOR] Compatible leftover found: 863.0mm × 9700.0mm (needed: 313.0mm × 9700.0mm)
+INFO 2025-11-03 09:04:57,462 services 18784 23912 [COMBO-TEST-FLOOR] Using leftover 1762131897462_0: 313.0mm from 863.0mm, remaining: 550.0mm
+INFO 2025-11-03 09:04:57,466 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 863.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,466 services 18784 23912 [COMBO-TEST-FLOOR] Compatible leftover found: 863.0mm × 9700.0mm (needed: 500.0mm × 7213.0mm)
+INFO 2025-11-03 09:04:57,466 services 18784 23912 [COMBO-TEST-FLOOR] Using leftover 1762131897466_0: 500.0mm from 863.0mm, remaining: 363.0mm
+INFO 2025-11-03 09:04:57,466 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,466 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 837.0mm × 9700.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,466 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7187.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:04:57,468 services 18784 23912 [COMBO-TEST-FLOOR] Leftover created: 650.0mm × 7213.0mm (thickness: 50.0mm)
+INFO 2025-11-03 09:05:41,475 services 18784 23912 [ANALYSIS-V] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,476 services 18784 23912 [ANALYSIS-V] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-11-03 09:05:41,476 services 18784 23912 [ANALYSIS-V] Using leftover 1762131941475_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-11-03 09:05:41,476 services 18784 23912 [ANALYSIS-V] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,478 services 18784 23912 [ANALYSIS-H] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,478 services 18784 23912 [ANALYSIS-H] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,478 services 18784 23912 [ANALYSIS-H] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,482 services 18784 23912 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,482 services 18784 23912 [COMBO-TEST] Compatible leftover found: 570.0mm × 10500.0mm (needed: 50.0mm × 9500.0mm)
+INFO 2025-11-03 09:05:41,484 services 18784 23912 [COMBO-TEST] Using leftover 1762131941482_0: 50.0mm from 570.0mm, remaining: 520.0mm
+INFO 2025-11-03 09:05:41,488 services 18784 23912 [COMBO-TEST] Leftover created: 570.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,489 services 18784 23912 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,489 services 18784 23912 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,489 services 18784 23912 [COMBO-TEST] Leftover created: 1100.0mm × 9500.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,490 services 18784 23912 [COMBO-TEST] Leftover created: 1000.0mm × 7480.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,490 services 18784 23912 [COMBO-TEST] Leftover created: 850.0mm × 15000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,500 services 18784 23912 [COMBO-TEST] Leftover created: 530.0mm × 10500.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:41,505 services 18784 23912 [COMBO-TEST] Leftover created: 1000.0mm × 7520.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:05:42,271 services 18784 23912 [ANALYSIS-H] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:05:42,271 services 18784 23912 [ANALYSIS-V] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:05:42,271 services 18784 23912 [ANALYSIS-H-EVAL] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:05:42,271 services 18784 23912 [ANALYSIS-V-EVAL] Leftover created: 830.0mm × 10200.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:05:42,271 services 18784 23912 [ANALYSIS-BEST] Leftover created: 150.0mm × 7220.0mm (thickness: 75.0mm)
+INFO 2025-11-03 09:09:05,395 services 18784 22876 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:05,395 services 18784 22876 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:05,396 services 18784 22876 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:05,396 services 18784 22876 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:05,400 services 18784 22876 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:05,405 services 18784 22876 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:05,418 services 18784 22876 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:05,423 services 18784 22876 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,651 services 18784 22876 [ANALYSIS-V] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,651 services 18784 22876 [ANALYSIS-V] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,651 services 18784 22876 [ANALYSIS-H] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,652 services 18784 22876 [ANALYSIS-H] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,656 services 18784 22876 [COMBO-TEST] Leftover created: 563.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,660 services 18784 22876 [COMBO-TEST] Leftover created: 350.0mm × 7487.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,695 services 18784 22876 [COMBO-TEST] Leftover created: 537.0mm × 10000.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,704 services 18784 22876 [COMBO-TEST] Leftover created: 350.0mm × 7513.0mm (thickness: 20.0mm)
+INFO 2025-11-03 09:09:06,716 services 18784 22876 ACTUAL CEILING GENERATION STARTING - Created project leftover tracker
+INFO 2025-11-03 09:09:06,716 services 18784 22876 _generate_enhanced_room_panels: Processing 2 rooms
+INFO 2025-11-03 09:09:06,716 services 18784 22876   Processing room 181: Room 1
+INFO 2025-11-03 09:09:06,718 services 18784 22876   Generating horizontal panels for room 181
+INFO 2025-11-03 09:09:06,718 services 18784 22876 [GENERATION] Leftover created: 350.0mm × 7487.0mm (thickness: 150mm)
+INFO 2025-11-03 09:09:06,719 services 18784 22876   Generated 9 panels for room 181
+INFO 2025-11-03 09:09:06,719 services 18784 22876   Processing room 182: Room 2
+INFO 2025-11-03 09:09:06,722 services 18784 22876   Generating horizontal panels for room 182
+INFO 2025-11-03 09:09:06,722 services 18784 22876 [GENERATION] Leftover created: 350.0mm × 7513.0mm (thickness: 150mm)
+INFO 2025-11-03 09:09:06,723 services 18784 22876   Generated 9 panels for room 182
+INFO 2025-11-03 09:09:06,723 services 18784 22876 _generate_enhanced_room_panels: Total panels generated: 18
+INFO 2025-11-03 09:09:06,723 services 18784 22876 CEILING GENERATION COMPLETE - Leftover stats: {'leftovers_created': 2, 'leftovers_reused': 0, 'full_panels_saved': 0, 'total_leftover_area': 5250000.0, 'current_leftovers_count': 2, 'current_leftovers': [{'id': '1762132146718_0', 'length': 7487.0, 'thickness': 150, 'width': 350.0, 'created_at': 1762132146.7186816}, {'id': '1762132146722_1', 'length': 7513.0, 'thickness': 150, 'width': 350.0, 'created_at': 1762132146.72219}]}
+INFO 2025-11-03 09:13:44,459 services 18784 22876 Recalculating room boundary for room 156
+INFO 2025-11-03 09:13:44,465 services 18784 22876 Updated room 156 boundary with 4 points (order preserved)
+ERROR 2025-11-03 09:13:50,109 log 18784 22876 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:13:58,651 log 18784 22876 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:13:58,727 log 18784 22876 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+INFO 2025-11-03 09:14:02,385 services 18784 22876 Recalculating room boundary for room 181
+INFO 2025-11-03 09:14:02,389 services 18784 22876 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:14:02,390 services 18784 22876 Recalculating room boundary for room 182
+INFO 2025-11-03 09:14:02,393 services 18784 22876 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:15:32,528 services 18784 22876 Recalculating room boundary for room 182
+INFO 2025-11-03 09:15:32,533 services 18784 22876 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:27:42,456 services 18784 15012 Recalculating room boundary for room 181
+INFO 2025-11-03 09:27:42,463 services 18784 15012 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:27:53,596 services 18784 15012 Recalculating room boundary for room 181
+INFO 2025-11-03 09:27:53,603 services 18784 15012 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:29:15,730 services 18784 15012 Recalculating room boundary for room 175
+INFO 2025-11-03 09:29:15,735 services 18784 15012 Updated room 175 boundary with 5 points (order preserved)
+INFO 2025-11-03 09:29:15,735 services 18784 15012 Recalculating room boundary for room 155
+INFO 2025-11-03 09:29:15,743 services 18784 15012 Updated room 155 boundary with 7 points (order preserved)
+INFO 2025-11-03 09:29:15,795 services 18784 14912 Recalculating room boundary for room 175
+INFO 2025-11-03 09:29:15,804 services 18784 14912 Updated room 175 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:29:15,804 services 18784 14912 Recalculating room boundary for room 155
+INFO 2025-11-03 09:29:15,808 services 18784 14912 Updated room 155 boundary with 6 points (order preserved)
+INFO 2025-11-03 09:29:15,950 services 18784 11436 Recalculating room boundary for room 175
+INFO 2025-11-03 09:29:15,954 services 18784 11436 Updated room 175 boundary with 4 points (order preserved)
+ERROR 2025-11-03 09:45:05,193 log 18784 416 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:45:06,172 log 18784 416 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:45:07,032 log 18784 416 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:45:07,191 log 18784 416 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+WARNING 2025-11-03 09:46:18,461 log 18784 15992 Not Found: /favicon.ico
+INFO 2025-11-03 09:46:43,721 autoreload 18784 18756 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 09:46:44,636 autoreload 8756 11840 Watching for file changes with StatReloader
+INFO 2025-11-03 09:46:56,199 autoreload 8756 11840 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 09:46:56,926 autoreload 22056 22652 Watching for file changes with StatReloader
+INFO 2025-11-03 09:47:25,478 services 22056 17744 Recalculating room boundary for room 182
+INFO 2025-11-03 09:47:25,484 services 22056 17744 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:47:25,484 services 22056 17744 Recalculating room boundary for room 181
+INFO 2025-11-03 09:47:25,487 services 22056 17744 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:47:35,239 services 22056 17744 Recalculating room boundary for room 182
+INFO 2025-11-03 09:47:35,242 services 22056 17744 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:47:35,242 services 22056 17744 Recalculating room boundary for room 181
+INFO 2025-11-03 09:47:35,246 services 22056 17744 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:47:42,618 autoreload 22056 22652 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 09:47:43,366 autoreload 19020 16960 Watching for file changes with StatReloader
+ERROR 2025-11-03 09:48:24,271 log 19020 252 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+INFO 2025-11-03 09:48:27,016 services 19020 252 Recalculating room boundary for room 182
+INFO 2025-11-03 09:48:27,023 services 19020 252 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:48:27,025 services 19020 252 Recalculating room boundary for room 181
+INFO 2025-11-03 09:48:27,030 services 19020 252 Updated room 181 boundary with 4 points (order preserved)
+ERROR 2025-11-03 09:48:31,138 log 19020 252 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:48:31,373 log 19020 252 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:48:31,539 log 19020 252 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:48:59,079 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:49:11,962 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:49:12,526 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:49:12,797 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:49:13,778 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:49:14,564 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:49:15,262 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:49:15,885 log 19020 252 Internal Server Error: /api/walls/6187/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+ERROR 2025-11-03 09:50:13,963 log 19020 252 Internal Server Error: /api/walls/6280/toggle_gap_fill/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 186, in toggle_gap_fill
+    updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'WallService' has no attribute 'set_gap_fill_mode'
+INFO 2025-11-03 09:51:32,863 autoreload 19020 16960 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 09:51:33,703 autoreload 7460 17964 Watching for file changes with StatReloader
+INFO 2025-11-03 09:52:22,897 autoreload 7460 17964 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 09:52:23,471 autoreload 408 21156 Watching for file changes with StatReloader
+INFO 2025-11-03 09:52:43,819 services 408 9540 Recalculating room boundary for room 182
+INFO 2025-11-03 09:52:43,823 services 408 9540 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:52:43,823 services 408 9540 Recalculating room boundary for room 181
+INFO 2025-11-03 09:52:43,826 services 408 9540 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:52:53,769 services 408 9540 Recalculating room boundary for room 182
+INFO 2025-11-03 09:52:53,774 services 408 9540 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:52:53,774 services 408 9540 Recalculating room boundary for room 181
+INFO 2025-11-03 09:52:53,778 services 408 9540 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:53:03,957 services 408 9540 Recalculating room boundary for room 181
+INFO 2025-11-03 09:53:03,962 services 408 9540 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:53:03,962 services 408 9540 Recalculating room boundary for room 182
+INFO 2025-11-03 09:53:03,965 services 408 9540 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:53:07,972 services 408 9540 Recalculating room boundary for room 182
+INFO 2025-11-03 09:53:08,016 services 408 9540 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:53:10,590 services 408 9540 Recalculating room boundary for room 182
+INFO 2025-11-03 09:53:10,595 services 408 9540 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:53:12,763 services 408 9540 Recalculating room boundary for room 182
+INFO 2025-11-03 09:53:12,768 services 408 9540 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:53:14,826 services 408 9540 Recalculating room boundary for room 181
+INFO 2025-11-03 09:53:14,830 services 408 9540 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-03 09:53:14,830 services 408 9540 Recalculating room boundary for room 182
+INFO 2025-11-03 09:53:14,833 services 408 9540 Updated room 182 boundary with 4 points (order preserved)

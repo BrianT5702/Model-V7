@@ -274,6 +274,43 @@ class WallService:
         wall_2.delete()
         return merged_wall
 
+    @staticmethod
+    def set_gap_fill_mode(wall, enabled):
+        """Set gap-fill mode for a wall between rooms with different heights"""
+        wall.fill_gap_mode = enabled
+        
+        if enabled:
+            # When enabling gap-fill mode, get room information
+            rooms = wall.rooms.all()
+            if rooms.count() == 2:
+                room1, room2 = rooms[0], rooms[1]
+                height1 = room1.height if hasattr(room1, 'height') and room1.height else 3000
+                height2 = room2.height if hasattr(room2, 'height') and room2.height else 3000
+                
+                # Calculate the gap height and base position
+                if height1 != height2:
+                    # Gap starts at the lower room's ceiling height
+                    lower_height = min(height1, height2)
+                    higher_height = max(height1, height2)
+                    gap_height = higher_height - lower_height
+                    base_position = lower_height
+                    
+                    wall.gap_fill_height = gap_height
+                    wall.gap_base_position = base_position
+                else:
+                    # Same height - can't fill gap
+                    raise ValueError("Cannot enable gap-fill mode for walls between rooms with the same height")
+            else:
+                # Not between exactly 2 rooms
+                raise ValueError("Gap-fill mode can only be enabled for walls between exactly 2 rooms")
+        else:
+            # When disabling, clear gap-fill fields
+            wall.gap_fill_height = None
+            wall.gap_base_position = None
+        
+        wall.save()
+        return wall
+
 class RoomService:
     @staticmethod
     def validate_room_points(room_points):

@@ -7,7 +7,8 @@ class WallSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'start_x', 'start_y', 'end_x', 'end_y',
             'height', 'thickness', 'application_type',
-            'is_default', 'has_concrete_base', 'concrete_base_height'
+            'is_default', 'has_concrete_base', 'concrete_base_height',
+            'fill_gap_mode', 'gap_fill_height', 'gap_base_position'
         ]
 
     def validate_height(self, value):

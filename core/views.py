@@ -174,6 +174,23 @@ class WallViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['post'])
+    def toggle_gap_fill(self, request, pk=None):
+        """Toggle gap-fill mode for a wall between rooms with different heights"""
+        from .services import WallService
+        
+        try:
+            wall = self.get_object()
+            enabled = request.data.get('enabled', False)
+            
+            updated_wall = WallService.set_gap_fill_mode(wall, enabled)
+            
+            return Response(WallSerializer(updated_wall).data, status=status.HTTP_200_OK)
+        except Wall.DoesNotExist:
+            return Response({'error': 'Wall not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 class RoomViewSet(viewsets.ModelViewSet):
     queryset = Room.objects.all()
     serializer_class = RoomSerializer

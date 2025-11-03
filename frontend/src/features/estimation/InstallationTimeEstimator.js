@@ -782,8 +782,13 @@ const InstallationTimeEstimator = ({
                     Math.pow(wall.end_y - wall.start_y, 2)
                 );
                 
+                // Use gap_fill_height for calculations if gap-fill mode is enabled
+                const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null) 
+                    ? wall.gap_fill_height 
+                    : wall.height;
+                
                 // Calculate panels for this wall (assuming butt_in joints for simplicity)
-                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' });
+                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' }, heightForCalc);
                 totalPanels += panels.length;
             }
         });
@@ -854,6 +859,68 @@ const InstallationTimeEstimator = ({
             months: months // 0 if less than 22 days, otherwise calculated
         };
     }, [totalQuantities, panelsPerDay, doorsPerDay, slabsPerDay]);
+
+    // Calculate panel area by thickness
+    const panelAreaByThickness = useMemo(() => {
+        const areaByThickness = {};
+        
+        // Process ceiling panels
+        if (sharedPanelData?.ceilingPanels && sharedPanelData.ceilingPanels.length > 0) {
+            sharedPanelData.ceilingPanels.forEach(panel => {
+                const thickness = panel.thickness || 150; // Default ceiling thickness
+                const area = (panel.width || 0) * (panel.length || 0) * (panel.quantity || 1);
+                if (!areaByThickness[thickness]) {
+                    areaByThickness[thickness] = { area: 0, count: 0, types: { ceiling: 0, floor: 0, wall: 0 } };
+                }
+                areaByThickness[thickness].area += area;
+                areaByThickness[thickness].count += panel.quantity || 1;
+                areaByThickness[thickness].types.ceiling += panel.quantity || 1;
+            });
+        }
+        
+        // Process floor panels
+        if (sharedPanelData?.floorPanels && sharedPanelData.floorPanels.length > 0) {
+            sharedPanelData.floorPanels.forEach(panel => {
+                const thickness = panel.thickness || 20; // Default floor thickness
+                const area = (panel.width || 0) * (panel.length || 0) * (panel.quantity || 1);
+                if (!areaByThickness[thickness]) {
+                    areaByThickness[thickness] = { area: 0, count: 0, types: { ceiling: 0, floor: 0, wall: 0 } };
+                }
+                areaByThickness[thickness].area += area;
+                areaByThickness[thickness].count += panel.quantity || 1;
+                areaByThickness[thickness].types.floor += panel.quantity || 1;
+            });
+        }
+        
+        // Process wall panels
+        if (sharedPanelData?.wallPanels && sharedPanelData.wallPanels.length > 0) {
+            sharedPanelData.wallPanels.forEach(panel => {
+                // For wall panels, we need to get thickness from the wall data
+                // Look up the wall thickness from walls array
+                const wall = walls.find(w => w.id === panel.wallId);
+                const thickness = wall?.thickness || 150; // Default wall thickness
+                const area = (panel.width || 0) * (panel.length || 0) * (panel.quantity || 1);
+                if (!areaByThickness[thickness]) {
+                    areaByThickness[thickness] = { area: 0, count: 0, types: { ceiling: 0, floor: 0, wall: 0 } };
+                }
+                areaByThickness[thickness].area += area;
+                areaByThickness[thickness].count += panel.quantity || 1;
+                areaByThickness[thickness].types.wall += panel.quantity || 1;
+            });
+        }
+        
+        // Convert to array and sort by thickness
+        const thicknessGroups = Object.entries(areaByThickness)
+            .map(([thickness, data]) => ({
+                thickness: parseFloat(thickness),
+                area: data.area,
+                count: data.count,
+                types: data.types
+            }))
+            .sort((a, b) => a.thickness - b.thickness);
+        
+        return thicknessGroups;
+    }, [sharedPanelData, walls]);
 
     // Handle input changes
     const handleInputChange = (field, value) => {
@@ -937,6 +1004,16 @@ const InstallationTimeEstimator = ({
         // Get canvas images from shared data
         const capturedImages = getCanvasImagesFromSharedData();
         
+        // Enrich wall panels with thickness from walls data
+        const enrichedWallPanels = (sharedPanelData?.wallPanels || []).map(panel => {
+            const wall = walls.find(w => w.id === panel.wallId);
+            const thickness = wall?.thickness || 150; // Default wall thickness
+            return {
+                ...panel,
+                thickness: thickness
+            };
+        });
+        
         const data = {
             projectInfo: {
                 name: projectData?.name || 'Unknown Project',
@@ -946,7 +1023,7 @@ const InstallationTimeEstimator = ({
                 doors: doors.length
             },
             rooms: rooms, // Include full room data for the preview
-            wallPanels: sharedPanelData?.wallPanels || [],
+            wallPanels: enrichedWallPanels,
             ceilingPanels: sharedPanelData?.ceilingPanels || [],
             floorPanels: sharedPanelData?.floorPanels || [],
             wallPanelAnalysis: sharedPanelData?.wallPanelAnalysis || null,
@@ -1156,6 +1233,7 @@ const InstallationTimeEstimator = ({
                     (index + 1).toString(),
                     `${panel.width}mm`,
                     `${panel.length}mm`,
+                    `${panel.thickness || 'N/A'}mm`,
                     panel.quantity ? panel.quantity.toString() : '1',
                     panel.type || 'N/A',
                     panel.application || 'N/A'
@@ -1163,7 +1241,7 @@ const InstallationTimeEstimator = ({
                 
                                  autoTable(doc, {
                      startY: yPos,
-                     head: [['No.', 'Panel Width', 'Panel Length', 'Quantity', 'Type', 'Application']],
+                     head: [['No.', 'Panel Width', 'Panel Length', 'Thickness', 'Quantity', 'Type', 'Application']],
                      body: wallPanelData,
                      theme: 'striped',
                      styles: { fontSize: 9, cellPadding: 4 }, // Larger font
@@ -1821,6 +1899,84 @@ const InstallationTimeEstimator = ({
                 </div>
             </div>
 
+            {/* Panel Area by Thickness */}
+            {panelAreaByThickness.length > 0 && (
+                <div className="bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-200 rounded-lg p-6 mb-8">
+                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
+                        <svg className="w-5 h-5 mr-2 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                        Panel Area by Thickness
+                    </h4>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full border border-gray-300 bg-white rounded-lg overflow-hidden">
+                            <thead className="bg-teal-100">
+                                <tr>
+                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                        Thickness (mm)
+                                    </th>
+                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                        Total Area (m²)
+                                    </th>
+                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                        Panel Count
+                                    </th>
+                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                        Breakdown
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white">
+                                {panelAreaByThickness.map((group, index) => (
+                                    <tr key={group.thickness} className={index % 2 === 0 ? 'bg-white' : 'bg-teal-50'}>
+                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900 font-medium">
+                                            {group.thickness}mm
+                                        </td>
+                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                            {(group.area / 1000000).toFixed(2)} m²
+                                        </td>
+                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                            {group.count} panels
+                                        </td>
+                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-600">
+                                            {group.types.wall > 0 && (
+                                                <span className="inline-block mr-2 px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
+                                                    {group.types.wall} wall
+                                                </span>
+                                            )}
+                                            {group.types.ceiling > 0 && (
+                                                <span className="inline-block mr-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                                                    {group.types.ceiling} ceiling
+                                                </span>
+                                            )}
+                                            {group.types.floor > 0 && (
+                                                <span className="inline-block mr-2 px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
+                                                    {group.types.floor} floor
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                                <tr className="bg-teal-100 font-semibold">
+                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                        Total
+                                    </td>
+                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                        {(panelAreaByThickness.reduce((sum, g) => sum + g.area, 0) / 1000000).toFixed(2)} m²
+                                    </td>
+                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                        {panelAreaByThickness.reduce((sum, g) => sum + g.count, 0)} panels
+                                    </td>
+                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-600">
+                                        Total area across all thicknesses
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
             {/* Installation Time Estimates */}
             <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg p-6">
                 <h4 className="font-semibold text-indigo-800 mb-4 flex items-center">
@@ -2075,6 +2231,9 @@ const InstallationTimeEstimator = ({
                                                         Length (mm)
                                                     </th>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Thickness (mm)
+                                                    </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
                                                         Quantity
                                                     </th>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
@@ -2091,6 +2250,7 @@ const InstallationTimeEstimator = ({
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{index + 1}</td>
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{panel.width}</td>
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{panel.length}</td>
+                                                        <td className="px-4 py-2 border border-gray-300 text-center">{panel.thickness || 'N/A'}</td>
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{panel.quantity || 1}</td>
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{panel.type || 'N/A'}</td>
                                                         <td className="px-4 py-2 border border-gray-300 text-center">{panel.application || 'N/A'}</td>
@@ -2101,7 +2261,7 @@ const InstallationTimeEstimator = ({
                                                         className="hover:bg-blue-50 cursor-pointer transition-colors"
                                                         onClick={() => toggleTableExpansion('wallPanels')}
                                                     >
-                                                        <td colSpan="6" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                        <td colSpan="7" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
                                                             {expandedTables.wallPanels ? (
                                                                 <>
                                                                     <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

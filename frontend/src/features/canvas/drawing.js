@@ -435,7 +435,7 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
 // Draw wall dimensions
 export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false) {
     // Debug: Log the scale factor being used
-    console.log('🔍 drawDimensions called with scaleFactor:', scaleFactor);
+    // console.log('🔍 drawDimensions called with scaleFactor:', scaleFactor);
     
     let midX = 0;
     let midY = 0;
@@ -450,7 +450,7 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     context.save();
     context.fillStyle = color;
     const fontSize = Math.max(14, 200 * scaleFactor); // Changed minimum from 16 to 14
-    console.log('🔍 drawDimensions font size:', fontSize, 'scaleFactor:', scaleFactor);
+    // console.log('🔍 drawDimensions font size:', fontSize, 'scaleFactor:', scaleFactor);
     context.font = `${fontSize}px Arial`;
     const text = `${Math.round(length)} mm`;
     const textWidth = context.measureText(text).width;
@@ -458,27 +458,26 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     const dy = endY - startY;
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
     
-    // If modelBounds is provided, use internal dimensioning (inside project boundaries)
+    // If modelBounds is provided, use external dimensioning
     if (modelBounds) {
         const { minX, maxX, minY, maxY } = modelBounds;
-        const baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Base distance inside the model
+        const baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Base distance outside the model
         
         if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-            // Horizontal wall - place on top or bottom INSIDE the project boundaries
+            // Horizontal wall - place on top or bottom
             const isTopHalf = wallMidY < (minY + maxY) / 2;
             const side = isTopHalf ? 'top' : 'bottom';
             
-            // Find available position INSIDE the project boundaries
+            // Find available position to avoid overlaps
             let labelY, labelX;
             let offset = baseOffset;
             let attempts = 0;
             const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
             
             do {
-                // Place dimensions INSIDE the project boundaries
                 labelY = isTopHalf ? 
-                    (minY * scaleFactor + offsetY + offset) : // INSIDE from top
-                    (maxY * scaleFactor + offsetY - offset);   // INSIDE from bottom
+                    (minY * scaleFactor + offsetY - offset) : // OUTSIDE above
+                    (maxY * scaleFactor + offsetY + offset);  // OUTSIDE below
                 labelX = wallMidX * scaleFactor + offsetX;
                 
                 // Check for overlaps with existing labels
@@ -492,13 +491,13 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 attempts++;
             } while (attempts < maxAttempts);
             
-            // Draw standard architectural dimensioning lines (internal placement)
+            // Draw standard architectural dimensioning lines
             context.beginPath();
             context.setLineDash([5, 5]);
-            // Extension line from start of wall (perpendicular to wall) - INSIDE placement
+            // Extension line from start of wall (perpendicular to wall)
             context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
             context.lineTo(startX * scaleFactor + offsetX, labelY);
-            // Extension line from end of wall (perpendicular to wall) - INSIDE placement
+            // Extension line from end of wall (perpendicular to wall)
             context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
             context.lineTo(endX * scaleFactor + offsetX, labelY);
             // Dimension line connecting the two extension lines
@@ -535,21 +534,20 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                  });
              }
         } else {
-            // Vertical wall - place on left or right INSIDE the project boundaries
+            // Vertical wall - place on left or right
             const isLeftHalf = wallMidX < (minX + maxX) / 2;
             const side = isLeftHalf ? 'left' : 'right';
             
-            // Find available position INSIDE the project boundaries
+            // Find available position to avoid overlaps
             let labelX, labelY;
-            let offset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
+            let offset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET); // Ensure minimum vertical offset
             let attempts = 0;
             const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
             
             do {
-                // Place dimensions INSIDE the project boundaries
                 labelX = isLeftHalf ? 
-                    (minX * scaleFactor + offsetX + offset) : // INSIDE from left
-                    (maxX * scaleFactor + offsetX - offset);   // INSIDE from right
+                    (minX * scaleFactor + offsetX - offset) : // OUTSIDE left
+                    (maxX * scaleFactor + offsetX + offset);  // OUTSIDE right
                 labelY = wallMidY * scaleFactor + offsetY;
                 
                 // Check for overlaps with existing labels (rotated bounding box for vertical text)
@@ -563,13 +561,13 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 attempts++;
             } while (attempts < maxAttempts);
             
-            // Draw standard architectural dimensioning lines (internal placement)
+            // Draw standard architectural dimensioning lines
             context.beginPath();
             context.setLineDash([5, 5]);
-            // Extension line from start of wall (perpendicular to wall) - INSIDE placement
+            // Extension line from start of wall (perpendicular to wall)
             context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
             context.lineTo(labelX, startY * scaleFactor + offsetY);
-            // Extension line from end of wall (perpendicular to wall) - INSIDE placement
+            // Extension line from end of wall (perpendicular to wall)
             context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
             context.lineTo(labelX, endY * scaleFactor + offsetY);
             // Dimension line connecting the two extension lines

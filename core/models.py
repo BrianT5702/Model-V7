@@ -39,6 +39,9 @@ class Wall(models.Model):
     is_default = models.BooleanField(default=True, help_text="True if the wall is a default boundary wall")
     has_concrete_base = models.BooleanField(default=False, help_text="Whether the wall has a concrete base")
     concrete_base_height = models.FloatField(null=True, blank=True, help_text="Height of the concrete base in mm")
+    fill_gap_mode = models.BooleanField(default=False, help_text="Fill only the gap between rooms with different heights")
+    gap_fill_height = models.FloatField(null=True, blank=True, help_text="Height of the wall when filling gap between rooms in mm")
+    gap_base_position = models.FloatField(null=True, blank=True, help_text="Y position (height) where the gap-fill wall starts in mm")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

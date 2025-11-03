@@ -8,6 +8,7 @@ import DoorEditorModal from '../door/DoorEditorModal';
 import CeilingManager from '../ceiling/CeilingManager';
 import FloorManager from '../floor/FloorManager';
 import InstallationTimeEstimator from '../estimation/InstallationTimeEstimator';
+import api from '../../api/api';
 
 import { 
     FaPencilAlt, 
@@ -728,9 +729,9 @@ const ProjectDetails = () => {
                                                 : projectDetails.currentView === 'ceiling-plan'
                                                 ? 'Generate and manage ceiling panels for optimal coverage'
                                                 : projectDetails.currentView === 'floor-plan'
-                                                ? 'Generate and manage floor panels with wall thickness deduction (only for rooms with floor_type = "panel")'
+                                                ? 'Generate and manage floor panels for optimal coverage (only for rooms with floor_type = "panel")'
                                                 : projectDetails.currentView === 'installation-estimator'
-                                                ? 'Comprehensive project overview with installation time calculations'
+                                                ? 'Project overview with installation time calculations'
                                                 : 'Click and drag to navigate, use scroll to zoom'
                                             }
                                             {projectDetails.rooms && projectDetails.rooms.length > 0 && !projectDetails.rooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel') && projectDetails.currentView === 'floor-plan' && (
@@ -930,6 +931,55 @@ const ProjectDetails = () => {
                                                     <option value="partition">Partition</option>
                                                 </select>
                                             </label>
+                                        </div>
+
+                                        {/* Gap-Fill Toggle Section */}
+                                        <div className="col-span-2 space-y-3 mt-4">
+                                            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
+                                                <div className="flex-1">
+                                                    <h4 className="font-medium text-gray-800 mb-1">Fill Gap Between Rooms</h4>
+                                                    <p className="text-sm text-gray-600">
+                                                        Fill only the gap between rooms with different heights
+                                                    </p>
+                                                    {editedWall?.gap_fill_height && (
+                                                        <div className="mt-2 text-xs text-blue-700 font-medium">
+                                                            Current: {editedWall.gap_fill_height}mm at {editedWall.gap_base_position}mm position
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={async () => {
+                                                        const enabled = !editedWall.fill_gap_mode;
+                                                        
+                                                        try {
+                                                            const response = await api.post(
+                                                                `/walls/${editedWall.id}/toggle_gap_fill/`,
+                                                                { enabled }
+                                                            );
+                                                            if (response.status === 200) {
+                                                                // Update local state
+                                                                setEditedWall({ ...editedWall, ...response.data });
+                                                                // Refresh walls list
+                                                                const wallsResponse = await api.get(`/walls/?project=${projectId}`);
+                                                                projectDetails.setWalls(wallsResponse.data);
+                                                                // Rebuild 3D scene
+                                                                if (projectDetails.threeCanvas) {
+                                                                    projectDetails.threeCanvas.buildModel();
+                                                                }
+                                                            }
+                                                        } catch (error) {
+                                                            console.error('Error toggling gap-fill mode:', error);
+                                                        }
+                                                    }}
+                                                    className={`ml-4 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                                                        editedWall?.fill_gap_mode
+                                                            ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg'
+                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                    }`}
+                                                >
+                                                    {editedWall?.fill_gap_mode ? '✓ Enabled' : 'Enable Gap-Fill'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
