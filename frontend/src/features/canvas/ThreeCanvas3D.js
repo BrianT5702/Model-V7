@@ -226,6 +226,9 @@ export default class ThreeCanvas {
       floor.visible = true;
     });
 
+    // Hide only ceiling panel lines for interior view (keep wall panel lines visible)
+    this.ceilingPanelLines.forEach(line => { line.visible = false; });
+
     // Animate camera position using AnimationManager
     const modelCenter = {
       x: centerX,
@@ -317,6 +320,11 @@ animateToExteriorView() {
       // Show floors for exterior view
       floor.visible = true;
     });
+
+    // Restore ceiling panel lines visibility to their previous state for exterior view
+    // Wall panel lines visibility remains unchanged (they were never hidden)
+    const shouldShowCeilingPanelLines = this.showCeilingPanelLines;
+    this.ceilingPanelLines.forEach(line => { line.visible = shouldShowCeilingPanelLines; });
 
     // Animate camera position using AnimationManager
     const modelCenter = { x: centerX, y: 0, z: centerZ };
@@ -1396,7 +1404,7 @@ getModelBounds() {
         // Debug: Log side panel positions
         const sidePanels = panels.filter(p => p.type === 'side');
         
-        const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
+        const { start_x, start_y, end_x, end_y, height, thickness, id, fill_gap_mode, gap_fill_height, gap_base_position } = wall;
         const scale = this.scalingFactor;
         const modelCenter = this.calculateModelCenter();
         
@@ -1468,8 +1476,17 @@ getModelBounds() {
         // Wall thickness in scaled units
         const wallThickness = thickness * scale;
         
-        // Wall height in scaled units
-        const wallHeight = height * scale;
+        // Wall height in scaled units - adjust for gap-fill mode
+        let wallHeight;
+        let wallBaseY = 0; // Default: floor level
+        if (fill_gap_mode && gap_fill_height !== null && gap_base_position !== null) {
+          // Gap-fill mode: position at gap base, use gap height
+          wallBaseY = gap_base_position * scale;
+          wallHeight = gap_fill_height * scale;
+        } else {
+          // Normal mode: floor to ceiling
+          wallHeight = height * scale;
+        }
         
         // Calculate the wall's midpoint using final coordinates
         const wallMidX = (finalStartX + finalEndX) / 2;
@@ -1603,6 +1620,7 @@ getModelBounds() {
             dbLinePoint, 
             offsetLinePoint, 
             wallHeight, 
+            wallBaseY,
             cutouts, 
             divisionPosition, 
             finalWallLength,
@@ -1634,7 +1652,7 @@ getModelBounds() {
   createFallbackPanelLines() {
     try {
       this.walls.forEach((wall, wallIndex) => {
-        const { start_x, start_y, end_x, end_y, height, thickness, id } = wall;
+        const { start_x, start_y, end_x, end_y, height, thickness, id, fill_gap_mode, gap_fill_height, gap_base_position } = wall;
         const scale = this.scalingFactor;
         
         // Calculate wall direction and length
@@ -1652,15 +1670,28 @@ getModelBounds() {
         const divX3D = midX * scale + this.modelOffset.x;
         const divZ3D = midY * scale + this.modelOffset.z;
         
-        // Create line from floor to ceiling
+        // Calculate wall height and base position for gap-fill mode
+        let wallHeight;
+        let wallBaseY = 0; // Default: floor level
+        if (fill_gap_mode && gap_fill_height !== null && gap_base_position !== null) {
+          // Gap-fill mode: position at gap base, use gap height
+          wallBaseY = gap_base_position * scale;
+          wallHeight = gap_fill_height * scale;
+        } else {
+          // Normal mode: floor to ceiling
+          wallHeight = height * scale;
+        }
+        
+        // Create line from wall base to wall top
+        const wallTopY = wallBaseY + wallHeight;
         const lineGeometry = new this.THREE.BufferGeometry();
         const vertices = new Float32Array([
           // Line at wall position
-          divX3D, 0, divZ3D,
-          divX3D, height * scale, divZ3D,
+          divX3D, wallBaseY, divZ3D,
+          divX3D, wallTopY, divZ3D,
           // Line offset by wall thickness
-          divX3D + (dy / wallLength) * thickness * scale, 0, divZ3D - (dx / wallLength) * thickness * scale,
-          divX3D + (dy / wallLength) * thickness * scale, height * scale, divZ3D - (dx / wallLength) * thickness * scale
+          divX3D + (dy / wallLength) * thickness * scale, wallBaseY, divZ3D - (dx / wallLength) * thickness * scale,
+          divX3D + (dy / wallLength) * thickness * scale, wallTopY, divZ3D - (dx / wallLength) * thickness * scale
         ]);
         
         lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
@@ -1723,11 +1754,19 @@ getModelBounds() {
   setCeilingPanelLinesVisibility(visible) {
     this.showCeilingPanelLines = visible;
     
-    if (visible && this.ceilingPanelLines.length === 0) {
-      this.createCeilingPanelDivisionLines();
+    // Only show ceiling panel lines if NOT in interior view
+    if (!this.isInteriorView) {
+      if (visible && this.ceilingPanelLines.length === 0) {
+        this.createCeilingPanelDivisionLines();
+      } else {
+        this.ceilingPanelLines.forEach(line => {
+          line.visible = visible;
+        });
+      }
     } else {
+      // In interior view, keep ceiling panel lines hidden
       this.ceilingPanelLines.forEach(line => {
-        line.visible = visible;
+        line.visible = false;
       });
     }
   }
@@ -1754,13 +1793,22 @@ getModelBounds() {
     }
     
     // Handle ceiling panel lines
-    if (newState && this.ceilingPanelLines.length === 0) {
-      console.log('🏠 Creating new ceiling panel lines...');
-      this.createCeilingPanelDivisionLines();
+    // Only show ceiling panel lines if NOT in interior view
+    if (!this.isInteriorView) {
+      if (newState && this.ceilingPanelLines.length === 0) {
+        console.log('🏠 Creating new ceiling panel lines...');
+        this.createCeilingPanelDivisionLines();
+      } else {
+        console.log('🏠 Toggling existing ceiling panel lines visibility...');
+        this.ceilingPanelLines.forEach(line => {
+          line.visible = newState;
+        });
+      }
     } else {
-      console.log('🏠 Toggling existing ceiling panel lines visibility...');
+      // In interior view, keep ceiling panel lines hidden
+      console.log('🏠 Interior view: Keeping ceiling panel lines hidden');
       this.ceilingPanelLines.forEach(line => {
-        line.visible = newState;
+        line.visible = false;
       });
     }
   }
@@ -1780,17 +1828,25 @@ getModelBounds() {
     }
     
     // Handle ceiling panel lines
-    if (visible && this.ceilingPanelLines.length === 0) {
-      this.createCeilingPanelDivisionLines();
+    // Only show ceiling panel lines if NOT in interior view
+    if (!this.isInteriorView) {
+      if (visible && this.ceilingPanelLines.length === 0) {
+        this.createCeilingPanelDivisionLines();
+      } else {
+        this.ceilingPanelLines.forEach(line => {
+          line.visible = visible;
+        });
+      }
     } else {
+      // In interior view, keep ceiling panel lines hidden
       this.ceilingPanelLines.forEach(line => {
-        line.visible = visible;
+        line.visible = false;
       });
     }
   }
 
   // Method to create line segments with gaps at door cutouts
-  createLineSegmentsWithCutouts(dbLinePoint, offsetLinePoint, wallHeight, cutouts, divisionPosition, finalWallLength, finalStartX, finalStartY, finalEndX, finalEndY, scale, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
+  createLineSegmentsWithCutouts(dbLinePoint, offsetLinePoint, wallHeight, wallBaseY, cutouts, divisionPosition, finalWallLength, finalStartX, finalStartY, finalEndX, finalEndY, scale, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
     
     // Check if this division line intersects with any door cutout
     // A door cutout is an area/range, so we check if the panel line falls within that area
@@ -1818,7 +1874,7 @@ getModelBounds() {
     
     
     if (intersectingCutouts.length === 0) {
-      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, isCutPanel, wallId, currentPanel, nextPanel);
+      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, wallBaseY, isCutPanel, wallId, currentPanel, nextPanel);
       return;
     }
     
@@ -1828,7 +1884,7 @@ getModelBounds() {
     // Validate cutout data
     if (!cutout || typeof cutout.height !== 'number' || cutout.height < 0) {
       console.error(`❌ Invalid cutout data:`, cutout);
-      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, isCutPanel, wallId, currentPanel, nextPanel);
+      this.createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, wallBaseY, isCutPanel, wallId, currentPanel, nextPanel);
       return;
     }
     
@@ -1836,22 +1892,26 @@ getModelBounds() {
     
     
     // Create line only from door top to wall top
-    this.createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight, isCutPanel, wallId, currentPanel, nextPanel);
+    this.createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, wallBaseY, doorHeight, isCutPanel, wallId, currentPanel, nextPanel);
   }
   
   // Method to create lines only from door top to wall top
-  createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, doorHeight, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
+  createDoorTopToWallTopLines(dbLinePoint, offsetLinePoint, wallHeight, wallBaseY, doorHeight, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
     
     // Only create line from door top to wall top (no line from floor to door bottom)
+    // doorHeight and wallHeight are relative to wallBaseY
+    const doorTopY = wallBaseY + doorHeight;
+    const wallTopY = wallBaseY + wallHeight;
+    
     if (doorHeight < wallHeight) {
       const lineGeometry = new this.THREE.BufferGeometry();
       const vertices = new Float32Array([
         // Line at database coordinate position (0 position) - from door top to wall top
-        dbLinePoint.x, doorHeight, dbLinePoint.z,
-        dbLinePoint.x, wallHeight, dbLinePoint.z,
+        dbLinePoint.x, doorTopY, dbLinePoint.z,
+        dbLinePoint.x, wallTopY, dbLinePoint.z,
         // Line offset by wall thickness - from door top to wall top
-        offsetLinePoint.x, doorHeight, offsetLinePoint.z,
-        offsetLinePoint.x, wallHeight, offsetLinePoint.z
+        offsetLinePoint.x, doorTopY, offsetLinePoint.z,
+        offsetLinePoint.x, wallTopY, offsetLinePoint.z
       ]);
       
       lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
@@ -1881,11 +1941,11 @@ getModelBounds() {
       const lineGeometry = new this.THREE.BufferGeometry();
       const vertices = new Float32Array([
         // Line at database coordinate position (0 position) - very short at top
-        dbLinePoint.x, wallHeight - 1, dbLinePoint.z,
-        dbLinePoint.x, wallHeight, dbLinePoint.z,
+        dbLinePoint.x, wallTopY - 1, dbLinePoint.z,
+        dbLinePoint.x, wallTopY, dbLinePoint.z,
         // Line offset by wall thickness - very short at top
-        offsetLinePoint.x, wallHeight - 1, offsetLinePoint.z,
-        offsetLinePoint.x, wallHeight, offsetLinePoint.z
+        offsetLinePoint.x, wallTopY - 1, offsetLinePoint.z,
+        offsetLinePoint.x, wallTopY, offsetLinePoint.z
       ]);
       
       lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
@@ -1908,17 +1968,17 @@ getModelBounds() {
   }
   
   // Method to create continuous lines (no cutouts)
-  createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
+  createContinuousLines(dbLinePoint, offsetLinePoint, wallHeight, wallBaseY, isCutPanel = false, wallId = null, currentPanel = null, nextPanel = null) {
     
     // Create the division line geometry - two lines: one at DB position, one offset
     const lineGeometry = new this.THREE.BufferGeometry();
     const vertices = new Float32Array([
       // Line at database coordinate position (0 position)
-      dbLinePoint.x, 0, dbLinePoint.z,
-      dbLinePoint.x, wallHeight, dbLinePoint.z,
+      dbLinePoint.x, wallBaseY, dbLinePoint.z,
+      dbLinePoint.x, wallBaseY + wallHeight, dbLinePoint.z,
       // Line offset by wall thickness
-      offsetLinePoint.x, 0, offsetLinePoint.z,
-      offsetLinePoint.x, wallHeight, offsetLinePoint.z
+      offsetLinePoint.x, wallBaseY, offsetLinePoint.z,
+      offsetLinePoint.x, wallBaseY + wallHeight, offsetLinePoint.z
     ]);
     
     lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));

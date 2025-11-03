@@ -223,6 +223,19 @@ const Canvas2D = ({
         isDraggingCanvas.current = false;
     };
 
+    // Handle right-click (context menu) for define-room mode
+    const handleCanvasContextMenu = (event) => {
+        // Only handle right-click in define-room mode
+        if (currentMode === 'define-room' && selectedRoomPoints && selectedRoomPoints.length > 0) {
+            event.preventDefault(); // Prevent default context menu
+            const points = [...selectedRoomPoints];
+            if (points.length > 0) {
+                points.pop();
+                onUpdateRoomPoints(points);
+            }
+        }
+    };
+
     // Add global mouse up event listener for canvas dragging
     useEffect(() => {
         const handleGlobalMouseUp = () => {
@@ -854,15 +867,7 @@ const Canvas2D = ({
             // 2. Snap to intersections, wall segments, endpoints
             const snapped = snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor.current);
             let points = [...selectedRoomPoints];
-            // 3. If right-click, remove last point
-            if (event.type === 'contextmenu' || event.button === 2) {
-                if (points.length > 0) {
-                    points.pop();
-                    onUpdateRoomPoints(points);
-                }
-                return;
-            }
-            // 4. If clicking near the first point and ≥3 points, close polygon
+            // 3. If clicking near the first point and ≥3 points, close polygon
             if (points.length >= 3) {
                 const first = points[0];
                 const distToFirst = Math.hypot(snapped.x - first.x, snapped.y - first.y);
@@ -1480,6 +1485,7 @@ const Canvas2D = ({
                         onClick={handleCanvasClick}
                         onMouseMove={handleMouseMove}
                         onMouseDown={handleCanvasMouseDown}
+                        onContextMenu={handleCanvasContextMenu}
                         
                         tabIndex={0}
                         className={`border border-gray-300 bg-gray-50 ${

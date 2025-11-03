@@ -334,7 +334,7 @@ const ProjectDetails = () => {
                                 <div>
                                     <h3 className="text-lg font-semibold text-gray-900">Define Room</h3>
                                     <p className="text-sm text-gray-600 mt-1">
-                                        Select walls to define room boundaries. Click on walls to select/deselect them.
+                                        Click points on the canvas to define the room boundary. Walls will be automatically detected based on the polygon. Right-click to remove the last point.
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-3">

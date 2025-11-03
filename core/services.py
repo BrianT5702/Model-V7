@@ -475,8 +475,10 @@ class RoomService:
 
     @staticmethod
     def update_wall_heights_for_room(wall_ids, new_height):
-        """Update the height of all walls in a room to match the room height."""
-        from .models import Wall
+        """Update the height of all walls in a room to match the room height.
+        For shared walls (walls that belong to multiple rooms), the wall height
+        will be set to the maximum height of all rooms that share the wall."""
+        from .models import Wall, Room
         import logging
         
         logger = logging.getLogger(__name__)
@@ -484,7 +486,7 @@ class RoomService:
         
         if not wall_ids or new_height is None:
             logger.warning(f"Invalid parameters: wall_ids={wall_ids}, new_height={new_height}")
-            return
+            return 0
             
         # Convert wall_ids to integers to handle string IDs from frontend
         try:
@@ -494,21 +496,42 @@ class RoomService:
             logger.error(f"Error converting wall_ids to integers: {e}")
             return 0
             
-        walls = Wall.objects.filter(id__in=wall_ids)
+        walls = Wall.objects.filter(id__in=wall_ids).prefetch_related('rooms')
         logger.info(f"Found {walls.count()} walls to update")
         
-        # Log current wall heights before update
+        updated_count = 0
+        
+        # Process each wall individually to handle shared walls
         for wall in walls:
-            logger.info(f"Wall {wall.id}: current height = {wall.height}")
+            logger.info(f"Processing wall {wall.id}: current height = {wall.height}")
+            
+            # Get all rooms that contain this wall
+            rooms_containing_wall = wall.rooms.all()
+            logger.info(f"Wall {wall.id} is shared by {rooms_containing_wall.count()} room(s)")
+            
+            # Collect heights from all rooms that contain this wall
+            room_heights = []
+            for room in rooms_containing_wall:
+                if room.height is not None:
+                    room_heights.append(room.height)
+                    logger.info(f"  Room {room.id} ({room.room_name}): height = {room.height}")
+            
+            # If wall is not in any room, use the provided new_height
+            if not room_heights:
+                target_height = new_height
+                logger.info(f"Wall {wall.id} is not in any room, using provided height: {target_height}")
+            else:
+                # Use the maximum height of all rooms sharing this wall
+                target_height = max(room_heights)
+                logger.info(f"Wall {wall.id} is shared by {len(room_heights)} room(s), using max height: {target_height}")
+            
+            # Update the wall height
+            wall.height = target_height
+            wall.save()
+            updated_count += 1
+            logger.info(f"Wall {wall.id}: updated to height = {wall.height}")
         
-        updated_count = walls.update(height=new_height)
-        logger.info(f"Updated {updated_count} walls to height {new_height}")
-        
-        # Verify the update
-        updated_walls = Wall.objects.filter(id__in=wall_ids)
-        for wall in updated_walls:
-            logger.info(f"Wall {wall.id}: new height = {wall.height}")
-        
+        logger.info(f"Updated {updated_count} walls total")
         return updated_count
 
     @staticmethod

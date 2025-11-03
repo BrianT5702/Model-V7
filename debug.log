@@ -26914,3 +26914,202 @@ INFO 2025-11-03 09:53:14,826 services 408 9540 Recalculating room boundary for r
 INFO 2025-11-03 09:53:14,830 services 408 9540 Updated room 181 boundary with 4 points (order preserved)
 INFO 2025-11-03 09:53:14,830 services 408 9540 Recalculating room boundary for room 182
 INFO 2025-11-03 09:53:14,833 services 408 9540 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:09:35,869 services 408 24776 calculate_minimum_wall_height called with wall_ids: [6277, 6273, 6279, 6280]
+INFO 2025-11-03 10:09:35,869 services 408 24776 Converted wall_ids to integers: [6277, 6273, 6279, 6280]
+INFO 2025-11-03 10:09:35,918 services 408 24776 Found 4 walls
+INFO 2025-11-03 10:09:35,919 services 408 24776 Calculated minimum wall height: 3500.0
+INFO 2025-11-03 10:09:45,730 services 408 24776 calculate_minimum_wall_height called with wall_ids: [6286, 6287]
+INFO 2025-11-03 10:09:45,730 services 408 24776 Converted wall_ids to integers: [6286, 6287]
+INFO 2025-11-03 10:09:45,770 services 408 24776 Found 2 walls
+INFO 2025-11-03 10:09:45,772 services 408 24776 Calculated minimum wall height: 5000.0
+INFO 2025-11-03 10:10:00,248 services 408 24776 calculate_minimum_wall_height called with wall_ids: [6286, 6287, 6288, 6284]
+INFO 2025-11-03 10:10:00,249 services 408 24776 Converted wall_ids to integers: [6286, 6287, 6288, 6284]
+INFO 2025-11-03 10:10:00,290 services 408 24776 Found 4 walls
+INFO 2025-11-03 10:10:00,291 services 408 24776 Calculated minimum wall height: 5000.0
+INFO 2025-11-03 10:21:15,350 autoreload 408 21156 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:21:16,333 autoreload 24388 11252 Watching for file changes with StatReloader
+INFO 2025-11-03 10:21:25,789 autoreload 24388 11252 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:21:26,603 autoreload 20720 24120 Watching for file changes with StatReloader
+INFO 2025-11-03 10:22:05,080 autoreload 20720 24120 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:22:05,940 autoreload 19596 7964 Watching for file changes with StatReloader
+INFO 2025-11-03 10:22:33,217 services 19596 25576 calculate_minimum_wall_height called with wall_ids: [6285, 6284]
+INFO 2025-11-03 10:22:33,218 services 19596 25576 Converted wall_ids to integers: [6285, 6284]
+INFO 2025-11-03 10:22:33,258 services 19596 25576 Found 2 walls
+INFO 2025-11-03 10:22:33,260 services 19596 25576 Calculated minimum wall height: 5000.0
+INFO 2025-11-03 10:22:47,241 views 19596 25576 Creating room with data: {'room_name': 'Room Testing 1 ', 'floor_type': 'None', 'floor_thickness': '0', 'temperature': 10, 'height': 3000, 'remarks': '', 'walls': [6285, 6284, 6283, 6282], 'project': '441', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 5000}, {'x': 5000, 'y': 5000}, {'x': 5000, 'y': 0}]}
+INFO 2025-11-03 10:22:47,241 services 19596 25576 create_room_with_height called with room_data: {'room_name': 'Room Testing 1 ', 'floor_type': 'None', 'floor_thickness': '0', 'temperature': 10, 'height': 3000, 'remarks': '', 'walls': [6285, 6284, 6283, 6282], 'project': '441', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 5000}, {'x': 5000, 'y': 5000}, {'x': 5000, 'y': 0}]}
+INFO 2025-11-03 10:22:47,296 services 19596 25576 Created room with ID: 183, height: 3000
+INFO 2025-11-03 10:22:47,296 services 19596 25576 Adding 4 walls to room and updating heights
+INFO 2025-11-03 10:22:47,297 services 19596 25576 Converted wall IDs: [6285, 6284, 6283, 6282]
+INFO 2025-11-03 10:22:47,299 services 19596 25576 Found 4 walls to add to room
+INFO 2025-11-03 10:22:47,312 services 19596 25576 Added walls to room 183
+INFO 2025-11-03 10:22:47,312 services 19596 25576 update_wall_heights_for_room called with wall_ids: [6285, 6284, 6283, 6282], new_height: 3000
+INFO 2025-11-03 10:22:47,312 services 19596 25576 Converted wall_ids to integers: [6285, 6284, 6283, 6282]
+INFO 2025-11-03 10:22:47,313 services 19596 25576 Found 4 walls to check for update
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Wall 6282: current height = 5000.0, new height = 3000
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Skipped wall 6282: original height (5000.0) is >= new height (3000)
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Wall 6283: current height = 5000.0, new height = 3000
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Skipped wall 6283: original height (5000.0) is >= new height (3000)
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Wall 6285: current height = 5000.0, new height = 3000
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Skipped wall 6285: original height (5000.0) is >= new height (3000)
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Wall 6284: current height = 5000.0, new height = 3000
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Skipped wall 6284: original height (5000.0) is >= new height (3000)
+INFO 2025-11-03 10:22:47,314 services 19596 25576 Updated 0 walls, skipped 4 walls
+INFO 2025-11-03 10:22:47,315 services 19596 25576 Updated 0 walls for room 183
+INFO 2025-11-03 10:22:47,315 views 19596 25576 Successfully created room 183 with height 3000
+INFO 2025-11-03 10:22:52,615 services 19596 25576 Recalculating room boundary for room 183
+INFO 2025-11-03 10:22:52,619 services 19596 25576 Updated room 183 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:23:24,602 autoreload 19596 7964 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:23:26,201 autoreload 24756 17336 Watching for file changes with StatReloader
+INFO 2025-11-03 10:25:55,115 autoreload 24756 17336 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:25:55,964 autoreload 23872 25076 Watching for file changes with StatReloader
+INFO 2025-11-03 10:26:50,858 autoreload 23872 25076 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:26:51,843 autoreload 7268 18944 Watching for file changes with StatReloader
+INFO 2025-11-03 10:27:19,306 services 7268 10652 calculate_minimum_wall_height called with wall_ids: [6285, 6284, 6283, 6282]
+INFO 2025-11-03 10:27:19,307 services 7268 10652 Converted wall_ids to integers: [6285, 6284, 6283, 6282]
+INFO 2025-11-03 10:27:19,466 services 7268 10652 Found 4 walls
+INFO 2025-11-03 10:27:19,468 services 7268 10652 Calculated minimum wall height: 5000.0
+INFO 2025-11-03 10:27:25,832 views 7268 10652 Updating room with data: {'room_name': 'Room Testing 1 ', 'floor_type': 'None', 'floor_thickness': 0, 'temperature': '10.00', 'height': 3000, 'remarks': '', 'walls': [6285, 6284, 6283, 6282], 'project': '441', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 5000}, {'x': 5000, 'y': 5000}, {'x': 5000, 'y': 0}], 'id': 183}
+INFO 2025-11-03 10:27:25,871 views 7268 10652 Found room to update: 183, current height: 3000.0
+INFO 2025-11-03 10:27:25,883 views 7268 10652 Updated room height to: 3000.0
+INFO 2025-11-03 10:27:25,885 views 7268 10652 Updating 4 walls with new height: 3000
+INFO 2025-11-03 10:27:25,885 services 7268 10652 update_wall_heights_for_room called with wall_ids: [6282, 6283, 6285, 6284], new_height: 3000
+INFO 2025-11-03 10:27:25,885 services 7268 10652 Converted wall_ids to integers: [6282, 6283, 6285, 6284]
+INFO 2025-11-03 10:27:25,886 services 7268 10652 Found 4 walls to check
+INFO 2025-11-03 10:27:25,887 services 7268 10652 Wall 6282: current height = 5000.0
+INFO 2025-11-03 10:27:25,887 services 7268 10652 Wall 6283: current height = 5000.0
+INFO 2025-11-03 10:27:25,887 services 7268 10652 Wall 6285: current height = 5000.0
+INFO 2025-11-03 10:27:25,887 services 7268 10652 Wall 6284: current height = 5000.0
+INFO 2025-11-03 10:27:25,891 services 7268 10652 Wall 6282: skipped (current height 5000.0 > room height 3000)
+INFO 2025-11-03 10:27:25,891 services 7268 10652 Wall 6283: skipped (current height 5000.0 > room height 3000)
+INFO 2025-11-03 10:27:25,891 services 7268 10652 Wall 6285: skipped (current height 5000.0 > room height 3000)
+INFO 2025-11-03 10:27:25,892 services 7268 10652 Wall 6284: skipped (current height 5000.0 > room height 3000)
+INFO 2025-11-03 10:27:25,892 services 7268 10652 Updated 0 walls to height 3000
+INFO 2025-11-03 10:27:25,893 services 7268 10652 Wall 6282: new height = 5000.0
+INFO 2025-11-03 10:27:25,893 services 7268 10652 Wall 6283: new height = 5000.0
+INFO 2025-11-03 10:27:25,893 services 7268 10652 Wall 6285: new height = 5000.0
+INFO 2025-11-03 10:27:25,893 services 7268 10652 Wall 6284: new height = 5000.0
+INFO 2025-11-03 10:27:25,893 views 7268 10652 Successfully updated 0 walls
+INFO 2025-11-03 10:27:25,894 services 7268 10652 Recalculating room boundary for room 183
+INFO 2025-11-03 10:27:25,897 services 7268 10652 Updated room 183 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:29:20,833 autoreload 7268 18944 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:29:21,952 autoreload 6028 15012 Watching for file changes with StatReloader
+INFO 2025-11-03 10:29:57,119 autoreload 6028 15012 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:29:57,923 autoreload 8096 6652 Watching for file changes with StatReloader
+INFO 2025-11-03 10:30:30,776 autoreload 8096 6652 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:30:31,706 autoreload 19480 20932 Watching for file changes with StatReloader
+INFO 2025-11-03 10:31:40,802 views 19480 704 Updating room with data: {'room_name': 'Room Testing 1', 'floor_type': 'None', 'floor_thickness': 0, 'temperature': '10.00', 'height': 3000, 'remarks': '', 'walls': [6285, 6284, 6283, 6282], 'project': '441', 'room_points': [{'x': 0, 'y': 0}, {'x': 0, 'y': 5000}, {'x': 5000, 'y': 5000}, {'x': 5000, 'y': 0}], 'id': 183}
+INFO 2025-11-03 10:31:40,841 views 19480 704 Found room to update: 183, current height: 3000.0
+INFO 2025-11-03 10:31:40,856 views 19480 704 Updated room height to: 3000.0
+INFO 2025-11-03 10:31:40,857 views 19480 704 Updating 4 walls with new height: 3000
+INFO 2025-11-03 10:31:40,857 services 19480 704 update_wall_heights_for_room called with wall_ids: [6282, 6283, 6285, 6284], new_height: 3000
+INFO 2025-11-03 10:31:40,857 services 19480 704 Converted wall_ids to integers: [6282, 6283, 6285, 6284]
+INFO 2025-11-03 10:31:40,858 services 19480 704 Found 4 walls to update
+INFO 2025-11-03 10:31:40,860 services 19480 704 Processing wall 6282: current height = 5000.0
+INFO 2025-11-03 10:31:40,860 services 19480 704 Wall 6282 is shared by 1 room(s)
+INFO 2025-11-03 10:31:40,860 services 19480 704   Room 183 (Room Testing 1): height = 3000.0
+INFO 2025-11-03 10:31:40,862 services 19480 704 Wall 6282 is shared by 1 room(s), using max height: 3000.0
+INFO 2025-11-03 10:31:40,862 services 19480 704 Wall 6282: updated to height = 3000.0
+INFO 2025-11-03 10:31:40,863 services 19480 704 Processing wall 6283: current height = 5000.0
+INFO 2025-11-03 10:31:40,863 services 19480 704 Wall 6283 is shared by 1 room(s)
+INFO 2025-11-03 10:31:40,863 services 19480 704   Room 183 (Room Testing 1): height = 3000.0
+INFO 2025-11-03 10:31:40,863 services 19480 704 Wall 6283 is shared by 1 room(s), using max height: 3000.0
+INFO 2025-11-03 10:31:40,863 services 19480 704 Wall 6283: updated to height = 3000.0
+INFO 2025-11-03 10:31:40,865 services 19480 704 Processing wall 6285: current height = 5000.0
+INFO 2025-11-03 10:31:40,865 services 19480 704 Wall 6285 is shared by 1 room(s)
+INFO 2025-11-03 10:31:40,865 services 19480 704   Room 183 (Room Testing 1): height = 3000.0
+INFO 2025-11-03 10:31:40,865 services 19480 704 Wall 6285 is shared by 1 room(s), using max height: 3000.0
+INFO 2025-11-03 10:31:40,866 services 19480 704 Wall 6285: updated to height = 3000.0
+INFO 2025-11-03 10:31:40,866 services 19480 704 Processing wall 6284: current height = 5000.0
+INFO 2025-11-03 10:31:40,867 services 19480 704 Wall 6284 is shared by 1 room(s)
+INFO 2025-11-03 10:31:40,867 services 19480 704   Room 183 (Room Testing 1): height = 3000.0
+INFO 2025-11-03 10:31:40,867 services 19480 704 Wall 6284 is shared by 1 room(s), using max height: 3000.0
+INFO 2025-11-03 10:31:40,868 services 19480 704 Wall 6284: updated to height = 3000.0
+INFO 2025-11-03 10:31:40,868 services 19480 704 Updated 4 walls total
+INFO 2025-11-03 10:31:40,868 views 19480 704 Successfully updated 4 walls
+INFO 2025-11-03 10:31:40,868 services 19480 704 Recalculating room boundary for room 183
+INFO 2025-11-03 10:31:40,870 services 19480 704 Updated room 183 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:33:00,873 services 19480 704 calculate_minimum_wall_height called with wall_ids: [6286, 6287]
+INFO 2025-11-03 10:33:00,873 services 19480 704 Converted wall_ids to integers: [6286, 6287]
+INFO 2025-11-03 10:33:01,013 services 19480 704 Found 2 walls
+INFO 2025-11-03 10:33:01,015 services 19480 704 Calculated minimum wall height: 5000.0
+INFO 2025-11-03 10:33:19,534 views 19480 704 Creating room with data: {'room_name': 'Room Testing 2', 'floor_type': 'None', 'floor_thickness': '0', 'temperature': -10, 'height': 1500, 'remarks': '', 'walls': [6286, 6287, 6288, 6284], 'project': '441', 'room_points': [{'x': 0, 'y': 5000}, {'x': 0, 'y': 5990}, {'x': 5037, 'y': 5990}, {'x': 5000, 'y': 5000}]}
+INFO 2025-11-03 10:33:19,534 services 19480 704 create_room_with_height called with room_data: {'room_name': 'Room Testing 2', 'floor_type': 'None', 'floor_thickness': '0', 'temperature': -10, 'height': 1500, 'remarks': '', 'walls': [6286, 6287, 6288, 6284], 'project': '441', 'room_points': [{'x': 0, 'y': 5000}, {'x': 0, 'y': 5990}, {'x': 5037, 'y': 5990}, {'x': 5000, 'y': 5000}]}
+INFO 2025-11-03 10:33:19,575 services 19480 704 Created room with ID: 184, height: 1500
+INFO 2025-11-03 10:33:19,575 services 19480 704 Adding 4 walls to room and updating heights
+INFO 2025-11-03 10:33:19,576 services 19480 704 Converted wall IDs: [6286, 6287, 6288, 6284]
+INFO 2025-11-03 10:33:19,577 services 19480 704 Found 4 walls to add to room
+INFO 2025-11-03 10:33:19,584 services 19480 704 Added walls to room 184
+INFO 2025-11-03 10:33:19,584 services 19480 704 update_wall_heights_for_room called with wall_ids: [6286, 6287, 6288, 6284], new_height: 1500
+INFO 2025-11-03 10:33:19,585 services 19480 704 Converted wall_ids to integers: [6286, 6287, 6288, 6284]
+INFO 2025-11-03 10:33:19,585 services 19480 704 Found 4 walls to update
+INFO 2025-11-03 10:33:19,588 services 19480 704 Processing wall 6287: current height = 5000.0
+INFO 2025-11-03 10:33:19,588 services 19480 704 Wall 6287 is shared by 1 room(s)
+INFO 2025-11-03 10:33:19,588 services 19480 704   Room 184 (Room Testing 2): height = 1500.0
+INFO 2025-11-03 10:33:19,588 services 19480 704 Wall 6287 is shared by 1 room(s), using max height: 1500.0
+INFO 2025-11-03 10:33:19,589 services 19480 704 Wall 6287: updated to height = 1500.0
+INFO 2025-11-03 10:33:19,589 services 19480 704 Processing wall 6284: current height = 3000.0
+INFO 2025-11-03 10:33:19,589 services 19480 704 Wall 6284 is shared by 2 room(s)
+INFO 2025-11-03 10:33:19,589 services 19480 704   Room 183 (Room Testing 1): height = 3000.0
+INFO 2025-11-03 10:33:19,590 services 19480 704   Room 184 (Room Testing 2): height = 1500.0
+INFO 2025-11-03 10:33:19,590 services 19480 704 Wall 6284 is shared by 2 room(s), using max height: 3000.0
+INFO 2025-11-03 10:33:19,590 services 19480 704 Wall 6284: updated to height = 3000.0
+INFO 2025-11-03 10:33:19,592 services 19480 704 Processing wall 6286: current height = 5000.0
+INFO 2025-11-03 10:33:19,592 services 19480 704 Wall 6286 is shared by 1 room(s)
+INFO 2025-11-03 10:33:19,592 services 19480 704   Room 184 (Room Testing 2): height = 1500.0
+INFO 2025-11-03 10:33:19,592 services 19480 704 Wall 6286 is shared by 1 room(s), using max height: 1500.0
+INFO 2025-11-03 10:33:19,592 services 19480 704 Wall 6286: updated to height = 1500.0
+INFO 2025-11-03 10:33:19,593 services 19480 704 Processing wall 6288: current height = 5000.0
+INFO 2025-11-03 10:33:19,593 services 19480 704 Wall 6288 is shared by 1 room(s)
+INFO 2025-11-03 10:33:19,593 services 19480 704   Room 184 (Room Testing 2): height = 1500.0
+INFO 2025-11-03 10:33:19,593 services 19480 704 Wall 6288 is shared by 1 room(s), using max height: 1500.0
+INFO 2025-11-03 10:33:19,594 services 19480 704 Wall 6288: updated to height = 1500.0
+INFO 2025-11-03 10:33:19,594 services 19480 704 Updated 4 walls total
+INFO 2025-11-03 10:33:19,594 services 19480 704 Updated 4 walls for room 184
+INFO 2025-11-03 10:33:19,594 views 19480 704 Successfully created room 184 with height 1500
+INFO 2025-11-03 10:37:26,159 services 19480 704 Recalculating room boundary for room 183
+INFO 2025-11-03 10:37:26,164 services 19480 704 Updated room 183 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:37:26,164 services 19480 704 Recalculating room boundary for room 184
+INFO 2025-11-03 10:37:26,168 services 19480 704 Updated room 184 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:38:06,105 autoreload 19480 20932 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-03 10:38:06,677 autoreload 23044 20400 Watching for file changes with StatReloader
+INFO 2025-11-03 10:41:38,765 services 23044 17148 calculate_minimum_wall_height called with wall_ids: [6286, 6287, 6288, 6284]
+INFO 2025-11-03 10:41:38,765 services 23044 17148 Converted wall_ids to integers: [6286, 6287, 6288, 6284]
+INFO 2025-11-03 10:41:38,922 services 23044 17148 Found 4 walls
+INFO 2025-11-03 10:41:38,924 services 23044 17148 Calculated minimum wall height: 1500.0
+INFO 2025-11-03 10:41:43,962 views 23044 17148 Updating room with data: {'room_name': 'Room Testing 2', 'floor_type': 'None', 'floor_thickness': 0, 'temperature': '-10.00', 'height': 5000, 'remarks': '', 'walls': [6286, 6287, 6288, 6284], 'project': '441', 'room_points': [{'x': 0, 'y': 5000}, {'x': 0, 'y': 5990}, {'x': 5037, 'y': 5990}, {'x': 5000, 'y': 5000}], 'id': 184}
+INFO 2025-11-03 10:41:44,007 views 23044 17148 Found room to update: 184, current height: 1500.0
+INFO 2025-11-03 10:41:44,019 views 23044 17148 Updated room height to: 5000.0
+INFO 2025-11-03 10:41:44,022 views 23044 17148 Updating 4 walls with new height: 5000
+INFO 2025-11-03 10:41:44,022 services 23044 17148 update_wall_heights_for_room called with wall_ids: [6284, 6287, 6286, 6288], new_height: 5000
+INFO 2025-11-03 10:41:44,022 services 23044 17148 Converted wall_ids to integers: [6284, 6287, 6286, 6288]
+INFO 2025-11-03 10:41:44,023 services 23044 17148 Found 4 walls to update
+INFO 2025-11-03 10:41:44,024 services 23044 17148 Processing wall 6284: current height = 3000.0
+INFO 2025-11-03 10:41:44,024 services 23044 17148 Wall 6284 is shared by 2 room(s)
+INFO 2025-11-03 10:41:44,025 services 23044 17148   Room 183 (Room Testing 1): height = 3000.0
+INFO 2025-11-03 10:41:44,025 services 23044 17148   Room 184 (Room Testing 2): height = 5000.0
+INFO 2025-11-03 10:41:44,025 services 23044 17148 Wall 6284 is shared by 2 room(s), using max height: 5000.0
+INFO 2025-11-03 10:41:44,027 services 23044 17148 Wall 6284: updated to height = 5000.0
+INFO 2025-11-03 10:41:44,027 services 23044 17148 Processing wall 6287: current height = 1500.0
+INFO 2025-11-03 10:41:44,027 services 23044 17148 Wall 6287 is shared by 1 room(s)
+INFO 2025-11-03 10:41:44,027 services 23044 17148   Room 184 (Room Testing 2): height = 5000.0
+INFO 2025-11-03 10:41:44,028 services 23044 17148 Wall 6287 is shared by 1 room(s), using max height: 5000.0
+INFO 2025-11-03 10:41:44,029 services 23044 17148 Wall 6287: updated to height = 5000.0
+INFO 2025-11-03 10:41:44,029 services 23044 17148 Processing wall 6286: current height = 1500.0
+INFO 2025-11-03 10:41:44,029 services 23044 17148 Wall 6286 is shared by 1 room(s)
+INFO 2025-11-03 10:41:44,029 services 23044 17148   Room 184 (Room Testing 2): height = 5000.0
+INFO 2025-11-03 10:41:44,029 services 23044 17148 Wall 6286 is shared by 1 room(s), using max height: 5000.0
+INFO 2025-11-03 10:41:44,030 services 23044 17148 Wall 6286: updated to height = 5000.0
+INFO 2025-11-03 10:41:44,030 services 23044 17148 Processing wall 6288: current height = 1500.0
+INFO 2025-11-03 10:41:44,030 services 23044 17148 Wall 6288 is shared by 1 room(s)
+INFO 2025-11-03 10:41:44,030 services 23044 17148   Room 184 (Room Testing 2): height = 5000.0
+INFO 2025-11-03 10:41:44,031 services 23044 17148 Wall 6288 is shared by 1 room(s), using max height: 5000.0
+INFO 2025-11-03 10:41:44,032 services 23044 17148 Wall 6288: updated to height = 5000.0
+INFO 2025-11-03 10:41:44,032 services 23044 17148 Updated 4 walls total
+INFO 2025-11-03 10:41:44,032 views 23044 17148 Successfully updated 4 walls
+INFO 2025-11-03 10:41:44,033 services 23044 17148 Recalculating room boundary for room 184
+INFO 2025-11-03 10:41:44,037 services 23044 17148 Updated room 184 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:42:08,053 services 23044 17148 Recalculating room boundary for room 183
+INFO 2025-11-03 10:42:08,057 services 23044 17148 Updated room 183 boundary with 4 points (order preserved)
+INFO 2025-11-03 10:42:08,057 services 23044 17148 Recalculating room boundary for room 184
+INFO 2025-11-03 10:42:08,060 services 23044 17148 Updated room 184 boundary with 4 points (order preserved)

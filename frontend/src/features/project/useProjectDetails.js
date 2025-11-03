@@ -11,7 +11,7 @@ export default function useProjectDetails(projectId) {
   const [isEditingMode, setIsEditingMode] = useState(false);
   const [currentMode, setCurrentMode] = useState(null);
   const [selectedWall, setSelectedWall] = useState(null);
-  const [is3DView, setIs3DView] = useState(null);
+  const [is3DView, setIs3DView] = useState(false);
   const [isInteriorView, setIsInteriorView] = useState(false);
   const threeCanvasInstance = useRef(null);
   const [showRoomManager, setShowRoomManager] = useState(false);
@@ -338,16 +338,17 @@ export default function useProjectDetails(projectId) {
         const newRoom = response.data;
         setRooms((prevRooms) => [...prevRooms, newRoom]);
         
-        // Update wall heights in frontend state immediately
-        if (roomData.walls && roomData.height) {
-          setWalls(prevWalls => 
-            prevWalls.map(wall => 
-              roomData.walls.includes(wall.id) 
-                ? { ...wall, height: roomData.height }
-                : wall
-            )
-          );
-          console.log('Updated wall heights in frontend state:', roomData.walls, 'to height:', roomData.height);
+        // Refetch walls to get updated heights (especially for shared walls)
+        // Shared walls will have the maximum height of all rooms that share them
+        if (roomData.height !== undefined) {
+          try {
+            const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+            setWalls(wallsResponse.data);
+            console.log('Refetched walls after room creation to sync shared wall heights');
+          } catch (error) {
+            console.error('Error refetching walls after room creation:', error);
+            // Continue even if refetch fails
+          }
         }
         
         setRoomCreateSuccess(true);
@@ -372,19 +373,16 @@ export default function useProjectDetails(projectId) {
       const response = await api.put(`/rooms/${updatedRoomData.id}/`, updatedRoomData);
       setRooms(rooms.map(room => room.id === updatedRoomData.id ? response.data : room));
       
-      // Update wall heights in frontend state immediately if height was changed
-      if (updatedRoomData.height) {
-        // Get the room to find its associated walls
-        const room = rooms.find(r => r.id === updatedRoomData.id);
-        if (room && room.walls) {
-          setWalls(prevWalls => 
-            prevWalls.map(wall => 
-              room.walls.includes(wall.id) 
-                ? { ...wall, height: updatedRoomData.height }
-                : wall
-            )
-          );
-          console.log('Updated wall heights in frontend state for room update:', room.walls, 'to height:', updatedRoomData.height);
+      // Refetch walls to get updated heights (especially for shared walls)
+      // Shared walls will have the maximum height of all rooms that share them
+      if (updatedRoomData.height !== undefined) {
+        try {
+          const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+          setWalls(wallsResponse.data);
+          console.log('Refetched walls after room height update to sync shared wall heights');
+        } catch (error) {
+          console.error('Error refetching walls after room update:', error);
+          // Continue even if refetch fails
         }
       }
       
