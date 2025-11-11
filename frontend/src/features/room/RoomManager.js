@@ -189,6 +189,61 @@ const RoomManager = ({
                                 )}
                             </div>
 
+                            {/* Base Elevation Section */}
+                            <div>
+                                <label className="text-xs font-medium text-gray-700">Base Elevation</label>
+                                <div className="mt-1 relative">
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={form.baseElevation}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            // Allow empty, minus sign, and valid number patterns
+                                            if (value === '' || value === '-') {
+                                                form.setBaseElevation(value);
+                                            } else if (/^-?\d*\.?\d*$/.test(value)) {
+                                                // Allow valid number patterns (including negative)
+                                                form.setBaseElevation(value);
+                                            }
+                                            // If pattern doesn't match, don't update (prevents invalid input)
+                                        }}
+                                        onBlur={(e) => {
+                                            // On blur, ensure we have a valid number
+                                            const value = e.target.value;
+                                            if (value === '' || value === '-') {
+                                                form.setBaseElevation(0);
+                                            } else {
+                                                const numValue = parseFloat(value);
+                                                form.setBaseElevation(isNaN(numValue) ? 0 : numValue);
+                                            }
+                                        }}
+                                        placeholder="0"
+                                        className="block w-full rounded-md border border-gray-300 px-2 py-1 pr-12 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">mm</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Positive = raised, Negative = sunken from ground level
+                                </p>
+                                <div className="mt-1 flex gap-1">
+                                    {[-300, -150, 0, 150, 300].map(value => (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            onClick={() => form.setBaseElevation(value.toString())}
+                                            className={`px-2 py-0.5 text-xs rounded border ${
+                                                form.baseElevation === value.toString() || (value === 0 && (form.baseElevation === '0' || form.baseElevation === 0))
+                                                    ? 'bg-blue-100 border-blue-500 text-blue-700'
+                                                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {value > 0 ? `+${value}` : value}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             {/* Remarks Section */}
                             <div>
                                 <label className="text-xs font-medium text-gray-700">Remarks</label>

@@ -1,13 +1,19 @@
+import logging
+
+from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import Project, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection
+from .models import Project, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection, CeilingZone
 from .serializers import (
     ProjectSerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
-    DoorSerializer, IntersectionSerializer
+    DoorSerializer, IntersectionSerializer, CeilingZoneSerializer
 )
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
@@ -411,14 +417,18 @@ class CeilingPanelViewSet(viewsets.ModelViewSet):
         """Optionally filter ceiling panels by room ID or project ID"""
         room_id = self.request.query_params.get('room')
         project_id = self.request.query_params.get('project')
+        zone_id = self.request.query_params.get('zone')
         
         if room_id:
             return CeilingPanel.objects.filter(room_id=room_id)
+        elif zone_id:
+            return CeilingPanel.objects.filter(zone_id=zone_id)
         elif project_id:
             # Filter by project by getting rooms that belong to the project
-            from .models import Room
-            project_rooms = Room.objects.filter(project_id=project_id)
-            return CeilingPanel.objects.filter(room__in=project_rooms)
+            from django.db.models import Q
+            return CeilingPanel.objects.filter(
+                Q(room__project_id=project_id) | Q(zone__project_id=project_id)
+            )
         
         return super().get_queryset()
 
@@ -430,14 +440,17 @@ class CeilingPlanViewSet(viewsets.ModelViewSet):
         """Optionally filter ceiling plans by room ID or project ID"""
         room_id = self.request.query_params.get('room')
         project_id = self.request.query_params.get('project')
+        zone_id = self.request.query_params.get('zone')
         
         if room_id:
             return CeilingPlan.objects.filter(room_id=room_id)
+        elif zone_id:
+            return CeilingPlan.objects.filter(zone_id=zone_id)
         elif project_id:
-            # Filter by project by getting rooms that belong to the project
-            from .models import Room
-            project_rooms = Room.objects.filter(project_id=project_id)
-            return CeilingPlan.objects.filter(room__in=project_rooms)
+            from django.db.models import Q
+            return CeilingPlan.objects.filter(
+                Q(room__project_id=project_id) | Q(zone__project_id=project_id)
+            )
         
         return super().get_queryset()
 
@@ -630,6 +643,67 @@ class CeilingPlanViewSet(viewsets.ModelViewSet):
             return Response(visualization_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CeilingZoneViewSet(viewsets.ModelViewSet):
+    queryset = CeilingZone.objects.all().prefetch_related('rooms', 'ceiling_panels')
+    serializer_class = CeilingZoneSerializer
+
+    def get_queryset(self):
+        project_id = self.request.query_params.get('project')
+        queryset = super().get_queryset()
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        project_id = request.data.get('project_id') or request.data.get('project')
+        room_ids = request.data.get('room_ids', [])
+
+        if not project_id:
+            return Response({'error': 'project_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(room_ids, (list, tuple)) or len(room_ids) < 2:
+            return Response({'error': 'Select at least two rooms to merge.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = CeilingService.create_ceiling_zone(project_id, room_ids, request.data)
+            serializer = self.get_serializer(result['zone'])
+            response_data = serializer.data
+            response_data['leftover_stats'] = result['leftover_stats']
+            response_data['orientation_used'] = result['orientation_used']
+            response_data['waste_percentage'] = result['waste_percentage']
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception('Failed to create ceiling zone')
+            return Response({'error': f'Failed to create ceiling zone: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def destroy(self, request, *args, **kwargs):
+        regenerate = request.query_params.get('regenerate', 'false').lower() == 'true'
+        zone = self.get_object()
+        try:
+            CeilingService.delete_ceiling_zone(zone.id, regenerate_room_plans=regenerate)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception('Failed to delete ceiling zone')
+            return Response({'error': f'Failed to delete ceiling zone: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='regenerate')
+    def regenerate(self, request, pk=None):
+        zone = self.get_object()
+        try:
+            generation_settings = request.data or {}
+            result = CeilingService.regenerate_existing_ceiling_zone(zone, generation_settings)
+            return Response(result, status=status.HTTP_200_OK)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception('Failed to regenerate ceiling zone')
+            return Response({'error': f'Failed to regenerate ceiling zone: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class DoorViewSet(viewsets.ModelViewSet):
     queryset = Door.objects.all()

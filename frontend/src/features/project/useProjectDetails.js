@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../../api/api';
 import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
 import { areCollinearWalls, calculateIntersection, arePointsEqual, detectRoomWalls } from './projectUtils';
@@ -50,13 +50,48 @@ export default function useProjectDetails(projectId) {
   });
   
   // Function to update shared panel data from any tab
-  const updateSharedPanelData = (tabName, panelData, analysis = null) => {
+  // Memoized to prevent unnecessary re-renders and wrapped in useCallback
+  const updateSharedPanelData = useCallback((tabName, panelData, analysis = null) => {
     setSharedPanelData(prev => {
+      // Determine which field to update based on tab name
+      const fieldName = tabName === 'wall-plan' ? 'wallPanels' : 
+                       tabName === 'ceiling-plan' ? 'ceilingPanels' : 
+                       tabName === 'floor-plan' ? 'floorPanels' : 'unknown';
+      
+      // Check if values actually changed to prevent unnecessary updates
+      const currentData = prev[fieldName];
+      const dataChanged = JSON.stringify(currentData) !== JSON.stringify(panelData);
+      
+      // For ceiling-support-options, check if analysis values changed
+      let supportDataChanged = false;
+      if ((tabName === 'ceiling-plan' || tabName === 'ceiling-support-options') && analysis && typeof analysis === 'object') {
+        const newSupportType = analysis.supportType ?? prev.supportType;
+        const newIncludeAccessories = analysis.includeAccessories ?? prev.includeAccessories;
+        const newIncludeCable = analysis.includeCable ?? prev.includeCable;
+        const newAluSuspensionCustomDrawing = analysis.aluSuspensionCustomDrawing ?? prev.aluSuspensionCustomDrawing;
+        const newPanelsNeedSupport = analysis.panelsNeedSupport ?? prev.panelsNeedSupport;
+        
+        supportDataChanged = 
+          prev.supportType !== newSupportType ||
+          prev.includeAccessories !== newIncludeAccessories ||
+          prev.includeCable !== newIncludeCable ||
+          prev.aluSuspensionCustomDrawing !== newAluSuspensionCustomDrawing ||
+          prev.panelsNeedSupport !== newPanelsNeedSupport;
+      }
+      
+      // Only update if something actually changed
+      // For ceiling-support-options, we need to check supportDataChanged specifically
+      if (tabName === 'ceiling-support-options') {
+        if (!supportDataChanged) {
+          return prev; // Return previous state unchanged to prevent unnecessary re-renders
+        }
+      } else if (!dataChanged && !supportDataChanged) {
+        return prev; // Return previous state unchanged to prevent unnecessary re-renders
+      }
+      
       const baseUpdate = {
         ...prev,
-        [tabName === 'wall-plan' ? 'wallPanels' : 
-         tabName === 'ceiling-plan' ? 'ceilingPanels' : 
-         tabName === 'floor-plan' ? 'floorPanels' : 'unknown']: panelData,
+        [fieldName]: panelData,
         wallPanelAnalysis: tabName === 'wall-plan' ? analysis : prev.wallPanelAnalysis,
         lastUpdated: new Date().toISOString()
       };
@@ -65,18 +100,21 @@ export default function useProjectDetails(projectId) {
       if ((tabName === 'ceiling-plan' || tabName === 'ceiling-support-options') && analysis && typeof analysis === 'object') {
         return {
           ...baseUpdate,
-          supportType: analysis.supportType || prev.supportType,
-          includeAccessories: analysis.includeAccessories || prev.includeAccessories,
-          includeCable: analysis.includeCable || prev.includeCable,
-          aluSuspensionCustomDrawing: analysis.aluSuspensionCustomDrawing || prev.aluSuspensionCustomDrawing,
-          panelsNeedSupport: analysis.panelsNeedSupport || prev.panelsNeedSupport
+          supportType: analysis.supportType ?? prev.supportType,
+          includeAccessories: analysis.includeAccessories ?? prev.includeAccessories,
+          includeCable: analysis.includeCable ?? prev.includeCable,
+          aluSuspensionCustomDrawing: analysis.aluSuspensionCustomDrawing ?? prev.aluSuspensionCustomDrawing,
+          panelsNeedSupport: analysis.panelsNeedSupport ?? prev.panelsNeedSupport
         };
       }
       
       return baseUpdate;
     });
-    console.log(`Updated shared panel data for ${tabName}:`, panelData, analysis);
-  };
+    // Only log when values actually changed to reduce console spam
+    if (tabName !== 'ceiling-support-options' || (analysis && Object.keys(analysis).length > 0)) {
+      console.log(`Updated shared panel data for ${tabName}:`, panelData, analysis);
+    }
+  }, []); // Empty dependency array - function doesn't depend on any props/state
   
   // Function to update canvas images
   const updateCanvasImage = (planType, imageData) => {

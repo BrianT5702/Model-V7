@@ -1,5 +1,4 @@
-import * as THREE from "three";
-import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry';
+import THREE, { TextGeometry } from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
@@ -10,6 +9,18 @@ import { THREE_CONFIG } from './threeConfig';
 import WallRenderer from './components/WallRenderer';
 import DoorRenderer from './components/DoorRenderer';
 import AnimationManager from './managers/AnimationManager';
+
+const isThreeDebugEnabled = process.env.REACT_APP_DEBUG_THREE === 'true';
+const debugLog = (...args) => {
+  if (isThreeDebugEnabled) {
+    console.log(...args);
+  }
+};
+const debugWarn = (...args) => {
+  if (isThreeDebugEnabled) {
+    console.warn(...args);
+  }
+};
 
 window.gsap = gsap;
 
@@ -214,7 +225,7 @@ export default class ThreeCanvas {
     });
 
     // Debug: Interior view animation
-    // console.log(`🏠 Interior view: Hiding ${ceilingLevels.length} ceilings, keeping ${floorLevels.length} floors visible`);
+    // debugLog(`🏠 Interior view: Hiding ${ceilingLevels.length} ceilings, keeping ${floorLevels.length} floors visible`);
 
     // Hide only ceilings for interior view (keep floors visible)
     ceilingLevels.forEach(ceiling => {
@@ -307,7 +318,7 @@ animateToExteriorView() {
     });
 
     // Debug: Exterior view animation
-    // console.log(`🏠 Exterior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors into view`);
+    // debugLog(`🏠 Exterior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors into view`);
 
     // Animate all ceiling levels
     ceilingLevels.forEach(ceiling => {
@@ -765,12 +776,13 @@ getModelBounds() {
           return;
         }
 
-        
+        // Get base elevation (default to 0 if not set)
+        const baseElevation = (room.base_elevation_mm ?? 0) * this.scalingFactor;
 
         // Convert room points to 3D coordinates
         const roomVertices = room.room_points.map(point => ({
-          x: point.x * this.scalingFactor + this.modelOffset.x,
-          z: point.y * this.scalingFactor + this.modelOffset.z
+            x: point.x * this.scalingFactor + this.modelOffset.x,
+            z: point.y * this.scalingFactor + this.modelOffset.z
         }));
 
         // Get ceiling thickness from room's ceiling plan or use default
@@ -780,14 +792,16 @@ getModelBounds() {
         const ceilingMesh = this.createRoomCeilingMesh(roomVertices, roomCeilingHeight, room, roomCeilingThickness);
         
         if (ceilingMesh) {
-          // Position ceiling at the correct height
-          ceilingMesh.position.y = roomCeilingHeight * this.scalingFactor;
+          // Position ceiling at base elevation + room height (absolute ceiling position)
+          ceilingMesh.position.y = baseElevation + (roomCeilingHeight * this.scalingFactor);
           ceilingMesh.name = `ceiling_room_${room.id}`;
           ceilingMesh.userData = {
             isCeiling: true,
             roomId: room.id,
             roomName: room.room_name || `Room ${room.id}`,
             height: roomCeilingHeight,
+            baseElevation: room.base_elevation_mm ?? 0,
+            absoluteHeight: baseElevation + (roomCeilingHeight * this.scalingFactor),
             thickness: roomCeilingThickness
           };
           
@@ -1060,9 +1074,9 @@ getModelBounds() {
       // Add text to ceiling
       ceiling.add(textMesh);
       
-      console.log(`🏷️ Added label "${room.room_name || `Room ${room.id}`}" to ceiling`);
+      debugLog(`🏷️ Added label "${room.room_name || `Room ${room.id}`}" to ceiling`);
     } catch (error) {
-      console.warn(`⚠️ Could not add room label to ceiling:`, error);
+      debugWarn(`⚠️ Could not add room label to ceiling:`, error);
       // Text geometry might not be available, skip label
     }
   }
@@ -1215,14 +1229,14 @@ getModelBounds() {
         // Swap left and right side panels
         if (rightSide) {
           const flippedRightSide = { ...rightSide, position: 'left' };
-          console.log(`  Right side panel (${rightSide.width}mm) -> Left side panel`);
+          debugLog(`  Right side panel (${rightSide.width}mm) -> Left side panel`);
           orderedPanels.push(flippedRightSide);
         }
         if (otherSides.length > 0 && !rightSide) orderedPanels.push(otherSides[0]);
         orderedPanels = orderedPanels.concat(fullPanels);
         if (leftSide) {
           const flippedLeftSide = { ...leftSide, position: 'right' };
-          console.log(`  Left side panel (${leftSide.width}mm) -> Right side panel`);
+          debugLog(`  Left side panel (${leftSide.width}mm) -> Right side panel`);
           orderedPanels.push(flippedLeftSide);
         }
         if (otherSides.length > 1 || (otherSides.length === 1 && rightSide)) orderedPanels.push(otherSides[otherSides.length - 1]);
@@ -1253,7 +1267,7 @@ getModelBounds() {
     }
 
     this.project.rooms.forEach(room => {
-      console.log(`🏠 Checking room ${room.id} (${room.room_name}):`, {
+      debugLog(`🏠 Checking room ${room.id} (${room.room_name}):`, {
         ceiling_plan: room.ceiling_plan,
         ceiling_panels_from_plan: room.ceiling_plan?.ceiling_panels,
         hasCeilingPanels: room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0
@@ -1262,7 +1276,7 @@ getModelBounds() {
       // Check for ceiling panels via ceiling_plan.ceiling_panels (correct path)
       if (room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0) {
         // Use the actual ceiling panel data from the database
-        console.log(`🏠 Room ${room.id}: Using actual ceiling panel data (${room.ceiling_plan.ceiling_panels.length} panels)`);
+        debugLog(`🏠 Room ${room.id}: Using actual ceiling panel data (${room.ceiling_plan.ceiling_panels.length} panels)`);
         const panels = room.ceiling_plan.ceiling_panels.map(panel => ({
           id: panel.panel_id,
           width: panel.width,
@@ -1283,10 +1297,10 @@ getModelBounds() {
           ceiling_plan: room.ceiling_plan
         };
         
-        console.log(`🏠 Room ${room.id} (${room.room_name}): Found ${panels.length} ceiling panels`);
+        debugLog(`🏠 Room ${room.id} (${room.room_name}): Found ${panels.length} ceiling panels`);
       } else {
         // Fallback: Generate panels using PanelCalculator if no ceiling plan exists
-        console.log(`🏠 Room ${room.id} (${room.room_name}): No ceiling panel data, generating fallback panels`);
+        debugLog(`🏠 Room ${room.id} (${room.room_name}): No ceiling panel data, generating fallback panels`);
         const fallbackPanels = this.generateFallbackCeilingPanels(room);
         if (fallbackPanels.length > 0) {
           ceilingPanelsMap[room.id] = {
@@ -1348,7 +1362,7 @@ getModelBounds() {
       accumulatedLength += lengthPanel.actualWidth || lengthPanel.width;
     });
     
-    console.log(`🏠 Generated ${panels.length} fallback ceiling panels for room ${room.id}`);
+    debugLog(`🏠 Generated ${panels.length} fallback ceiling panels for room ${room.id}`);
     return panels;
   }
 
@@ -1465,7 +1479,7 @@ getModelBounds() {
         const finalWallLengthUnscaled = finalWallLength / scale;
         
         // Debug: Wall length calculation
-        // console.log(`Wall ${wall.id} - Scaled length: ${finalWallLength}, Unscaled length: ${finalWallLengthUnscaled}mm, Scale: ${scale}`);
+        // debugLog(`Wall ${wall.id} - Scaled length: ${finalWallLength}, Unscaled length: ${finalWallLengthUnscaled}mm, Scale: ${scale}`);
         
         // Calculate wall normal (perpendicular to final wall direction)
         const wallDirX = finalDx / finalWallLength;
@@ -1485,6 +1499,22 @@ getModelBounds() {
           wallHeight = gap_fill_height * scale;
         } else {
           // Normal mode: floor to ceiling
+          // Find rooms that contain this wall and use the minimum base elevation
+          if (this.project && this.project.rooms) {
+            const roomsWithWall = this.project.rooms.filter(room => 
+              room.walls && room.walls.some(wallId => String(wallId) === String(id))
+            );
+            
+            if (roomsWithWall.length > 0) {
+              const baseElevations = roomsWithWall
+                .map(room => room.base_elevation_mm ?? 0)
+                .filter(elev => !isNaN(elev));
+              
+              if (baseElevations.length > 0) {
+                wallBaseY = Math.min(...baseElevations) * scale;
+              }
+            }
+          }
           wallHeight = height * scale;
         }
         
@@ -1600,15 +1630,15 @@ getModelBounds() {
             z: divZ3D + finalNormZ * wallThickness
           };
           
-          console.log(`  - 3D coordinates: (${divX3D.toFixed(2)}, ${divZ3D.toFixed(2)})`);
-          console.log(`  - Calling createLineSegmentsWithCutouts with position ${divisionPosition}mm`);
+          debugLog(`  - 3D coordinates: (${divX3D.toFixed(2)}, ${divZ3D.toFixed(2)})`);
+          debugLog(`  - Calling createLineSegmentsWithCutouts with position ${divisionPosition}mm`);
           
           // Get the current panel and next panel to determine if this is a cut panel boundary
           const currentPanel = panels[i];
           const nextPanel = panels[i + 1];
           const isCutPanel = currentPanel.type === 'side' || nextPanel.type === 'side';
           
-          console.log(`🔨 Wall ${wall.id} panel line ${i + 1}:`, {
+          debugLog(`🔨 Wall ${wall.id} panel line ${i + 1}:`, {
             currentPanel: { type: currentPanel.type, width: currentPanel.width },
             nextPanel: { type: nextPanel.type, width: nextPanel.width },
             isCutPanel: isCutPanel,
@@ -1678,7 +1708,22 @@ getModelBounds() {
           wallBaseY = gap_base_position * scale;
           wallHeight = gap_fill_height * scale;
         } else {
-          // Normal mode: floor to ceiling
+          // Normal mode: find rooms that contain this wall and use minimum base elevation
+          if (this.project && this.project.rooms) {
+            const roomsWithWall = this.project.rooms.filter(room => 
+              room.walls && room.walls.some(wallId => String(wallId) === String(id))
+            );
+            
+            if (roomsWithWall.length > 0) {
+              const baseElevations = roomsWithWall
+                .map(room => room.base_elevation_mm ?? 0)
+                .filter(elev => !isNaN(elev));
+              
+              if (baseElevations.length > 0) {
+                wallBaseY = Math.min(...baseElevations) * scale;
+              }
+            }
+          }
           wallHeight = height * scale;
         }
         
@@ -1735,15 +1780,15 @@ getModelBounds() {
   // Method to toggle ceiling panel division lines visibility
   toggleCeilingPanelLines() {
     this.showCeilingPanelLines = !this.showCeilingPanelLines;
-    console.log('🏠 Toggling ceiling panel lines to:', this.showCeilingPanelLines);
+    debugLog('🏠 Toggling ceiling panel lines to:', this.showCeilingPanelLines);
     
     if (this.showCeilingPanelLines && this.ceilingPanelLines.length === 0) {
       // Create ceiling panel lines only when first enabled
-      console.log('🏠 Creating new ceiling panel lines...');
+      debugLog('🏠 Creating new ceiling panel lines...');
       this.createCeilingPanelDivisionLines();
     } else {
       // Just toggle visibility of existing ceiling panel lines
-      console.log('🏠 Toggling visibility of existing ceiling panel lines:', this.ceilingPanelLines.length);
+      debugLog('🏠 Toggling visibility of existing ceiling panel lines:', this.ceilingPanelLines.length);
       this.ceilingPanelLines.forEach(line => {
         line.visible = this.showCeilingPanelLines;
       });
@@ -1777,16 +1822,16 @@ getModelBounds() {
     this.showPanelLines = newState;
     this.showCeilingPanelLines = newState;
     
-    console.log('🏠 Toggling ALL panel lines to:', newState);
-    console.log('🏠 Wall panel lines count:', this.panelLines.length);
-    console.log('🏠 Ceiling panel lines count:', this.ceilingPanelLines.length);
+    debugLog('🏠 Toggling ALL panel lines to:', newState);
+    debugLog('🏠 Wall panel lines count:', this.panelLines.length);
+    debugLog('🏠 Ceiling panel lines count:', this.ceilingPanelLines.length);
     
     // Handle wall panel lines
     if (newState && this.panelLines.length === 0) {
-      console.log('🏠 Creating new wall panel lines...');
+      debugLog('🏠 Creating new wall panel lines...');
       this.createPanelDivisionLines();
     } else {
-      console.log('🏠 Toggling existing wall panel lines visibility...');
+      debugLog('🏠 Toggling existing wall panel lines visibility...');
       this.panelLines.forEach(line => {
         line.visible = newState;
       });
@@ -1796,17 +1841,17 @@ getModelBounds() {
     // Only show ceiling panel lines if NOT in interior view
     if (!this.isInteriorView) {
       if (newState && this.ceilingPanelLines.length === 0) {
-        console.log('🏠 Creating new ceiling panel lines...');
+        debugLog('🏠 Creating new ceiling panel lines...');
         this.createCeilingPanelDivisionLines();
       } else {
-        console.log('🏠 Toggling existing ceiling panel lines visibility...');
+        debugLog('🏠 Toggling existing ceiling panel lines visibility...');
         this.ceilingPanelLines.forEach(line => {
           line.visible = newState;
         });
       }
     } else {
       // In interior view, keep ceiling panel lines hidden
-      console.log('🏠 Interior view: Keeping ceiling panel lines hidden');
+      debugLog('🏠 Interior view: Keeping ceiling panel lines hidden');
       this.ceilingPanelLines.forEach(line => {
         line.visible = false;
       });
@@ -1853,7 +1898,7 @@ getModelBounds() {
     const intersectingCutouts = cutouts.filter(cutout => {
       const isWithinCutout = divisionPosition >= cutout.start && divisionPosition <= cutout.end;
       
-      console.log(`🔍 Checking cutout for door ${cutout.doorInfo.id}:`, {
+      debugLog(`🔍 Checking cutout for door ${cutout.doorInfo.id}:`, {
         cutoutStart: cutout.start,
         cutoutEnd: cutout.end,
         cutoutRange: `${cutout.start}mm to ${cutout.end}mm`,
@@ -1864,9 +1909,9 @@ getModelBounds() {
       });
       
       if (isWithinCutout) {
-        console.log(`✅ Panel line at ${divisionPosition}mm is WITHIN door cutout ${cutout.start}-${cutout.end}mm`);
+        debugLog(`✅ Panel line at ${divisionPosition}mm is WITHIN door cutout ${cutout.start}-${cutout.end}mm`);
       } else {
-        console.log(`❌ Panel line at ${divisionPosition}mm is OUTSIDE door cutout ${cutout.start}-${cutout.end}mm`);
+        debugLog(`❌ Panel line at ${divisionPosition}mm is OUTSIDE door cutout ${cutout.start}-${cutout.end}mm`);
       }
       
       return isWithinCutout;
@@ -2026,7 +2071,7 @@ getModelBounds() {
   // Grid lines (gray) show the overall panel arrangement
   createCeilingPanelDivisionLines() {
     try {
-      console.log('🏠 Starting ceiling panel division lines creation...');
+      debugLog('🏠 Starting ceiling panel division lines creation...');
       
       // Clear existing ceiling panel lines
       this.ceilingPanelLines.forEach(line => {
@@ -2035,7 +2080,7 @@ getModelBounds() {
       this.ceilingPanelLines = [];
       
       const ceilingPanelsMap = this.calculateCeilingPanels();
-      console.log('🏠 Ceiling panels map:', ceilingPanelsMap);
+      debugLog('🏠 Ceiling panels map:', ceilingPanelsMap);
       
       let roomsWithCeilingPanels = 0;
       let totalCeilingPanelLines = 0;
@@ -2053,7 +2098,7 @@ getModelBounds() {
           return;
         }
         
-        console.log(`🏠 Creating ceiling panel lines for room ${room.id} (${room.room_name || 'Unnamed'}) with ${panels.length} panels`);
+        debugLog(`🏠 Creating ceiling panel lines for room ${room.id} (${room.room_name || 'Unnamed'}) with ${panels.length} panels`);
         
         // Convert room points to 3D coordinates
         const roomVertices = room.room_points.map(point => ({
@@ -2067,7 +2112,7 @@ getModelBounds() {
         totalCeilingPanelLines += this.calculateCeilingPanelLineCount(panels);
       });
       
-      console.log(`🏠 Created ceiling panel lines for ${roomsWithCeilingPanels} rooms, ${totalCeilingPanelLines} total lines`);
+      debugLog(`🏠 Created ceiling panel lines for ${roomsWithCeilingPanels} rooms, ${totalCeilingPanelLines} total lines`);
       
     } catch (error) {
       console.error('Error creating ceiling panel division lines:', error);
@@ -2090,11 +2135,11 @@ getModelBounds() {
   createCeilingPanelBoundaryLines(room, panels, roomVertices, ceilingY) {
     const scale = this.scalingFactor;
     
-    console.log(`🏠 Creating boundary lines for room ${room.id} with ${panels.length} panels`);
+    debugLog(`🏠 Creating boundary lines for room ${room.id} with ${panels.length} panels`);
     
     // Create lines along panel boundaries
     panels.forEach((panel, panelIndex) => {
-      console.log(`🏠 Panel ${panelIndex + 1} (${panel.id}):`, {
+      debugLog(`🏠 Panel ${panelIndex + 1} (${panel.id}):`, {
         start: { x: panel.start_x, y: panel.start_y },
         end: { x: panel.end_x, y: panel.end_y },
         width: panel.width,
@@ -2139,7 +2184,7 @@ getModelBounds() {
   createCeilingPanelBoundaryLine(startX, startZ, endX, endZ, ceilingY, roomId, panelId, isCutPanel) {
     const scale = this.scalingFactor;
     
-    console.log(`🏠 Creating ceiling panel line:`, {
+    debugLog(`🏠 Creating ceiling panel line:`, {
       start: { x: startX, z: startZ },
       end: { x: endX, z: endZ },
       ceilingY: ceilingY,
@@ -2178,7 +2223,7 @@ getModelBounds() {
     this.scene.add(line);
     this.ceilingPanelLines.push(line);
     
-    console.log(`🏠 Added ceiling panel line to scene. Total ceiling panel lines: ${this.ceilingPanelLines.length}`);
+    debugLog(`🏠 Added ceiling panel line to scene. Total ceiling panel lines: ${this.ceilingPanelLines.length}`);
   }
 
   // Create grid lines showing internal panel divisions
@@ -2282,7 +2327,7 @@ getModelBounds() {
   // Method to create a simple 3D demonstration of 45-degree joints
   create45DegreeJointDemo() {
     try {
-      console.log('🔨 Creating 45-degree joint demonstration...');
+      debugLog('🔨 Creating 45-degree joint demonstration...');
       
       // Clear existing demo objects
       this.scene.traverse((object) => {
@@ -2333,7 +2378,7 @@ getModelBounds() {
         wallAMesh.userData.wallId = 'demo_wall_a';
         wallAMesh.material.color.setHex(0x4ECDC4); // Teal for Wall A
         this.scene.add(wallAMesh);
-        console.log('✅ Created demo Wall A (vertical)');
+        debugLog('✅ Created demo Wall A (vertical)');
       }
       
       if (wallBMesh) {
@@ -2341,13 +2386,13 @@ getModelBounds() {
         wallBMesh.userData.wallId = 'demo_wall_b';
         wallBMesh.material.color.setHex(0xFF6B6B); // Red for Wall B
         this.scene.add(wallBMesh);
-        console.log('✅ Created demo Wall B (horizontal)');
+        debugLog('✅ Created demo Wall B (horizontal)');
       }
       
-      console.log('🎯 45-degree joint demonstration created!');
-      console.log('   - Wall A (Vertical): Teal color');
-      console.log('   - Wall B (Horizontal): Red color');
-      console.log('   - Joint: 45-degree mitered corner');
+      debugLog('🎯 45-degree joint demonstration created!');
+      debugLog('   - Wall A (Vertical): Teal color');
+      debugLog('   - Wall B (Horizontal): Red color');
+      debugLog('   - Joint: 45-degree mitered corner');
       
     } catch (error) {
       console.error('❌ Error creating 45-degree joint demo:', error);
@@ -2394,7 +2439,7 @@ getModelBounds() {
       );
       
       if (has45Joint) {
-        console.log(`🔨 Applying 45-degree cut to wall ${id}`);
+        debugLog(`🔨 Applying 45-degree cut to wall ${id}`);
         // For demo purposes, we'll create a simplified 45-degree cut
         // In the full implementation, this would use CSG operations
         
@@ -2415,7 +2460,7 @@ getModelBounds() {
         cutIndicator.rotation.y = angle + Math.PI / 4; // 45 degrees
         
         this.scene.add(cutIndicator);
-        console.log(`✅ Added 45-degree cut indicator for wall ${id}`);
+        debugLog(`✅ Added 45-degree cut indicator for wall ${id}`);
       }
       
       return wallMesh;
@@ -2428,14 +2473,14 @@ getModelBounds() {
 
   // Test method for ceiling panel lines functionality
   testCeilingPanelLinesFunctionality() {
-    console.log('🧪 Testing ceiling panel lines functionality...');
+    debugLog('🧪 Testing ceiling panel lines functionality...');
     
     // First, let's check what project data we have
-    console.log('🏠 Project data:', this.project);
+    debugLog('🏠 Project data:', this.project);
     if (this.project && this.project.rooms) {
-      console.log('🏠 Rooms data:', this.project.rooms);
+      debugLog('🏠 Rooms data:', this.project.rooms);
       this.project.rooms.forEach(room => {
-        console.log(`🏠 Room ${room.id} (${room.room_name}):`, {
+        debugLog(`🏠 Room ${room.id} (${room.room_name}):`, {
           ceiling_plan: room.ceiling_plan,
           ceiling_panels_from_plan: room.ceiling_plan?.ceiling_panels,
           ceiling_panels_count: room.ceiling_plan?.ceiling_panels ? room.ceiling_plan.ceiling_panels.length : 0,
@@ -2445,55 +2490,55 @@ getModelBounds() {
         
         // If we have ceiling panels, show some sample data
         if (room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0) {
-          console.log(`🏠 Sample ceiling panels for room ${room.id}:`, room.ceiling_plan.ceiling_panels.slice(0, 3));
+          debugLog(`🏠 Sample ceiling panels for room ${room.id}:`, room.ceiling_plan.ceiling_panels.slice(0, 3));
         }
       });
     }
     
     // Test ceiling panel calculation
     const ceilingPanelsMap = this.calculateCeilingPanels();
-    console.log('🏠 Ceiling panels map:', ceilingPanelsMap);
+    debugLog('🏠 Ceiling panels map:', ceilingPanelsMap);
     
     // Test individual methods
     Object.values(ceilingPanelsMap).forEach(({ room, panels }) => {
-      console.log(`🏠 Room ${room.id} (${room.room_name}): ${panels.length} panels`);
+      debugLog(`🏠 Room ${room.id} (${room.room_name}): ${panels.length} panels`);
       panels.forEach((panel, index) => {
-        console.log(`  Panel ${index + 1}: ${panel.width}x${panel.length}mm at (${panel.start_x}, ${panel.start_y}) - (${panel.end_x}, ${panel.end_y})`);
+        debugLog(`  Panel ${index + 1}: ${panel.width}x${panel.length}mm at (${panel.start_x}, ${panel.start_y}) - (${panel.end_x}, ${panel.end_y})`);
         if (panel.is_cut_panel) {
-          console.log(`    ⚠️ Cut panel: ${panel.cut_notes || 'No notes'}`);
+          debugLog(`    ⚠️ Cut panel: ${panel.cut_notes || 'No notes'}`);
         }
       });
     });
     
     // Test toggle functionality
-    console.log('🔄 Testing ceiling panel lines toggle...');
+    debugLog('🔄 Testing ceiling panel lines toggle...');
     this.toggleCeilingPanelLines();
-    console.log('✅ Ceiling panel lines toggled ON');
+    debugLog('✅ Ceiling panel lines toggled ON');
     
     setTimeout(() => {
       this.toggleCeilingPanelLines();
-      console.log('✅ Ceiling panel lines toggled OFF');
+      debugLog('✅ Ceiling panel lines toggled OFF');
     }, 2000);
     
     // Test combined toggle
     setTimeout(() => {
-      console.log('🔄 Testing combined panel lines toggle...');
+      debugLog('🔄 Testing combined panel lines toggle...');
       this.toggleAllPanelLines();
-      console.log('✅ All panel lines toggled ON');
+      debugLog('✅ All panel lines toggled ON');
     }, 4000);
     
     setTimeout(() => {
       this.toggleAllPanelLines();
-      console.log('✅ All panel lines toggled OFF');
+      debugLog('✅ All panel lines toggled OFF');
     }, 6000);
   }
 
   // Test method for ceiling and floor functionality
   testCeilingFunctionality() {
-    console.log('🧪 Testing ceiling and floor functionality...');
+    debugLog('🧪 Testing ceiling and floor functionality...');
     
     // Log all scene objects
-    console.log('🔍 All scene objects:', this.scene.children.map(child => ({
+    debugLog('🔍 All scene objects:', this.scene.children.map(child => ({
       name: child.name,
       type: child.type,
       userData: child.userData,
@@ -2524,7 +2569,7 @@ getModelBounds() {
           this.renderer.render(this.scene, this.camera);
         }
         
-        console.log(`  - New opacity: ${ceiling.material.opacity}`);
+        debugLog(`  - New opacity: ${ceiling.material.opacity}`);
       }
     });
     
@@ -2551,13 +2596,13 @@ getModelBounds() {
           duration: 2,
           ease: "power2.inOut",
           onUpdate: () => {
-            console.log(`🔄 GSAP update - ceiling opacity: ${allCeilings[0].material.opacity}`);
+            debugLog(`🔄 GSAP update - ceiling opacity: ${allCeilings[0].material.opacity}`);
             if (this.renderer) {
               this.renderer.render(this.scene, this.camera);
             }
           },
           onComplete: () => {
-            console.log('✅ GSAP animation for ceilings completed');
+            debugLog('✅ GSAP animation for ceilings completed');
           }
         });
       } catch (error) {
@@ -2567,20 +2612,20 @@ getModelBounds() {
     
     // Test GSAP for floors
     if (allFloors.length > 0 && allFloors[0].material) {
-      console.log('🧪 Testing GSAP animation for floors...');
+      debugLog('🧪 Testing GSAP animation for floors...');
       try {
         gsap.to(allFloors[0].material, {
           opacity: 0,
           duration: 2,
           ease: "power2.inOut",
           onUpdate: () => {
-            console.log(`🔄 GSAP update - floor opacity: ${allFloors[0].material.opacity}`);
+            debugLog(`🔄 GSAP update - floor opacity: ${allFloors[0].material.opacity}`);
             if (this.renderer) {
               this.renderer.render(this.scene, this.camera);
             }
           },
           onComplete: () => {
-            console.log('✅ GSAP animation for floors completed');
+            debugLog('✅ GSAP animation for floors completed');
           }
         });
       } catch (error) {
@@ -2614,7 +2659,7 @@ getModelBounds() {
 
   // Create room-specific floors at correct heights with thickness
   createRoomSpecificFloors() {
-    console.log('🏠 Creating room-specific floors for', this.project.rooms.length, 'rooms');
+    debugLog('🏠 Creating room-specific floors for', this.project.rooms.length, 'rooms');
     
     // Default floor thickness if not specified
     const defaultFloorThickness = 150; // 150mm default
@@ -2622,27 +2667,30 @@ getModelBounds() {
     this.project.rooms.forEach((room, roomIndex) => {
       try {
         if (!room.room_points || room.room_points.length < 3) {
-          console.log(`⚠️ Room ${room.id} has insufficient points, skipping floor`);
+          debugLog(`⚠️ Room ${room.id} has insufficient points, skipping floor`);
           return;
         }
 
         // Get floor thickness from room data or use default
         const roomFloorThickness = (room.floor_thickness || defaultFloorThickness) * this.scalingFactor;
         
-        console.log(`🏠 Room ${room.id} (${room.room_name || 'Unnamed'}) - Floor Thickness: ${room.floor_thickness || defaultFloorThickness}mm`);
+        // Get base elevation (default to 0 if not set)
+        const baseElevation = (room.base_elevation_mm ?? 0) * this.scalingFactor;
+        
+        debugLog(`🏠 Room ${room.id} (${room.room_name || 'Unnamed'}) - Floor Thickness: ${room.floor_thickness || defaultFloorThickness}mm, Base Elevation: ${room.base_elevation_mm ?? 0}mm`);
         
         // Convert room points to 3D coordinates
         const roomVertices = room.room_points.map(point => ({
-          x: point.x * this.scalingFactor + this.modelOffset.x,
-          z: point.y * this.scalingFactor + this.modelOffset.z
+            x: point.x * this.scalingFactor + this.modelOffset.x,
+            z: point.y * this.scalingFactor + this.modelOffset.z
         }));
 
         // Create floor geometry for this room
         const floorMesh = this.createRoomFloorMesh(roomVertices, room, roomFloorThickness);
         
         if (floorMesh) {
-          // Position floor at ground level (Y=0) - floor extends upward from here
-          floorMesh.position.y = 0;
+            // Position floor at base elevation - floor extends upward from here
+            floorMesh.position.y = baseElevation;
           floorMesh.name = `floor_room_${room.id}`;
           floorMesh.userData = {
             isFloor: true,
@@ -2652,7 +2700,7 @@ getModelBounds() {
           };
           
           this.scene.add(floorMesh);
-          console.log(`✅ Created floor for room ${room.id} with thickness ${room.floor_thickness || defaultFloorThickness}mm (extends upward from Y=0 to Y=+${room.floor_thickness || defaultFloorThickness}mm)`);
+          debugLog(`✅ Created floor for room ${room.id} with thickness ${room.floor_thickness || defaultFloorThickness}mm at base elevation ${room.base_elevation_mm ?? 0}mm (extends from Y=${room.base_elevation_mm ?? 0}mm to Y=${(room.base_elevation_mm ?? 0) + (room.floor_thickness || defaultFloorThickness)}mm)`);
         }
       } catch (error) {
         console.error(`❌ Error creating floor for room ${room.id}:`, error);
@@ -2833,9 +2881,9 @@ getModelBounds() {
       // Add text to floor
       floor.add(textMesh);
       
-      console.log(`🏷️ Added label "${room.room_name || `Room ${room.id}`}" to floor`);
+      debugLog(`🏷️ Added label "${room.room_name || `Room ${room.id}`}" to floor`);
     } catch (error) {
-      console.warn(`⚠️ Could not add room label to floor:`, error);
+      debugWarn(`⚠️ Could not add room label to floor:`, error);
       // Text geometry might not be available, skip label
     }
   }
@@ -2852,7 +2900,7 @@ getModelBounds() {
       // Get the building footprint vertices
       const vertices = this.getBuildingFootprint();
       if (vertices.length < 3) {
-        console.log('Not enough vertices for floor, skipping...');
+        debugLog('Not enough vertices for floor, skipping...');
         return;
       }
       
@@ -2866,7 +2914,7 @@ getModelBounds() {
       // Triangulate the polygon
       const triangles = earcut(flatVertices);
       if (triangles.length === 0) {
-        console.log('Failed to triangulate floor, skipping...');
+        debugLog('Failed to triangulate floor, skipping...');
         return;
       }
       
@@ -2989,7 +3037,7 @@ getModelBounds() {
       };
       
       this.scene.add(floor);
-      console.log('✅ Created fallback floor with thickness extending upward from Y=0 to Y=+150mm');
+      debugLog('✅ Created fallback floor with thickness extending upward from Y=0 to Y=+150mm');
     } catch (error) {
       console.error('Error creating floor:', error);
       // Don't crash the app if floor creation fails
@@ -2998,8 +3046,8 @@ getModelBounds() {
   
   // Method to test 45-degree joint demonstration
   test45DegreeJointDemo() {
-    console.log('🧪 Testing 45-degree joint demonstration...');
+    debugLog('🧪 Testing 45-degree joint demonstration...');
     this.create45DegreeJointDemo();
-    console.log('✅ 45-degree joint demo created! Check the 3D view.');
+    debugLog('✅ 45-degree joint demo created! Check the 3D view.');
   }
 }

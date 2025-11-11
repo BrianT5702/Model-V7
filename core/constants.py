@@ -59,6 +59,13 @@ WALL_JOINING_METHODS = [
     ('45_cut', '45° Cut'),
 ]
 
+# Face Materials (for inner/outer finishes)
+FACE_MATERIALS = [
+    ('PPGI', 'PPGI'),
+    ('S/Steel', 'S/Steel'),
+    ('PVC', 'PVC'),
+]
+
 # Default Values
 DEFAULT_WALL_THICKNESS = 200.0  # mm
 DEFAULT_WALL_HEIGHT = 1000.0    # mm
@@ -68,3 +75,6 @@ DEFAULT_DOOR_SLIDE_DIRECTION = 'right'
 DEFAULT_DOOR_TYPE = 'swing'
 DEFAULT_DOOR_CONFIGURATION = 'single_sided'
 DEFAULT_ROOM_FLOOR_TYPE = 'None' 
+
+# Default face thickness (sheet gauge) in mm
+DEFAULT_FACE_THICKNESS = 0.5

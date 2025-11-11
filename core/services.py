@@ -1,8 +1,16 @@
 from django.db import transaction
+from django.db.models import Count
 from .models import Wall, Room, Door
 from django.utils import timezone
 import logging
 import time
+
+try:
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+except ImportError:  # pragma: no cover - Shapely should be available via requirements
+    Polygon = None
+    unary_union = None
 
 logger = logging.getLogger(__name__)
 
@@ -2119,6 +2127,431 @@ class CeilingService:
             raise e
     
     @staticmethod
+    def create_ceiling_zone(project_id, room_ids, generation_settings):
+        """Create a merged ceiling zone across multiple rooms with shared configuration"""
+        from .models import Project, Room, CeilingZone, CeilingPanel, CeilingPlan, Wall
+
+        if not Polygon or not unary_union:
+            raise ValueError('Shapely is required to merge ceiling zones but is not available on the server.')
+
+        if not room_ids or len(room_ids) < 2:
+            raise ValueError('Select at least two rooms to create a merged ceiling zone.')
+
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            raise ValueError('Project not found')
+
+        rooms = list(Room.objects.filter(project_id=project_id, id__in=room_ids))
+        if len(rooms) != len(set(room_ids)):
+            raise ValueError('One or more rooms are invalid or do not belong to the project.')
+
+        if CeilingZone.objects.filter(rooms__in=rooms).exists():
+            raise ValueError('One or more selected rooms already belong to an existing ceiling zone. Unmerge them first.')
+
+        # Ensure all rooms have valid geometry and consistent height
+        shared_top_elevation = None
+        room_heights = []
+        room_polygons = []
+        for room in rooms:
+            points = room.room_points or []
+            if len(points) < 3:
+                raise ValueError(f'Room "{room.room_name}" does not have a valid boundary and cannot be merged.')
+
+            polygon = Polygon([(point['x'], point['y']) for point in points])
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
+            room_polygons.append(polygon)
+
+            current_height = room.height or project.height
+            if current_height is None:
+                raise ValueError(f'Room "{room.room_name}" does not have a height defined.')
+            base_elevation = room.base_elevation_mm or 0
+            current_top = base_elevation + current_height
+            if shared_top_elevation is None:
+                shared_top_elevation = current_top
+            elif abs(shared_top_elevation - current_top) > 0.1:
+                raise ValueError('All selected rooms must share the same top elevation to merge.')
+
+            room_heights.append(current_height)
+
+        ceiling_thickness = float(generation_settings.get('ceiling_thickness', 150))
+        orientation_strategy = generation_settings.get('orientation_strategy', 'auto')
+        panel_width = float(generation_settings.get('panel_width', CeilingService.DEFAULT_PANEL_WIDTH))
+        panel_length = generation_settings.get('panel_length', CeilingService.DEFAULT_PANEL_LENGTH)
+        custom_panel_length = generation_settings.get('custom_panel_length')
+        support_type = generation_settings.get('support_type', 'nylon')
+        support_config = generation_settings.get('support_config', {})
+
+        effective_room_height = min(room_heights) if room_heights else None
+        if effective_room_height is None:
+            raise ValueError('Failed to determine room heights for the selected rooms.')
+
+        clearance_limit = effective_room_height - ceiling_thickness
+        if clearance_limit <= 0:
+            raise ValueError('Ceiling thickness is greater than or equal to room height; cannot merge rooms.')
+
+        # Validate shared walls meet clearance requirement
+        shared_walls = (Wall.objects
+                        .filter(rooms__in=rooms)
+                        .annotate(shared_count=Count('rooms'))
+                        .filter(shared_count__gte=2)
+                        .distinct())
+
+        for wall in shared_walls:
+            if wall.height and wall.height > clearance_limit:
+                raise ValueError(
+                    f'Wall {wall.id} between selected rooms exceeds the clearance limit ({wall.height}mm > {clearance_limit}mm).'
+                )
+
+        # Ensure selected rooms form a contiguous area
+        if not CeilingService._rooms_form_contiguous_area(rooms):
+            raise ValueError('Selected rooms must form a contiguous area to merge the ceiling.')
+
+        merged_polygon = unary_union(room_polygons)
+        if merged_polygon.geom_type != 'Polygon':
+            raise ValueError('Selected rooms must result in a single continuous polygon. Please review the selection.')
+
+        outline_points = CeilingService._polygon_to_point_list(merged_polygon)
+        bounding_box = CeilingService._calculate_polygon_bounds(merged_polygon)
+        zone_area = float(merged_polygon.area)
+
+        # Determine orientation strategy
+        panels_result = CeilingService._generate_zone_panels(
+            outline_points,
+            bounding_box,
+            orientation_strategy,
+            panel_width,
+            panel_length,
+            custom_panel_length,
+            ceiling_thickness
+        )
+
+        panels = panels_result['panels']
+        orientation_used = panels_result['strategy_name']
+        orientation_raw = panels_result['orientation']
+        leftover_stats = panels_result['leftover_stats']
+        waste_area = panels_result['waste_area']
+        waste_percentage = (waste_area / panels_result['total_panel_area'] * 100) if panels_result['total_panel_area'] > 0 else 0.0
+
+        # Clear previous per-room ceiling data
+        CeilingPanel.objects.filter(room__in=rooms).delete()
+        CeilingPlan.objects.filter(room__in=rooms).delete()
+
+        # Create zone and associated plan
+        zone = CeilingZone.objects.create(
+            project=project,
+            ceiling_thickness=ceiling_thickness,
+            orientation_strategy=orientation_used,
+            panel_width=panel_width,
+            panel_length=panel_length,
+            custom_panel_length=custom_panel_length,
+            support_type=support_type,
+            support_config=support_config,
+            outline_points=outline_points,
+            total_area=zone_area,
+            total_panels=len(panels),
+            full_panels=len([p for p in panels if not p.get('is_cut')]),
+            cut_panels=len([p for p in panels if p.get('is_cut')]),
+            waste_percentage=waste_percentage,
+        )
+        zone.rooms.set(rooms)
+
+        zone_plan = CeilingPlan.objects.create(
+            zone=zone,
+            generation_method='zone_merge',
+            total_area=zone_area,
+            total_panels=len(panels),
+            full_panels=len([p for p in panels if not p.get('is_cut')]),
+            cut_panels=len([p for p in panels if p.get('is_cut')]),
+            waste_percentage=waste_percentage,
+            ceiling_thickness=ceiling_thickness,
+            orientation_strategy=orientation_used,
+            panel_width=panel_width,
+            panel_length=panel_length,
+            custom_panel_length=custom_panel_length,
+            support_type=support_type,
+            support_config=support_config,
+            notes=generation_settings.get('notes')
+        )
+
+        created_panels = []
+        for index, panel_data in enumerate(panels, start=1):
+            panel = CeilingPanel.objects.create(
+                zone=zone,
+                panel_id=panel_data.get('panel_id', f"CZ_{zone.id}_{index:03d}"),
+                start_x=panel_data['start_x'],
+                start_y=panel_data['start_y'],
+                end_x=panel_data['end_x'],
+                end_y=panel_data['end_y'],
+                width=panel_data['width'],
+                length=panel_data['length'],
+                thickness=ceiling_thickness,
+                material_type='standard',
+                is_cut_panel=panel_data.get('is_cut', False),
+                cut_notes=panel_data.get('cut_notes', '')
+            )
+            created_panels.append(panel)
+
+        zone.update_statistics()
+        zone_plan.update_statistics()
+
+        return {
+            'zone': zone,
+            'plan': zone_plan,
+            'panels': created_panels,
+            'leftover_stats': leftover_stats,
+            'waste_percentage': waste_percentage,
+            'orientation_used': orientation_used,
+            'orientation_raw': orientation_raw
+        }
+
+    @staticmethod
+    def delete_ceiling_zone(zone_id, regenerate_room_plans=False):
+        from .models import CeilingZone, CeilingPanel, CeilingPlan
+
+        try:
+            zone = CeilingZone.objects.get(id=zone_id)
+        except CeilingZone.DoesNotExist:
+            raise ValueError('Ceiling zone not found')
+
+        rooms = list(zone.rooms.all())
+
+        CeilingPanel.objects.filter(zone=zone).delete()
+        CeilingPlan.objects.filter(zone=zone).delete()
+        zone.delete()
+
+        if regenerate_room_plans:
+            for room in rooms:
+                try:
+                    CeilingService.generate_ceiling_plan(room.id)
+                except Exception:
+                    logger.warning('Failed to regenerate ceiling plan for room %s after zone deletion', room.id)
+
+        return {'rooms': [room.id for room in rooms]}
+
+    @staticmethod
+    def regenerate_existing_ceiling_zone(zone, generation_settings):
+        from .models import CeilingPanel, CeilingPlan
+        from .serializers import CeilingZoneSerializer, CeilingPanelSerializer
+
+        if not Polygon or not unary_union:
+            raise ValueError('Shapely is required to generate ceiling zones but is not available on the server.')
+
+        outline_points = zone.outline_points or []
+        if len(outline_points) < 3:
+            raise ValueError('Ceiling zone does not have a valid outline.')
+
+        polygon = Polygon([(point['x'], point['y']) for point in outline_points])
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+
+        bounding_box = CeilingService._calculate_polygon_bounds(polygon)
+
+        ceiling_thickness = float(generation_settings.get('ceiling_thickness', zone.ceiling_thickness or 150))
+        orientation_strategy = generation_settings.get('orientation_strategy', zone.orientation_strategy or 'auto')
+        panel_width = float(generation_settings.get('panel_width', zone.panel_width or CeilingService.DEFAULT_PANEL_WIDTH))
+        panel_length = generation_settings.get('panel_length', zone.panel_length or CeilingService.DEFAULT_PANEL_LENGTH)
+        custom_panel_length = generation_settings.get('custom_panel_length', zone.custom_panel_length)
+        support_type = generation_settings.get('support_type', zone.support_type or 'nylon')
+        support_config = generation_settings.get('support_config', zone.support_config or {}) or {}
+
+        panels_result = CeilingService._generate_zone_panels(
+            outline_points,
+            bounding_box,
+            orientation_strategy,
+            panel_width,
+            panel_length,
+            custom_panel_length,
+            ceiling_thickness
+        )
+
+        panels = panels_result['panels']
+        orientation_used = panels_result['strategy_name']
+        leftover_stats = panels_result['leftover_stats']
+        waste_area = panels_result['waste_area']
+        total_panel_area = panels_result['total_panel_area']
+        waste_percentage = (waste_area / total_panel_area * 100) if total_panel_area > 0 else 0.0
+
+        CeilingPanel.objects.filter(zone=zone).delete()
+
+        created_panels = []
+        for index, panel_data in enumerate(panels, start=1):
+            panel = CeilingPanel.objects.create(
+                zone=zone,
+                panel_id=panel_data.get('panel_id', f"CZ_{zone.id}_{index:03d}"),
+                start_x=panel_data['start_x'],
+                start_y=panel_data['start_y'],
+                end_x=panel_data['end_x'],
+                end_y=panel_data['end_y'],
+                width=panel_data['width'],
+                length=panel_data['length'],
+                thickness=ceiling_thickness,
+                material_type='standard',
+                is_cut_panel=panel_data.get('is_cut', False),
+                cut_notes=panel_data.get('cut_notes', '')
+            )
+            created_panels.append(panel)
+
+        zone.ceiling_thickness = ceiling_thickness
+        zone.orientation_strategy = orientation_used
+        zone.panel_width = panel_width
+        zone.panel_length = panel_length
+        zone.custom_panel_length = custom_panel_length
+        zone.support_type = support_type
+        zone.support_config = support_config
+        zone.total_panels = len(panels)
+        zone.full_panels = len([p for p in panels if not p.get('is_cut')])
+        zone.cut_panels = len([p for p in panels if p.get('is_cut')])
+        zone.waste_percentage = waste_percentage
+        zone.save()
+
+        panels_queryset = zone.ceiling_panels.all()
+        zone.update_statistics(panels_queryset)
+
+        zone_plan = getattr(zone, 'ceiling_plan', None)
+        if zone_plan is None:
+            zone_plan = CeilingPlan.objects.create(zone=zone)
+
+        zone_plan.generation_method = 'zone_merge'
+        zone_plan.total_area = zone.total_area
+        zone_plan.total_panels = zone.total_panels
+        zone_plan.full_panels = zone.full_panels
+        zone_plan.cut_panels = zone.cut_panels
+        zone_plan.waste_percentage = zone.waste_percentage
+        zone_plan.ceiling_thickness = ceiling_thickness
+        zone_plan.orientation_strategy = orientation_used
+        zone_plan.panel_width = panel_width
+        zone_plan.panel_length = panel_length
+        zone_plan.custom_panel_length = custom_panel_length
+        zone_plan.support_type = support_type
+        zone_plan.support_config = support_config
+        zone_plan.save()
+        zone_plan.update_statistics()
+
+        serialized_zone = CeilingZoneSerializer(zone).data
+        serialized_panels = CeilingPanelSerializer(zone.ceiling_panels.all(), many=True).data
+
+        return {
+            'zone_id': zone.id,
+            'orientation_used': orientation_used,
+            'total_panels': zone.total_panels,
+            'waste_percentage': zone.waste_percentage,
+            'leftover_stats': leftover_stats,
+            'zone': serialized_zone,
+            'panels': serialized_panels
+        }
+
+    @staticmethod
+    def _rooms_form_contiguous_area(rooms):
+        if not rooms:
+            return False
+
+        room_infos = []
+        for room in rooms:
+            points = room.room_points or []
+            if len(points) < 3:
+                return False
+            room_infos.append({
+                'id': room.id,
+                'points': points,
+                'center': CeilingService._calculate_room_center(points),
+                'bounding_box': CeilingService._calculate_room_bounding_box(points)
+            })
+
+        visited = set()
+        queue = [room_infos[0]]
+        visited.add(room_infos[0]['id'])
+
+        while queue:
+            current = queue.pop(0)
+            for other in room_infos:
+                if other['id'] in visited:
+                    continue
+                if CeilingService._rooms_are_geometrically_connected(current, other):
+                    visited.add(other['id'])
+                    queue.append(other)
+
+        return len(visited) == len(room_infos)
+
+    @staticmethod
+    def _polygon_to_point_list(polygon):
+        coords = list(polygon.exterior.coords)
+        if len(coords) > 1 and coords[0] == coords[-1]:
+            coords = coords[:-1]
+        return [{'x': float(x), 'y': float(y)} for x, y in coords]
+
+    @staticmethod
+    def _calculate_polygon_bounds(polygon):
+        min_x, min_y, max_x, max_y = polygon.bounds
+        return {
+            'min_x': float(min_x),
+            'max_x': float(max_x),
+            'min_y': float(min_y),
+            'max_y': float(max_y),
+            'width': float(max_x - min_x),
+            'height': float(max_y - min_y)
+        }
+
+    @staticmethod
+    def _generate_zone_panels(outline_points, bounding_box, orientation_strategy, panel_width, panel_length, custom_panel_length, ceiling_thickness):
+        zone_area = CeilingService._calculate_room_area(outline_points)
+
+        if panel_length not in (None, 'auto', 'custom'):
+            effective_panel_length = float(panel_length)
+        elif panel_length == 'custom' and custom_panel_length:
+            effective_panel_length = float(custom_panel_length)
+        elif custom_panel_length:
+            effective_panel_length = float(custom_panel_length)
+        else:
+            effective_panel_length = 'auto'
+
+        strategy = orientation_strategy or 'auto'
+        orientations_to_try = []
+        if strategy in ('all_vertical', 'vertical'):
+            orientations_to_try = ['vertical']
+        elif strategy in ('all_horizontal', 'horizontal'):
+            orientations_to_try = ['horizontal']
+        elif strategy == 'auto':
+            orientations_to_try = ['vertical', 'horizontal']
+        else:
+            orientations_to_try = ['vertical', 'horizontal']
+
+        best_result = None
+
+        for orientation in orientations_to_try:
+            tracker = LeftoverTracker(context=f'ZONE-{orientation.upper()}')
+            panels = CeilingService._generate_advanced_panels(
+                bounding_box,
+                outline_points,
+                orientation,
+                panel_width,
+                effective_panel_length,
+                tracker,
+                ceiling_thickness
+            )
+
+            total_panel_area = sum(panel['width'] * panel['length'] for panel in panels)
+            waste_area = max(0.0, total_panel_area - zone_area)
+
+            result = {
+                'orientation': orientation,
+                'strategy_name': f'all_{orientation}' if orientation in ('vertical', 'horizontal') else orientation,
+                'panels': panels,
+                'leftover_stats': tracker.get_stats(),
+                'waste_area': waste_area,
+                'total_panel_area': total_panel_area
+            }
+
+            if best_result is None or waste_area < best_result['waste_area']:
+                best_result = result
+
+        if best_result is None:
+            raise ValueError('Unable to generate panels for the selected rooms. Please review the geometry.')
+
+        return best_result
+
+    @staticmethod
     def _calculate_room_area(room_points):
         """Calculate the area of a room from its points using shoelace formula"""
         try:
@@ -2265,7 +2698,7 @@ class CeilingService:
             return None
 
     @staticmethod
-    def analyze_project_heights(project_id):
+    def analyze_project_heights(project_id, exclude_room_ids=None):
         """Enhanced project-level height analysis for intelligent ceiling planning
         
         Returns comprehensive analysis including:
@@ -2279,6 +2712,11 @@ class CeilingService:
         try:
             project = Project.objects.get(id=project_id)
             rooms = Room.objects.filter(project=project)
+            if exclude_room_ids:
+                exclude_set = {int(rid) for rid in exclude_room_ids}
+                rooms = rooms.exclude(id__in=exclude_set)
+            else:
+                exclude_set = set()
             
             if not rooms.exists():
                 return {'error': 'No rooms found in project'}
@@ -2561,7 +2999,7 @@ class CeilingService:
                 return 'height_grouped_separate'
 
     @staticmethod
-    def analyze_orientation_strategies(project_id, panel_width=1150, panel_length='auto', ceiling_thickness=150):
+    def analyze_orientation_strategies(project_id, panel_width=1150, panel_length='auto', ceiling_thickness=150, exclude_room_ids=None):
         """Stage 2: Analyze different panel orientation strategies to find the least waste
         
         Evaluates:
@@ -2574,7 +3012,7 @@ class CeilingService:
         """
         try:
             # Get height analysis first
-            height_analysis = CeilingService.analyze_project_heights(project_id)
+            height_analysis = CeilingService.analyze_project_heights(project_id, exclude_room_ids=exclude_room_ids)
             if 'error' in height_analysis:
                 return {'error': height_analysis['error']}
             
@@ -4396,8 +4834,21 @@ class CeilingService:
         - Supports different orientation strategies
         """
         try:
-            # Check if we have room-specific configuration
+            from .models import CeilingZone, Room
+
+            zones = list(CeilingZone.objects.filter(project_id=project_id).prefetch_related('rooms', 'ceiling_plan', 'ceiling_panels'))
+            zone_room_ids = {room.id for zone in zones for room in zone.rooms.all()}
+            zone_room_ids_str = {str(rid) for rid in zone_room_ids}
+
+            remaining_rooms_qs = Room.objects.filter(project_id=project_id)
+            if zone_room_ids:
+                remaining_rooms_qs = remaining_rooms_qs.exclude(id__in=zone_room_ids)
+            rooms_exist = remaining_rooms_qs.exists()
+
             if room_specific_config and room_specific_config.get('room_id'):
+                if str(room_specific_config.get('room_id')) in zone_room_ids_str:
+                    return {'error': 'Selected room is part of a merged ceiling zone. Update the zone instead.'}
+
                 logger.info(f"Room-specific ceiling configuration detected for room {room_specific_config.get('room_id')}")
                 logger.debug(f"Config: {room_specific_config}")
                 
@@ -4419,18 +4870,22 @@ class CeilingService:
                     return {'error': orientation_analysis['error']}
                 selected_strategy = orientation_analysis['strategies'][0] if orientation_analysis['strategies'] else {}
                 strategy_name = 'mixed'
-            else:
+            elif rooms_exist:
                 # Original logic: single orientation for all rooms
                 # Get orientation analysis first
                 orientation_analysis = CeilingService.analyze_orientation_strategies(
-                    project_id, 
-                    panel_width, 
-                    panel_length, 
-                    ceiling_thickness
+                    project_id,
+                    panel_width,
+                    panel_length,
+                    ceiling_thickness,
+                    exclude_room_ids=zone_room_ids if zone_room_ids else None
                 )
                 if 'error' in orientation_analysis:
                     return {'error': orientation_analysis['error']}
                 
+                if orientation_strategy in ('vertical', 'horizontal'):
+                    orientation_strategy = f'all_{orientation_strategy}'
+
                 # Determine which strategy to use
                 if orientation_strategy == 'auto':
                     # Use the recommended strategy
@@ -4453,51 +4908,103 @@ class CeilingService:
                 enhanced_panels, leftover_stats = CeilingService._generate_enhanced_panels_for_strategy(
                     selected_strategy, project_id, panel_width, panel_length, ceiling_thickness
                 )
-            
-            # Calculate enhanced waste analysis
-            waste_analysis = CeilingService._analyze_enhanced_waste(enhanced_panels, selected_strategy)
-            
-            # Calculate project-wide waste percentage using leftover area
-            # Formula: waste% = Leftover Area / Total Room Area × 100%
-            total_room_area = selected_strategy.get('total_room_area', 0)
-            leftover_area = leftover_stats.get('total_leftover_area', 0)
-            
-            if total_room_area > 0 and leftover_area > 0:
-                project_waste_percentage = (leftover_area / total_room_area) * 100
-                print(f"🎯 [PROJECT] Project-wide waste calculation:")
-                print(f"🎯 [PROJECT] Total Room Area: {total_room_area:,.0f} mm²")
-                print(f"🎯 [PROJECT] Total Leftover Area: {leftover_area:,.0f} mm²")
-                print(f"🎯 [PROJECT] Project Waste Percentage: {project_waste_percentage:.1f}%")
             else:
+                orientation_analysis = {
+                    'strategies': [],
+                    'recommended_strategy': 'zones_only'
+                }
+                strategy_name = 'zones_only' if orientation_strategy == 'auto' else orientation_strategy
+                selected_strategy = {
+                    'strategy_name': strategy_name,
+                    'orientation_type': 'zones_only',
+                    'room_results': [],
+                    'total_leftover_area': 0,
+                    'total_room_area': 0
+                }
+                enhanced_panels = []
+                leftover_stats = {
+                    'leftovers_created': 0,
+                    'leftovers_reused': 0,
+                    'full_panels_saved': 0,
+                    'total_leftover_area': 0
+                }
+            
+            if enhanced_panels:
+                waste_analysis = CeilingService._analyze_enhanced_waste(enhanced_panels, selected_strategy)
+                total_room_area = selected_strategy.get('total_room_area', 0)
+                leftover_area = leftover_stats.get('total_leftover_area', 0)
+                if total_room_area > 0 and leftover_area > 0:
+                    project_waste_percentage = (leftover_area / total_room_area) * 100
+                else:
+                    project_waste_percentage = 0.0
+            else:
+                waste_analysis = {
+                    'total_waste_percentage': 0.0,
+                    'actual_waste_percentage': 0.0,
+                    'reusable_cut_panels': 0,
+                    'efficiency_improvement': 0.0
+                }
                 project_waste_percentage = 0.0
-                print(f"⚠️ [PROJECT] Cannot calculate project waste: room_area={total_room_area}, leftover_area={leftover_area}")
             
             # Create or update ceiling plans with ALL generation parameters
             ceiling_plans = CeilingService._create_enhanced_ceiling_plans(
                 enhanced_panels, project_id, selected_strategy, ceiling_thickness,
                 panel_width, panel_length, custom_panel_length, orientation_strategy,
-                support_type, support_config, room_specific_config, leftover_stats
+                support_type, support_config, room_specific_config, leftover_stats,
+                excluded_room_ids=zone_room_ids if zone_room_ids else None
             )
+
+            zone_plans = []
+            zone_leftover_totals = {
+                'leftovers_created': 0,
+                'leftovers_reused': 0,
+                'full_panels_saved': 0,
+                'total_leftover_area': 0
+            }
+            if zones:
+                generation_settings = {
+                    'ceiling_thickness': ceiling_thickness,
+                    'orientation_strategy': orientation_strategy,
+                    'panel_width': panel_width,
+                    'panel_length': panel_length,
+                    'custom_panel_length': custom_panel_length,
+                    'support_type': support_type,
+                    'support_config': support_config
+                }
+                for zone in zones:
+                    zone_result = CeilingService.regenerate_existing_ceiling_zone(zone, generation_settings)
+                    stats = zone_result.get('leftover_stats') or {}
+                    zone_leftover_totals['leftovers_created'] += stats.get('leftovers_created', 0)
+                    zone_leftover_totals['leftovers_reused'] += stats.get('leftovers_reused', 0)
+                    zone_leftover_totals['full_panels_saved'] += stats.get('full_panels_saved', 0)
+                    zone_leftover_totals['total_leftover_area'] += stats.get('total_leftover_area', 0)
+                    zone_plans.append(zone_result)
+
+            combined_panels = list(enhanced_panels)
+            for zp in zone_plans:
+                combined_panels.extend(zp.get('panels', []))
+
             return {
                 'project_id': project_id,
                 'strategy_used': strategy_name,
                 'recommended_strategy': orientation_analysis.get('recommended_strategy', strategy_name),  # Always include system recommendation
                 'strategy_details': selected_strategy,
-                'enhanced_panels': enhanced_panels,
+                'enhanced_panels': combined_panels,
                 'leftover_stats': leftover_stats,  # Include leftover statistics
                 'waste_analysis': waste_analysis,
                 'ceiling_plans': ceiling_plans,
+                'zone_plans': zone_plans,
                 'summary': {
-                    'total_panels': len(enhanced_panels),
+                    'total_panels': len(enhanced_panels) + sum(z.get('total_panels', 0) for z in zone_plans),
                     'total_waste_percentage': waste_analysis['total_waste_percentage'],
                     'project_waste_percentage': project_waste_percentage,  # Add project-wide waste percentage
                     'recommended_strategy': orientation_analysis.get('recommended_strategy', strategy_name),  # Add to summary too
                     'reusable_cut_panels': waste_analysis['reusable_cut_panels'],
                     'actual_waste_percentage': waste_analysis['actual_waste_percentage'],
                     'efficiency_improvement': waste_analysis['efficiency_improvement'],
-                    'leftovers_created': leftover_stats.get('leftovers_created', 0),
-                    'leftovers_reused': leftover_stats.get('leftovers_reused', 0),
-                    'full_panels_saved': leftover_stats.get('full_panels_saved', 0)
+                    'leftovers_created': leftover_stats.get('leftovers_created', 0) + zone_leftover_totals['leftovers_created'],
+                    'leftovers_reused': leftover_stats.get('leftovers_reused', 0) + zone_leftover_totals['leftovers_reused'],
+                    'full_panels_saved': leftover_stats.get('full_panels_saved', 0) + zone_leftover_totals['full_panels_saved']
                 }
             }
             
@@ -4840,7 +5347,7 @@ class CeilingService:
     @staticmethod
     def _create_enhanced_ceiling_plans(enhanced_panels, project_id, strategy, ceiling_thickness=150, 
                                       panel_width=1150, panel_length='auto', custom_panel_length=None,
-                                      orientation_strategy='auto', support_type='nylon', support_config=None, room_specific_config=None, leftover_stats=None):
+                                      orientation_strategy='auto', support_type='nylon', support_config=None, room_specific_config=None, leftover_stats=None, excluded_room_ids=None):
         """Create or update ceiling plans with enhanced panel information and generation parameters"""
         try:
             from .models import CeilingPlan, CeilingPanel, Room
@@ -4855,7 +5362,11 @@ class CeilingService:
             
             created_plans = []
             
+            excluded_set = {int(rid) for rid in excluded_room_ids} if excluded_room_ids else set()
+
             for room_id, panels in room_panels.items():
+                if room_id is None or room_id in excluded_set:
+                    continue
                 try:
                     room = Room.objects.get(id=room_id)
                     

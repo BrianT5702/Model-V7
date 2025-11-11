@@ -34,10 +34,20 @@ const PanelCalculationControls = ({
     // Helper to generate CSV string from calculatedPanels
     const getCSVString = () => {
         if (!calculatedPanels) return '';
-        const header = 'Width,Length,Thickness,Application,Quantity,Type';
-        const rows = calculatedPanels.map(panel =>
-            `${panel.width},${panel.length},${panel.thickness || 'N/A'},${panel.application},${panel.quantity},${panel.type}`
-        );
+        const header = 'Width,Length,Thickness,Application,Quantity,Type,Panel Thickness,Finishing';
+        const rows = calculatedPanels.map(panel => {
+            const wallFallback = (!panel.inner_face_material || !panel.outer_face_material) && Array.isArray(walls)
+                ? walls.find(w => String(w.id) === String(panel.anyWallId))
+                : null;
+            const intMat = (panel.inner_face_material ?? wallFallback?.inner_face_material) ?? 'PPGI';
+            const intThk = (panel.inner_face_thickness ?? wallFallback?.inner_face_thickness) ?? 0.5;
+            const extMat = (panel.outer_face_material ?? wallFallback?.outer_face_material) ?? 'PPGI';
+            const extThk = (panel.outer_face_thickness ?? wallFallback?.outer_face_thickness) ?? 0.5;
+            const finishing = (intMat === extMat && intThk === extThk)
+                ? `Both Side ${extThk}mm ${extMat}`
+                : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+            return `${panel.width},${panel.length},${panel.thickness || 'N/A'},${panel.application},${panel.quantity},${panel.type},${panel.thickness || 'N/A'},"${finishing}"`;
+        });
         return [header, ...rows].join('\n');
     };
 
@@ -54,19 +64,33 @@ const PanelCalculationControls = ({
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Application</th>
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Quantity</th>
                         <th style={{ border: '1px solid #ccc', padding: '4px' }}>Type</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Panel Thickness</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Finishing</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {calculatedPanels.map((panel, idx) => (
-                        <tr key={idx}>
-                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.width}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.length}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.thickness || 'N/A'}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.application}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.quantity}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.type}</td>
-                        </tr>
-                    ))}
+                    {calculatedPanels.map((panel, idx) => {
+                        const intMat = panel.inner_face_material ?? 'PPGI';
+                        const intThk = panel.inner_face_thickness ?? 0.5;
+                        const extMat = panel.outer_face_material ?? 'PPGI';
+                        const extThk = panel.outer_face_thickness ?? 0.5;
+                        const finishing = (intMat === extMat && intThk === extThk)
+                            ? `Both Side ${extThk}mm ${extMat}`
+                            : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+                        
+                        return (
+                            <tr key={idx}>
+                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.width}</td>
+                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.length}</td>
+                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.thickness || 'N/A'}</td>
+                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.application}</td>
+                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.quantity}</td>
+                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.type}</td>
+                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.thickness || 'N/A'}</td>
+                                <td style={{ border: '1px solid #ccc', padding: '4px', fontSize: '12px' }}>{finishing}</td>
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
         );
@@ -83,18 +107,35 @@ const PanelCalculationControls = ({
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Application</th>
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Quantity</th>
                 <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Type</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Panel Thickness</th>
+                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Finishing</th>
             </tr>
         `;
-        const rows = calculatedPanels.map(panel => `
-            <tr>
-                <td style="border:1px solid #ccc;padding:4px;">${panel.width}</td>
-                <td style="border:1px solid #ccc;padding:4px;">${panel.length}</td>
-                <td style="border:1px solid #ccc;padding:4px;">${panel.thickness || 'N/A'}</td>
-                <td style="border:1px solid #ccc;padding:4px;">${panel.application}</td>
-                <td style="border:1px solid #ccc;padding:4px;">${panel.quantity}</td>
-                <td style="border:1px solid #ccc;padding:4px;">${panel.type}</td>
-            </tr>
-        `).join('');
+        const rows = calculatedPanels.map(panel => {
+            const wallFallback = (!panel.inner_face_material || !panel.outer_face_material) && Array.isArray(walls)
+                ? walls.find(w => String(w.id) === String(panel.anyWallId))
+                : null;
+            const intMat = (panel.inner_face_material ?? wallFallback?.inner_face_material) ?? 'PPGI';
+            const intThk = (panel.inner_face_thickness ?? wallFallback?.inner_face_thickness) ?? 0.5;
+            const extMat = (panel.outer_face_material ?? wallFallback?.outer_face_material) ?? 'PPGI';
+            const extThk = (panel.outer_face_thickness ?? wallFallback?.outer_face_thickness) ?? 0.5;
+            const finishing = (intMat === extMat && intThk === extThk)
+                ? `Both Side ${extThk}mm ${extMat}`
+                : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+            
+            return `
+                <tr>
+                    <td style="border:1px solid #ccc;padding:4px;">${panel.width}</td>
+                    <td style="border:1px solid #ccc;padding:4px;">${panel.length}</td>
+                    <td style="border:1px solid #ccc;padding:4px;">${panel.thickness || 'N/A'}</td>
+                    <td style="border:1px solid #ccc;padding:4px;">${panel.application}</td>
+                    <td style="border:1px solid #ccc;padding:4px;">${panel.quantity}</td>
+                    <td style="border:1px solid #ccc;padding:4px;">${panel.type}</td>
+                    <td style="border:1px solid #ccc;padding:4px;">${panel.thickness || 'N/A'}</td>
+                    <td style="border:1px solid #ccc;padding:4px;font-size:12px;">${finishing}</td>
+                </tr>
+            `;
+        }).join('');
         return `<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
     };
 
@@ -353,7 +394,12 @@ const PanelCalculationControls = ({
                     thickness: wall.thickness,
                     wallLength: wallLength,
                     wallStart: `(${Math.round(wall.start_x)}, ${Math.round(wall.start_y)})`,
-                    wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`
+                    wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`,
+                    // Surface type information
+                    inner_face_material: wall.inner_face_material || 'PPGI',
+                    inner_face_thickness: wall.inner_face_thickness ?? 0.5,
+                    outer_face_material: wall.outer_face_material || 'PPGI',
+                    outer_face_thickness: wall.outer_face_thickness ?? 0.5
                 });
             });
         });
@@ -365,9 +411,9 @@ const PanelCalculationControls = ({
 
         // Share panel data with other tabs if updateSharedPanelData is provided
         if (updateSharedPanelData) {
-            // Group panels by dimensions and application for sharing (matches table structure)
+            // Group panels by dimensions, application, and surface types for sharing (matches table structure)
             const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
-                const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}`;
+                const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
                 if (!acc[key]) {
                     acc[key] = {
                         width: panel.width,
@@ -375,7 +421,12 @@ const PanelCalculationControls = ({
                         thickness: panel.thickness,
                         application: panel.application,
                         quantity: 0,
-                        type: panel.type
+                        type: panel.type,
+                        inner_face_material: panel.inner_face_material,
+                        inner_face_thickness: panel.inner_face_thickness,
+                        outer_face_material: panel.outer_face_material,
+                        outer_face_thickness: panel.outer_face_thickness,
+                        anyWallId: panel.wallId
                     };
                 }
                 acc[key].quantity += 1;
@@ -385,9 +436,9 @@ const PanelCalculationControls = ({
             updateSharedPanelData('wall-plan', Object.values(groupedPanelsForSharing), analysis);
         }
 
-        // Group panels by dimensions and application
+        // Group panels by dimensions, application, and surface types
         const groupedPanels = allPanels.reduce((acc, panel) => {
-            const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}`;
+            const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
             if (!acc[key]) {
                 acc[key] = {
                     width: panel.width,
@@ -395,7 +446,11 @@ const PanelCalculationControls = ({
                     thickness: panel.thickness,
                     application: panel.application,
                     quantity: 0,
-                    type: panel.type
+                    type: panel.type,
+                    inner_face_material: panel.inner_face_material,
+                    inner_face_thickness: panel.inner_face_thickness,
+                    outer_face_material: panel.outer_face_material,
+                    outer_face_thickness: panel.outer_face_thickness
                 };
             }
             acc[key].quantity += 1;
@@ -457,123 +512,10 @@ const PanelCalculationControls = ({
                         {showTable ? 'Hide Panel Details' : 'Show Panel Details'}
                     </button>
                 )}
-                {/* Export button, only show when material details are visible */}
-                {showMaterialDetails && calculatedPanels && (
-                    <button
-                        onClick={() => setShowExportModal(true)}
-                        className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
-                    >
-                        Export
-                    </button>
-                )}
+                {/* Export removed in wall plan tab per requirements */}
             </div>
 
-            {/* Export Modal */}
-            {showExportModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-                    <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl relative">
-                        <button
-                            onClick={() => setShowExportModal(false)}
-                            className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-xl"
-                        >
-                            &times;
-                        </button>
-                        <div className="flex gap-4 mb-4">
-                            <button
-                                className={`px-4 py-2 rounded ${exportTab === 'pdf' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
-                                onClick={() => setExportTab('pdf')}
-                            >PDF Preview</button>
-                            <button
-                                className={`px-4 py-2 rounded ${exportTab === 'csv' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
-                                onClick={() => setExportTab('csv')}
-                            >CSV Preview</button>
-                            <button
-                                className={`px-4 py-2 rounded ${exportTab === 'sketch' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
-                                onClick={() => setExportTab('sketch')}
-                            >2D Sketch</button>
-                        </div>
-                        <div className="overflow-auto max-h-96 border rounded p-4 bg-gray-50">
-                            {exportTab === 'pdf' ? (
-                                <div>
-                                    {getPDFTable()}
-                                    {getDoorTable()}
-                                </div>
-                            ) : exportTab === 'csv' ? (
-                                <pre className="whitespace-pre-wrap text-sm">{getCSVStringWithDoors()}</pre>
-                            ) : exportTab === 'sketch' ? (
-                                <div className="text-center">
-                                    <div className="mb-4">
-                                        <h3 className="text-lg font-semibold mb-2">2D Sketch Export</h3>
-                                        <p className="text-gray-600 mb-4">
-                                            Export your 2D floor plan sketch in high-quality image or vector format.
-                                        </p>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="p-4 border rounded bg-white">
-                                            <h4 className="font-semibold mb-2">PNG Image</h4>
-                                            <p className="text-sm text-gray-600 mb-3">
-                                                High-resolution raster image suitable for printing and sharing.
-                                            </p>
-                                            <button
-                                                onClick={downloadSketchAsPNG}
-                                                className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                            >
-                                                Download PNG
-                                            </button>
-                                        </div>
-                                        <div className="p-4 border rounded bg-white">
-                                            <h4 className="font-semibold mb-2">SVG Vector</h4>
-                                            <p className="text-sm text-gray-600 mb-3">
-                                                Scalable vector format for editing and high-quality printing.
-                                            </p>
-                                            <button
-                                                onClick={downloadSketchAsSVG}
-                                                className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                                            >
-                                                Download SVG
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : null}
-                        </div>
-                        <div className="flex gap-4 mt-6 justify-end">
-                            {exportTab === 'pdf' && (
-                                <button
-                                    onClick={downloadPDF}
-                                    className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800"
-                                >
-                                    Save as PDF
-                                </button>
-                            )}
-                            {exportTab === 'csv' && (
-                                <button
-                                    onClick={downloadCSV}
-                                    className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800"
-                                >
-                                    Save as CSV
-                                </button>
-                            )}
-                            {exportTab === 'sketch' && (
-                                <>
-                                    <button
-                                        onClick={downloadSketchAsPNG}
-                                        className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800"
-                                    >
-                                        Download PNG
-                                    </button>
-                                    <button
-                                        onClick={downloadSketchAsSVG}
-                                        className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800"
-                                    >
-                                        Download SVG
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Export UI removed */}
 
             {showMaterialDetails && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -705,19 +647,37 @@ const PanelCalculationControls = ({
                                 <th className="px-4 py-2 border">Quantity</th>
                                 <th className="px-4 py-2 border">Type</th>
                                 <th className="px-4 py-2 border">Application</th>
+                                <th className="px-4 py-2 border">Panel Thickness (mm)</th>
+                                <th className="px-4 py-2 border">Finishing</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {calculatedPanels.map((panel, index) => (
-                                <tr key={index} className="hover:bg-gray-50">
-                                    <td className="px-4 py-2 border text-center">{index + 1}</td>
-                                    <td className="px-4 py-2 border text-center">{panel.width}</td>
-                                    <td className="px-4 py-2 border text-center">{panel.length}</td>
-                                    <td className="px-4 py-2 border text-center">{panel.quantity}</td>
-                                    <td className="px-4 py-2 border text-center">{panel.type}</td>
-                                    <td className="px-4 py-2 border text-center">{panel.application}</td>
-                                </tr>
-                            ))}
+                            {calculatedPanels.map((panel, index) => {
+                                // Fallback to wall data if panel doesn't carry face info
+                                const wallFallback = (!panel.inner_face_material || !panel.outer_face_material) && Array.isArray(walls)
+                                    ? walls.find(w => String(w.id) === String(panel.anyWallId))
+                                    : null;
+                                const intMat = (panel.inner_face_material ?? wallFallback?.inner_face_material) ?? 'PPGI';
+                                const intThk = (panel.inner_face_thickness ?? wallFallback?.inner_face_thickness) ?? 0.5;
+                                const extMat = (panel.outer_face_material ?? wallFallback?.outer_face_material) ?? 'PPGI';
+                                const extThk = (panel.outer_face_thickness ?? wallFallback?.outer_face_thickness) ?? 0.5;
+                                const finishing = (intMat === extMat && intThk === extThk)
+                                    ? `Both Side ${extThk}mm ${extMat}`
+                                    : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+                                
+                                return (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                        <td className="px-4 py-2 border text-center">{index + 1}</td>
+                                        <td className="px-4 py-2 border text-center">{panel.width}</td>
+                                        <td className="px-4 py-2 border text-center">{panel.length}</td>
+                                        <td className="px-4 py-2 border text-center">{panel.quantity}</td>
+                                        <td className="px-4 py-2 border text-center">{panel.type}</td>
+                                        <td className="px-4 py-2 border text-center">{panel.application}</td>
+                                        <td className="px-4 py-2 border text-center">{panel.thickness || 'N/A'}</td>
+                                        <td className="px-4 py-2 border text-left text-sm">{finishing}</td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

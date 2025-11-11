@@ -33,6 +33,22 @@ export default function useRoomForm({
   const [floorThickness, setFloorThickness] = useState(initialRoom?.floor_thickness || '');
   const [temperature, setTemperature] = useState(initialRoom?.temperature || '');
   const [roomHeight, setRoomHeight] = useState(initialRoom?.height || '');
+  // Store as string to allow intermediate typing states like "-" or "-3"
+  const [baseElevation, setBaseElevation] = useState(
+    initialRoom?.base_elevation_mm !== undefined && initialRoom?.base_elevation_mm !== null
+      ? initialRoom.base_elevation_mm.toString()
+      : '0'
+  );
+  
+  // Helper function to set base elevation allowing intermediate typing states
+  const setBaseElevationSafe = (value) => {
+    // Always store as string to allow intermediate states
+    if (typeof value === 'string') {
+      setBaseElevation(value);
+    } else {
+      setBaseElevation(value.toString());
+    }
+  };
   const [remarks, setRemarks] = useState(initialRoom?.remarks || '');
   const [displayWalls, setDisplayWalls] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -47,6 +63,11 @@ export default function useRoomForm({
       setRemarks(initialRoom.remarks);
       setTemperature(initialRoom.temperature || '');
       setRoomHeight(initialRoom.height || '');
+      setBaseElevation(
+        initialRoom.base_elevation_mm !== undefined && initialRoom.base_elevation_mm !== null
+          ? initialRoom.base_elevation_mm.toString()
+          : '0'
+      );
     }
   }, [initialRoom]);
 
@@ -147,6 +168,7 @@ export default function useRoomForm({
       floor_thickness: floorThickness,
       temperature: temperature,
       height: roomHeight,
+      base_elevation_mm: baseElevation === '' || baseElevation === '-' ? 0 : parseFloat(baseElevation) || 0,
       remarks: remarks,
       walls: selectedWallIds,
       project: projectId,
@@ -184,6 +206,8 @@ export default function useRoomForm({
     setTemperature,
     roomHeight,
     setRoomHeight,
+    baseElevation,
+    setBaseElevation: setBaseElevationSafe,
     remarks,
     setRemarks,
     displayWalls,

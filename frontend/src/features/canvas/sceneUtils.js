@@ -1,6 +1,6 @@
 // Utility functions for Three.js scene setup and model building
 
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { OrbitControls } from './threeInstance';
 import earcut from 'earcut';
 
 export function addGrid(instance) {

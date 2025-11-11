@@ -558,21 +558,32 @@ const InstallationTimeEstimator = ({
                         wallId: wall.id,
                         wallLength: wallLength,
                         wallStart: `(${Math.round(wall.start_x)}, ${Math.round(wall.start_y)})`,
-                        wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`
+                        wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`,
+                        thickness: wall.thickness,
+                        inner_face_material: wall.inner_face_material || 'PPGI',
+                        inner_face_thickness: wall.inner_face_thickness ?? 0.5,
+                        outer_face_material: wall.outer_face_material || 'PPGI',
+                        outer_face_thickness: wall.outer_face_thickness ?? 0.5
                     });
                 });
             });
 
-            // Group panels by dimensions and application for sharing (matches table structure)
+            // Group panels by dimensions, application, panel thickness, and surface types
             const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
-                const key = `${panel.width}-${panel.length}-${panel.application}`;
+                const key = `${panel.width}-${panel.length}-${panel.thickness || 'NA'}-${panel.application}-${panel.inner_face_material || 'PPGI'}-${panel.inner_face_thickness ?? 0.5}-${panel.outer_face_material || 'PPGI'}-${panel.outer_face_thickness ?? 0.5}`;
                 if (!acc[key]) {
                     acc[key] = {
                         width: panel.width,
                         length: panel.length,
+                        thickness: panel.thickness,
                         application: panel.application,
                         quantity: 0,
-                        type: panel.type
+                        type: panel.type,
+                        inner_face_material: panel.inner_face_material || 'PPGI',
+                        inner_face_thickness: panel.inner_face_thickness ?? 0.5,
+                        outer_face_material: panel.outer_face_material || 'PPGI',
+                        outer_face_thickness: panel.outer_face_thickness ?? 0.5,
+                        anyWallId: panel.wallId
                     };
                 }
                 acc[key].quantity += 1;
@@ -1004,13 +1015,21 @@ const InstallationTimeEstimator = ({
         // Get canvas images from shared data
         const capturedImages = getCanvasImagesFromSharedData();
         
-        // Enrich wall panels with thickness from walls data
+        // Enrich wall panels with thickness and surface types from walls data (fallbacks when missing)
         const enrichedWallPanels = (sharedPanelData?.wallPanels || []).map(panel => {
-            const wall = walls.find(w => w.id === panel.wallId);
-            const thickness = wall?.thickness || 150; // Default wall thickness
+            const wall = walls.find(w => String(w.id) === String(panel.wallId || panel.anyWallId));
+            const thickness = wall?.thickness || panel.thickness || 150; // Default wall thickness
+            const inner_face_material = panel.inner_face_material ?? wall?.inner_face_material ?? 'PPGI';
+            const inner_face_thickness = panel.inner_face_thickness ?? wall?.inner_face_thickness ?? 0.5;
+            const outer_face_material = panel.outer_face_material ?? wall?.outer_face_material ?? 'PPGI';
+            const outer_face_thickness = panel.outer_face_thickness ?? wall?.outer_face_thickness ?? 0.5;
             return {
                 ...panel,
-                thickness: thickness
+                thickness,
+                inner_face_material,
+                inner_face_thickness,
+                outer_face_material,
+                outer_face_thickness
             };
         });
         
@@ -1229,19 +1248,29 @@ const InstallationTimeEstimator = ({
                 addText(`Total: ${exportData.wallPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
                 yPos += 3;
                 
-                const wallPanelData = exportData.wallPanels.map((panel, index) => [
-                    (index + 1).toString(),
-                    `${panel.width}mm`,
-                    `${panel.length}mm`,
-                    `${panel.thickness || 'N/A'}mm`,
-                    panel.quantity ? panel.quantity.toString() : '1',
-                    panel.type || 'N/A',
-                    panel.application || 'N/A'
-                ]);
+                const wallPanelData = exportData.wallPanels.map((panel, index) => {
+                    const intMat = panel.inner_face_material ?? 'PPGI';
+                    const intThk = panel.inner_face_thickness ?? 0.5;
+                    const extMat = panel.outer_face_material ?? 'PPGI';
+                    const extThk = panel.outer_face_thickness ?? 0.5;
+                    const finishing = (intMat === extMat && intThk === extThk)
+                        ? `Both Side ${extThk}mm ${extMat}`
+                        : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+                    return [
+                        (index + 1).toString(),
+                        `${panel.width}mm`,
+                        `${panel.length}mm`,
+                        panel.quantity ? panel.quantity.toString() : '1',
+                        panel.type || 'N/A',
+                        panel.application || 'N/A',
+                        `${panel.thickness || 'N/A'}mm`,
+                        finishing
+                    ];
+                });
                 
                                  autoTable(doc, {
                      startY: yPos,
-                     head: [['No.', 'Panel Width', 'Panel Length', 'Thickness', 'Quantity', 'Type', 'Application']],
+                     head: [['No.', 'Width (mm)', 'Length (mm)', 'Quantity', 'Type', 'Application', 'Panel Thickness (mm)', 'Finishing']],
                      body: wallPanelData,
                      theme: 'striped',
                      styles: { fontSize: 9, cellPadding: 4 }, // Larger font
@@ -2231,9 +2260,6 @@ const InstallationTimeEstimator = ({
                                                         Length (mm)
                                                     </th>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
-                                                        Thickness (mm)
-                                                    </th>
-                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
                                                         Quantity
                                                     </th>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
@@ -2242,26 +2268,42 @@ const InstallationTimeEstimator = ({
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
                                                         Application
                                                     </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Panel Thickness (mm)
+                                                    </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Finishing
+                                                    </th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {(expandedTables.wallPanels ? exportData.wallPanels : exportData.wallPanels.slice(0, 5)).map((panel, index) => (
-                                                    <tr key={index} className="hover:bg-gray-50">
-                                                        <td className="px-4 py-2 border border-gray-300 text-center">{index + 1}</td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-center">{panel.width}</td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-center">{panel.length}</td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-center">{panel.thickness || 'N/A'}</td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-center">{panel.quantity || 1}</td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-center">{panel.type || 'N/A'}</td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-center">{panel.application || 'N/A'}</td>
-                                                    </tr>
-                                                ))}
+                                                {(expandedTables.wallPanels ? exportData.wallPanels : exportData.wallPanels.slice(0, 5)).map((panel, index) => {
+                                                    const intMat = panel.inner_face_material ?? 'PPGI';
+                                                    const intThk = panel.inner_face_thickness ?? 0.5;
+                                                    const extMat = panel.outer_face_material ?? 'PPGI';
+                                                    const extThk = panel.outer_face_thickness ?? 0.5;
+                                                    const finishing = (intMat === extMat && intThk === extThk)
+                                                        ? `Both Side ${extThk}mm ${extMat}`
+                                                        : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+                                                    return (
+                                                        <tr key={index} className="hover:bg-gray-50">
+                                                            <td className="px-4 py-2 border border-gray-300 text-center">{index + 1}</td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-center">{panel.width}</td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-center">{panel.length}</td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-center">{panel.quantity || 1}</td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-center">{panel.type || 'N/A'}</td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-center">{panel.application || 'N/A'}</td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-center">{panel.thickness || 'N/A'}</td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-left text-sm">{finishing}</td>
+                                                        </tr>
+                                                    );
+                                                })}
                                                 {exportData.wallPanels.length > 5 && (
                                                     <tr 
                                                         className="hover:bg-blue-50 cursor-pointer transition-colors"
                                                         onClick={() => toggleTableExpansion('wallPanels')}
                                                     >
-                                                        <td colSpan="7" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                        <td colSpan="8" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
                                                             {expandedTables.wallPanels ? (
                                                                 <>
                                                                     <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

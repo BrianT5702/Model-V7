@@ -29,8 +29,11 @@ const InteractiveRoomLabel = ({
     const getDisplayText = () => {
         const name = room.room_name || 'Unnamed Room';
         const height = room.height ? `EXT HT: ${room.height}mm` : 'EXT HT: No height';
+        const baseElevation = room.base_elevation_mm !== undefined && room.base_elevation_mm !== 0 
+            ? `Base: ${room.base_elevation_mm > 0 ? '+' : ''}${room.base_elevation_mm}mm` 
+            : '';
         const description = room.remarks || 'No description';
-        return `${name}<br/>${height}<br/>${description}`;
+        return `${name}<br/>${height}${baseElevation ? '<br/>' + baseElevation : ''}<br/>${description}`;
     };
 
     // Update current position when prop changes

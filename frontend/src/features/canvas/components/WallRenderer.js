@@ -61,14 +61,33 @@ export class WallRenderer {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       
+      // Find rooms that contain this wall and use the minimum base elevation
+      let minBaseElevation = 0;
+      if (this.instance.project && this.instance.project.rooms) {
+        const roomsWithWall = this.instance.project.rooms.filter(room => 
+          room.walls && room.walls.some(wallId => String(wallId) === String(wall.id))
+        );
+        
+        if (roomsWithWall.length > 0) {
+          const baseElevations = roomsWithWall
+            .map(room => room.base_elevation_mm ?? 0)
+            .filter(elev => !isNaN(elev));
+          
+          if (baseElevations.length > 0) {
+            minBaseElevation = Math.min(...baseElevations);
+          }
+        }
+      }
+      
       // Position the wall
       const midX = (start_x + end_x) / 2 * scale;
       const midZ = (start_y + end_y) / 2 * scale;
       const angle = Math.atan2(end_y - start_y, end_x - start_x);
+      const baseElevationY = minBaseElevation * scale;
       
       mesh.position.set(
         midX + this.instance.modelOffset.x, 
-        wallHeight / 2, 
+        baseElevationY + wallHeight / 2, 
         midZ + this.instance.modelOffset.z
       );
       mesh.rotation.y = angle;

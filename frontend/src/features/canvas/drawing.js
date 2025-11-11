@@ -679,22 +679,55 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
 }
 
 // Draw a pair of wall lines
-export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, color, dashPattern = []) {
-    context.strokeStyle = color;
-    context.lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH;
-    context.setLineDash(dashPattern);
-    lines.forEach(line => {
+export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, color, dashPattern = [], innerColor = null) {
+    // If innerColor is provided and different from color, draw each line with different color
+    // line1 (outer face) uses color, line2 (inner face) uses innerColor
+    if (innerColor && innerColor !== color && lines.length >= 2) {
+        // Draw outer face (line1) with outer color
+        context.strokeStyle = color;
+        context.lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH;
+        context.setLineDash(dashPattern);
         context.beginPath();
         context.moveTo(
-            line[0].x * scaleFactor + offsetX,
-            line[0].y * scaleFactor + offsetY
+            lines[0][0].x * scaleFactor + offsetX,
+            lines[0][0].y * scaleFactor + offsetY
         );
         context.lineTo(
-            line[1].x * scaleFactor + offsetX,
-            line[1].y * scaleFactor + offsetY
+            lines[0][1].x * scaleFactor + offsetX,
+            lines[0][1].y * scaleFactor + offsetY
         );
         context.stroke();
-    });
+        
+        // Draw inner face (line2) with inner color
+        context.strokeStyle = innerColor;
+        context.beginPath();
+        context.moveTo(
+            lines[1][0].x * scaleFactor + offsetX,
+            lines[1][0].y * scaleFactor + offsetY
+        );
+        context.lineTo(
+            lines[1][1].x * scaleFactor + offsetX,
+            lines[1][1].y * scaleFactor + offsetY
+        );
+        context.stroke();
+    } else {
+        // Same material on both faces - use single color
+        context.strokeStyle = color;
+        context.lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH;
+        context.setLineDash(dashPattern);
+        lines.forEach(line => {
+            context.beginPath();
+            context.moveTo(
+                line[0].x * scaleFactor + offsetX,
+                line[0].y * scaleFactor + offsetY
+            );
+            context.lineTo(
+                line[1].x * scaleFactor + offsetX,
+                line[1].y * scaleFactor + offsetY
+            );
+            context.stroke();
+        });
+    }
     context.setLineDash([]); // Reset dash
 }
 
@@ -790,38 +823,110 @@ export function drawWallCaps(context, wall, joints, center, intersections, SNAP_
     });
 }
 
-// Generate distinct colors for different wall thicknesses
+// Build a unique key for wall finish + thickness combination
+function getWallFinishKey(wall) {
+    const intMat = wall.inner_face_material || 'PPGI';
+    const intThk = wall.inner_face_thickness != null ? wall.inner_face_thickness : 0.5;
+    const extMat = wall.outer_face_material || 'PPGI';
+    const extThk = wall.outer_face_thickness != null ? wall.outer_face_thickness : 0.5;
+    const coreThk = wall.thickness;
+    return `${coreThk}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`;
+}
+
+// Build a key for inner face only (for color mapping)
+function getInnerFaceKey(wall) {
+    const intMat = wall.inner_face_material || 'PPGI';
+    const intThk = wall.inner_face_thickness != null ? wall.inner_face_thickness : 0.5;
+    const coreThk = wall.thickness;
+    return `${coreThk}|INT:${intThk} ${intMat}`;
+}
+
+// Build a key for outer face only (for color mapping)
+function getOuterFaceKey(wall) {
+    const extMat = wall.outer_face_material || 'PPGI';
+    const extThk = wall.outer_face_thickness != null ? wall.outer_face_thickness : 0.5;
+    const coreThk = wall.thickness;
+    return `${coreThk}|EXT:${extThk} ${extMat}`;
+}
+
+// Generate distinct colors for combinations of (thickness + inner/outer finishes)
 function generateThicknessColorMap(walls) {
     if (!walls || walls.length === 0) return new Map();
+
+    // Collect unique combination keys (full wall specs)
+    const keys = [...new Set(walls.map(getWallFinishKey))];
     
-    // Get all unique thicknesses
-    const thicknesses = [...new Set(walls.map(w => w.thickness))].sort((a, b) => a - b);
+    // Also collect unique inner and outer face keys for separate color mapping
+    const innerFaceKeys = [...new Set(walls.map(getInnerFaceKey))];
+    const outerFaceKeys = [...new Set(walls.map(getOuterFaceKey))];
     
-    // If only one thickness, return default colors
-    if (thicknesses.length === 1) {
+    // If only one combination, use default grayscale
+    if (keys.length === 1) {
         const colorMap = new Map();
-        colorMap.set(thicknesses[0], { wall: '#333', partition: '#666' });
+        const onlyKey = keys[0];
+        const wall = walls.find(w => getWallFinishKey(w) === onlyKey);
+        const hasDiffFaces = wall && 
+            (wall.inner_face_material || 'PPGI') !== (wall.outer_face_material || 'PPGI');
+        
+        if (hasDiffFaces) {
+            // Generate colors for inner and outer separately
+            const innerKey = getInnerFaceKey(wall);
+            const outerKey = getOuterFaceKey(wall);
+            const innerHue = 200; // Blue-ish for inner
+            const outerHue = 0; // Red-ish for outer
+            colorMap.set(onlyKey, {
+                wall: `hsl(${outerHue}, 70%, 35%)`,
+                partition: `hsl(${outerHue}, 60%, 50%)`,
+                innerWall: `hsl(${innerHue}, 70%, 35%)`,
+                innerPartition: `hsl(${innerHue}, 60%, 50%)`,
+                label: onlyKey,
+                hasDifferentFaces: true
+            });
+        } else {
+            colorMap.set(onlyKey, { wall: '#333', partition: '#666', label: onlyKey, hasDifferentFaces: false });
+        }
         return colorMap;
     }
-    
-    // Generate distinct colors for each thickness
-    // Using HSL color space for better visual distinction
+
+    // Assign distinct hues for each combination
     const colorMap = new Map();
-    thicknesses.forEach((thickness, index) => {
-        // Generate hue values spread across the color wheel
-        const hue = (index * 360) / thicknesses.length;
-        // Use higher saturation and moderate lightness for walls
-        const wallColor = `hsl(${hue}, 70%, 35%)`;
-        // Slightly lighter version for partitions
-        const partitionColor = `hsl(${hue}, 60%, 50%)`;
+    keys.forEach((key, index) => {
+        const wall = walls.find(w => getWallFinishKey(w) === key);
+        const hasDiffFaces = wall && 
+            (wall.inner_face_material || 'PPGI') !== (wall.outer_face_material || 'PPGI');
         
-        colorMap.set(thickness, {
-            wall: wallColor,
-            partition: partitionColor,
-            label: `${thickness}mm`
-        });
+        if (hasDiffFaces) {
+            // Different materials - assign separate colors for inner and outer
+            const hueOuter = (index * 360) / keys.length;
+            const hueInner = ((index * 360) / keys.length + 180) % 360; // Opposite side of color wheel
+            
+            const wallColor = `hsl(${hueOuter}, 70%, 35%)`;
+            const partitionColor = `hsl(${hueOuter}, 60%, 50%)`;
+            const innerWallColor = `hsl(${hueInner}, 70%, 35%)`;
+            const innerPartitionColor = `hsl(${hueInner}, 60%, 50%)`;
+            
+            const parts = key.split('|');
+            const label = `${parts[0]}mm | ${parts[1].replace('INT:', 'Int: ')} | ${parts[2].replace('EXT:', 'Ext: ')}`;
+            
+            colorMap.set(key, {
+                wall: wallColor,
+                partition: partitionColor,
+                innerWall: innerWallColor,
+                innerPartition: innerPartitionColor,
+                label,
+                hasDifferentFaces: true
+            });
+        } else {
+            // Same material on both faces
+            const hue = (index * 360) / keys.length;
+            const wallColor = `hsl(${hue}, 70%, 35%)`;
+            const partitionColor = `hsl(${hue}, 60%, 50%)`;
+            const parts = key.split('|');
+            const label = `${parts[0]}mm | ${parts[1].replace('INT:', 'Int: ')} | ${parts[2].replace('EXT:', 'Ext: ')}`;
+            colorMap.set(key, { wall: wallColor, partition: partitionColor, label, hasDifferentFaces: false });
+        }
     });
-    
+
     return colorMap;
 }
 
@@ -859,7 +964,7 @@ export function drawWalls({
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
-    // Generate thickness-based color map
+    // Generate color map based on (thickness + inner/outer finishes)
     const thicknessColorMap = generateThicknessColorMap(walls);
     
     // Calculate model bounds for external dimensioning
@@ -880,9 +985,20 @@ export function drawWalls({
     walls.forEach((wall, index) => {
         const highlight = highlightWalls.find(h => h.id === wall.id);
         
-        // Get thickness-based color
-        const thicknessColors = thicknessColorMap.get(wall.thickness) || { wall: '#333', partition: '#666' };
+        // Get color for this wall's combination
+        const comboKey = getWallFinishKey(wall);
+        const thicknessColors = thicknessColorMap.get(comboKey) || { wall: '#333', partition: '#666', hasDifferentFaces: false };
+        const hasDiffFaces = thicknessColors.hasDifferentFaces;
+        
+        // Check if inner and outer materials are actually different
+        const intMat = wall.inner_face_material || 'PPGI';
+        const extMat = wall.outer_face_material || 'PPGI';
+        const actuallyHasDiffFaces = hasDiffFaces && (intMat !== extMat);
+        
         const baseColor = wall.application_type === "partition" ? thicknessColors.partition : thicknessColors.wall;
+        const baseInnerColor = actuallyHasDiffFaces 
+            ? (wall.application_type === "partition" ? thicknessColors.innerPartition : thicknessColors.innerWall)
+            : null;
         
         const wallColor =
             highlight ? highlight.color :
@@ -890,6 +1006,14 @@ export function drawWalls({
             selectedWall === wall.id ? 'red' :
             hoveredWall === wall.id ? '#2196F3' :
             baseColor;
+        
+        // Inner color (only used if materials differ)
+        const innerColor = actuallyHasDiffFaces && !highlight && 
+            !selectedWallsForRoom.includes(wall.id) && 
+            selectedWall !== wall.id && 
+            hoveredWall !== wall.id
+            ? baseInnerColor
+            : null;
         let { line1, line2 } = calculateOffsetPoints(
             wall.start_x,
             wall.start_y,
@@ -1004,7 +1128,7 @@ export function drawWalls({
         });
         wall._line1 = line1;
         wall._line2 = line2;
-        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor);
+        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor, [], innerColor);
         drawWallCaps(context, wall, joints, center, intersections, SNAP_THRESHOLD, currentScaleFactor, offsetX, offsetY, scaleFactor);
         if (wall.application_type === "partition") {
             drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX, offsetY);

@@ -1,8 +1,16 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { calculateOffsetPoints } from './drawing.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
 import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds } from './collisionDetection.js';
+
+const DEFAULT_CANVAS_WIDTH = 1000;
+const DEFAULT_CANVAS_HEIGHT = 600;
+const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
+const MAX_CANVAS_HEIGHT_RATIO = 0.7;
+const MIN_CANVAS_WIDTH = 480;
+const MIN_CANVAS_HEIGHT = 320;
+const PADDING = 50;
 
 const CeilingCanvas = ({ 
     // Multi-room props
@@ -11,6 +19,7 @@ const CeilingCanvas = ({
     intersections = [],
     ceilingPlans = [], 
     ceilingPanelsMap = {}, 
+    zones = [],
     onRoomSelect,
     onRoomDeselect,
     onPanelSelect,
@@ -34,9 +43,13 @@ const CeilingCanvas = ({
     
     // Support configuration
     supportType = 'nylon',
+    enableNylonHangers = true, // Enable automatic nylon hanger supports
+    enableAluSuspension = false, // Enable alu suspension custom drawing
     nylonHangerOptions = { includeAccessories: false, includeCable: false },
     aluSuspensionCustomDrawing = false,
     panelsNeedSupport = false,
+    customSupports = undefined, // Custom supports from parent (for persistence)
+    onCustomSupportsChange = null, // Callback to update custom supports in parent
     
     // Room selection props
     showAllRooms = true,
@@ -44,22 +57,96 @@ const CeilingCanvas = ({
     // Shared panel data update function
     updateSharedPanelData = null
 }) => {
-    // Determine if we're in multi-room mode or single-room mode
-    const isMultiRoomMode = rooms.length > 0;
+    // Determine if we're in multi-room mode or single-room mode - memoize to prevent recalculation
+    const isMultiRoomMode = useMemo(() => rooms.length > 0, [rooms.length]);
     
-    // Use multi-room data or fall back to single-room data
-    const effectiveRooms = isMultiRoomMode ? rooms : (room ? [room] : []);
-    const effectiveCeilingPanelsMap = isMultiRoomMode ? ceilingPanelsMap : (room ? { [room.id]: ceilingPanels } : {});
-    const effectiveCeilingPlans = isMultiRoomMode ? ceilingPlans : (ceilingPlan ? [ceilingPlan] : []);
+    // Use multi-room data or fall back to single-room data - memoize to prevent re-renders
+    const effectiveRooms = useMemo(() => {
+        return isMultiRoomMode ? rooms : (room ? [room] : []);
+    }, [isMultiRoomMode, rooms, room]);
+    
+    const effectiveCeilingPanelsMap = useMemo(() => {
+        return isMultiRoomMode ? ceilingPanelsMap : (room ? { [room.id]: ceilingPanels } : {});
+    }, [isMultiRoomMode, ceilingPanelsMap, room, ceilingPanels]);
+    
+    const effectiveCeilingPlans = useMemo(() => {
+        return isMultiRoomMode ? ceilingPlans : (ceilingPlan ? [ceilingPlan] : []);
+    }, [isMultiRoomMode, ceilingPlans, ceilingPlan]);
     
     const canvasRef = useRef(null);
+    const canvasContainerRef = useRef(null);
+    const [canvasSize, setCanvasSize] = useState({
+        width: DEFAULT_CANVAS_WIDTH,
+        height: DEFAULT_CANVAS_HEIGHT
+    });
     const [currentScale, setCurrentScale] = useState(1);
     const [showPanelTable, setShowPanelTable] = useState(false);
     const [isPlacingSupport, setIsPlacingSupport] = useState(false);
-    const [customSupports, setCustomSupports] = useState([]);
+    // Use customSupports from props if provided, otherwise use local state as fallback
+    const [localCustomSupports, setLocalCustomSupports] = useState([]);
+    const effectiveCustomSupports = customSupports !== undefined && Array.isArray(customSupports) ? customSupports : localCustomSupports;
+    // Function to update custom supports - use callback if provided, otherwise use local state setter
+    const updateCustomSupports = useCallback((newSupports) => {
+        if (onCustomSupportsChange) {
+            onCustomSupportsChange(newSupports);
+        } else {
+            setLocalCustomSupports(newSupports);
+        }
+    }, [onCustomSupportsChange]);
     const [supportStartPoint, setSupportStartPoint] = useState(null);
     const [supportPreview, setSupportPreview] = useState(null);
     const [hoveredRoomId, setHoveredRoomId] = useState(null);
+
+    // Track available drawing space for responsive canvas sizing
+    useEffect(() => {
+        const container = canvasContainerRef.current;
+        if (!container) return;
+
+        const updateCanvasSize = (rawWidth) => {
+            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
+            const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
+            const calculatedHeight = width * CANVAS_ASPECT_RATIO;
+            const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
+            const constrainedHeight = Math.min(preferredHeight, maxHeight);
+            const height = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
+
+            setCanvasSize((prev) => {
+                if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
+                    return prev;
+                }
+                return {
+                    width,
+                    height
+                };
+            });
+        };
+
+        let observer = null;
+        if (typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.target === container) {
+                        const entryWidth = entry.contentRect?.width ?? container.clientWidth;
+                        updateCanvasSize(entryWidth);
+                    }
+                });
+            });
+
+            observer.observe(container);
+        }
+
+        updateCanvasSize(container.clientWidth);
+
+        const handleWindowResize = () => updateCanvasSize(container.clientWidth);
+        window.addEventListener('resize', handleWindowResize);
+
+        return () => {
+            if (observer) {
+                observer.disconnect();
+            }
+            window.removeEventListener('resize', handleWindowResize);
+        };
+    }, []);
     
     // Initialize mouse position tracking
     useEffect(() => {
@@ -72,29 +159,20 @@ const CeilingCanvas = ({
         }
     }, [projectData]);
     
-    // Set proper cursor when aluminum suspension drawing mode changes
+    // Set proper cursor when placing support mode changes
     useEffect(() => {
         if (canvasRef.current) {
-            if (aluSuspensionCustomDrawing) {
+            if (isPlacingSupport) {
                 canvasRef.current.style.cursor = 'crosshair';
             } else {
                 canvasRef.current.style.cursor = 'grab';
             }
         }
-    }, [aluSuspensionCustomDrawing]);
+    }, [isPlacingSupport]);
     
-    // Update shared panel data when support options change
-    useEffect(() => {
-        if (updateSharedPanelData) {
-            updateSharedPanelData('ceiling-support-options', null, {
-                supportType: supportType,
-                includeAccessories: nylonHangerOptions.includeAccessories,
-                includeCable: nylonHangerOptions.includeCable,
-                aluSuspensionCustomDrawing: aluSuspensionCustomDrawing,
-                panelsNeedSupport: panelsNeedSupport
-            });
-        }
-    }, [updateSharedPanelData, supportType, nylonHangerOptions.includeAccessories, nylonHangerOptions.includeCable, aluSuspensionCustomDrawing, panelsNeedSupport]);
+    // NOTE: Removed duplicate updateSharedPanelData call from CeilingCanvas
+    // CeilingManager already handles updating shared panel data to prevent infinite loops
+    // This was causing a circular dependency where both components were updating shared data
     
     // Canvas state refs
     const scaleFactor = useRef(1);
@@ -110,10 +188,9 @@ const CeilingCanvas = ({
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
     const hasUserPositionedView = useRef(false); // Track if user has manually positioned the view
 
-    // Canvas dimensions - match wall plan for consistent focus
-    const CANVAS_WIDTH = 1000;
-    const CANVAS_HEIGHT = 600;
-    const PADDING = 50;
+    // Canvas dimensions are derived from container size for responsiveness
+    const CANVAS_WIDTH = Math.round(canvasSize.width);
+    const CANVAS_HEIGHT = Math.round(canvasSize.height);
 
     // Calculate project bounds for dimension positioning (project boundary)
     const projectBounds = useMemo(() => {
@@ -154,7 +231,6 @@ const CeilingCanvas = ({
     // Helper function to get accurate panel counts from multiple sources
     const getAccuratePanelCounts = useMemo(() => {
         const getTotalPanels = () => {
-            // Try multiple sources for accurate panel count
             if (ceilingPlan && ceilingPlan.total_panels) {
                 return ceilingPlan.total_panels;
             }
@@ -164,43 +240,52 @@ const CeilingCanvas = ({
             if (ceilingPlan && ceilingPlan.ceiling_panels && Array.isArray(ceilingPlan.ceiling_panels)) {
                 return ceilingPlan.ceiling_panels.length;
             }
-            // Fallback to calculating from panels map
             const totalFromMap = Object.values(effectiveCeilingPanelsMap).reduce((sum, panels) => sum + (panels ? panels.length : 0), 0);
             if (totalFromMap > 0) {
                 return totalFromMap;
             }
-            // Last resort: count all panels in the ceilingPanels prop
             return ceilingPanels ? ceilingPanels.length : 0;
         };
 
         const getFullPanels = () => {
-            // Try to get from ceilingPlan first
             if (ceilingPlan && ceilingPlan.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels)) {
                 return ceilingPlan.enhanced_panels.filter(p => !p.is_cut).length;
             }
-            // Fallback to panels map
             return Object.values(effectiveCeilingPanelsMap).reduce((sum, panels) => 
                 sum + (panels ? panels.filter(p => !p.is_cut).length : 0), 0
             );
         };
 
         const getCutPanels = () => {
-            // Try to get from ceilingPlan first
             if (ceilingPlan && ceilingPlan.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels)) {
                 return ceilingPlan.enhanced_panels.filter(p => p.is_cut).length;
             }
-            // Fallback to panels map
             return Object.values(effectiveCeilingPanelsMap).reduce((sum, panels) => 
                 sum + (panels ? panels.filter(p => p.is_cut).length : 0), 0
             );
         };
 
+        const zoneTotals = zones.reduce((acc, zone) => {
+            const zonePanels = zone?.ceiling_panels || [];
+            if (!Array.isArray(zonePanels)) return acc;
+            zonePanels.forEach(panel => {
+                if (!panel) return;
+                acc.total += 1;
+                if (panel.is_cut || panel.is_cut_panel) {
+                    acc.cut += 1;
+                } else {
+                    acc.full += 1;
+                }
+            });
+            return acc;
+        }, { total: 0, full: 0, cut: 0 });
+
         return {
-            total: getTotalPanels(),
-            full: getFullPanels(),
-            cut: getCutPanels()
+            total: getTotalPanels() + zoneTotals.total,
+            full: getFullPanels() + zoneTotals.full,
+            cut: getCutPanels() + zoneTotals.cut
         };
-    }, [ceilingPlan, effectiveCeilingPanelsMap, ceilingPanels]);
+    }, [ceilingPlan, effectiveCeilingPanelsMap, ceilingPanels, zones]);
 
 
 
@@ -224,7 +309,7 @@ const CeilingCanvas = ({
         // Draw everything
         drawCanvas(ctx);
 
-    }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, selectedRoomId, selectedPanelId]);
+    }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, zones, selectedRoomId, selectedPanelId, CANVAS_WIDTH, CANVAS_HEIGHT]);
 
     // Sync external scale prop with internal zoom
     useEffect(() => {
@@ -236,7 +321,7 @@ const CeilingCanvas = ({
 
     // Calculate optimal canvas transformation
     const calculateCanvasTransform = () => {
-        if (!effectiveRooms || effectiveRooms.length === 0) {
+        if ((!effectiveRooms || effectiveRooms.length === 0) && (!zonesAsRooms || zonesAsRooms.length === 0)) {
             scaleFactor.current = 1;
             initialScale.current = 1; // Set initial scale
             offsetX.current = CANVAS_WIDTH / 2;
@@ -247,7 +332,8 @@ const CeilingCanvas = ({
         // Calculate bounds for all rooms combined
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         
-        effectiveRooms.forEach(room => {
+        const roomsForBounds = effectiveRooms.length > 0 ? effectiveRooms : zonesAsRooms;
+        roomsForBounds.forEach(room => {
             if (room.room_points && room.room_points.length > 0) {
                 const xCoords = room.room_points.map(p => p.x);
                 const yCoords = room.room_points.map(p => p.y);
@@ -315,6 +401,9 @@ const CeilingCanvas = ({
                 drawCeilingPanels(ctx, room, globalPlacedLabels, globalAllLabels);
             });
         }
+
+        // Draw merged ceiling zones after individual rooms for overlay
+        drawZones(ctx, globalPlacedLabels, globalAllLabels);
         
         // PASS 2: Draw all dimension text BOXES on top (highest layer)
         globalAllLabels.forEach(label => {
@@ -417,13 +506,23 @@ const CeilingCanvas = ({
 
         const isSelected = room.id === selectedRoomId;
         const isHovered = room.id === hoveredRoomId;
+        const isZoneSelectionActive = typeof selectedRoomId === 'string' && selectedRoomId.startsWith('zone-');
+        const isZoneRoom = typeof room.id === 'string' && room.id.startsWith('zone-');
         const isRoomMode = !showAllRooms && selectedRoomId;
+
+        if (isZoneSelectionActive && !isZoneRoom) {
+            return;
+        }
         
         // Room outline styling
         if (isSelected) {
             ctx.fillStyle = 'rgba(59, 130, 246, 0.25)'; // More visible blue for selected room
             ctx.strokeStyle = '#1d4ed8'; // Darker blue border for selected room
             ctx.lineWidth = 6 * scaleFactor.current; // Thicker border for better visibility
+        } else if (isZoneSelectionActive) {
+            ctx.fillStyle = 'rgba(156, 163, 175, 0.05)'; // Dimmed when zone is selected
+            ctx.strokeStyle = '#d1d5db';
+            ctx.lineWidth = 1 * scaleFactor.current;
         } else if (isHovered) {
             ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; // Light blue for hovered room
             ctx.strokeStyle = '#3b82f6'; // Blue border for hovered room
@@ -748,6 +847,11 @@ const CeilingCanvas = ({
     const drawCeilingPanels = (ctx, room, placedLabels = [], allLabels = []) => {
         // Get panels for this room first
         const roomPanels = effectiveCeilingPanelsMap[room.id] || [];
+        const isZoneSelectionActive = typeof selectedRoomId === 'string' && selectedRoomId.startsWith('zone-');
+        const isZoneRoom = typeof room.id === 'string' && room.id.startsWith('zone-');
+        if (isZoneSelectionActive && !isZoneRoom) {
+            return;
+        }
         
         // Calculate local panel bounds for this room
         const localPanelBounds = roomPanels.length > 0 ? {
@@ -761,8 +865,8 @@ const CeilingCanvas = ({
 
         // Check if this room is selected or if we're in single room mode
         const isRoomSelected = room.id === selectedRoomId;
-        const isRoomMode = !showAllRooms && selectedRoomId;
-        const shouldDimPanels = isRoomMode && !isRoomSelected;
+        const isRoomMode = (!showAllRooms && selectedRoomId) || isZoneSelectionActive;
+        const shouldDimPanels = isRoomMode && !isRoomSelected && !isZoneRoom;
 
         // First pass: draw panels and collect dimension info
         roomPanels.forEach(panel => {
@@ -776,9 +880,9 @@ const CeilingCanvas = ({
 
             // Panel styling - use same color scheme as FloorCanvas
             if (isSelected) {
-                ctx.fillStyle = 'rgba(59, 130, 246, 0.8)'; // Bright blue for selected
-                ctx.strokeStyle = '#3b82f6';
-                ctx.lineWidth = 10 * scaleFactor.current; // Increased from 5 to 6 for better visibility
+                ctx.fillStyle = 'rgba(37, 99, 235, 0.85)'; // Brighter blue for selected panel
+                ctx.strokeStyle = '#1d4ed8';
+                ctx.lineWidth = 12 * scaleFactor.current;
             } else {
                 // Use same colors as FloorCanvas: blue for full panels, green for cut panels
                 if (panel.is_cut) {
@@ -798,7 +902,7 @@ const CeilingCanvas = ({
                         ctx.strokeStyle = '#3b82f6'; // Blue border for full panels
                     }
                 }
-                ctx.lineWidth = shouldDimPanels ? 5 * scaleFactor.current : 10 * scaleFactor.current;
+                ctx.lineWidth = shouldDimPanels ? 5 * scaleFactor.current : (isRoomSelected ? 12 * scaleFactor.current : 10 * scaleFactor.current);
             }
 
             // Draw panel
@@ -831,15 +935,15 @@ const CeilingCanvas = ({
             drawEnhancedCeilingDimensions(ctx, room, roomPanels, modelBounds, placedLabels, allLabels);
         }
 
-        // Draw default supports (nylon hangers only) and custom supports
-        if (!aluSuspensionCustomDrawing) {
-            // Draw default nylon hanger supports
+        // Draw default nylon hanger supports if enabled (can be drawn alongside alu suspension)
+        if (enableNylonHangers) {
+            // Draw default nylon hanger supports automatically
             drawPanelSupports(ctx, roomPanels, scaleFactor.current, offsetX.current, offsetY.current);
         }
         
-        // Draw custom supports if custom drawing is enabled
-        if (aluSuspensionCustomDrawing) {
-            drawCustomSupports(ctx, customSupports, scaleFactor.current, offsetX.current, offsetY.current);
+        // Draw custom supports if alu suspension is enabled (always show drawn supports, not just in drawing mode)
+        if (enableAluSuspension && effectiveCustomSupports.length > 0) {
+            drawCustomSupports(ctx, effectiveCustomSupports, scaleFactor.current, offsetX.current, offsetY.current);
         }
         
         // Draw support preview line if placing support
@@ -851,6 +955,65 @@ const CeilingCanvas = ({
         if (isPlacingSupport && supportPreview && supportPreview.mousePosition && supportPreview.distances) {
             drawMousePositionDimensions(ctx, supportPreview.mousePosition, supportPreview.distances, scaleFactor.current, offsetX.current, offsetY.current);
         }
+    };
+
+    const drawZoneOutline = (ctx, zone) => {
+        if (!zone) return;
+
+        const outlinePoints = Array.isArray(zone.outline_points) && zone.outline_points.length >= 3
+            ? zone.outline_points
+            : (Array.isArray(zone.outlinePoints) && zone.outlinePoints.length >= 3 ? zone.outlinePoints : null);
+
+        if (!outlinePoints) return;
+
+        const zoneId = `zone-${zone.id}`;
+        const isSelected = selectedRoomId === zoneId;
+        const isHovered = hoveredRoomId === zoneId;
+
+        ctx.save();
+        ctx.beginPath();
+        outlinePoints.forEach((point, index) => {
+            const canvasX = point.x * scaleFactor.current + offsetX.current;
+            const canvasY = point.y * scaleFactor.current + offsetY.current;
+            if (index === 0) {
+                ctx.moveTo(canvasX, canvasY);
+            } else {
+                ctx.lineTo(canvasX, canvasY);
+            }
+        });
+        ctx.closePath();
+
+        if (isSelected) {
+            ctx.fillStyle = 'rgba(234, 88, 12, 0.25)';
+            ctx.fill();
+            ctx.strokeStyle = '#c2410c';
+            ctx.lineWidth = 14 * scaleFactor.current;
+            ctx.setLineDash([12 * scaleFactor.current, 6 * scaleFactor.current]);
+        } else if (isHovered) {
+            ctx.fillStyle = 'rgba(249, 115, 22, 0.15)';
+            ctx.fill();
+            ctx.strokeStyle = '#fb923c';
+            ctx.lineWidth = 12 * scaleFactor.current;
+            ctx.setLineDash([12 * scaleFactor.current, 6 * scaleFactor.current]);
+        } else {
+            ctx.strokeStyle = '#f97316';
+            ctx.lineWidth = 10 * scaleFactor.current;
+            ctx.setLineDash([14 * scaleFactor.current, 6 * scaleFactor.current]);
+        }
+
+        ctx.stroke();
+        ctx.restore();
+    };
+
+    const drawZones = (ctx, placedLabels, allLabels) => {
+        if (!zones || zones.length === 0) return;
+        zones.forEach(zone => {
+            const zoneRoom = zonesAsRooms.find(room => room.zone_id === zone.id);
+            if (zoneRoom) {
+                drawCeilingPanels(ctx, zoneRoom, placedLabels, allLabels);
+            }
+            drawZoneOutline(ctx, zone);
+        });
     };
 
     // Enhanced ceiling dimension drawing function
@@ -1506,6 +1669,10 @@ const CeilingCanvas = ({
         const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
         
         // Find available position to avoid overlaps - use project bounds for initial positioning
+        const dimensionFont = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        const previousFont = ctx.font;
+        ctx.font = dimensionFont;
+
         do {
             if (isHorizontal) {
                 // Horizontal dimension: place ABOVE or BELOW (perpendicular to dimension direction)
@@ -1658,6 +1825,8 @@ const CeilingCanvas = ({
             labelY: labelY,
             isHorizontal: isHorizontal
         });
+
+        ctx.font = previousFont;
         
         // console.log(`✅ Dimension drawn successfully:`, {
         //     type,
@@ -1736,36 +1905,51 @@ const CeilingCanvas = ({
         const modelX = (mouseX - offsetX.current) / scaleFactor.current;
         const modelY = (mouseY - offsetY.current) / scaleFactor.current;
         
-        // Check if mouse is over any room
+        // Zones have priority for hover detection
+        let hoveredZone = null;
+        if (zonesAsRooms && zonesAsRooms.length > 0) {
+            for (const zoneRoom of zonesAsRooms) {
+                if (zoneRoom.room_points && zoneRoom.room_points.length >= 3) {
+                    if (isPointInPolygon(modelX, modelY, zoneRoom.room_points)) {
+                        hoveredZone = zoneRoom;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Rooms are only considered when no zone is hovered
         let hoveredRoom = null;
-        for (const room of effectiveRooms) {
-            if (room.room_points && room.room_points.length >= 3) {
-                if (isPointInPolygon(modelX, modelY, room.room_points)) {
-                    hoveredRoom = room;
-                    break;
+        if (!hoveredZone) {
+            for (const room of effectiveRooms) {
+                if (room.room_points && room.room_points.length >= 3) {
+                    if (isPointInPolygon(modelX, modelY, room.room_points)) {
+                        hoveredRoom = room;
+                        break;
+                    }
                 }
             }
         }
         
-        // Update hover state
-        if (hoveredRoom && hoveredRoom.id !== hoveredRoomId) {
-            setHoveredRoomId(hoveredRoom.id);
-            // Change cursor to pointer
-            canvasRef.current.style.cursor = 'pointer';
-            // Redraw canvas
+        const newHoverId = hoveredZone ? hoveredZone.id : (hoveredRoom ? hoveredRoom.id : null);
+        const hadHover = Boolean(hoveredRoomId);
+
+        if (newHoverId !== hoveredRoomId) {
+            if (newHoverId) {
+                setHoveredRoomId(newHoverId);
+                canvasRef.current.style.cursor = 'pointer';
+            } else {
+                setHoveredRoomId(null);
+                canvasRef.current.style.cursor = aluSuspensionCustomDrawing ? 'crosshair' : 'grab';
+            }
+
             const ctx = canvasRef.current.getContext('2d');
             if (ctx) {
                 drawCanvas(ctx);
             }
-        } else if (!hoveredRoom && hoveredRoomId) {
+        } else if (!newHoverId && hadHover) {
             setHoveredRoomId(null);
-            // Reset cursor based on current mode
-            if (aluSuspensionCustomDrawing) {
-                canvasRef.current.style.cursor = 'crosshair';
-            } else {
-                canvasRef.current.style.cursor = 'grab';
-            }
-            // Redraw canvas
+            canvasRef.current.style.cursor = aluSuspensionCustomDrawing ? 'crosshair' : 'grab';
             const ctx = canvasRef.current.getContext('2d');
             if (ctx) {
                 drawCanvas(ctx);
@@ -2147,13 +2331,28 @@ const CeilingCanvas = ({
         const modelX = (clickX - offsetX.current) / scaleFactor.current;
         const modelY = (clickY - offsetY.current) / scaleFactor.current;
         
-        // Check if clicked on a room first
+        // Check if clicked on a merged ceiling zone first
+        let clickedZone = null;
+        if (zonesAsRooms && zonesAsRooms.length > 0) {
+            for (const zoneRoom of zonesAsRooms) {
+                if (zoneRoom.room_points && zoneRoom.room_points.length >= 3) {
+                    if (isPointInPolygon(modelX, modelY, zoneRoom.room_points)) {
+                        clickedZone = zoneRoom;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Check if clicked on a room (only if no zone was clicked)
         let clickedRoom = null;
-        for (const room of effectiveRooms) {
-            if (room.room_points && room.room_points.length >= 3) {
-                if (isPointInPolygon(modelX, modelY, room.room_points)) {
-                    clickedRoom = room;
-                    break;
+        if (!clickedZone) {
+            for (const room of effectiveRooms) {
+                if (room.room_points && room.room_points.length >= 3) {
+                    if (isPointInPolygon(modelX, modelY, room.room_points)) {
+                        clickedRoom = room;
+                        break;
+                    }
                 }
             }
         }
@@ -2163,6 +2362,13 @@ const CeilingCanvas = ({
             // Room selection is disabled when aluminum suspension drawing is active
             // Only handle support placement logic below
         } else {
+            // If clicked on a zone, select the zone
+            if (clickedZone && onRoomSelect) {
+                onPanelSelect?.(null);
+                onRoomSelect(clickedZone.id);
+                return;
+            }
+
             // If clicked on a room, select it (only when aluminum suspension drawing is NOT enabled)
             if (clickedRoom && onRoomSelect) {
                 onRoomSelect(clickedRoom.id);
@@ -2176,8 +2382,8 @@ const CeilingCanvas = ({
             }
         }
         
-        // If custom support placement is enabled, handle support placement
-        if (aluSuspensionCustomDrawing && isPlacingSupport) {
+        // If custom support placement mode is active, handle support placement
+        if (enableAluSuspension && isPlacingSupport) {
             
             // Apply boundary snapping for support placement
             let snappedModelX = modelX;
@@ -2209,8 +2415,13 @@ const CeilingCanvas = ({
                 setSupportPreview({ startX: snappedModelX, startY: snappedModelY, endX: snappedModelX, endY: snappedModelY });
             } else {
                 // Second click - finish support line and place supports on intersecting panels
+                // Apply 90-degree snapping to ensure straight lines
+                const snappedCoords = snapTo90Degrees(supportStartPoint.x, supportStartPoint.y, snappedModelX, snappedModelY);
+                const finalEndX = snappedCoords.x;
+                const finalEndY = snappedCoords.y;
+                
                 const intersectingPanels = findIntersectingPanels(
-                    supportStartPoint.x, supportStartPoint.y, snappedModelX, snappedModelY
+                    supportStartPoint.x, supportStartPoint.y, finalEndX, finalEndY
                 );
                 
                 // Create supports at each intersection point along the line
@@ -2230,20 +2441,22 @@ const CeilingCanvas = ({
                             supportLine: {
                                 startX: supportStartPoint.x,
                                 startY: supportStartPoint.y,
-                                endX: modelX,
-                                endY: modelY
+                                endX: finalEndX,
+                                endY: finalEndY,
+                                isSnapped: snappedCoords.isSnapped
                             },
                             isIntersectionPoint: true
                         });
                     });
                 });
                 
-                setCustomSupports(prev => [...prev, ...newSupports]);
+                updateCustomSupports([...effectiveCustomSupports, ...newSupports]);
                 
-                // Reset placement state
+                // Reset placement state - auto-disable drawing mode after placing support
                 setSupportStartPoint(null);
                 setSupportPreview(null);
                 setIsPlacingSupport(false);
+                // Note: aluSuspensionCustomDrawing stays enabled so supports remain visible, but drawing mode is off
                 
                 // Redraw canvas
                 const ctx = canvasRef.current.getContext('2d');
@@ -2270,6 +2483,27 @@ const CeilingCanvas = ({
                     onPanelSelect?.(panel.id);
                     onRoomSelect?.(room.id); // Also select the room
                     return;
+                }
+
+            }
+        }
+
+        // Check if clicked on a zone panel (treat zones as rooms for panel selection)
+        if (zonesAsRooms && zonesAsRooms.length > 0) {
+            for (const zoneRoom of zonesAsRooms) {
+                const zonePanels = effectiveCeilingPanelsMap[zoneRoom.id] || zoneRoom.ceiling_panels || [];
+                
+                for (const panel of zonePanels) {
+                    const x = panel.start_x * scaleFactor.current + offsetX.current;
+                    const y = panel.start_y * scaleFactor.current + offsetY.current;
+                    const width = (panel.end_x - panel.start_x) * scaleFactor.current;
+                    const height = (panel.end_y - panel.start_y ? Math.abs(panel.end_y - panel.start_y) : 0) * scaleFactor.current;
+                    
+                    if (clickX >= x && clickX <= x + width && clickY >= y && clickY <= y + (height || (panel.length || 0) * scaleFactor.current)) {
+                        onPanelSelect?.(panel.id);
+                        onRoomSelect?.(zoneRoom.id);
+                        return;
+                    }
                 }
             }
         }
@@ -2368,6 +2602,8 @@ const CeilingCanvas = ({
         
         console.log(`🔧 Drawing panel supports:`, {
             supportType,
+            enableNylonHangers,
+            enableAluSuspension,
             totalPanels: roomPanels.length,
             orientation: isHorizontalOrientation ? 'horizontal' : 'vertical',
             firstPanel: roomPanels.length > 0 ? {
@@ -2405,14 +2641,15 @@ const CeilingCanvas = ({
                     length: panel.length,
                     orientation: isHorizontalOrientation ? 'horizontal' : 'vertical',
                     dimensionChecked: isHorizontalOrientation ? panel.width : panel.length,
-                    supportType
+                    supportType,
+                    enableNylonHangers
                 });
                 
-                // Only draw nylon hanger supports by default (no ALU suspension)
-                if (supportType === 'nylon') {
+                // Draw nylon hanger supports if enabled (can be alongside alu suspension)
+                if (enableNylonHangers) {
                     drawNylonHanger(ctx, panel, scaleFactor, offsetX, offsetY);
                 }
-                // ALU suspension is only available through custom drawing
+                // ALU suspension is only available through custom drawing (handled separately)
             }
         });
     };
@@ -2421,12 +2658,13 @@ const CeilingCanvas = ({
     const drawCustomSupports = (ctx, supports, scaleFactor, offsetX, offsetY) => {
         supports.forEach(support => {
             if (support.isIntersectionPoint) {
-                // Draw * symbol at intersection points
+                // Draw * symbol at intersection points - clear and visible
                 const x = support.x * scaleFactor + offsetX;
                 const y = support.y * scaleFactor + offsetY;
                 
-                ctx.fillStyle = '#8b5cf6'; // Purple for intersection points
-                ctx.font = `bold ${Math.max(16, 18 * scaleFactor)}px Arial`;
+                // Draw * symbol - bigger and bolder for better visibility
+                ctx.fillStyle = '#7c3aed'; // Darker purple for better visibility
+                ctx.font = `bold ${Math.max(18, 24 * scaleFactor)}px Arial`; // Increased size from 12-16 to 18-24
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('*', x, y);
@@ -2732,6 +2970,41 @@ const CeilingCanvas = ({
         ctx.fill();
     };
 
+    const getRoomOutlineColor = (room) => {
+        return selectedRoomId && room.id === selectedRoomId ? '#2563eb' : '#1f2937';
+    };
+
+    const zonesAsRooms = useMemo(() => {
+        if (!zones || zones.length === 0) return [];
+        const clone = zones.map(zone => zone);
+        clone.sort((a, b) => (a.id || 0) - (b.id || 0));
+        return clone
+            .map(zone => {
+                const outlinePoints = Array.isArray(zone.outline_points) && zone.outline_points.length >= 3
+                    ? zone.outline_points
+                    : (Array.isArray(zone.outlinePoints) && zone.outlinePoints.length >= 3 ? zone.outlinePoints : null);
+
+                return {
+                    zone,
+                    outlinePoints
+                };
+            })
+            .filter(entry => entry.outlinePoints)
+            .map(entry => {
+                const { zone, outlinePoints } = entry;
+                const roomName = zone.room_ids && zone.room_ids.length
+                    ? `Zone ${zone.id} (${zone.room_ids.length} rooms)`
+                    : `Zone ${zone.id}`;
+                return {
+                    id: `zone-${zone.id}`,
+                    zone_id: zone.id,
+                    room_name: roomName,
+                    room_points: outlinePoints,
+                    ceiling_panels: zone.ceiling_panels || []
+                };
+            });
+    }, [zones]);
+
     return (
         <div className="ceiling-canvas-container bg-white rounded-xl shadow-lg p-6">
             {/* Header */}
@@ -2769,7 +3042,14 @@ const CeilingCanvas = ({
             <div className="flex gap-6">
                 {/* Canvas Container */}
                 <div className="ceiling-canvas-wrapper flex-1">
-                    <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg relative">
+                    <div
+                        ref={canvasContainerRef}
+                        className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg relative"
+                        style={{
+                            height: `${CANVAS_HEIGHT}px`,
+                            minHeight: `${MIN_CANVAS_HEIGHT}px`
+                        }}
+                    >
                         {/* Zoom Controls Overlay */}
                         <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
                             <button
@@ -2810,10 +3090,8 @@ const CeilingCanvas = ({
                                 !isPlacingSupport ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
                             }`}
                             style={{
-                                width: `${CANVAS_WIDTH}px`,
-                                height: `${CANVAS_HEIGHT}px`,
-                                maxWidth: '100%',
-                                maxHeight: '70vh'
+                                width: '100%',
+                                height: '100%'
                             }}
                             onMouseDown={handleMouseDown}
                             onMouseMove={(e) => {
@@ -2839,21 +3117,28 @@ const CeilingCanvas = ({
                     <div className="text-center">
                         <span className="font-medium">Click panels to select • Drag to pan • Use zoom buttons</span>
                     </div>
-                    {aluSuspensionCustomDrawing && (
+                    {enableAluSuspension && (
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={() => setIsPlacingSupport(!isPlacingSupport)}
+                                onClick={() => {
+                                    setIsPlacingSupport(!isPlacingSupport);
+                                    // Reset if canceling
+                                    if (isPlacingSupport) {
+                                        setSupportStartPoint(null);
+                                        setSupportPreview(null);
+                                    }
+                                }}
                                 className={`px-3 py-1 text-sm rounded transition-colors ${
                                     isPlacingSupport 
                                         ? 'bg-red-500 text-white hover:bg-red-600' 
                                         : 'bg-blue-500 text-white hover:bg-blue-600'
                                 }`}
                             >
-                                {isPlacingSupport ? 'Cancel Support' : 'Place Support'}
+                                {isPlacingSupport ? 'Cancel Drawing' : 'Draw Support Line'}
                             </button>
                             <button
                                 onClick={() => {
-                                    setCustomSupports([]);
+                                    updateCustomSupports([]);
                                     const ctx = canvasRef.current.getContext('2d');
                                     if (ctx) drawCanvas(ctx);
                                 }}
@@ -2870,9 +3155,9 @@ const CeilingCanvas = ({
                                     }
                                 </span>
                             )}
-                            {customSupports.length > 0 && (
+                            {effectiveCustomSupports.length > 0 && (
                                 <span className="text-sm text-gray-600">
-                                    {customSupports.length} custom support{customSupports.length !== 1 ? 's' : ''} placed
+                                    {effectiveCustomSupports.length} custom support{effectiveCustomSupports.length !== 1 ? 's' : ''} placed
                                 </span>
                             )}
                         </div>

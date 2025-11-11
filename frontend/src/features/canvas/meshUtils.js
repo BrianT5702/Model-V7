@@ -1,5 +1,5 @@
 // Utility functions for mesh creation in Three.js
-import { CSG } from 'three-csg-ts';
+// Note: CSG operations are handled via vertex manipulation instead of three-csg-ts
 
 // Calculate intersection point between two line segments
 function calculateLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
@@ -94,7 +94,27 @@ export function createWallMesh(instance, wall) {
     wallHeight = gap_fill_height * scale;
   } else {
     // Normal mode: floor to ceiling
-    basePositionY = 0;
+    // Find rooms that contain this wall and use the minimum base elevation
+    // This ensures walls are positioned correctly for raised rooms
+    let minBaseElevation = 0;
+    if (instance.project && instance.project.rooms) {
+      const roomsWithWall = instance.project.rooms.filter(room => 
+        room.walls && room.walls.some(wallId => String(wallId) === String(id))
+      );
+      
+      if (roomsWithWall.length > 0) {
+        // Use the minimum base elevation (lowest room) so wall starts from the lowest point
+        const baseElevations = roomsWithWall
+          .map(room => room.base_elevation_mm ?? 0)
+          .filter(elev => !isNaN(elev));
+        
+        if (baseElevations.length > 0) {
+          minBaseElevation = Math.min(...baseElevations);
+        }
+      }
+    }
+    
+    basePositionY = minBaseElevation * scale;
     wallHeight = height * scale;
   }
   
@@ -508,8 +528,10 @@ export function createDoorMesh(instance, door, wall) {
       // Create a door container
       const doorContainer = new instance.THREE.Object3D();
       // For slide doors: position above floor thickness to avoid intersection
-      const floorThickness = instance.project?.rooms?.find(r => r.id === door.room)?.floor_thickness || 150;
-      const adjustedY = (doorHeight/2) + (floorThickness * instance.scalingFactor);
+      const room = instance.project?.rooms?.find(r => r.id === door.room);
+      const floorThickness = room?.floor_thickness || 150;
+      const baseElevation = (room?.base_elevation_mm ?? 0) * instance.scalingFactor;
+      const adjustedY = baseElevation + (doorHeight/2) + (floorThickness * instance.scalingFactor);
       doorContainer.position.set(doorPosX, adjustedY, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       
@@ -584,8 +606,10 @@ export function createDoorMesh(instance, door, wall) {
       // Create door container to handle rotation and position
       const doorContainer = new instance.THREE.Object3D();
       // For slide doors: position above floor thickness to avoid intersection
-      const floorThickness = instance.project?.rooms?.find(r => r.id === door.room)?.floor_thickness || 150;
-      const adjustedY = (doorHeight/2) + (floorThickness * instance.scalingFactor);
+      const room = instance.project?.rooms?.find(r => r.id === door.room);
+      const floorThickness = room?.floor_thickness || 150;
+      const baseElevation = (room?.base_elevation_mm ?? 0) * instance.scalingFactor;
+      const adjustedY = baseElevation + (doorHeight/2) + (floorThickness * instance.scalingFactor);
       doorContainer.position.set(doorPosX, adjustedY, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       
@@ -636,7 +660,9 @@ export function createDoorMesh(instance, door, wall) {
     if (configuration === 'double_sided') {
       const halfWidth = doorWidth * 0.5;
       const doorContainer = new instance.THREE.Object3D();
-      doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+      const room = instance.project?.rooms?.find(r => r.id === door.room);
+      const baseElevation = (room?.base_elevation_mm ?? 0) * instance.scalingFactor;
+      doorContainer.position.set(doorPosX, baseElevation + doorHeight/2, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       const leftPivot = new instance.THREE.Object3D();
       leftPivot.position.set(-cutoutWidth/2 + 0.1, 0, 0);
@@ -689,7 +715,9 @@ export function createDoorMesh(instance, door, wall) {
       const hingeOnRight = adjustedSwingDirection === 'right';
       const mountedInside = adjustedSide === 'interior';
       const doorContainer = new instance.THREE.Object3D();
-      doorContainer.position.set(doorPosX, doorHeight/2, doorPosZ);
+      const room = instance.project?.rooms?.find(r => r.id === door.room);
+      const baseElevation = (room?.base_elevation_mm ?? 0) * instance.scalingFactor;
+      doorContainer.position.set(doorPosX, baseElevation + doorHeight/2, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       
       // IMPORTANT: When wall is flipped, the hinge position should also be flipped

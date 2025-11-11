@@ -3,6 +3,14 @@ import { calculateOffsetPoints } from './drawing.js';
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
 import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds } from './collisionDetection.js';
 
+const DEFAULT_CANVAS_WIDTH = 1000;
+const DEFAULT_CANVAS_HEIGHT = 600;
+const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
+const MAX_CANVAS_HEIGHT_RATIO = 0.7;
+const MIN_CANVAS_WIDTH = 480;
+const MIN_CANVAS_HEIGHT = 320;
+const PADDING = 50;
+
 const FloorCanvas = ({ 
     rooms, 
     walls, 
@@ -15,6 +23,11 @@ const FloorCanvas = ({
     projectWastePercentage = null
 }) => {
     const canvasRef = useRef(null);
+    const canvasContainerRef = useRef(null);
+    const [canvasSize, setCanvasSize] = useState({
+        width: DEFAULT_CANVAS_WIDTH,
+        height: DEFAULT_CANVAS_HEIGHT
+    });
     const [currentScale, setCurrentScale] = useState(1);
     
     // Canvas state refs - same as CeilingCanvas
@@ -30,10 +43,64 @@ const FloorCanvas = ({
     const isDraggingCanvas = useRef(false);
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
 
-    // Canvas dimensions - match wall plan for consistency
-    const CANVAS_WIDTH = 1000;
-    const CANVAS_HEIGHT = 600;
-    const PADDING = 50;
+    // Track available drawing space for responsive canvas sizing
+    useEffect(() => {
+        const container = canvasContainerRef.current;
+        if (!container) return;
+
+        const updateCanvasSize = (rawWidth) => {
+            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
+            const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
+            const calculatedHeight = width * CANVAS_ASPECT_RATIO;
+            const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
+            const constrainedHeight = Math.min(preferredHeight, maxHeight);
+            const height = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
+
+            setCanvasSize((prev) => {
+                if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
+                    return prev;
+                }
+                return {
+                    width,
+                    height
+                };
+            });
+        };
+
+        let observer = null;
+        if (typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.target === container) {
+                        const entryWidth = entry.contentRect?.width ?? container.clientWidth;
+                        updateCanvasSize(entryWidth);
+                    }
+                });
+            });
+
+            observer.observe(container);
+        }
+
+        updateCanvasSize(container.clientWidth);
+
+        const handleWindowResize = () => updateCanvasSize(container.clientWidth);
+        if (typeof window !== 'undefined') {
+            window.addEventListener('resize', handleWindowResize);
+        }
+
+        return () => {
+            if (observer) {
+                observer.disconnect();
+            }
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('resize', handleWindowResize);
+            }
+        };
+    }, []);
+
+    // Canvas dimensions - match wall plan proportions for consistency
+    const CANVAS_WIDTH = Math.round(canvasSize.width);
+    const CANVAS_HEIGHT = Math.round(canvasSize.height);
 
     // Calculate project bounds for dimension positioning (project boundary)
     const projectBounds = useMemo(() => {
@@ -174,7 +241,7 @@ const FloorCanvas = ({
         // Draw everything
         drawCanvas(ctx);
 
-    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap]);
+    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT]);
 
     // Sync external scale prop with internal zoom (if needed in the future)
     useEffect(() => {
@@ -1743,7 +1810,15 @@ const FloorCanvas = ({
             {/* Canvas Container with Right Side Summary */}
             <div className="flex gap-6">
                 {/* Main Canvas */}
-                <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg relative flex-1">
+                <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg flex-1">
+                    <div
+                        ref={canvasContainerRef}
+                        className="relative"
+                        style={{
+                            height: `${CANVAS_HEIGHT}px`,
+                            minHeight: `${MIN_CANVAS_HEIGHT}px`
+                        }}
+                    >
                     {/* Zoom Controls Overlay */}
                     <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
                         <button
@@ -1782,10 +1857,8 @@ const FloorCanvas = ({
                         data-plan-type="floor"
                         className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
                         style={{
-                            width: `${CANVAS_WIDTH}px`,
-                            height: `${CANVAS_HEIGHT}px`,
-                            maxWidth: '100%',
-                            maxHeight: '70vh'
+                                width: '100%',
+                                height: '100%'
                         }}
                         onWheel={handleWheel}
                         onMouseDown={handleMouseDown}
@@ -1794,6 +1867,7 @@ const FloorCanvas = ({
                         onMouseLeave={handleMouseUp}
                         onClick={handleCanvasClick}
                     />
+                    </div>
                     
                     {/* Canvas Controls */}
                     <div className="mt-4 flex items-center justify-between text-sm text-gray-600 p-3 bg-gray-50 border-t border-gray-200">

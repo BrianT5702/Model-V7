@@ -1,12 +1,14 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.contrib.postgres.fields import ArrayField
 from .constants import (
     WALL_APPLICATION_TYPES, ROOM_FLOOR_TYPES, ROOM_FLOOR_THICKNESS_CHOICES,
     DOOR_TYPES, DOOR_CONFIGURATIONS, DOOR_SIDES, DOOR_SWING_DIRECTIONS,
-    DOOR_SLIDE_DIRECTIONS, WALL_JOINING_METHODS,
+    DOOR_SLIDE_DIRECTIONS, WALL_JOINING_METHODS, FACE_MATERIALS,
     DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT, DEFAULT_DOOR_SIDE,
     DEFAULT_DOOR_SWING_DIRECTION, DEFAULT_DOOR_SLIDE_DIRECTION,
-    DEFAULT_DOOR_TYPE, DEFAULT_DOOR_CONFIGURATION, DEFAULT_ROOM_FLOOR_TYPE
+    DEFAULT_DOOR_TYPE, DEFAULT_DOOR_CONFIGURATION, DEFAULT_ROOM_FLOOR_TYPE,
+    DEFAULT_FACE_THICKNESS
 )
 
 class Project(models.Model):
@@ -30,6 +32,28 @@ class Wall(models.Model):
     end_y = models.FloatField(help_text="Y-coordinate of the wall's end point")
     height = models.FloatField(default=DEFAULT_WALL_HEIGHT, help_text="Height of the wall in mm")
     thickness = models.FloatField(default=DEFAULT_WALL_THICKNESS, help_text="Wall thickness in mm")
+
+    # Face finishes (materials and sheet thickness)
+    inner_face_material = models.CharField(
+        max_length=20,
+        choices=FACE_MATERIALS,
+        default='PPGI',
+        help_text="Inner face material"
+    )
+    inner_face_thickness = models.FloatField(
+        default=DEFAULT_FACE_THICKNESS,
+        help_text="Inner face sheet thickness in mm"
+    )
+    outer_face_material = models.CharField(
+        max_length=20,
+        choices=FACE_MATERIALS,
+        default='PPGI',
+        help_text="Outer face material"
+    )
+    outer_face_thickness = models.FloatField(
+        default=DEFAULT_FACE_THICKNESS,
+        help_text="Outer face sheet thickness in mm"
+    )
     application_type = models.CharField(
         max_length=50,
         choices=WALL_APPLICATION_TYPES,
@@ -74,6 +98,10 @@ class Room(models.Model):
         blank=True, 
         help_text="Height of the room in mm (will be set to minimum wall height if not specified)"
     )
+    base_elevation_mm = models.FloatField(
+        default=0.0,
+        help_text="Base elevation of the room relative to ground level in mm. Positive = raised, Negative = sunken. Default is 0 (ground level)."
+    )
     remarks = models.TextField(blank=True, null=True)
     
     room_points = ArrayField(
@@ -95,9 +123,72 @@ class Room(models.Model):
     def __str__(self):
         return f"{self.room_name} in Project {self.project.name}"
 
+class CeilingZone(models.Model):
+    """Grouping of multiple rooms that share a single continuous ceiling plan"""
+    project = models.ForeignKey(Project, related_name='ceiling_zones', on_delete=models.CASCADE)
+    rooms = models.ManyToManyField(Room, related_name='ceiling_zones')
+    ceiling_thickness = models.FloatField(default=150, help_text="Ceiling thickness used for this zone in mm")
+    orientation_strategy = models.CharField(
+        max_length=50,
+        default='auto',
+        help_text="Orientation strategy applied to the merged zone"
+    )
+    panel_width = models.FloatField(default=1150, help_text="Panel width used for this zone")
+    panel_length = models.CharField(max_length=20, default='auto', help_text="Panel length setting for this zone")
+    custom_panel_length = models.FloatField(null=True, blank=True, help_text="Custom panel length if not auto")
+    support_type = models.CharField(max_length=20, default='nylon', help_text="Support system type used")
+    support_config = models.JSONField(default=dict, help_text="Support configuration options used")
+    outline_points = models.JSONField(default=list, help_text="Ordered list of points defining the merged zone boundary")
+    total_area = models.FloatField(default=0.0, help_text="Total ceiling area covered by this zone")
+    total_panels = models.IntegerField(default=0, help_text="Total panels used across the zone")
+    full_panels = models.IntegerField(default=0, help_text="Number of full panels")
+    cut_panels = models.IntegerField(default=0, help_text="Number of cut panels")
+    waste_percentage = models.FloatField(default=0.0, help_text="Waste percentage for the zone")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        room_names = ', '.join(room.room_name for room in self.rooms.all()[:3])
+        suffix = '...' if self.rooms.count() > 3 else ''
+        return f"Ceiling Zone in {self.project.name} ({room_names}{suffix})"
+
+    def update_statistics(self, panels_queryset=None):
+        panels = panels_queryset if panels_queryset is not None else self.ceiling_panels.all()
+        self.total_panels = panels.count()
+        self.full_panels = panels.filter(is_cut_panel=False).count()
+        self.cut_panels = panels.filter(is_cut_panel=True).count()
+
+        total_panel_area = sum(panel.get_area() for panel in panels)
+        self.total_area = total_panel_area
+
+        combined_area = 0.0
+        for room in self.rooms.all():
+            if room.room_points and len(room.room_points) >= 3:
+                combined_area += self._calculate_polygon_area(room.room_points)
+
+        if combined_area > 0 and total_panel_area > 0:
+            waste_area = max(0, total_panel_area - combined_area)
+            self.waste_percentage = (waste_area / total_panel_area) * 100
+        else:
+            self.waste_percentage = 0.0
+
+        self.save()
+
+    @staticmethod
+    def _calculate_polygon_area(points):
+        area = 0.0
+        n = len(points)
+        for i in range(n):
+            j = (i + 1) % n
+            area += points[i]['x'] * points[j]['y']
+            area -= points[j]['x'] * points[i]['y']
+        return abs(area) / 2.0
+
+
 class CeilingPanel(models.Model):
-    """Individual ceiling panel that covers a specific area of a room"""
-    room = models.ForeignKey(Room, related_name='ceiling_panels', on_delete=models.CASCADE)
+    """Individual ceiling panel that covers a specific area of a room or merged zone"""
+    room = models.ForeignKey(Room, related_name='ceiling_panels', on_delete=models.CASCADE, null=True, blank=True)
+    zone = models.ForeignKey('CeilingZone', related_name='ceiling_panels', on_delete=models.CASCADE, null=True, blank=True)
     panel_id = models.CharField(max_length=50, help_text="Unique identifier for the panel")
     start_x = models.FloatField(help_text="X-coordinate of the panel's start point")
     start_y = models.FloatField(help_text="Y-coordinate of the panel's start point")
@@ -122,10 +213,19 @@ class CeilingPanel(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('room', 'panel_id')
+        unique_together = (
+            ('room', 'panel_id'),
+            ('zone', 'panel_id'),
+        )
 
     def __str__(self):
-        return f"Ceiling Panel {self.panel_id} in {self.room.room_name}"
+        if self.room:
+            target = self.room.room_name
+        elif self.zone:
+            target = f"Zone {self.zone.id}"
+        else:
+            target = 'unassigned'
+        return f"Ceiling Panel {self.panel_id} in {target}"
 
     def get_area(self):
         """Calculate the area of the panel in square mm"""
@@ -140,8 +240,21 @@ class CeilingPanel(models.Model):
         }
 
 class CeilingPlan(models.Model):
-    """Represents the complete ceiling plan for a room with automatic panel generation"""
-    room = models.OneToOneField(Room, related_name='ceiling_plan', on_delete=models.CASCADE)
+    """Represents the complete ceiling plan for a room or merged zone"""
+    room = models.OneToOneField(
+        Room,
+        related_name='ceiling_plan',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
+    zone = models.OneToOneField(
+        CeilingZone,
+        related_name='ceiling_plan',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
     total_area = models.FloatField(help_text="Total ceiling area in square mm")
     total_panels = models.IntegerField(default=0, help_text="Total number of panels used")
     full_panels = models.IntegerField(default=0, help_text="Number of full panels used")
@@ -198,11 +311,15 @@ class CeilingPlan(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Ceiling Plan for {self.room.room_name}"
+        if self.room:
+            return f"Ceiling Plan for {self.room.room_name}"
+        if self.zone:
+            return f"Ceiling Plan for zone in {self.zone.project.name}"
+        return "Ceiling Plan"
 
     def update_statistics(self, leftover_tracker=None):
         """Update statistics based on current panels, accounting for leftover reuse"""
-        panels = self.room.ceiling_panels.all()
+        panels = self._get_panels_queryset()
         self.total_panels = panels.count()
         self.full_panels = panels.filter(is_cut_panel=False).count()
         self.cut_panels = panels.filter(is_cut_panel=True).count()
@@ -231,9 +348,19 @@ class CeilingPlan(models.Model):
         
         self.save()
 
+        if self.zone:
+            self.zone.update_statistics(panels)
+
     def calculate_room_area(self):
         """Calculate the actual room area from room points"""
-        if not self.room.room_points:
+        if self.zone:
+            combined_area = 0.0
+            for room in self.zone.rooms.all():
+                if room.room_points and len(room.room_points) >= 3:
+                    combined_area += CeilingZone._calculate_polygon_area(room.room_points)
+            return combined_area
+
+        if not self.room or not self.room.room_points:
             return 0.0
         
         # Simple polygon area calculation (shoelace formula)
@@ -247,6 +374,19 @@ class CeilingPlan(models.Model):
             area -= points[j]['x'] * points[i]['y']
         
         return abs(area) / 2.0
+
+    def _get_panels_queryset(self):
+        if self.zone:
+            return self.zone.ceiling_panels.all()
+        if self.room:
+            return self.room.ceiling_panels.all()
+        return CeilingPanel.objects.none()
+
+    def clean(self):
+        if not self.room and not self.zone:
+            raise ValidationError('CeilingPlan must be associated with a room or a zone.')
+        if self.room and self.zone:
+            raise ValidationError('CeilingPlan cannot be associated with both a room and a zone simultaneously.')
 
 class FloorPanel(models.Model):
     """Individual floor panel that covers a specific area of a room (excluding walls)"""

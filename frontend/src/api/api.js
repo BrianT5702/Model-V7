@@ -11,6 +11,8 @@ const getBaseURL = () => {
     }
 };
 
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
 const api = axios.create({
     baseURL: getBaseURL(),
     timeout: 30000, // 30 second timeout
@@ -19,11 +21,15 @@ const api = axios.create({
 // Add request interceptor for logging
 api.interceptors.request.use(
     (config) => {
-        console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        if (isDevelopment) {
+            console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        }
         return config;
     },
     (error) => {
-        console.error('API Request Error:', error);
+        if (isDevelopment) {
+            console.error('API Request Error:', error);
+        }
         return Promise.reject(error);
     }
 );
@@ -34,10 +40,11 @@ api.interceptors.response.use(
         return response;
     },
     (error) => {
-        console.error('API Response Error:', error);
-        if (error.response?.status === 401) {
-            // Handle unauthorized access
-            console.log('Unauthorized access detected');
+        if (isDevelopment) {
+            console.error('API Response Error:', error);
+            if (error.response?.status === 401) {
+                console.log('Unauthorized access detected');
+            }
         }
         return Promise.reject(error);
     }

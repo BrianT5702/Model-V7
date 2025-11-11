@@ -751,12 +751,22 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
             const pos = transform(room.label_position.x, room.label_position.y);
             const name = room.room_name || 'Unnamed Room';
             const height = room.height ? `EXT HT: ${room.height}mm` : 'EXT HT: No height';
+            const baseElevation = room.base_elevation_mm !== undefined && room.base_elevation_mm !== 0 
+                ? `Base: ${room.base_elevation_mm > 0 ? '+' : ''}${room.base_elevation_mm}mm` 
+                : '';
             const description = room.remarks || 'No description';
             
             const labelSpacing = 15 * scale;
-            svgContent += `<text x="${pos.x}" y="${pos.y - labelSpacing}" class="room-label">${name}</text>`;
-            svgContent += `<text x="${pos.x}" y="${pos.y}" class="room-label">${height}</text>`;
-            svgContent += `<text x="${pos.x}" y="${pos.y + labelSpacing}" class="room-label">${description}</text>`;
+            let currentY = pos.y - labelSpacing;
+            svgContent += `<text x="${pos.x}" y="${currentY}" class="room-label">${name}</text>`;
+            currentY += labelSpacing;
+            svgContent += `<text x="${pos.x}" y="${currentY}" class="room-label">${height}</text>`;
+            if (baseElevation) {
+                currentY += labelSpacing;
+                svgContent += `<text x="${pos.x}" y="${currentY}" class="room-label">${baseElevation}</text>`;
+            }
+            currentY += labelSpacing;
+            svgContent += `<text x="${pos.x}" y="${currentY}" class="room-label">${description}</text>`;
         }
     });
 

@@ -1546,28 +1546,144 @@ const Canvas2D = ({
                 </div>
 
                 {/* Sidebar with Legend */}
-                {thicknessColorMap && thicknessColorMap.size > 1 && (
-                    <div className="flex-shrink-0 w-48">
+                {thicknessColorMap && thicknessColorMap.size > 0 && (
+                    <div className="flex-shrink-0 w-64">
                         <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm sticky top-4">
                             <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
                                 <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                                 </svg>
-                                Wall Thickness Legend
+                                Wall Finish Legend
                             </h5>
                             <div className="space-y-3">
-                                {Array.from(thicknessColorMap.entries()).map(([thickness, colors]) => (
-                                    <div key={thickness} className="flex items-center">
-                                        <div 
-                                            className="w-8 h-4 rounded mr-3 border border-gray-300" 
-                                            style={{ backgroundColor: colors.wall }}
-                                        ></div>
-                                        <span className="text-sm text-gray-700 font-medium">{colors.label}</span>
+                                {Array.from(thicknessColorMap.entries()).map(([key, colors]) => (
+                                    <div key={key} className="space-y-1">
+                                        <div className="flex items-center">
+                                            {/* Mini wall representation - two close lines with end caps */}
+                                            <div className="mr-3 relative" style={{ width: '60px', height: '16px' }}>
+                                                {/* Geometry constants for layout */}
+                                                {(() => {
+                                                    const lineHeight = 2; // px
+                                                    const gap = 4; // px between the two lines (closer)
+                                                    const topY = 4; // px from top
+                                                    const bottomY = topY + gap + lineHeight; // maintain small gap
+                                                    const capWidth = 1; // px
+                                                    const capLeft = 0;
+                                                    const capRight = 'calc(100% - 1px)';
+
+                                                    if (colors.hasDifferentFaces) {
+                                                        return (
+                                                            <>
+                                                                {/* Outer face (top line) */}
+                                                                <div
+                                                                    className="absolute left-0 right-0"
+                                                                    style={{
+                                                                        top: `${topY}px`,
+                                                                        height: `${lineHeight}px`,
+                                                                        backgroundColor: colors.wall
+                                                                    }}
+                                                                    title="Outer face"
+                                                                ></div>
+                                                                {/* Inner face (bottom line) */}
+                                                                <div
+                                                                    className="absolute left-0 right-0"
+                                                                    style={{
+                                                                        top: `${bottomY}px`,
+                                                                        height: `${lineHeight}px`,
+                                                                        backgroundColor: colors.innerWall
+                                                                    }}
+                                                                    title="Inner face"
+                                                                ></div>
+                                                                {/* End caps - left */}
+                                                                <div
+                                                                    className="absolute"
+                                                                    style={{
+                                                                        left: `${capLeft}px`,
+                                                                        top: `${topY}px`,
+                                                                        width: `${capWidth}px`,
+                                                                        height: `${(bottomY + lineHeight) - topY}px`,
+                                                                        backgroundColor: colors.innerWall
+                                                                    }}
+                                                                ></div>
+                                                                {/* End caps - right */}
+                                                                <div
+                                                                    className="absolute"
+                                                                    style={{
+                                                                        left: capRight,
+                                                                        top: `${topY}px`,
+                                                                        width: `${capWidth}px`,
+                                                                        height: `${(bottomY + lineHeight) - topY}px`,
+                                                                        backgroundColor: colors.innerWall
+                                                                    }}
+                                                                ></div>
+                                                            </>
+                                                        );
+                                                    }
+
+                                                    // Same material on both faces: draw two close lines with same color
+                                                    return (
+                                                        <>
+                                                            <div
+                                                                className="absolute left-0 right-0"
+                                                                style={{
+                                                                    top: `${topY}px`,
+                                                                    height: `${lineHeight}px`,
+                                                                    backgroundColor: colors.wall
+                                                                }}
+                                                            ></div>
+                                                            <div
+                                                                className="absolute left-0 right-0"
+                                                                style={{
+                                                                    top: `${bottomY}px`,
+                                                                    height: `${lineHeight}px`,
+                                                                    backgroundColor: colors.wall
+                                                                }}
+                                                            ></div>
+                                                            {/* Caps */}
+                                                            <div
+                                                                className="absolute"
+                                                                style={{
+                                                                    left: `${capLeft}px`,
+                                                                    top: `${topY}px`,
+                                                                    width: `${capWidth}px`,
+                                                                    height: `${(bottomY + lineHeight) - topY}px`,
+                                                                    backgroundColor: colors.wall
+                                                                }}
+                                                            ></div>
+                                                            <div
+                                                                className="absolute"
+                                                                style={{
+                                                                    left: capRight,
+                                                                    top: `${topY}px`,
+                                                                    width: `${capWidth}px`,
+                                                                    height: `${(bottomY + lineHeight) - topY}px`,
+                                                                    backgroundColor: colors.wall
+                                                                }}
+                                                            ></div>
+                                                        </>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <span className="text-sm text-gray-700 font-medium">{colors.label}</span>
+                                        </div>
+                                        {(() => {
+                                            // Parse combo key: `${core}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`
+                                            const parts = String(key).split('|');
+                                            const core = parts[0];
+                                            const intPart = (parts[1] || '').replace('INT:', '').trim();
+                                            const extPart = (parts[2] || '').replace('EXT:', '').trim();
+                                            return (
+                                                <div className="ml-0 pl-0 text-xs text-gray-600">
+                                                    <div><span className="font-medium">Panel Thickness:</span> {core}mm</div>
+                                                    <div><span className="font-medium">Finishing:</span> Ext: {extPart} | Int: {intPart}</div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 ))}
                             </div>
                             <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                💡 <strong>Tip:</strong> Different colors represent different wall thicknesses for easy identification
+                                💡 <strong>Tip:</strong> Different colors represent unique combinations of core thickness and inner/outer finishes. When materials differ, walls show two lines (top=outer, bottom=inner).
                             </div>
                         </div>
                     </div>
