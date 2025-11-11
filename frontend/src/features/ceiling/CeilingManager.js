@@ -89,8 +89,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             setActiveDetailType('zone');
             setIsDetailsPanelOpen(true);
         } else {
-            setShowAllRooms(false); // Switch to single room view
-            setShowRoomDetails(true); // Auto-expand details
+        setShowAllRooms(false); // Switch to single room view
+        setShowRoomDetails(true); // Auto-expand details
             setActiveZoneId(null);
             setActiveDetailType('room');
             setIsDetailsPanelOpen(true);
@@ -785,7 +785,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 api.get(`/ceiling-zones/?project=${parseInt(projectId)}`)
             ]);
 
-            const panels = panelsResponse.data || [];
+                const panels = panelsResponse.data || [];
             const zonesData = zonesResponse.data || [];
 
             setCeilingPanels(panels);
@@ -800,7 +800,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     ceiling_panels: panels,
                     zone_plans: zonesData
                 };
-
+                
                 setCeilingPlan(enhancedPlan);
                 
                 // CRITICAL: Load saved generation parameters to restore UI state
@@ -1797,38 +1797,38 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                     </button>
                                 </div>
                             )}
-                            {/* Canvas */}
-                            <CeilingCanvas
-                                rooms={filteredRooms}
-                                walls={allWalls}
-                                intersections={allIntersections}
-                                ceilingPlan={ceilingPlan}
-                                ceilingPanels={ceilingPanels}
-                                projectData={projectData}
-                                projectWastePercentage={projectWastePercentage}
-                                ceilingThickness={ceilingThickness}
-                                ceilingPanelsMap={ceilingPanelsMap}
+                        {/* Canvas */}
+                        <CeilingCanvas
+                            rooms={filteredRooms}
+                            walls={allWalls}
+                            intersections={allIntersections}
+                            ceilingPlan={ceilingPlan}
+                            ceilingPanels={ceilingPanels}
+                            projectData={projectData}
+                            projectWastePercentage={projectWastePercentage}
+                            ceilingThickness={ceilingThickness}
+                            ceilingPanelsMap={ceilingPanelsMap}
                                 zones={ceilingZones}
-                                orientationAnalysis={orientationAnalysis}
-                                // Support configuration
-                                supportType={supportType}
-                                enableNylonHangers={enableNylonHangers}
-                                enableAluSuspension={enableAluSuspension}
-                                nylonHangerOptions={nylonHangerOptions}
-                                aluSuspensionCustomDrawing={aluSuspensionCustomDrawing}
-                                panelsNeedSupport={panelsNeedSupport}
-                                customSupports={customSupports}
-                                onCustomSupportsChange={setCustomSupports}
-                                // Room selection props
-                                selectedRoomId={selectedRoomId}
-                                showAllRooms={showAllRooms}
-                                onRoomSelect={handleRoomSelection}
-                                onRoomDeselect={handleRoomDeselection}
-                                // Add updateSharedPanelData prop to pass support options
-                                updateSharedPanelData={updateSharedPanelData}
-                            />
+                            orientationAnalysis={orientationAnalysis}
+                            // Support configuration
+                            supportType={supportType}
+                            enableNylonHangers={enableNylonHangers}
+                            enableAluSuspension={enableAluSuspension}
+                            nylonHangerOptions={nylonHangerOptions}
+                            aluSuspensionCustomDrawing={aluSuspensionCustomDrawing}
+                            panelsNeedSupport={panelsNeedSupport}
+                            customSupports={customSupports}
+                            onCustomSupportsChange={setCustomSupports}
+                            // Room selection props
+                            selectedRoomId={selectedRoomId}
+                            showAllRooms={showAllRooms}
+                            onRoomSelect={handleRoomSelection}
+                            onRoomDeselect={handleRoomDeselection}
+                            // Add updateSharedPanelData prop to pass support options
+                            updateSharedPanelData={updateSharedPanelData}
+                        />
                         </div>
-
+                        
                         {/* Success Message */}
                         {roomRegenerationSuccess && (
                             <div className="bg-green-100 border-2 border-green-500 rounded-lg p-4 flex items-center gap-3 animate-pulse">
@@ -1841,7 +1841,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                 </div>
                             </div>
                         )}
-
+                        
                         {/* Debug info */}
                         {/* <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
                             <div>Debug Info:</div>
@@ -1874,7 +1874,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                             <>
                                                 <h3 className="text-lg font-semibold text-gray-900">
                                                     Room Details: {selectedRoom?.room_name || 'Room'}
-                                                </h3>
+                                    </h3>
                                                 {selectedRoom && (
                                                     <p className="text-xs text-gray-500">
                                                         ID #{selectedRoom.id}
@@ -1905,11 +1905,11 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                             </div>
                                         )}
                                         {showRoomDetailsPanel && (
-                                            <button
-                                                onClick={() => setShowRoomDetails(!showRoomDetails)}
+                                    <button
+                                        onClick={() => setShowRoomDetails(!showRoomDetails)}
                                                 className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
-                                            >
-                                                {showRoomDetails ? 'Hide Details' : 'Show Details'}
+                                    >
+                                        {showRoomDetails ? 'Hide Details' : 'Show Details'}
                                             </button>
                                         )}
                                         <button
@@ -1923,8 +1923,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                             className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
                                         >
                                             Clear
-                                        </button>
-                                    </div>
+                                    </button>
+                                </div>
                                 </div>
                                 <div className="px-5 py-4 overflow-y-auto max-h-[60vh]">
                                     {showRoomDetailsPanel ? (
@@ -1933,176 +1933,176 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                 <div className="grid grid-cols-1 gap-6">
                                                     <div className="bg-white border border-gray-200 rounded-lg p-4">
                                                         <h4 className="text-sm font-semibold text-gray-700 mb-3">Room Information</h4>
-                                                        <div className="space-y-2 text-sm">
-                                                            <div className="flex justify-between">
-                                                                <span className="text-gray-600">Room Name:</span>
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-600">Room Name:</span>
                                                                 <span className="font-medium text-gray-800">
                                                                     {selectedRoom?.room_name || '—'}
                                                                 </span>
-                                                            </div>
-                                                            <div className="flex justify-between">
-                                                                <span className="text-gray-600">Room Height:</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-600">Room Height:</span>
                                                                 <span className="font-medium text-gray-800">
                                                                     {selectedRoom?.height ?? 'Default'} mm
                                                                 </span>
-                                                            </div>
-                                                            <div className="flex justify-between">
-                                                                <span className="text-gray-600">Panel Count:</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-600">Panel Count:</span>
                                                                 <span className="font-medium text-gray-800">
                                                                     {selectedRoomPanelStats?.total ?? ceilingPanels.filter(p => p.room_id === selectedRoomId).length} panels
-                                                                </span>
-                                                            </div>
+                                                    </span>
+                                                </div>
                                                             <div className="pt-3 mt-3 border-t border-gray-200">
                                                                 <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
                                                                     Current Ceiling Settings
                                                                 </h5>
-                                                                <div className="flex justify-between">
-                                                                    <span className="text-gray-600">Ceiling Thickness:</span>
-                                                                    <span className="font-medium text-blue-600">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-600">Ceiling Thickness:</span>
+                                                        <span className="font-medium text-blue-600">
                                                                         {selectedRoom?.ceiling_plan?.ceiling_thickness || ceilingThickness} mm
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex justify-between">
-                                                                    <span className="text-gray-600">Panel Width:</span>
-                                                                    <span className="font-medium text-blue-600">
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-600">Panel Width:</span>
+                                                        <span className="font-medium text-blue-600">
                                                                         {selectedRoom?.ceiling_plan?.panel_width || panelWidth} mm
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex justify-between">
-                                                                    <span className="text-gray-600">Orientation:</span>
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-600">Orientation:</span>
                                                                     <span className="font-medium text-blue-600">
                                                                         {formatOrientationLabel(selectedRoom?.ceiling_plan?.orientation_strategy)}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                                        </span>
                                                     </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                                     <div className="bg-white border border-gray-200 rounded-lg p-4">
                                                         <h4 className="text-sm font-semibold text-gray-700 mb-3">Edit Ceiling Settings</h4>
                                                         <div className="space-y-3 text-sm">
-                                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center justify-between">
                                                                 <label className="text-gray-600">Ceiling Thickness:</label>
                                                                 <div className="flex items-center gap-2">
-                                                                    <input
-                                                                        type="number"
-                                                                        min="50"
-                                                                        max="500"
-                                                                        step="10"
-                                                                        value={roomEditConfig.ceilingThickness}
+                                                    <input
+                                                        type="number"
+                                                        min="50"
+                                                        max="500"
+                                                        step="10"
+                                                        value={roomEditConfig.ceilingThickness}
                                                                         onChange={(e) => setRoomEditConfig(prev => ({
                                                                             ...prev,
                                                                             ceilingThickness: parseInt(e.target.value)
                                                                         }))}
                                                                         className="w-24 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                                    />
-                                                                    <span className="text-xs text-gray-500">mm</span>
-                                                                </div>
+                                                    />
+                                                    <span className="text-xs text-gray-500">mm</span>
+                                                </div>
                                                             </div>
-                                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center justify-between">
                                                                 <label className="text-gray-600">Panel Width:</label>
                                                                 <div className="flex items-center gap-2">
-                                                                    <input
-                                                                        type="number"
-                                                                        min="100"
-                                                                        max="3000"
-                                                                        step="50"
-                                                                        value={roomEditConfig.panelWidth}
+                                                    <input
+                                                        type="number"
+                                                        min="100"
+                                                        max="3000"
+                                                        step="50"
+                                                        value={roomEditConfig.panelWidth}
                                                                         onChange={(e) => setRoomEditConfig(prev => ({
                                                                             ...prev,
                                                                             panelWidth: parseInt(e.target.value)
                                                                         }))}
                                                                         className="w-24 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                                    />
-                                                                    <span className="text-xs text-gray-500">mm</span>
-                                                                </div>
+                                                    />
+                                                    <span className="text-xs text-gray-500">mm</span>
+                                                </div>
                                                             </div>
-                                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center justify-between">
                                                                 <label className="text-gray-600">Orientation:</label>
-                                                                <select
-                                                                    value={roomEditConfig.orientationStrategy}
+                                                    <select
+                                                        value={roomEditConfig.orientationStrategy}
                                                                     onChange={(e) => setRoomEditConfig(prev => ({
                                                                         ...prev,
                                                                         orientationStrategy: e.target.value
                                                                     }))}
-                                                                    className="flex-1 ml-2 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                                >
-                                                                    <option value="auto">Auto (Best)</option>
-                                                                    <option value="all_vertical">Vertical</option>
-                                                                    <option value="all_horizontal">Horizontal</option>
-                                                                    <option value="room_optimal">Room Optimal</option>
-                                                                </select>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
+                                                        className="flex-1 ml-2 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                    >
+                                                        <option value="auto">Auto (Best)</option>
+                                                        <option value="all_vertical">Vertical</option>
+                                                        <option value="all_horizontal">Horizontal</option>
+                                                        <option value="room_optimal">Room Optimal</option>
+                                                    </select>
+                                                </div>
+                                                <div className="flex items-center justify-between">
                                                                 <label className="text-gray-600">Panel Length:</label>
-                                                                <select
-                                                                    value={roomEditConfig.panelLength}
+                                                    <select
+                                                        value={roomEditConfig.panelLength}
                                                                     onChange={(e) => setRoomEditConfig(prev => ({
                                                                         ...prev,
                                                                         panelLength: e.target.value
                                                                     }))}
-                                                                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                                >
-                                                                    <option value="auto">Auto</option>
-                                                                    <option value="custom">Custom</option>
-                                                                </select>
-                                                            </div>
-                                                            {roomEditConfig.panelLength === 'custom' && (
-                                                                <div className="flex items-center justify-between">
+                                                        className="px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                    >
+                                                        <option value="auto">Auto</option>
+                                                        <option value="custom">Custom</option>
+                                                    </select>
+                                                </div>
+                                                {roomEditConfig.panelLength === 'custom' && (
+                                                    <div className="flex items-center justify-between">
                                                                     <label className="text-gray-600">Custom Length:</label>
                                                                     <div className="flex items-center gap-2">
-                                                                        <input
-                                                                            type="number"
-                                                                            min="1000"
-                                                                            max="20000"
-                                                                            step="100"
-                                                                            value={roomEditConfig.customPanelLength}
+                                                        <input
+                                                            type="number"
+                                                            min="1000"
+                                                            max="20000"
+                                                            step="100"
+                                                            value={roomEditConfig.customPanelLength}
                                                                             onChange={(e) => setRoomEditConfig(prev => ({
                                                                                 ...prev,
                                                                                 customPanelLength: parseInt(e.target.value)
                                                                             }))}
                                                                             className="w-24 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                                        />
-                                                                        <span className="text-xs text-gray-500">mm</span>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                        </div>
+                                                        />
+                                                        <span className="text-xs text-gray-500">mm</span>
+                                        </div>
+                                    </div>
+                                )}
+                                        </div>
                                                         <div className="mt-4 flex items-center justify-between">
-                                                            <button
-                                                                onClick={() => setRoomEditConfig({
-                                                                    ceilingThickness: ceilingThickness,
-                                                                    panelWidth: panelWidth,
-                                                                    panelLength: panelLength,
-                                                                    customPanelLength: customPanelLength,
-                                                                    orientationStrategy: selectedOrientationStrategy
-                                                                })}
-                                                                className="px-4 py-2 bg-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-400 transition-colors font-medium"
-                                                            >
-                                                                Reset to Global
-                                                            </button>
-                                                            <button
-                                                                onClick={() => generateCeilingPlanForRoom(selectedRoomId, roomEditConfig)}
-                                                                disabled={isRegeneratingRoom}
-                                                                className={`px-6 py-2 text-sm rounded-lg font-medium transition-colors shadow-md ${
-                                                                    isRegeneratingRoom
-                                                                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                                                                        : 'bg-green-600 text-white hover:bg-green-700'
-                                                                }`}
-                                                            >
-                                                                {isRegeneratingRoom ? (
-                                                                    <span className="flex items-center gap-2">
-                                                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                                                                        </svg>
-                                                                        Applying...
-                                                                    </span>
-                                                                ) : (
-                                                                    '✓ Apply Settings to this room only'
-                                                                )}
-                                                            </button>
-                                                        </div>
-                                                    </div>
+                                            <button
+                                                onClick={() => setRoomEditConfig({
+                                                    ceilingThickness: ceilingThickness,
+                                                    panelWidth: panelWidth,
+                                                    panelLength: panelLength,
+                                                    customPanelLength: customPanelLength,
+                                                    orientationStrategy: selectedOrientationStrategy
+                                                })}
+                                                className="px-4 py-2 bg-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-400 transition-colors font-medium"
+                                            >
+                                                Reset to Global
+                                            </button>
+                                            <button
+                                                onClick={() => generateCeilingPlanForRoom(selectedRoomId, roomEditConfig)}
+                                                disabled={isRegeneratingRoom}
+                                                className={`px-6 py-2 text-sm rounded-lg font-medium transition-colors shadow-md ${
+                                                    isRegeneratingRoom
+                                                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                                        : 'bg-green-600 text-white hover:bg-green-700'
+                                                }`}
+                                            >
+                                                {isRegeneratingRoom ? (
+                                                    <span className="flex items-center gap-2">
+                                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                                                        </svg>
+                                                        Applying...
+                                                    </span>
+                                                ) : (
+                                                    '✓ Apply Settings to this room only'
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
                                                 </div>
                                                 <div className="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
                                                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Panel Totals by Dimension</h4>
@@ -2144,8 +2144,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                     ) : (
                                                         <div className="text-gray-500 text-sm">
                                                             No panel data available for this room.
-                                                        </div>
-                                                    )}
+                            </div>
+                        )}
                                                 </div>
                                                 <div className="mt-6 bg-white border border-gray-200 rounded-lg p-4">
                                                     <div className="flex items-center justify-between mb-3">
@@ -2188,7 +2188,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                             No panels found for this room.
                                                         </div>
                                                     )}
-                                                </div>
+                            </div>
                                             </>
                                         ) : (
                                             <div className="flex items-center justify-center py-12 text-gray-500 text-sm">

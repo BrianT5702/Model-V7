@@ -933,6 +933,64 @@ const ProjectDetails = () => {
                                             </label>
                                         </div>
 
+                                        {/* Face Finishes */}
+                                        <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                                            <div className="space-y-3">
+                                                <label className="block">
+                                                    <span className="font-medium text-gray-700">Inner Face Material:</span>
+                                                    <select
+                                                        value={editedWall?.inner_face_material || 'PPGI'}
+                                                        onChange={(e) => setEditedWall({ ...editedWall, inner_face_material: e.target.value })}
+                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    >
+                                                        <option value="PPGI">PPGI</option>
+                                                        <option value="S/Steel">S/Steel</option>
+                                                        <option value="PVC">PVC</option>
+                                                    </select>
+                                                </label>
+                                                <label className="block">
+                                                    <span className="font-medium text-gray-700">Inner Face Thickness (mm):</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0.1"
+                                                        step="0.1"
+                                                        value={editedWall?.inner_face_thickness ?? 0.5}
+                                                        onChange={(e) => setEditedWall({ ...editedWall, inner_face_thickness: parseFloat(e.target.value) })}
+                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    />
+                                                </label>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <label className="block">
+                                                    <span className="font-medium text-gray-700">Outer Face Material:</span>
+                                                    <select
+                                                        value={editedWall?.outer_face_material || 'PPGI'}
+                                                        onChange={(e) => setEditedWall({ ...editedWall, outer_face_material: e.target.value })}
+                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    >
+                                                        <option value="PPGI">PPGI</option>
+                                                        <option value="S/Steel">S/Steel</option>
+                                                        <option value="PVC">PVC</option>
+                                                    </select>
+                                                </label>
+                                                <label className="block">
+                                                    <span className="font-medium text-gray-700">Outer Face Thickness (mm):</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0.1"
+                                                        step="0.1"
+                                                        value={editedWall?.outer_face_thickness ?? 0.5}
+                                                        onChange={(e) => setEditedWall({ ...editedWall, outer_face_thickness: parseFloat(e.target.value) })}
+                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    />
+                                                </label>
+                                            </div>
+                                        </div>
+
                                         {/* Gap-Fill Toggle Section */}
                                         <div className="col-span-2 space-y-3 mt-4">
                                             <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
