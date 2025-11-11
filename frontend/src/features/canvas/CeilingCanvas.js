@@ -55,7 +55,8 @@ const CeilingCanvas = ({
     showAllRooms = true,
     
     // Shared panel data update function
-    updateSharedPanelData = null
+    updateSharedPanelData = null,
+    selectedPanelIds = []
 }) => {
     // Determine if we're in multi-room mode or single-room mode - memoize to prevent recalculation
     const isMultiRoomMode = useMemo(() => rooms.length > 0, [rooms.length]);
@@ -72,7 +73,25 @@ const CeilingCanvas = ({
     const effectiveCeilingPlans = useMemo(() => {
         return isMultiRoomMode ? ceilingPlans : (ceilingPlan ? [ceilingPlan] : []);
     }, [isMultiRoomMode, ceilingPlans, ceilingPlan]);
-    
+
+    const getPanelIdentifier = useCallback((panel) => {
+        if (!panel) return null;
+        const rawId = panel.id ?? panel.panel_id ?? panel.panelId ?? panel.uuid ?? null;
+        return rawId === null || rawId === undefined ? null : rawId.toString();
+    }, []);
+
+    const normalizedSelectedPanelId = useMemo(() => {
+        if (selectedPanelId === null || selectedPanelId === undefined) return null;
+        return selectedPanelId.toString();
+    }, [selectedPanelId]);
+
+    const selectedPanelIdsList = useMemo(() => {
+        if (!Array.isArray(selectedPanelIds)) return [];
+        return selectedPanelIds
+            .map(id => (id === null || id === undefined ? null : id.toString()))
+            .filter(Boolean);
+    }, [selectedPanelIds]);
+
     const canvasRef = useRef(null);
     const canvasContainerRef = useRef(null);
     const [canvasSize, setCanvasSize] = useState({
@@ -309,7 +328,7 @@ const CeilingCanvas = ({
         // Draw everything
         drawCanvas(ctx);
 
-    }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, zones, selectedRoomId, selectedPanelId, CANVAS_WIDTH, CANVAS_HEIGHT]);
+    }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, zones, selectedRoomId, selectedPanelId, selectedPanelIdsList, CANVAS_WIDTH, CANVAS_HEIGHT]);
 
     // Sync external scale prop with internal zoom
     useEffect(() => {
@@ -870,22 +889,39 @@ const CeilingCanvas = ({
 
         // First pass: draw panels and collect dimension info
         roomPanels.forEach(panel => {
-            const isSelected = panel.id === selectedPanelId;
+            const startX = panel.start_x ?? panel.x ?? 0;
+            const startY = panel.start_y ?? panel.y ?? 0;
+            const endX = panel.end_x ?? (panel.width !== undefined ? startX + panel.width : panel.x_end ?? startX);
+            const endY = panel.end_y ?? (panel.length !== undefined ? startY + panel.length : panel.y_end ?? startY);
+            const panelWidthRaw = panel.width ?? Math.abs(endX - startX);
+            const panelLengthRaw = panel.length ?? Math.abs(endY - startY);
+
+            const panelIdentifier = getPanelIdentifier(panel);
+            const selectionIndex = panelIdentifier ? selectedPanelIdsList.indexOf(panelIdentifier) : -1;
+            const isMultiSelectSelected = selectionIndex !== -1;
+            const isPrimarySelected = normalizedSelectedPanelId && panelIdentifier === normalizedSelectedPanelId;
+            const isSelected = isMultiSelectSelected || isPrimarySelected;
             
             // Panel dimensions
-            const x = panel.start_x * scaleFactor.current + offsetX.current;
-            const y = panel.start_y * scaleFactor.current + offsetY.current;
-            const width = panel.width * scaleFactor.current;
-            const height = panel.length * scaleFactor.current;
+            const x = startX * scaleFactor.current + offsetX.current;
+            const y = startY * scaleFactor.current + offsetY.current;
+            const width = panelWidthRaw * scaleFactor.current;
+            const height = panelLengthRaw * scaleFactor.current;
+
+            const isCutPanel = panel.is_cut || panel.is_cut_panel;
 
             // Panel styling - use same color scheme as FloorCanvas
             if (isSelected) {
-                ctx.fillStyle = 'rgba(37, 99, 235, 0.85)'; // Brighter blue for selected panel
-                ctx.strokeStyle = '#1d4ed8';
-                ctx.lineWidth = 12 * scaleFactor.current;
+                const fillColors = ['rgba(37, 99, 235, 0.75)', 'rgba(249, 115, 22, 0.65)'];
+                const borderColors = ['#1d4ed8', '#c2410c'];
+                const highlightIndex = selectionIndex !== -1 ? selectionIndex : 0;
+
+                ctx.fillStyle = fillColors[highlightIndex] ?? 'rgba(37, 99, 235, 0.75)';
+                ctx.strokeStyle = borderColors[highlightIndex] ?? '#1d4ed8';
+                ctx.lineWidth = 14 * scaleFactor.current;
             } else {
                 // Use same colors as FloorCanvas: blue for full panels, green for cut panels
-                if (panel.is_cut) {
+                if (isCutPanel) {
                     if (shouldDimPanels) {
                         ctx.fillStyle = 'rgba(34, 197, 94, 0.1)'; // Dimmed green for cut panels
                         ctx.strokeStyle = '#9ca3af'; // Gray border for dimmed panels
@@ -910,7 +946,7 @@ const CeilingCanvas = ({
             ctx.strokeRect(x, y, width, height);
 
             // Draw cut panel indicator with dashed border (same as FloorCanvas)
-            if (panel.is_cut) {
+            if (isCutPanel) {
                 ctx.strokeStyle = '#22c55e'; // Green dashed border for cut panels
                 ctx.lineWidth = 10 * scaleFactor.current; // Increased from 2 to 3 for better visibility
                 ctx.setLineDash([8 * scaleFactor.current, 4 * scaleFactor.current]);
@@ -922,11 +958,35 @@ const CeilingCanvas = ({
 
             // Panel ID label for selected panels (keep this for selection feedback)
             if (isSelected) {
-                ctx.fillStyle = '#3b82f6';
+                const highlightIndex = selectionIndex !== -1 ? selectionIndex : 0;
+                const badgeColors = ['rgba(37, 99, 235, 0.9)', 'rgba(234, 88, 12, 0.9)'];
+                const badgeColor = badgeColors[highlightIndex] ?? 'rgba(37, 99, 235, 0.9)';
+                const textColor = '#ffffff';
+                const panelLabel = panel.panel_id ?? panel.id ?? panelIdentifier ?? '';
+                const displayText = `P${panelLabel}`;
+
+                ctx.save();
                 ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(`P${panel.panel_id || panel.id}`, x + width / 2, y + height / 2);
+
+                const textWidth = ctx.measureText(displayText).width;
+                const textHeight = Math.max(16, 18 * scaleFactor.current);
+                const padding = 10 * scaleFactor.current;
+                const centerX = x + width / 2;
+                const centerY = y + height / 2;
+
+                ctx.fillStyle = badgeColor;
+                ctx.fillRect(
+                    centerX - textWidth / 2 - padding,
+                    centerY - textHeight / 2 - padding,
+                    textWidth + padding * 2,
+                    textHeight + padding * 2
+                );
+
+                ctx.fillStyle = textColor;
+                ctx.fillText(displayText, centerX, centerY);
+                ctx.restore();
             }
         });
 
@@ -2357,6 +2417,61 @@ const CeilingCanvas = ({
             }
         }
         
+        // Attempt panel selection (skip when actively placing supports)
+        if (!(enableAluSuspension && isPlacingSupport)) {
+            for (let i = 0; i < effectiveRooms.length; i++) {
+                const room = effectiveRooms[i];
+                const roomPanels = effectiveCeilingPanelsMap[room.id] || [];
+                
+                for (let j = 0; j < roomPanels.length; j++) {
+                    const panel = roomPanels[j];
+                    const panelIdentifier = getPanelIdentifier(panel);
+                    const startX = panel.start_x ?? panel.x ?? 0;
+                    const startY = panel.start_y ?? panel.y ?? 0;
+                    const endX = panel.end_x ?? (panel.width !== undefined ? startX + panel.width : panel.x_end ?? startX);
+                    const endY = panel.end_y ?? (panel.length !== undefined ? startY + panel.length : panel.y_end ?? startY);
+                    const panelWidthRaw = panel.width ?? Math.abs(endX - startX);
+                    const panelLengthRaw = panel.length ?? Math.abs(endY - startY);
+                    const x = startX * scaleFactor.current + offsetX.current;
+                    const y = startY * scaleFactor.current + offsetY.current;
+                    const width = panelWidthRaw * scaleFactor.current;
+                    const height = panelLengthRaw * scaleFactor.current;
+                    
+                    if (panelIdentifier && clickX >= x && clickX <= x + width && clickY >= y && clickY <= y + height) {
+                        onPanelSelect?.(panelIdentifier);
+                        onRoomSelect?.(room.id);
+                        return;
+                    }
+                }
+            }
+    
+            if (zonesAsRooms && zonesAsRooms.length > 0) {
+                for (const zoneRoom of zonesAsRooms) {
+                    const zonePanels = effectiveCeilingPanelsMap[zoneRoom.id] || zoneRoom.ceiling_panels || [];
+                    
+                    for (const panel of zonePanels) {
+                        const panelIdentifier = getPanelIdentifier(panel);
+                        const startX = panel.start_x ?? panel.x ?? 0;
+                        const startY = panel.start_y ?? panel.y ?? 0;
+                        const endX = panel.end_x ?? (panel.width !== undefined ? startX + panel.width : panel.x_end ?? startX);
+                        const endY = panel.end_y ?? (panel.length !== undefined ? startY + panel.length : panel.y_end ?? startY);
+                        const panelWidthRaw = panel.width ?? Math.abs(endX - startX);
+                        const panelLengthRaw = panel.length ?? Math.abs(endY - startY);
+                        const x = startX * scaleFactor.current + offsetX.current;
+                        const y = startY * scaleFactor.current + offsetY.current;
+                        const width = panelWidthRaw * scaleFactor.current;
+                        const height = panelLengthRaw * scaleFactor.current;
+                        
+                        if (panelIdentifier && clickX >= x && clickX <= x + width && clickY >= y && clickY <= y + (height || (panelLengthRaw || 0) * scaleFactor.current)) {
+                            onPanelSelect?.(panelIdentifier);
+                            onRoomSelect?.(zoneRoom.id);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         // If aluminum suspension custom drawing is enabled, disable room selection entirely
         if (aluSuspensionCustomDrawing) {
             // Room selection is disabled when aluminum suspension drawing is active
@@ -2466,48 +2581,6 @@ const CeilingCanvas = ({
             }
             return;
         }
-        
-        // Check if clicked on a panel
-        for (let i = 0; i < effectiveRooms.length; i++) {
-            const room = effectiveRooms[i];
-            const roomPanels = effectiveCeilingPanelsMap[room.id] || [];
-            
-            for (let j = 0; j < roomPanels.length; j++) {
-                const panel = roomPanels[j];
-                const x = panel.start_x * scaleFactor.current + offsetX.current;
-                const y = panel.start_y * scaleFactor.current + offsetY.current;
-                const width = (panel.end_x - panel.start_x) * scaleFactor.current;
-                const height = panel.end_y - panel.start_y ? Math.abs(panel.end_y - panel.start_y) * scaleFactor.current : (room ? Math.abs(Math.max(...room.room_points.map(p => p.y)) - Math.min(...room.room_points.map(p => p.y))) * scaleFactor.current : 10000 * scaleFactor.current);
-                
-                if (clickX >= x && clickX <= x + width && clickY >= y && clickY <= y + height) {
-                    onPanelSelect?.(panel.id);
-                    onRoomSelect?.(room.id); // Also select the room
-                    return;
-                }
-
-            }
-        }
-
-        // Check if clicked on a zone panel (treat zones as rooms for panel selection)
-        if (zonesAsRooms && zonesAsRooms.length > 0) {
-            for (const zoneRoom of zonesAsRooms) {
-                const zonePanels = effectiveCeilingPanelsMap[zoneRoom.id] || zoneRoom.ceiling_panels || [];
-                
-                for (const panel of zonePanels) {
-                    const x = panel.start_x * scaleFactor.current + offsetX.current;
-                    const y = panel.start_y * scaleFactor.current + offsetY.current;
-                    const width = (panel.end_x - panel.start_x) * scaleFactor.current;
-                    const height = (panel.end_y - panel.start_y ? Math.abs(panel.end_y - panel.start_y) : 0) * scaleFactor.current;
-                    
-                    if (clickX >= x && clickX <= x + width && clickY >= y && clickY <= y + (height || (panel.length || 0) * scaleFactor.current)) {
-                        onPanelSelect?.(panel.id);
-                        onRoomSelect?.(zoneRoom.id);
-                        return;
-                    }
-                }
-            }
-        }
-        
         // Clicked on empty space, deselect
         onPanelSelect?.(null);
     };
@@ -2968,10 +3041,6 @@ const CeilingCanvas = ({
         ctx.beginPath();
         ctx.arc(mouseX, mouseY, 4, 0, 2 * Math.PI);
         ctx.fill();
-    };
-
-    const getRoomOutlineColor = (room) => {
-        return selectedRoomId && room.id === selectedRoomId ? '#2563eb' : '#1f2937';
     };
 
     const zonesAsRooms = useMemo(() => {

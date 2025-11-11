@@ -27,6 +27,12 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const [mergeError, setMergeError] = useState(null);
     const [isMerging, setIsMerging] = useState(false);
     const [dissolvingZoneId, setDissolvingZoneId] = useState(null);
+    const [selectedPanelIds, setSelectedPanelIds] = useState([]);
+    const [panelSwapError, setPanelSwapError] = useState(null);
+    const [panelSwapSuccess, setPanelSwapSuccess] = useState(false);
+    const [isSwappingPanels, setIsSwappingPanels] = useState(false);
+    const swapFeedbackTimeoutRef = useRef(null);
+    const previousSelectedRoomKeyRef = useRef(null);
     
     // Orientation strategy
     const [selectedOrientationStrategy, setSelectedOrientationStrategy] = useState('auto');
@@ -105,6 +111,9 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         setActiveZoneId(null);
         setActiveDetailType(null);
         setIsDetailsPanelOpen(false);
+        setSelectedPanelIds([]);
+        setPanelSwapError(null);
+        setPanelSwapSuccess(false);
     };
     
     // Room-specific editing state
@@ -159,6 +168,15 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const showZoneDetailsPanel = shouldShowDetailsPanel && activeDetailType === 'zone';
     const hasActiveSelection = Boolean(selectedRoomId) || activeZoneId !== null;
 
+    const normalizePanelIdentifier = useCallback((value) => {
+        return value === null || value === undefined ? null : value.toString();
+    }, []);
+
+    const normalizeRoomKey = useCallback((value) => {
+        if (value === null || value === undefined) return null;
+        return typeof value === 'string' ? value : value.toString();
+    }, []);
+
     useEffect(() => {
         if (activeZone) {
             setZoneEditConfig({
@@ -171,10 +189,64 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         }
     }, [activeZone, ceilingThickness, panelWidth, panelLength, customPanelLength, selectedOrientationStrategy]);
 
+    useEffect(() => {
+        const currentRoomKey = normalizeRoomKey(selectedRoomId);
+        const previousKey = previousSelectedRoomKeyRef.current;
+        if (previousKey && currentRoomKey && previousKey !== currentRoomKey) {
+            setSelectedPanelIds([]);
+            setPanelSwapError(null);
+            setPanelSwapSuccess(false);
+        }
+        if (!currentRoomKey) {
+            setSelectedPanelIds([]);
+            setPanelSwapError(null);
+            setPanelSwapSuccess(false);
+        }
+        previousSelectedRoomKeyRef.current = currentRoomKey;
+    }, [selectedRoomId, normalizeRoomKey]);
+
     const roomsAvailableForMerge = useMemo(() => {
         if (!allRooms || allRooms.length === 0) return [];
         return allRooms.filter(room => !room.ceiling_zones || room.ceiling_zones.length === 0);
     }, [allRooms]);
+
+    const getPanelIdentifier = useCallback((panel) => {
+        if (!panel) return null;
+        const rawId = panel.id ?? panel.panel_id ?? panel.panelId ?? panel.uuid ?? null;
+        return normalizePanelIdentifier(rawId);
+    }, [normalizePanelIdentifier]);
+
+    const getPanelByIdentifier = useCallback((panelId) => {
+        const normalized = normalizePanelIdentifier(panelId);
+        if (!normalized) return null;
+        return ceilingPanels.find(panel => getPanelIdentifier(panel) === normalized) || null;
+    }, [ceilingPanels, getPanelIdentifier]);
+
+    const getPanelRoomKey = useCallback((panel) => {
+        if (!panel) return null;
+        if (panel.room_id !== undefined && panel.room_id !== null) {
+            return panel.room_id.toString();
+        }
+        if (panel.zone_id !== undefined && panel.zone_id !== null) {
+            return `zone-${panel.zone_id}`;
+        }
+        if (panel.zone !== undefined && panel.zone !== null) {
+            return `zone-${panel.zone}`;
+        }
+        return null;
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (swapFeedbackTimeoutRef.current) {
+                clearTimeout(swapFeedbackTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        setSelectedPanelIds(prev => prev.filter(id => !!getPanelByIdentifier(id)));
+    }, [ceilingPanels, getPanelByIdentifier]);
 
     const formatOrientationLabel = useCallback((strategy) => {
         if (!strategy) return 'Not set';
@@ -275,6 +347,43 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const selectedMergeRooms = useMemo(() => {
         return roomsAvailableForMerge.filter(room => mergeSelection.includes(room.id));
     }, [roomsAvailableForMerge, mergeSelection]);
+
+    const selectedPanels = useMemo(() => {
+        return selectedPanelIds
+            .map(id => getPanelByIdentifier(id))
+            .filter(Boolean);
+    }, [selectedPanelIds, getPanelByIdentifier]);
+
+    const firstSelectedPanelRoomKey = useMemo(() => {
+        if (selectedPanels.length === 0) return null;
+        return getPanelRoomKey(selectedPanels[0]);
+    }, [selectedPanels, getPanelRoomKey]);
+
+    const selectedPanelRoomName = useMemo(() => {
+        if (!firstSelectedPanelRoomKey) return null;
+
+        if (firstSelectedPanelRoomKey.startsWith('zone-')) {
+            const zoneId = parseInt(firstSelectedPanelRoomKey.replace('zone-', ''), 10);
+            if (!Number.isNaN(zoneId)) {
+                const zone = ceilingZones.find(z => z.id === zoneId);
+                if (zone) {
+                    const roomNames = Array.isArray(zone.room_ids)
+                        ? zone.room_ids
+                            .map(id => allRooms.find(room => room.id === id)?.room_name || `Room ${id}`)
+                            .filter(Boolean)
+                        : [];
+                    return `Zone #${zoneId}${roomNames.length ? ` (${roomNames.join(', ')})` : ''}`;
+                }
+            }
+            return `Zone ${firstSelectedPanelRoomKey.replace('zone-', '#')}`;
+        }
+
+        const room = allRooms.find(r => normalizeRoomKey(r.id) === firstSelectedPanelRoomKey);
+        if (room?.room_name) {
+            return room.room_name;
+        }
+        return `Room #${firstSelectedPanelRoomKey}`;
+    }, [allRooms, ceilingZones, firstSelectedPanelRoomKey, normalizeRoomKey]);
 
     const getRoomTopElevation = useCallback((room) => {
         if (!room) return null;
@@ -607,6 +716,72 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         setMergeError(null);
     };
 
+    const handlePanelSelectionReset = useCallback(() => {
+        if (swapFeedbackTimeoutRef.current) {
+            clearTimeout(swapFeedbackTimeoutRef.current);
+        }
+        setSelectedPanelIds([]);
+        setPanelSwapError(null);
+        setPanelSwapSuccess(false);
+    }, [swapFeedbackTimeoutRef]);
+
+    const handlePanelSelection = useCallback((panelId) => {
+        const normalizedId = normalizePanelIdentifier(panelId);
+
+        if (!normalizedId) {
+            handlePanelSelectionReset();
+            return;
+        }
+
+        const panel = getPanelByIdentifier(normalizedId);
+        if (!panel) {
+            setPanelSwapError('Unable to locate the selected panel.');
+            return;
+        }
+
+        setSelectedPanelIds(prev => {
+            if (prev.length === 0) {
+                setPanelSwapError(null);
+                setPanelSwapSuccess(false);
+                return [normalizedId];
+            }
+
+            if (prev.length === 1) {
+                if (prev[0] === normalizedId) {
+                    setPanelSwapError(null);
+                    setPanelSwapSuccess(false);
+                    return [];
+                }
+
+                const firstPanel = getPanelByIdentifier(prev[0]);
+                const firstRoomKey = getPanelRoomKey(firstPanel);
+                const currentRoomKey = getPanelRoomKey(panel);
+
+                if (firstRoomKey && currentRoomKey && firstRoomKey !== currentRoomKey) {
+                    setPanelSwapError('Please select two panels within the same room or zone.');
+                    return prev;
+                }
+
+                setPanelSwapError(null);
+                setPanelSwapSuccess(false);
+                return [prev[0], normalizedId];
+            }
+
+            if (prev.includes(normalizedId)) {
+                setPanelSwapError(null);
+                setPanelSwapSuccess(false);
+                if (prev[0] === normalizedId) {
+                    return prev.slice(1);
+                }
+                return [prev[0]];
+            }
+
+            setPanelSwapError(null);
+            setPanelSwapSuccess(false);
+            return [normalizedId];
+        });
+    }, [getPanelByIdentifier, getPanelRoomKey, handlePanelSelectionReset, normalizePanelIdentifier]);
+
     const handleMergeRoomToggle = (roomId) => {
         setMergeSelection(prev => {
             if (prev.includes(roomId)) {
@@ -776,6 +951,261 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
         return panelList;
     };
+
+    const handleSwapPanels = useCallback(async () => {
+        if (selectedPanelIds.length !== 2) {
+            setPanelSwapError('Select two panels within the same room to swap.');
+            return;
+        }
+
+        const [firstId, secondId] = selectedPanelIds;
+        const firstPanel = getPanelByIdentifier(firstId);
+        const secondPanel = getPanelByIdentifier(secondId);
+
+        if (!firstPanel || !secondPanel) {
+            setPanelSwapError('Unable to locate the selected panels.');
+            return;
+        }
+
+        const firstRoomKey = getPanelRoomKey(firstPanel);
+        const secondRoomKey = getPanelRoomKey(secondPanel);
+        if (firstRoomKey && secondRoomKey && firstRoomKey !== secondRoomKey) {
+            setPanelSwapError('Panels must belong to the same room or merged zone.');
+            return;
+        }
+
+        const firstBackendId = firstPanel.id ?? firstPanel.panel_id;
+        const secondBackendId = secondPanel.id ?? secondPanel.panel_id;
+        if (firstBackendId === undefined || secondBackendId === undefined) {
+            setPanelSwapError('Selected panels are missing identifiers needed for swapping.');
+            return;
+        }
+
+        const getPanelDimensions = (panel) => {
+            const startX = panel.start_x ?? panel.x ?? 0;
+            const startY = panel.start_y ?? panel.y ?? 0;
+            const width = panel.width ?? Math.abs((panel.end_x ?? startX) - startX);
+            const length = panel.length ?? Math.abs((panel.end_y ?? startY) - startY);
+            return { startX, startY, width, length };
+        };
+
+        const getRoomOrZoneBounds = (panel) => {
+            const roomKey = getPanelRoomKey(panel);
+            if (!roomKey) return null;
+
+            if (roomKey.startsWith('zone-')) {
+                const zoneId = parseInt(roomKey.replace('zone-', ''), 10);
+                const zone = ceilingZones.find(z => z.id === zoneId);
+                if (zone?.outline_points && zone.outline_points.length >= 3) {
+                    const xs = zone.outline_points.map(p => p.x);
+                    const ys = zone.outline_points.map(p => p.y);
+                    return {
+                        minX: Math.min(...xs),
+                        maxX: Math.max(...xs),
+                        minY: Math.min(...ys),
+                        maxY: Math.max(...ys)
+                    };
+                }
+            } else {
+                const room = allRooms.find(r => normalizeRoomKey(r.id) === roomKey);
+                if (room?.room_points && room.room_points.length >= 3) {
+                    const xs = room.room_points.map(p => p.x);
+                    const ys = room.room_points.map(p => p.y);
+                    return {
+                        minX: Math.min(...xs),
+                        maxX: Math.max(...xs),
+                        minY: Math.min(...ys),
+                        maxY: Math.max(...ys)
+                    };
+                }
+            }
+            return null;
+        };
+
+        const clampWithinBounds = (value, min, max) => {
+            if (min === undefined || max === undefined) return value;
+            if (value < min) return min;
+            if (value > max) return max;
+            return value;
+        };
+
+        const computePayload = (panel, newStartX, newStartY, bounds) => {
+            const { width, length } = getPanelDimensions(panel);
+            let clampedStartX = newStartX;
+            let clampedStartY = newStartY;
+
+            if (bounds) {
+                clampedStartX = clampWithinBounds(newStartX, bounds.minX, bounds.maxX - width);
+                clampedStartY = clampWithinBounds(newStartY, bounds.minY, bounds.maxY - length);
+            }
+
+            const payload = {
+                start_x: clampedStartX,
+                start_y: clampedStartY,
+                end_x: clampedStartX + width,
+                end_y: clampedStartY + length,
+                x: clampedStartX,
+                y: clampedStartY
+            };
+
+            return payload;
+        };
+
+        const rectanglesOverlap = (a, b) => {
+            if (!a || !b) return false;
+            return !(a.maxX <= b.minX || a.minX >= b.maxX || a.maxY <= b.minY || a.minY >= b.maxY);
+        };
+
+        const getBoundingBoxFromPayload = (payload) => ({
+            minX: payload.start_x,
+            maxX: payload.end_x,
+            minY: payload.start_y,
+            maxY: payload.end_y
+        });
+
+        const getBoundingBoxForPanel = (panel, overridePayload = null) => {
+            if (overridePayload) {
+                return getBoundingBoxFromPayload(overridePayload);
+            }
+            const { startX, startY, width, length } = getPanelDimensions(panel);
+            return {
+                minX: startX,
+                maxX: startX + width,
+                minY: startY,
+                maxY: startY + length
+            };
+        };
+
+        const firstPanelBounds = getRoomOrZoneBounds(firstPanel);
+        const secondPanelBounds = getRoomOrZoneBounds(secondPanel);
+
+        const secondPanelDims = getPanelDimensions(secondPanel);
+        const firstPanelDims = getPanelDimensions(firstPanel);
+
+        const firstPayload = computePayload(
+            firstPanel,
+            secondPanelDims.startX,
+            secondPanelDims.startY,
+            firstPanelBounds
+        );
+
+        const secondPayload = computePayload(
+            secondPanel,
+            firstPanelDims.startX,
+            firstPanelDims.startY,
+            secondPanelBounds
+        );
+
+        const firstBoundingBox = getBoundingBoxFromPayload(firstPayload);
+        const secondBoundingBox = getBoundingBoxFromPayload(secondPayload);
+
+        const involvedRoomKey = firstPanelBounds ? getPanelRoomKey(firstPanel) : getPanelRoomKey(secondPanel);
+        const panelsInArea = ceilingPanels.filter(panel => {
+            const key = getPanelRoomKey(panel);
+            return key === involvedRoomKey;
+        });
+
+        const overlapsExistingPanel = panelsInArea.some(panel => {
+            const panelId = getPanelIdentifier(panel);
+            if (panelId === firstId || panelId === secondId) {
+                return false;
+            }
+            const otherBox = getBoundingBoxForPanel(panel);
+            return rectanglesOverlap(firstBoundingBox, otherBox) || rectanglesOverlap(secondBoundingBox, otherBox);
+        });
+
+        if (overlapsExistingPanel || rectanglesOverlap(firstBoundingBox, secondBoundingBox)) {
+            setPanelSwapError('Unable to swap: panels would overlap after swapping.');
+            setPanelSwapSuccess(false);
+            setIsSwappingPanels(false);
+            return;
+        }
+
+        setIsSwappingPanels(true);
+        setPanelSwapError(null);
+
+        try {
+            await Promise.all([
+                api.patch(`/ceiling-panels/${firstBackendId}/`, firstPayload),
+                api.patch(`/ceiling-panels/${secondBackendId}/`, secondPayload)
+            ]);
+
+            const updatedPanels = ceilingPanels.map(panel => {
+                const panelId = getPanelIdentifier(panel);
+                if (panelId === firstId) {
+                    return { ...panel, ...firstPayload };
+                }
+                if (panelId === secondId) {
+                    return { ...panel, ...secondPayload };
+                }
+                return panel;
+            });
+
+            const applyPayloadToCollection = (collection) => {
+                if (!Array.isArray(collection)) return collection;
+                return collection.map(panel => {
+                    const panelId = getPanelIdentifier(panel);
+                    if (panelId === firstId) {
+                        return { ...panel, ...firstPayload };
+                    }
+                    if (panelId === secondId) {
+                        return { ...panel, ...secondPayload };
+                    }
+                    return panel;
+                });
+            };
+
+            setCeilingPanels(updatedPanels);
+
+            setCeilingPlan(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    ceiling_panels: applyPayloadToCollection(prev.ceiling_panels),
+                    enhanced_panels: applyPayloadToCollection(prev.enhanced_panels),
+                    zone_plans: Array.isArray(prev.zone_plans)
+                        ? prev.zone_plans.map(zone => ({
+                            ...zone,
+                            ceiling_panels: applyPayloadToCollection(zone.ceiling_panels)
+                        }))
+                        : prev.zone_plans
+                };
+            });
+
+            setCeilingZones(prev => prev.map(zone => ({
+                ...zone,
+                ceiling_panels: applyPayloadToCollection(zone.ceiling_panels)
+            })));
+
+            if (updateSharedPanelData) {
+                const sharedPanels = processCeilingPanelsForSharing(updatedPanels, allRooms);
+                updateSharedPanelData('ceiling', sharedPanels);
+            }
+
+            handlePanelSelectionReset();
+            setPanelSwapSuccess(true);
+            if (swapFeedbackTimeoutRef.current) {
+                clearTimeout(swapFeedbackTimeoutRef.current);
+            }
+            swapFeedbackTimeoutRef.current = setTimeout(() => setPanelSwapSuccess(false), 4000);
+        } catch (error) {
+            console.error('Error swapping ceiling panels:', error);
+            const message = error?.response?.data?.error || error.message || 'Failed to swap selected panels.';
+            setPanelSwapError(message);
+        } finally {
+            setIsSwappingPanels(false);
+        }
+    }, [
+        allRooms,
+        ceilingPanels,
+        getPanelByIdentifier,
+        getPanelIdentifier,
+        getPanelRoomKey,
+        handlePanelSelectionReset,
+        processCeilingPanelsForSharing,
+        selectedPanelIds,
+        updateSharedPanelData
+    ]);
 
     const loadExistingCeilingPlan = async () => {
         try {
@@ -1249,6 +1679,120 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const filteredRooms = useMemo(() => {
         return showAllRooms ? allRooms : allRooms.filter(room => room.id === selectedRoomId);
     }, [allRooms, showAllRooms, selectedRoomId]);
+
+    const shouldShowPanelSwapCard = selectedPanelIds.length > 0 || Boolean(panelSwapError) || Boolean(panelSwapSuccess);
+
+    const panelSwapCard = shouldShowPanelSwapCard ? (
+        <div className="bg-white border border-blue-200 rounded-lg p-4 space-y-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h4 className="text-sm font-semibold text-blue-700">Panel Swap</h4>
+                    {selectedPanelRoomName && (
+                        <p className="text-xs text-blue-500 mt-1">
+                            Room: {selectedPanelRoomName}
+                        </p>
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handlePanelSelectionReset}
+                        className="px-3 py-1 text-xs rounded border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
+                    >
+                        Clear Selection
+                    </button>
+                </div>
+            </div>
+
+            <div className="space-y-3">
+                {[0, 1].map(index => {
+                    const panel = selectedPanels[index];
+                    const label = index === 0 ? 'Panel A' : 'Panel B';
+                    const panelId = selectedPanelIds[index];
+
+                    if (!panel) {
+                        return (
+                            <div
+                                key={`panel-placeholder-${index}`}
+                                className="border border-dashed border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-500 bg-blue-50/40"
+                            >
+                                {index === 0
+                                    ? 'Select a panel in the canvas to begin.'
+                                    : 'Select another panel in the same room to enable swapping.'}
+                            </div>
+                        );
+                    }
+
+                    const isCutPanel = panel.is_cut || panel.is_cut_panel;
+                    const widthDisplay = panel.width ?? '—';
+                    const lengthDisplay = panel.length ?? '—';
+                    const positionX = Math.round(panel.start_x ?? panel.x ?? 0);
+                    const positionY = Math.round(panel.start_y ?? panel.y ?? 0);
+                    return (
+                        <div
+                            key={`panel-selection-${panelId}-${index}`}
+                            className="border border-blue-100 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-3 bg-blue-50/40"
+                        >
+                            <div>
+                                <p className="text-xs uppercase tracking-wide text-blue-500">{label}</p>
+                                <p className="text-sm font-semibold text-gray-800">
+                                    #{panel.panel_id ?? panel.id ?? panelId ?? '—'}
+                                </p>
+                            </div>
+                            <div className="text-xs text-gray-600 space-y-1 text-right">
+                                <div>
+                                    <span className="font-medium text-gray-700">{widthDisplay}</span> ×{' '}
+                                    <span className="font-medium text-gray-700">{lengthDisplay}</span> mm
+                                </div>
+                                <div>
+                                    Pos: (
+                                    <span className="font-medium text-gray-700">
+                                        {positionX}
+                                    </span>
+                                    ,{' '}
+                                    <span className="font-medium text-gray-700">
+                                        {positionY}
+                                    </span>
+                                    )
+                                </div>
+                                <div className={isCutPanel ? 'text-amber-600' : 'text-green-600'}>
+                                    {isCutPanel ? 'Cut Panel' : 'Full Panel'}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {panelSwapError && (
+                <div className="bg-red-50 border border-red-200 text-sm text-red-600 rounded-lg px-3 py-2">
+                    {panelSwapError}
+                </div>
+            )}
+
+            {panelSwapSuccess && (
+                <div className="bg-green-50 border border-green-200 text-sm text-green-700 rounded-lg px-3 py-2">
+                    Panels swapped successfully.
+                </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-gray-500">
+                    Select two panels in the canvas to enable the swap action.
+                </p>
+                <button
+                    onClick={handleSwapPanels}
+                    disabled={selectedPanelIds.length !== 2 || isSwappingPanels}
+                    className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                        selectedPanelIds.length !== 2 || isSwappingPanels
+                            ? 'bg-blue-200 text-blue-500 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                >
+                    {isSwappingPanels ? 'Swapping...' : 'Swap Selected Panels'}
+                </button>
+            </div>
+        </div>
+    ) : null;
 
     if (!projectId) {
         return (
@@ -1822,6 +2366,9 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             // Room selection props
                             selectedRoomId={selectedRoomId}
                             showAllRooms={showAllRooms}
+                            selectedPanelId={selectedPanelIds[0] ?? null}
+                            selectedPanelIds={selectedPanelIds}
+                            onPanelSelect={handlePanelSelection}
                             onRoomSelect={handleRoomSelection}
                             onRoomDeselect={handleRoomDeselection}
                             // Add updateSharedPanelData prop to pass support options
@@ -1930,6 +2477,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                     {showRoomDetailsPanel ? (
                                         showRoomDetails ? (
                                             <>
+                                                {panelSwapCard}
                                                 <div className="grid grid-cols-1 gap-6">
                                                     <div className="bg-white border border-gray-200 rounded-lg p-4">
                                                         <h4 className="text-sm font-semibold text-gray-700 mb-3">Room Information</h4>
@@ -2197,6 +2745,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                         )
                                     ) : (
                                         <>
+                                            {panelSwapCard}
                                             {zoneRegenerationSuccess && (
                                                 <div className="mb-4 bg-green-100 border border-green-500 text-green-700 px-4 py-3 rounded-lg flex items-center gap-2">
                                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -2339,12 +2339,52 @@ class CeilingService:
             raise ValueError('Shapely is required to generate ceiling zones but is not available on the server.')
 
         outline_points = zone.outline_points or []
-        if len(outline_points) < 3:
-            raise ValueError('Ceiling zone does not have a valid outline.')
+        polygon = None
 
-        polygon = Polygon([(point['x'], point['y']) for point in outline_points])
-        if not polygon.is_valid:
-            polygon = polygon.buffer(0)
+        if len(outline_points) >= 3:
+            polygon = Polygon([(point['x'], point['y']) for point in outline_points])
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
+
+        if polygon is None or polygon.is_empty or len(outline_points) < 3:
+            rooms = list(zone.rooms.all())
+            if not rooms:
+                raise ValueError('Ceiling zone does not have any rooms assigned.')
+
+            room_polygons = []
+            for room in rooms:
+                room_points = room.room_points or []
+                if len(room_points) < 3:
+                    raise ValueError(f'Room "{room.room_name}" in this zone does not have a valid boundary.')
+                room_polygon = Polygon([(point['x'], point['y']) for point in room_points])
+                if not room_polygon.is_valid:
+                    room_polygon = room_polygon.buffer(0)
+                if room_polygon.is_empty:
+                    raise ValueError(f'Failed to rebuild geometry for room "{room.room_name}".')
+                room_polygons.append(room_polygon)
+
+            merged_polygon = unary_union(room_polygons)
+            if merged_polygon.is_empty:
+                raise ValueError('Unable to rebuild a valid outline for this ceiling zone.')
+
+            if merged_polygon.geom_type == 'MultiPolygon':
+                merged_polygon = max(list(merged_polygon.geoms), key=lambda geom: geom.area, default=None)
+                if merged_polygon is None or merged_polygon.is_empty:
+                    raise ValueError('Ceiling zone rooms result in a non-contiguous outline. Please review the zone.')
+
+            if merged_polygon.geom_type != 'Polygon':
+                raise ValueError('Ceiling zone rooms do not produce a single polygon outline. Please review the zone.')
+
+            polygon = merged_polygon if merged_polygon.is_valid else merged_polygon.buffer(0)
+            if polygon.is_empty:
+                raise ValueError('Unable to rebuild a valid outline for this ceiling zone.')
+
+            outline_points = CeilingService._polygon_to_point_list(polygon)
+            if len(outline_points) < 3:
+                raise ValueError('Rebuilt ceiling zone outline is invalid. Please review the zone geometry.')
+
+            zone.outline_points = outline_points
+            zone.save(update_fields=['outline_points'])
 
         bounding_box = CeilingService._calculate_polygon_bounds(polygon)
 
@@ -3273,7 +3313,7 @@ class CeilingService:
         
         # For performance: use exhaustive search for <= 10 rooms, greedy heuristic for larger projects
         if num_rooms <= 10:
-            logger.info(f"🌍 GLOBAL OPTIMIZATION: Testing all {2**num_rooms} combinations for {num_rooms} rooms")
+            logger.info(f"GLOBAL OPTIMIZATION: Testing all {2**num_rooms} combinations for {num_rooms} rooms")
             
             best_combo = None
             best_leftover_area = float('inf')
@@ -3298,12 +3338,12 @@ class CeilingService:
                     best_result = result
                     
                     combo_str = ', '.join([f"{rooms[j]['name']}:{o[0].upper()}" for j, o in enumerate(orientation_combo)])
-                    logger.info(f"  ✓ New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
+                    logger.info(f"  New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
             
             # Log the final best combination
             best_combo_str = ', '.join([f"{rooms[j]['name']}:{o[0].upper()}" for j, o in enumerate(best_combo)])
             waste_pct = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
-            logger.info(f"🎯 GLOBAL OPTIMAL FOUND: {best_combo_str} > Project Waste: {waste_pct:.2f}%")
+            logger.info(f"GLOBAL OPTIMAL FOUND: {best_combo_str} > Project Waste: {waste_pct:.2f}%")
             
             # Calculate waste percentage
             leftover_waste_percentage = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
@@ -4861,6 +4901,18 @@ class CeilingService:
                 # Get leftover stats from tracker
                 leftover_stats = project_leftover_tracker.get_stats()
                 logger.info(f"ROOM-SPECIFIC GENERATION - Leftover stats: {leftover_stats}")
+                target_room_id = room_specific_config.get('room_id')
+                if target_room_id is not None:
+                    generated_for_target_room = any(
+                        str(panel.get('room_id')) == str(target_room_id) for panel in enhanced_panels
+                    )
+                    if not generated_for_target_room:
+                        return {
+                            'error': (
+                                'Failed to regenerate ceiling plan for the selected room because no panels '
+                                'could be generated. Please verify the room geometry and try again.'
+                            )
+                        }
                 
                 # Use a dummy strategy for metadata
                 orientation_analysis = CeilingService.analyze_orientation_strategies(
@@ -5009,6 +5061,7 @@ class CeilingService:
             }
             
         except Exception as e:
+            logger.exception('Enhanced ceiling plan generation failed')
             return {'error': f'Enhanced ceiling plan generation failed: {str(e)}'}
 
     @staticmethod
