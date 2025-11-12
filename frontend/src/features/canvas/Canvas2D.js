@@ -48,7 +48,11 @@ const Canvas2D = ({
     onRoomSelect,
     onRoomUpdate,
     onRoomLabelPositionUpdate,
-    updateSharedPanelData = null // Add this prop for sharing panel data
+    updateSharedPanelData = null, // Add this prop for sharing panel data
+    onManualWallSplit = null,
+    wallSplitError = '',
+    setWallSplitError = () => {},
+    wallSplitSuccess = false
 }) => {
 
     const canvasRef = useRef(null);
@@ -73,6 +77,16 @@ const Canvas2D = ({
     const [forceRefresh, setForceRefresh] = useState(0);
     const lastRoomDataRef = useRef({ rooms: [], walls: [] });
     const [thicknessColorMap, setThicknessColorMap] = useState(new Map());
+    const [dimensionVisibility, setDimensionVisibility] = useState({
+        project: true,
+        wall: true,
+        panel: true
+    });
+    const [splitTargetWallId, setSplitTargetWallId] = useState(null);
+    const [splitPreviewPoint, setSplitPreviewPoint] = useState(null);
+    const [splitDistanceInput, setSplitDistanceInput] = useState('');
+    const [splitHoverDistance, setSplitHoverDistance] = useState(null);
+    const [isProcessingSplit, setIsProcessingSplit] = useState(false);
 
     const offsetX = useRef(0);
     const offsetY = useRef(0);
@@ -82,6 +96,7 @@ const Canvas2D = ({
     
     // Canvas dragging state
     const isDraggingCanvas = useRef(false);
+    const suppressNextContextMenu = useRef(false);
     const lastMousePos = useRef({ x: 0, y: 0 });
 
     // Utility function to detect database connection errors
@@ -106,6 +121,13 @@ const Canvas2D = ({
 
     const toggleMaterialDetails = () => {
         setShowMaterialDetails(prev => !prev);
+    };
+
+    const handleDimensionVisibilityChange = (type) => {
+        setDimensionVisibility((prev) => ({
+            ...prev,
+            [type]: !prev[type]
+        }));
     };
 
     // Zoom functions
@@ -210,9 +232,12 @@ const Canvas2D = ({
 
     // Canvas dragging functions
     const handleCanvasMouseDown = (e) => {
-        // Only start dragging if not in editing mode
-        if (isEditingMode) return;
-        
+        // Only initiate dragging with the right mouse button
+        if (e.button !== 2) {
+            return;
+        }
+
+        suppressNextContextMenu.current = false;
         isDraggingCanvas.current = true;
         isZoomed.current = true; // Mark that user has positioned the view
         lastMousePos.current = { x: e.clientX, y: e.clientY };
@@ -225,9 +250,9 @@ const Canvas2D = ({
 
     // Handle right-click (context menu) for define-room mode
     const handleCanvasContextMenu = (event) => {
+        event.preventDefault();
         // Only handle right-click in define-room mode
         if (currentMode === 'define-room' && selectedRoomPoints && selectedRoomPoints.length > 0) {
-            event.preventDefault(); // Prevent default context menu
             const points = [...selectedRoomPoints];
             if (points.length > 0) {
                 points.pop();
@@ -660,6 +685,253 @@ const Canvas2D = ({
         return closestPoint;
     }
 
+    const SPLIT_ENDPOINT_TOLERANCE = 1;
+    const SPLIT_DISTANCE_TOLERANCE = 0.5;
+
+    const getWallLength = (wall) => Math.hypot(
+        wall.end_x - wall.start_x,
+        wall.end_y - wall.start_y
+    );
+
+    const getDistanceFromWallStart = (wall, point) => Math.hypot(
+        point.x - wall.start_x,
+        point.y - wall.start_y
+    );
+
+    const getIntersectionsForWall = (wallId) => {
+        const candidatePoints = [];
+        intersections.forEach((inter) => {
+            const involved =
+                inter.wall_1 === wallId ||
+                inter.wall_2 === wallId ||
+                (Array.isArray(inter.pairs) &&
+                    inter.pairs.some(
+                        (pair) =>
+                            pair?.wall1?.id === wallId || pair?.wall2?.id === wallId
+                    ));
+            if (involved) {
+                candidatePoints.push({ x: inter.x, y: inter.y });
+            }
+        });
+        return candidatePoints;
+    };
+
+    const snapSplitPoint = (wall, x, y) => {
+        const intersectionThreshold = (SNAP_THRESHOLD * 3) / scaleFactor.current;
+        const endpointThreshold = SNAP_THRESHOLD / scaleFactor.current;
+        const segmentThreshold = (SNAP_THRESHOLD * 1.5) / scaleFactor.current;
+
+        let bestPoint = null;
+        let bestDistance = Infinity;
+
+        const considerPoint = (point, maxDistance) => {
+            const distance = Math.hypot(point.x - x, point.y - y);
+            if (distance <= maxDistance && distance < bestDistance) {
+                bestPoint = point;
+                bestDistance = distance;
+            }
+        };
+
+        // Intersections associated with this wall
+        getIntersectionsForWall(wall.id).forEach((pt) =>
+            considerPoint(pt, intersectionThreshold)
+        );
+
+        // Endpoints
+        considerPoint({ x: wall.start_x, y: wall.start_y }, endpointThreshold);
+        considerPoint({ x: wall.end_x, y: wall.end_y }, endpointThreshold);
+
+        if (bestPoint) {
+            return bestPoint;
+        }
+
+        // Segment projection
+        const segmentPoint = snapToWallSegment(x, y, wall);
+        if (!segmentPoint) {
+            return null;
+        }
+
+        const segmentDistance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+        if (segmentDistance <= segmentThreshold) {
+            return segmentPoint;
+        }
+
+        return null;
+    };
+
+    const findClosestWallAtPoint = (x, y) => {
+        const selectionThreshold = (SNAP_THRESHOLD * 1.5) / scaleFactor.current;
+
+        if (splitTargetWallId) {
+            const targetWall = walls.find((w) => w.id === splitTargetWallId);
+            if (!targetWall) return null;
+
+            const snapped = snapSplitPoint(targetWall, x, y);
+            if (!snapped) return null;
+
+            const distance = Math.hypot(snapped.x - x, snapped.y - y);
+            if (distance > selectionThreshold) {
+                return null;
+            }
+
+            return { wall: targetWall, point: snapped };
+        }
+
+        let bestResult = null;
+        let bestDistance = Infinity;
+
+        walls.forEach((wall) => {
+            const snapped = snapSplitPoint(wall, x, y);
+            if (!snapped) return;
+
+            const distance = Math.hypot(snapped.x - x, snapped.y - y);
+            if (distance < bestDistance && distance <= selectionThreshold) {
+                bestDistance = distance;
+                bestResult = { wall, point: snapped };
+            }
+        });
+
+        return bestResult;
+    };
+
+    const resetSplitState = (clearError = false) => {
+        setSplitTargetWallId(null);
+        setSplitPreviewPoint(null);
+        setSplitDistanceInput('');
+        setSplitHoverDistance(null);
+        setIsProcessingSplit(false);
+        setHighlightWalls([]);
+        if (clearError) {
+            setWallSplitError('');
+        }
+    };
+
+    const isValidSplitPoint = (wall, point) => {
+        const wallLength = getWallLength(wall);
+        if (wallLength <= SPLIT_DISTANCE_TOLERANCE) {
+            return false;
+        }
+
+        const distStart = getDistanceFromWallStart(wall, point);
+        const distEnd = Math.hypot(point.x - wall.end_x, point.y - wall.end_y);
+
+        if (distStart < SPLIT_ENDPOINT_TOLERANCE || distEnd < SPLIT_ENDPOINT_TOLERANCE) {
+            return false;
+        }
+
+        return Math.abs(distStart + distEnd - wallLength) <= SPLIT_DISTANCE_TOLERANCE;
+    };
+
+    const getRoundedPoint = (point) => ({
+        x: Number(point.x.toFixed(3)),
+        y: Number(point.y.toFixed(3))
+    });
+
+    const updatePreviewFromDistance = (value) => {
+        setSplitDistanceInput(value);
+        if (!splitTargetWallId) {
+            return;
+        }
+
+        const targetWall = walls.find(w => w.id === splitTargetWallId);
+        if (!targetWall) {
+            return;
+        }
+
+        const distance = parseFloat(value);
+        if (Number.isNaN(distance) || distance <= 0) {
+            setSplitPreviewPoint(null);
+            setSplitHoverDistance(null);
+            return;
+        }
+
+        const wallLength = getWallLength(targetWall);
+        if (distance >= wallLength) {
+            setSplitPreviewPoint(null);
+            setSplitHoverDistance(null);
+            return;
+        }
+
+        const ratio = distance / wallLength;
+        const previewPoint = {
+            x: targetWall.start_x + (targetWall.end_x - targetWall.start_x) * ratio,
+            y: targetWall.start_y + (targetWall.end_y - targetWall.start_y) * ratio
+        };
+
+        const snappedPoint = snapSplitPoint(targetWall, previewPoint.x, previewPoint.y);
+        const effectivePoint = snappedPoint || {
+            x: Math.round(previewPoint.x),
+            y: Math.round(previewPoint.y)
+        };
+        const roundedPreview = getRoundedPoint(effectivePoint);
+        setSplitPreviewPoint(roundedPreview);
+        setSplitHoverDistance(getDistanceFromWallStart(targetWall, roundedPreview));
+    };
+
+    const handleSplitAtDistance = async () => {
+        if (!splitTargetWallId) {
+            setWallSplitError('Select a wall to split first.');
+            setTimeout(() => setWallSplitError(''), 4000);
+            return;
+        }
+
+        const targetWall = walls.find(w => w.id === splitTargetWallId);
+        if (!targetWall) {
+            setWallSplitError('Selected wall could not be found.');
+            setTimeout(() => setWallSplitError(''), 4000);
+            return;
+        }
+
+        const distance = parseFloat(splitDistanceInput);
+        if (Number.isNaN(distance) || distance <= 0) {
+            setWallSplitError('Enter a valid split distance greater than zero.');
+            setTimeout(() => setWallSplitError(''), 4000);
+            return;
+        }
+
+        const wallLength = getWallLength(targetWall);
+        if (distance >= wallLength - SPLIT_ENDPOINT_TOLERANCE) {
+            setWallSplitError('Split distance must be smaller than the wall length.');
+            setTimeout(() => setWallSplitError(''), 4000);
+            return;
+        }
+
+        const ratio = distance / wallLength;
+        const splitPoint = {
+            x: targetWall.start_x + (targetWall.end_x - targetWall.start_x) * ratio,
+            y: targetWall.start_y + (targetWall.end_y - targetWall.start_y) * ratio
+        };
+
+        const snappedPoint = snapSplitPoint(targetWall, splitPoint.x, splitPoint.y);
+        const effectivePoint = snappedPoint || {
+            x: Math.round(splitPoint.x),
+            y: Math.round(splitPoint.y)
+        };
+        const roundedSplitPoint = getRoundedPoint(effectivePoint);
+
+        if (!isValidSplitPoint(targetWall, roundedSplitPoint)) {
+            setWallSplitError('Split point must lie on the wall and away from its ends.');
+            setTimeout(() => setWallSplitError(''), 4000);
+            return;
+        }
+
+        if (typeof onManualWallSplit !== 'function' || isProcessingSplit) {
+            return;
+        }
+
+        setSplitPreviewPoint(roundedSplitPoint);
+        setSplitHoverDistance(getDistanceFromWallStart(targetWall, roundedSplitPoint));
+        setIsProcessingSplit(true);
+        try {
+            await onManualWallSplit(targetWall.id, roundedSplitPoint);
+            resetSplitState(true);
+        } catch (error) {
+            console.error('Manual wall split (distance) failed:', error);
+        } finally {
+            setIsProcessingSplit(false);
+        }
+    };
+
     // Enhanced click handling with endpoint detection
     const handleCanvasClick = async (event) => {
         // Don't handle clicks if we were dragging the canvas
@@ -677,7 +949,7 @@ const Canvas2D = ({
         }
     
         // Intersection selection block (unchanged)
-        if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room') {
+        if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room' && currentMode !== 'split-wall') {
             for (const inter of intersections) {
                 const wall1 = walls.find(w => w.id === inter.wall_1);
                 const wall2 = walls.find(w => w.id === inter.wall_2);
@@ -822,6 +1094,52 @@ const Canvas2D = ({
             return;
             }
 
+        // === Split-Wall Mode ===
+        if (currentMode === 'split-wall') {
+            const closest = findClosestWallAtPoint(x, y);
+
+            if (!closest) {
+                setWallSplitError('Click directly on a wall to select it for splitting.');
+                setTimeout(() => setWallSplitError(''), 3000);
+                return;
+            }
+
+            const { wall, point } = closest;
+            const roundedPoint = getRoundedPoint(point);
+
+            if (!splitTargetWallId || wall.id !== splitTargetWallId) {
+                setSplitTargetWallId(wall.id);
+                setSplitPreviewPoint(roundedPoint);
+                setSplitDistanceInput('');
+                setSplitHoverDistance(getDistanceFromWallStart(wall, roundedPoint));
+                setHighlightWalls([{ id: wall.id, color: '#F97316' }]);
+                setWallSplitError('');
+                return;
+            }
+
+            if (!isValidSplitPoint(wall, roundedPoint)) {
+                setWallSplitError('Split point must be on the wall and away from its ends.');
+                setTimeout(() => setWallSplitError(''), 4000);
+                return;
+            }
+
+            if (typeof onManualWallSplit !== 'function' || isProcessingSplit) {
+                return;
+            }
+
+            setIsProcessingSplit(true);
+            setSplitPreviewPoint(roundedPoint);
+            try {
+                await onManualWallSplit(wall.id, roundedPoint);
+                resetSplitState(true);
+            } catch (error) {
+                console.error('Manual wall split failed:', error);
+            } finally {
+                setIsProcessingSplit(false);
+            }
+            return;
+        }
+
         // === Add-Door Mode ===
         if (currentMode === 'add-door') {
             let closestWallId = null;
@@ -916,28 +1234,62 @@ const Canvas2D = ({
 
 
     const handleMouseMove = (event) => {
-        // Handle canvas dragging when not in editing mode
+        // Handle canvas dragging regardless of editing mode (right mouse button only)
+        if (isDraggingCanvas.current) {
+            const deltaX = event.clientX - lastMousePos.current.x;
+            const deltaY = event.clientY - lastMousePos.current.y;
+
+            offsetX.current += deltaX;
+            offsetY.current += deltaY;
+
+            lastMousePos.current = { x: event.clientX, y: event.clientY };
+
+            suppressNextContextMenu.current = true;
+            // Trigger a re-render
+            setForceRefresh(prev => prev + 1);
+            return;
+        }
+
         if (!isEditingMode) {
-            if (isDraggingCanvas.current) {
-                const deltaX = event.clientX - lastMousePos.current.x;
-                const deltaY = event.clientY - lastMousePos.current.y;
-                
-                offsetX.current += deltaX;
-                offsetY.current += deltaY;
-                
-                lastMousePos.current = { x: event.clientX, y: event.clientY };
-                
-                // Trigger a re-render
-                setForceRefresh(prev => prev + 1);
+            return;
+        }
+
+        const { x, y } = getMousePos(event);
+
+        if (currentMode === 'split-wall') {
+            if (splitTargetWallId) {
+                const targetWall = walls.find((w) => w.id === splitTargetWallId);
+                if (targetWall) {
+                    const snappedPoint = snapSplitPoint(targetWall, x, y);
+                    if (snappedPoint) {
+                        const rounded = getRoundedPoint(snappedPoint);
+                        setSplitPreviewPoint(rounded);
+                        setSplitHoverDistance(getDistanceFromWallStart(targetWall, rounded));
+                    } else {
+                        setSplitPreviewPoint(null);
+                    }
+                }
+            } else {
+                const closest = findClosestWallAtPoint(x, y);
+                if (closest) {
+                    const rounded = getRoundedPoint(closest.point);
+                    setSplitPreviewPoint(rounded);
+                    setSplitHoverDistance(getDistanceFromWallStart(closest.wall, rounded));
+                    setHighlightWalls([{ id: closest.wall.id, color: '#F97316' }]);
+                } else {
+                    setSplitPreviewPoint(null);
+                    setSplitHoverDistance(null);
+                    setHighlightWalls([]);
+                }
             }
             return;
         }
-        
+
         if (currentMode === 'define-room') {
             setHoveredPoint(null); // Disable endpoint hover effect
             return;
         }
-        const { x, y } = getMousePos(event);
+
         // Endpoint Hover Detection
         let closestPoint = null;
         let minDistance = SNAP_THRESHOLD / scaleFactor.current;
@@ -1006,15 +1358,29 @@ const Canvas2D = ({
         }
     };
 
+    useEffect(() => {
+        if (currentMode !== 'split-wall') {
+            resetSplitState();
+        } else {
+            setWallSplitError('');
+        }
+    }, [currentMode]);
+
+    useEffect(() => {
+        if (splitTargetWallId && !walls.some(w => w.id === splitTargetWallId)) {
+            resetSplitState();
+        }
+    }, [splitTargetWallId, walls]);
+
+    useEffect(() => {
+        if (wallSplitSuccess) {
+            resetSplitState(true);
+        }
+    }, [wallSplitSuccess]);
+
     // Add adjustWallForJointType and dependencies from old code
     const originalWallEndpoints = new Map();
 
-    const getWallLength = (wall) => {
-        const dx = wall.end_x - wall.start_x;
-        const dy = wall.end_y - wall.start_y;
-        return Math.hypot(dx, dy);
-    };
-    
     const adjustWallForJointType = async (joint, walls, setWalls, projectId, intersection) => {
         const wall1 = walls.find(w => w.id === joint.wall_1);
         const wall2 = walls.find(w => w.id === joint.wall_2);
@@ -1247,6 +1613,8 @@ const Canvas2D = ({
     const dimensionComparison = React.useMemo(() => {
         return compareDimensions(actualProjectDimensions, project);
     }, [actualProjectDimensions, project]);
+    const splitTargetWall = splitTargetWallId ? walls.find(w => w.id === splitTargetWallId) : null;
+    const splitTargetWallLength = splitTargetWall ? getWallLength(splitTargetWall) : null;
 
     // Auto-update project dimensions when actual exceeds declared
     useEffect(() => {
@@ -1325,7 +1693,7 @@ const Canvas2D = ({
         const allLabels = [];
         
         // Draw overall project dimensions first (highest priority)
-        if (walls.length > 0) {
+        if (walls.length > 0 && dimensionVisibility.project) {
             drawOverallProjectDimensions(
                 context,
                 walls,
@@ -1368,7 +1736,8 @@ const Canvas2D = ({
             drawPanelDivisions,
             filteredDimensions,
             placedLabels, // Share collision detection arrays
-            allLabels
+            allLabels,
+            dimensionVisibility
         });
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);
@@ -1379,6 +1748,69 @@ const Canvas2D = ({
         // Draw room preview
         drawRoomPreview(context, selectedRoomPoints, scaleFactor.current, offsetX.current, offsetY.current);
         
+        const previewWall =
+            splitTargetWall ||
+            (highlightWalls.length === 1
+                ? walls.find((w) => w.id === highlightWalls[0].id)
+                : null);
+
+        if (currentMode === 'split-wall' && splitPreviewPoint) {
+            const markerX = splitPreviewPoint.x * scaleFactor.current + offsetX.current;
+            const markerY = splitPreviewPoint.y * scaleFactor.current + offsetY.current;
+            context.save();
+            context.fillStyle = '#F97316';
+            context.strokeStyle = '#F97316';
+            context.lineWidth = 2;
+            context.beginPath();
+            context.arc(markerX, markerY, 6, 0, Math.PI * 2);
+            context.fill();
+            context.stroke();
+
+            if (previewWall && getWallLength(previewWall) > 0) {
+                const wallLength = getWallLength(previewWall);
+                const dirX = (previewWall.end_x - previewWall.start_x) / wallLength;
+                const dirY = (previewWall.end_y - previewWall.start_y) / wallLength;
+                const perpX = -dirY;
+                const perpY = dirX;
+                const cutScreenLength = 28;
+                const cutModelHalf = (cutScreenLength / scaleFactor.current) / 2;
+
+                const cutStart = {
+                    x: splitPreviewPoint.x - perpX * cutModelHalf,
+                    y: splitPreviewPoint.y - perpY * cutModelHalf
+                };
+                const cutEnd = {
+                    x: splitPreviewPoint.x + perpX * cutModelHalf,
+                    y: splitPreviewPoint.y + perpY * cutModelHalf
+                };
+
+                context.beginPath();
+                context.moveTo(
+                    cutStart.x * scaleFactor.current + offsetX.current,
+                    cutStart.y * scaleFactor.current + offsetY.current
+                );
+                context.lineTo(
+                    cutEnd.x * scaleFactor.current + offsetX.current,
+                    cutEnd.y * scaleFactor.current + offsetY.current
+                );
+                context.stroke();
+
+                if (splitHoverDistance !== null) {
+                    context.fillStyle = '#1E293B';
+                    context.font = `${Math.max(12, 180 * scaleFactor.current)}px Arial`;
+                    context.textAlign = 'left';
+                    context.textBaseline = 'bottom';
+                    context.fillText(
+                        `${Math.round(splitHoverDistance)} mm`,
+                        markerX + 10,
+                        markerY - 8
+                    );
+                }
+            }
+
+            context.restore();
+        }
+
     }, [
         walls, rooms, selectedWall, tempWall, doors,
         selectedWallsForRoom, joints, isEditingMode,
@@ -1386,7 +1818,11 @@ const Canvas2D = ({
         selectedRoomPoints, project, hoveredPoint,
         wallPanelsMap, // Add wallPanelsMap to dependencies
         filteredDimensions, // Add filteredDimensions to dependencies
-        forceRefresh // Add forceRefresh to dependencies to force re-renders
+        forceRefresh, // Add forceRefresh to dependencies to force re-renders
+        dimensionVisibility,
+        currentMode,
+        splitPreviewPoint,
+        splitTargetWallId
         // Removed roomLabelPositions from dependencies to prevent infinite loop
     ]);
 
@@ -1488,9 +1924,7 @@ const Canvas2D = ({
                         onContextMenu={handleCanvasContextMenu}
                         
                         tabIndex={0}
-                        className={`border border-gray-300 bg-gray-50 ${
-                            !isEditingMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
-                        }`}
+                        className={`border border-gray-300 bg-gray-50 cursor-grab active:cursor-grabbing`}
                     />
                     
                     {/* Zoom Controls Overlay */}
@@ -1545,10 +1979,71 @@ const Canvas2D = ({
                     ))}
                 </div>
 
-                {/* Sidebar with Legend */}
-                {thicknessColorMap && thicknessColorMap.size > 0 && (
-                    <div className="flex-shrink-0 w-64">
-                        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm sticky top-4">
+                <div className="flex-shrink-0 w-64 space-y-4 sticky top-4">
+                    {currentMode === 'split-wall' && (
+                        <div className="bg-white border border-emerald-200 rounded-lg p-5 shadow-sm">
+                            <h5 className="font-semibold text-gray-900 mb-3">Manual Wall Split</h5>
+                            {!splitTargetWall ? (
+                                <div className="text-sm text-emerald-700 space-y-2">
+                                    <p>Click a wall on the canvas to select it for splitting.</p>
+                                    <p>Click again on the wall to split at the snapped point, or enter an exact distance below.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="text-sm text-gray-700 space-y-1 mb-3">
+                                        <div className="flex justify-between">
+                                            <span className="font-medium">Wall ID:</span>
+                                            <span>#{splitTargetWall.id}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="font-medium">Length:</span>
+                                            <span>{Math.round(splitTargetWallLength || 0)} mm</span>
+                                        </div>
+                                        {splitHoverDistance !== null && (
+                                            <div className="flex justify-between text-emerald-700">
+                                                <span className="font-medium">Preview distance:</span>
+                                                <span>{Math.round(splitHoverDistance)} mm</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                                        Distance from start (mm)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={splitDistanceInput}
+                                        onChange={(e) => updatePreviewFromDistance(e.target.value)}
+                                        className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                                        placeholder="e.g. 1200"
+                                    />
+                                    <div className="mt-3 flex flex-col gap-2">
+                                        <button
+                                            onClick={handleSplitAtDistance}
+                                            disabled={isProcessingSplit}
+                                            className={`w-full px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ${
+                                                isProcessingSplit
+                                                    ? 'bg-emerald-300 cursor-wait'
+                                                    : 'bg-emerald-500 hover:bg-emerald-600'
+                                            }`}
+                                        >
+                                            {isProcessingSplit ? 'Splitting...' : 'Split at Distance'}
+                                        </button>
+                                        <button
+                                            onClick={() => resetSplitState(true)}
+                                            disabled={isProcessingSplit}
+                                            className="w-full px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-all duration-200 text-sm"
+                                        >
+                                            Clear Selection
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {thicknessColorMap && thicknessColorMap.size > 0 && (
+                        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
                             <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
                                 <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
@@ -1686,8 +2181,46 @@ const Canvas2D = ({
                                 💡 <strong>Tip:</strong> Different colors represent unique combinations of core thickness and inner/outer finishes. When materials differ, walls show two lines (top=outer, bottom=inner).
                             </div>
                         </div>
+                    )}
+
+                    <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                        <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
+                            <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
+                            </svg>
+                            Dimension Labels
+                        </h5>
+                        <div className="space-y-3 text-sm text-gray-700">
+                            <label className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.project}
+                                    onChange={() => handleDimensionVisibilityChange('project')}
+                                />
+                                <span>Overall project dimensions</span>
+                            </label>
+                            <label className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.wall}
+                                    onChange={() => handleDimensionVisibilityChange('wall')}
+                                />
+                                <span>Wall dimensions</span>
+                            </label>
+                            <label className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.panel}
+                                    onChange={() => handleDimensionVisibilityChange('panel')}
+                                />
+                                <span>Side Panel dimensions</span>
+                            </label>
+                        </div>
                     </div>
-                )}
+                </div>
             </div>
             {selectedIntersection && (
             <div className="fixed inset-0 bg-black bg-opacity-10 flex justify-end items-start z-50"> {/* Changed to items-start and justify-end */}

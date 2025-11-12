@@ -16,6 +16,7 @@ import {
     FaSquare, 
     FaEdit, 
     FaObjectGroup, 
+    FaCut,
     FaDoorOpen, 
     FaHome,
     FaCog,
@@ -478,6 +479,16 @@ const ProjectDetails = () => {
                                     </button>
 
                                     <button
+                                        onClick={() => projectDetails.toggleMode('split-wall')}
+                                        className={`tool-button ${
+                                            projectDetails.currentMode === 'split-wall' ? 'active' : ''
+                                        }`}
+                                    >
+                                        <FaCut className="text-xl mb-2" />
+                                        <span className="text-sm font-medium">Split Wall</span>
+                                    </button>
+
+                                    <button
                                         onClick={() => projectDetails.toggleMode('define-room')}
                                         className={`tool-button ${
                                             projectDetails.currentMode === 'define-room' ? 'active' : ''
@@ -547,6 +558,18 @@ const ProjectDetails = () => {
                                     </div>
                                 )}
 
+                                {projectDetails.currentMode === 'split-wall' && (
+                                    <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 shadow-sm space-y-3">
+                                        <p className="text-sm text-emerald-800 font-medium">
+                                            Select a wall, then either click along it to split at a snapped point,
+                                            or enter an exact distance in the split panel beside the canvas.
+                                        </p>
+                                        <p className="text-xs text-emerald-700">
+                                            Tip: the preview marker updates as you move the cursor over the selected wall.
+                                        </p>
+                                    </div>
+                                )}
+
                                 {/* Status Messages */}
                                 {projectDetails.wallMergeError && (
                                     <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -557,6 +580,18 @@ const ProjectDetails = () => {
                                 {projectDetails.wallMergeSuccess && (
                                     <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                                         <p className="text-sm text-green-700">Walls merged successfully!</p>
+                                    </div>
+                                )}
+
+                                {projectDetails.wallSplitError && (
+                                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                        <p className="text-sm text-red-700">{projectDetails.wallSplitError}</p>
+                                    </div>
+                                )}
+
+                                {projectDetails.wallSplitSuccess && (
+                                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <p className="text-sm text-green-700">Wall split completed successfully!</p>
                                     </div>
                                 )}
                             </div>
@@ -747,7 +782,6 @@ const ProjectDetails = () => {
                                 <div className="relative">
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D
-                                            key={`canvas-${projectDetails.walls.length}`}
                                             walls={projectDetails.walls}
                                             setWalls={projectDetails.setWalls}
                                             joints={projectDetails.joints}
@@ -777,6 +811,10 @@ const ProjectDetails = () => {
                                             selectedRoomPoints={projectDetails.selectedRoomPoints}
                                             onUpdateRoomPoints={projectDetails.updateRoomPointsAndDetectWalls}
                                             updateSharedPanelData={projectDetails.updateSharedPanelData}
+                                            onManualWallSplit={projectDetails.handleManualWallSplit}
+                                            wallSplitError={projectDetails.wallSplitError}
+                                            setWallSplitError={projectDetails.setWallSplitError}
+                                            wallSplitSuccess={projectDetails.wallSplitSuccess}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager

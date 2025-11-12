@@ -960,9 +960,13 @@ export function drawWalls({
     drawPanelDivisions, // <-- added
     filteredDimensions, // <-- added for dimension filtering
     placedLabels = [], // <-- added for shared collision detection
-    allLabels = [] // <-- added for shared collision detection
+    allLabels = [], // <-- added for shared collision detection
+    dimensionVisibility = {}
 }) {
     if (!Array.isArray(walls) || !walls) return;
+    
+    const showWallDimensions = dimensionVisibility?.wall !== false;
+    const showPanelDimensions = dimensionVisibility?.panel !== false;
     
     // Generate color map based on (thickness + inner/outer finishes)
     const thicknessColorMap = generateThicknessColorMap(walls);
@@ -1137,7 +1141,22 @@ export function drawWalls({
         if (wallPanelsMap && drawPanelDivisions) {
             const panels = wallPanelsMap[wall.id];
             if (panels && panels.length > 0) {
-                drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, undefined, FIXED_GAP, modelBounds, placedLabels, allPanelLabels, true, filteredDimensions);
+                drawPanelDivisions(
+                    context,
+                    wall,
+                    panels,
+                    scaleFactor,
+                    offsetX,
+                    offsetY,
+                    undefined,
+                    FIXED_GAP,
+                    modelBounds,
+                    placedLabels,
+                    allPanelLabels,
+                    true,
+                    filteredDimensions,
+                    showPanelDimensions
+                );
             }
         }
         // --- End panel divisions ---
@@ -1147,7 +1166,7 @@ export function drawWalls({
             drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
         }
         // Collect wall label info for second pass (only if this wall should show dimensions)
-        if (!filteredDimensions || shouldShowWallDimension(wall, intersections, filteredDimensions.wallDimensions, walls)) {
+        if (showWallDimensions && (!filteredDimensions || shouldShowWallDimension(wall, intersections, filteredDimensions.wallDimensions, walls))) {
             drawDimensions(
                 context,
                 wall.start_x,
@@ -1194,21 +1213,23 @@ export function drawWalls({
         drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, '#4CAF50', [5, 5]);
         drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
         drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
-        drawDimensions(
-            context,
-            tempWall.start_x,
-            tempWall.start_y,
-            tempWall.end_x,
-            tempWall.end_y,
-            scaleFactor,
-            offsetX,
-            offsetY,
-            '#4CAF50',
-            modelBounds,
-            placedLabels,
-            allLabels,
-            true // collectOnly
-        );
+        if (showWallDimensions) {
+            drawDimensions(
+                context,
+                tempWall.start_x,
+                tempWall.start_y,
+                tempWall.end_x,
+                tempWall.end_y,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                '#4CAF50',
+                modelBounds,
+                placedLabels,
+                allLabels,
+                true // collectOnly
+            );
+        }
         const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
         if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
             context.beginPath();
@@ -1268,7 +1289,22 @@ export function drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX
 } 
 
 // Draw panel division lines along a wall
-export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, offsetY, color = '#333', FIXED_GAP = 2.5, modelBounds = null, placedLabels = [], allPanelLabels = [], collectOnly = false, filteredDimensions = null) {
+export function drawPanelDivisions(
+    context,
+    wall,
+    panels,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    color = '#333',
+    FIXED_GAP = 2.5,
+    modelBounds = null,
+    placedLabels = [],
+    allPanelLabels = [],
+    collectOnly = false,
+    filteredDimensions = null,
+    showPanelDimensions = true
+) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
     const line1 = wall._line1;
     const line2 = wall._line2;
@@ -1386,6 +1422,10 @@ export function drawPanelDivisions(context, wall, panels, scaleFactor, offsetX, 
         accumulated += panelWidth;
     }
     
+    if (!showPanelDimensions) {
+        return;
+    }
+
     // Draw side panel length labels (original - only first and last)
     accumulated = 0;
     for (let i = 0; i < panels.length; i++) {

@@ -37103,3 +37103,15 @@ INFO 2025-11-11 21:48:44,020 services 21720 1052 [COMBO-TEST] Leftover created: 
 INFO 2025-11-11 21:48:44,020 services 21720 1052 [COMBO-TEST] Leftover created: 160.0mm × 5000.0mm (thickness: 20.0mm)
 INFO 2025-11-11 21:48:44,020 services 21720 1052 [COMBO-TEST] Leftover created: 730mm × 2259mm (thickness: 20.0mm)
 INFO 2025-11-11 21:48:44,020 services 21720 1052 GLOBAL OPTIMAL FOUND: Room Testing 2:V, Room Testing 3:V > Project Waste: 5.83%
+INFO 2025-11-12 20:35:23,297 autoreload 31400 28084 Watching for file changes with StatReloader
+WARNING 2025-11-12 21:11:13,526 log 31400 1844 Bad Request: /api/walls/merge_walls/
+WARNING 2025-11-12 22:28:50,307 log 31400 30284 Bad Request: /api/walls/6377/toggle_gap_fill/
+WARNING 2025-11-12 22:28:51,619 log 31400 30284 Bad Request: /api/walls/6377/toggle_gap_fill/
+INFO 2025-11-12 22:29:00,556 services 31400 30284 Recalculating room boundary for room 181
+INFO 2025-11-12 22:29:00,568 services 31400 30284 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-12 22:29:00,568 services 31400 30284 Recalculating room boundary for room 182
+INFO 2025-11-12 22:29:00,572 services 31400 30284 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-12 22:29:09,575 services 31400 30284 Recalculating room boundary for room 181
+INFO 2025-11-12 22:29:09,578 services 31400 30284 Updated room 181 boundary with 4 points (order preserved)
+INFO 2025-11-12 22:29:09,578 services 31400 30284 Recalculating room boundary for room 182
+INFO 2025-11-12 22:29:09,581 services 31400 30284 Updated room 182 boundary with 4 points (order preserved)
