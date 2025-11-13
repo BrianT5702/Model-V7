@@ -333,6 +333,52 @@ class RoomService:
         return abs(x1 - x2) <= tolerance and abs(y1 - y2) <= tolerance
 
     @staticmethod
+    def _map_points_to_endpoints(original_points, endpoints):
+        """Reorder endpoints to follow the original manual point order."""
+        from math import sqrt
+
+        if not original_points:
+            return []
+
+        if not endpoints:
+            return [{'x': float(p['x']), 'y': float(p['y'])} for p in original_points]
+
+        remaining_endpoints = list(endpoints)
+        mapped_points = []
+
+        def distance(point, endpoint):
+            return sqrt((point['x'] - endpoint[0]) ** 2 + (point['y'] - endpoint[1]) ** 2)
+
+        for orig_point in original_points:
+            if remaining_endpoints:
+                best_endpoint = min(remaining_endpoints, key=lambda ep: distance(orig_point, ep))
+                mapped_points.append({'x': best_endpoint[0], 'y': best_endpoint[1]})
+                remaining_endpoints.remove(best_endpoint)
+            else:
+                # No more unique endpoints to map - retain the original coordinate
+                mapped_points.append({'x': orig_point['x'], 'y': orig_point['y']})
+
+        # If there are any endpoints left unmatched (new corners), append them in a stable order
+        if remaining_endpoints:
+            from math import atan2
+
+            # Compute centroid of originally mapped points to determine ordering
+            if mapped_points:
+                center_x = sum(p['x'] for p in mapped_points) / len(mapped_points)
+                center_y = sum(p['y'] for p in mapped_points) / len(mapped_points)
+            else:
+                center_x = sum(ep[0] for ep in remaining_endpoints) / len(remaining_endpoints)
+                center_y = sum(ep[1] for ep in remaining_endpoints) / len(remaining_endpoints)
+
+            def angle_from_center(endpoint):
+                return atan2(endpoint[1] - center_y, endpoint[0] - center_x)
+
+            for endpoint in sorted(remaining_endpoints, key=angle_from_center):
+                mapped_points.append({'x': endpoint[0], 'y': endpoint[1]})
+
+        return mapped_points
+
+    @staticmethod
     def normalize_room_points(room_points, tolerance=0.01):
         """Remove duplicate points (including repeated start/end) while preserving manual order."""
         if not isinstance(room_points, (list, tuple)):
@@ -435,17 +481,18 @@ class RoomService:
                 
                 room_points = new_room_points
             else:
-                # Fallback: if no original points or count mismatch, preserve order as much as possible
-                # Sort by angle from center to maintain some semblance of order
-                if current_endpoints:
+                # Fallback: if no original points or count mismatch, align endpoints using manual order
+                if original_points:
+                    room_points = RoomService._map_points_to_endpoints(original_points, current_endpoints)
+                elif current_endpoints:
+                    # No original points to reference - best effort by angle sort
                     center_x = sum(p[0] for p in current_endpoints) / len(current_endpoints)
                     center_y = sum(p[1] for p in current_endpoints) / len(current_endpoints)
-                    
+
                     def angle_from_center(point):
                         import math
                         return math.atan2(point[1] - center_y, point[0] - center_x)
-                    
-                    # Sort by angle to maintain clockwise/counterclockwise order
+
                     current_endpoints.sort(key=angle_from_center)
                     room_points = [{'x': x, 'y': y} for x, y in current_endpoints]
                 else:
