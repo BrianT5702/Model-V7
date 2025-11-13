@@ -201,6 +201,9 @@ class RoomSerializer(serializers.ModelSerializer):
         
         # Update all other fields
         for attr, value in validated_data.items():
+            if attr == 'room_points':
+                from .services import RoomService
+                value = RoomService.normalize_room_points(value)
             setattr(instance, attr, value)
         
         instance.save()

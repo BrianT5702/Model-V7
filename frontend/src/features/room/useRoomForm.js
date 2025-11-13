@@ -15,6 +15,40 @@ import { calculateMinWallHeight } from '../../api/api';
  * @param {Array} options.selectedPolygonPoints - Array of selected polygon points
  * @param {Array} options.walls - Array of wall objects
  */
+const pointsAreEqual = (a, b, tolerance = 0.01) => {
+  if (!a || !b) return false;
+  return Math.abs(a.x - b.x) <= tolerance && Math.abs(a.y - b.y) <= tolerance;
+};
+
+const normalizePolygonPoints = (points, tolerance = 0.01) => {
+  if (!Array.isArray(points)) {
+    return [];
+  }
+
+  const cleaned = [];
+
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i];
+    if (!current || typeof current.x !== 'number' || typeof current.y !== 'number') {
+      continue;
+    }
+
+    const last = cleaned[cleaned.length - 1];
+    if (last && pointsAreEqual(last, current, tolerance)) {
+      // Skip consecutive duplicate points
+      continue;
+    }
+
+    cleaned.push({ x: current.x, y: current.y });
+  }
+
+  if (cleaned.length > 1 && pointsAreEqual(cleaned[0], cleaned[cleaned.length - 1], tolerance)) {
+    cleaned.pop();
+  }
+
+  return cleaned;
+};
+
 export default function useRoomForm({
   initialRoom = null,
   isEditMode = false,
@@ -114,6 +148,8 @@ export default function useRoomForm({
   // Validation function
   const validateForm = () => {
     const errors = {};
+    const normalizedPoints = normalizePolygonPoints(selectedPolygonPoints);
+
     if (!roomName.trim()) {
       errors.roomName = 'Room name is required';
     }
@@ -129,7 +165,7 @@ export default function useRoomForm({
     if (!roomHeight || roomHeight <= 0) {
       errors.roomHeight = 'Room height must be greater than 0';
     }
-    if (selectedPolygonPoints.length < 3) {
+    if (normalizedPoints.length < 3) {
       errors.polygonPoints = 'At least 3 points are required to define a room';
     }
     setValidationErrors(errors);
@@ -149,12 +185,14 @@ export default function useRoomForm({
 
   // Check if form is valid for button disabled state
   const isFormValid = () => {
+    const normalizedPoints = normalizePolygonPoints(selectedPolygonPoints);
+
     return roomName.trim() && 
            floorType && 
            (floorThickness !== '' && floorThickness !== null && floorThickness !== undefined) && 
            (temperature !== '' && temperature !== null && temperature !== undefined) && 
            roomHeight && 
-           selectedPolygonPoints.length >= 3;
+           normalizedPoints.length >= 3;
   };
 
   // Save handler (add or update)
@@ -162,6 +200,8 @@ export default function useRoomForm({
     if (!validateForm()) {
       return;
     }
+    const normalizedPoints = normalizePolygonPoints(selectedPolygonPoints);
+
     const roomData = {
       room_name: roomName,
       floor_type: floorType,
@@ -172,7 +212,7 @@ export default function useRoomForm({
       remarks: remarks,
       walls: selectedWallIds,
       project: projectId,
-      room_points: selectedPolygonPoints,
+      room_points: normalizedPoints,
     };
     
     console.log('Saving room with data:', roomData);

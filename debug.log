@@ -37115,3 +37115,258 @@ INFO 2025-11-12 22:29:09,575 services 31400 30284 Recalculating room boundary fo
 INFO 2025-11-12 22:29:09,578 services 31400 30284 Updated room 181 boundary with 4 points (order preserved)
 INFO 2025-11-12 22:29:09,578 services 31400 30284 Recalculating room boundary for room 182
 INFO 2025-11-12 22:29:09,581 services 31400 30284 Updated room 182 boundary with 4 points (order preserved)
+INFO 2025-11-13 08:47:13,928 autoreload 26368 14944 Watching for file changes with StatReloader
+INFO 2025-11-13 08:47:57,881 autoreload 26368 14944 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-13 08:47:58,660 autoreload 25616 14968 Watching for file changes with StatReloader
+INFO 2025-11-13 08:48:05,827 autoreload 25616 14968 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2025-11-13 08:48:06,414 autoreload 2184 7776 Watching for file changes with StatReloader
+INFO 2025-11-13 08:48:32,220 autoreload 2184 7776 C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2025-11-13 08:48:33,058 autoreload 12908 4596 Watching for file changes with StatReloader
+INFO 2025-11-13 08:50:14,349 services 12908 24056 calculate_minimum_wall_height called with wall_ids: [6273, 6280]
+INFO 2025-11-13 08:50:14,349 services 12908 24056 Converted wall_ids to integers: [6273, 6280]
+INFO 2025-11-13 08:50:14,393 services 12908 24056 Found 2 walls
+INFO 2025-11-13 08:50:14,394 services 12908 24056 Calculated minimum wall height: 3500.0
+INFO 2025-11-13 08:50:18,851 services 12908 24056 calculate_minimum_wall_height called with wall_ids: [6276, 6280, 6275]
+INFO 2025-11-13 08:50:18,851 services 12908 24056 Converted wall_ids to integers: [6276, 6280, 6275]
+INFO 2025-11-13 08:50:18,889 services 12908 24056 Found 3 walls
+INFO 2025-11-13 08:50:18,890 services 12908 24056 Calculated minimum wall height: 5000.0
+INFO 2025-11-13 08:50:26,659 services 12908 24056 calculate_minimum_wall_height called with wall_ids: [6380]
+INFO 2025-11-13 08:50:26,659 services 12908 24056 Converted wall_ids to integers: [6380]
+INFO 2025-11-13 08:50:26,696 services 12908 24056 Found 1 walls
+INFO 2025-11-13 08:50:26,697 services 12908 24056 Calculated minimum wall height: 3500.0
+INFO 2025-11-13 08:50:45,090 views 12908 24056 Creating room with data: {'room_name': 'ASRS 1 ', 'floor_type': 'Slab', 'floor_thickness': '200', 'temperature': -25, 'height': 25000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6380, 6381, 6384, 6273, 6390, 6391, 6388, 6387, 6385, 6280], 'project': '440', 'room_points': [{'x': 7513, 'y': 0}, {'x': 9913, 'y': 75}, {'x': 9913, 'y': 1372}, {'x': 12438, 'y': 1372}, {'x': 12438, 'y': 75}, {'x': 15000, 'y': 0}, {'x': 15000, 'y': 10000}, {'x': 12463, 'y': 10000}, {'x': 12463, 'y': 8822}, {'x': 9988, 'y': 8822}, {'x': 9988, 'y': 10000}, {'x': 7513, 'y': 10000}]}
+INFO 2025-11-13 08:50:45,090 services 12908 24056 create_room_with_height called with room_data: {'room_name': 'ASRS 1 ', 'floor_type': 'Slab', 'floor_thickness': '200', 'temperature': -25, 'height': 25000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6380, 6381, 6384, 6273, 6390, 6391, 6388, 6387, 6385, 6280], 'project': '440', 'room_points': [{'x': 7513, 'y': 0}, {'x': 9913, 'y': 75}, {'x': 9913, 'y': 1372}, {'x': 12438, 'y': 1372}, {'x': 12438, 'y': 75}, {'x': 15000, 'y': 0}, {'x': 15000, 'y': 10000}, {'x': 12463, 'y': 10000}, {'x': 12463, 'y': 8822}, {'x': 9988, 'y': 8822}, {'x': 9988, 'y': 10000}, {'x': 7513, 'y': 10000}]}
+INFO 2025-11-13 08:50:45,130 services 12908 24056 Created room with ID: 191, height: 25000
+INFO 2025-11-13 08:50:45,130 services 12908 24056 Adding 10 walls to room and updating heights
+INFO 2025-11-13 08:50:45,131 services 12908 24056 Converted wall IDs: [6380, 6381, 6384, 6273, 6390, 6391, 6388, 6387, 6385, 6280]
+INFO 2025-11-13 08:50:45,133 services 12908 24056 Found 10 walls to add to room
+INFO 2025-11-13 08:50:45,141 services 12908 24056 Added walls to room 191
+INFO 2025-11-13 08:50:45,141 services 12908 24056 update_wall_heights_for_room called with wall_ids: [6380, 6381, 6384, 6273, 6390, 6391, 6388, 6387, 6385, 6280], new_height: 25000
+INFO 2025-11-13 08:50:45,141 services 12908 24056 Converted wall_ids to integers: [6380, 6381, 6384, 6273, 6390, 6391, 6388, 6387, 6385, 6280]
+INFO 2025-11-13 08:50:45,142 services 12908 24056 Found 10 walls to update
+INFO 2025-11-13 08:50:45,145 services 12908 24056 Processing wall 6388: current height = 3500.0
+INFO 2025-11-13 08:50:45,145 services 12908 24056 Wall 6388 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,145 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,145 services 12908 24056 Wall 6388 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,147 services 12908 24056 Wall 6388: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,147 services 12908 24056 Processing wall 6273: current height = 3500.0
+INFO 2025-11-13 08:50:45,147 services 12908 24056 Wall 6273 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,147 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,147 services 12908 24056 Wall 6273 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,148 services 12908 24056 Wall 6273: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,148 services 12908 24056 Processing wall 6390: current height = 3500.0
+INFO 2025-11-13 08:50:45,148 services 12908 24056 Wall 6390 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,149 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,149 services 12908 24056 Wall 6390 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,149 services 12908 24056 Wall 6390: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,149 services 12908 24056 Processing wall 6380: current height = 3500.0
+INFO 2025-11-13 08:50:45,150 services 12908 24056 Wall 6380 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,150 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,150 services 12908 24056 Wall 6380 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,151 services 12908 24056 Wall 6380: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,151 services 12908 24056 Processing wall 6384: current height = 3500.0
+INFO 2025-11-13 08:50:45,151 services 12908 24056 Wall 6384 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,151 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,151 services 12908 24056 Wall 6384 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,152 services 12908 24056 Wall 6384: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,152 services 12908 24056 Processing wall 6381: current height = 3500.0
+INFO 2025-11-13 08:50:45,152 services 12908 24056 Wall 6381 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,153 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,153 services 12908 24056 Wall 6381 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,154 services 12908 24056 Wall 6381: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,154 services 12908 24056 Processing wall 6385: current height = 3500.0
+INFO 2025-11-13 08:50:45,154 services 12908 24056 Wall 6385 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,154 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,154 services 12908 24056 Wall 6385 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,155 services 12908 24056 Wall 6385: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,155 services 12908 24056 Processing wall 6387: current height = 3500.0
+INFO 2025-11-13 08:50:45,155 services 12908 24056 Wall 6387 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,155 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,156 services 12908 24056 Wall 6387 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,156 services 12908 24056 Wall 6387: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,157 services 12908 24056 Processing wall 6391: current height = 3500.0
+INFO 2025-11-13 08:50:45,157 services 12908 24056 Wall 6391 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,157 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,157 services 12908 24056 Wall 6391 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,158 services 12908 24056 Wall 6391: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,158 services 12908 24056 Processing wall 6280: current height = 5000.0
+INFO 2025-11-13 08:50:45,158 services 12908 24056 Wall 6280 is shared by 1 room(s)
+INFO 2025-11-13 08:50:45,158 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:50:45,158 services 12908 24056 Wall 6280 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:50:45,159 services 12908 24056 Wall 6280: updated to height = 25000.0
+INFO 2025-11-13 08:50:45,159 services 12908 24056 Updated 10 walls total
+INFO 2025-11-13 08:50:45,159 services 12908 24056 Updated 10 walls for room 191
+INFO 2025-11-13 08:50:45,159 views 12908 24056 Successfully created room 191 with height 25000
+INFO 2025-11-13 08:50:50,322 services 12908 24056 calculate_minimum_wall_height called with wall_ids: [6380, 6381]
+INFO 2025-11-13 08:50:50,322 services 12908 24056 Converted wall_ids to integers: [6380, 6381]
+INFO 2025-11-13 08:50:50,360 services 12908 24056 Found 2 walls
+INFO 2025-11-13 08:50:50,362 services 12908 24056 Calculated minimum wall height: 25000.0
+INFO 2025-11-13 08:51:03,698 views 12908 24056 Creating room with data: {'room_name': 'ANTER ROOM 1', 'floor_type': 'Slab', 'floor_thickness': '150', 'temperature': 20, 'height': 5000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6380, 6381, 6384], 'project': '440', 'room_points': [{'x': 9913, 'y': 75}, {'x': 9913, 'y': 1372}, {'x': 12438, 'y': 1372}, {'x': 12438, 'y': 75}]}
+INFO 2025-11-13 08:51:03,698 services 12908 24056 create_room_with_height called with room_data: {'room_name': 'ANTER ROOM 1', 'floor_type': 'Slab', 'floor_thickness': '150', 'temperature': 20, 'height': 5000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6380, 6381, 6384], 'project': '440', 'room_points': [{'x': 9913, 'y': 75}, {'x': 9913, 'y': 1372}, {'x': 12438, 'y': 1372}, {'x': 12438, 'y': 75}]}
+INFO 2025-11-13 08:51:03,731 services 12908 24056 Created room with ID: 192, height: 5000
+INFO 2025-11-13 08:51:03,732 services 12908 24056 Adding 3 walls to room and updating heights
+INFO 2025-11-13 08:51:03,732 services 12908 24056 Converted wall IDs: [6380, 6381, 6384]
+INFO 2025-11-13 08:51:03,734 services 12908 24056 Found 3 walls to add to room
+INFO 2025-11-13 08:51:03,740 services 12908 24056 Added walls to room 192
+INFO 2025-11-13 08:51:03,740 services 12908 24056 update_wall_heights_for_room called with wall_ids: [6380, 6381, 6384], new_height: 5000
+INFO 2025-11-13 08:51:03,740 services 12908 24056 Converted wall_ids to integers: [6380, 6381, 6384]
+INFO 2025-11-13 08:51:03,741 services 12908 24056 Found 3 walls to update
+INFO 2025-11-13 08:51:03,743 services 12908 24056 Processing wall 6384: current height = 25000.0
+INFO 2025-11-13 08:51:03,743 services 12908 24056 Wall 6384 is shared by 2 room(s)
+INFO 2025-11-13 08:51:03,743 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:51:03,743 services 12908 24056   Room 192 (ANTER ROOM 1): height = 5000.0
+INFO 2025-11-13 08:51:03,744 services 12908 24056 Wall 6384 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:03,745 services 12908 24056 Wall 6384: updated to height = 25000.0
+INFO 2025-11-13 08:51:03,745 services 12908 24056 Processing wall 6380: current height = 25000.0
+INFO 2025-11-13 08:51:03,745 services 12908 24056 Wall 6380 is shared by 2 room(s)
+INFO 2025-11-13 08:51:03,745 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:51:03,746 services 12908 24056   Room 192 (ANTER ROOM 1): height = 5000.0
+INFO 2025-11-13 08:51:03,746 services 12908 24056 Wall 6380 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:03,747 services 12908 24056 Wall 6380: updated to height = 25000.0
+INFO 2025-11-13 08:51:03,747 services 12908 24056 Processing wall 6381: current height = 25000.0
+INFO 2025-11-13 08:51:03,747 services 12908 24056 Wall 6381 is shared by 2 room(s)
+INFO 2025-11-13 08:51:03,747 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:51:03,747 services 12908 24056   Room 192 (ANTER ROOM 1): height = 5000.0
+INFO 2025-11-13 08:51:03,747 services 12908 24056 Wall 6381 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:03,748 services 12908 24056 Wall 6381: updated to height = 25000.0
+INFO 2025-11-13 08:51:03,749 services 12908 24056 Updated 3 walls total
+INFO 2025-11-13 08:51:03,749 services 12908 24056 Updated 3 walls for room 192
+INFO 2025-11-13 08:51:03,749 views 12908 24056 Successfully created room 192 with height 5000
+INFO 2025-11-13 08:51:10,259 services 12908 24056 calculate_minimum_wall_height called with wall_ids: [6387, 6389]
+INFO 2025-11-13 08:51:10,259 services 12908 24056 Converted wall_ids to integers: [6387, 6389]
+INFO 2025-11-13 08:51:10,297 services 12908 24056 Found 2 walls
+INFO 2025-11-13 08:51:10,298 services 12908 24056 Calculated minimum wall height: 3500.0
+INFO 2025-11-13 08:51:21,866 views 12908 24056 Creating room with data: {'room_name': 'ANTER ROOM 2', 'floor_type': 'Slab', 'floor_thickness': '150', 'temperature': 20, 'height': 5000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6387, 6389, 6391, 6388], 'project': '440', 'room_points': [{'x': 9988, 'y': 8822}, {'x': 9988, 'y': 10000}, {'x': 12463, 'y': 10000}, {'x': 12463, 'y': 8822}]}
+INFO 2025-11-13 08:51:21,866 services 12908 24056 create_room_with_height called with room_data: {'room_name': 'ANTER ROOM 2', 'floor_type': 'Slab', 'floor_thickness': '150', 'temperature': 20, 'height': 5000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6387, 6389, 6391, 6388], 'project': '440', 'room_points': [{'x': 9988, 'y': 8822}, {'x': 9988, 'y': 10000}, {'x': 12463, 'y': 10000}, {'x': 12463, 'y': 8822}]}
+INFO 2025-11-13 08:51:21,900 services 12908 24056 Created room with ID: 193, height: 5000
+INFO 2025-11-13 08:51:21,900 services 12908 24056 Adding 4 walls to room and updating heights
+INFO 2025-11-13 08:51:21,900 services 12908 24056 Converted wall IDs: [6387, 6389, 6391, 6388]
+INFO 2025-11-13 08:51:21,902 services 12908 24056 Found 4 walls to add to room
+INFO 2025-11-13 08:51:21,908 services 12908 24056 Added walls to room 193
+INFO 2025-11-13 08:51:21,908 services 12908 24056 update_wall_heights_for_room called with wall_ids: [6387, 6389, 6391, 6388], new_height: 5000
+INFO 2025-11-13 08:51:21,908 services 12908 24056 Converted wall_ids to integers: [6387, 6389, 6391, 6388]
+INFO 2025-11-13 08:51:21,909 services 12908 24056 Found 4 walls to update
+INFO 2025-11-13 08:51:21,911 services 12908 24056 Processing wall 6388: current height = 25000.0
+INFO 2025-11-13 08:51:21,911 services 12908 24056 Wall 6388 is shared by 2 room(s)
+INFO 2025-11-13 08:51:21,911 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:51:21,911 services 12908 24056   Room 193 (ANTER ROOM 2): height = 5000.0
+INFO 2025-11-13 08:51:21,912 services 12908 24056 Wall 6388 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:21,913 services 12908 24056 Wall 6388: updated to height = 25000.0
+INFO 2025-11-13 08:51:21,913 services 12908 24056 Processing wall 6389: current height = 3500.0
+INFO 2025-11-13 08:51:21,913 services 12908 24056 Wall 6389 is shared by 1 room(s)
+INFO 2025-11-13 08:51:21,913 services 12908 24056   Room 193 (ANTER ROOM 2): height = 5000.0
+INFO 2025-11-13 08:51:21,913 services 12908 24056 Wall 6389 is shared by 1 room(s), using max height: 5000.0
+INFO 2025-11-13 08:51:21,914 services 12908 24056 Wall 6389: updated to height = 5000.0
+INFO 2025-11-13 08:51:21,914 services 12908 24056 Processing wall 6387: current height = 25000.0
+INFO 2025-11-13 08:51:21,915 services 12908 24056 Wall 6387 is shared by 2 room(s)
+INFO 2025-11-13 08:51:21,915 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:51:21,915 services 12908 24056   Room 193 (ANTER ROOM 2): height = 5000.0
+INFO 2025-11-13 08:51:21,915 services 12908 24056 Wall 6387 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:21,916 services 12908 24056 Wall 6387: updated to height = 25000.0
+INFO 2025-11-13 08:51:21,916 services 12908 24056 Processing wall 6391: current height = 25000.0
+INFO 2025-11-13 08:51:21,916 services 12908 24056 Wall 6391 is shared by 2 room(s)
+INFO 2025-11-13 08:51:21,916 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:51:21,916 services 12908 24056   Room 193 (ANTER ROOM 2): height = 5000.0
+INFO 2025-11-13 08:51:21,917 services 12908 24056 Wall 6391 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:21,918 services 12908 24056 Wall 6391: updated to height = 25000.0
+INFO 2025-11-13 08:51:21,918 services 12908 24056 Updated 4 walls total
+INFO 2025-11-13 08:51:21,918 services 12908 24056 Updated 4 walls for room 193
+INFO 2025-11-13 08:51:21,918 views 12908 24056 Successfully created room 193 with height 5000
+INFO 2025-11-13 08:51:29,805 services 12908 24056 calculate_minimum_wall_height called with wall_ids: [6276, 6280]
+INFO 2025-11-13 08:51:29,805 services 12908 24056 Converted wall_ids to integers: [6276, 6280]
+INFO 2025-11-13 08:51:29,845 services 12908 24056 Found 2 walls
+INFO 2025-11-13 08:51:29,847 services 12908 24056 Calculated minimum wall height: 5000.0
+INFO 2025-11-13 08:51:53,339 views 12908 24056 Creating room with data: {'room_name': 'ASRS 2', 'floor_type': 'Panel', 'floor_thickness': '150', 'temperature': -25, 'height': 25000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6276, 6280, 6397, 6398, 6395, 6394, 6392, 6275], 'project': '440', 'room_points': [{'x': 0, 'y': 0}, {'x': 7513, 'y': 0}, {'x': 7513, 'y': 10000}, {'x': 5038, 'y': 10000}, {'x': 5038, 'y': 8747}, {'x': 2538, 'y': 8747}, {'x': 2538, 'y': 10000}, {'x': 0, 'y': 10000}]}
+INFO 2025-11-13 08:51:53,339 services 12908 24056 create_room_with_height called with room_data: {'room_name': 'ASRS 2', 'floor_type': 'Panel', 'floor_thickness': '150', 'temperature': -25, 'height': 25000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6276, 6280, 6397, 6398, 6395, 6394, 6392, 6275], 'project': '440', 'room_points': [{'x': 0, 'y': 0}, {'x': 7513, 'y': 0}, {'x': 7513, 'y': 10000}, {'x': 5038, 'y': 10000}, {'x': 5038, 'y': 8747}, {'x': 2538, 'y': 8747}, {'x': 2538, 'y': 10000}, {'x': 0, 'y': 10000}]}
+INFO 2025-11-13 08:51:53,375 services 12908 24056 Created room with ID: 194, height: 25000
+INFO 2025-11-13 08:51:53,375 services 12908 24056 Adding 8 walls to room and updating heights
+INFO 2025-11-13 08:51:53,375 services 12908 24056 Converted wall IDs: [6276, 6280, 6397, 6398, 6395, 6394, 6392, 6275]
+INFO 2025-11-13 08:51:53,377 services 12908 24056 Found 8 walls to add to room
+INFO 2025-11-13 08:51:53,383 services 12908 24056 Added walls to room 194
+INFO 2025-11-13 08:51:53,384 services 12908 24056 update_wall_heights_for_room called with wall_ids: [6276, 6280, 6397, 6398, 6395, 6394, 6392, 6275], new_height: 25000
+INFO 2025-11-13 08:51:53,384 services 12908 24056 Converted wall_ids to integers: [6276, 6280, 6397, 6398, 6395, 6394, 6392, 6275]
+INFO 2025-11-13 08:51:53,385 services 12908 24056 Found 8 walls to update
+INFO 2025-11-13 08:51:53,387 services 12908 24056 Processing wall 6275: current height = 5000.0
+INFO 2025-11-13 08:51:53,387 services 12908 24056 Wall 6275 is shared by 1 room(s)
+INFO 2025-11-13 08:51:53,388 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,388 services 12908 24056 Wall 6275 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,389 services 12908 24056 Wall 6275: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,389 services 12908 24056 Processing wall 6392: current height = 5000.0
+INFO 2025-11-13 08:51:53,389 services 12908 24056 Wall 6392 is shared by 1 room(s)
+INFO 2025-11-13 08:51:53,389 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,389 services 12908 24056 Wall 6392 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,391 services 12908 24056 Wall 6392: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,391 services 12908 24056 Processing wall 6394: current height = 3500.0
+INFO 2025-11-13 08:51:53,391 services 12908 24056 Wall 6394 is shared by 1 room(s)
+INFO 2025-11-13 08:51:53,391 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,391 services 12908 24056 Wall 6394 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,392 services 12908 24056 Wall 6394: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,392 services 12908 24056 Processing wall 6398: current height = 3500.0
+INFO 2025-11-13 08:51:53,393 services 12908 24056 Wall 6398 is shared by 1 room(s)
+INFO 2025-11-13 08:51:53,393 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,393 services 12908 24056 Wall 6398 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,394 services 12908 24056 Wall 6398: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,394 services 12908 24056 Processing wall 6276: current height = 5000.0
+INFO 2025-11-13 08:51:53,394 services 12908 24056 Wall 6276 is shared by 1 room(s)
+INFO 2025-11-13 08:51:53,394 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,394 services 12908 24056 Wall 6276 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,395 services 12908 24056 Wall 6276: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,395 services 12908 24056 Processing wall 6395: current height = 3500.0
+INFO 2025-11-13 08:51:53,395 services 12908 24056 Wall 6395 is shared by 1 room(s)
+INFO 2025-11-13 08:51:53,396 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,396 services 12908 24056 Wall 6395 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,397 services 12908 24056 Wall 6395: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,397 services 12908 24056 Processing wall 6397: current height = 5000.0
+INFO 2025-11-13 08:51:53,397 services 12908 24056 Wall 6397 is shared by 1 room(s)
+INFO 2025-11-13 08:51:53,397 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,397 services 12908 24056 Wall 6397 is shared by 1 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,398 services 12908 24056 Wall 6397: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,398 services 12908 24056 Processing wall 6280: current height = 25000.0
+INFO 2025-11-13 08:51:53,398 services 12908 24056 Wall 6280 is shared by 2 room(s)
+INFO 2025-11-13 08:51:53,399 services 12908 24056   Room 191 (ASRS 1 ): height = 25000.0
+INFO 2025-11-13 08:51:53,399 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:51:53,399 services 12908 24056 Wall 6280 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:51:53,400 services 12908 24056 Wall 6280: updated to height = 25000.0
+INFO 2025-11-13 08:51:53,400 services 12908 24056 Updated 8 walls total
+INFO 2025-11-13 08:51:53,400 services 12908 24056 Updated 8 walls for room 194
+INFO 2025-11-13 08:51:53,401 views 12908 24056 Successfully created room 194 with height 25000
+INFO 2025-11-13 08:52:00,645 services 12908 24056 calculate_minimum_wall_height called with wall_ids: [6394, 6396]
+INFO 2025-11-13 08:52:00,645 services 12908 24056 Converted wall_ids to integers: [6394, 6396]
+INFO 2025-11-13 08:52:00,682 services 12908 24056 Found 2 walls
+INFO 2025-11-13 08:52:00,684 services 12908 24056 Calculated minimum wall height: 5000.0
+INFO 2025-11-13 08:52:11,835 views 12908 24056 Creating room with data: {'room_name': 'ANTER ROOM 3', 'floor_type': 'Slab', 'floor_thickness': '150', 'temperature': 20, 'height': 5000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6394, 6396, 6398, 6395], 'project': '440', 'room_points': [{'x': 2538, 'y': 8747}, {'x': 2538, 'y': 10000}, {'x': 5038, 'y': 10000}, {'x': 5038, 'y': 8747}]}
+INFO 2025-11-13 08:52:11,835 services 12908 24056 create_room_with_height called with room_data: {'room_name': 'ANTER ROOM 3', 'floor_type': 'Slab', 'floor_thickness': '150', 'temperature': 20, 'height': 5000, 'base_elevation_mm': 0, 'remarks': '', 'walls': [6394, 6396, 6398, 6395], 'project': '440', 'room_points': [{'x': 2538, 'y': 8747}, {'x': 2538, 'y': 10000}, {'x': 5038, 'y': 10000}, {'x': 5038, 'y': 8747}]}
+INFO 2025-11-13 08:52:11,870 services 12908 24056 Created room with ID: 195, height: 5000
+INFO 2025-11-13 08:52:11,870 services 12908 24056 Adding 4 walls to room and updating heights
+INFO 2025-11-13 08:52:11,871 services 12908 24056 Converted wall IDs: [6394, 6396, 6398, 6395]
+INFO 2025-11-13 08:52:11,873 services 12908 24056 Found 4 walls to add to room
+INFO 2025-11-13 08:52:11,878 services 12908 24056 Added walls to room 195
+INFO 2025-11-13 08:52:11,879 services 12908 24056 update_wall_heights_for_room called with wall_ids: [6394, 6396, 6398, 6395], new_height: 5000
+INFO 2025-11-13 08:52:11,879 services 12908 24056 Converted wall_ids to integers: [6394, 6396, 6398, 6395]
+INFO 2025-11-13 08:52:11,879 services 12908 24056 Found 4 walls to update
+INFO 2025-11-13 08:52:11,882 services 12908 24056 Processing wall 6396: current height = 5000.0
+INFO 2025-11-13 08:52:11,882 services 12908 24056 Wall 6396 is shared by 1 room(s)
+INFO 2025-11-13 08:52:11,883 services 12908 24056   Room 195 (ANTER ROOM 3): height = 5000.0
+INFO 2025-11-13 08:52:11,883 services 12908 24056 Wall 6396 is shared by 1 room(s), using max height: 5000.0
+INFO 2025-11-13 08:52:11,884 services 12908 24056 Wall 6396: updated to height = 5000.0
+INFO 2025-11-13 08:52:11,884 services 12908 24056 Processing wall 6394: current height = 25000.0
+INFO 2025-11-13 08:52:11,884 services 12908 24056 Wall 6394 is shared by 2 room(s)
+INFO 2025-11-13 08:52:11,884 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:52:11,884 services 12908 24056   Room 195 (ANTER ROOM 3): height = 5000.0
+INFO 2025-11-13 08:52:11,885 services 12908 24056 Wall 6394 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:52:11,886 services 12908 24056 Wall 6394: updated to height = 25000.0
+INFO 2025-11-13 08:52:11,886 services 12908 24056 Processing wall 6398: current height = 25000.0
+INFO 2025-11-13 08:52:11,886 services 12908 24056 Wall 6398 is shared by 2 room(s)
+INFO 2025-11-13 08:52:11,886 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:52:11,886 services 12908 24056   Room 195 (ANTER ROOM 3): height = 5000.0
+INFO 2025-11-13 08:52:11,886 services 12908 24056 Wall 6398 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:52:11,887 services 12908 24056 Wall 6398: updated to height = 25000.0
+INFO 2025-11-13 08:52:11,887 services 12908 24056 Processing wall 6395: current height = 25000.0
+INFO 2025-11-13 08:52:11,887 services 12908 24056 Wall 6395 is shared by 2 room(s)
+INFO 2025-11-13 08:52:11,887 services 12908 24056   Room 194 (ASRS 2): height = 25000.0
+INFO 2025-11-13 08:52:11,887 services 12908 24056   Room 195 (ANTER ROOM 3): height = 5000.0
+INFO 2025-11-13 08:52:11,888 services 12908 24056 Wall 6395 is shared by 2 room(s), using max height: 25000.0
+INFO 2025-11-13 08:52:11,888 services 12908 24056 Wall 6395: updated to height = 25000.0
+INFO 2025-11-13 08:52:11,888 services 12908 24056 Updated 4 walls total
+INFO 2025-11-13 08:52:11,889 services 12908 24056 Updated 4 walls for room 195
+INFO 2025-11-13 08:52:11,889 views 12908 24056 Successfully created room 195 with height 5000

@@ -321,9 +321,50 @@ class WallService:
 
 class RoomService:
     @staticmethod
+    def _points_are_equal(p1, p2, tolerance=0.01):
+        if p1 is None or p2 is None:
+            return False
+
+        x1 = float(p1.get('x', p1[0] if isinstance(p1, (list, tuple)) and len(p1) > 0 else 0))
+        y1 = float(p1.get('y', p1[1] if isinstance(p1, (list, tuple)) and len(p1) > 1 else 0))
+        x2 = float(p2.get('x', p2[0] if isinstance(p2, (list, tuple)) and len(p2) > 0 else 0))
+        y2 = float(p2.get('y', p2[1] if isinstance(p2, (list, tuple)) and len(p2) > 1 else 0))
+
+        return abs(x1 - x2) <= tolerance and abs(y1 - y2) <= tolerance
+
+    @staticmethod
+    def normalize_room_points(room_points, tolerance=0.01):
+        """Remove duplicate points (including repeated start/end) while preserving manual order."""
+        if not isinstance(room_points, (list, tuple)):
+            return []
+
+        normalized = []
+
+        for point in room_points:
+            if isinstance(point, dict):
+                if 'x' not in point or 'y' not in point:
+                    continue
+                current_point = {'x': float(point['x']), 'y': float(point['y'])}
+            elif isinstance(point, (list, tuple)) and len(point) >= 2:
+                current_point = {'x': float(point[0]), 'y': float(point[1])}
+            else:
+                continue
+
+            if normalized and RoomService._points_are_equal(normalized[-1], current_point, tolerance):
+                continue
+
+            normalized.append(current_point)
+
+        if len(normalized) > 1 and RoomService._points_are_equal(normalized[0], normalized[-1], tolerance):
+            normalized.pop()
+
+        return normalized
+
+    @staticmethod
     def validate_room_points(room_points):
         """Validate that room points form a valid polygon."""
-        if not room_points or len(room_points) < 3:
+        normalized_points = RoomService.normalize_room_points(room_points)
+        if not normalized_points or len(normalized_points) < 3:
             raise ValueError('At least 3 points are required to define a room polygon.')
         return True
 
@@ -348,7 +389,7 @@ class RoomService:
                 return False
             
             # Get the original room_points to preserve order
-            original_points = room.room_points if room.room_points else []
+            original_points = RoomService.normalize_room_points(room.room_points if room.room_points else [])
             
             # Collect all unique endpoints from walls
             endpoints = set()
@@ -411,7 +452,7 @@ class RoomService:
                     room_points = []
             
             # Update the room's room_points
-            room.room_points = room_points
+            room.room_points = RoomService.normalize_room_points(room_points)
             room.save()
             
             logger.info(f"Updated room {room_id} boundary with {len(room_points)} points (order preserved)")
@@ -559,6 +600,8 @@ class RoomService:
                 room_data['height'] = min_height
         
         # Create the room
+        normalized_points = RoomService.normalize_room_points(room_data.get('room_points', []))
+
         room = Room.objects.create(
             project_id=room_data['project'],
             room_name=room_data['room_name'],
@@ -567,7 +610,7 @@ class RoomService:
             temperature=room_data.get('temperature'),
             height=room_data.get('height'),
             remarks=room_data.get('remarks', ''),
-            room_points=room_data.get('room_points', [])
+            room_points=normalized_points
         )
         
         logger.info(f"Created room with ID: {room.id}, height: {room.height}")
