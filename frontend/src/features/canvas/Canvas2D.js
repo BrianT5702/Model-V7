@@ -82,7 +82,7 @@ const Canvas2D = ({
     const [dimensionVisibility, setDimensionVisibility] = useState({
         project: true,
         wall: true,
-        panel: true
+        panel: false
     });
     const [splitTargetWallId, setSplitTargetWallId] = useState(null);
     const [splitPreviewPoint, setSplitPreviewPoint] = useState(null);

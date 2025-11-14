@@ -1809,34 +1809,98 @@ const CeilingCanvas = ({
         const text = getDimensionText(dimension, length, quantity);
         const textWidth = ctx.measureText(text).width;
         
-        // Simple validation: ensure label is not inside project area
+        // Enhanced validation: ensure entire label bounds are outside project area
         if (avoidArea) {
-            // Convert label position back to model coordinates for comparison
-            const labelModelX = (labelX - offsetX.current) / scaleFactor.current;
-            const labelModelY = (labelY - offsetY.current) / scaleFactor.current;
+            let labelBounds;
+            let labelModelBounds;
+            let overlapsAvoidArea = true;
+            let validationAttempts = 0;
+            const maxValidationAttempts = 10;
+            const minSeparation = 5; // Minimum separation in pixels
             
-            // Check if label center is inside the avoid area (project boundaries)
-            const isInsideAvoidArea = labelModelX >= avoidArea.minX && 
-                                     labelModelX <= avoidArea.maxX && 
-                                     labelModelY >= avoidArea.minY && 
-                                     labelModelY <= avoidArea.maxY;
-            
-            if (isInsideAvoidArea) {
-                // Force placement further out if inside project area
-                offset += 15; // Reduced increment for tighter spacing
+            while (overlapsAvoidArea && validationAttempts < maxValidationAttempts) {
+                // Calculate label bounds in canvas coordinates
                 if (isHorizontal) {
-                    if (midY < (minY + maxY) / 2) {
-                        labelY = (minY * scaleFactor.current + offsetY.current - offset);
-                    } else {
-                        labelY = (maxY * scaleFactor.current + offsetY.current + offset);
-                    }
+                    labelBounds = {
+                        x: labelX - textWidth / 2 - 4,
+                        y: labelY - 8,
+                        width: textWidth + 8,
+                        height: 16
+                    };
                 } else {
-                    // For vertical dimensions, ensure minimum 30px separation from project area
-                    if (midX < (minX + maxX) / 2) {
-                        labelX = (minX * scaleFactor.current + offsetX.current - Math.max(offset, 30));
+                    labelBounds = {
+                        x: labelX - 8,
+                        y: labelY - textWidth / 2 - 4,
+                        width: 16,
+                        height: textWidth + 8
+                    };
+                }
+                
+                // Convert label bounds to model coordinates for comparison
+                labelModelBounds = {
+                    minX: (labelBounds.x - offsetX.current) / scaleFactor.current,
+                    maxX: (labelBounds.x + labelBounds.width - offsetX.current) / scaleFactor.current,
+                    minY: (labelBounds.y - offsetY.current) / scaleFactor.current,
+                    maxY: (labelBounds.y + labelBounds.height - offsetY.current) / scaleFactor.current
+                };
+                
+                // Check if label bounds overlap with avoid area (with minimum separation)
+                const separation = minSeparation / scaleFactor.current;
+                overlapsAvoidArea = !(
+                    labelModelBounds.maxX < avoidArea.minX - separation ||
+                    labelModelBounds.minX > avoidArea.maxX + separation ||
+                    labelModelBounds.maxY < avoidArea.minY - separation ||
+                    labelModelBounds.minY > avoidArea.maxY + separation
+                );
+                
+                if (overlapsAvoidArea) {
+                    // Force placement further out if overlapping project area
+                    offset += DIMENSION_CONFIG.OFFSET_INCREMENT;
+                    
+                    // Calculate how much we need to move based on current overlap
+                    let requiredOffset = offset;
+                    if (isHorizontal) {
+                        const projectMidY = (avoidArea.minY + avoidArea.maxY) / 2;
+                        const isTopHalf = midY < projectMidY;
+                        
+                        // Calculate how much we need to move to clear the avoid area
+                        if (isTopHalf) {
+                            // Need to move above avoidArea.minY
+                            const overlap = labelModelBounds.maxY - (avoidArea.minY - separation);
+                            if (overlap > 0) {
+                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
+                            }
+                            labelY = avoidArea.minY * scaleFactor.current + offsetY.current - requiredOffset;
+                        } else {
+                            // Need to move below avoidArea.maxY
+                            const overlap = (avoidArea.maxY + separation) - labelModelBounds.minY;
+                            if (overlap > 0) {
+                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
+                            }
+                            labelY = avoidArea.maxY * scaleFactor.current + offsetY.current + requiredOffset;
+                        }
                     } else {
-                        labelX = (maxX * scaleFactor.current + offsetX.current + Math.max(offset, 30));
+                        const projectMidX = (avoidArea.minX + avoidArea.maxX) / 2;
+                        const isLeftHalf = midX < projectMidX;
+                        
+                        // Calculate how much we need to move to clear the avoid area
+                        if (isLeftHalf) {
+                            // Need to move left of avoidArea.minX
+                            const overlap = labelModelBounds.maxX - (avoidArea.minX - separation);
+                            if (overlap > 0) {
+                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
+                            }
+                            labelX = avoidArea.minX * scaleFactor.current + offsetX.current - requiredOffset;
+                        } else {
+                            // Need to move right of avoidArea.maxX
+                            const overlap = (avoidArea.maxX + separation) - labelModelBounds.minX;
+                            if (overlap > 0) {
+                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
+                            }
+                            labelX = avoidArea.maxX * scaleFactor.current + offsetX.current + requiredOffset;
+                        }
                     }
+                    validationAttempts++;
                 }
             }
         }

@@ -1697,7 +1697,8 @@ export default function useProjectDetails(projectId) {
         start_y: normalizedCoords.startPoint.y,
         end_x: normalizedCoords.endPoint.x,
         end_y: normalizedCoords.endPoint.y,
-        project: project.id 
+        project: project.id,
+        storey: wallData.storey ?? activeStoreyId ?? defaultStoreyId
       };
       const response = await api.post('/walls/create_wall/', dataToSend);
       await refreshWalls(); // Ensure UI is in sync with backend
@@ -2404,7 +2405,8 @@ export default function useProjectDetails(projectId) {
         height: wall.height,
         thickness: wall.thickness,
         application_type: wall.application_type,
-        project: project.id
+        project: project.id,
+        storey: wall.storey ?? activeStoreyId ?? defaultStoreyId
       });
       
       // Normalize second segment
@@ -2420,7 +2422,8 @@ export default function useProjectDetails(projectId) {
         height: wall.height,
         thickness: wall.thickness,
         application_type: wall.application_type,
-        project: project.id
+        project: project.id,
+        storey: wall.storey ?? activeStoreyId ?? defaultStoreyId
       });
     });
 
@@ -2446,7 +2449,8 @@ export default function useProjectDetails(projectId) {
         height: wallProps.height,
         thickness: wallProps.thickness,
         application_type: wallProps.application_type,
-        project: project.id
+        project: project.id,
+        storey: wallProps.storey ?? activeStoreyId ?? defaultStoreyId
       });
     }
 
