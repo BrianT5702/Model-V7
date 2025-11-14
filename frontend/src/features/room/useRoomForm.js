@@ -59,7 +59,9 @@ export default function useRoomForm({
   projectId,
   selectedWallIds = [],
   selectedPolygonPoints = [],
-  walls = []
+  walls = [],
+  storeys = [],
+  activeStoreyId = null
 }) {
   // State for room fields
   const [roomName, setRoomName] = useState(initialRoom?.room_name || '');
@@ -67,6 +69,17 @@ export default function useRoomForm({
   const [floorThickness, setFloorThickness] = useState(initialRoom?.floor_thickness || '');
   const [temperature, setTemperature] = useState(initialRoom?.temperature || '');
   const [roomHeight, setRoomHeight] = useState(initialRoom?.height || '');
+  const normaliseStoreyId = (value) => {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const numeric = Number(value);
+    return Number.isNaN(numeric) ? null : numeric;
+  };
+  const defaultStoreyId = normaliseStoreyId(
+    initialRoom?.storey ?? initialRoom?.storey_id ?? activeStoreyId ?? (storeys[0]?.id ?? null)
+  );
+  const [storeyId, setStoreyId] = useState(defaultStoreyId);
   // Store as string to allow intermediate typing states like "-" or "-3"
   const [baseElevation, setBaseElevation] = useState(
     initialRoom?.base_elevation_mm !== undefined && initialRoom?.base_elevation_mm !== null
@@ -102,8 +115,13 @@ export default function useRoomForm({
           ? initialRoom.base_elevation_mm.toString()
           : '0'
       );
+      setStoreyId(
+        normaliseStoreyId(
+          initialRoom.storey ?? initialRoom.storey_id ?? activeStoreyId ?? (storeys[0]?.id ?? null)
+        )
+      );
     }
-  }, [initialRoom]);
+  }, [initialRoom, activeStoreyId, storeys]);
 
   // Update displayWalls when selectedWallIds or walls change
   useEffect(() => {
@@ -165,6 +183,9 @@ export default function useRoomForm({
     if (!roomHeight || roomHeight <= 0) {
       errors.roomHeight = 'Room height must be greater than 0';
     }
+    if (!storeyId) {
+      errors.storeyId = 'Storey is required';
+    }
     if (normalizedPoints.length < 3) {
       errors.polygonPoints = 'At least 3 points are required to define a room';
     }
@@ -192,6 +213,7 @@ export default function useRoomForm({
            (floorThickness !== '' && floorThickness !== null && floorThickness !== undefined) && 
            (temperature !== '' && temperature !== null && temperature !== undefined) && 
            roomHeight && 
+           storeyId &&
            normalizedPoints.length >= 3;
   };
 
@@ -213,6 +235,7 @@ export default function useRoomForm({
       walls: selectedWallIds,
       project: projectId,
       room_points: normalizedPoints,
+      storey: storeyId,
     };
     
     console.log('Saving room with data:', roomData);
@@ -246,6 +269,8 @@ export default function useRoomForm({
     setTemperature,
     roomHeight,
     setRoomHeight,
+    storeyId,
+    setStoreyId,
     baseElevation,
     setBaseElevation: setBaseElevationSafe,
     remarks,

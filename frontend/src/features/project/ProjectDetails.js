@@ -30,6 +30,94 @@ const ProjectDetails = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
     const projectDetails = useProjectDetails(projectId);
+    const wizardStep = projectDetails.storeyWizardStep;
+    const sourceStoreyId = projectDetails.storeyWizardSourceStoreyId ?? projectDetails.activeStoreyId;
+    const selectedRoomsSet = new Set(projectDetails.storeyWizardRoomSelections || []);
+    const roomOverrides = projectDetails.storeyWizardRoomOverrides || {};
+    const sourceRooms = (projectDetails.rooms || []).filter(
+        (room) => sourceStoreyId ? String(room.storey) === String(sourceStoreyId) : true
+    );
+    const isDrawingStoreyArea = projectDetails.selectionContext === 'storey' && projectDetails.currentMode === 'storey-area';
+    const effectiveProjectHeight = Math.max(
+        Number(projectDetails.project?.height) || 0,
+        Number(projectDetails.projectCalculatedHeight) || 0
+    );
+
+    const handleSourceStoreyChange = (event) => {
+        const value = event.target.value;
+        const numericValue = value === '' ? null : Number(value);
+        projectDetails.setStoreyWizardSourceStoreyId(numericValue);
+        projectDetails.setStoreyWizardRoomSelections([]);
+        projectDetails.setStoreyWizardError('');
+
+        if (numericValue !== null) {
+            const baseStorey = projectDetails.storeys.find(storey => String(storey.id) === String(numericValue));
+            if (baseStorey) {
+                projectDetails.setStoreyWizardElevation((baseStorey.elevation_mm ?? 0) + (baseStorey.default_room_height_mm ?? 3000) + (baseStorey.slab_thickness_mm ?? 0));
+                projectDetails.setStoreyWizardDefaultHeight(baseStorey.default_room_height_mm ?? 3000);
+                projectDetails.setStoreyWizardSlabThickness(baseStorey.slab_thickness_mm ?? 0);
+            }
+        }
+    };
+
+    const toggleStoreyWizardRoom = (roomId) => {
+        if (roomId === null || roomId === undefined) return;
+        projectDetails.setStoreyWizardError('');
+        projectDetails.setStoreyWizardRoomSelections((prev) => {
+            const next = new Set(prev || []);
+            if (next.has(roomId)) {
+                next.delete(roomId);
+            } else {
+                next.add(roomId);
+            }
+            return Array.from(next);
+        });
+    };
+
+    const handleRoomHeightOverrideChange = (roomId, value) => {
+        const parsed = Number(value);
+        const numeric = Number.isNaN(parsed) ? 0 : parsed;
+        projectDetails.updateStoreyWizardRoomOverride(roomId, { height: numeric });
+        projectDetails.computeStoreyWizardElevation();
+    };
+
+    const handleRemoveWizardArea = (areaId) => {
+        projectDetails.setStoreyWizardError('');
+        projectDetails.setStoreyWizardAreas((prev) => prev.filter((area) => area.id !== areaId));
+    };
+
+    const handleStoreyWizardNext = () => {
+        projectDetails.setStoreyWizardError('');
+        if (wizardStep === 1) {
+            projectDetails.setStoreyWizardStep(2);
+        } else if (wizardStep === 2) {
+            const hasRooms = (projectDetails.storeyWizardRoomSelections || []).length > 0;
+            const hasAreas = (projectDetails.storeyWizardAreas || []).length > 0;
+            if (!hasRooms && !hasAreas) {
+                projectDetails.setStoreyWizardError('Select at least one room or draw an area.');
+                return;
+            }
+            if (isDrawingStoreyArea) {
+                projectDetails.setStoreyWizardError('Finish drawing the current area before continuing.');
+                return;
+            }
+            projectDetails.computeStoreyWizardElevation();
+            projectDetails.setStoreyWizardStep(3);
+        }
+    };
+
+    const handleStoreyWizardBack = () => {
+        projectDetails.setStoreyWizardError('');
+        if (wizardStep === 2) {
+            projectDetails.setStoreyWizardStep(1);
+        } else if (wizardStep === 3) {
+            projectDetails.setStoreyWizardStep(2);
+        }
+    };
+
+    const handleStoreyWizardClose = () => {
+        projectDetails.closeStoreyWizard();
+    };
     
     // Modal state for image capture
     const [isCapturingImages, setIsCapturingImages] = useState(false);
@@ -126,7 +214,7 @@ const ProjectDetails = () => {
         if (['wall-plan', 'ceiling-plan', 'floor-plan'].includes(projectDetails.currentView)) {
             captureCanvasImage();
         }
-    }, [projectDetails.currentView, projectDetails.walls, projectDetails.rooms]);
+    }, [projectDetails.currentView, projectDetails.filteredWalls, projectDetails.filteredRooms]);
 
     // Memoize the room close handler to prevent unnecessary re-renders
     const handleRoomClose = useCallback(() => {
@@ -154,12 +242,12 @@ const ProjectDetails = () => {
     // When the modal opens, copy the selected wall to local state
     useEffect(() => {
         if (projectDetails.selectedWall !== null) {
-            const wall = projectDetails.walls.find(w => w.id === projectDetails.selectedWall);
+            const wall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWall);
             setEditedWall(wall ? { ...wall } : null);
         } else {
             setEditedWall(null);
         }
-    }, [projectDetails.selectedWall, projectDetails.walls]);
+    }, [projectDetails.selectedWall, projectDetails.filteredWalls]);
 
     return (
         <div className="min-h-screen bg-gray-50 project-details-container">
@@ -282,7 +370,7 @@ const ProjectDetails = () => {
                             )}
                             {projectDetails.project && (
                                 <p className="text-sm text-gray-600 mt-1">
-                                    Dimensions: {projectDetails.project.width} × {projectDetails.project.length} × {projectDetails.project.height} mm
+                                    Dimensions: {(projectDetails.project?.width ?? '—')} × {(projectDetails.project?.length ?? '—')} × {effectiveProjectHeight} mm
                                 </p>
                             )}
                         </div>
@@ -316,8 +404,74 @@ const ProjectDetails = () => {
                                     </>
                                 )}
                             </button>
-                            
-
+                            <div className="h-6 w-px bg-gray-300"></div>
+                            <div className="flex items-center space-x-2">
+                                <FaLayerGroup className="text-blue-600" />
+                                <div className="flex items-center space-x-2">
+                                    <select
+                                        value={projectDetails.activeStoreyId ?? ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            if (value === '' || value === undefined) {
+                                                return;
+                                            }
+                                            const numericValue = Number(value);
+                                            projectDetails.setActiveStoreyId(Number.isNaN(numericValue) ? value : numericValue);
+                                        }}
+                                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[160px]"
+                                    >
+                                        {projectDetails.storeys.length === 0 && (
+                                            <option value="">No levels</option>
+                                        )}
+                                        {projectDetails.storeys.map((storey) => (
+                                            <option key={storey.id} value={storey.id}>
+                                                {storey.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        onClick={() => {
+                                            if (!projectDetails.activeStoreyId) {
+                                                return;
+                                            }
+                                            const activeId = projectDetails.activeStoreyId;
+                                            const sortedStoreys = [...(projectDetails.storeys || [])]
+                                                .sort((a, b) => {
+                                                    const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+                                                    if (orderDiff !== 0) return orderDiff;
+                                                    const elevationDiff = (a.elevation_mm ?? 0) - (b.elevation_mm ?? 0);
+                                                    if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
+                                                    return (a.id ?? 0) - (b.id ?? 0);
+                                                });
+                                            const lowest = sortedStoreys[0];
+                                            if (lowest && String(lowest.id) === String(activeId)) {
+                                                projectDetails.setStoreyError('Ground floor cannot be deleted.');
+                                                setTimeout(() => projectDetails.setStoreyError(''), 4000);
+                                                return;
+                                            }
+                                            if (window.confirm('Delete this level? Rooms, walls, and panels on this storey will be removed.')) {
+                                                projectDetails.deleteStorey(activeId);
+                                            }
+                                        }}
+                                        className="px-3 py-1 rounded-lg text-sm font-medium bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                                        title="Delete selected level"
+                                    >
+                                        Delete Level
+                                    </button>
+                                    <button
+                                        onClick={projectDetails.openStoreyWizard}
+                                        className="px-3 py-1 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                    >
+                                        Add Level
+                                    </button>
+                                    {projectDetails.isStoreyLoading && (
+                                        <span className="text-xs text-gray-400">Loading...</span>
+                                    )}
+                                    {projectDetails.storeyError && (
+                                        <span className="text-xs text-red-500">{projectDetails.storeyError}</span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -391,7 +545,10 @@ const ProjectDetails = () => {
                                     </div>
                                     <RoomManager
                                         projectId={projectId}
-                                        walls={projectDetails.walls}
+                                        walls={projectDetails.filteredWalls}
+                                        storeys={projectDetails.storeys}
+                                        activeStoreyId={projectDetails.activeStoreyId}
+                                        onStoreyChange={projectDetails.setActiveStoreyId}
                                         selectedWallIds={projectDetails.selectedWallsForRoom}
                                         onSave={handleRoomSave}
                                         onDelete={handleRoomDelete}
@@ -617,21 +774,21 @@ const ProjectDetails = () => {
                             <div className="space-y-3 text-sm">
                                 <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
                                     <span className="text-blue-700 font-medium">Walls:</span>
-                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.walls.length}</span>
+                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.filteredWalls.length}</span>
                                 </div>
                                 <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
                                     <span className="text-blue-700 font-medium">Rooms:</span>
-                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.rooms.length}</span>
+                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.filteredRooms.length}</span>
                                 </div>
                                 <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
                                     <span className="text-blue-700 font-medium">Doors:</span>
-                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.doors.length}</span>
+                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.filteredDoors.length}</span>
                                 </div>
-                                {projectDetails.rooms && projectDetails.rooms.length > 0 && (
+                                {projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 && (
                                     <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
                                         <span className="text-blue-700 font-medium">Est. Install:</span>
                                         <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full text-xs">
-                                            {Math.ceil(projectDetails.rooms.length * 2 / 8)} days
+                                            {Math.ceil(projectDetails.filteredRooms.length * 2 / 8)} days
                                         </span>
                                     </div>
                                 )}
@@ -713,9 +870,9 @@ const ProjectDetails = () => {
                                             </button>
                                             <button
                                                 onClick={() => projectDetails.setCurrentView('ceiling-plan')}
-                                                disabled={!projectDetails.rooms || projectDetails.rooms.length === 0}
+                                                disabled={!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0}
                                                 className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                                                    (!projectDetails.rooms || projectDetails.rooms.length === 0)
+                                                    (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0)
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : projectDetails.currentView === 'ceiling-plan'
                                                         ? 'bg-green-600 text-white shadow-md'
@@ -727,9 +884,13 @@ const ProjectDetails = () => {
                                             </button>
                                             <button
                                                 onClick={() => projectDetails.setCurrentView('floor-plan')}
-                                                disabled={!projectDetails.rooms || projectDetails.rooms.length === 0 || !projectDetails.rooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel')}
+                                                disabled={
+                                                    !projectDetails.filteredRooms ||
+                                                    projectDetails.filteredRooms.length === 0 ||
+                                                    !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel')
+                                                }
                                                 className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                                                    (!projectDetails.rooms || projectDetails.rooms.length === 0 || !projectDetails.rooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel'))
+                                                    (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0 || !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel'))
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : projectDetails.currentView === 'floor-plan'
                                                         ? 'bg-green-600 text-white shadow-md'
@@ -738,9 +899,9 @@ const ProjectDetails = () => {
                                             >
                                                 <FaSquare className="inline mr-2" />
                                                 Floor Plan
-                                                {projectDetails.rooms && projectDetails.rooms.length > 0 && (
+                                                {projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 && (
                                                     <span className="ml-1 text-xs">
-                                                        ({projectDetails.rooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel').length} panel rooms)
+                                                        ({projectDetails.filteredRooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel').length} panel rooms)
                                                     </span>
                                                 )}
                                             </button>
@@ -769,7 +930,7 @@ const ProjectDetails = () => {
                                                 ? 'Project overview with installation time calculations'
                                                 : 'Click and drag to navigate, use scroll to zoom'
                                             }
-                                            {projectDetails.rooms && projectDetails.rooms.length > 0 && !projectDetails.rooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel') && projectDetails.currentView === 'floor-plan' && (
+                                            {projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 && !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel') && projectDetails.currentView === 'floor-plan' && (
                                                 <span className="text-orange-600 font-medium ml-2">
                                                     ⚠️ No rooms with panel floors found
                                                 </span>
@@ -782,10 +943,10 @@ const ProjectDetails = () => {
                                 <div className="relative">
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D
-                                            walls={projectDetails.walls}
+                                            walls={projectDetails.filteredWalls}
                                             setWalls={projectDetails.setWalls}
-                                            joints={projectDetails.joints}
-                                            intersections={projectDetails.joints}
+                                            joints={projectDetails.filteredJoints}
+                                            intersections={projectDetails.filteredJoints}
                                             projectId={projectId}
                                             onWallTypeSelect={projectDetails.selectedWallType}
                                             onWallUpdate={projectDetails.handleWallUpdate}
@@ -796,12 +957,12 @@ const ProjectDetails = () => {
                                             onWallSelect={projectDetails.handleWallSelect}
                                             selectedWallsForRoom={projectDetails.selectedWallsForRoom}
                                             onRoomWallsSelect={projectDetails.setSelectedWallsForRoom}
-                                            rooms={projectDetails.rooms}
+                                            rooms={projectDetails.filteredRooms}
                                             onRoomSelect={projectDetails.handleRoomSelect}
                                             onRoomUpdate={projectDetails.handleRoomUpdate}
                                             onRoomLabelPositionUpdate={projectDetails.handleRoomLabelPositionUpdate}
                                             onJointsUpdate={projectDetails.setJoints}
-                                            doors={projectDetails.doors}
+                                            doors={projectDetails.filteredDoors}
                                             onDoorSelect={projectDetails.handleDoorSelect}
                                             onDoorWallSelect={(wall) => {
                                                 projectDetails.setSelectedDoorWall(wall);
@@ -815,6 +976,8 @@ const ProjectDetails = () => {
                                             wallSplitError={projectDetails.wallSplitError}
                                             setWallSplitError={projectDetails.setWallSplitError}
                                             wallSplitSuccess={projectDetails.wallSplitSuccess}
+                                            ghostWalls={projectDetails.filteredGhostWalls}
+                                            ghostAreas={projectDetails.filteredGhostAreas}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager
@@ -840,7 +1003,7 @@ const ProjectDetails = () => {
                                     ) : (
                                         <CeilingManager
                                             projectId={projectId}
-                                            room={projectDetails.rooms && projectDetails.rooms.length > 0 ? projectDetails.rooms[0] : null}
+                                            room={projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 ? projectDetails.filteredRooms[0] : null}
                                             onClose={() => projectDetails.setCurrentView('wall-plan')}
                                             onCeilingPlanGenerated={(ceilingPlan) => {
                                                 console.log('Ceiling plan generated:', ceilingPlan);
@@ -859,6 +1022,340 @@ const ProjectDetails = () => {
 
 
             {/* Modals and Overlays */}
+            {projectDetails.showStoreyWizard && !projectDetails.isStoreyWizardMinimized && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000]">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+                            <div>
+                                <h2 className="text-xl font-semibold text-gray-900">Create New Storey</h2>
+                                <p className="text-sm text-gray-500">Step {wizardStep} of 3</p>
+                            </div>
+                            <button
+                                onClick={handleStoreyWizardClose}
+                                className="text-gray-500 hover:text-gray-700 transition-colors"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                            {wizardStep === 1 && (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Storey Name</label>
+                                        <input
+                                            type="text"
+                                            value={projectDetails.storeyWizardName || ''}
+                                            onChange={(e) => projectDetails.setStoreyWizardName(e.target.value)}
+                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="e.g., First Floor"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Copy Layout From</label>
+                                        <select
+                                            value={sourceStoreyId ?? ''}
+                                            onChange={handleSourceStoreyChange}
+                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            <option value="">None (start blank)</option>
+                                            {projectDetails.storeys.map((storey) => (
+                                                <option key={storey.id} value={storey.id}>
+                                                    {storey.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700">
+                                        Elevation and default room height will be calculated automatically after you choose rooms or draw areas in Step 2.
+                                    </div>
+                                </div>
+                            )}
+
+                            {wizardStep === 2 && (
+                                <div className="space-y-4">
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+                                        Select the rooms from <span className="font-semibold">{projectDetails.storeys.find(s => String(s.id) === String(sourceStoreyId))?.name || 'the base storey'}</span> that should appear on the new storey, or draw new areas on the canvas. Close the polygon by clicking back on the first point.
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="border border-gray-200 rounded-lg">
+                                            <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                                                <span className="text-sm font-semibold text-gray-700">Rooms to Copy</span>
+                                                <span className="text-xs text-gray-500">{selectedRoomsSet.size} selected</span>
+                                            </div>
+                                            <div className="max-h-56 overflow-y-auto">
+                                                {sourceRooms.length === 0 ? (
+                                                    <div className="p-4 text-sm text-gray-500">
+                                                        No rooms available on the selected storey.
+                                                    </div>
+                                                ) : (
+                                                    <ul className="divide-y divide-gray-200">
+                                                        {sourceRooms.map((room) => (
+                                                            <li key={room.id} className="px-4 py-2 flex items-center justify-between text-sm">
+                                                                <label className="flex items-center gap-2">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={selectedRoomsSet.has(room.id)}
+                                                                        onChange={() => toggleStoreyWizardRoom(room.id)}
+                                                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                    />
+                                                                    <span className="text-gray-700">{room.room_name}</span>
+                                                                </label>
+                                                                <span className="text-xs text-gray-500">
+                                                                    {room.floor_type || 'No floor type'}
+                                                                </span>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="border border-gray-200 rounded-lg">
+                                            <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                                                <span className="text-sm font-semibold text-gray-700">Custom Areas</span>
+                                                <button
+                                                    className="text-sm text-blue-600 hover:text-blue-800"
+                                                    onClick={() => {
+                                                        projectDetails.setStoreyWizardError('');
+                                                        if (projectDetails.is3DView) {
+                                                            projectDetails.forceCleanup3D();
+                                                            projectDetails.setIs3DView(false);
+                                                        }
+                                                        if (projectDetails.currentView !== 'wall-plan') {
+                                                            projectDetails.setCurrentView('wall-plan');
+                                                        }
+                                                        projectDetails.beginStoreyAreaSelection();
+                                                    }}
+                                                    disabled={isDrawingStoreyArea}
+                                                >
+                                                    {isDrawingStoreyArea ? 'Drawing...' : 'Draw Area'}
+                                                </button>
+                                            </div>
+                                            <div className="max-h-56 overflow-y-auto p-4 space-y-2">
+                                                {isDrawingStoreyArea && (
+                                                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-3 py-2 rounded-lg flex items-center justify-between">
+                                                        <span>Click on the canvas to define the area. Close the loop by clicking the starting point.</span>
+                                                        <button
+                                                            className="text-yellow-700 underline text-xs"
+                                                            onClick={projectDetails.cancelStoreyAreaSelection}
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {projectDetails.storeyWizardAreas.length === 0 && !isDrawingStoreyArea && (
+                                                    <div className="text-sm text-gray-500">
+                                                        No custom areas yet. Use "Draw Area" to outline new space on the canvas.
+                                                    </div>
+                                                )}
+                                                {projectDetails.storeyWizardAreas.map((area, index) => (
+                                                    <div key={area.id} className="border border-gray-200 rounded-lg px-3 py-2 flex items-center justify-between text-sm">
+                                                        <div>
+                                                            <div className="font-medium text-gray-700">Area {index + 1}</div>
+                                                            <div className="text-xs text-gray-500">{area.points.length} points</div>
+                                                        </div>
+                                                        <button
+                                                            className="text-xs text-red-600 hover:text-red-800"
+                                                            onClick={() => handleRemoveWizardArea(area.id)}
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {wizardStep === 3 && (
+                                <div className="space-y-4">
+                                    <div className="border border-gray-200 rounded-lg p-4">
+                                        <h3 className="text-sm font-semibold text-gray-700 mb-2">Storey Details</h3>
+                                        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-600">
+                                            <div className="flex justify-between">
+                                                <dt className="font-medium text-gray-700">Name:</dt>
+                                                <dd>{projectDetails.storeyWizardName}</dd>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <dt className="font-medium text-gray-700">Elevation:</dt>
+                                                <dd>
+                                                    {projectDetails.storeyWizardElevation !== null && projectDetails.storeyWizardElevation !== undefined
+                                                        ? `${projectDetails.storeyWizardElevation} mm`
+                                                        : 'Will be calculated after Step 2'}
+                                                </dd>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <dt className="font-medium text-gray-700">Default Height:</dt>
+                                                <dd>
+                                                    {projectDetails.storeyWizardDefaultHeight !== null && projectDetails.storeyWizardDefaultHeight !== undefined
+                                                        ? `${projectDetails.storeyWizardDefaultHeight} mm`
+                                                        : 'Will be calculated after Step 2'}
+                                                </dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+
+                                    <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+                                        <h3 className="text-sm font-semibold text-gray-700 mb-2">Included Rooms</h3>
+                                        {selectedRoomsSet.size === 0 ? (
+                                            <p className="text-sm text-gray-500">No rooms selected.</p>
+                                        ) : (
+                                            <>
+                                                <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                                                    {projectDetails.rooms
+                                                        .filter(room => selectedRoomsSet.has(room.id))
+                                                        .map(room => (
+                                                            <li key={room.id}>{room.room_name}</li>
+                                                        ))}
+                                                </ul>
+                                                <div className="space-y-3">
+                                                    {projectDetails.rooms
+                                                        .filter(room => selectedRoomsSet.has(room.id))
+                                                        .map(room => {
+                                                            const override = roomOverrides[String(room.id)] || {};
+                                                            const originalBase = Number(room.base_elevation_mm) || 0;
+                                                            const originalHeight = Number(room.height) || 0;
+                                                            const computedBase =
+                                                                (override.baseElevation !== undefined && override.baseElevation !== null)
+                                                                    ? Number(override.baseElevation) || 0
+                                                                    : originalBase + (originalHeight || projectDetails.storeyWizardDefaultHeight || 0);
+                                                            const computedHeight =
+                                                                (override.height !== undefined && override.height !== null)
+                                                                    ? Number(override.height) || 0
+                                                                    : originalHeight || projectDetails.storeyWizardDefaultHeight || 0;
+                                                            return (
+                                                                <div key={`override-${room.id}`} className="border border-gray-200 rounded-lg px-3 py-2">
+                                                                    <div className="flex justify-between items-center">
+                                                                        <span className="text-sm font-medium text-gray-700">{room.room_name}</span>
+                                                                        <span className="text-xs text-gray-500">
+                                                                            Ground top: {originalBase + originalHeight} mm
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-600">New Base Elevation (mm)</label>
+                                                                            <div className="mt-1 text-sm text-gray-800">{computedBase} mm</div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-600">Room Height (mm)</label>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={computedHeight}
+                                                                                onChange={(e) => handleRoomHeightOverrideChange(room.id, e.target.value)}
+                                                                                className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+
+                                    <div className="border border-gray-200 rounded-lg p-4">
+                                        <h3 className="text-sm font-semibold text-gray-700 mb-2">Custom Areas</h3>
+                                        {projectDetails.storeyWizardAreas.length === 0 ? (
+                                            <p className="text-sm text-gray-500">No custom areas defined.</p>
+                                        ) : (
+                                            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                                                {projectDetails.storeyWizardAreas.map((area, index) => (
+                                                    <li key={area.id}>Area {index + 1} — {area.points.length} points</li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {projectDetails.storeyWizardError && (
+                                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                                    {projectDetails.storeyWizardError}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+                            <button
+                                onClick={handleStoreyWizardBack}
+                                disabled={wizardStep === 1}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                                    wizardStep === 1
+                                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                                }`}
+                            >
+                                Back
+                            </button>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={handleStoreyWizardClose}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                                >
+                                    Cancel
+                                </button>
+                                {wizardStep < 3 ? (
+                                    <button
+                                        onClick={handleStoreyWizardNext}
+                                        className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
+                                    >
+                                        Next
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={projectDetails.completeStoreyWizard}
+                                        className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700"
+                                    >
+                                        Create Storey
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {projectDetails.showStoreyWizard && projectDetails.isStoreyWizardMinimized && (
+                <div className="fixed bottom-6 right-6 z-[11000] flex flex-col gap-2">
+                    <div className="bg-gray-900/90 text-white px-4 py-3 rounded-lg shadow-lg max-w-md">
+                        <div className="flex items-center justify-between">
+                            <div className="text-sm font-medium">
+                                Drawing storey area…
+                            </div>
+                            <button
+                                onClick={() => projectDetails.setStoreyWizardMinimized(false)}
+                                className="text-xs text-blue-200 hover:text-white transition-colors"
+                            >
+                                Restore panel
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-200 mt-2">
+                            Click on the canvas to place points. Close the loop by clicking the first point.
+                        </p>
+                        <div className="mt-3 flex items-center gap-2">
+                            <button
+                                onClick={projectDetails.cancelStoreyAreaSelection}
+                                className="px-3 py-1.5 rounded-md bg-red-500 text-xs font-medium hover:bg-red-600 transition-colors"
+                            >
+                                Cancel drawing
+                            </button>
+                            <button
+                                onClick={() => projectDetails.setStoreyWizardMinimized(false)}
+                                className="px-3 py-1.5 rounded-md bg-gray-700 text-xs font-medium hover:bg-gray-600 transition-colors"
+                            >
+                                Resume wizard
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
                 {/* Wall Editor Modal */}
                     {projectDetails.selectedWall !== null && projectDetails.currentMode === 'edit-wall' && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 modal-backdrop">
@@ -1157,14 +1654,23 @@ const ProjectDetails = () => {
                         projectId={projectId}
                         wall={projectDetails.selectedDoorWall}
                         editingDoor={projectDetails.editingDoor}
-                        onSaveDoor={projectDetails.editingDoor ? projectDetails.handleUpdateDoor : projectDetails.handleCreateDoor}
+                        isEditMode={!!projectDetails.editingDoor}
+                        onSaveDoor={projectDetails.handleCreateDoor}
+                        onUpdateDoor={projectDetails.handleUpdateDoor}
                         onDeleteDoor={async (doorId) => {
                             await projectDetails.handleDeleteDoor(doorId);
                         }}
                         onClose={() => {
                             projectDetails.setShowDoorManager(false);
                             projectDetails.setEditingDoor(null);
+                            projectDetails.setSelectedDoorWall(null);
                         }}
+                        activeStoreyId={projectDetails.editingDoor?.storey ?? projectDetails.activeStoreyId}
+                        activeStoreyName={
+                            projectDetails.editingDoor?.storey
+                                ? (projectDetails.storeys.find(s => s.id === projectDetails.editingDoor.storey)?.name || '')
+                                : projectDetails.activeStorey?.name
+                        }
                     />
                 )}
 

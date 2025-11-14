@@ -1,12 +1,14 @@
 import logging
 
-from django.db.models import Q
-from rest_framework import viewsets, status
+from django.db.models import Q, Max
+from django.middleware.csrf import get_token
+from rest_framework import serializers, viewsets, status
 from rest_framework.response import Response
-from rest_framework.decorators import action
-from .models import Project, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection, CeilingZone
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection, CeilingZone
 from .serializers import (
-    ProjectSerializer, WallSerializer, RoomSerializer,
+    ProjectSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
     DoorSerializer, IntersectionSerializer, CeilingZoneSerializer
 )
@@ -26,7 +28,18 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project = serializer.save()
 
         # Create default walls using the service
-        WallService.create_default_walls(project)
+        # Ensure a default ground-floor storey exists
+        default_storey, _ = Storey.objects.get_or_create(
+            project=project,
+            order=0,
+            defaults={
+                'name': 'Ground Floor',
+                'elevation_mm': 0.0,
+                'default_room_height_mm': project.height if project.height else 3000.0,
+            },
+        )
+
+        WallService.create_default_walls(project, storey=default_storey)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'])
@@ -39,6 +52,56 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class StoreyViewSet(viewsets.ModelViewSet):
+    queryset = Storey.objects.all()
+    serializer_class = StoreySerializer
+
+    def get_queryset(self):
+        project_id = self.request.query_params.get('project')
+        if project_id:
+            return Storey.objects.filter(project_id=project_id).order_by('order', 'elevation_mm', 'id')
+        return super().get_queryset()
+
+    def perform_create(self, serializer):
+        project = serializer.validated_data.get('project')
+        if project is None:
+            project_id = self.request.data.get('project')
+            if not project_id:
+                raise serializers.ValidationError({'project': 'Project is required'})
+            try:
+                project = Project.objects.get(pk=project_id)
+            except Project.DoesNotExist:
+                raise serializers.ValidationError({'project': 'Project not found'})
+
+        order = serializer.validated_data.get('order')
+        if order is None:
+            existing_max = Storey.objects.filter(project=project).aggregate(Max('order'))['order__max']
+            order = (existing_max or 0) + 1
+        serializer.save(project=project, order=order)
+
+    def destroy(self, request, *args, **kwargs):
+        storey = self.get_object()
+        lowest_storey = (
+            Storey.objects
+            .filter(project=storey.project)
+            .order_by('order', 'elevation_mm', 'id')
+            .first()
+        )
+        if lowest_storey and storey.id == lowest_storey.id:
+            return Response(
+                {'error': 'The ground floor cannot be deleted.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return super().destroy(request, *args, **kwargs)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def csrf_token_view(request):
+    return Response({'csrfToken': get_token(request)})
 
 class WallViewSet(viewsets.ModelViewSet):
     queryset = Wall.objects.all()

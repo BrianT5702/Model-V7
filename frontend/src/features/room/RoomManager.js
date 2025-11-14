@@ -5,6 +5,8 @@ import { calculateMinWallHeight } from '../../api/api';
 const RoomManager = ({ 
     projectId, 
     walls, 
+    storeys = [],
+    activeStoreyId = null,
     onSave, 
     onDelete,
     onClose,
@@ -23,7 +25,9 @@ const RoomManager = ({
         projectId,
         selectedWallIds,
         selectedPolygonPoints,
-        walls
+        walls,
+        storeys,
+        activeStoreyId
     });
 
     return (
@@ -85,6 +89,33 @@ const RoomManager = ({
                                     </div>
                                     {form.validationErrors.temperature && (
                                         <p className="text-xs text-red-500 mt-1">{form.validationErrors.temperature}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700">Storey</label>
+                                    <select
+                                        value={form.storeyId ?? ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            const numeric = value === '' ? null : Number(value);
+                                            form.setStoreyId(Number.isNaN(numeric) ? null : numeric);
+                                            form.clearValidationError('storeyId');
+                                        }}
+                                        className={`mt-1 block w-full rounded-md border px-2 py-1 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 ${
+                                            form.validationErrors.storeyId
+                                                ? 'border-red-300 focus:border-red-500'
+                                                : 'border-gray-300 focus:border-blue-500'
+                                        }`}
+                                    >
+                                        <option value="">Select storey</option>
+                                        {storeys.map((storey) => (
+                                            <option key={storey.id} value={storey.id}>
+                                                {storey.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {form.validationErrors.storeyId && (
+                                        <p className="text-xs text-red-500 mt-1">{form.validationErrors.storeyId}</p>
                                     )}
                                 </div>
                             </div>

@@ -1,16 +1,50 @@
 from rest_framework import serializers
-from .models import Project, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection, CeilingZone
+from .models import (
+    Project,
+    Storey,
+    Wall,
+    Room,
+    CeilingPanel,
+    CeilingPlan,
+    FloorPanel,
+    FloorPlan,
+    Door,
+    Intersection,
+    CeilingZone,
+)
+
+
+class StoreySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Storey
+        fields = [
+            'id',
+            'project',
+            'name',
+            'elevation_mm',
+            'default_room_height_mm',
+            'order',
+            'slab_thickness_mm',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
 
 class WallSerializer(serializers.ModelSerializer):
+    rooms = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+
     class Meta:
         model = Wall
         fields = [
-            'id', 'start_x', 'start_y', 'end_x', 'end_y',
+            'id', 'project', 'storey',
+            'start_x', 'start_y', 'end_x', 'end_y',
             'height', 'thickness', 'application_type',
             'inner_face_material', 'inner_face_thickness',
             'outer_face_material', 'outer_face_thickness',
             'is_default', 'has_concrete_base', 'concrete_base_height',
-            'fill_gap_mode', 'gap_fill_height', 'gap_base_position'
+            'fill_gap_mode', 'gap_fill_height', 'gap_base_position',
+            'rooms'
         ]
 
     def validate_height(self, value):
@@ -220,12 +254,13 @@ class ProjectSerializer(serializers.ModelSerializer):
     rooms = RoomSerializer(many=True, read_only=True)
     doors = DoorSerializer(many=True, read_only=True)
     intersections = IntersectionSerializer(many=True, read_only=True)
+    storeys = StoreySerializer(many=True, read_only=True)
 
     class Meta:
         model = Project
         fields = [
             'id', 'name', 'width', 'length', 'height', 'wall_thickness',
-            'walls', 'rooms', 'doors', 'intersections'
+            'storeys', 'walls', 'rooms', 'doors', 'intersections'
         ]
 
     def validate_name(self, value):

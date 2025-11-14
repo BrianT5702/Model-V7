@@ -16,6 +16,9 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 const api = axios.create({
     baseURL: getBaseURL(),
     timeout: 30000, // 30 second timeout
+    withCredentials: true,
+    xsrfCookieName: 'csrftoken',
+    xsrfHeaderName: 'X-CSRFToken',
 });
 
 // Add request interceptor for logging

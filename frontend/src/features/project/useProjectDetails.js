@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import api from '../../api/api';
 import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
 import { areCollinearWalls, calculateIntersection, arePointsEqual, detectRoomWalls } from './projectUtils';
@@ -8,6 +8,11 @@ export default function useProjectDetails(projectId) {
   // State
   const [project, setProject] = useState(null);
   const [walls, setWalls] = useState([]);
+  const [storeys, setStoreys] = useState([]);
+  const [activeStoreyId, setActiveStoreyId] = useState(null);
+  const [storeyError, setStoreyError] = useState('');
+  const [isStoreyLoading, setIsStoreyLoading] = useState(false);
+  const [filteredWalls, setFilteredWalls] = useState([]);
   const [isEditingMode, setIsEditingMode] = useState(false);
   const [currentMode, setCurrentMode] = useState(null);
   const [selectedWall, setSelectedWall] = useState(null);
@@ -18,21 +23,244 @@ export default function useProjectDetails(projectId) {
   const [selectedWallsForRoom, setSelectedWallsForRoom] = useState([]);
   const [editingRoom, setEditingRoom] = useState(null);
   const [rooms, setRooms] = useState([]);
+  const [filteredRooms, setFilteredRooms] = useState([]);
+  const [filteredGhostWalls, setFilteredGhostWalls] = useState([]);
+  const [filteredGhostAreas, setFilteredGhostAreas] = useState([]);
+  const [projectCalculatedHeight, setProjectCalculatedHeight] = useState(0);
   const [selectedWallType, setSelectedWallType] = useState('wall');
   const [showWallEditor, setShowWallEditor] = useState(false);
   const [showRoomManagerModal, setShowRoomManagerModal] = useState(false);
   const [joints, setJoints] = useState([]);
+  const [filteredJoints, setFilteredJoints] = useState([]);
   const [selectedDoorWall, setSelectedDoorWall] = useState(null);
   const [showDoorManager, setShowDoorManager] = useState(false);
   const [doors, setDoors] = useState([]);
+  const [filteredDoors, setFilteredDoors] = useState([]);
   const [editingDoor, setEditingDoor] = useState(null);
   const [showDoorEditor, setShowDoorEditor] = useState(false);
+  const [showStoreyWizard, setShowStoreyWizard] = useState(false);
+  const [selectionContext, setSelectionContext] = useState('room'); // 'room' | 'storey'
+  const [storeyWizardStep, setStoreyWizardStep] = useState(1);
+  const [storeyWizardSourceStoreyId, setStoreyWizardSourceStoreyId] = useState(null);
+  const [storeyWizardName, setStoreyWizardName] = useState('');
+  const [storeyWizardElevation, setStoreyWizardElevation] = useState(0);
+  const [storeyWizardDefaultHeight, setStoreyWizardDefaultHeight] = useState(3000);
+  const [storeyWizardSlabThickness, setStoreyWizardSlabThickness] = useState(0);
+const [storeyWizardAreas, setStoreyWizardAreas] = useState([]);
+const [storeyWizardRoomSelections, setStoreyWizardRoomSelections] = useState([]);
+const [storeyWizardRoomOverrides, setStoreyWizardRoomOverrides] = useState({});
+const [storeyWizardError, setStoreyWizardError] = useState('');
+const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
+  useEffect(() => {
+    api.get('/csrf-token/').catch((error) => {
+      console.warn('Failed to prefetch CSRF token:', error);
+    });
+  }, []);
+
+  const initializeRoomOverride = useCallback((room) => {
+    if (!room) {
+      return {
+        baseElevation: 0,
+        height: storeyWizardDefaultHeight || 3000,
+      };
+    }
+    const baseElevation =
+      (Number(room.base_elevation_mm) || 0) +
+      (Number(room.height) || storeyWizardDefaultHeight || 0);
+    const height = Number(room.height) || storeyWizardDefaultHeight || 3000;
+    return {
+      baseElevation,
+      height,
+    };
+  }, [storeyWizardDefaultHeight]);
+
+  useEffect(() => {
+    setStoreyWizardRoomOverrides((prev) => {
+      const next = { ...prev };
+      const selectedIds = new Set(
+        (storeyWizardRoomSelections || []).map((id) => String(id))
+      );
+
+      selectedIds.forEach((id) => {
+        if (!next[id]) {
+          const room = rooms.find((r) => String(r.id) === id);
+          if (room) {
+            next[id] = initializeRoomOverride(room);
+          }
+        }
+      });
+
+      Object.keys(next).forEach((id) => {
+        if (!selectedIds.has(id)) {
+          delete next[id];
+        }
+      });
+
+      return next;
+    });
+  }, [storeyWizardRoomSelections, rooms, initializeRoomOverride]);
+
+  const updateStoreyWizardRoomOverride = useCallback((roomId, updates) => {
+    setStoreyWizardRoomOverrides((prev) => {
+      const key = String(roomId);
+      const existing = prev[key] || initializeRoomOverride(
+        rooms.find((room) => String(room.id) === key)
+      );
+      return {
+        ...prev,
+        [key]: {
+          ...existing,
+          ...updates,
+        },
+      };
+    });
+  }, [initializeRoomOverride, rooms]);
   const [selectedRoomPoints, setSelectedRoomPoints] = useState([]);
   const [currentView, setCurrentView] = useState('wall-plan'); // 'wall-plan', 'ceiling-plan', or 'floor-plan'
   const [wallSplitError, setWallSplitError] = useState('');
   const [wallSplitSuccess, setWallSplitSuccess] = useState(false);
   const MERGE_POINT_TOLERANCE = 0.5;
   const SPLIT_ENDPOINT_TOLERANCE = 1.0;
+
+  const activeStorey = useMemo(() => {
+    if (!activeStoreyId) return null;
+    return storeys.find(storey => String(storey.id) === String(activeStoreyId)) || null;
+  }, [storeys, activeStoreyId]);
+
+  const defaultStoreyId = useMemo(() => {
+    return storeys.length > 0 ? storeys[0].id : null;
+  }, [storeys]);
+
+  const applyStoreyList = useCallback((incomingStoreys) => {
+    if (!Array.isArray(incomingStoreys)) {
+      setStoreys([]);
+      setActiveStoreyId(null);
+      return [];
+    }
+
+    const sorted = [...incomingStoreys].sort((a, b) => {
+      const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+      if (orderDiff !== 0) return orderDiff;
+
+      const elevationDiff = (a.elevation_mm ?? 0) - (b.elevation_mm ?? 0);
+      if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
+
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+
+    setStoreys(sorted);
+    setActiveStoreyId((prev) => {
+      if (prev && sorted.some(storey => String(storey.id) === String(prev))) {
+        return prev;
+      }
+      return sorted[0]?.id ?? null;
+    });
+
+    return sorted;
+  }, []);
+
+  const ensureStoreys = useCallback(async (projectData = null) => {
+    setIsStoreyLoading(true);
+    try {
+      if (projectData && Array.isArray(projectData.storeys) && projectData.storeys.length > 0) {
+        return applyStoreyList(projectData.storeys);
+      }
+
+      const response = await api.get(`/storeys/?project=${projectId}`);
+      const storeyList = Array.isArray(response.data) ? response.data : [];
+      if (storeyList.length > 0) {
+        return applyStoreyList(storeyList);
+      }
+
+      const fallbackProject = projectData || project;
+      if (!fallbackProject) {
+        return applyStoreyList([]);
+      }
+
+      const createPayload = {
+        project: parseInt(projectId, 10),
+        name: 'Ground Floor',
+        elevation_mm: 0,
+        order: 0,
+        default_room_height_mm: fallbackProject.height || 3000,
+        slab_thickness_mm: 0,
+      };
+
+      const createdResponse = await api.post('/storeys/', createPayload);
+      return applyStoreyList([createdResponse.data]);
+    } catch (error) {
+      console.error('Error loading storeys:', error);
+      setStoreyError('Failed to load storeys');
+      applyStoreyList([]);
+      return [];
+    } finally {
+      setIsStoreyLoading(false);
+    }
+  }, [applyStoreyList, projectId, project]);
+
+  const openStoreyWizard = useCallback(() => {
+    const baseStorey =
+      storeys.find(storey => String(storey.id) === String(activeStoreyId)) ||
+      storeys[storeys.length - 1] ||
+      null;
+
+    const nextOrder = (storeys[storeys.length - 1]?.order ?? storeys.length - 1) + 1;
+    const defaultName = baseStorey
+      ? `${baseStorey.name} +1`
+      : `Level ${storeys.length + 1}`;
+
+    const baseHeight = baseStorey?.default_room_height_mm ?? 3000;
+
+    setStoreyWizardStep(1);
+    setStoreyWizardSourceStoreyId(baseStorey?.id ?? null);
+    setStoreyWizardName(defaultName);
+    setStoreyWizardElevation(null);
+    setStoreyWizardDefaultHeight(baseHeight);
+    setStoreyWizardSlabThickness(0);
+    setStoreyWizardAreas([]);
+    setStoreyWizardRoomSelections([]);
+    setStoreyWizardRoomOverrides({});
+    setStoreyWizardError('');
+    setSelectionContext('room');
+    setSelectedRoomPoints([]);
+    setSelectedWallsForRoom([]);
+    setShowStoreyWizard(true);
+  }, [activeStoreyId, storeys]);
+
+  const closeStoreyWizard = useCallback(() => {
+    setShowStoreyWizard(false);
+    setSelectionContext('room');
+    setStoreyWizardAreas([]);
+    setStoreyWizardRoomSelections([]);
+    setStoreyWizardRoomOverrides({});
+    setStoreyWizardError('');
+    setStoreyWizardStep(1);
+    setStoreyWizardMinimized(false);
+    if (currentMode === 'storey-area') {
+      setCurrentMode(null);
+    }
+    setSelectedRoomPoints([]);
+    setSelectedWallsForRoom([]);
+  }, [currentMode]);
+
+  const beginStoreyAreaSelection = useCallback(() => {
+    setSelectionContext('storey');
+    setSelectedRoomPoints([]);
+    setSelectedWallsForRoom([]);
+    setIsEditingMode(true);
+    setCurrentMode('storey-area');
+    setStoreyWizardMinimized(true);
+  }, []);
+
+  const cancelStoreyAreaSelection = useCallback(() => {
+    setSelectionContext('room');
+    setSelectedRoomPoints([]);
+    setSelectedWallsForRoom([]);
+    setStoreyWizardMinimized(false);
+    if (currentMode === 'storey-area') {
+      setCurrentMode(null);
+    }
+  }, [currentMode]);
   
   // Add shared panel data state for cross-tab communication
   const [sharedPanelData, setSharedPanelData] = useState({
@@ -53,6 +281,391 @@ export default function useProjectDetails(projectId) {
     lastUpdated: null        // Track when data was last updated
   });
   
+  useEffect(() => {
+    const matchesActiveStorey = (storeyId) => {
+      if (!activeStoreyId) {
+        return true;
+      }
+      if (storeyId === null || storeyId === undefined) {
+        if (defaultStoreyId === null || defaultStoreyId === undefined) {
+          return false;
+        }
+        return String(defaultStoreyId) === String(activeStoreyId);
+      }
+      return String(storeyId) === String(activeStoreyId);
+    };
+
+    const normalizedWalls = Array.isArray(walls) ? walls : [];
+    const visibleWalls = normalizedWalls.filter((wall) => matchesActiveStorey(wall.storey));
+    setFilteredWalls(visibleWalls);
+
+    const normalizedRooms = Array.isArray(rooms) ? rooms : [];
+    const visibleRooms = normalizedRooms.filter((room) => matchesActiveStorey(room.storey));
+    setFilteredRooms(visibleRooms);
+
+    const wallStoreyMap = new Map(
+      normalizedWalls.map((wall) => [String(wall.id), wall.storey])
+    );
+
+    const normalizedDoors = Array.isArray(doors) ? doors : [];
+    const visibleDoors = normalizedDoors.filter((door) => {
+      const directStorey = door.storey ?? door.storey_id;
+      if (directStorey !== null && directStorey !== undefined) {
+        return matchesActiveStorey(directStorey);
+      }
+
+      const linkedWallId = door.linked_wall || door.wall || door.wall_id;
+      if (!linkedWallId) {
+        return matchesActiveStorey(null);
+      }
+      const wallStorey = wallStoreyMap.get(String(linkedWallId));
+      return matchesActiveStorey(wallStorey);
+    });
+    setFilteredDoors(visibleDoors);
+
+    const visibleWallIds = new Set(visibleWalls.map((wall) => wall.id));
+    const normalizedJoints = Array.isArray(joints) ? joints : [];
+    const visibleJoints = normalizedJoints.filter(
+      (joint) =>
+        visibleWallIds.has(joint.wall_1) && visibleWallIds.has(joint.wall_2)
+    );
+    setFilteredJoints(visibleJoints);
+  }, [walls, rooms, doors, joints, activeStoreyId, defaultStoreyId]);
+
+  useEffect(() => {
+    if (selectedWallsForRoom.length === 0) {
+      return;
+    }
+    setSelectedWallsForRoom((prev) =>
+      prev.filter((wallId) => filteredWalls.some((wall) => wall.id === wallId))
+    );
+  }, [filteredWalls]);
+
+  useEffect(() => {
+    if (!activeStoreyId) {
+      setFilteredGhostWalls([]);
+      setFilteredGhostAreas([]);
+      return;
+    }
+
+    const targetStorey =
+      storeys.find(storey => String(storey.id) === String(activeStoreyId)) || null;
+
+    if (!targetStorey) {
+      setFilteredGhostWalls([]);
+      setFilteredGhostAreas([]);
+      return;
+    }
+
+    const targetElevation = typeof targetStorey.elevation_mm === 'number'
+      ? targetStorey.elevation_mm
+      : Number(targetStorey.elevation_mm) || 0;
+    const defaultHeight = typeof targetStorey.default_room_height_mm === 'number'
+      ? targetStorey.default_room_height_mm
+      : Number(targetStorey.default_room_height_mm) || 0;
+
+    const ghostMap = new Map();
+    const normalizedWalls = Array.isArray(walls) ? walls : [];
+    const normalizedRooms = Array.isArray(filteredRooms) ? filteredRooms : [];
+
+    normalizedRooms.forEach((room) => {
+      const roomWalls = Array.isArray(room.walls) ? room.walls : [];
+      const roomHeight = room.height !== undefined && room.height !== null
+        ? Number(room.height) || 0
+        : defaultHeight;
+      const requiredTop = targetElevation + roomHeight;
+
+      roomWalls.forEach((wallId) => {
+        const wall = normalizedWalls.find((w) => String(w.id) === String(wallId));
+        if (!wall) {
+          return;
+        }
+
+        if (String(wall.storey) === String(activeStoreyId)) {
+          return;
+        }
+
+        const sharedCount = Array.isArray(wall.rooms) ? wall.rooms.length : 0;
+        if (sharedCount <= 1) {
+          return;
+        }
+
+        const wallStorey =
+          storeys.find(storey => String(storey.id) === String(wall.storey)) || null;
+        const wallBaseElevation = wallStorey && wallStorey.elevation_mm !== undefined
+          ? Number(wallStorey.elevation_mm) || 0
+          : 0;
+        const wallHeight = wall.height !== undefined && wall.height !== null
+          ? Number(wall.height) || 0
+          : 0;
+        const wallTop = wallBaseElevation + wallHeight;
+
+        if (wallTop + 1e-3 < requiredTop) {
+          return;
+        }
+
+        if (ghostMap.has(wall.id)) {
+          return;
+        }
+
+        ghostMap.set(wall.id, {
+          id: `ghost-${wall.id}-${activeStoreyId}`,
+          originalWallId: wall.id,
+          storey: wall.storey,
+          start_x: wall.start_x,
+          start_y: wall.start_y,
+          end_x: wall.end_x,
+          end_y: wall.end_y,
+          thickness: wall.thickness,
+          height: wall.height,
+        });
+      });
+    });
+
+    setFilteredGhostWalls(Array.from(ghostMap.values()));
+
+    const sortedStoreys = [...storeys].sort((a, b) => {
+      const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+      if (orderDiff !== 0) return orderDiff;
+      const elevationDiff = (Number(a.elevation_mm) || 0) - (Number(b.elevation_mm) || 0);
+      if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+
+    const activeIndex = sortedStoreys.findIndex(
+      (storey) => String(storey.id) === String(activeStoreyId)
+    );
+
+    if (activeIndex <= 0) {
+      setFilteredGhostAreas([]);
+    } else {
+      const normalizedRooms = Array.isArray(rooms) ? rooms : [];
+
+      const activeRoomSignatures = new Set(
+        (Array.isArray(filteredRooms) ? filteredRooms : [])
+          .map((room) => {
+            if (!Array.isArray(room.room_points) || room.room_points.length < 3) {
+              return null;
+            }
+            const normalizedPoints = room.room_points.map((point) => [
+              Number(point.x) || 0,
+              Number(point.y) || 0,
+            ]);
+            return JSON.stringify(normalizedPoints);
+          })
+          .filter(Boolean)
+      );
+
+      const occupiedSignatures = new Set(activeRoomSignatures);
+      const descendingStoreys = sortedStoreys.slice(0, activeIndex).reverse();
+      const ghostAreas = [];
+
+      descendingStoreys.forEach((storey) => {
+        const storeyRooms = normalizedRooms.filter(
+          (room) => String(room.storey) === String(storey.id)
+        );
+
+        storeyRooms.forEach((room) => {
+          if (!Array.isArray(room.room_points) || room.room_points.length < 3) {
+            return;
+          }
+
+          const normalizedPoints = room.room_points.map((point) => [
+            Number(point.x) || 0,
+            Number(point.y) || 0,
+          ]);
+          const signature = JSON.stringify(normalizedPoints);
+
+          if (occupiedSignatures.has(signature)) {
+            return;
+          }
+
+          const baseElevation =
+            room.base_elevation_mm !== undefined && room.base_elevation_mm !== null
+              ? Number(room.base_elevation_mm) || 0
+              : Number(storey.elevation_mm) || 0;
+          const roomHeight =
+            room.height !== undefined && room.height !== null
+              ? Number(room.height) || 0
+              : Number(storey.default_room_height_mm) || 0;
+          const roomTop = baseElevation + roomHeight;
+
+          if (roomTop + 1e-3 < targetElevation) {
+            return;
+          }
+
+          occupiedSignatures.add(signature);
+          ghostAreas.push({
+            id: `ghost-area-${room.id}-${activeStoreyId}`,
+            sourceRoomId: room.id,
+            room_name: room.room_name,
+            room_points: room.room_points,
+            storey: room.storey,
+            source_storey_name: storey.name,
+          });
+        });
+      });
+
+      setFilteredGhostAreas(ghostAreas);
+    }
+  }, [walls, rooms, filteredRooms, storeys, activeStoreyId]);
+
+  useEffect(() => {
+    const normalizedStoreys = Array.isArray(storeys) ? storeys : [];
+    const normalizedRooms = Array.isArray(rooms) ? rooms : [];
+
+    let maxTop = 0;
+
+    normalizedRooms.forEach((room) => {
+      const storeyRef = normalizedStoreys.find(
+        (storey) => String(storey.id) === String(room.storey)
+      );
+
+      const baseElevation =
+        room.base_elevation_mm !== undefined && room.base_elevation_mm !== null
+          ? Number(room.base_elevation_mm) || 0
+          : storeyRef && storeyRef.elevation_mm !== undefined
+            ? Number(storeyRef.elevation_mm) || 0
+            : 0;
+
+      const roomHeight =
+        room.height !== undefined && room.height !== null
+          ? Number(room.height) || 0
+          : storeyRef && storeyRef.default_room_height_mm !== undefined
+            ? Number(storeyRef.default_room_height_mm) || 0
+            : 0;
+
+      const top = baseElevation + roomHeight;
+      if (!Number.isNaN(top) && top > maxTop) {
+        maxTop = top;
+      }
+    });
+
+    normalizedStoreys.forEach((storey) => {
+      const baseElevation = Number(storey.elevation_mm) || 0;
+      const defaultHeight = Number(storey.default_room_height_mm) || 0;
+      const top = baseElevation + defaultHeight;
+      if (!Number.isNaN(top) && top > maxTop) {
+        maxTop = top;
+      }
+    });
+
+    setProjectCalculatedHeight(maxTop);
+  }, [storeys, rooms]);
+
+  const computeStoreyWizardElevation = () => {
+    const selectedRooms = rooms.filter((room) =>
+      storeyWizardRoomSelections.includes(room.id)
+    );
+
+    if (!selectedRooms.length && !storeyWizardAreas.length) {
+      setStoreyWizardError('Select at least one room or draw an area.');
+      return;
+    }
+
+    let minBase = Infinity;
+    let maxHeight = 0;
+
+    selectedRooms.forEach((room) => {
+      const override = storeyWizardRoomOverrides[String(room.id)] || initializeRoomOverride(room);
+      const base = Number(override?.baseElevation) || 0;
+      const height = Number(override?.height) || storeyWizardDefaultHeight || 0;
+      if (base < minBase) {
+        minBase = base;
+      }
+      if (height > maxHeight) {
+        maxHeight = height;
+      }
+    });
+
+    if (storeyWizardAreas.length > 0) {
+      if (storeys.length > 0) {
+        const highestStorey = storeys.reduce((prev, cur) =>
+          (prev.elevation_mm ?? 0) + (prev.default_room_height_mm ?? 0) >
+          (cur.elevation_mm ?? 0) + (cur.default_room_height_mm ?? 0)
+            ? prev
+            : cur
+        );
+        const areaBase =
+          (highestStorey.elevation_mm ?? 0) +
+          (highestStorey.default_room_height_mm ?? 0);
+        minBase = Math.min(minBase, areaBase);
+        if (highestStorey.default_room_height_mm) {
+          maxHeight = Math.max(
+            maxHeight,
+            Number(highestStorey.default_room_height_mm) || 0
+          );
+        }
+      } else if (!Number.isFinite(minBase)) {
+        minBase = 0;
+      }
+    }
+
+    if (!Number.isFinite(minBase)) {
+      minBase = 0;
+    }
+
+    setStoreyWizardElevation(minBase);
+    setStoreyWizardDefaultHeight(maxHeight || storeyWizardDefaultHeight || 3000);
+    setStoreyWizardSlabThickness(0);
+  };
+
+  useEffect(() => {
+    if (!selectedDoorWall) {
+      return;
+    }
+    const stillVisible = filteredWalls.some(
+      (wall) => wall.id === selectedDoorWall.id
+    );
+    if (!stillVisible) {
+      setSelectedDoorWall(null);
+    }
+  }, [filteredWalls, selectedDoorWall]);
+
+  useEffect(() => {
+    setSelectedRoomPoints([]);
+    setSelectedWallsForRoom([]);
+  }, [activeStoreyId]);
+
+  useEffect(() => {
+    if (selectionContext !== 'storey') {
+      return;
+    }
+    if (selectedRoomPoints.length < 4) {
+      return;
+    }
+    const firstPoint = selectedRoomPoints[0];
+    const lastPoint = selectedRoomPoints[selectedRoomPoints.length - 1];
+    const isClosed =
+      Math.abs(firstPoint.x - lastPoint.x) < 0.001 &&
+      Math.abs(firstPoint.y - lastPoint.y) < 0.001;
+
+    if (!isClosed) {
+      return;
+    }
+
+    const polygon = selectedRoomPoints.slice(0, -1);
+    if (polygon.length < 3) {
+      return;
+    }
+
+    const newArea = {
+      id: `${Date.now()}-${polygon.length}`,
+      points: polygon,
+      source: 'manual',
+    };
+
+    setStoreyWizardAreas(prev => [...prev, newArea]);
+    setSelectedRoomPoints([]);
+    setSelectedWallsForRoom([]);
+    setSelectionContext('room');
+    setStoreyWizardMinimized(false);
+    setShowStoreyWizard(true);
+    if (currentMode === 'storey-area') {
+      setCurrentMode(null);
+    }
+  }, [selectionContext, selectedRoomPoints, currentMode]);
+
   // Function to update shared panel data from any tab
   // Memoized to prevent unnecessary re-renders and wrapped in useCallback
   const updateSharedPanelData = useCallback((tabName, panelData, analysis = null) => {
@@ -157,9 +770,14 @@ export default function useProjectDetails(projectId) {
   const updateRoomPointsAndDetectWalls = (newPoints) => {
     setSelectedRoomPoints(newPoints);
     
+    if (selectionContext === 'storey') {
+      setSelectedWallsForRoom([]);
+      return;
+    }
+
     // If we have enough points to form a polygon, detect walls
     if (newPoints.length >= 3) {
-      const detectedWallIds = detectRoomWalls(newPoints, walls, 1); // 1mm tolerance
+      const detectedWallIds = detectRoomWalls(newPoints, filteredWalls, 1); // 1mm tolerance
       console.log('Auto-detected walls for room:', detectedWallIds);
       setSelectedWallsForRoom(detectedWallIds);
     } else {
@@ -215,13 +833,17 @@ export default function useProjectDetails(projectId) {
     setWallDeleteError('');
     setRoomError('');
     setWallMergeSuccess(false);
+    setSelectionContext('room');
   };
 
   // Fetch project details
   const fetchProjectDetails = async () => {
     try {
       const projectResponse = await api.get(`/projects/${projectId}/`);
-      setProject(projectResponse.data);
+      const projectData = projectResponse.data;
+      setProject(projectData);
+      await ensureStoreys(projectData);
+      setStoreyError('');
       const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
       setWalls(wallsResponse.data);
       const doorsResponse = await api.get(`/doors/?project=${projectId}`);
@@ -494,12 +1116,14 @@ export default function useProjectDetails(projectId) {
         ...doorData,
         swing_direction: 'right',
         slide_direction: 'right',
-        side: 'interior'
+        side: 'interior',
+        storey: activeStoreyId ?? defaultStoreyId
       };
       const response = await api.post('/doors/create_door/', completeDoorData);
       setDoors([...doors, response.data]);
       setShowDoorManager(false);
       setCurrentMode(null);
+      setSelectedDoorWall(null);
     } catch (error) {
       console.error('Error creating door:', error);
     }
@@ -522,12 +1146,13 @@ export default function useProjectDetails(projectId) {
         slide_direction: updatedDoor.slide_direction,
         side: updatedDoor.side,
         orientation: updatedDoor.orientation || 'horizontal',
+        storey: updatedDoor.storey ?? activeStoreyId ?? defaultStoreyId,
       });
       const updated = response.data;
       setDoors(doors.map(d => d.id === updated.id ? updated : d));
       setShowDoorEditor(false);
       setEditingDoor(null);
-      setSelectedWall(null);
+      setSelectedDoorWall(null);
     } catch (error) {
       console.error('Failed to update door:', error);
       if (error.response && error.response.data) {
@@ -535,6 +1160,240 @@ export default function useProjectDetails(projectId) {
         alert(JSON.stringify(error.response.data, null, 2));
       }
       throw error;
+    }
+  };
+
+  const duplicateRoomToStorey = async (roomId, targetStoreyId, overrides = {}) => {
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) {
+      console.warn('Room not found for duplication:', roomId);
+      return null;
+    }
+
+    const roomStoreyName =
+      storeys.find(storey => String(storey.id) === String(targetStoreyId))?.name || 'New Level';
+
+    const targetStorey =
+      storeys.find(storey => String(storey.id) === String(targetStoreyId)) || null;
+    const override = storeyWizardRoomOverrides[String(room.id)];
+    const targetElevation = override?.baseElevation !== undefined
+      ? Number(override.baseElevation) || 0
+      : overrides.base_elevation_mm !== undefined
+        ? Number(overrides.base_elevation_mm) || 0
+        : targetStorey && targetStorey.elevation_mm !== undefined
+          ? Number(targetStorey.elevation_mm) || 0
+          : 0;
+    const roomHeight = override?.height !== undefined
+      ? Number(override.height) || 0
+      : overrides.height !== undefined
+        ? Number(overrides.height) || 0
+        : room.height !== undefined && room.height !== null
+          ? Number(room.height) || 0
+          : targetStorey && targetStorey.default_room_height_mm !== undefined
+            ? Number(targetStorey.default_room_height_mm) || 0
+            : 0;
+
+    const wallIds = Array.isArray(room.walls) ? room.walls : [];
+    const createdWalls = [];
+    const reusedWallIds = [];
+
+    for (const wallId of wallIds) {
+      const wall = walls.find(w => w.id === wallId);
+      if (!wall) {
+        continue;
+      }
+
+       const wallStorey =
+         storeys.find(storey => String(storey.id) === String(wall.storey)) || null;
+       const wallBaseElevation = wallStorey && wallStorey.elevation_mm !== undefined
+         ? Number(wallStorey.elevation_mm) || 0
+         : 0;
+       const wallHeight = wall.height !== undefined && wall.height !== null
+         ? Number(wall.height) || 0
+         : 0;
+       const wallTop = wallBaseElevation + wallHeight;
+       const requiredTop = targetElevation + roomHeight;
+       const sharedCount = Array.isArray(wall.rooms) ? wall.rooms.length : 0;
+       const shouldReuse =
+         sharedCount > 1 &&
+         wallTop + 1e-3 >= requiredTop;
+
+       if (shouldReuse) {
+         reusedWallIds.push(wall.id);
+         continue;
+       }
+
+      const wallPayload = {
+        project: projectId,
+        storey: targetStoreyId,
+        start_x: wall.start_x,
+        start_y: wall.start_y,
+        end_x: wall.end_x,
+        end_y: wall.end_y,
+        height: wall.height,
+        thickness: wall.thickness,
+        application_type: wall.application_type,
+        inner_face_material: wall.inner_face_material,
+        inner_face_thickness: wall.inner_face_thickness,
+        outer_face_material: wall.outer_face_material,
+        outer_face_thickness: wall.outer_face_thickness,
+        is_default: wall.is_default ?? false,
+        has_concrete_base: wall.has_concrete_base ?? false,
+        concrete_base_height: wall.concrete_base_height,
+        fill_gap_mode: false,
+        gap_fill_height: null,
+        gap_base_position: null,
+      };
+
+      const wallResponse = await api.post('/walls/', wallPayload);
+      createdWalls.push(wallResponse.data);
+    }
+
+    if (createdWalls.length > 0) {
+      setWalls(prev => [...prev, ...createdWalls]);
+    }
+
+    const combinedWallIds = [
+      ...createdWalls.map(w => w.id),
+      ...reusedWallIds
+    ];
+
+    const uniqueWallIds = Array.from(new Set(combinedWallIds));
+
+    const roomPayload = {
+      project: projectId,
+      storey: targetStoreyId,
+      room_name: overrides.room_name || `${room.room_name} (${roomStoreyName})`,
+      floor_type: overrides.floor_type || room.floor_type || 'Panel',
+      floor_thickness: overrides.floor_thickness ?? room.floor_thickness ?? 0,
+      temperature: overrides.temperature ?? room.temperature ?? 0,
+      height: overrides.height ?? room.height ?? storeyWizardDefaultHeight,
+      base_elevation_mm: targetElevation,
+      remarks: overrides.remarks ?? room.remarks ?? '',
+      walls: uniqueWallIds,
+      room_points: overrides.room_points || room.room_points || [],
+    };
+
+    const roomResponse = await api.post('/rooms/', roomPayload);
+    setRooms(prev => [...prev, roomResponse.data]);
+    return roomResponse.data;
+  };
+
+  const createRoomFromPolygon = async (points, targetStoreyId, options = {}) => {
+    if (!Array.isArray(points) || points.length < 3) {
+      return null;
+    }
+
+    const wallHeight = options.height ?? storeyWizardDefaultHeight;
+    const wallThickness = options.thickness ?? project?.wall_thickness ?? 200;
+    const roomStoreyName =
+      storeys.find(storey => String(storey.id) === String(targetStoreyId))?.name || 'New Level';
+
+    const createdWalls = [];
+    for (let i = 0; i < points.length; i += 1) {
+      const start = points[i];
+      const end = points[(i + 1) % points.length];
+      const wallPayload = {
+        project: projectId,
+        storey: targetStoreyId,
+        start_x: start.x,
+        start_y: start.y,
+        end_x: end.x,
+        end_y: end.y,
+        height: wallHeight,
+        thickness: wallThickness,
+        application_type: 'wall',
+        inner_face_material: 'PPGI',
+        inner_face_thickness: 0.5,
+        outer_face_material: 'PPGI',
+        outer_face_thickness: 0.5,
+        is_default: false,
+        has_concrete_base: false,
+        concrete_base_height: null,
+        fill_gap_mode: false,
+        gap_fill_height: null,
+        gap_base_position: null,
+      };
+
+      const wallResponse = await api.post('/walls/', wallPayload);
+      createdWalls.push(wallResponse.data);
+    }
+
+    if (createdWalls.length > 0) {
+      setWalls(prev => [...prev, ...createdWalls]);
+    }
+
+    const roomPayload = {
+      project: projectId,
+      storey: targetStoreyId,
+      room_name: options.room_name || `Upper Area ${storeyWizardAreas.length + 1} (${roomStoreyName})`,
+      floor_type: options.floor_type || 'Panel',
+      floor_thickness: options.floor_thickness ?? 0,
+      temperature: options.temperature ?? 0,
+      height: wallHeight,
+      base_elevation_mm: options.base_elevation_mm ?? 0,
+      remarks: options.remarks ?? '',
+      walls: createdWalls.map(w => w.id),
+      room_points: points,
+    };
+
+    const roomResponse = await api.post('/rooms/', roomPayload);
+    setRooms(prev => [...prev, roomResponse.data]);
+    return roomResponse.data;
+  };
+
+  const completeStoreyWizard = async () => {
+    if (!storeyWizardName || !storeyWizardName.trim()) {
+      setStoreyWizardError('Storey name is required.');
+      return;
+    }
+
+    try {
+      setStoreyWizardError('');
+      try {
+        await api.get('/csrf-token/');
+      } catch (tokenError) {
+        console.warn('Failed to refresh CSRF token:', tokenError);
+      }
+      const payload = {
+        project: projectId,
+        name: storeyWizardName.trim(),
+        elevation_mm: storeyWizardElevation,
+        default_room_height_mm: storeyWizardDefaultHeight,
+        slab_thickness_mm: storeyWizardSlabThickness,
+        order: storeys.length,
+      };
+
+      const storeyResponse = await api.post('/storeys/', payload);
+      const newStorey = storeyResponse.data;
+      await ensureStoreys();
+      setActiveStoreyId(newStorey.id);
+      const storeyElevation = newStorey.elevation_mm ?? storeyWizardElevation ?? 0;
+
+      for (const roomId of storeyWizardRoomSelections) {
+        await duplicateRoomToStorey(roomId, newStorey.id, {
+          base_elevation_mm: storeyElevation,
+        });
+      }
+
+      for (let index = 0; index < storeyWizardAreas.length; index += 1) {
+        const area = storeyWizardAreas[index];
+        await createRoomFromPolygon(area.points, newStorey.id, {
+          room_name: `Area ${index + 1} - ${storeyWizardName}`,
+          base_elevation_mm: storeyElevation,
+        });
+      }
+
+      await fetchProjectDetails();
+      closeStoreyWizard();
+      setStoreyWizardMinimized(false);
+    } catch (error) {
+      console.error('Error completing storey wizard:', error);
+      const message =
+        error.response?.data?.error ||
+        error.message ||
+        'Failed to create storey.';
+      setStoreyWizardError(message);
     }
   };
 
@@ -1382,6 +2241,55 @@ export default function useProjectDetails(projectId) {
     project,
     walls,
     setWalls,
+    storeys,
+    setStoreys,
+    activeStorey,
+    activeStoreyId,
+    setActiveStoreyId,
+    storeyError,
+    setStoreyError,
+    isStoreyLoading,
+    showStoreyWizard,
+    setShowStoreyWizard,
+    openStoreyWizard,
+    closeStoreyWizard,
+    selectionContext,
+    setSelectionContext,
+    storeyWizardStep,
+    setStoreyWizardStep,
+    storeyWizardSourceStoreyId,
+    setStoreyWizardSourceStoreyId,
+    storeyWizardName,
+    setStoreyWizardName,
+    storeyWizardElevation,
+    setStoreyWizardElevation,
+    storeyWizardDefaultHeight,
+    setStoreyWizardDefaultHeight,
+    storeyWizardSlabThickness,
+    setStoreyWizardSlabThickness,
+    storeyWizardAreas,
+    setStoreyWizardAreas,
+    storeyWizardRoomSelections,
+    setStoreyWizardRoomSelections,
+    storeyWizardRoomOverrides,
+    updateStoreyWizardRoomOverride,
+    deleteStorey: async (storeyId) => {
+      try {
+        await api.delete(`/storeys/${storeyId}/`);
+        await ensureStoreys();
+        await fetchProjectDetails();
+      } catch (error) {
+        console.error('Failed to delete storey:', error);
+        const message =
+          error.response?.data?.error ||
+          error.message ||
+          'Failed to delete storey.';
+        setStoreyError(message);
+      }
+    },
+    storeyWizardError,
+    setStoreyWizardError,
+    filteredWalls,
     isEditingMode,
     setIsEditingMode,
     currentMode,
@@ -1401,6 +2309,10 @@ export default function useProjectDetails(projectId) {
     setEditingRoom,
     rooms,
     setRooms,
+    filteredRooms,
+    filteredGhostWalls,
+    filteredGhostAreas,
+    projectCalculatedHeight,
     selectedWallType,
     setSelectedWallType,
     showWallEditor,
@@ -1409,12 +2321,14 @@ export default function useProjectDetails(projectId) {
     setShowRoomManagerModal,
     joints,
     setJoints,
+    filteredJoints,
     selectedDoorWall,
     setSelectedDoorWall,
     showDoorManager,
     setShowDoorManager,
     doors,
     setDoors,
+    filteredDoors,
     editingDoor,
     setEditingDoor,
     showDoorEditor,
@@ -1460,6 +2374,9 @@ export default function useProjectDetails(projectId) {
     getAllPanelData,
     // Handlers
     fetchProjectDetails,
+    ensureStoreys,
+    beginStoreyAreaSelection,
+    cancelStoreyAreaSelection,
     handleCreateRoom,
     handleRoomUpdate,
     handleRoomDelete,
@@ -1475,6 +2392,11 @@ export default function useProjectDetails(projectId) {
     handleDeleteDoor,
     handleAddWallWithSplitting,
     handleViewToggle,
+    completeStoreyWizard,
+    computeStoreyWizardElevation,
+    computeStoreyWizardElevation,
+    isStoreyWizardMinimized,
+    setStoreyWizardMinimized,
     togglePanelLines: () => {
       setShowPanelLines(prev => !prev);
       // Also toggle ceiling panel lines when toggling wall panel lines

@@ -1,6 +1,19 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProjectViewSet, WallViewSet, RoomViewSet, CeilingPanelViewSet, CeilingPlanViewSet, FloorPanelViewSet, FloorPlanViewSet, DoorViewSet, IntersectionViewSet, CeilingZoneViewSet
+from .views import (
+    ProjectViewSet,
+    WallViewSet,
+    RoomViewSet,
+    CeilingPanelViewSet,
+    CeilingPlanViewSet,
+    FloorPanelViewSet,
+    FloorPlanViewSet,
+    DoorViewSet,
+    IntersectionViewSet,
+    CeilingZoneViewSet,
+    StoreyViewSet,
+    csrf_token_view,
+)
 
 # Create a router for registering viewsets
 router = DefaultRouter()
@@ -14,8 +27,10 @@ router.register(r'floor-panels', FloorPanelViewSet, basename='floor-panel')  # E
 router.register(r'floor-plans', FloorPlanViewSet, basename='floor-plan')  # Endpoint for floor plans
 router.register(r'doors', DoorViewSet, basename='door')  # New endpoint for doors
 router.register(r'intersections', IntersectionViewSet, basename='intersection')  # New endpoint for intersections
+router.register(r'storeys', StoreyViewSet, basename='storey')
 
 # Define urlpatterns
 urlpatterns = [
+    path('csrf-token/', csrf_token_view, name='csrf-token'),
     path('', include(router.urls)),  # Include all routes defined by the router
 ]

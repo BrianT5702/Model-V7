@@ -8,7 +8,9 @@ const DoorManager = ({
   editingDoor = null,
   isEditMode = false,
   onDeleteDoor,
-  onClose
+  onClose,
+  activeStoreyId = null,
+  activeStoreyName = ''
 }) => {
   // Local state for all door fields
   const [doorType, setDoorType] = useState('swing');
@@ -94,7 +96,8 @@ const DoorManager = ({
       position_y: 0,
       swing_direction: swingDirection,
       slide_direction: slideDirection,
-      side: side
+      side: side,
+      storey: activeStoreyId
     };
     if (isEditMode && editingDoor) {
       onUpdateDoor({ ...doorData, id: editingDoor.id });
@@ -159,6 +162,11 @@ const DoorManager = ({
         <h2 className="text-lg font-bold mb-4">
           {isEditMode ? 'Edit Door' : 'Add New Door'}
         </h2>
+
+        <div className="mb-4 text-sm text-gray-600">
+          <span className="font-medium text-gray-700">Storey:</span>{' '}
+          {activeStoreyName || (activeStoreyId ? `Level ${activeStoreyId}` : 'Not set')}
+        </div>
 
         {validationError && (
           <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">

@@ -41,6 +41,8 @@ const Canvas2D = ({
     rooms = [],
     onJointsUpdate,
     doors = [],
+    ghostWalls = [],
+    ghostAreas = [],
     onDoorWallSelect,
     onDoorSelect = () => {},
     selectedRoomPoints = [],
@@ -251,8 +253,8 @@ const Canvas2D = ({
     // Handle right-click (context menu) for define-room mode
     const handleCanvasContextMenu = (event) => {
         event.preventDefault();
-        // Only handle right-click in define-room mode
-        if (currentMode === 'define-room' && selectedRoomPoints && selectedRoomPoints.length > 0) {
+        // Only handle right-click in polygon modes
+        if ((currentMode === 'define-room' || currentMode === 'storey-area') && selectedRoomPoints && selectedRoomPoints.length > 0) {
             const points = [...selectedRoomPoints];
             if (points.length > 0) {
                 points.pop();
@@ -944,12 +946,12 @@ const Canvas2D = ({
         if (!isEditingMode) return;
         
         // Deselect room label when clicking on empty space (but not when actively defining a room)
-        if (selectedRoomId !== null && !(currentMode === 'define-room' && selectedRoomPoints && selectedRoomPoints.length > 0)) {
+        if (selectedRoomId !== null && !((currentMode === 'define-room' || currentMode === 'storey-area') && selectedRoomPoints && selectedRoomPoints.length > 0)) {
             setSelectedRoomId(null);
         }
     
         // Intersection selection block (unchanged)
-        if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room' && currentMode !== 'split-wall') {
+        if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room' && currentMode !== 'storey-area' && currentMode !== 'split-wall') {
             for (const inter of intersections) {
                 const wall1 = walls.find(w => w.id === inter.wall_1);
                 const wall2 = walls.find(w => w.id === inter.wall_2);
@@ -1164,21 +1166,24 @@ const Canvas2D = ({
             }
         }
           
-        // === Define-Room Mode ===
-        if (currentMode === 'define-room') {
-            // 1. Check if clicked inside an existing room polygon
-            const clickPoint = { x, y };
-            for (const room of rooms) {
-                const polygon = room.room_points?.length >= 3 ? room.room_points : null;
-                if (polygon && isPointInPolygon(clickPoint, polygon)) {
-                    // Only disable room selection if actively defining a room (has polygon points)
-                    if (selectedRoomPoints && selectedRoomPoints.length > 0) {
-                        // Don't select room when actively defining a room
-                        return;
-                    } else {
-                        // Allow room selection when not actively defining a room
-                        if (typeof onRoomSelect === 'function') onRoomSelect(room.id);
-                        return;
+        // === Define-Room / Storey-Area Mode ===
+        const isPolygonMode = currentMode === 'define-room' || currentMode === 'storey-area';
+        if (isPolygonMode) {
+            if (currentMode === 'define-room') {
+                // 1. Check if clicked inside an existing room polygon
+                const clickPoint = { x, y };
+                for (const room of rooms) {
+                    const polygon = room.room_points?.length >= 3 ? room.room_points : null;
+                    if (polygon && isPointInPolygon(clickPoint, polygon)) {
+                        // Only disable room selection if actively defining a room (has polygon points)
+                        if (selectedRoomPoints && selectedRoomPoints.length > 0) {
+                            // Don't select room when actively defining a room
+                            return;
+                        } else {
+                            // Allow room selection when not actively defining a room
+                            if (typeof onRoomSelect === 'function') onRoomSelect(room.id);
+                            return;
+                        }
                     }
                 }
             }
@@ -1285,7 +1290,7 @@ const Canvas2D = ({
             return;
         }
 
-        if (currentMode === 'define-room') {
+        if (currentMode === 'define-room' || currentMode === 'storey-area') {
             setHoveredPoint(null); // Disable endpoint hover effect
             return;
         }
@@ -1742,6 +1747,99 @@ const Canvas2D = ({
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);
         
+        if (Array.isArray(ghostAreas) && ghostAreas.length > 0) {
+            ghostAreas.forEach((ghostArea) => {
+                const points = Array.isArray(ghostArea.room_points)
+                    ? ghostArea.room_points
+                    : Array.isArray(ghostArea.points)
+                        ? ghostArea.points
+                        : [];
+
+                if (points.length < 3) {
+                    return;
+                }
+
+                const transformedPoints = points.map((point) => ({
+                    x: (Number(point.x) || 0) * scaleFactor.current + offsetX.current,
+                    y: (Number(point.y) || 0) * scaleFactor.current + offsetY.current,
+                }));
+
+                context.save();
+                context.beginPath();
+                transformedPoints.forEach((point, index) => {
+                    if (index === 0) {
+                        context.moveTo(point.x, point.y);
+                    } else {
+                        context.lineTo(point.x, point.y);
+                    }
+                });
+                context.closePath();
+
+                context.globalAlpha = 0.15;
+                context.fillStyle = '#BFDBFE';
+                context.fill();
+
+                context.globalAlpha = 0.8;
+                context.strokeStyle = '#60A5FA';
+                context.setLineDash([10, 6]);
+                context.lineWidth = Math.max(1, 2 * scaleFactor.current);
+                context.stroke();
+                context.restore();
+
+                const centroid = transformedPoints.reduce(
+                    (acc, point) => {
+                        acc.x += point.x;
+                        acc.y += point.y;
+                        return acc;
+                    },
+                    { x: 0, y: 0 }
+                );
+                centroid.x /= transformedPoints.length;
+                centroid.y /= transformedPoints.length;
+
+                context.save();
+                context.globalAlpha = 0.85;
+                context.fillStyle = '#1D4ED8';
+                context.font = `${Math.max(12, 160 * scaleFactor.current)}px Arial`;
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+                const areaName = ghostArea.room_name || 'Area';
+                const originLabel = ghostArea.source_storey_name
+                    ? ` (${ghostArea.source_storey_name})`
+                    : ' (Below)';
+                const label = `${areaName}${originLabel}`;
+                context.fillText(label, centroid.x, centroid.y);
+                context.restore();
+            });
+        }
+
+        if (Array.isArray(ghostWalls) && ghostWalls.length > 0) {
+            ghostWalls.forEach((ghostWall) => {
+                if (
+                    ghostWall.start_x === undefined || ghostWall.start_y === undefined ||
+                    ghostWall.end_x === undefined || ghostWall.end_y === undefined
+                ) {
+                    return;
+                }
+
+                const startX = ghostWall.start_x * scaleFactor.current + offsetX.current;
+                const startY = ghostWall.start_y * scaleFactor.current + offsetY.current;
+                const endX = ghostWall.end_x * scaleFactor.current + offsetX.current;
+                const endY = ghostWall.end_y * scaleFactor.current + offsetY.current;
+
+                context.save();
+                context.strokeStyle = '#94A3B8';
+                context.globalAlpha = 0.7;
+                context.lineWidth = Math.max(1, (ghostWall.thickness || FIXED_GAP / 2) * scaleFactor.current * 0.5);
+                context.setLineDash([12, 6]);
+                context.beginPath();
+                context.moveTo(startX, startY);
+                context.lineTo(endX, endY);
+                context.stroke();
+                context.restore();
+            });
+        }
+
         // Draw doors
         drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
         // Draw rooms
@@ -1822,7 +1920,9 @@ const Canvas2D = ({
         dimensionVisibility,
         currentMode,
         splitPreviewPoint,
-        splitTargetWallId
+        splitTargetWallId,
+        ghostWalls,
+        ghostAreas
         // Removed roomLabelPositions from dependencies to prevent infinite loop
     ]);
 

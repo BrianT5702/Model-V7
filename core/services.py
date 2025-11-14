@@ -1,6 +1,6 @@
 from django.db import transaction
 from django.db.models import Count
-from .models import Wall, Room, Door
+from .models import Storey, Wall, Room, Door
 from django.utils import timezone
 import logging
 import time
@@ -165,7 +165,7 @@ def normalize_wall_coordinates(start_x, start_y, end_x, end_y):
 
 class WallService:
     @staticmethod
-    def create_default_walls(project):
+    def create_default_walls(project, storey=None):
         """Create default boundary walls for a project."""
         width = project.width
         length = project.length
@@ -186,6 +186,7 @@ class WallService:
             norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(start_x, start_y, end_x, end_y)
             walls.append({
                 'project': project, 
+                'storey': storey,
                 'start_x': norm_start_x, 
                 'start_y': norm_start_y, 
                 'end_x': norm_end_x, 
@@ -208,6 +209,7 @@ class WallService:
             )
             split_wall_1 = Wall.objects.create(
                 project=wall.project,
+                storey=wall.storey,
                 start_x=norm_start_x1,
                 start_y=norm_start_y1,
                 end_x=norm_end_x1,
@@ -223,6 +225,7 @@ class WallService:
             )
             split_wall_2 = Wall.objects.create(
                 project=wall.project,
+                storey=wall.storey,
                 start_x=norm_start_x2,
                 start_y=norm_start_y2,
                 end_x=norm_end_x2,
@@ -269,6 +272,7 @@ class WallService:
         # Create the merged wall
         merged_wall = Wall.objects.create(
             project=wall_1.project,
+            storey=wall_1.storey,
             start_x=norm_start_x,
             start_y=norm_start_y,
             end_x=norm_end_x,
@@ -649,13 +653,39 @@ class RoomService:
         # Create the room
         normalized_points = RoomService.normalize_room_points(room_data.get('room_points', []))
 
+        project_id = room_data['project']
+        storey_id = room_data.get('storey')
+        storey = None
+
+        if storey_id is not None:
+            try:
+                storey = Storey.objects.get(pk=storey_id, project_id=project_id)
+            except Storey.DoesNotExist:
+                raise ValueError('Selected storey not found for this project')
+        else:
+            storey = Storey.objects.filter(project_id=project_id).order_by('order', 'elevation_mm', 'id').first()
+            if storey is None:
+                storey = Storey.objects.create(
+                    project_id=project_id,
+                    name='Ground Floor',
+                    elevation_mm=0.0,
+                    default_room_height_mm=room_data.get('height') or 3000.0,
+                    order=0,
+                )
+
+        base_elevation = room_data.get('base_elevation_mm')
+        if base_elevation is None and storey is not None:
+            base_elevation = storey.elevation_mm
+
         room = Room.objects.create(
-            project_id=room_data['project'],
+            project_id=project_id,
+            storey=storey,
             room_name=room_data['room_name'],
             floor_type=room_data.get('floor_type', 'None'),
             floor_thickness=room_data.get('floor_thickness'),
             temperature=room_data.get('temperature'),
             height=room_data.get('height'),
+            base_elevation_mm=base_elevation if base_elevation is not None else 0.0,
             remarks=room_data.get('remarks', ''),
             room_points=normalized_points
         )
@@ -681,9 +711,31 @@ class RoomService:
             room.walls.set(walls)
             logger.info(f"Added walls to room {room.id}")
             
-            # Update wall heights
-            updated_count = RoomService.update_wall_heights_for_room(wall_ids, room_data['height'])
-            logger.info(f"Updated {updated_count} walls for room {room.id}")
+            walls_to_update = []
+            
+            if storey:
+                for wall in walls:
+                    if wall.storey_id is None:
+                        wall.storey = storey
+                        wall.save(update_fields=['storey'])
+                        walls_to_update.append(wall.id)
+                        logger.info(f"Assigned wall {wall.id} to storey {storey.id}")
+                    elif wall.storey_id == storey.id:
+                        walls_to_update.append(wall.id)
+                    else:
+                        logger.info(
+                            "Reusing wall %s from storey %s with room %s on storey %s without reassignment",
+                            wall.id,
+                            wall.storey_id,
+                            room.id,
+                            storey.id,
+                        )
+            else:
+                walls_to_update = [wall.id for wall in walls]
+            
+            if walls_to_update:
+                updated_count = RoomService.update_wall_heights_for_room(walls_to_update, room_data['height'])
+                logger.info(f"Updated {updated_count} walls for room {room.id}")
         
         return room
 

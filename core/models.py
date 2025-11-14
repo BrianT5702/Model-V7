@@ -24,8 +24,51 @@ class Project(models.Model):
         return self.name
 
 
+class Storey(models.Model):
+    """Represents a vertical level within a project."""
+    project = models.ForeignKey(
+        Project,
+        related_name='storeys',
+        on_delete=models.CASCADE,
+        help_text="Project this storey belongs to."
+    )
+    name = models.CharField(max_length=100, help_text="Human-readable storey label.")
+    elevation_mm = models.FloatField(
+        help_text="Base elevation of the storey relative to project ground level in mm."
+    )
+    default_room_height_mm = models.FloatField(
+        default=3000.0,
+        help_text="Default room height for rooms created on this storey in mm."
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        help_text="Ordering index for storeys from lowest to highest."
+    )
+    slab_thickness_mm = models.FloatField(
+        default=0.0,
+        help_text="Optional structural thickness between this storey and the one above."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('project', 'name')
+        ordering = ['order', 'elevation_mm', 'id']
+
+    def __str__(self):
+        return f"{self.project.name} · {self.name}"
+
+
 class Wall(models.Model):
     project = models.ForeignKey(Project, related_name="walls", on_delete=models.CASCADE)
+    storey = models.ForeignKey(
+        Storey,
+        related_name='walls',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Storey this wall belongs to."
+    )
     start_x = models.FloatField(help_text="X-coordinate of the wall's start point")
     start_y = models.FloatField(help_text="Y-coordinate of the wall's start point")
     end_x = models.FloatField(help_text="X-coordinate of the wall's end point")
@@ -76,6 +119,14 @@ class Room(models.Model):
     project = models.ForeignKey(Project, related_name='rooms', on_delete=models.CASCADE)
     walls = models.ManyToManyField(Wall, related_name='rooms')
     room_name = models.CharField(max_length=100)
+    storey = models.ForeignKey(
+        Storey,
+        related_name='rooms',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Storey this room resides in."
+    )
     floor_type = models.CharField(
         max_length=50,
         choices=ROOM_FLOOR_TYPES,
@@ -127,6 +178,14 @@ class CeilingZone(models.Model):
     """Grouping of multiple rooms that share a single continuous ceiling plan"""
     project = models.ForeignKey(Project, related_name='ceiling_zones', on_delete=models.CASCADE)
     rooms = models.ManyToManyField(Room, related_name='ceiling_zones')
+    storey = models.ForeignKey(
+        Storey,
+        related_name='ceiling_zones',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Storey this ceiling zone belongs to."
+    )
     ceiling_thickness = models.FloatField(default=150, help_text="Ceiling thickness used for this zone in mm")
     orientation_strategy = models.CharField(
         max_length=50,
@@ -549,6 +608,14 @@ class FloorPlan(models.Model):
 
 class Door(models.Model):
     project = models.ForeignKey(Project, related_name='doors', on_delete=models.CASCADE)
+    storey = models.ForeignKey(
+        Storey,
+        related_name='doors',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Storey this door resides in."
+    )
     door_type = models.CharField(
         max_length=50,
         choices=DOOR_TYPES,
