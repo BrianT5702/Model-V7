@@ -255,13 +255,47 @@ class ProjectSerializer(serializers.ModelSerializer):
     doors = DoorSerializer(many=True, read_only=True)
     intersections = IntersectionSerializer(many=True, read_only=True)
     storeys = StoreySerializer(many=True, read_only=True)
+    calculated_height = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
         fields = [
-            'id', 'name', 'width', 'length', 'height', 'wall_thickness',
+            'id', 'name', 'width', 'length', 'height', 'calculated_height', 'wall_thickness',
             'storeys', 'walls', 'rooms', 'doors', 'intersections'
         ]
+
+    def get_calculated_height(self, obj):
+        """Calculate the maximum height from all rooms and storeys"""
+        max_height = 0.0
+        
+        # Check all rooms
+        for room in obj.rooms.all():
+            storey = room.storey
+            base_elevation = (
+                room.base_elevation_mm if room.base_elevation_mm is not None
+                else (storey.elevation_mm if storey else 0.0)
+            )
+            room_height = (
+                room.height if room.height is not None
+                else (storey.default_room_height_mm if storey else 0.0)
+            )
+            top = base_elevation + room_height
+            if top > max_height:
+                max_height = top
+        
+        # Check all storeys (for default heights even without rooms)
+        for storey in obj.storeys.all():
+            base_elevation = storey.elevation_mm or 0.0
+            default_height = storey.default_room_height_mm or 0.0
+            top = base_elevation + default_height
+            if top > max_height:
+                max_height = top
+        
+        # Fallback to the stored height if no rooms/storeys exist
+        if max_height == 0.0:
+            max_height = obj.height or 0.0
+        
+        return max_height
 
     def validate_name(self, value):
         """Validate that project name is unique"""

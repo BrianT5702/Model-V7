@@ -46,11 +46,21 @@ export default function useProjectDetails(projectId) {
   const [storeyWizardElevation, setStoreyWizardElevation] = useState(0);
   const [storeyWizardDefaultHeight, setStoreyWizardDefaultHeight] = useState(3000);
   const [storeyWizardSlabThickness, setStoreyWizardSlabThickness] = useState(0);
-const [storeyWizardAreas, setStoreyWizardAreas] = useState([]);
-const [storeyWizardRoomSelections, setStoreyWizardRoomSelections] = useState([]);
-const [storeyWizardRoomOverrides, setStoreyWizardRoomOverrides] = useState({});
-const [storeyWizardError, setStoreyWizardError] = useState('');
-const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
+  const [storeyWizardAreas, setStoreyWizardAreas] = useState([]);
+  const [storeyWizardRoomSelections, setStoreyWizardRoomSelections] = useState([]);
+  const [storeyWizardRoomOverrides, setStoreyWizardRoomOverrides] = useState({});
+  const [storeyWizardError, setStoreyWizardError] = useState('');
+  const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
+  const [isLevelEditMode, setIsLevelEditMode] = useState(false);
+  const [levelEditSelections, setLevelEditSelections] = useState([]);
+  const [levelEditOverrides, setLevelEditOverrides] = useState({});
+  const [isLevelEditApplying, setIsLevelEditApplying] = useState(false);
+  const [levelEditError, setLevelEditError] = useState('');
+  const [levelEditSuccess, setLevelEditSuccess] = useState('');
+  const activeStorey = useMemo(() => {
+    if (!activeStoreyId) return null;
+    return storeys.find(storey => String(storey.id) === String(activeStoreyId)) || null;
+  }, [storeys, activeStoreyId]);
   useEffect(() => {
     api.get('/csrf-token/').catch((error) => {
       console.warn('Failed to prefetch CSRF token:', error);
@@ -115,17 +125,147 @@ const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
       };
     });
   }, [initializeRoomOverride, rooms]);
+
+  const enterLevelEditMode = useCallback(() => {
+    setIsLevelEditMode(true);
+    setLevelEditSelections([]);
+    setLevelEditOverrides({});
+    setLevelEditError('');
+    setLevelEditSuccess('');
+    setSelectionContext('room');
+  }, []);
+
+  const exitLevelEditMode = useCallback(() => {
+    setIsLevelEditMode(false);
+    setLevelEditSelections([]);
+    setLevelEditOverrides({});
+    setIsLevelEditApplying(false);
+    setLevelEditError('');
+    setLevelEditSuccess('');
+    if (currentMode === 'storey-area') {
+      setCurrentMode(null);
+    }
+    setSelectedRoomPoints([]);
+    setSelectedWallsForRoom([]);
+  }, [currentMode]);
+
+  const toggleLevelEditRoom = useCallback((roomId) => {
+    if (roomId === null || roomId === undefined) {
+      return;
+    }
+    const targetStoreyElevation =
+      activeStorey && activeStorey.elevation_mm !== undefined
+        ? Number(activeStorey.elevation_mm) || 0
+        : 0;
+
+    setLevelEditSelections((prev) => {
+      const next = new Set(prev || []);
+      const key = String(roomId);
+      const alreadySelected = next.has(roomId);
+
+      if (alreadySelected) {
+        next.delete(roomId);
+        setLevelEditOverrides((prevOverrides) => {
+          if (!prevOverrides[key]) {
+            return prevOverrides;
+          }
+          const updated = { ...prevOverrides };
+          delete updated[key];
+          return updated;
+        });
+      } else {
+        next.add(roomId);
+        const sourceRoom = rooms.find((room) => String(room.id) === key);
+        const sourceStorey =
+          storeys.find((storey) => String(storey.id) === String(sourceRoom?.storey)) || null;
+        const sourceHeight =
+          sourceRoom && sourceRoom.height !== undefined && sourceRoom.height !== null
+            ? Number(sourceRoom.height) || 0
+            : sourceStorey && sourceStorey.default_room_height_mm !== undefined
+              ? Number(sourceStorey.default_room_height_mm) || 0
+              : activeStorey && activeStorey.default_room_height_mm !== undefined
+                ? Number(activeStorey.default_room_height_mm) || 0
+                : 0;
+        const sourceBase =
+          sourceRoom && sourceRoom.base_elevation_mm !== undefined && sourceRoom.base_elevation_mm !== null
+            ? Number(sourceRoom.base_elevation_mm) || 0
+            : sourceStorey && sourceStorey.elevation_mm !== undefined
+              ? Number(sourceStorey.elevation_mm) || 0
+              : 0;
+        const stackedBase = sourceBase + sourceHeight;
+        const suggestedBase = Math.max(stackedBase, targetStoreyElevation);
+
+        setLevelEditOverrides((prevOverrides) => ({
+          ...prevOverrides,
+          [key]: {
+            baseElevation: suggestedBase,
+            height: sourceHeight,
+          },
+        }));
+      }
+
+      return Array.from(next);
+    });
+    setLevelEditError('');
+    setLevelEditSuccess('');
+  }, [activeStorey, rooms, storeys]);
+
+  const clearLevelEditSelections = useCallback(() => {
+    setLevelEditSelections([]);
+    setLevelEditOverrides({});
+    setLevelEditError('');
+    setLevelEditSuccess('');
+  }, []);
+
+  const updateLevelEditOverride = useCallback((roomId, updates) => {
+    const key = String(roomId);
+    setLevelEditOverrides((prev) => {
+      const existing = prev[key] || {};
+      const normalizedUpdates = { ...updates };
+      if (normalizedUpdates.baseElevation !== undefined && normalizedUpdates.baseElevation !== null) {
+        normalizedUpdates.baseElevation = Number(normalizedUpdates.baseElevation);
+        if (Number.isNaN(normalizedUpdates.baseElevation)) {
+          normalizedUpdates.baseElevation = existing.baseElevation ?? activeStorey?.elevation_mm ?? 0;
+        }
+      }
+      if (normalizedUpdates.height !== undefined && normalizedUpdates.height !== null) {
+        normalizedUpdates.height = Number(normalizedUpdates.height);
+        if (Number.isNaN(normalizedUpdates.height)) {
+          normalizedUpdates.height = existing.height ?? activeStorey?.default_room_height_mm ?? 0;
+        }
+      }
+      const next = {
+        ...prev,
+        [key]: {
+          baseElevation: existing.baseElevation ?? (activeStorey?.elevation_mm ?? 0),
+          height: existing.height ?? activeStorey?.default_room_height_mm ?? 0,
+          ...normalizedUpdates,
+        },
+      };
+      if (!next[key].baseElevation && next[key].baseElevation !== 0) {
+        next[key].baseElevation = activeStorey?.elevation_mm ?? 0;
+      }
+      if (!next[key].height && next[key].height !== 0) {
+        next[key].height = activeStorey?.default_room_height_mm ?? 0;
+      }
+      const minBase = activeStorey?.elevation_mm !== undefined && activeStorey?.elevation_mm !== null
+        ? Number(activeStorey.elevation_mm) || 0
+        : 0;
+      if (next[key].baseElevation < minBase) {
+        next[key].baseElevation = minBase;
+      }
+      if (next[key].height < 0) {
+        next[key].height = 0;
+      }
+      return next;
+    });
+  }, [activeStorey]);
   const [selectedRoomPoints, setSelectedRoomPoints] = useState([]);
   const [currentView, setCurrentView] = useState('wall-plan'); // 'wall-plan', 'ceiling-plan', or 'floor-plan'
   const [wallSplitError, setWallSplitError] = useState('');
   const [wallSplitSuccess, setWallSplitSuccess] = useState(false);
   const MERGE_POINT_TOLERANCE = 0.5;
   const SPLIT_ENDPOINT_TOLERANCE = 1.0;
-
-  const activeStorey = useMemo(() => {
-    if (!activeStoreyId) return null;
-    return storeys.find(storey => String(storey.id) === String(activeStoreyId)) || null;
-  }, [storeys, activeStoreyId]);
 
   const defaultStoreyId = useMemo(() => {
     return storeys.length > 0 ? storeys[0].id : null;
@@ -509,6 +649,16 @@ const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
       setFilteredGhostAreas(ghostAreas);
     }
   }, [walls, rooms, filteredRooms, storeys, activeStoreyId]);
+
+  useEffect(() => {
+    if (!levelEditSuccess) {
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setLevelEditSuccess('');
+    }, 4000);
+    return () => clearTimeout(timeout);
+  }, [levelEditSuccess]);
 
   useEffect(() => {
     const normalizedStoreys = Array.isArray(storeys) ? storeys : [];
@@ -1175,23 +1325,32 @@ const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
 
     const targetStorey =
       storeys.find(storey => String(storey.id) === String(targetStoreyId)) || null;
-    const override = storeyWizardRoomOverrides[String(room.id)];
-    const targetElevation = override?.baseElevation !== undefined
-      ? Number(override.baseElevation) || 0
-      : overrides.base_elevation_mm !== undefined
-        ? Number(overrides.base_elevation_mm) || 0
-        : targetStorey && targetStorey.elevation_mm !== undefined
-          ? Number(targetStorey.elevation_mm) || 0
-          : 0;
-    const roomHeight = override?.height !== undefined
-      ? Number(override.height) || 0
-      : overrides.height !== undefined
-        ? Number(overrides.height) || 0
-        : room.height !== undefined && room.height !== null
-          ? Number(room.height) || 0
-          : targetStorey && targetStorey.default_room_height_mm !== undefined
+    // Prioritize overrides parameter (from edit level mode) over storeyWizardRoomOverrides
+    const targetElevation = overrides.base_elevation_mm !== undefined && overrides.base_elevation_mm !== null
+      ? Number(overrides.base_elevation_mm) || 0
+      : (() => {
+          const wizardOverride = storeyWizardRoomOverrides[String(room.id)];
+          if (wizardOverride?.baseElevation !== undefined) {
+            return Number(wizardOverride.baseElevation) || 0;
+          }
+          return targetStorey && targetStorey.elevation_mm !== undefined
+            ? Number(targetStorey.elevation_mm) || 0
+            : 0;
+        })();
+    const roomHeight = overrides.height !== undefined && overrides.height !== null
+      ? Number(overrides.height) || 0
+      : (() => {
+          const wizardOverride = storeyWizardRoomOverrides[String(room.id)];
+          if (wizardOverride?.height !== undefined) {
+            return Number(wizardOverride.height) || 0;
+          }
+          if (room.height !== undefined && room.height !== null) {
+            return Number(room.height) || 0;
+          }
+          return targetStorey && targetStorey.default_room_height_mm !== undefined
             ? Number(targetStorey.default_room_height_mm) || 0
             : 0;
+        })();
 
     const wallIds = Array.isArray(room.walls) ? room.walls : [];
     const createdWalls = [];
@@ -1267,8 +1426,8 @@ const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
       floor_type: overrides.floor_type || room.floor_type || 'Panel',
       floor_thickness: overrides.floor_thickness ?? room.floor_thickness ?? 0,
       temperature: overrides.temperature ?? room.temperature ?? 0,
-      height: overrides.height ?? room.height ?? storeyWizardDefaultHeight,
-      base_elevation_mm: targetElevation,
+      height: roomHeight, // Use the calculated roomHeight which respects overrides
+      base_elevation_mm: targetElevation, // Use the calculated targetElevation which respects overrides
       remarks: overrides.remarks ?? room.remarks ?? '',
       walls: uniqueWallIds,
       room_points: overrides.room_points || room.room_points || [],
@@ -1278,6 +1437,101 @@ const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
     setRooms(prev => [...prev, roomResponse.data]);
     return roomResponse.data;
   };
+
+  const addRoomsToActiveStorey = useCallback(async () => {
+    if (!isLevelEditMode) {
+      return;
+    }
+    if (!activeStoreyId) {
+      setLevelEditError('Select a level to edit before adding rooms.');
+      return;
+    }
+    if (!Array.isArray(levelEditSelections) || levelEditSelections.length === 0) {
+      setLevelEditError('Select at least one room to add to this level.');
+      return;
+    }
+
+    const targetStorey =
+      storeys.find((storey) => String(storey.id) === String(activeStoreyId)) || null;
+
+    if (!targetStorey) {
+      setLevelEditError('Active level details could not be found.');
+      return;
+    }
+
+    setIsLevelEditApplying(true);
+    setLevelEditError('');
+    setLevelEditSuccess('');
+
+    try {
+      let addedCount = 0;
+
+      for (const roomId of levelEditSelections) {
+        const sourceRoom = rooms.find((room) => String(room.id) === String(roomId));
+        if (!sourceRoom) {
+          continue;
+        }
+
+        const sourceStorey =
+          storeys.find((storey) => String(storey.id) === String(sourceRoom.storey)) || null;
+
+        const defaultHeight =
+          sourceRoom && sourceRoom.height !== undefined && sourceRoom.height !== null
+            ? Number(sourceRoom.height) || 0
+            : sourceStorey && sourceStorey.default_room_height_mm !== undefined
+              ? Number(sourceStorey.default_room_height_mm) || 0
+              : targetStorey && targetStorey.default_room_height_mm !== undefined
+                ? Number(targetStorey.default_room_height_mm) || 0
+                : 0;
+
+        const override = levelEditOverrides[String(roomId)] || {};
+
+        let desiredBase =
+          override.baseElevation !== undefined && override.baseElevation !== null
+            ? Number(override.baseElevation) || 0
+            : Number(targetStorey.elevation_mm) || 0;
+
+        let desiredHeight =
+          override.height !== undefined && override.height !== null
+            ? Number(override.height) || 0
+            : defaultHeight;
+
+        const minBase = Number(targetStorey.elevation_mm) || 0;
+        if (desiredBase < minBase) {
+          desiredBase = minBase;
+        }
+
+        if (desiredHeight < 0) {
+          desiredHeight = 0;
+        }
+
+        const payloadOverrides = {
+          base_elevation_mm: desiredBase,
+          height: desiredHeight,
+        };
+
+        await duplicateRoomToStorey(sourceRoom.id, activeStoreyId, payloadOverrides);
+        addedCount += 1;
+      }
+
+      if (addedCount > 0) {
+        setLevelEditSelections([]);
+        setLevelEditOverrides({});
+        setLevelEditSuccess(`Added ${addedCount} ${addedCount === 1 ? 'room' : 'rooms'} to ${targetStorey.name}.`);
+      } else {
+        setLevelEditError('No rooms were added. They may already exist on this level.');
+      }
+    } catch (error) {
+      console.error('Failed to add rooms to level:', error);
+      const message =
+        error.response?.data?.error ||
+        error.message ||
+        'Failed to add rooms to this level.';
+      setLevelEditError(message);
+    } finally {
+      setIsLevelEditApplying(false);
+    }
+  }, [isLevelEditMode, activeStoreyId, levelEditSelections, levelEditOverrides, rooms, storeys, duplicateRoomToStorey]);
 
   const createRoomFromPolygon = async (points, targetStoreyId, options = {}) => {
     if (!Array.isArray(points) || points.length < 3) {
@@ -2312,6 +2566,18 @@ const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
     filteredRooms,
     filteredGhostWalls,
     filteredGhostAreas,
+    isLevelEditMode,
+    enterLevelEditMode,
+    exitLevelEditMode,
+    levelEditSelections,
+    levelEditOverrides,
+    toggleLevelEditRoom,
+    clearLevelEditSelections,
+    addRoomsToActiveStorey,
+    isLevelEditApplying,
+    levelEditError,
+    updateLevelEditOverride,
+    levelEditSuccess,
     projectCalculatedHeight,
     selectedWallType,
     setSelectedWallType,

@@ -42,6 +42,33 @@ const ProjectDetails = () => {
         Number(projectDetails.project?.height) || 0,
         Number(projectDetails.projectCalculatedHeight) || 0
     );
+    // Get rooms on the active storey to check for duplicates
+    const activeStoreyRooms = (projectDetails.rooms || []).filter(
+        (room) => String(room.storey) === String(projectDetails.activeStoreyId)
+    );
+    
+    // Create a set of room point signatures for quick lookup
+    const activeStoreyRoomSignatures = new Set(
+        activeStoreyRooms
+            .filter((room) => Array.isArray(room.room_points) && room.room_points.length >= 3)
+            .map((room) => {
+                const normalizedPoints = room.room_points.map((point) => [
+                    Number(point.x) || 0,
+                    Number(point.y) || 0,
+                ]);
+                return JSON.stringify(normalizedPoints);
+            })
+    );
+
+    const roomsGroupedForLevelEdit = (projectDetails.storeys || [])
+        .filter((storey) => String(storey.id) !== String(projectDetails.activeStoreyId))
+        .map((storey) => ({
+            storey,
+            rooms: (projectDetails.rooms || []).filter(
+                (room) => String(room.storey) === String(storey.id)
+            ),
+        }))
+        .filter((group) => group.rooms.length > 0);
 
     const handleSourceStoreyChange = (event) => {
         const value = event.target.value;
@@ -429,6 +456,21 @@ const ProjectDetails = () => {
                                             </option>
                                         ))}
                                     </select>
+                                    {projectDetails.isLevelEditMode ? (
+                                        <button
+                                            onClick={projectDetails.exitLevelEditMode}
+                                            className="px-3 py-1 rounded-lg text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                                        >
+                                            Exit Edit Level
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={projectDetails.enterLevelEditMode}
+                                            className="px-3 py-1 rounded-lg text-sm font-medium bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 transition-colors"
+                                        >
+                                            Edit Level
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => {
                                             if (!projectDetails.activeStoreyId) {
@@ -476,8 +518,206 @@ const ProjectDetails = () => {
                     </div>
                 </div>
             </div>
+            
+            {projectDetails.isLevelEditMode && (
+                <div className="max-w-7xl mx-auto px-6 mt-4">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h2 className="text-lg font-semibold text-amber-900">Edit Level Mode</h2>
+                                <p className="text-sm text-amber-800">
+                                    Select rooms from other levels to duplicate onto <span className="font-medium">{projectDetails.activeStorey?.name || 'this level'}</span>.
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    onClick={projectDetails.clearLevelEditSelections}
+                                    className="px-3 py-1.5 text-sm rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+                                >
+                                    Clear Selection
+                                </button>
+                                <button
+                                    onClick={projectDetails.exitLevelEditMode}
+                                    className="px-3 py-1.5 text-sm rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-200 transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
 
+                        {(projectDetails.levelEditError || projectDetails.levelEditSuccess) && (
+                            <div className="mt-3 space-y-2">
+                                {projectDetails.levelEditError && (
+                                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                        {projectDetails.levelEditError}
+                                    </div>
+                                )}
+                                {projectDetails.levelEditSuccess && (
+                                    <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                                        {projectDetails.levelEditSuccess}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
+                        <div className="mt-4 max-h-72 overflow-y-auto pr-1">
+                            {roomsGroupedForLevelEdit.length === 0 ? (
+                                <p className="text-sm text-amber-700">
+                                    No rooms available on other levels to duplicate.
+                                </p>
+                            ) : (
+                                roomsGroupedForLevelEdit.map(({ storey, rooms }) => (
+                                    <div key={storey.id} className="mb-4 rounded-lg border border-white bg-white/60 p-3 last:mb-0">
+                                        <div>
+                                            <p className="text-sm font-semibold text-amber-900">
+                                                {storey.name}
+                                            </p>
+                                            <p className="text-xs text-amber-700">
+                                                Elevation {Math.round(storey.elevation_mm ?? 0)} mm · Default height {Math.round(storey.default_room_height_mm ?? 0)} mm
+                                            </p>
+                                        </div>
+                                        <div className="mt-3 space-y-2">
+                                            {rooms.map((room) => {
+                                                const isSelected = (projectDetails.levelEditSelections || []).some(
+                                                    (id) => String(id) === String(room.id)
+                                                );
+                                                
+                                                // Check if this room already exists on the active storey
+                                                const roomPoints = Array.isArray(room.room_points) && room.room_points.length >= 3
+                                                    ? room.room_points
+                                                    : null;
+                                                const roomSignature = roomPoints
+                                                    ? JSON.stringify(
+                                                          roomPoints.map((point) => [
+                                                              Number(point.x) || 0,
+                                                              Number(point.y) || 0,
+                                                          ])
+                                                      )
+                                                    : null;
+                                                const alreadyExists = roomSignature
+                                                    ? activeStoreyRoomSignatures.has(roomSignature)
+                                                    : false;
+                                                
+                                                const baseElevation =
+                                                    Number(room.base_elevation_mm ?? storey.elevation_mm ?? 0) || 0;
+                                                const height =
+                                                    Number(room.height ?? storey.default_room_height_mm ?? 0) || 0;
+                                                const topElevation = baseElevation + height;
+                                                const plannedBase =
+                                                    (projectDetails.levelEditOverrides &&
+                                                        projectDetails.levelEditOverrides[String(room.id)] &&
+                                                        projectDetails.levelEditOverrides[String(room.id)].baseElevation !== undefined)
+                                                        ? projectDetails.levelEditOverrides[String(room.id)].baseElevation
+                                                        : projectDetails.activeStorey?.elevation_mm ?? 0;
+                                                const plannedHeight =
+                                                    (projectDetails.levelEditOverrides &&
+                                                        projectDetails.levelEditOverrides[String(room.id)] &&
+                                                        projectDetails.levelEditOverrides[String(room.id)].height !== undefined)
+                                                        ? projectDetails.levelEditOverrides[String(room.id)].height
+                                                        : height;
+                                                const plannedBaseValue = Number.isFinite(Number(plannedBase))
+                                                    ? Number(plannedBase)
+                                                    : Number(projectDetails.activeStorey?.elevation_mm ?? 0);
+                                                const plannedHeightValue = Number.isFinite(Number(plannedHeight))
+                                                    ? Number(plannedHeight)
+                                                    : Number(height);
+                                                return (
+                                                    <label
+                                                        key={room.id}
+                                                        className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${
+                                                            alreadyExists
+                                                                ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed'
+                                                                : 'border-amber-100 bg-white text-amber-900 hover:border-amber-300'
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            className={`mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 ${
+                                                                alreadyExists ? 'opacity-50 cursor-not-allowed' : ''
+                                                            }`}
+                                                            checked={isSelected}
+                                                            disabled={alreadyExists}
+                                                            onChange={() => {
+                                                                if (!alreadyExists) {
+                                                                    projectDetails.toggleLevelEditRoom(room.id);
+                                                                }
+                                                            }}
+                                                        />
+                                                        <div className="flex-1">
+                                                            <p className="font-medium">{room.room_name}</p>
+                                                            {alreadyExists ? (
+                                                                <p className="text-xs text-red-600 font-medium mt-1">
+                                                                    Already exists on {projectDetails.activeStorey?.name || 'this level'}
+                                                                </p>
+                                                            ) : (
+                                                                <p className="text-xs text-amber-700">
+                                                                    Origin base {Math.round(baseElevation)} mm · Origin height {Math.round(height)} mm · Origin top {Math.round(topElevation)} mm
+                                                                </p>
+                                                            )}
+                                                            {isSelected && (
+                                                                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                                    <label className="text-xs text-amber-800">
+                                                                        <span className="block font-medium mb-1">Base Elevation (mm)</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            className="w-full rounded-lg border border-amber-300 px-3 py-1.5 text-sm text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                                            value={plannedBaseValue}
+                                                                            min={Math.round(projectDetails.activeStorey?.elevation_mm ?? 0)}
+                                                                            onChange={(event) => {
+                                                                                projectDetails.updateLevelEditOverride(room.id, {
+                                                                                    baseElevation: event.target.value,
+                                                                                });
+                                                                            }}
+                                                                        />
+                                                                    </label>
+                                                                    <label className="text-xs text-amber-800">
+                                                                        <span className="block font-medium mb-1">Room Height (mm)</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            className="w-full rounded-lg border border-amber-300 px-3 py-1.5 text-sm text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                                            value={plannedHeightValue}
+                                                                            min={0}
+                                                                            onChange={(event) => {
+                                                                                projectDetails.updateLevelEditOverride(room.id, {
+                                                                                    height: event.target.value,
+                                                                                });
+                                                                            }}
+                                                                        />
+                                                                    </label>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <button
+                                onClick={projectDetails.addRoomsToActiveStorey}
+                                disabled={
+                                    projectDetails.isLevelEditApplying ||
+                                    (projectDetails.levelEditSelections || []).length === 0
+                                }
+                                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                    (projectDetails.levelEditSelections || []).length === 0 || projectDetails.isLevelEditApplying
+                                        ? 'bg-amber-200 text-amber-500 cursor-not-allowed'
+                                        : 'bg-amber-500 text-white hover:bg-amber-600'
+                                }`}
+                            >
+                                {projectDetails.isLevelEditApplying ? 'Adding...' : 'Add Selected Rooms'}
+                            </button>
+                            <span className="text-xs text-amber-700">
+                                Selected {projectDetails.levelEditSelections?.length || 0} rooms
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Define Room Container - Above Canvas */}
             {projectDetails.currentMode === 'define-room' && (
