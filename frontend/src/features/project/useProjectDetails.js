@@ -30,6 +30,7 @@ export default function useProjectDetails(projectId) {
   const [selectedWallType, setSelectedWallType] = useState('wall');
   const [showWallEditor, setShowWallEditor] = useState(false);
   const [showRoomManagerModal, setShowRoomManagerModal] = useState(false);
+  const [isRoomManagerMinimized, setRoomManagerMinimized] = useState(false);
   const [joints, setJoints] = useState([]);
   const [filteredJoints, setFilteredJoints] = useState([]);
   const [selectedDoorWall, setSelectedDoorWall] = useState(null);
@@ -1143,6 +1144,42 @@ export default function useProjectDetails(projectId) {
   // Room handlers
   const handleCreateRoom = async (roomData) => {
     try {
+      // Check if any point is in a ghosted area
+      if (Array.isArray(filteredGhostAreas) && filteredGhostAreas.length > 0 && Array.isArray(selectedRoomPoints) && selectedRoomPoints.length >= 3) {
+        const isPointInPolygon = (point, polygon) => {
+          let inside = false;
+          for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            const intersect = ((yi > point.y) !== (yj > point.y))
+              && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+          }
+          return inside;
+        };
+
+        for (const point of selectedRoomPoints) {
+          for (const ghostArea of filteredGhostAreas) {
+            const ghostPoints = Array.isArray(ghostArea.room_points)
+              ? ghostArea.room_points
+              : Array.isArray(ghostArea.points)
+                ? ghostArea.points
+                : [];
+            if (ghostPoints.length >= 3) {
+              const normalizedPolygon = ghostPoints.map((pt) => ({
+                x: Number(pt.x) || 0,
+                y: Number(pt.y) || 0,
+              }));
+              if (isPointInPolygon(point, normalizedPolygon)) {
+                setRoomError('Cannot create rooms in ghosted areas (double-height spaces from lower levels).');
+                setTimeout(() => setRoomError(''), 5000);
+                return;
+              }
+            }
+          }
+        }
+      }
+
       const completeRoomData = {
         ...roomData,
         room_points: selectedRoomPoints,
@@ -1425,6 +1462,7 @@ export default function useProjectDetails(projectId) {
       room_name: overrides.room_name || `${room.room_name} (${roomStoreyName})`,
       floor_type: overrides.floor_type || room.floor_type || 'Panel',
       floor_thickness: overrides.floor_thickness ?? room.floor_thickness ?? 0,
+      floor_layers: overrides.floor_layers ?? room.floor_layers ?? 1,
       temperature: overrides.temperature ?? room.temperature ?? 0,
       height: roomHeight, // Use the calculated roomHeight which respects overrides
       base_elevation_mm: targetElevation, // Use the calculated targetElevation which respects overrides
@@ -1538,6 +1576,40 @@ export default function useProjectDetails(projectId) {
       return null;
     }
 
+    // Check if any point is in a ghosted area (only if we're on an upper level)
+    if (Array.isArray(filteredGhostAreas) && filteredGhostAreas.length > 0) {
+      const isPointInPolygon = (point, polygon) => {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+          const xi = polygon[i].x, yi = polygon[i].y;
+          const xj = polygon[j].x, yj = polygon[j].y;
+          const intersect = ((yi > point.y) !== (yj > point.y))
+            && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      };
+
+      for (const point of points) {
+        for (const ghostArea of filteredGhostAreas) {
+          const ghostPoints = Array.isArray(ghostArea.room_points)
+            ? ghostArea.room_points
+            : Array.isArray(ghostArea.points)
+              ? ghostArea.points
+              : [];
+          if (ghostPoints.length >= 3) {
+            const normalizedPolygon = ghostPoints.map((pt) => ({
+              x: Number(pt.x) || 0,
+              y: Number(pt.y) || 0,
+            }));
+            if (isPointInPolygon(point, normalizedPolygon)) {
+              throw new Error('Cannot create rooms in ghosted areas (double-height spaces from lower levels).');
+            }
+          }
+        }
+      }
+    }
+
     const wallHeight = options.height ?? storeyWizardDefaultHeight;
     const wallThickness = options.thickness ?? project?.wall_thickness ?? 200;
     const roomStoreyName =
@@ -1583,6 +1655,7 @@ export default function useProjectDetails(projectId) {
       room_name: options.room_name || `Upper Area ${storeyWizardAreas.length + 1} (${roomStoreyName})`,
       floor_type: options.floor_type || 'Panel',
       floor_thickness: options.floor_thickness ?? 0,
+      floor_layers: options.floor_layers ?? 1,
       temperature: options.temperature ?? 0,
       height: wallHeight,
       base_elevation_mm: options.base_elevation_mm ?? 0,
@@ -2589,6 +2662,8 @@ export default function useProjectDetails(projectId) {
     setShowWallEditor,
     showRoomManagerModal,
     setShowRoomManagerModal,
+    isRoomManagerMinimized,
+    setRoomManagerMinimized,
     joints,
     setJoints,
     filteredJoints,

@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { calculateOffsetPoints } from './drawing.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
-import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds } from './collisionDetection.js';
+import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
 
 const DEFAULT_CANVAS_WIDTH = 1000;
-const DEFAULT_CANVAS_HEIGHT = 600;
+const DEFAULT_CANVAS_HEIGHT = 650;
 const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
 const MAX_CANVAS_HEIGHT_RATIO = 0.7;
 const MIN_CANVAS_WIDTH = 480;
@@ -201,6 +201,9 @@ const CeilingCanvas = ({
     const isDragging = useRef(false); // For support placement
     const lastMousePos = useRef({ x: 0, y: 0 });
     const isZoomed = useRef(false); // Track if user has manually zoomed
+    
+    // Store placement decisions for dimensions to prevent position changes on zoom
+    const dimensionPlacementMemory = useRef(new Map());
     
     // Canvas dragging state (separate from support dragging)
     const isDraggingCanvas = useRef(false);
@@ -1218,7 +1221,7 @@ const CeilingCanvas = ({
                             priority: 3,
                             avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
                             quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${panelWidth}mm`,
+                            panelLabel: `${panelWidth}`,
                             drawnPositions: drawnPositions,
                             roomId: room.id // Assign room ID
                         };
@@ -1271,7 +1274,7 @@ const CeilingCanvas = ({
                             priority: 4, // Lower priority than full panels
                             avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
                             quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${dimensionValue}mm (CUT)`,
+                            panelLabel: `${dimensionValue} (CUT)`,
                             drawnPositions: drawnPositions,
                             roomId: room.id, // Assign room ID
                             isHorizontal: true // This dimension line is HORIZONTAL (same as grouped dimensions for horizontal panels)
@@ -1294,7 +1297,7 @@ const CeilingCanvas = ({
                             priority: 4, // Lower priority than full panels
                             avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
                             quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${dimensionValue}mm (CUT)`,
+                            panelLabel: `${dimensionValue} (CUT)`,
                             drawnPositions: drawnPositions,
                             roomId: room.id, // Assign room ID
                             isHorizontal: false // This dimension line is VERTICAL (same as grouped dimensions for vertical panels)
@@ -1607,9 +1610,9 @@ const CeilingCanvas = ({
         if ((dimension.type === 'grouped_width' || dimension.type === 'grouped_width_horizontal' || dimension.type === 'grouped_width_vertical' || 
              dimension.type === 'grouped_length_horizontal') && quantity) {
             // Use the dimension.dimension value (which is the actual dimension value)
-            return `${quantity} × ${dimension.dimension}mm`;
+            return `${quantity} × ${dimension.dimension}`;
         } else {
-            return dimension.panelLabel || (quantity ? `${dimension.dimension}mm (${quantity} panels)` : `${Math.round(dimension.dimension)}mm`);
+            return dimension.panelLabel || (quantity ? `${dimension.dimension} (${quantity} panels)` : `${Math.round(dimension.dimension)}`);
         }
     };
 
@@ -1630,7 +1633,34 @@ const CeilingCanvas = ({
         
         // Draw text
         ctx.fillStyle = color;
-        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
+        let fontSize;
+        
+        // Calculate square root scaled font size if user has zoomed in
+        let sqrtScaledFontSize = 0;
+        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
+            // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+            // This means 2x zoom only results in ~1.41x text size, not 2x
+            const zoomRatio = scaleFactor.current / initialScale.current;
+            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+        }
+        
+        // Use the maximum of calculated and square root scaled to prevent discontinuity
+        // This ensures smooth transition when crossing the minimum threshold
+        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+            // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+        } else {
+            // Above minimum threshold - use max of calculated and square root scaled
+            // This prevents sudden drop when crossing the threshold
+            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+        }
+        
+        // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+        // This handles any edge cases or timing issues
+        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+        ctx.font = `bold ${fontSize}px 'Segoe UI', Arial, sans-serif`;
         
         if (isHorizontal) {
             // Horizontal text
@@ -1721,79 +1751,183 @@ const CeilingCanvas = ({
         const midX = (startX + endX) / 2;
         const midY = (startY + endY) / 2;
         
-        // Determine optimal label position using wall plan approach - ALWAYS OUTSIDE project area
+        // Create unique key for this dimension to remember placement decision
+        const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_${type || 'default'}`;
+        
+        // Check if we have a stored placement decision for this dimension
+        const storedPlacement = dimensionPlacementMemory.current.get(dimensionKey);
+        const lockedSide = storedPlacement ? storedPlacement.side : null;
+        
+        // Determine optimal label position with smart placement
         let labelX, labelY;
-        let baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Base distance from project boundary
+        
+        // Smart placement: determine if dimension is "small" relative to project size
+        // Small dimensions can be placed near the wall, large ones go outside project area
+        const projectWidth = (maxX - minX) || 1;
+        const projectHeight = (maxY - minY) || 1;
+        const projectSize = Math.max(projectWidth, projectHeight);
+        const isSmallDimension = length < (projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD);
+        
+        // Use smaller offset for small dimensions (place near wall), larger offset for big dimensions (outside project)
+        let baseOffset = isSmallDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : DIMENSION_CONFIG.BASE_OFFSET;
         let offset = baseOffset;
         let attempts = 0;
         const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
         
         // Find available position to avoid overlaps - use project bounds for initial positioning
-        const dimensionFont = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
+        let fontSize;
+        
+        // Calculate square root scaled font size if user has zoomed in
+        let sqrtScaledFontSize = 0;
+        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
+            // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+            // This means 2x zoom only results in ~1.41x text size, not 2x
+            const zoomRatio = scaleFactor.current / initialScale.current;
+            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+        }
+        
+        // Use the maximum of calculated and square root scaled to prevent discontinuity
+        // This ensures smooth transition when crossing the minimum threshold
+        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+            // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+        } else {
+            // Above minimum threshold - use max of calculated and square root scaled
+            // This prevents sudden drop when crossing the threshold
+            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+        }
+        
+        // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+        // This handles any edge cases or timing issues
+        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+        const dimensionFont = `bold ${fontSize}px 'Segoe UI', Arial, sans-serif`;
         const previousFont = ctx.font;
         ctx.font = dimensionFont;
 
-        do {
-            if (isHorizontal) {
-                // Horizontal dimension: place ABOVE or BELOW (perpendicular to dimension direction)
-                // Use project bounds to ensure labels start outside project area
-                const projectMidY = avoidArea ? (avoidArea.minY + avoidArea.maxY) / 2 : (minY + maxY) / 2;
-                const isTopHalf = midY < projectMidY;
-                // const side = isTopHalf ? 'top' : 'bottom'; // Unused variable
-                
-                if (avoidArea) {
-                    // Position relative to project boundary
-                    labelY = isTopHalf ? 
-                        (avoidArea.minY * scaleFactor.current + offsetY.current - offset) : 
-                        (avoidArea.maxY * scaleFactor.current + offsetY.current + offset);
-                } else {
-                    // Fallback to dimension bounds
-                    labelY = isTopHalf ? 
-                        (minY * scaleFactor.current + offsetY.current - offset) : 
-                        (maxY * scaleFactor.current + offsetY.current + offset);
-                }
-                labelX = midX * scaleFactor.current + offsetX.current;
-            } else {
-                // Vertical dimension: place to LEFT or RIGHT (perpendicular to dimension direction)
-                // For vertical dimensions, use larger offset to ensure labels are well outside project area
-                const verticalOffset = Math.max(offset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET); // Minimum for vertical dimensions
-                // Use project bounds to ensure labels start outside project area
-                const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
-                const isLeftHalf = midX < projectMidX;
-                // const side = isLeftHalf ? 'left' : 'right'; // Unused variable
-                
-                if (avoidArea) {
-                    // Position relative to project boundary
-                    labelX = isLeftHalf ? 
-                        (avoidArea.minX * scaleFactor.current + offsetX.current - verticalOffset) : 
-                        (avoidArea.maxX * scaleFactor.current + offsetX.current + verticalOffset);
-                } else {
-                    // Fallback to dimension bounds
-                    labelX = isLeftHalf ? 
-                        (minX * scaleFactor.current + offsetX.current - verticalOffset) : 
-                        (maxX * scaleFactor.current + offsetX.current + verticalOffset);
-                }
-                labelY = midY * scaleFactor.current + offsetY.current;
-            }
+        // Get text width first for smart placement
+        const text = getDimensionText(dimension, length, quantity);
+        const textWidth = ctx.measureText(text).width;
+        
+        // Smart placement: evaluate both sides and choose the best (or use locked side if stored)
+        let placement;
+        
+        if (isHorizontal) {
+            // Horizontal dimension: smart placement - try both top and bottom
+            const projectMidY = avoidArea ? (avoidArea.minY + avoidArea.maxY) / 2 : (minY + maxY) / 2;
             
-            // Check for overlaps with existing labels
-            const text = getDimensionText(dimension, length, quantity);
-            const textWidth = ctx.measureText(text).width;
+            placement = smartPlacement({
+                calculatePositionSide1: (offset) => {
+                    // Side 1: Top (above)
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: midY * scaleFactor.current + offsetY.current - offset
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: avoidArea.minY * scaleFactor.current + offsetY.current - offset
+                        };
+                    } else {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: minY * scaleFactor.current + offsetY.current - offset
+                        };
+                    }
+                },
+                calculatePositionSide2: (offset) => {
+                    // Side 2: Bottom (below)
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: midY * scaleFactor.current + offsetY.current + offset
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: avoidArea.maxY * scaleFactor.current + offsetY.current + offset
+                        };
+                    } else {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: maxY * scaleFactor.current + offsetY.current + offset
+                        };
+                    }
+                },
+                calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8),
+                textWidth: textWidth,
+                placedLabels: placedLabels,
+                baseOffset: baseOffset,
+                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                maxAttempts: maxAttempts,
+                preferredSide: 'side1', // Prefer top for horizontal dimensions
+                lockedSide: lockedSide // Use stored side if available
+            });
+        } else {
+            // Vertical dimension: smart placement - try both left and right
+            const minVerticalOffset = isSmallDimension ? DIMENSION_CONFIG.MIN_VERTICAL_OFFSET_SMALL : DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
+            const baseVerticalOffset = Math.max(baseOffset, minVerticalOffset);
+            const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
             
-            // Create label bounds (accounting for text rotation for vertical dimensions)
-            const labelBounds = isHorizontal 
-                ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8)
-                : calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8);
-            
-            // Check for overlaps with existing labels
-            const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
-            
-            if (!hasOverlap) break;
-            
-            // Increase offset and try again
-            offset += DIMENSION_CONFIG.OFFSET_INCREMENT;
-            attempts++;
-        } while (attempts < maxAttempts);
+            placement = smartPlacement({
+                calculatePositionSide1: (offset) => {
+                    // Side 1: Left
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current - offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: avoidArea.minX * scaleFactor.current + offsetX.current - offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else {
+                        return {
+                            labelX: minX * scaleFactor.current + offsetX.current - offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    }
+                },
+                calculatePositionSide2: (offset) => {
+                    // Side 2: Right
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current + offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: avoidArea.maxX * scaleFactor.current + offsetX.current + offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else {
+                        return {
+                            labelX: maxX * scaleFactor.current + offsetX.current + offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    }
+                },
+                calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8),
+                textWidth: textWidth,
+                placedLabels: placedLabels,
+                baseOffset: baseVerticalOffset,
+                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                maxAttempts: maxAttempts,
+                preferredSide: 'side2', // Prefer right for vertical dimensions
+                lockedSide: lockedSide // Use stored side if available
+            });
+        }
+        
+        // Store the placement decision for future renders (to prevent position changes on zoom)
+        if (!storedPlacement) {
+            dimensionPlacementMemory.current.set(dimensionKey, { side: placement.side });
+        }
+        
+        labelX = placement.labelX;
+        labelY = placement.labelY;
         
         // console.log(`🎨 Dimension label positioning for ${type}:`, {
         //     dimension: { startX, endX, startY, endY, length },
@@ -1805,11 +1939,8 @@ const CeilingCanvas = ({
         //     calculatedPosition: { labelX, labelY }
         // });
         
-        // Get final text for drawing
-        const text = getDimensionText(dimension, length, quantity);
-        const textWidth = ctx.measureText(text).width;
-        
         // Enhanced validation: ensure entire label bounds are outside project area
+        // (text and textWidth already declared above for smart placement)
         if (avoidArea) {
             let labelBounds;
             let labelModelBounds;
@@ -1817,6 +1948,8 @@ const CeilingCanvas = ({
             let validationAttempts = 0;
             const maxValidationAttempts = 10;
             const minSeparation = 5; // Minimum separation in pixels
+            // Track offset starting from placement offset, incrementing by fixed amount (like wall plan)
+            let validationOffset = (placement.offset || baseOffset);
             
             while (overlapsAvoidArea && validationAttempts < maxValidationAttempts) {
                 // Calculate label bounds in canvas coordinates
@@ -1855,49 +1988,29 @@ const CeilingCanvas = ({
                 
                 if (overlapsAvoidArea) {
                     // Force placement further out if overlapping project area
-                    offset += DIMENSION_CONFIG.OFFSET_INCREMENT;
+                    // Use fixed increment (like smartPlacement) instead of calculating from overlap
+                    // This prevents excessive spacing when there are collisions (consistent with wall plan)
+                    validationOffset += DIMENSION_CONFIG.OFFSET_INCREMENT;
                     
-                    // Calculate how much we need to move based on current overlap
-                    let requiredOffset = offset;
                     if (isHorizontal) {
                         const projectMidY = (avoidArea.minY + avoidArea.maxY) / 2;
                         const isTopHalf = midY < projectMidY;
                         
-                        // Calculate how much we need to move to clear the avoid area
+                        // Move using fixed increment (consistent with wall plan and floor plan)
                         if (isTopHalf) {
-                            // Need to move above avoidArea.minY
-                            const overlap = labelModelBounds.maxY - (avoidArea.minY - separation);
-                            if (overlap > 0) {
-                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
-                            }
-                            labelY = avoidArea.minY * scaleFactor.current + offsetY.current - requiredOffset;
+                            labelY = avoidArea.minY * scaleFactor.current + offsetY.current - validationOffset;
                         } else {
-                            // Need to move below avoidArea.maxY
-                            const overlap = (avoidArea.maxY + separation) - labelModelBounds.minY;
-                            if (overlap > 0) {
-                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
-                            }
-                            labelY = avoidArea.maxY * scaleFactor.current + offsetY.current + requiredOffset;
+                            labelY = avoidArea.maxY * scaleFactor.current + offsetY.current + validationOffset;
                         }
                     } else {
                         const projectMidX = (avoidArea.minX + avoidArea.maxX) / 2;
                         const isLeftHalf = midX < projectMidX;
                         
-                        // Calculate how much we need to move to clear the avoid area
+                        // Move using fixed increment (consistent with wall plan and floor plan)
                         if (isLeftHalf) {
-                            // Need to move left of avoidArea.minX
-                            const overlap = labelModelBounds.maxX - (avoidArea.minX - separation);
-                            if (overlap > 0) {
-                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
-                            }
-                            labelX = avoidArea.minX * scaleFactor.current + offsetX.current - requiredOffset;
+                            labelX = avoidArea.minX * scaleFactor.current + offsetX.current - validationOffset;
                         } else {
-                            // Need to move right of avoidArea.maxX
-                            const overlap = (avoidArea.maxX + separation) - labelModelBounds.minX;
-                            if (overlap > 0) {
-                                requiredOffset = Math.max(offset, (overlap + minSeparation) * scaleFactor.current);
-                            }
-                            labelX = avoidArea.maxX * scaleFactor.current + offsetX.current + requiredOffset;
+                            labelX = avoidArea.maxX * scaleFactor.current + offsetX.current + validationOffset;
                         }
                     }
                     validationAttempts++;
@@ -3058,7 +3171,7 @@ const CeilingCanvas = ({
         ctx.textBaseline = 'middle';
         
         // Add background for better readability
-        const text = `${distance}mm`;
+        const text = `${distance}`;
         const textWidth = ctx.measureText(text).width;
         const padding = 4;
         

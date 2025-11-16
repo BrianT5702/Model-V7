@@ -3,24 +3,27 @@
 
 export const DIMENSION_CONFIG = {
     // Spacing and positioning
-    BASE_OFFSET: 15,              // Base distance from model boundary (px)
-    PROJECT_BASE_OFFSET: 55,      // Base distance for project dimensions (px) - outermost layer
+    BASE_OFFSET: 15,              // Base distance from model boundary (px) - for large dimensions
+    BASE_OFFSET_SMALL: 5,         // Base distance for small dimensions (px) - place near wall
+    PROJECT_BASE_OFFSET: 35,      // Base distance for project dimensions (px) - outermost layer
     OFFSET_INCREMENT: 20,         // Increment when overlap detected (px)
     PROJECT_OFFSET_INCREMENT: 30, // Increment for project dimensions (px) - more aggressive
     MIN_VERTICAL_OFFSET: 30,      // Minimum offset for vertical dimensions (px)
+    MIN_VERTICAL_OFFSET_SMALL: 10, // Minimum offset for small vertical dimensions (px)
     PROJECT_MIN_VERTICAL_OFFSET: 50, // Minimum offset for project vertical dimensions (px)
     MAX_ATTEMPTS: 10,             // Maximum collision resolution attempts
     PROJECT_MAX_ATTEMPTS: 15,     // Maximum attempts for project dimensions
+    SMALL_DIMENSION_THRESHOLD: 0.15, // Dimension is "small" if < 5% of project size
     
     // Appearance - Dimensions
     FONT_SIZE: 200,               // Dimension text scaling multiplier - matches wall plan
-    FONT_SIZE_MIN: 14,            // Minimum font size when scaled down - matches wall plan
+    FONT_SIZE_MIN: 8,             // Minimum font size when scaled down
     FONT_FAMILY: "'Segoe UI', Arial, sans-serif",  // Modern font with fallbacks
     FONT_WEIGHT: 'bold',          // Font weight for dimensions
-    LINE_WIDTH: 1.5,              // Extension line width (px)
-    DIMENSION_LINE_WIDTH: 2,      // Main dimension line width (px)
+    LINE_WIDTH: 1,              // Extension line width (px)
+    DIMENSION_LINE_WIDTH: 1.5,      // Main dimension line width (px)
     EXTENSION_DASH: [5, 5],       // Dash pattern for extension lines
-    BACKGROUND_OPACITY: 0.95,     // Text background opacity
+    BACKGROUND_OPACITY: 0.8,     // Text background opacity
     LABEL_PADDING_H: 8,           // Horizontal label padding (px)
     LABEL_PADDING_V: 8,           // Vertical label padding (px)
     LABEL_BORDER_WIDTH: 1,        // Label border width (px)
@@ -34,7 +37,7 @@ export const DIMENSION_CONFIG = {
     ROOM_PREVIEW_LINE_WIDTH: 2,   // Room preview line width
     ROOM_PREVIEW_DASH: [5, 5],    // Room preview dash pattern
     ENDPOINT_SIZE: 2,             // Normal endpoint circle size
-    ENDPOINT_SIZE_HOVER: 6,       // Hovered endpoint circle size
+    ENDPOINT_SIZE_HOVER: 4,       // Hovered endpoint circle size
     
     // Colors for different dimension types
     COLORS: {

@@ -31,6 +31,14 @@ const PanelCalculationControls = ({
         }
     }, [calculatedPanels]);
 
+    // Auto-calculate when showMaterialDetails becomes true and no panels are calculated yet
+    useEffect(() => {
+        if (showMaterialDetails && !calculatedPanels && !isCalculating && walls && walls.length > 0) {
+            calculateAllPanels();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showMaterialDetails]);
+
     // Helper to generate CSV string from calculatedPanels
     const getCSVString = () => {
         if (!calculatedPanels) return '';
@@ -495,7 +503,7 @@ const PanelCalculationControls = ({
     };
 
     return (
-        <div className="w-full max-w-4xl mt-4 material-list-container">
+        <div className="w-full mt-4 material-list-container">
             <div className="flex gap-4 mb-4">
                 <button
                     onClick={handleButtonClick}
@@ -637,8 +645,8 @@ const PanelCalculationControls = ({
             )}
 
             {showTable && calculatedPanels && (
-                <div className="overflow-x-auto">
-                    <table className="min-w-full bg-white border border-gray-300">
+                <div className="overflow-x-auto w-full">
+                    <table className="w-full bg-white border border-gray-300">
                         <thead>
                             <tr className="bg-gray-100">
                                 <th className="px-4 py-2 border">No.</th>

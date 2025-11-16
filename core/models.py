@@ -137,6 +137,10 @@ class Room(models.Model):
         choices=ROOM_FLOOR_THICKNESS_CHOICES,
         help_text="Floor thickness in mm (select from predefined values)."
     )
+    floor_layers = models.IntegerField(
+        default=1,
+        help_text="Number of layers of floor slabs. Total thickness = floor_thickness × floor_layers"
+    )
     temperature = models.DecimalField(
         max_digits=5, 
         decimal_places=2, 

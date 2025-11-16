@@ -58,6 +58,7 @@ const Canvas2D = ({
 }) => {
 
     const canvasRef = useRef(null);
+    const canvasContainerRef = useRef(null);
     const [selectedWall, setSelectedWall] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [tempWall, setTempWall] = useState(null);
@@ -70,6 +71,28 @@ const Canvas2D = ({
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
     const [showMaterialDetails, setShowMaterialDetails] = useState(false);
+    const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(true);
+    const [showMaterialNeeded, setShowMaterialNeeded] = useState(false);
+
+    // Auto-show material details when the section is opened
+    useEffect(() => {
+        if (showMaterialNeeded && !showMaterialDetails) {
+            setShowMaterialDetails(true);
+        }
+    }, [showMaterialNeeded, showMaterialDetails]);
+    
+    // Canvas size constants (matching CeilingCanvas)
+    const DEFAULT_CANVAS_WIDTH = 1000;
+    const DEFAULT_CANVAS_HEIGHT = 650;
+    const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
+    const MAX_CANVAS_HEIGHT_RATIO = 0.7;
+    const MIN_CANVAS_WIDTH = 480;
+    const MIN_CANVAS_HEIGHT = 320;
+    const CANVAS_HEIGHT = DEFAULT_CANVAS_HEIGHT; // For styling consistency with CeilingCanvas
+    const [canvasSize, setCanvasSize] = useState({
+        width: DEFAULT_CANVAS_WIDTH,
+        height: DEFAULT_CANVAS_HEIGHT
+    });
 
 
     const [dbConnectionError, setDbConnectionError] = useState(false);
@@ -581,6 +604,30 @@ const Canvas2D = ({
         return inside;
     };
 
+    // Check if a point is in any ghosted area
+    const isPointInGhostedArea = (point) => {
+        if (!Array.isArray(ghostAreas) || ghostAreas.length === 0) {
+            return false;
+        }
+        for (const ghostArea of ghostAreas) {
+            const points = Array.isArray(ghostArea.room_points)
+                ? ghostArea.room_points
+                : Array.isArray(ghostArea.points)
+                    ? ghostArea.points
+                    : [];
+            if (points.length >= 3) {
+                const normalizedPolygon = points.map((pt) => ({
+                    x: Number(pt.x) || 0,
+                    y: Number(pt.y) || 0,
+                }));
+                if (isPointInPolygon(point, normalizedPolygon)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
     // Use for getting correct mouse position
     const getMousePos = (event) => {
         const rect = canvasRef.current.getBoundingClientRect();
@@ -990,6 +1037,16 @@ const Canvas2D = ({
                     startPoint = roundPoint(startPoint);
                     endPoint = roundPoint(endPoint);
 
+                    // Check if start or end point is in a ghosted area
+                    if (isPointInGhostedArea(startPoint) || isPointInGhostedArea(endPoint)) {
+                        if (setWallSplitError) {
+                            setWallSplitError('Cannot create walls in ghosted areas (double-height spaces from lower levels).');
+                            setTimeout(() => setWallSplitError(''), 4000);
+                        }
+                        setTempWall(null);
+                        return;
+                    }
+
                     // Normalize wall coordinates to ensure proper direction
                     const normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
                     startPoint = normalizedCoords.startPoint;
@@ -1144,6 +1201,16 @@ const Canvas2D = ({
 
         // === Add-Door Mode ===
         if (currentMode === 'add-door') {
+            const clickPoint = { x, y };
+            // Check if click point is in a ghosted area
+            if (isPointInGhostedArea(clickPoint)) {
+                if (setWallSplitError) {
+                    setWallSplitError('Cannot create doors in ghosted areas (double-height spaces from lower levels).');
+                    setTimeout(() => setWallSplitError(''), 4000);
+                }
+                return;
+            }
+            
             let closestWallId = null;
             let minDistance = SNAP_THRESHOLD / scaleFactor.current;
             walls.forEach((wall) => {
@@ -1153,6 +1220,10 @@ const Canvas2D = ({
                 }
                 const segmentPoint = snapToWallSegment(x, y, wall);
                 if (segmentPoint) {
+                    // Also check if the segment point is in a ghosted area
+                    if (isPointInGhostedArea(segmentPoint)) {
+                        return;
+                    }
                     const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
                     if (distance < minDistance) {
                         minDistance = distance;
@@ -1189,6 +1260,16 @@ const Canvas2D = ({
             }
             // 2. Snap to intersections, wall segments, endpoints
             const snapped = snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor.current);
+            
+            // Check if the snapped point is in a ghosted area
+            if (isPointInGhostedArea(snapped)) {
+                if (setWallSplitError) {
+                    setWallSplitError('Cannot create rooms in ghosted areas (double-height spaces from lower levels).');
+                    setTimeout(() => setWallSplitError(''), 4000);
+                }
+                return;
+            }
+            
             let points = [...selectedRoomPoints];
             // 3. If clicking near the first point and ≥3 points, close polygon
             if (points.length >= 3) {
@@ -1653,11 +1734,63 @@ const Canvas2D = ({
         updateProjectDimensions();
     }, [dimensionComparison.exceeds, actualProjectDimensions, project, projectId]);
     
+    // Track available drawing space for responsive canvas sizing (matching CeilingCanvas)
+    useEffect(() => {
+        const container = canvasContainerRef.current;
+        if (!container) return;
+
+        const updateCanvasSize = (rawWidth) => {
+            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
+            const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
+            const calculatedHeight = width * CANVAS_ASPECT_RATIO;
+            const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
+            const constrainedHeight = Math.min(preferredHeight, maxHeight);
+            const height = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
+
+            setCanvasSize((prev) => {
+                if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
+                    return prev;
+                }
+                return {
+                    width,
+                    height
+                };
+            });
+        };
+
+        let observer = null;
+        if (typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.target === container) {
+                        const entryWidth = entry.contentRect?.width ?? container.clientWidth;
+                        updateCanvasSize(entryWidth);
+                    }
+                });
+            });
+
+            observer.observe(container);
+        }
+
+        updateCanvasSize(container.clientWidth);
+
+        const handleWindowResize = () => updateCanvasSize(container.clientWidth);
+        window.addEventListener('resize', handleWindowResize);
+
+        return () => {
+            if (observer) {
+                observer.disconnect();
+            }
+            window.removeEventListener('resize', handleWindowResize);
+        };
+    }, []);
+
     useEffect(() => {
         const canvas = canvasRef.current;
+        if (!canvas) return;
         const context = canvas.getContext('2d');
-        canvas.width = 1000;
-        canvas.height = 600;
+        canvas.width = canvasSize.width;
+        canvas.height = canvasSize.height;
 
         // === Restore original scale/offset calculation ===
         // Find bounding box of all wall endpoints
@@ -1671,8 +1804,8 @@ const Canvas2D = ({
 
         const padding = 50;
         const sf = Math.min(
-            (canvas.width - 4 * padding) / wallWidth,
-            (canvas.height - 4 * padding) / wallHeight
+            1.2*(canvas.width - 4 * padding) / wallWidth,
+            1.2*(canvas.height - 4 * padding) / wallHeight
         );
 
         // Only set the scale if user hasn't manually zoomed
@@ -1706,7 +1839,8 @@ const Canvas2D = ({
                 offsetX.current,
                 offsetY.current,
                 placedLabels, // Share the arrays for collision detection
-                allLabels
+                allLabels,
+                initialScale.current
             );
         }
         
@@ -1742,7 +1876,8 @@ const Canvas2D = ({
             filteredDimensions,
             placedLabels, // Share collision detection arrays
             allLabels,
-            dimensionVisibility
+            dimensionVisibility,
+            initialScale: initialScale.current
         });
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);
@@ -1977,7 +2112,7 @@ const Canvas2D = ({
     ]);
     
     return (
-        <div className="flex flex-col items-center gap-4">
+        <>
             {/* Database Connection Error Message */}
             {dbConnectionError && (
                 <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
@@ -2011,317 +2146,430 @@ const Canvas2D = ({
                     </div>
                 </div>
             )}
-            
-            <div className="flex gap-6 items-start">
-                {/* Canvas Container */}
-                <div className="relative">
-                    <canvas
-                        ref={canvasRef}
-                        data-plan-type="wall"
-                        onClick={handleCanvasClick}
-                        onMouseMove={handleMouseMove}
-                        onMouseDown={handleCanvasMouseDown}
-                        onContextMenu={handleCanvasContextMenu}
-                        
-                        tabIndex={0}
-                        className={`border border-gray-300 bg-gray-50 cursor-grab active:cursor-grabbing`}
-                    />
-                    
-                    {/* Zoom Controls Overlay */}
-                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-                        <button
-                            onClick={handleZoomIn}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom In"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                            </svg>
-                        </button>
-                        
-                        <button
-                            onClick={handleZoomOut}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom Out"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
-                            </svg>
-                        </button>
-                        
-                        <button
-                            onClick={handleResetZoom}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Reset Zoom"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                        </button>
+
+            {/* Main Content - Matching Ceiling Plan Structure */}
+            <div className="wall-canvas-container bg-white rounded-xl shadow-lg p-6">
+                {/* Header */}
+                <div className="wall-canvas-header mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                                Wall Plan
+                            </h3>
+                            <p className="text-gray-600 text-lg">
+                                Professional Layout
+                            </p>
+                        </div>
                     </div>
-                    
-                    {/* Interactive Room Labels */}
-                    {roomLabelPositions.map((labelData) => (
-                        <InteractiveRoomLabel
-                            key={labelData.roomId}
-                            room={labelData.room}
-                            position={labelData.position}
-                            scaleFactor={scaleFactor.current}
-                            offsetX={offsetX.current}
-                            offsetY={offsetY.current}
-                            onUpdateRoom={handleRoomUpdateOptimized}
-                            onPositionChange={handleRoomLabelPositionChange}
-                            isSelected={selectedRoomId === labelData.roomId}
-                            onSelect={handleRoomSelect}
-                            currentMode={currentMode}
-                            selectedRoomPoints={selectedRoomPoints}
-                        />
-                    ))}
                 </div>
 
-                <div className="flex-shrink-0 w-64 space-y-4 sticky top-4">
-                    {currentMode === 'split-wall' && (
-                        <div className="bg-white border border-emerald-200 rounded-lg p-5 shadow-sm">
-                            <h5 className="font-semibold text-gray-900 mb-3">Manual Wall Split</h5>
-                            {!splitTargetWall ? (
-                                <div className="text-sm text-emerald-700 space-y-2">
-                                    <p>Click a wall on the canvas to select it for splitting.</p>
-                                    <p>Click again on the wall to split at the snapped point, or enter an exact distance below.</p>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="text-sm text-gray-700 space-y-1 mb-3">
-                                        <div className="flex justify-between">
-                                            <span className="font-medium">Wall ID:</span>
-                                            <span>#{splitTargetWall.id}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="font-medium">Length:</span>
-                                            <span>{Math.round(splitTargetWallLength || 0)} mm</span>
-                                        </div>
-                                        {splitHoverDistance !== null && (
-                                            <div className="flex justify-between text-emerald-700">
-                                                <span className="font-medium">Preview distance:</span>
-                                                <span>{Math.round(splitHoverDistance)} mm</span>
-                                            </div>
-                                        )}
+                <div className="space-y-6">
+                    <div className="space-y-4">
+                        {/* Canvas */}
+                        <div className="flex gap-6">
+                            {/* Canvas Container */}
+                            <div className="wall-canvas-wrapper flex-1">
+                                <div
+                                    ref={canvasContainerRef}
+                                    className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg relative"
+                                    style={{
+                                        height: `${CANVAS_HEIGHT}px`,
+                                        minHeight: `${MIN_CANVAS_HEIGHT}px`
+                                    }}
+                                >
+                                    {/* Zoom Controls Overlay */}
+                                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                        <button
+                                            onClick={handleZoomIn}
+                                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                                            title="Zoom In"
+                                        >
+                                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                                            </svg>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={handleZoomOut}
+                                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                                            title="Zoom Out"
+                                        >
+                                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
+                                            </svg>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={handleResetZoom}
+                                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
+                                            title="Reset Zoom"
+                                        >
+                                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                        </button>
                                     </div>
-                                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                                        Distance from start (mm)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={splitDistanceInput}
-                                        onChange={(e) => updatePreviewFromDistance(e.target.value)}
-                                        className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
-                                        placeholder="e.g. 1200"
+
+                                    <canvas
+                                        ref={canvasRef}
+                                        data-plan-type="wall"
+                                        onClick={handleCanvasClick}
+                                        onMouseMove={handleMouseMove}
+                                        onMouseDown={handleCanvasMouseDown}
+                                        onContextMenu={handleCanvasContextMenu}
+                                        tabIndex={0}
+                                        className="wall-canvas block w-full cursor-grab active:cursor-grabbing"
+                                        style={{
+                                            width: '100%',
+                                            height: '100%'
+                                        }}
                                     />
-                                    <div className="mt-3 flex flex-col gap-2">
-                                        <button
-                                            onClick={handleSplitAtDistance}
-                                            disabled={isProcessingSplit}
-                                            className={`w-full px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ${
-                                                isProcessingSplit
-                                                    ? 'bg-emerald-300 cursor-wait'
-                                                    : 'bg-emerald-500 hover:bg-emerald-600'
-                                            }`}
-                                        >
-                                            {isProcessingSplit ? 'Splitting...' : 'Split at Distance'}
-                                        </button>
-                                        <button
-                                            onClick={() => resetSplitState(true)}
-                                            disabled={isProcessingSplit}
-                                            className="w-full px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-all duration-200 text-sm"
-                                        >
-                                            Clear Selection
-                                        </button>
+                                    
+                                    {/* Interactive Room Labels */}
+                                    {roomLabelPositions.map((labelData) => (
+                                        <InteractiveRoomLabel
+                                            key={labelData.roomId}
+                                            room={labelData.room}
+                                            position={labelData.position}
+                                            scaleFactor={currentScaleFactor}
+                                            initialScale={initialScale.current}
+                                            offsetX={offsetX.current}
+                                            offsetY={offsetY.current}
+                                            onUpdateRoom={handleRoomUpdateOptimized}
+                                            onPositionChange={handleRoomLabelPositionChange}
+                                            isSelected={selectedRoomId === labelData.roomId}
+                                            onSelect={handleRoomSelect}
+                                            currentMode={currentMode}
+                                            selectedRoomPoints={selectedRoomPoints}
+                                        />
+                                    ))}
+                                </div>
+                                
+                                {/* Canvas Controls */}
+                                <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                                    <div className="flex items-center gap-4">
+                                        <span className="font-medium">Scale:</span>
+                                        <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+                                            {currentScaleFactor.toFixed(2)}x
+                                        </span>
                                     </div>
-                                </>
+                                    <div className="text-center">
+                                        <span className="font-medium">Click and drag to navigate • Use zoom buttons</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Plan Details Sidebar - Matching Ceiling Plan Structure */}
+                            {isDetailsPanelOpen && (
+                                <div className="wall-summary-sidebar flex-shrink-0">
+                                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 w-80 shadow-lg">
+                                        <h4 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                                            <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                            </svg>
+                                            Plan Details
+                                        </h4>
+                                        
+                                        <div className="space-y-6">
+                                            {/* Collapse Button */}
+                                            <div className="flex justify-end">
+                                                <button
+                                                    onClick={() => setIsDetailsPanelOpen(false)}
+                                                    className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                                                >
+                                                    Collapse
+                                                </button>
+                                            </div>
+
+                                                            {/* Manual Wall Split Section */}
+                                            {currentMode === 'split-wall' && (
+                                                <div className="bg-white border border-emerald-200 rounded-lg p-5 shadow-sm">
+                                                    <h5 className="font-semibold text-gray-900 mb-3">Manual Wall Split</h5>
+                                                    {!splitTargetWall ? (
+                                                        <div className="text-sm text-emerald-700 space-y-2">
+                                                            <p>Click a wall on the canvas to select it for splitting.</p>
+                                                            <p>Click again on the wall to split at the snapped point, or enter an exact distance below.</p>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <div className="text-sm text-gray-700 space-y-1 mb-3">
+                                                                <div className="flex justify-between">
+                                                                    <span className="font-medium">Wall ID:</span>
+                                                                    <span>#{splitTargetWall.id}</span>
+                                                                </div>
+                                                                <div className="flex justify-between">
+                                                                    <span className="font-medium">Length:</span>
+                                                                    <span>{Math.round(splitTargetWallLength || 0)} mm</span>
+                                                                </div>
+                                                                {splitHoverDistance !== null && (
+                                                                    <div className="flex justify-between text-emerald-700">
+                                                                        <span className="font-medium">Preview distance:</span>
+                                                                        <span>{Math.round(splitHoverDistance)} mm</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                                                                Distance from start (mm)
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                value={splitDistanceInput}
+                                                                onChange={(e) => updatePreviewFromDistance(e.target.value)}
+                                                                className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                                                                placeholder="e.g. 1200"
+                                                            />
+                                                            <div className="mt-3 flex flex-col gap-2">
+                                                                <button
+                                                                    onClick={handleSplitAtDistance}
+                                                                    disabled={isProcessingSplit}
+                                                                    className={`w-full px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ${
+                                                                        isProcessingSplit
+                                                                            ? 'bg-emerald-300 cursor-wait'
+                                                                            : 'bg-emerald-500 hover:bg-emerald-600'
+                                                                    }`}
+                                                                >
+                                                                    {isProcessingSplit ? 'Splitting...' : 'Split at Distance'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => resetSplitState(true)}
+                                                                    disabled={isProcessingSplit}
+                                                                    className="w-full px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-all duration-200 text-sm"
+                                                                >
+                                                                    Clear Selection
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Wall Finish Legend */}
+                                            {thicknessColorMap && thicknessColorMap.size > 0 && (
+                                                <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                                                    <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
+                                                        <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                                                        </svg>
+                                                        Wall Finish Legend
+                                                    </h5>
+                                                    <div className="space-y-3">
+                                                        {Array.from(thicknessColorMap.entries()).map(([key, colors]) => (
+                                                            <div key={key} className="space-y-1">
+                                                                <div className="flex items-center">
+                                                                    {/* Mini wall representation - two close lines with end caps */}
+                                                                    <div className="mr-3 relative" style={{ width: '60px', height: '16px' }}>
+                                                                        {/* Geometry constants for layout */}
+                                                                        {(() => {
+                                                                            const lineHeight = 2; // px
+                                                                            const gap = 4; // px between the two lines (closer)
+                                                                            const topY = 4; // px from top
+                                                                            const bottomY = topY + gap + lineHeight; // maintain small gap
+                                                                            const capWidth = 1; // px
+                                                                            const capLeft = 0;
+                                                                            const capRight = 'calc(100% - 1px)';
+
+                                                                            if (colors.hasDifferentFaces) {
+                                                                                return (
+                                                                                    <>
+                                                                                        {/* Outer face (top line) */}
+                                                                                        <div
+                                                                                            className="absolute left-0 right-0"
+                                                                                            style={{
+                                                                                                top: `${topY}px`,
+                                                                                                height: `${lineHeight}px`,
+                                                                                                backgroundColor: colors.wall
+                                                                                            }}
+                                                                                            title="Outer face"
+                                                                                        ></div>
+                                                                                        {/* Inner face (bottom line) */}
+                                                                                        <div
+                                                                                            className="absolute left-0 right-0"
+                                                                                            style={{
+                                                                                                top: `${bottomY}px`,
+                                                                                                height: `${lineHeight}px`,
+                                                                                                backgroundColor: colors.innerWall
+                                                                                            }}
+                                                                                            title="Inner face"
+                                                                                        ></div>
+                                                                                        {/* End caps - left */}
+                                                                                        <div
+                                                                                            className="absolute"
+                                                                                            style={{
+                                                                                                left: `${capLeft}px`,
+                                                                                                top: `${topY}px`,
+                                                                                                width: `${capWidth}px`,
+                                                                                                height: `${(bottomY + lineHeight) - topY}px`,
+                                                                                                backgroundColor: colors.innerWall
+                                                                                            }}
+                                                                                        ></div>
+                                                                                        {/* End caps - right */}
+                                                                                        <div
+                                                                                            className="absolute"
+                                                                                            style={{
+                                                                                                left: capRight,
+                                                                                                top: `${topY}px`,
+                                                                                                width: `${capWidth}px`,
+                                                                                                height: `${(bottomY + lineHeight) - topY}px`,
+                                                                                                backgroundColor: colors.innerWall
+                                                                                            }}
+                                                                                        ></div>
+                                                                                    </>
+                                                                                );
+                                                                            }
+
+                                                                            // Same material on both faces: draw two close lines with same color
+                                                                            return (
+                                                                                <>
+                                                                                    <div
+                                                                                        className="absolute left-0 right-0"
+                                                                                        style={{
+                                                                                            top: `${topY}px`,
+                                                                                            height: `${lineHeight}px`,
+                                                                                            backgroundColor: colors.wall
+                                                                                        }}
+                                                                                    ></div>
+                                                                                    <div
+                                                                                        className="absolute left-0 right-0"
+                                                                                        style={{
+                                                                                            top: `${bottomY}px`,
+                                                                                            height: `${lineHeight}px`,
+                                                                                            backgroundColor: colors.wall
+                                                                                        }}
+                                                                                    ></div>
+                                                                                    {/* Caps */}
+                                                                                    <div
+                                                                                        className="absolute"
+                                                                                        style={{
+                                                                                            left: `${capLeft}px`,
+                                                                                            top: `${topY}px`,
+                                                                                            width: `${capWidth}px`,
+                                                                                            height: `${(bottomY + lineHeight) - topY}px`,
+                                                                                            backgroundColor: colors.wall
+                                                                                        }}
+                                                                                    ></div>
+                                                                                    <div
+                                                                                        className="absolute"
+                                                                                        style={{
+                                                                                            left: capRight,
+                                                                                            top: `${topY}px`,
+                                                                                            width: `${capWidth}px`,
+                                                                                            height: `${(bottomY + lineHeight) - topY}px`,
+                                                                                            backgroundColor: colors.wall
+                                                                                        }}
+                                                                                    ></div>
+                                                                                </>
+                                                                            );
+                                                                        })()}
+                                                                    </div>
+                                                                    <span className="text-sm text-gray-700 font-medium">{colors.label}</span>
+                                                                </div>
+                                                                {(() => {
+                                                                    // Parse combo key: `${core}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`
+                                                                    const parts = String(key).split('|');
+                                                                    const core = parts[0];
+                                                                    const intPart = (parts[1] || '').replace('INT:', '').trim();
+                                                                    const extPart = (parts[2] || '').replace('EXT:', '').trim();
+                                                                    return (
+                                                                        <div className="ml-0 pl-0 text-xs text-gray-600">
+                                                                            <div><span className="font-medium">Panel Thickness:</span> {core}mm</div>
+                                                                            <div><span className="font-medium">Finishing:</span> Ext: {extPart} | Int: {intPart}</div>
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
+                                                        💡 <strong>Tip:</strong> Different colors represent unique combinations of core thickness and inner/outer finishes. When materials differ, walls show two lines (top=outer, bottom=inner).
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Dimension Labels */}
+                                            <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                                                <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
+                                                    <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
+                                                    </svg>
+                                                    Dimension Labels
+                                                </h5>
+                                                <div className="space-y-3 text-sm text-gray-700">
+                                                    <label className="flex items-center gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            checked={dimensionVisibility.project}
+                                                            onChange={() => handleDimensionVisibilityChange('project')}
+                                                        />
+                                                        <span>Overall project dimensions</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            checked={dimensionVisibility.wall}
+                                                            onChange={() => handleDimensionVisibilityChange('wall')}
+                                                        />
+                                                        <span>Wall dimensions</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            checked={dimensionVisibility.panel}
+                                                            onChange={() => handleDimensionVisibilityChange('panel')}
+                                                        />
+                                                        <span>Side Panel dimensions</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                </div>
                             )}
                         </div>
-                    )}
+                    </div>
 
-                    {thicknessColorMap && thicknessColorMap.size > 0 && (
-                        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-                            <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
-                                <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                                </svg>
-                                Wall Finish Legend
-                            </h5>
-                            <div className="space-y-3">
-                                {Array.from(thicknessColorMap.entries()).map(([key, colors]) => (
-                                    <div key={key} className="space-y-1">
-                                        <div className="flex items-center">
-                                            {/* Mini wall representation - two close lines with end caps */}
-                                            <div className="mr-3 relative" style={{ width: '60px', height: '16px' }}>
-                                                {/* Geometry constants for layout */}
-                                                {(() => {
-                                                    const lineHeight = 2; // px
-                                                    const gap = 4; // px between the two lines (closer)
-                                                    const topY = 4; // px from top
-                                                    const bottomY = topY + gap + lineHeight; // maintain small gap
-                                                    const capWidth = 1; // px
-                                                    const capLeft = 0;
-                                                    const capRight = 'calc(100% - 1px)';
+                    {/* View Material Needed Section - Matching Ceiling Panel List Structure */}
+                    <div className="mt-6 p-4 bg-white rounded-lg shadow-md border border-gray-200">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">View Material Needed</h3>
+                            <button
+                                onClick={() => setShowMaterialNeeded(!showMaterialNeeded)}
+                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                            >
+                                {showMaterialNeeded ? 'Hide Material Details' : 'Show Material Details'}
+                            </button>
+                        </div>
 
-                                                    if (colors.hasDifferentFaces) {
-                                                        return (
-                                                            <>
-                                                                {/* Outer face (top line) */}
-                                                                <div
-                                                                    className="absolute left-0 right-0"
-                                                                    style={{
-                                                                        top: `${topY}px`,
-                                                                        height: `${lineHeight}px`,
-                                                                        backgroundColor: colors.wall
-                                                                    }}
-                                                                    title="Outer face"
-                                                                ></div>
-                                                                {/* Inner face (bottom line) */}
-                                                                <div
-                                                                    className="absolute left-0 right-0"
-                                                                    style={{
-                                                                        top: `${bottomY}px`,
-                                                                        height: `${lineHeight}px`,
-                                                                        backgroundColor: colors.innerWall
-                                                                    }}
-                                                                    title="Inner face"
-                                                                ></div>
-                                                                {/* End caps - left */}
-                                                                <div
-                                                                    className="absolute"
-                                                                    style={{
-                                                                        left: `${capLeft}px`,
-                                                                        top: `${topY}px`,
-                                                                        width: `${capWidth}px`,
-                                                                        height: `${(bottomY + lineHeight) - topY}px`,
-                                                                        backgroundColor: colors.innerWall
-                                                                    }}
-                                                                ></div>
-                                                                {/* End caps - right */}
-                                                                <div
-                                                                    className="absolute"
-                                                                    style={{
-                                                                        left: capRight,
-                                                                        top: `${topY}px`,
-                                                                        width: `${capWidth}px`,
-                                                                        height: `${(bottomY + lineHeight) - topY}px`,
-                                                                        backgroundColor: colors.innerWall
-                                                                    }}
-                                                                ></div>
-                                                            </>
-                                                        );
-                                                    }
-
-                                                    // Same material on both faces: draw two close lines with same color
-                                                    return (
-                                                        <>
-                                                            <div
-                                                                className="absolute left-0 right-0"
-                                                                style={{
-                                                                    top: `${topY}px`,
-                                                                    height: `${lineHeight}px`,
-                                                                    backgroundColor: colors.wall
-                                                                }}
-                                                            ></div>
-                                                            <div
-                                                                className="absolute left-0 right-0"
-                                                                style={{
-                                                                    top: `${bottomY}px`,
-                                                                    height: `${lineHeight}px`,
-                                                                    backgroundColor: colors.wall
-                                                                }}
-                                                            ></div>
-                                                            {/* Caps */}
-                                                            <div
-                                                                className="absolute"
-                                                                style={{
-                                                                    left: `${capLeft}px`,
-                                                                    top: `${topY}px`,
-                                                                    width: `${capWidth}px`,
-                                                                    height: `${(bottomY + lineHeight) - topY}px`,
-                                                                    backgroundColor: colors.wall
-                                                                }}
-                                                            ></div>
-                                                            <div
-                                                                className="absolute"
-                                                                style={{
-                                                                    left: capRight,
-                                                                    top: `${topY}px`,
-                                                                    width: `${capWidth}px`,
-                                                                    height: `${(bottomY + lineHeight) - topY}px`,
-                                                                    backgroundColor: colors.wall
-                                                                }}
-                                                            ></div>
-                                                        </>
-                                                    );
-                                                })()}
-                                            </div>
-                                            <span className="text-sm text-gray-700 font-medium">{colors.label}</span>
-                                        </div>
-                                        {(() => {
-                                            // Parse combo key: `${core}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`
-                                            const parts = String(key).split('|');
-                                            const core = parts[0];
-                                            const intPart = (parts[1] || '').replace('INT:', '').trim();
-                                            const extPart = (parts[2] || '').replace('EXT:', '').trim();
-                                            return (
-                                                <div className="ml-0 pl-0 text-xs text-gray-600">
-                                                    <div><span className="font-medium">Panel Thickness:</span> {core}mm</div>
-                                                    <div><span className="font-medium">Finishing:</span> Ext: {extPart} | Int: {intPart}</div>
-                                                </div>
-                                            );
-                                        })()}
+                        {showMaterialNeeded && (
+                            <div className="space-y-4">
+                                <PanelCalculationControls 
+                                    walls={walls} 
+                                    intersections={intersections}
+                                    doors={doors}
+                                    showMaterialDetails={showMaterialDetails}
+                                    toggleMaterialDetails={toggleMaterialDetails}
+                                    canvasRef={canvasRef}
+                                    rooms={rooms}
+                                    project={project}
+                                    updateSharedPanelData={updateSharedPanelData}
+                                />
+                                
+                                {/* Door Table */}
+                                {showMaterialDetails && (
+                                    <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                                        <DoorTable doors={doors} />
                                     </div>
-                                ))}
+                                )}
                             </div>
-                            <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                💡 <strong>Tip:</strong> Different colors represent unique combinations of core thickness and inner/outer finishes. When materials differ, walls show two lines (top=outer, bottom=inner).
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-                        <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
-                            <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
-                            </svg>
-                            Dimension Labels
-                        </h5>
-                        <div className="space-y-3 text-sm text-gray-700">
-                            <label className="flex items-center gap-3">
-                                <input
-                                    type="checkbox"
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    checked={dimensionVisibility.project}
-                                    onChange={() => handleDimensionVisibilityChange('project')}
-                                />
-                                <span>Overall project dimensions</span>
-                            </label>
-                            <label className="flex items-center gap-3">
-                                <input
-                                    type="checkbox"
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    checked={dimensionVisibility.wall}
-                                    onChange={() => handleDimensionVisibilityChange('wall')}
-                                />
-                                <span>Wall dimensions</span>
-                            </label>
-                            <label className="flex items-center gap-3">
-                                <input
-                                    type="checkbox"
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    checked={dimensionVisibility.panel}
-                                    onChange={() => handleDimensionVisibilityChange('panel')}
-                                />
-                                <span>Side Panel dimensions</span>
-                            </label>
-                        </div>
+                        )}
                     </div>
                 </div>
             </div>
+            
             {selectedIntersection && (
             <div className="fixed inset-0 bg-black bg-opacity-10 flex justify-end items-start z-50"> {/* Changed to items-start and justify-end */}
                 <div className="bg-white p-4 rounded-lg shadow-lg m-4 max-w-md w-full"> {/* Added margin and reduced padding */}
@@ -2449,22 +2697,6 @@ const Canvas2D = ({
             </div>
             )}
 
-            {/* Panel Calculation Controls */}
-            <PanelCalculationControls 
-                walls={walls} 
-                intersections={intersections}
-                doors={doors}
-                showMaterialDetails={showMaterialDetails}
-                toggleMaterialDetails={toggleMaterialDetails}
-                canvasRef={canvasRef}
-                rooms={rooms}
-                project={project}
-                updateSharedPanelData={updateSharedPanelData} // Pass the prop
-            />
-            
-            {/* Door Table */}
-            {showMaterialDetails && <DoorTable doors={doors} />}
-
             {wallMergeError && (
               <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg">
                 <div className="flex items-center">
@@ -2475,7 +2707,7 @@ const Canvas2D = ({
                 </div>
               </div>
             )}
-        </div>
+        </>
     );
 };
 

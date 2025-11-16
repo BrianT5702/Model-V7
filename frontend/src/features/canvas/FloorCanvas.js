@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { calculateOffsetPoints } from './drawing.js';
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
-import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds } from './collisionDetection.js';
+import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
 
 const DEFAULT_CANVAS_WIDTH = 1000;
-const DEFAULT_CANVAS_HEIGHT = 600;
+const DEFAULT_CANVAS_HEIGHT = 650;
 const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
 const MAX_CANVAS_HEIGHT_RATIO = 0.7;
 const MIN_CANVAS_WIDTH = 480;
@@ -42,6 +42,9 @@ const FloorCanvas = ({
     // Canvas dragging state (separate from other dragging)
     const isDraggingCanvas = useRef(false);
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
+    
+    // Store placement decisions for dimensions to prevent position changes on zoom
+    const dimensionPlacementMemory = useRef(new Map());
 
     // Track available drawing space for responsive canvas sizing
     useEffect(() => {
@@ -1073,7 +1076,33 @@ const FloorCanvas = ({
         
         // Draw text
         ctx.fillStyle = color;
-        const fontSize = Math.max(DIMENSION_CONFIG.FONT_SIZE_MIN, DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current);
+        // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
+        let fontSize;
+        
+        // Calculate square root scaled font size if user has zoomed in
+        let sqrtScaledFontSize = 0;
+        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
+            // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+            // This means 2x zoom only results in ~1.41x text size, not 2x
+            const zoomRatio = scaleFactor.current / initialScale.current;
+            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+        }
+        
+        // Use the maximum of calculated and square root scaled to prevent discontinuity
+        // This ensures smooth transition when crossing the minimum threshold
+        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+            // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+        } else {
+            // Above minimum threshold - use max of calculated and square root scaled
+            // This prevents sudden drop when crossing the threshold
+            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+        }
+        
+        // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+        // This handles any edge cases or timing issues
+        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
         ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         
         if (isHorizontal) {
@@ -1119,9 +1148,25 @@ const FloorCanvas = ({
         const midX = (startX + endX) / 2;
         const midY = (startY + endY) / 2;
         
+        // Create unique key for this dimension to remember placement decision
+        const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_${dimension.type || 'default'}`;
+        
+        // Check if we have a stored placement decision for this dimension
+        const storedPlacement = dimensionPlacementMemory.current.get(dimensionKey);
+        const lockedSide = storedPlacement ? storedPlacement.side : null;
+        
         // Determine optimal label position
         let labelX, labelY;
-        let baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Use config for consistency
+        
+        // Smart placement: determine if dimension is "small" relative to project size
+        // Small dimensions can be placed near the wall, large ones go outside project area
+        const projectWidth = (maxX - minX) || 1;
+        const projectHeight = (maxY - minY) || 1;
+        const projectSize = Math.max(projectWidth, projectHeight);
+        const isSmallDimension = length < (projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD);
+        
+        // Use smaller offset for small dimensions (place near wall), larger offset for big dimensions (outside project)
+        let baseOffset = isSmallDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : DIMENSION_CONFIG.BASE_OFFSET;
         let offset = baseOffset;
         let attempts = 0;
         const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
@@ -1129,68 +1174,137 @@ const FloorCanvas = ({
         // Initialize text and labelBounds variables
         let text;
         if (dimension.type === 'cut_panel' || dimension.isCut) {
-            // Cut panel dimension label should match ceiling plan format: "320mm (CUT)"
-            text = `${Math.round(length)}mm (CUT)`;
+            // Cut panel dimension label should match ceiling plan format: "320 (CUT)"
+            text = `${Math.round(length)} (CUT)`;
         } else if (dimension.quantity && dimension.quantity > 1) {
             // Grouped panel dimension: show "n × A" format
-            text = `${dimension.quantity} × ${Math.round(length)}mm`;
+            text = `${dimension.quantity} × ${Math.round(length)}`;
         } else {
             // Regular dimension: show just the value
-            text = `${Math.round(length)}mm`;
+            text = `${Math.round(length)}`;
         }
         let textWidth = ctx.measureText(text).width;
         let labelBounds;
         
-        do {
-            if (isHorizontal) {
-                // Horizontal dimension: place ABOVE or BELOW
-                const projectMidY = avoidArea ? (avoidArea.minY + avoidArea.maxY) / 2 : (minY + maxY) / 2;
-                const isTopHalf = midY < projectMidY;
-                
-                if (avoidArea) {
-                    labelY = isTopHalf ? 
-                        (avoidArea.minY * scaleFactor.current + offsetY.current - offset) : 
-                        (avoidArea.maxY * scaleFactor.current + offsetY.current + offset);
-                } else {
-                    labelY = isTopHalf ? 
-                        (minY * scaleFactor.current + offsetY.current - offset) : 
-                        (maxY * scaleFactor.current + offsetY.current + offset);
-                }
-                labelX = midX * scaleFactor.current + offsetX.current;
-            } else {
-                // Vertical dimension: place to LEFT or RIGHT
-                const verticalOffset = Math.max(offset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET); // Use config for consistency
-                const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
-                const isLeftHalf = midX < projectMidX;
-                
-                if (avoidArea) {
-                    labelX = isLeftHalf ? 
-                        (avoidArea.minX * scaleFactor.current + offsetX.current - verticalOffset) : 
-                        (avoidArea.maxX * scaleFactor.current + offsetX.current + verticalOffset);
-                } else {
-                    labelX = isLeftHalf ? 
-                        (minX * scaleFactor.current + offsetX.current - verticalOffset) : 
-                        (maxX * scaleFactor.current + offsetX.current + verticalOffset);
-                }
-                labelY = midY * scaleFactor.current + offsetY.current;
-            }
+        // Smart placement: evaluate both sides and choose the best (or use locked side if stored)
+        let placement;
+        
+        if (isHorizontal) {
+            // Horizontal dimension: smart placement - try both top and bottom
+            const projectMidY = avoidArea ? (avoidArea.minY + avoidArea.maxY) / 2 : (minY + maxY) / 2;
             
-            // Update text width and label bounds for this iteration
-            textWidth = ctx.measureText(text).width;
+            placement = smartPlacement({
+                calculatePositionSide1: (offset) => {
+                    // Side 1: Top (above)
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: midY * scaleFactor.current + offsetY.current - offset
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: avoidArea.minY * scaleFactor.current + offsetY.current - offset
+                        };
+                    } else {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: minY * scaleFactor.current + offsetY.current - offset
+                        };
+                    }
+                },
+                calculatePositionSide2: (offset) => {
+                    // Side 2: Bottom (below)
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: midY * scaleFactor.current + offsetY.current + offset
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: avoidArea.maxY * scaleFactor.current + offsetY.current + offset
+                        };
+                    } else {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current,
+                            labelY: maxY * scaleFactor.current + offsetY.current + offset
+                        };
+                    }
+                },
+                calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8),
+                textWidth: textWidth,
+                placedLabels: placedLabels,
+                baseOffset: baseOffset,
+                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                maxAttempts: maxAttempts,
+                preferredSide: 'side1', // Prefer top for horizontal dimensions
+                lockedSide: lockedSide // Use stored side if available
+            });
+        } else {
+            // Vertical dimension: smart placement - try both left and right
+            const minVerticalOffset = isSmallDimension ? DIMENSION_CONFIG.MIN_VERTICAL_OFFSET_SMALL : DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
+            const baseVerticalOffset = Math.max(baseOffset, minVerticalOffset);
+            const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
             
-            // Calculate label bounds using shared utility
-            labelBounds = isHorizontal 
-                ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8)
-                : calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8);
-            
-            // Check for overlaps using shared utility
-            const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
-            
-            if (!hasOverlap) break;
-            
-            offset += DIMENSION_CONFIG.OFFSET_INCREMENT;
-            attempts++;
-        } while (attempts < maxAttempts);
+            placement = smartPlacement({
+                calculatePositionSide1: (offset) => {
+                    // Side 1: Left
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current - offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: avoidArea.minX * scaleFactor.current + offsetX.current - offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else {
+                        return {
+                            labelX: minX * scaleFactor.current + offsetX.current - offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    }
+                },
+                calculatePositionSide2: (offset) => {
+                    // Side 2: Right
+                    if (isSmallDimension) {
+                        return {
+                            labelX: midX * scaleFactor.current + offsetX.current + offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else if (avoidArea) {
+                        return {
+                            labelX: avoidArea.maxX * scaleFactor.current + offsetX.current + offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    } else {
+                        return {
+                            labelX: maxX * scaleFactor.current + offsetX.current + offset,
+                            labelY: midY * scaleFactor.current + offsetY.current
+                        };
+                    }
+                },
+                calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8),
+                textWidth: textWidth,
+                placedLabels: placedLabels,
+                baseOffset: baseVerticalOffset,
+                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                maxAttempts: maxAttempts,
+                preferredSide: 'side2', // Prefer right for vertical dimensions
+                lockedSide: lockedSide // Use stored side if available
+            });
+        }
+        
+        // Store the placement decision for future renders (to prevent position changes on zoom)
+        if (!storedPlacement) {
+            dimensionPlacementMemory.current.set(dimensionKey, { side: placement.side });
+        }
+        
+        labelX = placement.labelX;
+        labelY = placement.labelY;
+        labelBounds = placement.labelBounds;
         
         // Draw dimension lines
         ctx.save();

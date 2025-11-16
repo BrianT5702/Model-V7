@@ -766,23 +766,39 @@ const ProjectDetails = () => {
                     </div>
 
                     {/* Room Creation Interface */}
-                    {projectDetails.showRoomManagerModal && (
-                        <div className="p-4 room-creation-interface">
-                            <div className="max-w-4xl mx-auto">
-                                <div className="room-form-container p-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h4 className="text-lg font-semibold text-gray-900">
+                    {projectDetails.showRoomManagerModal && !projectDetails.isRoomManagerMinimized && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000]">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-gray-900">
                                             {projectDetails.editingRoom ? 'Edit Room' : 'Create New Room'}
-                                        </h4>
-                        <button
+                                        </h2>
+                                        <p className="text-sm text-gray-500">
+                                            {projectDetails.currentMode === 'define-room' ? 'Click on the canvas to place points. Close the loop by clicking the first point.' : 'Define room properties'}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => projectDetails.setRoomManagerMinimized(true)}
+                                            className="text-gray-500 hover:text-gray-700 transition-colors"
+                                            title="Minimize"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                            </svg>
+                                        </button>
+                                        <button
                                             onClick={() => projectDetails.setShowRoomManagerModal(false)}
-                                            className="text-gray-400 hover:text-gray-600 transition-colors"
-                        >
+                                            className="text-gray-500 hover:text-gray-700 transition-colors"
+                                        >
                                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                             </svg>
-                        </button>
+                                        </button>
                                     </div>
+                                </div>
+                                <div className="p-6">
                                     <RoomManager
                                         projectId={projectId}
                                         walls={projectDetails.filteredWalls}
@@ -796,6 +812,43 @@ const ProjectDetails = () => {
                                         editingRoom={projectDetails.editingRoom}
                                         selectedPolygonPoints={projectDetails.selectedRoomPoints}
                                     />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {projectDetails.showRoomManagerModal && projectDetails.isRoomManagerMinimized && (
+                        <div className="fixed bottom-6 right-6 z-[11000] flex flex-col gap-2">
+                            <div className="bg-gray-900/90 text-white px-4 py-3 rounded-lg shadow-lg max-w-md">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm font-medium">
+                                        {projectDetails.currentMode === 'define-room' ? 'Drawing room area…' : (projectDetails.editingRoom ? 'Editing room…' : 'Creating room…')}
+                                    </div>
+                                    <button
+                                        onClick={() => projectDetails.setRoomManagerMinimized(false)}
+                                        className="text-xs text-blue-200 hover:text-white transition-colors"
+                                    >
+                                        Restore panel
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-200 mt-2">
+                                    {projectDetails.currentMode === 'define-room' 
+                                        ? 'Click on the canvas to place points. Close the loop by clicking the first point.'
+                                        : 'Complete the room form to save.'}
+                                </p>
+                                <div className="mt-3 flex items-center gap-2">
+                                    <button
+                                        onClick={handleRoomClose}
+                                        className="px-3 py-1.5 rounded-md bg-red-500 text-xs font-medium hover:bg-red-600 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => projectDetails.setRoomManagerMinimized(false)}
+                                        className="px-3 py-1.5 rounded-md bg-gray-700 text-xs font-medium hover:bg-gray-600 transition-colors"
+                                    >
+                                        Resume form
+                                    </button>
                                 </div>
                             </div>
                         </div>

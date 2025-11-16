@@ -5,7 +5,11 @@ import { shouldShowWallDimension, shouldShowPanelDimension } from './dimensionFi
 // Import dimension configuration
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
 // Import collision detection utilities
-import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds } from './collisionDetection.js';
+import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
+
+// Store placement decisions for dimensions to prevent position changes on zoom
+// Module-level Map that persists across renders
+const dimensionPlacementMemory = new Map();
 
 // Utility function to normalize wall coordinates
 // Ensures horizontal walls are created from left to right
@@ -230,7 +234,7 @@ export function compareDimensions(actualDimensions, declaredProject) {
 }
 
 // Draw overall project dimensions (actual dimensions from wall boundaries)
-export function drawOverallProjectDimensions(context, walls, scaleFactor, offsetX, offsetY, placedLabels = [], allLabels = []) {
+export function drawOverallProjectDimensions(context, walls, scaleFactor, offsetX, offsetY, placedLabels = [], allLabels = [], initialScale = 1) {
     if (!walls || walls.length === 0) return;
     
     const actualDimensions = calculateActualProjectDimensions(walls);
@@ -254,7 +258,8 @@ export function drawOverallProjectDimensions(context, walls, scaleFactor, offset
         maxX, minY, // end point (horizontal line)
         scaleFactor, offsetX, offsetY,
         DIMENSION_CONFIG.COLORS.PROJECT,
-        modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'horizontal'
+        modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'horizontal',
+        initialScale
     );
     
     // Draw overall length dimension (right side) with enhanced collision detection
@@ -264,12 +269,13 @@ export function drawOverallProjectDimensions(context, walls, scaleFactor, offset
         maxX, maxY, // end point (vertical line)
         scaleFactor, offsetX, offsetY,
         DIMENSION_CONFIG.COLORS.PROJECT,
-        modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'vertical'
+        modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'vertical',
+        initialScale
     );
 }
 
 // Enhanced function to draw project dimensions with better collision detection
-function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color, modelBounds, placedLabels, allLabels, baseOffset, orientation) {
+function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color, modelBounds, placedLabels, allLabels, baseOffset, orientation, initialScale = 1) {
     const length = Math.sqrt(
         Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
@@ -282,9 +288,34 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
     
     context.save();
     context.fillStyle = color;
-    const fontSize = Math.max(14, 200 * scaleFactor);
+    // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+    const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+    let fontSize;
+    
+    // Calculate square root scaled font size if user has zoomed in
+    let sqrtScaledFontSize = 0;
+    if (initialScale > 0 && scaleFactor > initialScale) {
+        // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+        // This means 2x zoom only results in ~1.41x text size, not 2x
+        const zoomRatio = scaleFactor / initialScale;
+        sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+    }
+    
+    // Use the maximum of calculated and square root scaled to prevent discontinuity
+    // This ensures smooth transition when crossing the minimum threshold
+    if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+        // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+        fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+    } else {
+        // Above minimum threshold - use max of calculated and square root scaled
+        // This prevents sudden drop when crossing the threshold
+        fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+    }
+    
+    // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
     context.font = `${fontSize}px Arial`;
-    const text = `${Math.round(length)} mm`;
+    const text = `${Math.round(length)}`;
     const textWidth = context.measureText(text).width;
     const dx = endX - startX;
     const dy = endY - startY;
@@ -433,7 +464,7 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
 }
 
 // Draw wall dimensions
-export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false) {
+export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false, initialScale = 1) {
     // Debug: Log the scale factor being used
     // console.log('🔍 drawDimensions called with scaleFactor:', scaleFactor);
     
@@ -449,10 +480,35 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     
     context.save();
     context.fillStyle = color;
-    const fontSize = Math.max(14, 200 * scaleFactor); // Changed minimum from 16 to 14
+    // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+    const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+    let fontSize;
+    
+    // Calculate square root scaled font size if user has zoomed in
+    let sqrtScaledFontSize = 0;
+    if (initialScale > 0 && scaleFactor > initialScale) {
+        // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+        // This means 2x zoom only results in ~1.41x text size, not 2x
+        const zoomRatio = scaleFactor / initialScale;
+        sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+    }
+    
+    // Use the maximum of calculated and square root scaled to prevent discontinuity
+    // This ensures smooth transition when crossing the minimum threshold
+    if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+        // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+        fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+    } else {
+        // Above minimum threshold - use max of calculated and square root scaled
+        // This prevents sudden drop when crossing the threshold
+        fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+    }
+    
+    // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
     // console.log('🔍 drawDimensions font size:', fontSize, 'scaleFactor:', scaleFactor);
     context.font = `${fontSize}px Arial`;
-    const text = `${Math.round(length)} mm`;
+    const text = `${Math.round(length)}`;
     const textWidth = context.measureText(text).width;
     const dx = endX - startX;
     const dy = endY - startY;
@@ -461,35 +517,74 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     // If modelBounds is provided, use external dimensioning
     if (modelBounds) {
         const { minX, maxX, minY, maxY } = modelBounds;
-        const baseOffset = DIMENSION_CONFIG.BASE_OFFSET; // Base distance outside the model
+        
+        // Create unique key for this dimension to remember placement decision
+        const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_wall`;
+        
+        // Check if we have a stored placement decision for this dimension
+        const storedPlacement = dimensionPlacementMemory.get(dimensionKey);
+        const lockedSide = storedPlacement ? storedPlacement.side : null;
+        
+        // Smart placement: determine if dimension is "small" relative to project size
+        // Small dimensions can be placed near the wall, large ones go outside project area
+        const projectWidth = (maxX - minX) || 1;
+        const projectHeight = (maxY - minY) || 1;
+        const projectSize = Math.max(projectWidth, projectHeight);
+        const isSmallDimension = length < (projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD);
+        
+        // Use smaller offset for small dimensions (place near wall), larger offset for big dimensions (outside project)
+        const baseOffset = isSmallDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : DIMENSION_CONFIG.BASE_OFFSET;
         
         if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-            // Horizontal wall - place on top or bottom
-            const isTopHalf = wallMidY < (minY + maxY) / 2;
-            const side = isTopHalf ? 'top' : 'bottom';
+            // Horizontal wall - smart placement: try both top and bottom, choose best
+            // Smart placement: evaluate both top and bottom sides
+            const placement = smartPlacement({
+                calculatePositionSide1: (offset) => {
+                    // Side 1: Top (above)
+                    if (isSmallDimension) {
+                        return {
+                            labelX: wallMidX * scaleFactor + offsetX,
+                            labelY: wallMidY * scaleFactor + offsetY - offset
+                        };
+                    } else {
+                        return {
+                            labelX: wallMidX * scaleFactor + offsetX,
+                            labelY: minY * scaleFactor + offsetY - offset
+                        };
+                    }
+                },
+                calculatePositionSide2: (offset) => {
+                    // Side 2: Bottom (below)
+                    if (isSmallDimension) {
+                        return {
+                            labelX: wallMidX * scaleFactor + offsetX,
+                            labelY: wallMidY * scaleFactor + offsetY + offset
+                        };
+                    } else {
+                        return {
+                            labelX: wallMidX * scaleFactor + offsetX,
+                            labelY: maxY * scaleFactor + offsetY + offset
+                        };
+                    }
+                },
+                calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8),
+                textWidth: textWidth,
+                placedLabels: placedLabels,
+                baseOffset: baseOffset,
+                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                maxAttempts: DIMENSION_CONFIG.MAX_ATTEMPTS,
+                preferredSide: 'side1', // Prefer top for horizontal dimensions (professional standard)
+                lockedSide: lockedSide // Use stored side if available
+            });
             
-            // Find available position to avoid overlaps
-            let labelY, labelX;
-            let offset = baseOffset;
-            let attempts = 0;
-            const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
+            // Store the placement decision for future renders (to prevent position changes on zoom)
+            if (!storedPlacement) {
+                dimensionPlacementMemory.set(dimensionKey, { side: placement.side });
+            }
             
-            do {
-                labelY = isTopHalf ? 
-                    (minY * scaleFactor + offsetY - offset) : // OUTSIDE above
-                    (maxY * scaleFactor + offsetY + offset);  // OUTSIDE below
-                labelX = wallMidX * scaleFactor + offsetX;
-                
-                // Check for overlaps with existing labels
-                const labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
-                
-                if (!hasOverlap) break;
-                
-                // Increase offset and try again
-                offset += 20;
-                attempts++;
-            } while (attempts < maxAttempts);
+            const labelX = placement.labelX;
+            const labelY = placement.labelY;
+            const side = placement.side === 'side1' ? 'top' : 'bottom';
             
             // Draw standard architectural dimensioning lines
             context.beginPath();
@@ -534,32 +629,58 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                  });
              }
         } else {
-            // Vertical wall - place on left or right
-            const isLeftHalf = wallMidX < (minX + maxX) / 2;
-            const side = isLeftHalf ? 'left' : 'right';
+            // Vertical wall - smart placement: try both left and right, choose best
+            const minVerticalOffset = isSmallDimension ? DIMENSION_CONFIG.MIN_VERTICAL_OFFSET_SMALL : DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
+            const baseVerticalOffset = Math.max(baseOffset, minVerticalOffset);
             
-            // Find available position to avoid overlaps
-            let labelX, labelY;
-            let offset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET); // Ensure minimum vertical offset
-            let attempts = 0;
-            const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
+            // Smart placement: evaluate both left and right sides
+            const placement = smartPlacement({
+                calculatePositionSide1: (offset) => {
+                    // Side 1: Left
+                    if (isSmallDimension) {
+                        return {
+                            labelX: wallMidX * scaleFactor + offsetX - offset,
+                            labelY: wallMidY * scaleFactor + offsetY
+                        };
+                    } else {
+                        return {
+                            labelX: minX * scaleFactor + offsetX - offset,
+                            labelY: wallMidY * scaleFactor + offsetY
+                        };
+                    }
+                },
+                calculatePositionSide2: (offset) => {
+                    // Side 2: Right
+                    if (isSmallDimension) {
+                        return {
+                            labelX: wallMidX * scaleFactor + offsetX + offset,
+                            labelY: wallMidY * scaleFactor + offsetY
+                        };
+                    } else {
+                        return {
+                            labelX: maxX * scaleFactor + offsetX + offset,
+                            labelY: wallMidY * scaleFactor + offsetY
+                        };
+                    }
+                },
+                calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8),
+                textWidth: textWidth,
+                placedLabels: placedLabels,
+                baseOffset: baseVerticalOffset,
+                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                maxAttempts: DIMENSION_CONFIG.MAX_ATTEMPTS,
+                preferredSide: 'side2', // Prefer right for vertical dimensions (professional standard)
+                lockedSide: lockedSide // Use stored side if available
+            });
             
-            do {
-                labelX = isLeftHalf ? 
-                    (minX * scaleFactor + offsetX - offset) : // OUTSIDE left
-                    (maxX * scaleFactor + offsetX + offset);  // OUTSIDE right
-                labelY = wallMidY * scaleFactor + offsetY;
-                
-                // Check for overlaps with existing labels (rotated bounding box for vertical text)
-                const labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
-                
-                if (!hasOverlap) break;
-                
-                // Increase offset and try again
-                offset += 20;
-                attempts++;
-            } while (attempts < maxAttempts);
+            // Store the placement decision for future renders (to prevent position changes on zoom)
+            if (!storedPlacement) {
+                dimensionPlacementMemory.set(dimensionKey, { side: placement.side });
+            }
+            
+            const labelX = placement.labelX;
+            const labelY = placement.labelY;
+            const side = placement.side === 'side1' ? 'left' : 'right';
             
             // Draw standard architectural dimensioning lines
             context.beginPath();
@@ -585,7 +706,33 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             context.fillStyle = 'rgba(255, 255, 255, 0.95)';
             context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
             context.fillStyle = color;
-            context.font = `bold ${Math.max(14, 200 * scaleFactor)}px Arial`;
+            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+            let fontSize;
+            
+            // Calculate square root scaled font size if user has zoomed in
+            let sqrtScaledFontSize = 0;
+            if (initialScale > 0 && scaleFactor > initialScale) {
+                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+                // This means 2x zoom only results in ~1.41x text size, not 2x
+                const zoomRatio = scaleFactor / initialScale;
+                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+            }
+            
+            // Use the maximum of calculated and square root scaled to prevent discontinuity
+            // This ensures smooth transition when crossing the minimum threshold
+            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+            } else {
+                // Above minimum threshold - use max of calculated and square root scaled
+                // This prevents sudden drop when crossing the threshold
+                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+            }
+            
+            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+            context.font = `bold ${fontSize}px Arial`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(text, 0, 0);
@@ -961,7 +1108,8 @@ export function drawWalls({
     filteredDimensions, // <-- added for dimension filtering
     placedLabels = [], // <-- added for shared collision detection
     allLabels = [], // <-- added for shared collision detection
-    dimensionVisibility = {}
+    dimensionVisibility = {},
+    initialScale = 1 // <-- added for proper zoom scaling from minimum
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
@@ -1180,7 +1328,8 @@ export function drawWalls({
                 modelBounds,
                 placedLabels,
                 allLabels,
-                true // collectOnly
+                true, // collectOnly
+                initialScale
             );
         }
         if (isEditingMode) {
@@ -1227,7 +1376,8 @@ export function drawWalls({
                 modelBounds,
                 placedLabels,
                 allLabels,
-                true // collectOnly
+                true, // collectOnly
+                initialScale
             );
         }
         const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
@@ -1254,7 +1404,7 @@ export function drawWalls({
     const allCombinedLabels = [...allLabels, ...allPanelLabels];
     
     // Draw all labels together (prevents panel labels from being covered by wall labels)
-    allCombinedLabels.forEach(label => { label.draw = makeLabelDrawFn(label, scaleFactor); });
+    allCombinedLabels.forEach(label => { label.draw = makeLabelDrawFn(label, scaleFactor, initialScale); });
     allCombinedLabels.forEach(label => { label.draw(context); });
     
     // Return the thickness color map for legend drawing
@@ -1303,7 +1453,8 @@ export function drawPanelDivisions(
     allPanelLabels = [],
     collectOnly = false,
     filteredDimensions = null,
-    showPanelDimensions = true
+    showPanelDimensions = true,
+    initialScale = 1
 ) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
     const line1 = wall._line1;
@@ -1449,7 +1600,7 @@ export function drawPanelDivisions(
                 // No special symbol or color - appear as normal panels
             }
             
-            const labelText = `${Math.round(displayWidth)} mm`;
+            const labelText = `${Math.round(displayWidth)}`;
             const fullLabelText = specialSymbol ? `${labelText} ${specialSymbol}` : labelText;
 
             // Start and end t values for the panel
@@ -1492,7 +1643,33 @@ export function drawPanelDivisions(
             const text = fullLabelText; // Use the enhanced label text
             
             // IMPORTANT: Set font BEFORE measuring text width!
-            context.font = `${Math.max(14, 200 * scaleFactor)}px Arial`;
+            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+            let fontSize;
+            
+            // Calculate square root scaled font size if user has zoomed in
+            let sqrtScaledFontSize = 0;
+            if (initialScale > 0 && scaleFactor > initialScale) {
+                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+                // This means 2x zoom only results in ~1.41x text size, not 2x
+                const zoomRatio = scaleFactor / initialScale;
+                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+            }
+            
+            // Use the maximum of calculated and square root scaled to prevent discontinuity
+            // This ensures smooth transition when crossing the minimum threshold
+            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+            } else {
+                // Above minimum threshold - use max of calculated and square root scaled
+                // This prevents sudden drop when crossing the threshold
+                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+            }
+            
+            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+            context.font = `${fontSize}px Arial`;
             const textWidth = context.measureText(text).width;
 
             if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
@@ -1649,7 +1826,7 @@ export function drawPanelDivisions(
 } 
 
 // Helper to create label draw function (original simple style)
-export function makeLabelDrawFn(label, scaleFactor) {
+export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
     return function(context) {
         context.save();
         if (label.angle && Math.abs(label.angle) > 45 && Math.abs(label.angle) < 135) {
@@ -1661,7 +1838,33 @@ export function makeLabelDrawFn(label, scaleFactor) {
             context.fillStyle = 'rgba(255, 255, 255, 0.8)';
             context.fillRect(-label.height / 2, -label.width / 2, label.height, label.width);
             context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
-            context.font = `${Math.max(14, 200 * scaleFactor)}px Arial`;
+            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+            let fontSize;
+            
+            // Calculate square root scaled font size if user has zoomed in
+            let sqrtScaledFontSize = 0;
+            if (initialScale > 0 && scaleFactor > initialScale) {
+                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+                // This means 2x zoom only results in ~1.41x text size, not 2x
+                const zoomRatio = scaleFactor / initialScale;
+                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+            }
+            
+            // Use the maximum of calculated and square root scaled to prevent discontinuity
+            // This ensures smooth transition when crossing the minimum threshold
+            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+            } else {
+                // Above minimum threshold - use max of calculated and square root scaled
+                // This prevents sudden drop when crossing the threshold
+                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+            }
+            
+            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+            context.font = `${fontSize}px Arial`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(label.text, 0, 0);
@@ -1670,7 +1873,33 @@ export function makeLabelDrawFn(label, scaleFactor) {
             context.fillStyle = 'rgba(255, 255, 255, 0.8)';
             context.fillRect(label.x, label.y, label.width, label.height);
             context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
-            context.font = `${Math.max(14, 200 * scaleFactor)}px Arial`;
+            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
+            const calculatedFontSize2 = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+            let fontSize2;
+            
+            // Calculate square root scaled font size if user has zoomed in
+            let sqrtScaledFontSize2 = 0;
+            if (initialScale > 0 && scaleFactor > initialScale) {
+                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
+                // This means 2x zoom only results in ~1.41x text size, not 2x
+                const zoomRatio = scaleFactor / initialScale;
+                sqrtScaledFontSize2 = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+            }
+            
+            // Use the maximum of calculated and square root scaled to prevent discontinuity
+            // This ensures smooth transition when crossing the minimum threshold
+            if (calculatedFontSize2 < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
+                fontSize2 = sqrtScaledFontSize2 > 0 ? sqrtScaledFontSize2 : DIMENSION_CONFIG.FONT_SIZE_MIN;
+            } else {
+                // Above minimum threshold - use max of calculated and square root scaled
+                // This prevents sudden drop when crossing the threshold
+                fontSize2 = Math.max(calculatedFontSize2, sqrtScaledFontSize2 || DIMENSION_CONFIG.FONT_SIZE_MIN);
+            }
+            
+            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
+            fontSize2 = Math.max(fontSize2, DIMENSION_CONFIG.FONT_SIZE_MIN);
+            context.font = `${fontSize2}px Arial`;
             context.textAlign = 'left';
             context.textBaseline = 'top';
             context.fillText(label.text, label.x + 2, label.y + 2);

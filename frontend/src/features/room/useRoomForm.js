@@ -67,6 +67,7 @@ export default function useRoomForm({
   const [roomName, setRoomName] = useState(initialRoom?.room_name || '');
   const [floorType, setFloorType] = useState(initialRoom?.floor_type || '');
   const [floorThickness, setFloorThickness] = useState(initialRoom?.floor_thickness || '');
+  const [floorLayers, setFloorLayers] = useState(initialRoom?.floor_layers || 1);
   const [temperature, setTemperature] = useState(initialRoom?.temperature || '');
   const [roomHeight, setRoomHeight] = useState(initialRoom?.height || '');
   const normaliseStoreyId = (value) => {
@@ -107,6 +108,7 @@ export default function useRoomForm({
       setRoomName(initialRoom.room_name);
       setFloorType(initialRoom.floor_type);
       setFloorThickness(initialRoom.floor_thickness);
+      setFloorLayers(initialRoom.floor_layers || 1);
       setRemarks(initialRoom.remarks);
       setTemperature(initialRoom.temperature || '');
       setRoomHeight(initialRoom.height || '');
@@ -183,9 +185,6 @@ export default function useRoomForm({
     if (!roomHeight || roomHeight <= 0) {
       errors.roomHeight = 'Room height must be greater than 0';
     }
-    if (!storeyId) {
-      errors.storeyId = 'Storey is required';
-    }
     if (normalizedPoints.length < 3) {
       errors.polygonPoints = 'At least 3 points are required to define a room';
     }
@@ -213,7 +212,6 @@ export default function useRoomForm({
            (floorThickness !== '' && floorThickness !== null && floorThickness !== undefined) && 
            (temperature !== '' && temperature !== null && temperature !== undefined) && 
            roomHeight && 
-           storeyId &&
            normalizedPoints.length >= 3;
   };
 
@@ -228,6 +226,7 @@ export default function useRoomForm({
       room_name: roomName,
       floor_type: floorType,
       floor_thickness: floorThickness,
+      floor_layers: floorLayers || 1,
       temperature: temperature,
       height: roomHeight,
       base_elevation_mm: baseElevation === '' || baseElevation === '-' ? 0 : parseFloat(baseElevation) || 0,
@@ -235,7 +234,7 @@ export default function useRoomForm({
       walls: selectedWallIds,
       project: projectId,
       room_points: normalizedPoints,
-      storey: storeyId,
+      storey: activeStoreyId || storeyId || null, // Use activeStoreyId if available, otherwise use form storeyId
     };
     
     console.log('Saving room with data:', roomData);
@@ -264,6 +263,8 @@ export default function useRoomForm({
     floorType,
     setFloorType,
     floorThickness,
+    floorLayers,
+    setFloorLayers,
     setFloorThickness,
     temperature,
     setTemperature,

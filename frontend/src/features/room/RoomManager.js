@@ -31,16 +31,7 @@ const RoomManager = ({
     });
 
     return (
-        <div className="bg-gray-50 p-4">
-            <div className="max-w-5xl mx-auto bg-white rounded-lg shadow-lg">
-                {/* Header */}
-                <div className="px-4 py-2 border-b border-gray-200">
-                    <h1 className="text-xl font-bold text-gray-900">
-                        {isEditMode ? 'Edit Room' : 'Create New Room'}
-                    </h1>
-                </div>
-                
-                <div className="p-4">
+        <div className="space-y-4">
                     {/* Main Form Section - Two Columns Layout */}
                     <div className="grid grid-cols-2 gap-4">
                         {/* Left Column - Room Details */}
@@ -91,33 +82,6 @@ const RoomManager = ({
                                         <p className="text-xs text-red-500 mt-1">{form.validationErrors.temperature}</p>
                                     )}
                                 </div>
-                                <div>
-                                    <label className="text-xs font-medium text-gray-700">Storey</label>
-                                    <select
-                                        value={form.storeyId ?? ''}
-                                        onChange={(e) => {
-                                            const value = e.target.value;
-                                            const numeric = value === '' ? null : Number(value);
-                                            form.setStoreyId(Number.isNaN(numeric) ? null : numeric);
-                                            form.clearValidationError('storeyId');
-                                        }}
-                                        className={`mt-1 block w-full rounded-md border px-2 py-1 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 ${
-                                            form.validationErrors.storeyId
-                                                ? 'border-red-300 focus:border-red-500'
-                                                : 'border-gray-300 focus:border-blue-500'
-                                        }`}
-                                    >
-                                        <option value="">Select storey</option>
-                                        {storeys.map((storey) => (
-                                            <option key={storey.id} value={storey.id}>
-                                                {storey.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {form.validationErrors.storeyId && (
-                                        <p className="text-xs text-red-500 mt-1">{form.validationErrors.storeyId}</p>
-                                    )}
-                                </div>
                             </div>
 
                             {/* Floor Details Section */}
@@ -166,6 +130,33 @@ const RoomManager = ({
                                     </select>
                                     {form.validationErrors.floorThickness && (
                                         <p className="text-xs text-red-500 mt-1">{form.validationErrors.floorThickness}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700">Layers</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={form.floorLayers}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value) || 1;
+                                            form.setFloorLayers(Math.max(1, value));
+                                            form.clearValidationError('floorLayers');
+                                        }}
+                                        className={`mt-1 block w-full rounded-md border px-2 py-1 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 ${
+                                            form.validationErrors.floorLayers 
+                                                ? 'border-red-300 focus:border-red-500' 
+                                                : 'border-gray-300 focus:border-blue-500'
+                                        }`}
+                                        placeholder="1"
+                                    />
+                                    {form.floorThickness && form.floorThickness !== '0' && form.floorThickness !== '' && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Total: {form.floorThickness * form.floorLayers} mm
+                                        </p>
+                                    )}
+                                    {form.validationErrors.floorLayers && (
+                                        <p className="text-xs text-red-500 mt-1">{form.validationErrors.floorLayers}</p>
                                     )}
                                 </div>
                             </div>
@@ -370,8 +361,6 @@ const RoomManager = ({
                             {isEditMode ? 'Update Room' : 'Save Room'}
                         </button>
                     </div>
-                </div>
-            </div>
 
             {/* Delete Confirmation Modal */}
             {form.showDeleteConfirm && (

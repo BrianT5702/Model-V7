@@ -182,4 +182,160 @@ export function debugCollision(labelBounds, placedLabels, hadCollision) {
     }
 }
 
+/**
+ * Count the number of overlapping labels for a given label bounds
+ * @param {Object} labelBounds - The label bounds to check {x, y, width, height}
+ * @param {Array} placedLabels - Array of existing label bounds
+ * @returns {number} - Number of overlapping labels
+ */
+export function countOverlaps(labelBounds, placedLabels) {
+    return placedLabels.filter(existing => checkBoxOverlap(labelBounds, existing)).length;
+}
+
+/**
+ * Smart placement: Choose the best side (left/right for vertical, top/bottom for horizontal)
+ * by evaluating both sides and selecting the one with fewer overlaps
+ * @param {Object} params - Configuration object
+ * @param {Function} params.calculatePositionSide1 - Function(offset) that returns {labelX, labelY} for first side
+ * @param {Function} params.calculatePositionSide2 - Function(offset) that returns {labelX, labelY} for second side
+ * @param {Function} params.calculateBounds - Function(labelX, labelY, textWidth) that returns bounds
+ * @param {number} params.textWidth - Width of the text to place
+ * @param {Array} params.placedLabels - Array of existing label bounds
+ * @param {number} params.baseOffset - Starting offset value
+ * @param {number} params.offsetIncrement - How much to increase offset on collision
+ * @param {number} params.maxAttempts - Maximum number of attempts per side
+ * @param {string} params.preferredSide - 'side1' or 'side2' - preferred side if equal overlaps
+ * @param {string} params.lockedSide - 'side1' or 'side2' or null - if provided, use this side and don't re-evaluate
+ * @returns {Object} - {labelX, labelY, offset, attempts, side, labelBounds}
+ */
+export function smartPlacement({
+    calculatePositionSide1,
+    calculatePositionSide2,
+    calculateBounds,
+    textWidth,
+    placedLabels,
+    baseOffset,
+    offsetIncrement = 20,
+    maxAttempts = 10,
+    preferredSide = 'side1',
+    lockedSide = null
+}) {
+    // If side is locked, use it directly without evaluating both sides
+    if (lockedSide === 'side1' || lockedSide === 'side2') {
+        const calculatePosition = lockedSide === 'side1' ? calculatePositionSide1 : calculatePositionSide2;
+        let offset = baseOffset;
+        let attempts = 0;
+        
+        while (attempts < maxAttempts) {
+            const position = calculatePosition(offset);
+            const bounds = calculateBounds(position.labelX, position.labelY, textWidth);
+            const overlaps = countOverlaps(bounds, placedLabels);
+            
+            if (overlaps === 0) {
+                // Perfect position found
+                return {
+                    labelX: position.labelX,
+                    labelY: position.labelY,
+                    labelBounds: bounds,
+                    offset: offset,
+                    attempts: attempts,
+                    side: lockedSide,
+                    overlaps: 0
+                };
+            }
+            
+            offset += offsetIncrement;
+            attempts++;
+        }
+        
+        // If we couldn't find a perfect position, use the last tried position
+        const finalPosition = calculatePosition(offset - offsetIncrement);
+        const finalBounds = calculateBounds(finalPosition.labelX, finalPosition.labelY, textWidth);
+        return {
+            labelX: finalPosition.labelX,
+            labelY: finalPosition.labelY,
+            labelBounds: finalBounds,
+            offset: offset - offsetIncrement,
+            attempts: attempts,
+            side: lockedSide,
+            overlaps: countOverlaps(finalBounds, placedLabels)
+        };
+    }
+    
+    // Original logic: evaluate both sides if not locked
+    // Try side 1 with increasing offsets
+    let bestSide1 = null;
+    let bestOverlaps1 = Infinity;
+    let offset1 = baseOffset;
+    let attempts1 = 0;
+    
+    while (attempts1 < maxAttempts) {
+        const position1 = calculatePositionSide1(offset1);
+        const bounds1 = calculateBounds(position1.labelX, position1.labelY, textWidth);
+        const overlaps1 = countOverlaps(bounds1, placedLabels);
+        
+        if (overlaps1 === 0) {
+            // Perfect position found - use it immediately
+            bestSide1 = { labelX: position1.labelX, labelY: position1.labelY, offset: offset1, bounds: bounds1, overlaps: 0 };
+            break;
+        }
+        
+        if (overlaps1 < bestOverlaps1) {
+            bestOverlaps1 = overlaps1;
+            bestSide1 = { labelX: position1.labelX, labelY: position1.labelY, offset: offset1, bounds: bounds1, overlaps: overlaps1 };
+        }
+        
+        offset1 += offsetIncrement;
+        attempts1++;
+    }
+    
+    // Try side 2 with increasing offsets
+    let bestSide2 = null;
+    let bestOverlaps2 = Infinity;
+    let offset2 = baseOffset;
+    let attempts2 = 0;
+    
+    while (attempts2 < maxAttempts) {
+        const position2 = calculatePositionSide2(offset2);
+        const bounds2 = calculateBounds(position2.labelX, position2.labelY, textWidth);
+        const overlaps2 = countOverlaps(bounds2, placedLabels);
+        
+        if (overlaps2 === 0) {
+            // Perfect position found - use it immediately
+            bestSide2 = { labelX: position2.labelX, labelY: position2.labelY, offset: offset2, bounds: bounds2, overlaps: 0 };
+            break;
+        }
+        
+        if (overlaps2 < bestOverlaps2) {
+            bestOverlaps2 = overlaps2;
+            bestSide2 = { labelX: position2.labelX, labelY: position2.labelY, offset: offset2, bounds: bounds2, overlaps: overlaps2 };
+        }
+        
+        offset2 += offsetIncrement;
+        attempts2++;
+    }
+    
+    // Choose the side with fewer overlaps
+    // If equal, prefer the preferred side
+    let chosen;
+    if (bestOverlaps1 < bestOverlaps2) {
+        chosen = { ...bestSide1, side: 'side1' };
+    } else if (bestOverlaps2 < bestOverlaps1) {
+        chosen = { ...bestSide2, side: 'side2' };
+    } else {
+        // Equal overlaps - use preferred side
+        chosen = preferredSide === 'side1' ? { ...bestSide1, side: 'side1' } : { ...bestSide2, side: 'side2' };
+    }
+    
+    return {
+        labelX: chosen.labelX,
+        labelY: chosen.labelY,
+        labelBounds: chosen.bounds,
+        offset: chosen.offset,
+        attempts: chosen.side === 'side1' ? attempts1 : attempts2,
+        side: chosen.side,
+        overlaps: chosen.overlaps
+    };
+}
+
 
