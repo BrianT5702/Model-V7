@@ -56,7 +56,9 @@ const CeilingCanvas = ({
     
     // Shared panel data update function
     updateSharedPanelData = null,
-    selectedPanelIds = []
+    selectedPanelIds = [],
+    // Dimension visibility (checkbox filter)
+    dimensionVisibility = { room: true, panel: true }
 }) => {
     // Determine if we're in multi-room mode or single-room mode - memoize to prevent recalculation
     const isMultiRoomMode = useMemo(() => rooms.length > 0, [rooms.length]);
@@ -1123,12 +1125,13 @@ const CeilingCanvas = ({
         //     roomHeight: roomHeight
         // });
         
-        // Draw room-level dimensions first (most important) - well outside panel area
-        // These have highest priority and should be drawn first
-        drawRoomDimensions(ctx, room, roomWidth, roomHeight, roomBounds, canvasPanelBounds, placedLabels, allLabels);
+        // Draw room-level dimensions first (most important)
+        if (dimensionVisibility?.room !== false) {
+            drawRoomDimensions(ctx, room, roomWidth, roomHeight, roomBounds, canvasPanelBounds, placedLabels, allLabels);
+        }
         
         // Draw panel-level dimensions - handle any number of panels intelligently
-        if (roomPanels.length > 0) {
+        if (roomPanels.length > 0 && dimensionVisibility?.panel !== false) {
             // Group panels by their dimension to show grouped dimensions (EXCLUDE cut panels)
             const panelsByDimension = new Map();
             const cutPanels = roomPanels.filter(p => p.is_cut);
@@ -1358,30 +1361,7 @@ const CeilingCanvas = ({
             // Generate and log panel list
             generatePanelList();
             
-            // For rooms with many panels, show a summary dimension
-            if (roomPanels.length > 20) {
-                const totalPanels = roomPanels.length;
-                const fullPanels = roomPanels.filter(p => !p.is_cut).length;
-                const cutPanels = roomPanels.filter(p => p.is_cut).length;
-                
-                // Show summary below the room
-                const summaryDimension = {
-                    startX: panelBounds.minX,
-                    endX: panelBounds.maxX,
-                    startY: panelBounds.maxY,
-                    endY: panelBounds.maxY,
-                    dimension: `${totalPanels} panels (${fullPanels} full, ${cutPanels} cut)`,
-                    type: 'panel_summary',
-                    color: '#6b7280', // Gray for summary
-                    priority: 4,
-                    avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
-                    quantity: 0,
-                    panelLabel: `${totalPanels} panels (${fullPanels} full, ${cutPanels} cut)`,
-                    drawnPositions: new Set(),
-                    roomId: room.id // Assign room ID
-                };
-                drawCeilingDimension(ctx, summaryDimension, projectBounds, placedLabels, allLabels);
-            }
+            // Panel count summary removed per user preference
         }
     };
 
@@ -1761,17 +1741,9 @@ const CeilingCanvas = ({
         // Determine optimal label position with smart placement
         let labelX, labelY;
         
-        // Smart placement: determine if dimension is "small" relative to project size
-        // Small dimensions can be placed near the wall, large ones go outside project area
-        const projectWidth = (maxX - minX) || 1;
-        const projectHeight = (maxY - minY) || 1;
-        const projectSize = Math.max(projectWidth, projectHeight);
-        const isSmallDimension = length < (projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD);
-        
-        // Use smaller offset for small dimensions (place near wall), larger offset for big dimensions (outside project)
-        let baseOffset = isSmallDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : DIMENSION_CONFIG.BASE_OFFSET;
-        let offset = baseOffset;
-        let attempts = 0;
+        // For ceiling plan, always place dimensions externally (no near-wall placement)
+        // Always use external offset like wall plan (no BASE_OFFSET_SMALL)
+        let baseOffset = DIMENSION_CONFIG.BASE_OFFSET;
         const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
         
         // Find available position to avoid overlaps - use project bounds for initial positioning
@@ -1814,47 +1786,21 @@ const CeilingCanvas = ({
         let placement;
         
         if (isHorizontal) {
-            // Horizontal dimension: smart placement - try both top and bottom
-            const projectMidY = avoidArea ? (avoidArea.minY + avoidArea.maxY) / 2 : (minY + maxY) / 2;
-            
+            // Horizontal dimension: smart placement - try both top and bottom from outer bounds
             placement = smartPlacement({
                 calculatePositionSide1: (offset) => {
-                    // Side 1: Top (above)
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: midY * scaleFactor.current + offsetY.current - offset
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: avoidArea.minY * scaleFactor.current + offsetY.current - offset
-                        };
-                    } else {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: minY * scaleFactor.current + offsetY.current - offset
-                        };
-                    }
+                    // Side 1: Top (above) — always from project/avoid-area boundary
+                    return {
+                        labelX: midX * scaleFactor.current + offsetX.current,
+                        labelY: (avoidArea ? avoidArea.minY : minY) * scaleFactor.current + offsetY.current - offset
+                    };
                 },
                 calculatePositionSide2: (offset) => {
-                    // Side 2: Bottom (below)
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: midY * scaleFactor.current + offsetY.current + offset
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: avoidArea.maxY * scaleFactor.current + offsetY.current + offset
-                        };
-                    } else {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: maxY * scaleFactor.current + offsetY.current + offset
-                        };
-                    }
+                    // Side 2: Bottom (below) — always from project/avoid-area boundary
+                    return {
+                        labelX: midX * scaleFactor.current + offsetX.current,
+                        labelY: (avoidArea ? avoidArea.maxY : maxY) * scaleFactor.current + offsetY.current + offset
+                    };
                 },
                 calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8),
                 textWidth: textWidth,
@@ -1866,49 +1812,24 @@ const CeilingCanvas = ({
                 lockedSide: lockedSide // Use stored side if available
             });
         } else {
-            // Vertical dimension: smart placement - try both left and right
-            const minVerticalOffset = isSmallDimension ? DIMENSION_CONFIG.MIN_VERTICAL_OFFSET_SMALL : DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
+            // Vertical dimension: smart placement - try both left and right from outer bounds
+            const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
             const baseVerticalOffset = Math.max(baseOffset, minVerticalOffset);
-            const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
             
             placement = smartPlacement({
                 calculatePositionSide1: (offset) => {
-                    // Side 1: Left
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current - offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: avoidArea.minX * scaleFactor.current + offsetX.current - offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else {
-                        return {
-                            labelX: minX * scaleFactor.current + offsetX.current - offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    }
+                    // Side 1: Left — always from project/avoid-area boundary
+                    return {
+                        labelX: (avoidArea ? avoidArea.minX : minX) * scaleFactor.current + offsetX.current - offset,
+                        labelY: midY * scaleFactor.current + offsetY.current
+                    };
                 },
                 calculatePositionSide2: (offset) => {
-                    // Side 2: Right
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current + offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: avoidArea.maxX * scaleFactor.current + offsetX.current + offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else {
-                        return {
-                            labelX: maxX * scaleFactor.current + offsetX.current + offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    }
+                    // Side 2: Right — always from project/avoid-area boundary
+                    return {
+                        labelX: (avoidArea ? avoidArea.maxX : maxX) * scaleFactor.current + offsetX.current + offset,
+                        labelY: midY * scaleFactor.current + offsetY.current
+                    };
                 },
                 calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8),
                 textWidth: textWidth,
@@ -3695,4 +3616,3 @@ const CeilingCanvas = ({
 };
 
 export default CeilingCanvas;
-

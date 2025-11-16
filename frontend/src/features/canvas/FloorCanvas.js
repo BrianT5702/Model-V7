@@ -20,7 +20,9 @@ const FloorCanvas = ({
     projectData, 
     floorPanelsMap,
     orientationAnalysis,
-    projectWastePercentage = null
+    projectWastePercentage = null,
+    // Dimension visibility (checkbox filter)
+    dimensionVisibility = { room: true, panel: true }
 }) => {
     const canvasRef = useRef(null);
     const canvasContainerRef = useRef(null);
@@ -1027,12 +1029,12 @@ const FloorCanvas = ({
                 const widthGlobalKey = `room_width_${Math.round(roomWidth)}`;
                 const heightGlobalKey = `room_height_${Math.round(roomHeight)}`;
                 
-                if (!globalDimensionTracker.has(widthGlobalKey)) {
+                if (!globalDimensionTracker.has(widthGlobalKey) && (dimensionVisibility?.room !== false)) {
                     drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
                     globalDimensionTracker.set(widthGlobalKey, true);
                 }
                 
-                if (!globalDimensionTracker.has(heightGlobalKey)) {
+                if (!globalDimensionTracker.has(heightGlobalKey) && (dimensionVisibility?.room !== false)) {
                     drawRoomDimensions(ctx, heightDimension, projectBounds, placedLabels, allLabels);
                     globalDimensionTracker.set(heightGlobalKey, true);
                 }
@@ -1158,17 +1160,9 @@ const FloorCanvas = ({
         // Determine optimal label position
         let labelX, labelY;
         
-        // Smart placement: determine if dimension is "small" relative to project size
-        // Small dimensions can be placed near the wall, large ones go outside project area
-        const projectWidth = (maxX - minX) || 1;
-        const projectHeight = (maxY - minY) || 1;
-        const projectSize = Math.max(projectWidth, projectHeight);
-        const isSmallDimension = length < (projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD);
-        
-        // Use smaller offset for small dimensions (place near wall), larger offset for big dimensions (outside project)
-        let baseOffset = isSmallDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : DIMENSION_CONFIG.BASE_OFFSET;
-        let offset = baseOffset;
-        let attempts = 0;
+        // For floor plan, always place dimensions externally (no near-wall placement)
+        // Always use external offset like wall plan (no BASE_OFFSET_SMALL)
+        let baseOffset = DIMENSION_CONFIG.BASE_OFFSET;
         const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
         
         // Initialize text and labelBounds variables
@@ -1190,47 +1184,21 @@ const FloorCanvas = ({
         let placement;
         
         if (isHorizontal) {
-            // Horizontal dimension: smart placement - try both top and bottom
-            const projectMidY = avoidArea ? (avoidArea.minY + avoidArea.maxY) / 2 : (minY + maxY) / 2;
-            
+            // Horizontal dimension: smart placement - try both top and bottom from outer bounds
             placement = smartPlacement({
                 calculatePositionSide1: (offset) => {
-                    // Side 1: Top (above)
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: midY * scaleFactor.current + offsetY.current - offset
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: avoidArea.minY * scaleFactor.current + offsetY.current - offset
-                        };
-                    } else {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: minY * scaleFactor.current + offsetY.current - offset
-                        };
-                    }
+                    // Side 1: Top (above) — always from project/avoid-area boundary
+                    return {
+                        labelX: midX * scaleFactor.current + offsetX.current,
+                        labelY: (avoidArea ? avoidArea.minY : minY) * scaleFactor.current + offsetY.current - offset
+                    };
                 },
                 calculatePositionSide2: (offset) => {
-                    // Side 2: Bottom (below)
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: midY * scaleFactor.current + offsetY.current + offset
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: avoidArea.maxY * scaleFactor.current + offsetY.current + offset
-                        };
-                    } else {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current,
-                            labelY: maxY * scaleFactor.current + offsetY.current + offset
-                        };
-                    }
+                    // Side 2: Bottom (below) — always from project/avoid-area boundary
+                    return {
+                        labelX: midX * scaleFactor.current + offsetX.current,
+                        labelY: (avoidArea ? avoidArea.maxY : maxY) * scaleFactor.current + offsetY.current + offset
+                    };
                 },
                 calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8),
                 textWidth: textWidth,
@@ -1242,49 +1210,24 @@ const FloorCanvas = ({
                 lockedSide: lockedSide // Use stored side if available
             });
         } else {
-            // Vertical dimension: smart placement - try both left and right
-            const minVerticalOffset = isSmallDimension ? DIMENSION_CONFIG.MIN_VERTICAL_OFFSET_SMALL : DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
+            // Vertical dimension: smart placement - try both left and right from outer bounds
+            const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
             const baseVerticalOffset = Math.max(baseOffset, minVerticalOffset);
-            const projectMidX = avoidArea ? (avoidArea.minX + avoidArea.maxX) / 2 : (minX + maxX) / 2;
             
             placement = smartPlacement({
                 calculatePositionSide1: (offset) => {
-                    // Side 1: Left
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current - offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: avoidArea.minX * scaleFactor.current + offsetX.current - offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else {
-                        return {
-                            labelX: minX * scaleFactor.current + offsetX.current - offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    }
+                    // Side 1: Left — always from project/avoid-area boundary
+                    return {
+                        labelX: (avoidArea ? avoidArea.minX : minX) * scaleFactor.current + offsetX.current - offset,
+                        labelY: midY * scaleFactor.current + offsetY.current
+                    };
                 },
                 calculatePositionSide2: (offset) => {
-                    // Side 2: Right
-                    if (isSmallDimension) {
-                        return {
-                            labelX: midX * scaleFactor.current + offsetX.current + offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else if (avoidArea) {
-                        return {
-                            labelX: avoidArea.maxX * scaleFactor.current + offsetX.current + offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    } else {
-                        return {
-                            labelX: maxX * scaleFactor.current + offsetX.current + offset,
-                            labelY: midY * scaleFactor.current + offsetY.current
-                        };
-                    }
+                    // Side 2: Right — always from project/avoid-area boundary
+                    return {
+                        labelX: (avoidArea ? avoidArea.maxX : maxX) * scaleFactor.current + offsetX.current + offset,
+                        labelY: midY * scaleFactor.current + offsetY.current
+                    };
                 },
                 calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8),
                 textWidth: textWidth,
@@ -1454,7 +1397,9 @@ const FloorCanvas = ({
                         isHorizontal: false // Individual panel dimensions are always perpendicular to panel direction
                     };
                     
-                    drawRoomDimensions(ctx, individualDimension, projectBounds, placedLabels, allLabels);
+                    if (dimensionVisibility?.panel !== false) {
+                        drawRoomDimensions(ctx, individualDimension, projectBounds, placedLabels, allLabels);
+                    }
                 }
             }
         });
@@ -1534,7 +1479,9 @@ const FloorCanvas = ({
                 }
                 
                 // Draw cut panel dimension
-                drawRoomDimensions(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels);
+                if (dimensionVisibility?.panel !== false) {
+                    drawRoomDimensions(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels);
+                }
             });
         }
     };
@@ -1592,8 +1539,10 @@ const FloorCanvas = ({
             };
             
             // Draw both dimensions
-            drawRoomDimensions(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
-            drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+            if (dimensionVisibility?.panel !== false) {
+                drawRoomDimensions(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+                drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+            }
         } else {
             // Vertical panels: show BOTH dimensions
             // Find the center and bounds of the panel group
@@ -1641,8 +1590,10 @@ const FloorCanvas = ({
             };
             
             // Draw both dimensions
-            drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
-            drawRoomDimensions(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+            if (dimensionVisibility?.panel !== false) {
+                drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+                drawRoomDimensions(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+            }
         }
     };
 

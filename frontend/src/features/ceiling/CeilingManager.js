@@ -34,6 +34,15 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const swapFeedbackTimeoutRef = useRef(null);
     const previousSelectedRoomKeyRef = useRef(null);
     
+    // Dimension visibility filters (checkboxes)
+    const [dimensionVisibility, setDimensionVisibility] = useState({
+        room: true,
+        panel: true
+    });
+    const toggleDimensionVisibility = (key) => {
+        setDimensionVisibility(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
     // Orientation strategy
     const [selectedOrientationStrategy, setSelectedOrientationStrategy] = useState('auto');
     const [orientationAnalysis, setOrientationAnalysis] = useState(null);
@@ -1852,6 +1861,27 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             )}
                         </div>
                     )}
+                    {/* Dimension visibility checkboxes */}
+                    <div className="flex items-center space-x-4">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                checked={dimensionVisibility.room}
+                                onChange={() => toggleDimensionVisibility('room')}
+                            />
+                            <span className="text-sm text-gray-700">Room dimensions</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                checked={dimensionVisibility.panel}
+                                onChange={() => toggleDimensionVisibility('panel')}
+                            />
+                            <span className="text-sm text-gray-700">Panel dimensions</span>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -2373,6 +2403,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             onRoomDeselect={handleRoomDeselection}
                             // Add updateSharedPanelData prop to pass support options
                             updateSharedPanelData={updateSharedPanelData}
+                            dimensionVisibility={dimensionVisibility}
                         />
                         </div>
                         
@@ -2494,12 +2525,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                     {selectedRoom?.height ?? 'Default'} mm
                                                                 </span>
                                                 </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Panel Count:</span>
-                                                                <span className="font-medium text-gray-800">
-                                                                    {selectedRoomPanelStats?.total ?? ceilingPanels.filter(p => p.room_id === selectedRoomId).length} panels
-                                                    </span>
-                                                </div>
+                                                {/* Panel count removed per user preference */}
                                                             <div className="pt-3 mt-3 border-t border-gray-200">
                                                                 <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
                                                                     Current Ceiling Settings
@@ -2776,12 +2802,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                         {activeZone.room_ids?.map(id => allRooms.find(room => room.id === id)?.room_name || `Room ${id}`).join(', ') || '—'}
                                                                     </span>
                                                                 </div>
-                                                                <div className="flex justify-between">
-                                                                    <span className="text-gray-600">Panel Count:</span>
-                                                                    <span className="font-medium text-gray-800">
-                                                                        {activeZonePanelStats?.total ?? 0} panels
-                                                                    </span>
-                                                                </div>
+                                                                {/* Panel count removed per user preference */}
                                                                 <div className="pt-3 mt-3 border-t border-gray-200">
                                                                     <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
                                                                         Current Ceiling Settings

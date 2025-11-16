@@ -107,6 +107,7 @@ const Canvas2D = ({
         wall: true,
         panel: false
     });
+    const [showPanelLines, setShowPanelLines] = useState(false);
     const [splitTargetWallId, setSplitTargetWallId] = useState(null);
     const [splitPreviewPoint, setSplitPreviewPoint] = useState(null);
     const [splitDistanceInput, setSplitDistanceInput] = useState('');
@@ -1877,6 +1878,7 @@ const Canvas2D = ({
             placedLabels, // Share collision detection arrays
             allLabels,
             dimensionVisibility,
+            showPanelLines, // Panel lines visibility toggle
             initialScale: initialScale.current
         });
         // Store thickness color map for the legend
@@ -2053,6 +2055,7 @@ const Canvas2D = ({
         filteredDimensions, // Add filteredDimensions to dependencies
         forceRefresh, // Add forceRefresh to dependencies to force re-renders
         dimensionVisibility,
+        showPanelLines, // Add showPanelLines to dependencies
         currentMode,
         splitPreviewPoint,
         splitTargetWallId,
@@ -2521,6 +2524,15 @@ const Canvas2D = ({
                                                             onChange={() => handleDimensionVisibilityChange('panel')}
                                                         />
                                                         <span>Side Panel dimensions</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            checked={showPanelLines}
+                                                            onChange={() => setShowPanelLines(!showPanelLines)}
+                                                        />
+                                                        <span>Panel division lines</span>
                                                     </label>
                                                 </div>
                                             </div>

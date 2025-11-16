@@ -29,6 +29,15 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
     // Track if current plan needs regeneration due to dimension changes
     const [planNeedsRegeneration, setPlanNeedsRegeneration] = useState(false);
 
+    // Dimension visibility filters (checkboxes)
+    const [dimensionVisibility, setDimensionVisibility] = useState({
+        room: true,
+        panel: true
+    });
+    const toggleDimensionVisibility = (key) => {
+        setDimensionVisibility(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
     useEffect(() => {
         if (projectId) {
             loadProjectData();
@@ -464,6 +473,27 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
 
             {/* Control Panel */}
             <div className="p-6 ml-8">
+                {/* Dimension visibility checkboxes */}
+                <div className="mb-4 flex items-center space-x-4">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            checked={dimensionVisibility.room}
+                            onChange={() => toggleDimensionVisibility('room')}
+                        />
+                        <span className="text-sm text-gray-700">Room dimensions</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            checked={dimensionVisibility.panel}
+                            onChange={() => toggleDimensionVisibility('panel')}
+                        />
+                        <span className="text-sm text-gray-700">Panel dimensions</span>
+                    </label>
+                </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                     {/* Strategy Selection */}
                     <div className="control-card">
@@ -629,6 +659,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                             floorPanels={floorPanels}
                             projectData={projectData}
                             projectWastePercentage={projectWastePercentage}
+                            dimensionVisibility={dimensionVisibility}
 
                             floorPanelsMap={(() => {
                                 // Convert floorPanels array to floorPanelsMap format

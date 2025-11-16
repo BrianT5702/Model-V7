@@ -1109,6 +1109,7 @@ export function drawWalls({
     placedLabels = [], // <-- added for shared collision detection
     allLabels = [], // <-- added for shared collision detection
     dimensionVisibility = {},
+    showPanelLines = false, // <-- added for panel lines visibility toggle
     initialScale = 1 // <-- added for proper zoom scaling from minimum
 }) {
     if (!Array.isArray(walls) || !walls) return;
@@ -1286,7 +1287,7 @@ export function drawWalls({
             drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX, offsetY);
         }
         // --- Draw panel divisions here (collect panel label info) ---
-        if (wallPanelsMap && drawPanelDivisions) {
+        if (showPanelLines && wallPanelsMap && drawPanelDivisions) {
             const panels = wallPanelsMap[wall.id];
             if (panels && panels.length > 0) {
                 drawPanelDivisions(

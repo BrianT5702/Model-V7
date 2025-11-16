@@ -3724,72 +3724,37 @@ class CeilingService:
 
     @staticmethod
     def _analyze_room_shape(room_points, bounding_box, orientation='horizontal'):
-        """Universal room shape analysis - works for Rectangle, L, U, H, and complex shapes
-        Uses grid-based decomposition to ensure 100% coverage for any polygon shape"""
+        """Analyze room shape to identify distinct rectangular regions (handles rectangular, L, U, H, and general orthogonal concave shapes)
+        
+        Strategy:
+        - If polygon is axis-aligned (orthogonal), decompose into a set of non-overlapping rectangles via horizontal scanline partitioning,
+          then greedily merge vertically adjacent rectangles to reduce count.
+        - If decomposition fails or polygon is non-orthogonal, fall back to simple bounding-box region.
+        """
         try:
             if not room_points or len(room_points) < 3:
                 return []
             
-            # Convert room points to a more manageable format
-            points = [(p['x'], p['y']) for p in room_points]
-            
-            # For simple rectangles (4 points, area matches bounding box), use single region
-            if len(points) == 4:
-                x_coords = [p[0] for p in points]
-                y_coords = [p[1] for p in points]
-                min_x, max_x = min(x_coords), max(x_coords)
-                min_y, max_y = min(y_coords), max(y_coords)
-                bbox_area = (max_x - min_x) * (max_y - min_y)
-                actual_area = CeilingService._calculate_polygon_area(points)
-                # If area matches bounding box within 0.1%, it's a rectangle
-                if abs(bbox_area - actual_area) < bbox_area * 0.001:
+            # Convert to tuples
+            points = [(float(p['x']), float(p['y'])) for p in room_points]
+            # Ensure closed polygon for calculations
+            if points[0] != points[-1]:
+                points = points + [points[0]]
+
+            if CeilingService._is_axis_aligned(points):
+                rects = CeilingService._decompose_orthogonal_polygon_to_rectangles(points)
+                if rects:
                     return [{
-                        'min_x': min_x,
-                        'max_x': max_x,
-                        'min_y': min_y,
-                        'max_y': max_y,
-                        'width': max_x - min_x,
-                        'height': max_y - min_y,
-                        'type': 'rectangular'
-                    }]
-            
-            # For all other shapes (L, U, H, complex), use universal grid-based approach
-            # This ensures 100% coverage for any polygon shape
-            regions = CeilingService._create_universal_grid_regions(points, bounding_box, orientation)
-            
-            # Verify coverage
-            if regions:
-                total_region_area = sum(r['width'] * r['height'] for r in regions)
-                actual_area = CeilingService._calculate_polygon_area(points)
-                coverage_ratio = total_region_area / actual_area if actual_area > 0 else 0
-                
-                # If coverage is significantly off, use fallback
-                if coverage_ratio < 0.95 or coverage_ratio > 1.10:
-                    logger.warning(f"Grid regions coverage ratio: {coverage_ratio:.2%}, using fallback")
-                    # Fallback to bounding box (will be optimized by panel generation)
-                    return [{
-                        'min_x': bounding_box['min_x'],
-                        'max_x': bounding_box['max_x'],
-                        'min_y': bounding_box['min_y'],
-                        'max_y': bounding_box['max_y'],
-                        'width': bounding_box['width'],
-                        'height': bounding_box['height'],
-                        'type': 'fallback'
-                    }]
-            
-            return regions if regions else [{
-                'min_x': bounding_box['min_x'],
-                'max_x': bounding_box['max_x'],
-                'min_y': bounding_box['min_y'],
-                'max_y': bounding_box['max_y'],
-                'width': bounding_box['width'],
-                'height': bounding_box['height'],
-                'type': 'fallback'
-            }]
-                
-        except Exception as e:
-            logger.error(f"Error analyzing room shape: {str(e)}")
-            # Fallback to bounding box
+                        'min_x': r['min_x'],
+                        'max_x': r['max_x'],
+                        'min_y': r['min_y'],
+                        'max_y': r['max_y'],
+                        'width': r['max_x'] - r['min_x'],
+                        'height': r['max_y'] - r['min_y'],
+                        'type': 'rectangular_subregion'
+                    } for r in rects]
+
+            # Fallback: single region based on bounding box
             return [{
                 'min_x': bounding_box['min_x'],
                 'max_x': bounding_box['max_x'],
@@ -3797,118 +3762,140 @@ class CeilingService:
                 'max_y': bounding_box['max_y'],
                 'width': bounding_box['width'],
                 'height': bounding_box['height'],
-                'type': 'fallback'
+                'type': 'rectangular_fallback'
             }]
-    
-    @staticmethod
-    def _create_universal_grid_regions(points, bounding_box, orientation):
-        """Create regions using universal grid-based approach that works for ANY polygon shape
-        This ensures 100% coverage for Rectangle, L, U, H, and complex shapes"""
-        try:
-            regions = []
-            x_coords = [p[0] for p in points]
-            y_coords = [p[1] for p in points]
-            min_x, max_x = min(x_coords), max(x_coords)
-            min_y, max_y = min(y_coords), max(y_coords)
-            
-            # Get all unique X and Y coordinates from room points
-            # These define the grid lines where the shape changes
-            unique_x = sorted(set(x_coords))
-            unique_y = sorted(set(y_coords))
-            
-            # Filter coordinates to avoid too many small regions
-            # Keep coordinates that are at least 1% of the dimension apart
-            significant_x = [unique_x[0]]  # Always include min
-            for i in range(1, len(unique_x) - 1):
-                if unique_x[i] - significant_x[-1] >= (max_x - min_x) * 0.01:
-                    significant_x.append(unique_x[i])
-            significant_x.append(unique_x[-1])  # Always include max
-            
-            significant_y = [unique_y[0]]  # Always include min
-            for i in range(1, len(unique_y) - 1):
-                if unique_y[i] - significant_y[-1] >= (max_y - min_y) * 0.01:
-                    significant_y.append(unique_y[i])
-            significant_y.append(unique_y[-1])  # Always include max
-            
-            # Convert points back to dict format for point-in-polygon check
-            room_points_dict = [{'x': p[0], 'y': p[1]} for p in points]
-            
-            # Create grid cells and check which are inside the room
-            for i in range(len(significant_x) - 1):
-                for j in range(len(significant_y) - 1):
-                    cell_min_x = significant_x[i]
-                    cell_max_x = significant_x[i + 1]
-                    cell_min_y = significant_y[j]
-                    cell_max_y = significant_y[j + 1]
-                    
-                    # Test multiple points in the cell to determine if it's inside the room
-                    # This ensures we catch all cells that overlap with the room
-                    test_points = [
-                        # Center
-                        ((cell_min_x + cell_max_x) / 2, (cell_min_y + cell_max_y) / 2),
-                        # Corners
-                        (cell_min_x, cell_min_y),
-                        (cell_max_x, cell_min_y),
-                        (cell_max_x, cell_max_y),
-                        (cell_min_x, cell_max_y),
-                        # Midpoints of edges
-                        ((cell_min_x + cell_max_x) / 2, cell_min_y),
-                        ((cell_min_x + cell_max_x) / 2, cell_max_y),
-                        (cell_min_x, (cell_min_y + cell_max_y) / 2),
-                        (cell_max_x, (cell_min_y + cell_max_y) / 2),
-                    ]
-                    
-                    points_inside = sum(1 for px, py in test_points 
-                                      if CeilingService._is_point_in_polygon(px, py, room_points_dict))
-                    
-                    # Check center and corners to determine if cell should be included
-                    center_x = (cell_min_x + cell_max_x) / 2
-                    center_y = (cell_min_y + cell_max_y) / 2
-                    center_inside = CeilingService._is_point_in_polygon(center_x, center_y, room_points_dict)
-                    
-                    corners = [
-                        (cell_min_x, cell_min_y),
-                        (cell_max_x, cell_min_y),
-                        (cell_max_x, cell_max_y),
-                        (cell_min_x, cell_max_y)
-                    ]
-                    corners_inside = sum(1 for cx, cy in corners 
-                                        if CeilingService._is_point_in_polygon(cx, cy, room_points_dict))
-                    
-                    # Include cell if:
-                    # 1. Center is inside (cell is clearly inside), OR
-                    # 2. At least 3 corners are inside (cell is mostly inside)
-                    # Panel optimization will later clip any panels that extend beyond boundaries
-                    if center_inside or corners_inside >= 3:
-                        regions.append({
-                            'min_x': cell_min_x,
-                            'max_x': cell_max_x,
-                            'min_y': cell_min_y,
-                            'max_y': cell_max_y,
-                            'width': cell_max_x - cell_min_x,
-                            'height': cell_max_y - cell_min_y,
-                            'type': 'grid_region' if corners_inside == 4 else 'grid_region_boundary'
-                        })
-            
-            return regions
-            
+                
         except Exception as e:
-            logger.error(f"Error creating universal grid regions: {str(e)}")
+            logger.error(f"Error analyzing room shape: {str(e)}")
+            return []
+
+    @staticmethod
+    def _is_axis_aligned(points):
+        """Return True if every edge of polygon is horizontal or vertical."""
+        try:
+            if not points or len(points) < 4:
+                return False
+            for i in range(len(points) - 1):
+                x1, y1 = points[i]
+                x2, y2 = points[i + 1]
+                if not (x1 == x2 or y1 == y2):
+                    return False
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _decompose_orthogonal_polygon_to_rectangles(points):
+        """Decompose an orthogonal simple polygon (axis-aligned edges) into rectangles.
+        
+        Method: horizontal scanline between unique sorted Ys.
+        - For each horizontal band [y_i, y_{i+1}], compute x-intervals where the polygon interior exists at the band midpoint.
+        - Create band rectangles for each [x_left, x_right] across the band.
+        - Merge vertically adjacent rectangles with identical x-intervals to reduce count.
+        """
+        try:
+            # Prepare unique sorted y-coordinates
+            ys = sorted(set(y for _, y in points))
+            if len(ys) < 2:
+                return []
+
+            # Helper: find x-intersections of polygon edges with a horizontal line at y0
+            def x_intersections(y0):
+                xs = []
+                for i in range(len(points) - 1):
+                    (x1, y1) = points[i]
+                    (x2, y2) = points[i + 1]
+                    # Consider edges that cross y0 (exclude horizontal edges)
+                    if y1 == y2:
+                        continue
+                    ymin = min(y1, y2)
+                    ymax = max(y1, y2)
+                    # Include lower bound, exclude upper bound to avoid double counting at vertices
+                    if y0 >= ymin and y0 < ymax:
+                        # Since edges are vertical or horizontal, here it's vertical (x constant)
+                        # But keep general interpolation for safety
+                        if x1 == x2:
+                            xs.append(x1)
+                        else:
+                            # Should not happen for orthogonal polygons, but handle robustly
+                            t = (y0 - y1) / (y2 - y1)
+                            xs.append(x1 + t * (x2 - x1))
+                xs.sort()
+                return xs
+
+            # Build initial band rectangles
+            band_rects = []  # list of dicts with min_x,max_x,min_y,max_y
+            for yi in range(len(ys) - 1):
+                y_bottom = ys[yi]
+                y_top = ys[yi + 1]
+                if y_top == y_bottom:
+                    continue
+                y_mid = (y_bottom + y_top) / 2.0
+                xs = x_intersections(y_mid)
+                # Pair xs into inside intervals [x0,x1], [x2,x3], ...
+                for j in range(0, len(xs), 2):
+                    if j + 1 >= len(xs):
+                        break
+                    x_left = float(xs[j])
+                    x_right = float(xs[j + 1])
+                    if x_right <= x_left:
+                        continue
+                    band_rects.append({
+                        'min_x': x_left,
+                        'max_x': x_right,
+                        'min_y': y_bottom,
+                        'max_y': y_top
+                    })
+
+            if not band_rects:
+                return []
+
+            # Merge vertically adjacent rectangles with identical x-intervals
+            # Index rectangles by (min_x, max_x), and attempt to merge contiguous y-bands
+            from collections import defaultdict
+            buckets = defaultdict(list)
+            for r in band_rects:
+                key = (round(r['min_x'], 6), round(r['max_x'], 6))
+                buckets[key].append(r)
+
+            merged_rects = []
+            for key, rects in buckets.items():
+                # Sort by min_y to merge vertically
+                rects.sort(key=lambda r: (r['min_y'], r['max_y']))
+                current = None
+                for r in rects:
+                    if current is None:
+                        current = dict(r)
+                        continue
+                    if abs(r['min_y'] - current['max_y']) < 1e-6:
+                        # Adjacent vertically, merge
+                        current['max_y'] = r['max_y']
+                    else:
+                        merged_rects.append(current)
+                        current = dict(r)
+                if current is not None:
+                    merged_rects.append(current)
+
+            # Optional: small-area noise filter (not expected with clean integer coords)
+            final_rects = []
+            for r in merged_rects:
+                w = r['max_x'] - r['min_x']
+                h = r['max_y'] - r['min_y']
+                if w > 0 and h > 0:
+                    final_rects.append(r)
+
+            return final_rects
+        except Exception:
             return []
 
     @staticmethod
     def _detect_l_shape(points):
-        """Detect if a room has an L-shape by analyzing its geometry using multiple methods"""
+        """Detect if a room has an L-shape by analyzing its geometry"""
         try:
             if len(points) < 4:
                 return False
             
-            # Method 1: Check for concave corners (inner corners indicate L-shape)
-            concave_corners = CeilingService._count_concave_corners(points)
-            if concave_corners > 0:
-                return True
-            
-            # Method 2: Check area ratio (improved threshold)
+            # Calculate room dimensions
             x_coords = [p[0] for p in points]
             y_coords = [p[1] for p in points]
             
@@ -3920,71 +3907,18 @@ class CeilingService:
             
             # Calculate room area
             room_area = room_width * room_height
-            if room_area == 0:
-                return False
             
             # Calculate actual polygon area using shoelace formula
             actual_area = CeilingService._calculate_polygon_area(points)
+            
+            # If actual area is significantly less than bounding box area, it's likely L-shaped
             area_ratio = actual_area / room_area
             
-            # Method 3: Check if polygon has more than 4 vertices (L-shapes typically have 6)
-            # and area ratio suggests non-rectangular shape
-            if len(points) > 4 and area_ratio < 0.98:
-                # Additional check: see if there's a significant "cutout" area
-                missing_area = room_area - actual_area
-                missing_ratio = missing_area / room_area
-                # If more than 2% of bounding box is missing, it's likely L-shaped
-                if missing_ratio > 0.02:
-                    return True
-            
-            # Method 4: Original threshold for very obvious L-shapes
+            # L-shaped rooms typically have area ratio < 0.8
             return area_ratio < 0.8
             
         except Exception as e:
             return False
-    
-    @staticmethod
-    def _count_concave_corners(points):
-        """Count concave (inner) corners in a polygon - indicates L-shape"""
-        try:
-            if len(points) < 3:
-                return 0
-            
-            concave_count = 0
-            n = len(points)
-            
-            for i in range(n):
-                prev_i = (i - 1) % n
-                next_i = (i + 1) % n
-                
-                # Get vectors
-                v1 = (points[prev_i][0] - points[i][0], points[prev_i][1] - points[i][1])
-                v2 = (points[next_i][0] - points[i][0], points[next_i][1] - points[i][1])
-                
-                # Calculate cross product to determine if corner is concave
-                cross_product = v1[0] * v2[1] - v1[1] * v2[0]
-                
-                # For counter-clockwise polygons, negative cross product indicates concave corner
-                # For clockwise, positive indicates concave
-                # We'll check both by looking at the sign relative to polygon orientation
-                if abs(cross_product) > 1e-6:  # Avoid floating point issues
-                    # Determine polygon orientation
-                    signed_area = 0
-                    for j in range(n):
-                        k = (j + 1) % n
-                        signed_area += (points[j][0] * points[k][1] - points[k][0] * points[j][1])
-                    
-                    # If polygon is counter-clockwise (positive area), concave corners have negative cross product
-                    # If clockwise (negative area), concave corners have positive cross product
-                    is_concave = (signed_area > 0 and cross_product < 0) or (signed_area < 0 and cross_product > 0)
-                    
-                    if is_concave:
-                        concave_count += 1
-            
-            return concave_count
-            
-        except Exception:
-            return 0
 
     @staticmethod
     def _calculate_polygon_area(points):
@@ -4007,23 +3941,13 @@ class CeilingService:
 
     @staticmethod
     def _split_l_shaped_room(points, bounding_box, orientation='horizontal'):
-        """Split L-shaped or complex room into rectangular regions optimized for given orientation"""
+        """Split L-shaped room into rectangular regions optimized for given orientation"""
         try:
+            
             # Convert points to find coordinates
             x_coords = [p[0] for p in points]
             y_coords = [p[1] for p in points]
             
-            # Count concave corners to determine complexity
-            concave_count = CeilingService._count_concave_corners(points)
-            
-            # For complex rooms (U-shaped or multiple indentations), use a different strategy
-            if concave_count > 2:
-                # Use grid-based approach for complex rooms
-                return CeilingService._split_complex_room(
-                    points, bounding_box, orientation, x_coords, y_coords
-                )
-            
-            # For simple L-shaped rooms, use the original approach
             # Find the cutout coordinates (inner corner of L)
             cutout_x = None
             cutout_y = None
@@ -4037,6 +3961,7 @@ class CeilingService:
                         cutout_x = x
                         cutout_y = y
             
+            
             if not cutout_x or not cutout_y:
                 return []
             
@@ -4047,144 +3972,43 @@ class CeilingService:
                     x_coords, y_coords, cutout_x, cutout_y
                 )
             else:
-                # HORIZONTAL SPLIT: Split at y=cutout_y
+                # HORIZONTAL SPLIT: Split at y=cutout_y (current approach)
                 return CeilingService._create_horizontal_split_regions(
                     x_coords, y_coords, cutout_x, cutout_y
                 )
             
         except Exception as e:
-            logger.error(f"Error splitting room: {str(e)}")
             return []
-    
-    @staticmethod
-    def _split_complex_room(points, bounding_box, orientation, x_coords, y_coords):
-        """Split complex rooms (U-shaped, multiple indentations) into rectangular regions"""
-        try:
-            regions = []
-            min_x, max_x = min(x_coords), max(x_coords)
-            min_y, max_y = min(y_coords), max(y_coords)
-            
-            # Find all significant X and Y coordinates (where indentations occur)
-            # These are coordinates that appear multiple times or are not at extremes
-            x_values = sorted(set(x_coords))
-            y_values = sorted(set(y_coords))
-            
-            # Filter to get significant coordinates (not too close together)
-            significant_x = [x_values[0]]  # Always include min
-            for i in range(1, len(x_values) - 1):
-                # Include if it's far enough from previous
-                if x_values[i] - significant_x[-1] > (max_x - min_x) * 0.1:  # At least 10% of width
-                    significant_x.append(x_values[i])
-            significant_x.append(x_values[-1])  # Always include max
-            
-            significant_y = [y_values[0]]  # Always include min
-            for i in range(1, len(y_values) - 1):
-                # Include if it's far enough from previous
-                if y_values[i] - significant_y[-1] > (max_y - min_y) * 0.1:  # At least 10% of height
-                    significant_y.append(y_values[i])
-            significant_y.append(y_values[-1])  # Always include max
-            
-            # Create a grid of potential regions
-            # For each cell in the grid, check if it's inside the room polygon
-            for i in range(len(significant_x) - 1):
-                for j in range(len(significant_y) - 1):
-                    region_min_x = significant_x[i]
-                    region_max_x = significant_x[i + 1]
-                    region_min_y = significant_y[j]
-                    region_max_y = significant_y[j + 1]
-                    
-                    # Check if this region is inside the room
-                    # Test center point and corners
-                    center_x = (region_min_x + region_max_x) / 2
-                    center_y = (region_min_y + region_max_y) / 2
-                    
-                    # Convert points back to dict format for point-in-polygon check
-                    room_points_dict = [{'x': p[0], 'y': p[1]} for p in points]
-                    
-                    if CeilingService._is_point_in_polygon(center_x, center_y, room_points_dict):
-                        # Check if at least 50% of this region is inside
-                        # Test all four corners
-                        corners_inside = 0
-                        for corner_x in [region_min_x, region_max_x]:
-                            for corner_y in [region_min_y, region_max_y]:
-                                if CeilingService._is_point_in_polygon(corner_x, corner_y, room_points_dict):
-                                    corners_inside += 1
-                        
-                        # If at least 2 corners are inside, include this region
-                        if corners_inside >= 2:
-                            regions.append({
-                                'min_x': region_min_x,
-                                'max_x': region_max_x,
-                                'min_y': region_min_y,
-                                'max_y': region_max_y,
-                                'width': region_max_x - region_min_x,
-                                'height': region_max_y - region_min_y,
-                                'type': 'complex_region'
-                            })
-            
-            # If grid approach didn't work well, fall back to simpler approach
-            if not regions or len(regions) == 0:
-                # Fallback: treat as single region (will be optimized later)
-                regions = [{
-                    'min_x': min_x,
-                    'max_x': max_x,
-                    'min_y': min_y,
-                    'max_y': max_y,
-                    'width': max_x - min_x,
-                    'height': max_y - min_y,
-                    'type': 'complex_fallback'
-                }]
-            
-            return regions
-            
-        except Exception as e:
-            logger.error(f"Error splitting complex room: {str(e)}")
-            # Fallback to bounding box
-            return [{
-                'min_x': min(x_coords),
-                'max_x': max(x_coords),
-                'min_y': min(y_coords),
-                'max_y': max(y_coords),
-                'width': max(x_coords) - min(x_coords),
-                'height': max(y_coords) - min(y_coords),
-                'type': 'complex_fallback'
-            }]
 
     @staticmethod
     def _create_vertical_split_regions(x_coords, y_coords, cutout_x, cutout_y):
-        """Create regions using VERTICAL split at x=cutout_x for maximum panel length
-        This correctly splits L-shaped rooms into non-overlapping regions that cover the entire area"""
+        """Create regions using VERTICAL split at x=cutout_x for maximum panel length"""
         try:
             regions = []
             
-            # For L-shaped rooms, we need to identify which parts of the room exist
-            # The cutout point (cutout_x, cutout_y) is the inner corner
-            
-            # Strategy: Split into regions that cover the entire room without gaps
-            # Region 1: Left side (full height from min_y to max_y)
-            # This covers the main rectangular area
+            # Region 1: Bottom-left area ONLY (below Room 144)
+            # From x=0 to x=cutout_x, from y=cutout_y to y=max (NOT full height!)
             region1 = {
                 'min_x': min(x_coords),
                 'max_x': cutout_x,
-                'min_y': min(y_coords),
+                'min_y': cutout_y,  # Start BELOW Room 144
                 'max_y': max(y_coords),
                 'width': cutout_x - min(x_coords),
-                'height': max(y_coords) - min(y_coords),
-                'type': 'left_vertical_arm'
+                'height': max(y_coords) - cutout_y,  # Only the bottom part
+                'type': 'bottom_left_vertical_arm'
             }
             regions.append(region1)
             
-            # Region 2: Right extension (only the part that exists, from cutout_y to max_y)
-            # This covers the extension part of the L-shape
-            # Note: We only create the extension region where it actually exists
+            # Region 2: Right side (the right arm of L-shape)
+            # From x=cutout_x to x=max, full height - THIS GETS 10000mm LENGTH!
             region2 = {
                 'min_x': cutout_x,
                 'max_x': max(x_coords),
-                'min_y': cutout_y,
+                'min_y': min(y_coords),
                 'max_y': max(y_coords),
                 'width': max(x_coords) - cutout_x,
-                'height': max(y_coords) - cutout_y,
-                'type': 'right_vertical_extension'
+                'height': max(y_coords) - min(y_coords),  # FULL 10000mm!
+                'type': 'right_vertical_arm'
             }
             regions.append(region2)
             
@@ -4195,52 +4019,33 @@ class CeilingService:
 
     @staticmethod
     def _create_horizontal_split_regions(x_coords, y_coords, cutout_x, cutout_y):
-        """Create regions using HORIZONTAL split at y=cutout_y
-        This correctly splits L-shaped rooms into non-overlapping regions that cover the entire area"""
+        """Create regions using HORIZONTAL split at y=cutout_y (current approach)"""
         try:
             regions = []
             
-            # For L-shaped rooms with horizontal split:
-            # The cutout point indicates where the extension starts
-            # Region 1: Top region (only the main area, not the extension)
-            # This covers the main rectangular area at the top (from min_x to cutout_x)
+            # Region 1: Top-right rectangle (only the right part, not covering Room 144)
             region1 = {
-                'min_x': min(x_coords),
-                'max_x': cutout_x,
+                'min_x': cutout_x,  # Start from cutout_x (8036), not min_x (0)
+                'max_x': max(x_coords),
                 'min_y': min(y_coords),
                 'max_y': cutout_y,
-                'width': cutout_x - min(x_coords),
+                'width': max(x_coords) - cutout_x,
                 'height': cutout_y - min(y_coords),
-                'type': 'top_horizontal_arm'
+                'type': 'top_right_arm'
             }
             regions.append(region1)
             
-            # Region 2: Bottom-left region (from min_x to cutout_x)
-            # This covers the main part of the bottom section
+            # Region 2: Bottom horizontal strip (full width, below Room 144)
             region2 = {
                 'min_x': min(x_coords),
-                'max_x': cutout_x,
+                'max_x': max(x_coords),
                 'min_y': cutout_y,
                 'max_y': max(y_coords),
-                'width': cutout_x - min(x_coords),
+                'width': max(x_coords) - min(x_coords),
                 'height': max(y_coords) - cutout_y,
-                'type': 'bottom_left_horizontal_arm'
+                'type': 'bottom_arm'
             }
             regions.append(region2)
-            
-            # Region 3: Bottom-right extension (from cutout_x to max_x)
-            # This covers the extension part of the L-shape (only exists at bottom)
-            if cutout_x < max(x_coords):
-                region3 = {
-                    'min_x': cutout_x,
-                    'max_x': max(x_coords),
-                    'min_y': cutout_y,
-                    'max_y': max(y_coords),
-                    'width': max(x_coords) - cutout_x,
-                    'height': max(y_coords) - cutout_y,
-                    'type': 'bottom_right_horizontal_extension'
-                }
-                regions.append(region3)
             
             return regions
             
