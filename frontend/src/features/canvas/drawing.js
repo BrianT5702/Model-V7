@@ -1176,109 +1176,273 @@ export function drawWalls({
             center,
             scaleFactor
         );
-        // Check for 45° joint at endpoints and possibly flip inner wall side
-        const endpoints = [
-            { label: 'start', x: wall.start_x, y: wall.start_y },
-            { label: 'end', x: wall.end_x, y: wall.end_y }
-        ];
-        endpoints.forEach((pt, idx) => {
-            const relevantIntersections = intersections.filter(inter => {
-                const dx = inter.x - pt.x;
-                const dy = inter.y - pt.y;
-                return Math.hypot(dx, dy) < SNAP_THRESHOLD / currentScaleFactor;
-            });
-            // Find if this endpoint has a 45_cut and get the joining wall
-            let has45 = false;
-            let joiningWall = null;
-            let joiningWallId = null;
-            relevantIntersections.forEach(inter => {
-                inter.pairs.forEach(pair => {
-                    if ((pair.wall1.id === wall.id || pair.wall2.id === wall.id) && pair.joining_method === '45_cut') {
-                        has45 = true;
-                        // Find the joining wall id
-                        joiningWallId = pair.wall1.id === wall.id ? pair.wall2.id : pair.wall1.id;
-                    }
-                });
-            });
-            // If 45_cut, check if joining wall is on same side as model center
-            if (has45 && joiningWallId) {
-                joiningWall = walls.find(w => w.id === joiningWallId);
-                if (joiningWall) {
-                    // Calculate normal for this wall
-                    const dx = wall.end_x - wall.start_x;
-                    const dy = wall.end_y - wall.start_y;
-                    const length = Math.hypot(dx, dy);
-                    const normalX = dy / length;
-                    const normalY = -dx / length;
-                    // Midpoint of this wall
-                    const midX = (wall.start_x + wall.end_x) / 2;
-                    const midY = (wall.start_y + wall.end_y) / 2;
-                    // Vector to model center
-                    const toCenterX = center.x - midX;
-                    const toCenterY = center.y - midY;
-                    const dotToCenter = normalX * toCenterX + normalY * toCenterY;
-                    // Vector to joining wall midpoint
-                    const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
-                    const joinMidY = (joiningWall.start_y + joiningWall.end_y) / 2;
-                    const toJoinX = joinMidX - midX;
-                    const toJoinY = joinMidY - midY;
-                    const dotToJoin = normalX * toJoinX + normalY * toJoinY;
-                    // If dotToCenter and dotToJoin have opposite signs, flip the side for line2
-                    const shouldFlip = (dotToCenter > 0 && dotToJoin < 0) || (dotToCenter < 0 && dotToJoin > 0);
-                    if (shouldFlip) {
-                        // Recalculate line2 with flipped offset
-                        const gapPixels = FIXED_GAP;
-                        const scale = scaleFactor;
-                        // Flip the shouldFlip logic in calculateOffsetPoints
-                        const offsetX = (gapPixels * normalX) / scale;
-                        const offsetY = (gapPixels * normalY) / scale;
-                        // Normally, shouldFlip = dotToCenter > 0, so flip it:
-                        const finalOffsetX = dotToCenter > 0 ? offsetX : -offsetX;
-                        const finalOffsetY = dotToCenter > 0 ? offsetY : -offsetY;
-                        // Flip the entire inner line by updating both endpoints
-                        line2[0] = {
-                            x: wall.start_x - finalOffsetX * 2,
-                            y: wall.start_y - finalOffsetY * 2
-                        };
-                        line2[1] = {
-                            x: wall.end_x - finalOffsetX * 2,
-                            y: wall.end_y - finalOffsetY * 2
-                        };
-                    }
-                }
+        // Check for 45° cuts at EACH END separately
+        // We need to determine which line (left or right) to shorten at each end
+        const wallDx = wall.end_x - wall.start_x;
+        const wallDy = wall.end_y - wall.start_y;
+        const wallLength = Math.hypot(wallDx, wallDy);
+        const wallDirX = wallLength > 0 ? wallDx / wallLength : 0;
+        const wallDirY = wallLength > 0 ? wallDy / wallLength : 0;
+        
+        // Determine which line is left and which is right by comparing positions
+        const isVertical = Math.abs(wallDx) < Math.abs(wallDy);
+        
+        // Compare line positions at midpoint
+        const line1MidX = (line1[0].x + line1[1].x) / 2;
+        const line1MidY = (line1[0].y + line1[1].y) / 2;
+        const line2MidX = (line2[0].x + line2[1].x) / 2;
+        const line2MidY = (line2[0].y + line2[1].y) / 2;
+        
+        // Determine which line is on left vs right
+        let line1IsLeft;
+        if (isVertical) {
+            // For vertical walls, left = smaller X
+            line1IsLeft = line1MidX < line2MidX;
+        } else {
+            // For horizontal walls, determine left based on wall direction
+            if (wallDirX > 0) {
+                line1IsLeft = line1MidY < line2MidY;
+            } else {
+                line1IsLeft = line1MidY > line2MidY;
             }
-            // Existing logic for shortening/capping for 45_cut
-            if (has45) {
-                const dx = wall.end_x - wall.start_x;
-                const dy = wall.end_y - wall.start_y;
-                const len = Math.hypot(dx, dy);
-                const ux = len ? dx / len : 0;
-                const uy = len ? dy / len : 0;
+        }
+        
+        // Check start end for 45° cut
+        let startHas45 = false;
+        let startIsOnLeftSide = false;
+        
+        // Check end end for 45° cut
+        let endHas45 = false;
+        let endIsOnLeftSide = false;
+        
+        // Check each intersection to find 45° cuts at each endpoint
+        intersections.forEach(inter => {
+            const tolerance = SNAP_THRESHOLD / currentScaleFactor;
+            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
+            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
+            
+            if (isAtStart || isAtEnd) {
+                // Check if this intersection has a 45_cut
+                let has45Cut = false;
+                let joiningWallId = null;
                 
-                // Scale-aware gap calculation for 45° cut
-                // We want the visual gap to look consistent across all project scales
+                if (inter.pairs) {
+                    inter.pairs.forEach(pair => {
+                        if ((pair.wall1.id === wall.id || pair.wall2.id === wall.id) && pair.joining_method === '45_cut') {
+                            has45Cut = true;
+                            joiningWallId = pair.wall1.id === wall.id ? pair.wall2.id : pair.wall1.id;
+                        }
+                    });
+                }
                 
-                // Target visual gap in pixels (consistent across all scales)
-                const targetVisualGap = 4.5;
-                
-                // Convert visual gap back to model units using scale factor
-                // This ensures the gap looks the same size on screen regardless of project scale
-                const adjust = targetVisualGap / currentScaleFactor;
-                
-                // Ensure the gap is never smaller than a reasonable minimum in model units
-                const minGapInModelUnits = Math.max(wall.thickness * 0.3, 30);
-                const finalAdjust = Math.max(adjust, minGapInModelUnits);
-                
-                line2 = [...line2.map(p => ({ ...p }))];
-                if (pt.label === 'start') {
-                    line2[0].x += ux * finalAdjust;
-                    line2[0].y += uy * finalAdjust;
-                } else {
-                    line2[1].x -= ux * finalAdjust;
-                    line2[1].y -= uy * finalAdjust;
+                if (has45Cut && joiningWallId) {
+                    const joiningWall = walls.find(w => w.id === joiningWallId);
+                    if (joiningWall) {
+                        const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
+                        const joinMidY = (joiningWall.start_y + joiningWall.end_y) / 2;
+                        
+                        if (isAtStart) {
+                            startHas45 = true;
+                            // Determine which side (left or right) the joining wall is on
+                            if (isVertical) {
+                                startIsOnLeftSide = joinMidX < wall.start_x;
+                            } else {
+                                if (wallDirX > 0) {
+                                    startIsOnLeftSide = joinMidY < wall.start_y;
+                                } else {
+                                    startIsOnLeftSide = joinMidY > wall.start_y;
+                                }
+                            }
+                        } else if (isAtEnd) {
+                            endHas45 = true;
+                            // Determine which side (left or right) the joining wall is on
+                            if (isVertical) {
+                                endIsOnLeftSide = joinMidX < wall.end_x;
+                            } else {
+                                if (wallDirX > 0) {
+                                    endIsOnLeftSide = joinMidY < wall.end_y;
+                                } else {
+                                    endIsOnLeftSide = joinMidY > wall.end_y;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         });
+        
+        // Apply 45° cut shortening at each end independently
+        // Scale-aware gap calculation for 45° cut
+        const targetVisualGap = 4.5;
+        const adjust = targetVisualGap / currentScaleFactor;
+        const minGapInModelUnits = Math.max(wall.thickness * 0.3, 30);
+        const finalAdjust = Math.max(adjust, minGapInModelUnits);
+        
+        // Make copies of lines for modification
+        line1 = [...line1.map(p => ({ ...p }))];
+        line2 = [...line2.map(p => ({ ...p }))];
+        
+        // Shorten at START end
+        if (startHas45) {
+            // If joining wall is on LEFT side, shorten the LEFT line
+            // If joining wall is on RIGHT side, shorten the RIGHT line
+            if (startIsOnLeftSide) {
+                // Shorten left line at start
+                if (line1IsLeft) {
+                    line1[0].x += wallDirX * finalAdjust;
+                    line1[0].y += wallDirY * finalAdjust;
+                } else {
+                    line2[0].x += wallDirX * finalAdjust;
+                    line2[0].y += wallDirY * finalAdjust;
+                }
+            } else {
+                // Shorten right line at start
+                if (line1IsLeft) {
+                    line2[0].x += wallDirX * finalAdjust;
+                    line2[0].y += wallDirY * finalAdjust;
+                } else {
+                    line1[0].x += wallDirX * finalAdjust;
+                    line1[0].y += wallDirY * finalAdjust;
+                }
+            }
+        }
+        
+        // Shorten at END end
+        if (endHas45) {
+            // If joining wall is on LEFT side, shorten the LEFT line
+            // If joining wall is on RIGHT side, shorten the RIGHT line
+            if (endIsOnLeftSide) {
+                // Shorten left line at end
+                if (line1IsLeft) {
+                    line1[1].x -= wallDirX * finalAdjust;
+                    line1[1].y -= wallDirY * finalAdjust;
+                } else {
+                    line2[1].x -= wallDirX * finalAdjust;
+                    line2[1].y -= wallDirY * finalAdjust;
+                }
+            } else {
+                // Shorten right line at end
+                if (line1IsLeft) {
+                    line2[1].x -= wallDirX * finalAdjust;
+                    line2[1].y -= wallDirY * finalAdjust;
+                } else {
+                    line1[1].x -= wallDirX * finalAdjust;
+                    line1[1].y -= wallDirY * finalAdjust;
+                }
+            }
+        }
+        
+        // Auto-extend wall lines at joints to ensure connectivity (visual only, no data update)
+        // This fixes gaps that occur due to flip logic
+        const gapTolerance = 0.5; // 0.5mm tolerance for detecting gaps
+        const maxExtension = wall.thickness * 2; // Maximum extension distance (2x wall thickness)
+        
+        // Check start endpoint
+        const startIntersections = intersections.filter(inter => {
+            const dx = inter.x - wall.start_x;
+            const dy = inter.y - wall.start_y;
+            return Math.hypot(dx, dy) < SNAP_THRESHOLD / currentScaleFactor;
+        });
+        
+        if (startIntersections.length > 0) {
+            // Find the closest intersection point
+            let closestInter = null;
+            let minDist = Infinity;
+            startIntersections.forEach(inter => {
+                const dist = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestInter = inter;
+                }
+            });
+            
+            if (closestInter) {
+                if (minDist > gapTolerance && minDist <= maxExtension) {
+                    // There's a gap within extension limit - extend lines along wall direction to reach intersection
+                    // Calculate extension direction (from wall start toward intersection)
+                    const extendDirX = (closestInter.x - wall.start_x) / minDist;
+                    const extendDirY = (closestInter.y - wall.start_y) / minDist;
+                    
+                    // Calculate the offset vector between line1 and line2 at start
+                    const offsetX = line2[0].x - line1[0].x;
+                    const offsetY = line2[0].y - line1[0].y;
+                    
+                    // Extend line1 to intersection point
+                    line1[0].x = closestInter.x;
+                    line1[0].y = closestInter.y;
+                    
+                    // Extend line2 maintaining the same offset from line1
+                    line2[0].x = closestInter.x + offsetX;
+                    line2[0].y = closestInter.y + offsetY;
+                } else if (minDist <= gapTolerance) {
+                    // Very small gap - extend slightly to ensure connectivity while maintaining offset
+                    const extendDirX = (closestInter.x - wall.start_x) / (minDist || 1);
+                    const extendDirY = (closestInter.y - wall.start_y) / (minDist || 1);
+                    const offsetX = line2[0].x - line1[0].x;
+                    const offsetY = line2[0].y - line1[0].y;
+                    
+                    line1[0].x = closestInter.x;
+                    line1[0].y = closestInter.y;
+                    line2[0].x = closestInter.x + offsetX;
+                    line2[0].y = closestInter.y + offsetY;
+                }
+                // If minDist > maxExtension, don't extend (gap is too large, might be intentional)
+            }
+        }
+        
+        // Check end endpoint
+        const endIntersections = intersections.filter(inter => {
+            const dx = inter.x - wall.end_x;
+            const dy = inter.y - wall.end_y;
+            return Math.hypot(dx, dy) < SNAP_THRESHOLD / currentScaleFactor;
+        });
+        
+        if (endIntersections.length > 0) {
+            // Find the closest intersection point
+            let closestInter = null;
+            let minDist = Infinity;
+            endIntersections.forEach(inter => {
+                const dist = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestInter = inter;
+                }
+            });
+            
+            if (closestInter) {
+                if (minDist > gapTolerance && minDist <= maxExtension) {
+                    // There's a gap within extension limit - extend lines along wall direction to reach intersection
+                    // Calculate extension direction (from wall end toward intersection)
+                    const extendDirX = (closestInter.x - wall.end_x) / minDist;
+                    const extendDirY = (closestInter.y - wall.end_y) / minDist;
+                    
+                    // Calculate the offset vector between line1 and line2 at end
+                    const offsetX = line2[1].x - line1[1].x;
+                    const offsetY = line2[1].y - line1[1].y;
+                    
+                    // Extend line1 to intersection point
+                    line1[1].x = closestInter.x;
+                    line1[1].y = closestInter.y;
+                    
+                    // Extend line2 maintaining the same offset from line1
+                    line2[1].x = closestInter.x + offsetX;
+                    line2[1].y = closestInter.y + offsetY;
+                } else if (minDist <= gapTolerance) {
+                    // Very small gap - extend slightly to ensure connectivity while maintaining offset
+                    const extendDirX = (closestInter.x - wall.end_x) / (minDist || 1);
+                    const extendDirY = (closestInter.y - wall.end_y) / (minDist || 1);
+                    const offsetX = line2[1].x - line1[1].x;
+                    const offsetY = line2[1].y - line1[1].y;
+                    
+                    line1[1].x = closestInter.x;
+                    line1[1].y = closestInter.y;
+                    line2[1].x = closestInter.x + offsetX;
+                    line2[1].y = closestInter.y + offsetY;
+                }
+                // If minDist > maxExtension, don't extend (gap is too large, might be intentional)
+            }
+        }
+        
         wall._line1 = line1;
         wall._line2 = line2;
         drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor, [], innerColor);

@@ -88,23 +88,24 @@ const HomePage = () => {
 
             {/* Header Section */}
             <div className="bg-white border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    <div className="flex items-center justify-between">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center">
-                            <FaCube className="w-10 h-10 text-blue-600 mr-4" />
-                            <h1 className="text-3xl font-bold text-gray-900">System V7.0</h1>
+                            <FaCube className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600 mr-3 sm:mr-4" />
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">System V7.0</h1>
                         </div>
                         
-                        <div className="flex items-center space-x-4">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:space-x-4">
                             {quickActions.map((action, index) => (
                                 <button
                                     key={index}
                                     onClick={action.action}
-                                    className={`group relative px-6 py-3 rounded-xl bg-gradient-to-r ${action.color} text-white font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300`}
+                                    className={`group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl bg-gradient-to-r ${action.color} text-white text-sm sm:text-base font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300`}
                                 >
-                                    <div className="flex items-center">
-                                        <action.icon className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-300" />
-                                        {action.title}
+                                    <div className="flex items-center justify-center">
+                                        <action.icon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-2 group-hover:scale-110 transition-transform duration-300" />
+                                        <span className="hidden sm:inline">{action.title}</span>
+                                        <span className="sm:hidden">{action.title.replace('New ', '').replace('View ', '')}</span>
                                     </div>
                                 </button>
                             ))}
@@ -114,12 +115,12 @@ const HomePage = () => {
             </div>
 
             {/* Main Content */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
                 {/* Create Project Section */}
                 {showCreateForm && (
-                    <div className="mb-12">
-                        <div className="text-center mb-8">
-                            <h2 className="text-2xl font-bold text-gray-900">Create New Project</h2>
+                    <div className="mb-8 sm:mb-12">
+                        <div className="text-center mb-6 sm:mb-8">
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Project</h2>
                         </div>
                         
                         <div className="flex justify-center">
@@ -133,8 +134,8 @@ const HomePage = () => {
 
                 {/* Projects Section */}
                 <div id="projects-section">
-                    <div className="flex items-center justify-between mb-8">
-                        <h2 className="text-2xl font-bold text-gray-900">Projects</h2>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 mb-6 sm:mb-8">
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Projects</h2>
                         <div className="text-sm text-gray-600">
                             {isLoading ? 'Loading...' : `${projects.length} project${projects.length !== 1 ? 's' : ''}`}
                         </div>

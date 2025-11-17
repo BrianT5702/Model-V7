@@ -18,15 +18,27 @@ code {
 
 /* Canvas container expansion */
 .canvas-container {
-  min-height: 600px;
+  min-height: 400px;
   height: auto;
   overflow: visible;
+}
+
+@media (min-width: 640px) {
+  .canvas-container {
+    min-height: 600px;
+  }
 }
 
 .canvas-container canvas {
   width: 100%;
   height: auto;
-  min-height: 400px;
+  min-height: 300px;
+}
+
+@media (min-width: 640px) {
+  .canvas-container canvas {
+    min-height: 400px;
+  }
 }
 
 /* Ensure material list can expand */
@@ -44,16 +56,28 @@ code {
 
 /* Ensure sidebar can scroll independently */
 .sidebar-scroll {
-  max-height: calc(100vh - 120px);
+  max-height: calc(100vh - 80px);
   overflow-y: auto;
+}
+
+@media (min-width: 1024px) {
+  .sidebar-scroll {
+    max-height: calc(100vh - 120px);
+  }
 }
 
 /* Edit mode tool buttons */
 .tool-button {
-  @apply flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer;
-  min-height: 90px;
+  @apply flex flex-col items-center justify-center p-3 sm:p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer;
+  min-height: 70px;
   background: white;
   border-color: #e5e7eb;
+}
+
+@media (min-width: 640px) {
+  .tool-button {
+    min-height: 90px;
+  }
 }
 
 .tool-button:hover {
@@ -203,4 +227,41 @@ code {
   z-index: 40;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(8px);
+}
+
+/* Mobile-specific improvements */
+@media (max-width: 639px) {
+  /* Prevent horizontal scrolling */
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* Improve touch targets */
+  button, a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Better spacing on mobile */
+  .canvas-container {
+    margin: 0.75rem;
+  }
+  
+  /* Smaller text on mobile for better fit */
+  .text-sm {
+    font-size: 0.875rem;
+  }
+  
+  /* Modal improvements */
+  .modal-content {
+    margin: 1rem;
+    max-width: calc(100vw - 2rem);
+  }
+}
+
+/* Tablet improvements */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .canvas-container {
+    margin: 1rem;
+  }
 }

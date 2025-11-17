@@ -86,8 +86,9 @@ const Canvas2D = ({
     const DEFAULT_CANVAS_HEIGHT = 650;
     const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
     const MAX_CANVAS_HEIGHT_RATIO = 0.7;
-    const MIN_CANVAS_WIDTH = 480;
-    const MIN_CANVAS_HEIGHT = 320;
+    // Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
+    const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
+    const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
     const CANVAS_HEIGHT = DEFAULT_CANVAS_HEIGHT; // For styling consistency with CeilingCanvas
     const [canvasSize, setCanvasSize] = useState({
         width: DEFAULT_CANVAS_WIDTH,

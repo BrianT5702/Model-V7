@@ -8,8 +8,9 @@ const DEFAULT_CANVAS_WIDTH = 1000;
 const DEFAULT_CANVAS_HEIGHT = 650;
 const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
 const MAX_CANVAS_HEIGHT_RATIO = 0.7;
-const MIN_CANVAS_WIDTH = 480;
-const MIN_CANVAS_HEIGHT = 320;
+// Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
+const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
+const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
 const PADDING = 50;
 
 const CeilingCanvas = ({ 
@@ -694,93 +695,170 @@ const CeilingCanvas = ({
                     scaleFactor.current
                 );
                 
-                // Check if this wall is involved in any 45° cut intersections
-                let has45 = false;
-                let joiningWall = null;
-                let joiningWallId = null;
+                // Check for 45° cuts at EACH END separately
+                // We need to determine which line (left or right) to shorten at each end
+                const wallDx = wall.end_x - wall.start_x;
+                const wallDy = wall.end_y - wall.start_y;
+                const wallLength = Math.hypot(wallDx, wallDy);
+                const wallDirX = wallLength > 0 ? wallDx / wallLength : 0;
+                const wallDirY = wallLength > 0 ? wallDy / wallLength : 0;
                 
-                // Look through all intersections to find 45° cuts involving this wall
+                // Determine which line is left and which is right by comparing positions
+                // For vertical walls: left = smaller X, right = larger X
+                // For horizontal walls: need to consider wall direction
+                const isVertical = Math.abs(wallDx) < Math.abs(wallDy);
+                
+                // Compare line positions at midpoint
+                const line1MidX = (line1[0].x + line1[1].x) / 2;
+                const line1MidY = (line1[0].y + line1[1].y) / 2;
+                const line2MidX = (line2[0].x + line2[1].x) / 2;
+                const line2MidY = (line2[0].y + line2[1].y) / 2;
+                
+                // Determine which line is on left vs right
+                let line1IsLeft;
+                if (isVertical) {
+                    // For vertical walls, left = smaller X
+                    line1IsLeft = line1MidX < line2MidX;
+                } else {
+                    // For horizontal walls, determine left based on wall direction
+                    // When facing the wall direction, left is 90° counterclockwise
+                    // For wall going left-to-right (wallDirX > 0): left = smaller Y
+                    // For wall going right-to-left (wallDirX < 0): left = larger Y
+                    if (wallDirX > 0) {
+                        line1IsLeft = line1MidY < line2MidY;
+                    } else {
+                        line1IsLeft = line1MidY > line2MidY;
+                    }
+                }
+                
+                // Check start end for 45° cut
+                let startHas45 = false;
+                let startIsOnLeftSide = false; // true if joining wall is on left side
+                
+                // Check end end for 45° cut
+                let endHas45 = false;
+                let endIsOnLeftSide = false;
+                
+                // Check each intersection to find 45° cuts at each endpoint
                 intersections.forEach(inter => {
-                    if ((inter.wall_1 === wall.id || inter.wall_2 === wall.id) && 
-                        inter.joining_method === '45_cut') {
-                        has45 = true;
-                        // Find the joining wall id
-                        joiningWallId = inter.wall_1 === wall.id ? inter.wall_2 : inter.wall_1;
+                    if (inter.joining_method === '45_cut' && (inter.wall_1 === wall.id || inter.wall_2 === wall.id)) {
+                        const joiningWallId = inter.wall_1 === wall.id ? inter.wall_2 : inter.wall_1;
+                        const joiningWall = walls.find(w => w.id === joiningWallId);
+                        
+                        if (joiningWall) {
+                            // Check if this intersection is at start or end
+                            const tolerance = 1; // 1mm tolerance
+                            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
+                            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
+                            
+                            if (isAtStart) {
+                                startHas45 = true;
+                                
+                                // Determine which side (left or right) the joining wall is on
+                                const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
+                                const joinMidY = (joiningWall.start_y + joiningWall.end_y) / 2;
+                                
+                                // Determine which side (left or right) the joining wall is on
+                                // Use direct coordinate comparison instead of cross product for clarity
+                                if (isVertical) {
+                                    // For vertical wall, left = smaller X
+                                    startIsOnLeftSide = joinMidX < wall.start_x;
+                                } else {
+                                    // For horizontal wall, need to check based on wall direction
+                                    if (wallDirX > 0) {
+                                        // Wall goes left to right, left = smaller Y
+                                        startIsOnLeftSide = joinMidY < wall.start_y;
+                                    } else {
+                                        // Wall goes right to left, left = larger Y
+                                        startIsOnLeftSide = joinMidY > wall.start_y;
+                                    }
+                                }
+                                
+                            } else if (isAtEnd) {
+                                endHas45 = true;
+                                
+                                // Determine which side (left or right) the joining wall is on
+                                const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
+                                const joinMidY = (joiningWall.start_y + joiningWall.end_y) / 2;
+                                
+                                // Determine which side (left or right) the joining wall is on
+                                if (isVertical) {
+                                    // For vertical wall, left = smaller X
+                                    endIsOnLeftSide = joinMidX < wall.end_x;
+                                } else {
+                                    // For horizontal wall, need to check based on wall direction
+                                    if (wallDirX > 0) {
+                                        // Wall goes left to right, left = smaller Y
+                                        endIsOnLeftSide = joinMidY < wall.end_y;
+                                    } else {
+                                        // Wall goes right to left, left = larger Y
+                                        endIsOnLeftSide = joinMidY > wall.end_y;
+                                    }
+                                }
+                            }
+                        }
                     }
                 });
                 
-                // If 45_cut, check if joining wall is on same side as model center
-                if (has45 && joiningWallId) {
-                    joiningWall = walls.find(w => w.id === joiningWallId);
-                    if (joiningWall) {
-                        // Calculate normal for this wall
-                        const dx = wall.end_x - wall.start_x;
-                        const dy = wall.end_y - wall.start_y;
-                        const length = Math.hypot(dx, dy);
-                        const normalX = dy / length;
-                        const normalY = -dx / length;
-                        
-                        // Midpoint of this wall
-                        const midX = (wall.start_x + wall.end_x) / 2;
-                        const midY = (wall.start_y + wall.end_y) / 2;
-                        
-                        // Vector to model center
-                        const toCenterX = center.x - midX;
-                        const toCenterY = center.y - midY;
-                        const dotToCenter = normalX * toCenterX + normalY * toCenterY;
-                        
-                        // Vector to joining wall midpoint
-                        const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
-                        const joinMidY = (joiningWall.start_y + joiningWall.end_y) / 2;
-                        const toJoinX = joinMidX - midX;
-                        const toJoinY = joinMidY - midY;
-                        const dotToJoin = normalX * toJoinX + normalY * toJoinY;
-                        
-                        // If dotToCenter and dotToJoin have opposite signs, flip the side for line2
-                        const shouldFlip = (dotToCenter > 0 && dotToJoin < 0) || (dotToCenter < 0 && dotToJoin > 0);
-                        
-                        if (shouldFlip) {
-                            // Recalculate line2 with flipped offset
-                            const offsetX = (FIXED_GAP * normalX) / scaleFactor.current;
-                            const offsetY = (FIXED_GAP * normalY) / scaleFactor.current;
-                            
-                            // Flip the offset based on the logic
-                            const finalOffsetX = dotToCenter > 0 ? offsetX : -offsetX;
-                            const finalOffsetY = dotToCenter > 0 ? offsetY : -offsetY;
-                            
-                            // Flip the entire inner line by updating both endpoints
-                            line2[0] = {
-                                x: wall.start_x - finalOffsetX * 2,
-                                y: wall.start_y - finalOffsetY * 2
-                            };
-                            line2[1] = {
-                                x: wall.end_x - finalOffsetX * 2,
-                                y: wall.end_y - finalOffsetY * 2
-                            };
+                // Apply 45° cut shortening at each end independently
+                // Scale-aware gap calculation for 45° cut
+                const targetVisualGap = 4.5;
+                const adjust = targetVisualGap / scaleFactor.current;
+                const minGapInModelUnits = Math.max(100 * 0.3, 30);
+                const finalAdjust = Math.max(adjust, minGapInModelUnits);
+                
+                // Make copies of lines for modification
+                line1 = [...line1.map(p => ({ ...p }))];
+                line2 = [...line2.map(p => ({ ...p }))];
+                
+                // Shorten at START end
+                if (startHas45) {
+                    // If joining wall is on LEFT side, shorten the LEFT line
+                    // If joining wall is on RIGHT side, shorten the RIGHT line
+                    if (startIsOnLeftSide) {
+                        // Shorten left line at start
+                        if (line1IsLeft) {
+                            line1[0].x += wallDirX * finalAdjust;
+                            line1[0].y += wallDirY * finalAdjust;
+                        } else {
+                            line2[0].x += wallDirX * finalAdjust;
+                            line2[0].y += wallDirY * finalAdjust;
+                        }
+                    } else {
+                        // Shorten right line at start
+                        if (line1IsLeft) {
+                            line2[0].x += wallDirX * finalAdjust;
+                            line2[0].y += wallDirY * finalAdjust;
+                        } else {
+                            line1[0].x += wallDirX * finalAdjust;
+                            line1[0].y += wallDirY * finalAdjust;
                         }
                     }
                 }
                 
-                // 45° cut shortening logic (simplified - no endpoint-specific logic needed)
-                if (has45) {
-                    const dx = wall.end_x - wall.start_x;
-                    const dy = wall.end_y - wall.start_y;
-                    const len = Math.hypot(dx, dy);
-                    const ux = len ? dx / len : 0;
-                    const uy = len ? dy / len : 0;
-                    
-                    // Scale-aware gap calculation for 45° cut
-                    const targetVisualGap = 4.5;
-                    const adjust = targetVisualGap / scaleFactor.current;
-                    const minGapInModelUnits = Math.max(100 * 0.3, 30);
-                    const finalAdjust = Math.max(adjust, minGapInModelUnits);
-                    
-                    // Shorten both ends of the wall line for 45° cut
-                    line2 = [...line2.map(p => ({ ...p }))];
-                    line2[0].x += ux * finalAdjust;
-                    line2[0].y += uy * finalAdjust;
-                    line2[1].x -= ux * finalAdjust;
-                    line2[1].y -= uy * finalAdjust;
+                // Shorten at END end
+                if (endHas45) {
+                    // If joining wall is on LEFT side, shorten the LEFT line
+                    // If joining wall is on RIGHT side, shorten the RIGHT line
+                    if (endIsOnLeftSide) {
+                        // Shorten left line at end
+                        if (line1IsLeft) {
+                            line1[1].x -= wallDirX * finalAdjust;
+                            line1[1].y -= wallDirY * finalAdjust;
+                        } else {
+                            line2[1].x -= wallDirX * finalAdjust;
+                            line2[1].y -= wallDirY * finalAdjust;
+                        }
+                    } else {
+                        // Shorten right line at end
+                        if (line1IsLeft) {
+                            line2[1].x -= wallDirX * finalAdjust;
+                            line2[1].y -= wallDirY * finalAdjust;
+                        } else {
+                            line1[1].x -= wallDirX * finalAdjust;
+                            line1[1].y -= wallDirY * finalAdjust;
+                        }
+                    }
                 }
 
                 // Store the calculated lines for wall caps

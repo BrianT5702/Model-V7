@@ -30,6 +30,7 @@ const ProjectDetails = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
     const projectDetails = useProjectDetails(projectId);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const wizardStep = projectDetails.storeyWizardStep;
     const sourceStoreyId = projectDetails.storeyWizardSourceStoreyId ?? projectDetails.activeStoreyId;
     const selectedRoomsSet = new Set(projectDetails.storeyWizardRoomSelections || []);
@@ -345,40 +346,48 @@ const ProjectDetails = () => {
 
             {/* Navigation Bar */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-6 py-3">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2 sm:space-x-4">
+                            <button
+                                onClick={() => setSidebarOpen(!sidebarOpen)}
+                                className="lg:hidden flex items-center px-2 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                                </svg>
+                            </button>
                             <button
                                 onClick={() => navigate('/')}
-                                className="flex items-center px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <FaArrowLeft className="w-4 h-4 mr-2" />
-                                Back to Home
+                                <FaArrowLeft className="w-4 h-4 sm:mr-2" />
+                                <span className="hidden sm:inline">Back to Home</span>
                             </button>
-                            <div className="h-6 w-px bg-gray-300"></div>
+                            <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
                             <div className="flex items-center text-gray-900">
                                 <FaCube className="w-5 h-5 mr-2 text-blue-600" />
-                                <span className="font-medium">Project View</span>
+                                <span className="font-medium hidden sm:inline">Project View</span>
                             </div>
                         </div>
                         
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2 sm:space-x-3">
                             <button
                                 onClick={() => navigate('/')}
-                                className="flex items-center px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <FaHome className="w-4 h-4 mr-2" />
-                                Home
+                                <FaHome className="w-4 h-4 sm:mr-2" />
+                                <span className="hidden sm:inline">Home</span>
                             </button>
-                            <div className="h-6 w-px bg-gray-300"></div>
+                            <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
                             <button
                                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                                className="flex items-center px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                                 </svg>
-                                Top
+                                <span className="hidden sm:inline">Top</span>
                             </button>
                         </div>
                     </div>
@@ -387,23 +396,23 @@ const ProjectDetails = () => {
 
             {/* Header Section */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-6 py-4">
-                    <div className="flex items-center justify-between">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
                     {(!projectDetails.project || !projectDetails.project.name) ? (
-                                <h1 className="text-2xl font-bold text-gray-900">Loading project...</h1>
+                                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Loading project...</h1>
                             ) : (
-                                <h1 className="text-2xl font-bold text-gray-900">{projectDetails.project.name}</h1>
+                                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{projectDetails.project.name}</h1>
                             )}
                             {projectDetails.project && (
-                                <p className="text-sm text-gray-600 mt-1">
+                                <p className="text-xs sm:text-sm text-gray-600 mt-1">
                                     Dimensions: {(projectDetails.project?.width ?? '—')} × {(projectDetails.project?.length ?? '—')} × {effectiveProjectHeight} mm
                                 </p>
                             )}
                         </div>
                         
                         {/* View Toggle Buttons */}
-                        <div className="flex items-center space-x-3">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                             <button
                                 onClick={() => {
                                     const newViewState = !projectDetails.is3DView;
@@ -431,10 +440,10 @@ const ProjectDetails = () => {
                                     </>
                                 )}
                             </button>
-                            <div className="h-6 w-px bg-gray-300"></div>
-                            <div className="flex items-center space-x-2">
-                                <FaLayerGroup className="text-blue-600" />
-                                <div className="flex items-center space-x-2">
+                            <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full sm:w-auto">
+                                <FaLayerGroup className="text-blue-600 hidden sm:block" />
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                                     <select
                                         value={projectDetails.activeStoreyId ?? ''}
                                         onChange={(e) => {
@@ -445,7 +454,7 @@ const ProjectDetails = () => {
                                             const numericValue = Number(value);
                                             projectDetails.setActiveStoreyId(Number.isNaN(numericValue) ? value : numericValue);
                                         }}
-                                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[160px]"
+                                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:min-w-[160px]"
                                     >
                                         {projectDetails.storeys.length === 0 && (
                                             <option value="">No levels</option>
@@ -459,14 +468,14 @@ const ProjectDetails = () => {
                                     {projectDetails.isLevelEditMode ? (
                                         <button
                                             onClick={projectDetails.exitLevelEditMode}
-                                            className="px-3 py-1 rounded-lg text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                                            className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors whitespace-nowrap"
                                         >
                                             Exit Edit Level
                                         </button>
                                     ) : (
                                         <button
                                             onClick={projectDetails.enterLevelEditMode}
-                                            className="px-3 py-1 rounded-lg text-sm font-medium bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 transition-colors"
+                                            className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 transition-colors whitespace-nowrap"
                                         >
                                             Edit Level
                                         </button>
@@ -495,14 +504,15 @@ const ProjectDetails = () => {
                                                 projectDetails.deleteStorey(activeId);
                                             }
                                         }}
-                                        className="px-3 py-1 rounded-lg text-sm font-medium bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                                        className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-red-100 text-red-600 hover:bg-red-200 transition-colors whitespace-nowrap"
                                         title="Delete selected level"
                                     >
-                                        Delete Level
+                                        <span className="hidden sm:inline">Delete Level</span>
+                                        <span className="sm:hidden">Delete</span>
                                     </button>
                                     <button
                                         onClick={projectDetails.openStoreyWizard}
-                                        className="px-3 py-1 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                        className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
                                     >
                                         Add Level
                                     </button>
@@ -767,7 +777,7 @@ const ProjectDetails = () => {
 
                     {/* Room Creation Interface */}
                     {projectDetails.showRoomManagerModal && !projectDetails.isRoomManagerMinimized && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000]">
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-4">
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
                                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                                     <div>
@@ -856,10 +866,32 @@ const ProjectDetails = () => {
                 </div>
             )}
 
-            <div className="flex min-h-[calc(100vh-120px)]">
+            <div className="flex min-h-[calc(100vh-120px)] relative">
+                {/* Mobile Sidebar Overlay */}
+                {sidebarOpen && (
+                    <div 
+                        className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+                        onClick={() => setSidebarOpen(false)}
+                    ></div>
+                )}
+                
                 {/* Left Sidebar - Controls */}
-                <div className="w-80 bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll">
-                    <div className="p-6">
+                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-80 bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
+                    sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+                }`}>
+                    <div className="p-4 sm:p-6">
+                        {/* Mobile Close Button */}
+                        <div className="flex items-center justify-between mb-4 lg:hidden">
+                            <h2 className="text-lg font-semibold text-gray-900">Controls</h2>
+                            <button
+                                onClick={() => setSidebarOpen(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
                         {/* Edit Mode Toggle */}
                         <div className="mb-6">
                     <button
@@ -1094,39 +1126,42 @@ const ProjectDetails = () => {
                 <div className="flex-1 flex flex-col overflow-visible">
                     {/* 3D Controls Bar - Only show when in 3D view */}
                     {projectDetails.is3DView && (
-                        <div className="mx-6 mt-6 mb-2">
-                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-4">
-                                        <h3 className="text-lg font-semibold text-gray-900">3D View Controls</h3>
+                        <div className="mx-3 sm:mx-6 mt-3 sm:mt-6 mb-2">
+                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">3D View Controls</h3>
                                         <button
                                             onClick={projectDetails.handleViewToggle}
-                                            className="flex items-center px-4 py-2 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-all duration-200 shadow-lg"
+                                            className="flex items-center px-3 sm:px-4 py-2 rounded-lg bg-green-600 text-white text-sm sm:text-base font-medium hover:bg-green-700 transition-all duration-200 shadow-lg"
                                         >
                                             {projectDetails.isInteriorView ? (
                                                 <>
-                                                    <FaEye className="mr-2" />
-                                                    Switch to Exterior
+                                                    <FaEye className="mr-1 sm:mr-2" />
+                                                    <span className="hidden sm:inline">Switch to Exterior</span>
+                                                    <span className="sm:hidden">Exterior</span>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <FaEyeSlash className="mr-2" />
-                                                    Switch to Interior
+                                                    <FaEyeSlash className="mr-1 sm:mr-2" />
+                                                    <span className="hidden sm:inline">Switch to Interior</span>
+                                                    <span className="sm:hidden">Interior</span>
                                                 </>
                                             )}
                                         </button>
                                         <button
                                             onClick={projectDetails.togglePanelLines}
-                                            className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-lg ${
+                                            className={`flex items-center px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 shadow-lg ${
                                                 projectDetails.showPanelLines 
                                                     ? 'bg-blue-600 text-white hover:bg-blue-700' 
                                                     : 'bg-gray-600 text-white hover:bg-gray-700'
                                             }`}
                                         >
-                                            {projectDetails.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines'}
+                                            <span className="hidden sm:inline">{projectDetails.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines'}</span>
+                                            <span className="sm:hidden">{projectDetails.showPanelLines ? 'Hide' : 'Show'}</span>
                                         </button>
                                     </div>
-                                    <div className="flex items-center space-x-4">
+                                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
                                         <div className="text-sm text-gray-600">
                                             <span className="font-medium">View:</span> {projectDetails.isInteriorView ? 'Interior' : 'Exterior'}
                                         </div>
@@ -1141,30 +1176,31 @@ const ProjectDetails = () => {
                     )}
                     
                     {/* Canvas Container */}
-                    <div className="bg-white m-6 rounded-lg shadow-sm border border-gray-200 canvas-container">
+                    <div className="bg-white m-3 sm:m-6 rounded-lg shadow-sm border border-gray-200 canvas-container">
                         {projectDetails.is3DView ? (
-                            <div id="three-canvas-container" className="w-full h-[600px] bg-gray-50 active" />
+                            <div id="three-canvas-container" className="w-full h-[400px] sm:h-[600px] bg-gray-50 active" />
                         ) : (
                             <div className="flex flex-col">
                                 {/* Tab Navigation */}
-                                <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex space-x-1">
+                                <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                        <div className="flex flex-wrap gap-1 sm:space-x-1">
                                             <button
                                                 onClick={() => projectDetails.setCurrentView('wall-plan')}
-                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
                                                     projectDetails.currentView === 'wall-plan'
                                                         ? 'bg-blue-600 text-white shadow-md'
                                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                                 }`}
                                             >
-                                                <FaSquare className="inline mr-2" />
-                                                Wall Plan
+                                                <FaSquare className="inline mr-1 sm:mr-2" />
+                                                <span className="hidden sm:inline">Wall Plan</span>
+                                                <span className="sm:hidden">Wall</span>
                                             </button>
                                             <button
                                                 onClick={() => projectDetails.setCurrentView('ceiling-plan')}
                                                 disabled={!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0}
-                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
                                                     (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0)
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : projectDetails.currentView === 'ceiling-plan'
@@ -1172,8 +1208,9 @@ const ProjectDetails = () => {
                                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                                 }`}
                                             >
-                                                <FaLayerGroup className="inline mr-2" />
-                                                Ceiling Plan
+                                                <FaLayerGroup className="inline mr-1 sm:mr-2" />
+                                                <span className="hidden sm:inline">Ceiling Plan</span>
+                                                <span className="sm:hidden">Ceiling</span>
                                             </button>
                                             <button
                                                 onClick={() => projectDetails.setCurrentView('floor-plan')}
@@ -1182,7 +1219,7 @@ const ProjectDetails = () => {
                                                     projectDetails.filteredRooms.length === 0 ||
                                                     !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel')
                                                 }
-                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
                                                     (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0 || !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel'))
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : projectDetails.currentView === 'floor-plan'
@@ -1190,29 +1227,32 @@ const ProjectDetails = () => {
                                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                                 }`}
                                             >
-                                                <FaSquare className="inline mr-2" />
-                                                Floor Plan
+                                                <FaSquare className="inline mr-1 sm:mr-2" />
+                                                <span className="hidden sm:inline">Floor Plan</span>
+                                                <span className="sm:hidden">Floor</span>
                                                 {projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 && (
-                                                    <span className="ml-1 text-xs">
+                                                    <span className="ml-1 text-xs hidden sm:inline">
                                                         ({projectDetails.filteredRooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel').length} panel rooms)
                                                     </span>
                                                 )}
                                             </button>
                                             <button
                                                 onClick={() => projectDetails.setCurrentView('installation-estimator')}
-                                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
                                                     projectDetails.currentView === 'installation-estimator'
                                                         ? 'bg-orange-600 text-white shadow-md'
                                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                                 }`}
                                             >
-                                                <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <svg className="w-4 h-4 inline mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                 </svg>
-                                                Project Summary & Installation Time
+                                                <span className="hidden lg:inline">Project Summary & Installation Time</span>
+                                                <span className="lg:hidden hidden sm:inline">Summary</span>
+                                                <span className="sm:hidden">Time</span>
                                             </button>
                                         </div>
-                                        <div className="text-sm text-gray-600">
+                                        <div className="text-xs sm:text-sm text-gray-600">
                                             {projectDetails.currentView === 'wall-plan' 
                                                 ? ''
                                                 : projectDetails.currentView === 'ceiling-plan'
@@ -1316,7 +1356,7 @@ const ProjectDetails = () => {
 
             {/* Modals and Overlays */}
             {projectDetails.showStoreyWizard && !projectDetails.isStoreyWizardMinimized && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000]">
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                             <div>
