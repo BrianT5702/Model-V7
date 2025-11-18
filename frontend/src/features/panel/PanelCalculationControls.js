@@ -503,21 +503,21 @@ const PanelCalculationControls = ({
     };
 
     return (
-        <div className="w-full mt-4 material-list-container">
-            <div className="flex gap-4 mb-4">
+        <div className="w-full mt-2 sm:mt-4 material-list-container">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-3 sm:mb-4">
                 <button
                     onClick={handleButtonClick}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap"
                 >
-                    {showMaterialDetails ? 'Hide Material Needed' : 'View Material Needed'}
+                    {showMaterialDetails ? 'Hide Material' : 'View Material'}
                 </button>
                 {/* Show Panel Details button only when material details are visible */}
                 {showMaterialDetails && calculatedPanels && (
                     <button
                         onClick={() => setShowTable(!showTable)}
-                        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                        className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-green-600 text-white rounded hover:bg-green-700 whitespace-nowrap"
                     >
-                        {showTable ? 'Hide Panel Details' : 'Show Panel Details'}
+                        {showTable ? 'Hide Details' : 'Show Details'}
                     </button>
                 )}
                 {/* Export removed in wall plan tab per requirements */}
@@ -526,8 +526,8 @@ const PanelCalculationControls = ({
             {/* Export UI removed */}
 
             {showMaterialDetails && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <h3 className="text-lg font-semibold mb-2 text-gray-900">Material Analysis</h3>
+                <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <h3 className="text-base sm:text-lg font-semibold mb-2 text-gray-900">Material Analysis</h3>
                     
                     {!walls || walls.length === 0 ? (
                         <div className="text-center py-4 text-gray-500">
@@ -539,7 +539,7 @@ const PanelCalculationControls = ({
                             <p className="mt-2 text-gray-600">Calculating material requirements...</p>
                         </div>
                     ) : panelAnalysis ? (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
                         <div className="p-2 bg-white rounded shadow">
                             <div className="text-sm text-gray-600">Full Panels</div>
                             <div className="text-xl font-bold">

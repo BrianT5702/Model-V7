@@ -1134,7 +1134,197 @@ export function drawWalls({
     // placedLabels and allLabels are passed as parameters
     const allPanelLabels = [];
     
-    // First pass: draw all dashed lines and collect label info
+    // First pass: Calculate all wall lines and store them
+    const wallLinesMap = new Map(); // Store line1 and line2 for each wall
+    
+    walls.forEach((wall) => {
+        let { line1, line2 } = calculateOffsetPoints(
+            wall.start_x,
+            wall.start_y,
+            wall.end_x,
+            wall.end_y,
+            FIXED_GAP,
+            center,
+            scaleFactor
+        );
+        wallLinesMap.set(wall.id, { line1, line2, wall });
+    });
+    
+    // Second pass: Extend lines to intersections (before 45° cuts)
+    // This ensures perfect alignment at intersections
+    intersections.forEach(inter => {
+        const tolerance = SNAP_THRESHOLD / currentScaleFactor;
+        
+        // Find all walls that meet at this intersection
+        const wallsAtIntersection = [];
+        
+        walls.forEach(wall => {
+            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
+            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
+            
+            if (isAtStart || isAtEnd) {
+                const wallData = wallLinesMap.get(wall.id);
+                if (wallData) {
+                    wallsAtIntersection.push({
+                        wall,
+                        wallData,
+                        isAtStart,
+                        isAtEnd
+                    });
+                }
+            }
+        });
+        
+        // Only process vertical-horizontal intersections (2 walls)
+        if (wallsAtIntersection.length === 2) {
+            const [wall1Data, wall2Data] = wallsAtIntersection;
+            const wall1 = wall1Data.wall;
+            const wall2 = wall2Data.wall;
+            
+            // Determine if one is vertical and one is horizontal
+            const wall1Dx = wall1.end_x - wall1.start_x;
+            const wall1Dy = wall1.end_y - wall1.start_y;
+            const wall2Dx = wall2.end_x - wall2.start_x;
+            const wall2Dy = wall2.end_y - wall2.start_y;
+            
+            const wall1IsVertical = Math.abs(wall1Dx) < Math.abs(wall1Dy);
+            const wall2IsVertical = Math.abs(wall2Dx) < Math.abs(wall2Dy);
+            
+            // Only process if one is vertical and one is horizontal
+            if (wall1IsVertical !== wall2IsVertical) {
+                const verticalWall = wall1IsVertical ? wall1Data : wall2Data;
+                const horizontalWall = wall1IsVertical ? wall2Data : wall1Data;
+                
+                const vWall = verticalWall.wall;
+                const hWall = horizontalWall.wall;
+                const vLines = verticalWall.wallData;
+                const hLines = horizontalWall.wallData;
+                
+                // Determine which end of vertical wall is at intersection
+                const vIsAtStart = verticalWall.isAtStart;
+                
+                // Determine which end of horizontal wall is at intersection
+                const hIsAtStart = horizontalWall.isAtStart;
+                
+                // For vertical wall: extend to upper/lower line of horizontal
+                // Determine which line of horizontal is upper and which is lower
+                const hLine1Y = (hLines.line1[0].y + hLines.line1[1].y) / 2;
+                const hLine2Y = (hLines.line2[0].y + hLines.line2[1].y) / 2;
+                const hUpperLine = hLine1Y < hLine2Y ? hLines.line1 : hLines.line2;
+                const hLowerLine = hLine1Y < hLine2Y ? hLines.line2 : hLines.line1;
+                
+                // Determine which end of vertical is joining (top or bottom)
+                // Top = smaller Y, Bottom = larger Y
+                const vEndpointY = vIsAtStart ? vWall.start_y : vWall.end_y;
+                const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
+                const isTopEnd = vEndpointY < vOtherY;
+                
+                // Calculate intersection point on horizontal line
+                // Project intersection point onto horizontal line to get exact Y coordinate
+                // Get Y coordinate from the appropriate horizontal line at intersection X
+                let targetY;
+                if (isTopEnd) {
+                    // Top end -> extend to upper line
+                    // Get Y from upper line at intersection X
+                    const hUpperStartX = hUpperLine[0].x;
+                    const hUpperStartY = hUpperLine[0].y;
+                    const hUpperEndX = hUpperLine[1].x;
+                    const hUpperEndY = hUpperLine[1].y;
+                    const hUpperDx = hUpperEndX - hUpperStartX;
+                    const hUpperDy = hUpperEndY - hUpperStartY;
+                    if (Math.abs(hUpperDx) > 0.001) {
+                        const t = (inter.x - hUpperStartX) / hUpperDx;
+                        targetY = hUpperStartY + t * hUpperDy;
+                    } else {
+                        targetY = hUpperStartY; // Vertical line, use start Y
+                    }
+                } else {
+                    // Bottom end -> extend to lower line
+                    // Get Y from lower line at intersection X
+                    const hLowerStartX = hLowerLine[0].x;
+                    const hLowerStartY = hLowerLine[0].y;
+                    const hLowerEndX = hLowerLine[1].x;
+                    const hLowerEndY = hLowerLine[1].y;
+                    const hLowerDx = hLowerEndX - hLowerStartX;
+                    const hLowerDy = hLowerEndY - hLowerStartY;
+                    if (Math.abs(hLowerDx) > 0.001) {
+                        const t = (inter.x - hLowerStartX) / hLowerDx;
+                        targetY = hLowerStartY + t * hLowerDy;
+                    } else {
+                        targetY = hLowerStartY; // Vertical line, use start Y
+                    }
+                }
+                
+                // Extend vertical wall lines to horizontal wall's line
+                if (vIsAtStart) {
+                    vLines.line1[0].y = targetY;
+                    vLines.line2[0].y = targetY;
+                } else {
+                    vLines.line1[1].y = targetY;
+                    vLines.line2[1].y = targetY;
+                }
+                
+                // For horizontal wall: extend to leftmost/rightmost line of vertical
+                // Determine which line of vertical is leftmost and which is rightmost
+                const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
+                const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
+                const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
+                const vRightmostLine = vLine1X < vLine2X ? vLines.line2 : vLines.line1;
+                
+                // Determine which SIDE of the vertical wall the horizontal wall is on
+                // Compare horizontal wall midpoint X with vertical wall X at intersection
+                const hMidX = (hWall.start_x + hWall.end_x) / 2;
+                const vIntersectionX = inter.x;
+                const isHorizontalOnLeft = hMidX < vIntersectionX;
+                
+                // Calculate intersection point on vertical line
+                // Project intersection point onto vertical line to get exact X coordinate
+                let targetX;
+                if (isHorizontalOnLeft) {
+                    // Horizontal on LEFT of vertical -> extend to RIGHTMOST line (opposite side)
+                    // Get X from rightmost line at intersection Y
+                    const vRightStartX = vRightmostLine[0].x;
+                    const vRightStartY = vRightmostLine[0].y;
+                    const vRightEndX = vRightmostLine[1].x;
+                    const vRightEndY = vRightmostLine[1].y;
+                    const vRightDx = vRightEndX - vRightStartX;
+                    const vRightDy = vRightEndY - vRightStartY;
+                    if (Math.abs(vRightDy) > 0.001) {
+                        const t = (inter.y - vRightStartY) / vRightDy;
+                        targetX = vRightStartX + t * vRightDx;
+                    } else {
+                        targetX = vRightStartX; // Horizontal line, use start X
+                    }
+                } else {
+                    // Horizontal on RIGHT of vertical -> extend to LEFTMOST line (opposite side)
+                    // Get X from leftmost line at intersection Y
+                    const vLeftStartX = vLeftmostLine[0].x;
+                    const vLeftStartY = vLeftmostLine[0].y;
+                    const vLeftEndX = vLeftmostLine[1].x;
+                    const vLeftEndY = vLeftmostLine[1].y;
+                    const vLeftDx = vLeftEndX - vLeftStartX;
+                    const vLeftDy = vLeftEndY - vLeftStartY;
+                    if (Math.abs(vLeftDy) > 0.001) {
+                        const t = (inter.y - vLeftStartY) / vLeftDy;
+                        targetX = vLeftStartX + t * vLeftDx;
+                    } else {
+                        targetX = vLeftStartX; // Horizontal line, use start X
+                    }
+                }
+                
+                // Extend horizontal wall lines to vertical wall's line
+                if (hIsAtStart) {
+                    hLines.line1[0].x = targetX;
+                    hLines.line2[0].x = targetX;
+                } else {
+                    hLines.line1[1].x = targetX;
+                    hLines.line2[1].x = targetX;
+                }
+            }
+        }
+    });
+    
+    // Third pass: Apply 45° cuts and draw walls
     walls.forEach((wall, index) => {
         const highlight = highlightWalls.find(h => h.id === wall.id);
         
@@ -1167,15 +1357,13 @@ export function drawWalls({
             hoveredWall !== wall.id
             ? baseInnerColor
             : null;
-        let { line1, line2 } = calculateOffsetPoints(
-            wall.start_x,
-            wall.start_y,
-            wall.end_x,
-            wall.end_y,
-            FIXED_GAP,
-            center,
-            scaleFactor
-        );
+        // Get pre-calculated lines (already extended to intersections)
+        let { line1, line2 } = wallLinesMap.get(wall.id);
+        
+        // Make copies for modification (45° cuts will modify these)
+        line1 = [...line1.map(p => ({ ...p }))];
+        line2 = [...line2.map(p => ({ ...p }))];
+        
         // Check for 45° cuts at EACH END separately
         // We need to determine which line (left or right) to shorten at each end
         const wallDx = wall.end_x - wall.start_x;
@@ -1331,118 +1519,6 @@ export function drawWalls({
                 }
             }
         }
-        
-        // Auto-extend wall lines at joints to ensure connectivity (visual only, no data update)
-        // This fixes gaps that occur due to flip logic
-        const gapTolerance = 0.5; // 0.5mm tolerance for detecting gaps
-        const maxExtension = wall.thickness * 2; // Maximum extension distance (2x wall thickness)
-        
-        // Check start endpoint
-        const startIntersections = intersections.filter(inter => {
-            const dx = inter.x - wall.start_x;
-            const dy = inter.y - wall.start_y;
-            return Math.hypot(dx, dy) < SNAP_THRESHOLD / currentScaleFactor;
-        });
-        
-        if (startIntersections.length > 0) {
-            // Find the closest intersection point
-            let closestInter = null;
-            let minDist = Infinity;
-            startIntersections.forEach(inter => {
-                const dist = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y);
-                if (dist < minDist) {
-                    minDist = dist;
-                    closestInter = inter;
-                }
-            });
-            
-            if (closestInter) {
-                if (minDist > gapTolerance && minDist <= maxExtension) {
-                    // There's a gap within extension limit - extend lines along wall direction to reach intersection
-                    // Calculate extension direction (from wall start toward intersection)
-                    const extendDirX = (closestInter.x - wall.start_x) / minDist;
-                    const extendDirY = (closestInter.y - wall.start_y) / minDist;
-                    
-                    // Calculate the offset vector between line1 and line2 at start
-                    const offsetX = line2[0].x - line1[0].x;
-                    const offsetY = line2[0].y - line1[0].y;
-                    
-                    // Extend line1 to intersection point
-                    line1[0].x = closestInter.x;
-                    line1[0].y = closestInter.y;
-                    
-                    // Extend line2 maintaining the same offset from line1
-                    line2[0].x = closestInter.x + offsetX;
-                    line2[0].y = closestInter.y + offsetY;
-                } else if (minDist <= gapTolerance) {
-                    // Very small gap - extend slightly to ensure connectivity while maintaining offset
-                    const extendDirX = (closestInter.x - wall.start_x) / (minDist || 1);
-                    const extendDirY = (closestInter.y - wall.start_y) / (minDist || 1);
-                    const offsetX = line2[0].x - line1[0].x;
-                    const offsetY = line2[0].y - line1[0].y;
-                    
-                    line1[0].x = closestInter.x;
-                    line1[0].y = closestInter.y;
-                    line2[0].x = closestInter.x + offsetX;
-                    line2[0].y = closestInter.y + offsetY;
-                }
-                // If minDist > maxExtension, don't extend (gap is too large, might be intentional)
-            }
-        }
-        
-        // Check end endpoint
-        const endIntersections = intersections.filter(inter => {
-            const dx = inter.x - wall.end_x;
-            const dy = inter.y - wall.end_y;
-            return Math.hypot(dx, dy) < SNAP_THRESHOLD / currentScaleFactor;
-        });
-        
-        if (endIntersections.length > 0) {
-            // Find the closest intersection point
-            let closestInter = null;
-            let minDist = Infinity;
-            endIntersections.forEach(inter => {
-                const dist = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y);
-                if (dist < minDist) {
-                    minDist = dist;
-                    closestInter = inter;
-                }
-            });
-            
-            if (closestInter) {
-                if (minDist > gapTolerance && minDist <= maxExtension) {
-                    // There's a gap within extension limit - extend lines along wall direction to reach intersection
-                    // Calculate extension direction (from wall end toward intersection)
-                    const extendDirX = (closestInter.x - wall.end_x) / minDist;
-                    const extendDirY = (closestInter.y - wall.end_y) / minDist;
-                    
-                    // Calculate the offset vector between line1 and line2 at end
-                    const offsetX = line2[1].x - line1[1].x;
-                    const offsetY = line2[1].y - line1[1].y;
-                    
-                    // Extend line1 to intersection point
-                    line1[1].x = closestInter.x;
-                    line1[1].y = closestInter.y;
-                    
-                    // Extend line2 maintaining the same offset from line1
-                    line2[1].x = closestInter.x + offsetX;
-                    line2[1].y = closestInter.y + offsetY;
-                } else if (minDist <= gapTolerance) {
-                    // Very small gap - extend slightly to ensure connectivity while maintaining offset
-                    const extendDirX = (closestInter.x - wall.end_x) / (minDist || 1);
-                    const extendDirY = (closestInter.y - wall.end_y) / (minDist || 1);
-                    const offsetX = line2[1].x - line1[1].x;
-                    const offsetY = line2[1].y - line1[1].y;
-                    
-                    line1[1].x = closestInter.x;
-                    line1[1].y = closestInter.y;
-                    line2[1].x = closestInter.x + offsetX;
-                    line2[1].y = closestInter.y + offsetY;
-                }
-                // If minDist > maxExtension, don't extend (gap is too large, might be intentional)
-            }
-        }
-        
         wall._line1 = line1;
         wall._line2 = line2;
         drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor, [], innerColor);

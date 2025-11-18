@@ -303,21 +303,13 @@ export function createWallMesh(instance, wall) {
             const bisectorLen = Math.hypot(bisector.x, bisector.z);
             const bisectorNorm = { x: bisector.x / bisectorLen, z: bisector.z / bisectorLen };
             
-            // Calculate which side the joining wall is on (left or right relative to wall direction)
-            // Cross product: wallDir × joinDir (in 2D: wallDir.x * joinDir.z - wallDir.z * joinDir.x)
-            // Positive = joining wall is on LEFT side, Negative = joining wall is on RIGHT side
-            const crossProduct = wallNorm.x * joinNorm.z - wallNorm.z * joinNorm.x;
-            const isOnLeftSide = crossProduct > 0;
-            
             // Check if joint is at start (with tolerance)
             if (nearlyEqual(jointX, finalStartX) && nearlyEqual(jointZ, finalStartZ)) {
               hasStart45 = true;
               startJointInfo = {
                 otherWall,
                 bisector: bisectorNorm,
-                jointPoint: { x: jointX, z: jointZ },
-                isOnLeftSide: isOnLeftSide,
-                joinVec: joinNorm
+                jointPoint: { x: jointX, z: jointZ }
               };
               // console.log('[45° Cut Debug] Found start 45° cut for wall:', id);
             }
@@ -327,9 +319,7 @@ export function createWallMesh(instance, wall) {
               endJointInfo = {
                 otherWall,
                 bisector: bisectorNorm,
-                jointPoint: { x: jointX, z: jointZ },
-                isOnLeftSide: isOnLeftSide,
-                joinVec: joinNorm
+                jointPoint: { x: jointX, z: jointZ }
               };
               // console.log('[45° Cut Debug] Found end 45° cut for wall:', id);
             }
@@ -412,7 +402,7 @@ export function createWallMesh(instance, wall) {
   // Apply 45° cuts using boolean operations if needed
   if (hasStart45 || hasEnd45) {
     //console.log('[45° Cut Debug] About to apply boolean operations:', { hasStart45, hasEnd45, finalWallLength, wallHeight, wallThickness });
-    wallMesh = apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, finalWallLength, wallHeight, wallThickness, startJointInfo, endJointInfo, finalStartX, finalStartZ, finalEndX, finalEndZ, modelCenter, scale);
+    wallMesh = apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, finalWallLength, wallHeight, wallThickness);
   } else {
     //console.log('[45° Cut Debug] No 45° cuts detected for this wall');
   }
@@ -445,7 +435,7 @@ export function createWallMesh(instance, wall) {
   return wallMesh;
 }
 
-function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength, wallHeight, wallThickness, startJointInfo, endJointInfo, finalStartX, finalStartZ, finalEndX, finalEndZ, modelCenter, scale) {
+function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength, wallHeight, wallThickness) {
   const pos = wallMesh.geometry.attributes.position;
   const arr = pos.array;
   const vcount = pos.count;
@@ -460,33 +450,6 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
   const thickness = Math.max(1e-8, maxZ - minZ);
   const epsEndX = Math.max(1e-6 * lenX, 1e-5);
 
-  // Calculate wall direction vector (from start to end)
-  const wallDx = finalEndX - finalStartX;
-  const wallDz = finalEndZ - finalStartZ;
-  const wallLen = Math.hypot(wallDx, wallDz);
-  const wallDirX = wallLen > 0 ? wallDx / wallLen : 0;
-  const wallDirZ = wallLen > 0 ? wallDz / wallLen : 0;
-
-  // Determine cut direction for start and end based on which side joining wall is on
-  // For 45° cuts: if joining wall is on LEFT side, cut angles one way; if on RIGHT side, angles opposite way
-  let startCutDirection = 1; // +1 = push forward (extend), -1 = pull back (retract)
-  let endCutDirection = 1;   // +1 = push forward (extend), -1 = pull back (retract)
-
-  if (hasStart45 && startJointInfo) {
-    // Use the stored isOnLeftSide information from joint detection
-    // If joining wall is on LEFT side: cut should extend forward (positive direction)
-    // If joining wall is on RIGHT side: cut should retract backward (negative direction)
-    // However, for start end, we need to consider: if on left, we push forward; if on right, we pull back
-    startCutDirection = startJointInfo.isOnLeftSide ? 1 : -1;
-  }
-
-  if (hasEnd45 && endJointInfo) {
-    // For end cut: opposite logic from start
-    // If joining wall is on LEFT side: cut should retract backward (negative direction)
-    // If joining wall is on RIGHT side: cut should extend forward (positive direction)
-    endCutDirection = endJointInfo.isOnLeftSide ? -1 : 1;
-  }
-
   for (let i = 0; i < vcount; i++) {
     const ix = i * 3;
     const x = arr[ix];
@@ -496,14 +459,14 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
     let t = (z - minZ) / thickness;
     if (t < 0) t = 0; else if (t > 1) t = 1;
 
-    // End cut: direction depends on which side joining wall is on
+    // End cut: pull inner back along X up to thickness
     if (hasEnd45 && Math.abs(x - maxX) < epsEndX) {
-      arr[ix] = x + endCutDirection * t * thickness;
+      arr[ix] = x - t * thickness;
     }
 
-    // Start cut: direction depends on which side joining wall is on
+    // Start cut: push inner forward along X up to thickness
     if (hasStart45 && Math.abs(x - minX) < epsEndX) {
-      arr[ix] = x + startCutDirection * t * thickness;
+      arr[ix] = x + t * thickness;
     }
   }
 
