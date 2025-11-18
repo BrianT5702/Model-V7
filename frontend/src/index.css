@@ -18,7 +18,7 @@ code {
 
 /* Canvas container expansion */
 .canvas-container {
-  min-height: 400px;
+  min-height: 500px;
   height: auto;
   overflow: visible;
 }
