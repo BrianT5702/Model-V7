@@ -272,5 +272,8 @@ This creates a smooth, predictable zooming experience where text remains readabl
 
 
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> parent of a25a7b6e (Fixed the gaps in wall plan drawing)

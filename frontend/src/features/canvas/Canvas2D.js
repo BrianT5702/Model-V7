@@ -85,8 +85,7 @@ const Canvas2D = ({
     const DEFAULT_CANVAS_WIDTH = 1000;
     const DEFAULT_CANVAS_HEIGHT = 650;
     const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
-    // Increase canvas height ratio on mobile for better visibility
-    const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
+    const MAX_CANVAS_HEIGHT_RATIO = 0.7;
     // Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
     const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
     const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
@@ -196,9 +195,8 @@ const Canvas2D = ({
         if (!canvas) return;
         
         // Get the current view center (where the user is currently looking)
-        // Use display dimensions, not scaled dimensions
-        const canvasCenterX = canvasSize.width / 2;
-        const canvasCenterY = canvasSize.height / 2;
+        const canvasCenterX = canvas.width / 2;
+        const canvasCenterY = canvas.height / 2;
         
         // Calculate the current view center in model coordinates
         const currentViewCenterX = (canvasCenterX - offsetX.current) / scaleFactor.current;
@@ -233,9 +231,8 @@ const Canvas2D = ({
         const canvas = canvasRef.current;
         if (!canvas) return;
         
-        // Use display dimensions, not scaled dimensions
-        const canvasCenterX = canvasSize.width / 2;
-        const canvasCenterY = canvasSize.height / 2;
+        const canvasCenterX = canvas.width / 2;
+        const canvasCenterY = canvas.height / 2;
         
         const scaleRatio = newScale / scaleFactor.current;
         
@@ -1794,22 +1791,8 @@ const Canvas2D = ({
         const canvas = canvasRef.current;
         if (!canvas) return;
         const context = canvas.getContext('2d');
-        
-        // Handle high DPI displays to prevent blurriness
-        const dpr = window.devicePixelRatio || 1;
-        const displayWidth = canvasSize.width;
-        const displayHeight = canvasSize.height;
-        
-        // Set the internal size to the display size * device pixel ratio
-        canvas.width = displayWidth * dpr;
-        canvas.height = displayHeight * dpr;
-        
-        // Scale the context to match device pixel ratio
-        context.scale(dpr, dpr);
-        
-        // Set the CSS size to the display size
-        canvas.style.width = displayWidth + 'px';
-        canvas.style.height = displayHeight + 'px';
+        canvas.width = canvasSize.width;
+        canvas.height = canvasSize.height;
 
         // === Restore original scale/offset calculation ===
         // Find bounding box of all wall endpoints
@@ -1822,10 +1805,9 @@ const Canvas2D = ({
         const wallHeight = maxY - minY || 1;
 
         const padding = 50;
-        // Use display dimensions (already declared above) for calculations
         const sf = Math.min(
-            1.2*(displayWidth - 4 * padding) / wallWidth,
-            1.2*(displayHeight - 4 * padding) / wallHeight
+            1.2*(canvas.width - 4 * padding) / wallWidth,
+            1.2*(canvas.height - 4 * padding) / wallHeight
         );
 
         // Only set the scale if user hasn't manually zoomed
@@ -1837,15 +1819,14 @@ const Canvas2D = ({
 
         // Only reset offset if user hasn't manually dragged the canvas or zoomed
         if (!isDraggingCanvas.current && !isZoomed.current) {
-            offsetX.current = (displayWidth - wallWidth * sf) / 2 - minX * sf;
-            offsetY.current = (displayHeight - wallHeight * sf) / 2 - minY * sf;
+            offsetX.current = (canvas.width - wallWidth * sf) / 2 - minX * sf;
+            offsetY.current = (canvas.height - wallHeight * sf) / 2 - minY * sf;
         }
         // === End scale/offset calculation ===
 
-        // Clear using display dimensions (context is already scaled)
-        context.clearRect(0, 0, displayWidth, displayHeight);
-        // Draw grid using display dimensions
-        drawGrid(context, displayWidth, displayHeight, gridSize, isDrawing);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        // Draw grid
+        drawGrid(context, canvas.width, canvas.height, gridSize, isDrawing);
         
         // Initialize label tracking arrays for collision detection
         const placedLabels = [];
@@ -2565,19 +2546,19 @@ const Canvas2D = ({
                     </div>
 
                     {/* View Material Needed Section - Matching Ceiling Panel List Structure */}
-                    <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-white rounded-lg shadow-md border border-gray-200">
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-800">View Material Needed</h3>
+                    <div className="mt-6 p-4 bg-white rounded-lg shadow-md border border-gray-200">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">View Material Needed</h3>
                             <button
                                 onClick={() => setShowMaterialNeeded(!showMaterialNeeded)}
-                                className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors whitespace-nowrap"
+                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                             >
-                                {showMaterialNeeded ? 'Hide Details' : 'Show Details'}
+                                {showMaterialNeeded ? 'Hide Material Details' : 'Show Material Details'}
                             </button>
                         </div>
 
                         {showMaterialNeeded && (
-                            <div className="space-y-3 sm:space-y-4">
+                            <div className="space-y-4">
                                 <PanelCalculationControls 
                                     walls={walls} 
                                     intersections={intersections}

@@ -253,5 +253,8 @@ All three use the same calculation approach, with Floor/Ceiling having the 2.0 c
 
 
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> parent of a25a7b6e (Fixed the gaps in wall plan drawing)

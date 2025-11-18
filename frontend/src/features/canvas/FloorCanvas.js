@@ -6,8 +6,7 @@ import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabel
 const DEFAULT_CANVAS_WIDTH = 1000;
 const DEFAULT_CANVAS_HEIGHT = 650;
 const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
-// Increase canvas height ratio on mobile for better visibility
-const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
+const MAX_CANVAS_HEIGHT_RATIO = 0.7;
 // Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
 const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
 const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
@@ -238,21 +237,9 @@ const FloorCanvas = ({
 
         const ctx = canvas.getContext('2d');
         
-        // Handle high DPI displays to prevent blurriness
-        const dpr = window.devicePixelRatio || 1;
-        const displayWidth = CANVAS_WIDTH;
-        const displayHeight = CANVAS_HEIGHT;
-        
-        // Set the internal size to the display size * device pixel ratio
-        canvas.width = displayWidth * dpr;
-        canvas.height = displayHeight * dpr;
-        
-        // Scale the context to match device pixel ratio
-        ctx.scale(dpr, dpr);
-        
-        // Set the CSS size to the display size
-        canvas.style.width = displayWidth + 'px';
-        canvas.style.height = displayHeight + 'px';
+        // Set canvas dimensions
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
 
         // Calculate optimal scale and offset for all rooms
         calculateCanvasTransform();
