@@ -219,12 +219,30 @@ export default class ThreeCanvas {
 
     // Create window resize handler
     this.handleWindowResize = () => {
-      this.handleResize();
+      // Use requestAnimationFrame to throttle resize updates
+      requestAnimationFrame(() => {
+        this.handleResize();
+      });
+    };
+
+    // Create orientation change handler (for mobile devices)
+    this.handleOrientationChange = () => {
+      // Delay slightly to allow browser to finish orientation change
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          this.handleResize();
+        });
+      }, 100);
     };
 
     // Add window resize listener
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', this.handleWindowResize);
+      window.addEventListener('orientationchange', this.handleOrientationChange);
+      // Also listen for visual viewport changes (better for mobile)
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', this.handleWindowResize);
+      }
     }
 
     // Setup ResizeObserver for container size changes
@@ -253,6 +271,15 @@ export default class ThreeCanvas {
     if (this.handleWindowResize && typeof window !== 'undefined') {
       window.removeEventListener('resize', this.handleWindowResize);
       this.handleWindowResize = null;
+    }
+
+    // Remove orientation change listener
+    if (this.handleOrientationChange && typeof window !== 'undefined') {
+      window.removeEventListener('orientationchange', this.handleOrientationChange);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', this.handleWindowResize);
+      }
+      this.handleOrientationChange = null;
     }
 
     // Disconnect ResizeObserver

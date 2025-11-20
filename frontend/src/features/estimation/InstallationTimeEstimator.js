@@ -279,12 +279,23 @@ const InstallationTimeEstimator = ({
                 
                 let labelsDrawn = 0;
                 groundFloorRooms.forEach((room) => {
-                    // Get label position - use stored position or calculate center
+                    // Get label position - ALWAYS prioritize stored user position
                     let labelPos = null;
-                    if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
-                        labelPos = room.label_position;
+                    let usingStoredPosition = false;
+                    
+                    if (room.label_position && 
+                        room.label_position.x !== undefined && 
+                        room.label_position.y !== undefined &&
+                        !isNaN(Number(room.label_position.x)) &&
+                        !isNaN(Number(room.label_position.y))) {
+                        // Use the exact position the user placed
+                        labelPos = {
+                            x: Number(room.label_position.x),
+                            y: Number(room.label_position.y)
+                        };
+                        usingStoredPosition = true;
                     } else {
-                        // Calculate center if no label position
+                        // Only calculate center if no stored position exists
                         labelPos = calculateRoomCenter(room);
                         if (!labelPos) {
                             console.log(`⚠️ Room ${room.id} (${room.room_name}) has no label_position and no room_points, skipping`);
@@ -292,9 +303,17 @@ const InstallationTimeEstimator = ({
                         }
                     }
                     
-                    // Calculate canvas position
+                    // Calculate canvas position using the EXACT same formula as InteractiveRoomLabel
+                    // InteractiveRoomLabel uses: canvasX = currentPosition.x * scaleFactor + offsetX
                     const canvasX = labelPos.x * scaleFactor + offsetX;
                     const canvasY = labelPos.y * scaleFactor + offsetY;
+                    
+                    console.log(`📍 Drawing label for room ${room.id} (${room.room_name}):`, {
+                        usingStoredPosition,
+                        modelPosition: { x: labelPos.x.toFixed(2), y: labelPos.y.toFixed(2) },
+                        transform: { scaleFactor: scaleFactor.toFixed(4), offsetX: offsetX.toFixed(2), offsetY: offsetY.toFixed(2) },
+                        canvasPosition: { x: canvasX.toFixed(2), y: canvasY.toFixed(2) }
+                    });
                     
                     // Prepare text content (same format as InteractiveRoomLabel)
                     const name = room.room_name || 'Unnamed Room';
@@ -367,11 +386,26 @@ const InstallationTimeEstimator = ({
                             console.log(`🔍 Attempting to draw room labels for ${rooms.length} rooms`);
                             
                             // Get transform values from canvas data attributes (set by Canvas2D)
-                            const scaleFactor = parseFloat(canvas.getAttribute('data-scale-factor')) || 1;
-                            const offsetX = parseFloat(canvas.getAttribute('data-offset-x')) || 0;
-                            const offsetY = parseFloat(canvas.getAttribute('data-offset-y')) || 0;
+                            // These MUST match the values used by InteractiveRoomLabel for correct positioning
+                            const scaleFactorAttr = canvas.getAttribute('data-scale-factor');
+                            const offsetXAttr = canvas.getAttribute('data-offset-x');
+                            const offsetYAttr = canvas.getAttribute('data-offset-y');
                             
-                            console.log(`📐 Canvas transform values: scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
+                            const scaleFactor = scaleFactorAttr ? parseFloat(scaleFactorAttr) : 1;
+                            const offsetX = offsetXAttr ? parseFloat(offsetXAttr) : 0;
+                            const offsetY = offsetYAttr ? parseFloat(offsetYAttr) : 0;
+                            
+                            // Validate transform values
+                            if (isNaN(scaleFactor) || isNaN(offsetX) || isNaN(offsetY)) {
+                                console.warn(`⚠️ Invalid transform values from canvas: scaleFactor=${scaleFactorAttr}, offsetX=${offsetXAttr}, offsetY=${offsetYAttr}`);
+                            }
+                            
+                            console.log(`📐 Canvas transform values (from data attributes):`, {
+                                scaleFactor: scaleFactor.toFixed(4),
+                                offsetX: offsetX.toFixed(2),
+                                offsetY: offsetY.toFixed(2),
+                                raw: { scaleFactorAttr, offsetXAttr, offsetYAttr }
+                            });
                             
                             // Create a new canvas with room labels drawn
                             const labeledCanvas = document.createElement('canvas');

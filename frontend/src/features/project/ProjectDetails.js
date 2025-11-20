@@ -266,12 +266,23 @@ const ProjectDetails = () => {
             
             let labelsDrawn = 0;
             groundFloorRooms.forEach((room, index) => {
-                // Get label position - use stored position or calculate center
+                // Get label position - ALWAYS prioritize stored user position
                 let labelPos = null;
-                if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
-                    labelPos = room.label_position;
+                let usingStoredPosition = false;
+                
+                if (room.label_position && 
+                    room.label_position.x !== undefined && 
+                    room.label_position.y !== undefined &&
+                    !isNaN(Number(room.label_position.x)) &&
+                    !isNaN(Number(room.label_position.y))) {
+                    // Use the exact position the user placed
+                    labelPos = {
+                        x: Number(room.label_position.x),
+                        y: Number(room.label_position.y)
+                    };
+                    usingStoredPosition = true;
                 } else {
-                    // Calculate center if no label position
+                    // Only calculate center if no stored position exists
                     labelPos = calculateRoomCenter(room);
                     if (!labelPos) {
                         console.log(`⚠️ Room ${room.id} (${room.room_name}) has no label_position and no room_points, skipping`);
@@ -279,11 +290,17 @@ const ProjectDetails = () => {
                     }
                 }
                 
-                // Calculate canvas position
+                // Calculate canvas position using the EXACT same formula as InteractiveRoomLabel
+                // InteractiveRoomLabel uses: canvasX = currentPosition.x * scaleFactor + offsetX
                 const canvasX = labelPos.x * scaleFactor + offsetX;
                 const canvasY = labelPos.y * scaleFactor + offsetY;
                 
-                console.log(`📍 Drawing label for room ${room.id} (${room.room_name}) at canvas (${canvasX.toFixed(1)}, ${canvasY.toFixed(1)}) from model (${labelPos.x.toFixed(1)}, ${labelPos.y.toFixed(1)})`);
+                console.log(`📍 Drawing label for room ${room.id} (${room.room_name}):`, {
+                    usingStoredPosition,
+                    modelPosition: { x: labelPos.x.toFixed(2), y: labelPos.y.toFixed(2) },
+                    transform: { scaleFactor: scaleFactor.toFixed(4), offsetX: offsetX.toFixed(2), offsetY: offsetY.toFixed(2) },
+                    canvasPosition: { x: canvasX.toFixed(2), y: canvasY.toFixed(2) }
+                });
                 
                 // Prepare text content (same format as InteractiveRoomLabel)
                 const name = room.room_name || 'Unnamed Room';
@@ -364,18 +381,33 @@ const ProjectDetails = () => {
                         console.log(`🔍 Attempting to draw room labels for ${projectDetails.filteredRooms.length} rooms`);
                         
                         // Get transform values from canvas data attributes (set by Canvas2D)
-                        const scaleFactor = parseFloat(canvas.getAttribute('data-scale-factor')) || 1;
-                        const offsetX = parseFloat(canvas.getAttribute('data-offset-x')) || 0;
-                        const offsetY = parseFloat(canvas.getAttribute('data-offset-y')) || 0;
+                        // These MUST match the values used by InteractiveRoomLabel for correct positioning
+                        const scaleFactorAttr = canvas.getAttribute('data-scale-factor');
+                        const offsetXAttr = canvas.getAttribute('data-offset-x');
+                        const offsetYAttr = canvas.getAttribute('data-offset-y');
                         
-                        console.log(`📐 Canvas transform values: scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
-                        console.log(`📋 Rooms data:`, projectDetails.filteredRooms.map(r => ({
-                            id: r.id,
-                            name: r.room_name,
-                            hasLabelPosition: !!r.label_position,
-                            labelPosition: r.label_position,
-                            hasRoomPoints: !!(r.room_points && r.room_points.length > 0)
-                        })));
+                        const scaleFactor = scaleFactorAttr ? parseFloat(scaleFactorAttr) : 1;
+                        const offsetX = offsetXAttr ? parseFloat(offsetXAttr) : 0;
+                        const offsetY = offsetYAttr ? parseFloat(offsetYAttr) : 0;
+                        
+                        // Validate transform values
+                        if (isNaN(scaleFactor) || isNaN(offsetX) || isNaN(offsetY)) {
+                            console.warn(`⚠️ Invalid transform values from canvas: scaleFactor=${scaleFactorAttr}, offsetX=${offsetXAttr}, offsetY=${offsetYAttr}`);
+                        }
+                        
+                        console.log(`📐 Canvas transform values (from data attributes):`, {
+                            scaleFactor: scaleFactor.toFixed(4),
+                            offsetX: offsetX.toFixed(2),
+                            offsetY: offsetY.toFixed(2),
+                            raw: { scaleFactorAttr, offsetXAttr, offsetYAttr }
+                        });
+                        console.log(`📋 Rooms with label positions:`, projectDetails.filteredRooms
+                            .filter(r => r.label_position && r.label_position.x !== undefined && r.label_position.y !== undefined)
+                            .map(r => ({
+                                id: r.id,
+                                name: r.room_name,
+                                labelPosition: r.label_position
+                            })));
                         
                         // Create a new canvas with room labels drawn
                         const labeledCanvas = document.createElement('canvas');
@@ -451,12 +483,22 @@ const ProjectDetails = () => {
         const updateContainerHeight = () => {
             // Get the container element
             const container = document.getElementById('three-canvas-container');
-            if (!container) return;
+            if (!container) {
+                // Retry after a short delay if container not found
+                setTimeout(updateContainerHeight, 100);
+                return;
+            }
 
-            const containerWidth = container.clientWidth || window.innerWidth;
-            const maxHeight = typeof window !== 'undefined' 
-                ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO 
-                : 600;
+            // Get the parent container to calculate available space
+            const parentContainer = container.parentElement;
+            if (!parentContainer) return;
+
+            // Get available width from parent container
+            const containerWidth = parentContainer.clientWidth || container.clientWidth || window.innerWidth;
+            
+            // Calculate max height based on viewport
+            const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 600;
+            const maxHeight = viewportHeight * MAX_CANVAS_HEIGHT_RATIO;
             
             // Calculate height based on aspect ratio (similar to 2D view)
             // Default aspect ratio: 600/1000 = 0.6, but allow more height on mobile
@@ -465,42 +507,73 @@ const ProjectDetails = () => {
             const constrainedHeight = Math.min(preferredHeight, maxHeight);
             const finalHeight = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
 
-            // Mobile: 400px, Desktop: calculated or 600px max
-            const mobileHeight = window.innerWidth < 640 ? 400 : finalHeight;
-            const desktopHeight = Math.min(finalHeight, 600);
+            // Mobile: use calculated height (fills more space), Desktop: calculated or 600px max
+            const isMobile = window.innerWidth < 640;
+            const newHeight = isMobile 
+                ? Math.min(finalHeight, maxHeight) // On mobile, use more of the available space
+                : Math.min(finalHeight, 600); // On desktop, cap at 600px
 
-            setThreeDContainerHeight(window.innerWidth < 640 ? mobileHeight : desktopHeight);
+            // Only update if height actually changed (prevents infinite loops)
+            setThreeDContainerHeight(prevHeight => {
+                if (Math.abs(prevHeight - newHeight) < 1) {
+                    return prevHeight;
+                }
+                return newHeight;
+            });
         };
 
-        // Initial calculation
-        updateContainerHeight();
+        // Initial calculation with delay to ensure DOM is ready
+        const initialTimeout = setTimeout(updateContainerHeight, 50);
 
-        // Setup ResizeObserver for container
+        // Setup ResizeObserver for parent container (watches the canvas-container div)
         let resizeObserver = null;
-        const container = document.getElementById('three-canvas-container');
+        const parentContainer = document.querySelector('.canvas-container');
         
-        if (container && typeof ResizeObserver !== 'undefined') {
-            resizeObserver = new ResizeObserver(() => {
-                updateContainerHeight();
+        if (parentContainer && typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver((entries) => {
+                // Use requestAnimationFrame to throttle updates
+                requestAnimationFrame(() => {
+                    updateContainerHeight();
+                });
             });
-            resizeObserver.observe(container);
+            resizeObserver.observe(parentContainer);
         }
 
-        // Window resize listener
+        // Window resize and orientation change listeners
         const handleWindowResize = () => {
-            updateContainerHeight();
+            // Use requestAnimationFrame to throttle resize updates
+            requestAnimationFrame(() => {
+                updateContainerHeight();
+            });
+        };
+        
+        const handleOrientationChange = () => {
+            // Delay slightly to allow browser to finish orientation change
+            setTimeout(() => {
+                updateContainerHeight();
+            }, 100);
         };
         
         if (typeof window !== 'undefined') {
             window.addEventListener('resize', handleWindowResize);
+            window.addEventListener('orientationchange', handleOrientationChange);
+            // Also listen for visual viewport changes (better for mobile)
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', handleWindowResize);
+            }
         }
 
         return () => {
+            clearTimeout(initialTimeout);
             if (resizeObserver) {
                 resizeObserver.disconnect();
             }
             if (typeof window !== 'undefined') {
                 window.removeEventListener('resize', handleWindowResize);
+                window.removeEventListener('orientationchange', handleOrientationChange);
+                if (window.visualViewport) {
+                    window.visualViewport.removeEventListener('resize', handleWindowResize);
+                }
             }
         };
     }, [projectDetails.is3DView]);
@@ -1411,8 +1484,11 @@ const ProjectDetails = () => {
                         {projectDetails.is3DView ? (
                             <div 
                                 id="three-canvas-container" 
-                                className="w-full bg-gray-50 active" 
-                                style={{ height: `${threeDContainerHeight}px` }}
+                                className="w-full bg-gray-50 active relative overflow-hidden" 
+                                style={{ 
+                                    height: `${threeDContainerHeight}px`,
+                                    minHeight: `${MIN_CANVAS_HEIGHT}px`
+                                }}
                             />
                         ) : (
                             <div className="flex flex-col">
