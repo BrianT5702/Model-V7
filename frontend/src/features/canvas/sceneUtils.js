@@ -31,6 +31,34 @@ export function addControls(instance) {
   instance.controls = new OrbitControls(instance.camera, instance.renderer.domElement);
   instance.controls.maxDistance = 1500;
   instance.controls.minDistance = 10;
+  
+  // Enable touch controls for mobile devices (pinch-to-zoom, pan, rotate)
+  instance.controls.enableDamping = true;
+  instance.controls.dampingFactor = 0.05;
+  
+  // Enable all touch gestures
+  instance.controls.enablePan = true;
+  instance.controls.enableZoom = true;
+  instance.controls.enableRotate = true;
+  
+  // Touch-specific settings for mobile (pinch-to-zoom support)
+  // ONE touch = rotate, TWO touches = zoom (dolly) and pan
+  if (instance.THREE.TOUCH) {
+    instance.controls.touches = {
+      ONE: instance.THREE.TOUCH.ROTATE,
+      TWO: instance.THREE.TOUCH.DOLLY_PAN  // This enables pinch-to-zoom
+    };
+  }
+  
+  // Mouse button settings
+  if (instance.THREE.MOUSE) {
+    instance.controls.mouseButtons = {
+      LEFT: instance.THREE.MOUSE.ROTATE,
+      MIDDLE: instance.THREE.MOUSE.DOLLY,
+      RIGHT: instance.THREE.MOUSE.PAN
+    };
+  }
+  
   // Set the center of rotation to the model center if possible
   if (typeof instance.calculateModelCenter === 'function') {
     const center = instance.calculateModelCenter();

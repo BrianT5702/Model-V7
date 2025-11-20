@@ -597,13 +597,13 @@ const ProjectDetails = () => {
 
             {/* Header Section */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div className="flex-shrink-0">
                     {(!projectDetails.project || !projectDetails.project.name) ? (
-                                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Loading project...</h1>
+                                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Loading project...</h1>
                             ) : (
-                                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{projectDetails.project.name}</h1>
+                                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">{projectDetails.project.name}</h1>
                             )}
                             {projectDetails.project && (
                                 <p className="text-xs sm:text-sm text-gray-600 mt-1">
@@ -613,7 +613,7 @@ const ProjectDetails = () => {
                         </div>
                         
                         {/* View Toggle Buttons */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4">
                             <button
                                 onClick={() => {
                                     const newViewState = !projectDetails.is3DView;
@@ -1332,6 +1332,9 @@ const ProjectDetails = () => {
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                     <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                                         <h3 className="text-base sm:text-lg font-semibold text-gray-900">3D View Controls</h3>
+                                        <div className="text-xs sm:text-sm text-gray-500 hidden sm:block">
+                                            (Use pinch-to-zoom on mobile)
+                                        </div>
                                         <button
                                             onClick={projectDetails.handleViewToggle}
                                             className="flex items-center px-3 sm:px-4 py-2 rounded-lg bg-green-600 text-white text-sm sm:text-base font-medium hover:bg-green-700 transition-all duration-200 shadow-lg"

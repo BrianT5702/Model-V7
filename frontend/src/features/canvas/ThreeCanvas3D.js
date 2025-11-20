@@ -129,6 +129,12 @@ export default class ThreeCanvas {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.shadowMap.enabled = true;
     this.container.appendChild(this.renderer.domElement);
+    
+    // Prevent default touch behaviors that might interfere with OrbitControls
+    // This allows pinch-to-zoom to work properly
+    this.renderer.domElement.style.touchAction = 'none';
+    this.renderer.domElement.style.userSelect = 'none';
+    
     this.container.addEventListener('mousemove', (event) => onMouseMoveHandler(this, event));
     this.container.addEventListener('click', (event) => onCanvasClickHandler(this, event));
     this.doorButton.addEventListener('click', () => toggleDoorHandler(this));
@@ -139,6 +145,26 @@ export default class ThreeCanvas {
         toggleDoorHandler(this);
       }
     });
+    
+    // Prevent default touch behaviors on container for better touch control
+    this.container.addEventListener('touchstart', (e) => {
+      // Allow OrbitControls to handle touch events
+      // Only prevent default if it's not a two-finger gesture
+      if (e.touches.length === 1) {
+        // Single touch - allow default for potential scrolling
+        // But OrbitControls will still handle rotation
+      } else if (e.touches.length === 2) {
+        // Two-finger gesture (pinch) - prevent default to allow zoom
+        e.preventDefault();
+      }
+    }, { passive: false });
+    
+    this.container.addEventListener('touchmove', (e) => {
+      // Prevent default scrolling when using two fingers for zoom
+      if (e.touches.length === 2) {
+        e.preventDefault();
+      }
+    }, { passive: false });
   
     // Adjust initial camera position for better view
     this.camera.position.set(
