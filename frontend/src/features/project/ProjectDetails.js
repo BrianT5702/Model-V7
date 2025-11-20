@@ -155,6 +155,13 @@ const ProjectDetails = () => {
     // Modal state for image capture
     const [isCapturingImages, setIsCapturingImages] = useState(false);
     const [captureSuccess, setCaptureSuccess] = useState(false);
+    
+    // Dynamic 3D container height for mobile responsiveness (matching Canvas2D pattern)
+    const [threeDContainerHeight, setThreeDContainerHeight] = useState(600);
+    
+    // Mobile-specific constants (matching Canvas2D)
+    const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
+    const MIN_CANVAS_HEIGHT = 240;
 
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
@@ -409,6 +416,67 @@ const ProjectDetails = () => {
             setEditedWall(null);
         }
     }, [projectDetails.selectedWall, projectDetails.filteredWalls]);
+
+    // Calculate dynamic 3D container height for mobile responsiveness
+    useEffect(() => {
+        if (!projectDetails.is3DView) return;
+
+        const updateContainerHeight = () => {
+            // Get the container element
+            const container = document.getElementById('three-canvas-container');
+            if (!container) return;
+
+            const containerWidth = container.clientWidth || window.innerWidth;
+            const maxHeight = typeof window !== 'undefined' 
+                ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO 
+                : 600;
+            
+            // Calculate height based on aspect ratio (similar to 2D view)
+            // Default aspect ratio: 600/1000 = 0.6, but allow more height on mobile
+            const calculatedHeight = containerWidth * 0.6;
+            const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
+            const constrainedHeight = Math.min(preferredHeight, maxHeight);
+            const finalHeight = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
+
+            // Mobile: 400px, Desktop: calculated or 600px max
+            const mobileHeight = window.innerWidth < 640 ? 400 : finalHeight;
+            const desktopHeight = Math.min(finalHeight, 600);
+
+            setThreeDContainerHeight(window.innerWidth < 640 ? mobileHeight : desktopHeight);
+        };
+
+        // Initial calculation
+        updateContainerHeight();
+
+        // Setup ResizeObserver for container
+        let resizeObserver = null;
+        const container = document.getElementById('three-canvas-container');
+        
+        if (container && typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => {
+                updateContainerHeight();
+            });
+            resizeObserver.observe(container);
+        }
+
+        // Window resize listener
+        const handleWindowResize = () => {
+            updateContainerHeight();
+        };
+        
+        if (typeof window !== 'undefined') {
+            window.addEventListener('resize', handleWindowResize);
+        }
+
+        return () => {
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+            }
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('resize', handleWindowResize);
+            }
+        };
+    }, [projectDetails.is3DView]);
 
     return (
         <div className="min-h-screen bg-gray-50 project-details-container">
@@ -1311,7 +1379,11 @@ const ProjectDetails = () => {
                     {/* Canvas Container */}
                     <div className="bg-white m-3 sm:m-6 rounded-lg shadow-sm border border-gray-200 canvas-container">
                         {projectDetails.is3DView ? (
-                            <div id="three-canvas-container" className="w-full h-[400px] sm:h-[600px] bg-gray-50 active" />
+                            <div 
+                                id="three-canvas-container" 
+                                className="w-full bg-gray-50 active" 
+                                style={{ height: `${threeDContainerHeight}px` }}
+                            />
                         ) : (
                             <div className="flex flex-col">
                                 {/* Tab Navigation */}

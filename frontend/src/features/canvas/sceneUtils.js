@@ -31,18 +31,6 @@ export function addControls(instance) {
   instance.controls = new OrbitControls(instance.camera, instance.renderer.domElement);
   instance.controls.maxDistance = 1500;
   instance.controls.minDistance = 10;
-  
-  // Enable touch controls for mobile
-  instance.controls.enablePan = true;
-  instance.controls.enableZoom = true;
-  instance.controls.enableRotate = true;
-  
-  // Mobile-specific settings
-  instance.controls.touches = {
-    ONE: 0, // Rotate
-    TWO: 1  // Zoom/Pan
-  };
-  
   // Set the center of rotation to the model center if possible
   if (typeof instance.calculateModelCenter === 'function') {
     const center = instance.calculateModelCenter();

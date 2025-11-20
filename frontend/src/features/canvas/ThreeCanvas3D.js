@@ -1,7 +1,7 @@
 import THREE, { TextGeometry } from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
-import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler, onTouchMoveHandler, onTouchStartHandler, onTouchEndHandler } from './threeEventHandlers';
+import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
 import { addGrid, adjustModelScale, addLighting, addControls, calculateModelOffset } from './sceneUtils';
 import { createWallMesh, createDoorMesh } from './meshUtils';
 import PanelCalculator from '../panel/PanelCalculator';
@@ -24,6 +24,11 @@ const debugWarn = (...args) => {
 
 window.gsap = gsap;
 
+// Mobile-specific constants (matching Canvas2D)
+const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
+const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
+const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
+
 export default class ThreeCanvas {
   constructor(containerId, walls, joints = [], doors = [], scalingFactor = 0.01, project = null) {
     this.container = document.getElementById(containerId);
@@ -45,6 +50,10 @@ export default class ThreeCanvas {
     this.gridSize = THREE_CONFIG.GRID.SIZE;
     this.isInteriorView = false;
     this.project = project;
+    
+    // Resize handling references for cleanup
+    this.resizeObserver = null;
+    this.handleWindowResize = null;
 
     // Initialize renderer modules
     this.wallRenderer = new WallRenderer(this);
@@ -120,8 +129,6 @@ export default class ThreeCanvas {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.shadowMap.enabled = true;
     this.container.appendChild(this.renderer.domElement);
-    
-    // Mouse event handlers (desktop)
     this.container.addEventListener('mousemove', (event) => onMouseMoveHandler(this, event));
     this.container.addEventListener('click', (event) => onCanvasClickHandler(this, event));
     this.doorButton.addEventListener('click', () => toggleDoorHandler(this));
@@ -132,13 +139,6 @@ export default class ThreeCanvas {
         toggleDoorHandler(this);
       }
     });
-    
-    // Touch event handlers (mobile)
-    // Use passive: true for touchmove to allow smooth scrolling/panning
-    // Only use passive: false if we need to preventDefault (which we don't for camera controls)
-    this.container.addEventListener('touchmove', (event) => onTouchMoveHandler(this, event), { passive: true });
-    this.container.addEventListener('touchstart', (event) => onTouchStartHandler(this, event), { passive: true });
-    this.container.addEventListener('touchend', (event) => onTouchEndHandler(this, event), { passive: true });
   
     // Adjust initial camera position for better view
     this.camera.position.set(
@@ -164,7 +164,95 @@ export default class ThreeCanvas {
     dotMesh.name = 'model_center_dot';
     this.scene.add(dotMesh);
   
+    // Setup responsive resize handling
+    this.setupResizeHandlers();
+  
     this.animate();
+  }
+
+  // Handle window/container resize for mobile responsiveness
+  handleResize() {
+    if (!this.container) return;
+    
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    
+    // Update camera aspect ratio
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    
+    // Update renderer size
+    this.renderer.setSize(width, height);
+    
+    debugLog(`📱 Resize: ${width}x${height} (aspect: ${this.camera.aspect.toFixed(2)})`);
+  }
+
+  // Setup ResizeObserver and window resize listener
+  setupResizeHandlers() {
+    if (!this.container) return;
+
+    // Create window resize handler
+    this.handleWindowResize = () => {
+      this.handleResize();
+    };
+
+    // Add window resize listener
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.handleWindowResize);
+    }
+
+    // Setup ResizeObserver for container size changes
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.target === this.container) {
+            // Use requestAnimationFrame to throttle resize updates
+            requestAnimationFrame(() => {
+              this.handleResize();
+            });
+          }
+        });
+      });
+
+      this.resizeObserver.observe(this.container);
+    } else {
+      // Fallback: use window resize only if ResizeObserver is not available
+      debugWarn('ResizeObserver not available, using window resize only');
+    }
+  }
+
+  // Cleanup resize handlers
+  dispose() {
+    // Remove window resize listener
+    if (this.handleWindowResize && typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.handleWindowResize);
+      this.handleWindowResize = null;
+    }
+
+    // Disconnect ResizeObserver
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    // Dispose of controls if they exist
+    if (this.controls) {
+      this.controls.dispose();
+    }
+
+    // Dispose of renderer
+    if (this.renderer) {
+      this.renderer.dispose();
+      // Remove renderer DOM element if it exists
+      if (this.renderer.domElement && this.renderer.domElement.parentNode) {
+        this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+      }
+    }
+
+    // Clean up UI container
+    if (this.uiContainer && this.uiContainer.parentNode) {
+      this.uiContainer.parentNode.removeChild(this.uiContainer);
+    }
   }
 
   animateToInteriorView() {

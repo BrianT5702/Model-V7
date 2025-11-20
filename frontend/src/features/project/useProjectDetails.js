@@ -1120,8 +1120,14 @@ export default function useProjectDetails(projectId) {
       }, 100);
       return () => {
         if (threeCanvasInstance.current) {
-          if (threeCanvasInstance.current.renderer) {
-            threeCanvasInstance.current.renderer.dispose();
+          // Use dispose method if available (includes resize handler cleanup)
+          if (typeof threeCanvasInstance.current.dispose === 'function') {
+            threeCanvasInstance.current.dispose();
+          } else {
+            // Fallback to manual cleanup
+            if (threeCanvasInstance.current.renderer) {
+              threeCanvasInstance.current.renderer.dispose();
+            }
           }
           threeCanvasInstance.current = null;
         }
@@ -1129,8 +1135,14 @@ export default function useProjectDetails(projectId) {
     } else {
       // Clean up 3D canvas when switching back to 2D
       if (threeCanvasInstance.current) {
-        if (threeCanvasInstance.current.renderer) {
-          threeCanvasInstance.current.renderer.dispose();
+        // Use dispose method if available (includes resize handler cleanup)
+        if (typeof threeCanvasInstance.current.dispose === 'function') {
+          threeCanvasInstance.current.dispose();
+        } else {
+          // Fallback to manual cleanup
+          if (threeCanvasInstance.current.renderer) {
+            threeCanvasInstance.current.renderer.dispose();
+          }
         }
         threeCanvasInstance.current = null;
       }
