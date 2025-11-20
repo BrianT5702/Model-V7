@@ -230,6 +230,23 @@ const ProjectDetails = () => {
             };
         };
         
+        // Helper function to check if room is on ground floor
+        const isGroundFloorRoom = (room) => {
+            if (!room.storey) {
+                // If no storey assigned, assume ground floor (legacy data)
+                return true;
+            }
+            // Find the storey object
+            const storey = projectDetails.storeys?.find(s => String(s.id) === String(room.storey));
+            if (!storey) {
+                // If storey not found, assume ground floor
+                return true;
+            }
+            // Ground floor has elevation_mm === 0 and order === 0
+            return (storey.elevation_mm === 0 || storey.elevation_mm === null) && 
+                   (storey.order === 0 || storey.order === null);
+        };
+        
         // Helper function to draw room labels on canvas
         const drawRoomLabelsOnCanvas = (ctx, rooms, scaleFactor, offsetX, offsetY) => {
             if (!rooms || rooms.length === 0) {
@@ -237,10 +254,18 @@ const ProjectDetails = () => {
                 return;
             }
             
-            console.log(`🎨 Drawing labels for ${rooms.length} rooms, scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
+            // Filter to only ground floor rooms
+            const groundFloorRooms = rooms.filter(isGroundFloorRoom);
+            
+            if (groundFloorRooms.length === 0) {
+                console.log('⚠️ No ground floor rooms to draw labels for');
+                return;
+            }
+            
+            console.log(`🎨 Drawing labels for ${groundFloorRooms.length} ground floor rooms (out of ${rooms.length} total), scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
             
             let labelsDrawn = 0;
-            rooms.forEach((room, index) => {
+            groundFloorRooms.forEach((room, index) => {
                 // Get label position - use stored position or calculate center
                 let labelPos = null;
                 if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
@@ -262,8 +287,10 @@ const ProjectDetails = () => {
                 
                 // Prepare text content (same format as InteractiveRoomLabel)
                 const name = room.room_name || 'Unnamed Room';
-                const temperature = room.temperature !== undefined && room.temperature !== null && room.temperature !== 0
-                    ? `${room.temperature > 0 ? '+' : ''}${room.temperature}°C`
+                // Don't show temperature if it's 0°C
+                const tempValue = Number(room.temperature);
+                const temperature = (room.temperature !== undefined && room.temperature !== null && tempValue !== 0)
+                    ? `${tempValue > 0 ? '+' : ''}${tempValue}°C`
                     : '';
                 const height = room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
                 
