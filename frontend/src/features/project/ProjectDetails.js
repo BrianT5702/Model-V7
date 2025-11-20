@@ -217,6 +217,19 @@ const ProjectDetails = () => {
             return tempCanvas;
         };
         
+        // Helper function to check if point is in polygon (ray casting algorithm)
+        const isPointInPolygon = (point, polygon) => {
+            let inside = false;
+            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                const xi = polygon[i].x, yi = polygon[i].y;
+                const xj = polygon[j].x, yj = polygon[j].y;
+                const intersect = ((yi > point.y) !== (yj > point.y))
+                    && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        };
+        
         // Helper function to calculate room center if no label_position
         const calculateRoomCenter = (room) => {
             if (!room.room_points || room.room_points.length < 3) {
@@ -228,6 +241,29 @@ const ProjectDetails = () => {
                 x: sumX / room.room_points.length,
                 y: sumY / room.room_points.length
             };
+        };
+        
+        // Helper function to check if room can contain label
+        const canRoomContainLabel = (room, scaleFactor) => {
+            if (!room.room_points || room.room_points.length < 3) {
+                return true; // No boundary, assume it can contain
+            }
+            const normalizedPolygon = room.room_points.map(pt => ({
+                x: Number(pt.x) || 0,
+                y: Number(pt.y) || 0
+            }));
+            const minX = Math.min(...normalizedPolygon.map(p => p.x));
+            const maxX = Math.max(...normalizedPolygon.map(p => p.x));
+            const minY = Math.min(...normalizedPolygon.map(p => p.y));
+            const maxY = Math.max(...normalizedPolygon.map(p => p.y));
+            const roomWidth = maxX - minX;
+            const roomHeight = maxY - minY;
+            const baseLabelWidth = 140;
+            const baseLabelHeight = 50;
+            const labelWidth = baseLabelWidth / scaleFactor;
+            const labelHeight = baseLabelHeight / scaleFactor;
+            const margin = 20 / scaleFactor;
+            return roomWidth >= labelWidth + margin && roomHeight >= labelHeight + margin;
         };
         
         // Helper function to check if room is on ground floor
@@ -347,6 +383,111 @@ const ProjectDetails = () => {
                 });
                 
                 ctx.restore();
+                
+                // Draw arrow if label is outside room and room is too small
+                if (room.room_points && room.room_points.length >= 3) {
+                    const normalizedPolygon = room.room_points.map(pt => ({
+                        x: Number(pt.x) || 0,
+                        y: Number(pt.y) || 0
+                    }));
+                    
+                    const isLabelOutsideRoom = !isPointInPolygon(labelPos, normalizedPolygon);
+                    const roomCanContain = canRoomContainLabel(room, scaleFactor);
+                    const shouldShowArrow = isLabelOutsideRoom && !roomCanContain;
+                    
+                    if (shouldShowArrow) {
+                        // Calculate room center
+                        const roomCenterX = normalizedPolygon.reduce((sum, p) => sum + p.x, 0) / normalizedPolygon.length;
+                        const roomCenterY = normalizedPolygon.reduce((sum, p) => sum + p.y, 0) / normalizedPolygon.length;
+                        
+                        // Calculate direction from label to room center
+                        const dx = roomCenterX - labelPos.x;
+                        const dy = roomCenterY - labelPos.y;
+                        const absDx = Math.abs(dx);
+                        const absDy = Math.abs(dy);
+                        
+                        // Estimate label dimensions (approximate)
+                        const estimatedLabelWidth = 120;
+                        const estimatedLabelHeight = 50;
+                        
+                        // Determine starting point on label edge
+                        let startX, startY;
+                        let isHorizontalEdge = false;
+                        
+                        if (absDx > absDy) {
+                            // Horizontal direction
+                            isHorizontalEdge = true;
+                            if (dx > 0) {
+                                startX = canvasX + estimatedLabelWidth / 2;
+                                startY = canvasY;
+                            } else {
+                                startX = canvasX - estimatedLabelWidth / 2;
+                                startY = canvasY;
+                            }
+                        } else {
+                            // Vertical direction
+                            if (dy > 0) {
+                                startX = canvasX;
+                                startY = canvasY + estimatedLabelHeight / 2;
+                            } else {
+                                startX = canvasX;
+                                startY = canvasY - estimatedLabelHeight / 2;
+                            }
+                        }
+                        
+                        // End point at room center (in canvas coordinates)
+                        const endX = roomCenterX * scaleFactor + offsetX;
+                        const endY = roomCenterY * scaleFactor + offsetY;
+                        
+                        // Create L-shaped path
+                        let midX, midY;
+                        if (isHorizontalEdge) {
+                            midX = endX;
+                            midY = startY;
+                        } else {
+                            midX = startX;
+                            midY = endY;
+                        }
+                        
+                        // Draw arrow (L-shaped path with arrowhead)
+                        ctx.save();
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = Math.max(1.2 * Math.sqrt(scaleFactor), 1);
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        
+                        // Draw first segment (horizontal or vertical)
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(midX, midY);
+                        ctx.stroke();
+                        
+                        // Draw second segment to room center
+                        ctx.beginPath();
+                        ctx.moveTo(midX, midY);
+                        ctx.lineTo(endX, endY);
+                        ctx.stroke();
+                        
+                        // Draw arrowhead
+                        const angle = Math.atan2(endY - midY, endX - midX);
+                        const arrowLength = 8;
+                        ctx.beginPath();
+                        ctx.moveTo(endX, endY);
+                        ctx.lineTo(
+                            endX - arrowLength * Math.cos(angle - Math.PI / 6),
+                            endY - arrowLength * Math.sin(angle - Math.PI / 6)
+                        );
+                        ctx.moveTo(endX, endY);
+                        ctx.lineTo(
+                            endX - arrowLength * Math.cos(angle + Math.PI / 6),
+                            endY - arrowLength * Math.sin(angle + Math.PI / 6)
+                        );
+                        ctx.stroke();
+                        
+                        ctx.restore();
+                    }
+                }
+                
                 labelsDrawn++;
             });
             
