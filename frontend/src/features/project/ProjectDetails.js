@@ -112,6 +112,11 @@ const ProjectDetails = () => {
     const handleRemoveWizardArea = (areaId) => {
         projectDetails.setStoreyWizardError('');
         projectDetails.setStoreyWizardAreas((prev) => prev.filter((area) => area.id !== areaId));
+        projectDetails.setStoreyWizardAreaOverrides((prev) => {
+            const next = { ...prev };
+            delete next[areaId];
+            return next;
+        });
     };
 
     const handleStoreyWizardNext = () => {
@@ -205,6 +210,98 @@ const ProjectDetails = () => {
             return tempCanvas;
         };
         
+        // Helper function to calculate room center if no label_position
+        const calculateRoomCenter = (room) => {
+            if (!room.room_points || room.room_points.length < 3) {
+                return null;
+            }
+            const sumX = room.room_points.reduce((sum, p) => sum + (Number(p.x) || 0), 0);
+            const sumY = room.room_points.reduce((sum, p) => sum + (Number(p.y) || 0), 0);
+            return {
+                x: sumX / room.room_points.length,
+                y: sumY / room.room_points.length
+            };
+        };
+        
+        // Helper function to draw room labels on canvas
+        const drawRoomLabelsOnCanvas = (ctx, rooms, scaleFactor, offsetX, offsetY) => {
+            if (!rooms || rooms.length === 0) {
+                console.log('⚠️ No rooms to draw labels for');
+                return;
+            }
+            
+            console.log(`🎨 Drawing labels for ${rooms.length} rooms, scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
+            
+            let labelsDrawn = 0;
+            rooms.forEach((room, index) => {
+                // Get label position - use stored position or calculate center
+                let labelPos = null;
+                if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
+                    labelPos = room.label_position;
+                } else {
+                    // Calculate center if no label position
+                    labelPos = calculateRoomCenter(room);
+                    if (!labelPos) {
+                        console.log(`⚠️ Room ${room.id} (${room.room_name}) has no label_position and no room_points, skipping`);
+                        return; // Skip if we can't determine position
+                    }
+                }
+                
+                // Calculate canvas position
+                const canvasX = labelPos.x * scaleFactor + offsetX;
+                const canvasY = labelPos.y * scaleFactor + offsetY;
+                
+                console.log(`📍 Drawing label for room ${room.id} (${room.room_name}) at canvas (${canvasX.toFixed(1)}, ${canvasY.toFixed(1)}) from model (${labelPos.x.toFixed(1)}, ${labelPos.y.toFixed(1)})`);
+                
+                // Prepare text content (same format as InteractiveRoomLabel)
+                const name = room.room_name || 'Unnamed Room';
+                const temperature = room.temperature !== undefined && room.temperature !== null && room.temperature !== 0
+                    ? `${room.temperature > 0 ? '+' : ''}${room.temperature}°C`
+                    : '';
+                const height = room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
+                
+                // Format text lines
+                let lines = [];
+                if (temperature) {
+                    if (name.length > 15) {
+                        lines.push(name);
+                        lines.push(temperature);
+                    } else {
+                        lines.push(`${name} ${temperature}`);
+                    }
+                } else {
+                    lines.push(name);
+                }
+                lines.push(height);
+                
+                // Draw text on canvas with better styling
+                ctx.save();
+                
+                // Set font size based on scale factor (similar to InteractiveRoomLabel)
+                const baseFontSize = 8;
+                const fontSize = Math.max(baseFontSize, baseFontSize * scaleFactor);
+                ctx.font = `${fontSize}px Arial`;
+                ctx.fillStyle = '#000000';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Calculate text dimensions
+                const lineHeight = fontSize + 2;
+                const totalHeight = lines.length * lineHeight;
+                const startY = canvasY - (totalHeight / 2) + (lineHeight / 2);
+                
+                // Draw each line
+                lines.forEach((line, index) => {
+                    ctx.fillText(line, canvasX, startY + (index * lineHeight));
+                });
+                
+                ctx.restore();
+                labelsDrawn++;
+            });
+            
+            console.log(`✅ Drew ${labelsDrawn} room labels on canvas`);
+        };
+        
         const captureCanvasImage = async () => {
             // Wait for canvas to render
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -226,9 +323,45 @@ const ProjectDetails = () => {
             if (canvas && planType) {
                 try {
                     // Remove grid lines before capturing
-                    const cleanCanvas = removeGridFromCanvas(canvas);
+                    let cleanCanvas = removeGridFromCanvas(canvas);
+                    
+                    // For wall plan, draw room labels on the canvas
+                    if (planType === 'wall' && projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0) {
+                        console.log(`🔍 Attempting to draw room labels for ${projectDetails.filteredRooms.length} rooms`);
+                        
+                        // Get transform values from canvas data attributes (set by Canvas2D)
+                        const scaleFactor = parseFloat(canvas.getAttribute('data-scale-factor')) || 1;
+                        const offsetX = parseFloat(canvas.getAttribute('data-offset-x')) || 0;
+                        const offsetY = parseFloat(canvas.getAttribute('data-offset-y')) || 0;
+                        
+                        console.log(`📐 Canvas transform values: scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
+                        console.log(`📋 Rooms data:`, projectDetails.filteredRooms.map(r => ({
+                            id: r.id,
+                            name: r.room_name,
+                            hasLabelPosition: !!r.label_position,
+                            labelPosition: r.label_position,
+                            hasRoomPoints: !!(r.room_points && r.room_points.length > 0)
+                        })));
+                        
+                        // Create a new canvas with room labels drawn
+                        const labeledCanvas = document.createElement('canvas');
+                        labeledCanvas.width = canvas.width;
+                        labeledCanvas.height = canvas.height;
+                        const labeledCtx = labeledCanvas.getContext('2d');
+                        
+                        // Copy the clean canvas
+                        labeledCtx.drawImage(cleanCanvas, 0, 0);
+                        
+                        // Draw room labels using the actual transform values
+                        drawRoomLabelsOnCanvas(labeledCtx, projectDetails.filteredRooms, scaleFactor, offsetX, offsetY);
+                        
+                        cleanCanvas = labeledCanvas;
+                    } else {
+                        console.log(`⚠️ Skipping room labels: planType=${planType}, hasRooms=${!!(projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0)}`);
+                    }
+                    
                     const imageData = cleanCanvas.toDataURL('image/png', 0.9);
-                    console.log(`📸 Captured ${planType} plan image (without grid)`);
+                    console.log(`📸 Captured ${planType} plan image (without grid${planType === 'wall' ? ', with room labels' : ''})`);
                     
                     // Store in shared data - use special method for canvas images
                     projectDetails.updateCanvasImage(planType, imageData);
@@ -1514,12 +1647,25 @@ const ProjectDetails = () => {
                                                 <dt className="font-medium text-gray-700">Name:</dt>
                                                 <dd>{projectDetails.storeyWizardName}</dd>
                                             </div>
-                                            <div className="flex justify-between">
-                                                <dt className="font-medium text-gray-700">Elevation:</dt>
+                                            <div className="flex flex-col gap-1">
+                                                <dt className="font-medium text-gray-700">Elevation (mm):</dt>
                                                 <dd>
-                                                    {projectDetails.storeyWizardElevation !== null && projectDetails.storeyWizardElevation !== undefined
-                                                        ? `${projectDetails.storeyWizardElevation} mm`
-                                                        : 'Will be calculated after Step 2'}
+                                                    <input
+                                                        type="number"
+                                                        value={projectDetails.storeyWizardElevation !== null && projectDetails.storeyWizardElevation !== undefined
+                                                            ? projectDetails.storeyWizardElevation
+                                                            : ''}
+                                                        onChange={(e) => {
+                                                            const numeric = Number(e.target.value);
+                                                            if (!isNaN(numeric)) {
+                                                                projectDetails.setStoreyWizardElevation(numeric);
+                                                            } else if (e.target.value === '') {
+                                                                projectDetails.setStoreyWizardElevation(null);
+                                                            }
+                                                        }}
+                                                        placeholder="Will be calculated after Step 2"
+                                                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    />
                                                 </dd>
                                             </div>
                                             <div className="flex justify-between">
@@ -1592,16 +1738,51 @@ const ProjectDetails = () => {
                                         )}
                                     </div>
 
-                                    <div className="border border-gray-200 rounded-lg p-4">
+                                    <div className="border border-gray-200 rounded-lg p-4 space-y-3">
                                         <h3 className="text-sm font-semibold text-gray-700 mb-2">Custom Areas</h3>
                                         {projectDetails.storeyWizardAreas.length === 0 ? (
                                             <p className="text-sm text-gray-500">No custom areas defined.</p>
                                         ) : (
-                                            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                                                {projectDetails.storeyWizardAreas.map((area, index) => (
-                                                    <li key={area.id}>Area {index + 1} — {area.points.length} points</li>
-                                                ))}
-                                            </ul>
+                                            <div className="space-y-3">
+                                                {projectDetails.storeyWizardAreas.map((area, index) => {
+                                                    const areaOverride = projectDetails.storeyWizardAreaOverrides?.[area.id] || {};
+                                                    const areaHeight = areaOverride.height ?? projectDetails.storeyWizardDefaultHeight ?? 3000;
+                                                    return (
+                                                        <div key={area.id} className="border border-gray-200 rounded-lg px-3 py-2">
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="text-sm font-medium text-gray-700">Area {index + 1}</span>
+                                                                <span className="text-xs text-gray-500">
+                                                                    {area.points.length} points
+                                                                </span>
+                                                            </div>
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                                                <div>
+                                                                    <label className="block text-xs font-medium text-gray-600">Base Elevation (mm)</label>
+                                                                    <div className="mt-1 text-sm text-gray-800">
+                                                                        {projectDetails.storeyWizardElevation !== null && projectDetails.storeyWizardElevation !== undefined
+                                                                            ? `${projectDetails.storeyWizardElevation} mm`
+                                                                            : 'Will be calculated'}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-medium text-gray-600">Room Height (mm)</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={areaHeight}
+                                                                        onChange={(e) => {
+                                                                            const numeric = Number(e.target.value);
+                                                                            if (!isNaN(numeric) && numeric > 0) {
+                                                                                projectDetails.updateStoreyWizardAreaOverride(area.id, { height: numeric });
+                                                                            }
+                                                                        }}
+                                                                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         )}
                                     </div>
                                 </div>

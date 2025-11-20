@@ -1,7 +1,7 @@
 import THREE, { TextGeometry } from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
-import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
+import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler, onTouchMoveHandler, onTouchStartHandler, onTouchEndHandler } from './threeEventHandlers';
 import { addGrid, adjustModelScale, addLighting, addControls, calculateModelOffset } from './sceneUtils';
 import { createWallMesh, createDoorMesh } from './meshUtils';
 import PanelCalculator from '../panel/PanelCalculator';
@@ -120,6 +120,8 @@ export default class ThreeCanvas {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.shadowMap.enabled = true;
     this.container.appendChild(this.renderer.domElement);
+    
+    // Mouse event handlers (desktop)
     this.container.addEventListener('mousemove', (event) => onMouseMoveHandler(this, event));
     this.container.addEventListener('click', (event) => onCanvasClickHandler(this, event));
     this.doorButton.addEventListener('click', () => toggleDoorHandler(this));
@@ -130,6 +132,13 @@ export default class ThreeCanvas {
         toggleDoorHandler(this);
       }
     });
+    
+    // Touch event handlers (mobile)
+    // Use passive: true for touchmove to allow smooth scrolling/panning
+    // Only use passive: false if we need to preventDefault (which we don't for camera controls)
+    this.container.addEventListener('touchmove', (event) => onTouchMoveHandler(this, event), { passive: true });
+    this.container.addEventListener('touchstart', (event) => onTouchStartHandler(this, event), { passive: true });
+    this.container.addEventListener('touchend', (event) => onTouchEndHandler(this, event), { passive: true });
   
     // Adjust initial camera position for better view
     this.camera.position.set(

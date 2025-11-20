@@ -53,6 +53,12 @@ const InstallationTimeEstimator = ({
         doors: false
     });
     
+    // PDF export settings
+    const [planRotation, setPlanRotation] = useState(0); // Rotation angle in degrees (0, 90, 180, 270)
+    const [planPageOrientation, setPlanPageOrientation] = useState('portrait'); // 'portrait' or 'landscape' for plan pages
+    const [singlePlanPerPage, setSinglePlanPerPage] = useState(true); // Each plan takes a full page
+    const [fitToPage, setFitToPage] = useState(false); // Fit plan to fill entire page without boundary
+    
     const toggleTableExpansion = (tableName) => {
         setExpandedTables(prev => ({
             ...prev,
@@ -219,6 +225,96 @@ const InstallationTimeEstimator = ({
                 return tempCanvas;
             };
             
+            // Helper function to calculate room center if no label_position
+            const calculateRoomCenter = (room) => {
+                if (!room.room_points || room.room_points.length < 3) {
+                    return null;
+                }
+                const sumX = room.room_points.reduce((sum, p) => sum + (Number(p.x) || 0), 0);
+                const sumY = room.room_points.reduce((sum, p) => sum + (Number(p.y) || 0), 0);
+                return {
+                    x: sumX / room.room_points.length,
+                    y: sumY / room.room_points.length
+                };
+            };
+            
+            // Helper function to draw room labels on canvas
+            const drawRoomLabelsOnCanvas = (ctx, rooms, scaleFactor, offsetX, offsetY) => {
+                if (!rooms || rooms.length === 0) {
+                    console.log('⚠️ No rooms to draw labels for');
+                    return;
+                }
+                
+                console.log(`🎨 Drawing labels for ${rooms.length} rooms, scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
+                
+                let labelsDrawn = 0;
+                rooms.forEach((room) => {
+                    // Get label position - use stored position or calculate center
+                    let labelPos = null;
+                    if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
+                        labelPos = room.label_position;
+                    } else {
+                        // Calculate center if no label position
+                        labelPos = calculateRoomCenter(room);
+                        if (!labelPos) {
+                            console.log(`⚠️ Room ${room.id} (${room.room_name}) has no label_position and no room_points, skipping`);
+                            return; // Skip if we can't determine position
+                        }
+                    }
+                    
+                    // Calculate canvas position
+                    const canvasX = labelPos.x * scaleFactor + offsetX;
+                    const canvasY = labelPos.y * scaleFactor + offsetY;
+                    
+                    // Prepare text content (same format as InteractiveRoomLabel)
+                    const name = room.room_name || 'Unnamed Room';
+                    const temperature = room.temperature !== undefined && room.temperature !== null && room.temperature !== 0
+                        ? `${room.temperature > 0 ? '+' : ''}${room.temperature}°C`
+                        : '';
+                    const height = room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
+                    
+                    // Format text lines
+                    let lines = [];
+                    if (temperature) {
+                        if (name.length > 15) {
+                            lines.push(name);
+                            lines.push(temperature);
+                        } else {
+                            lines.push(`${name} ${temperature}`);
+                        }
+                    } else {
+                        lines.push(name);
+                    }
+                    lines.push(height);
+                    
+                    // Draw text on canvas with better styling
+                    ctx.save();
+                    
+                    // Set font size based on scale factor (similar to InteractiveRoomLabel)
+                    const baseFontSize = 8;
+                    const fontSize = Math.max(baseFontSize, baseFontSize * scaleFactor);
+                    ctx.font = `${fontSize}px Arial`;
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    // Calculate text dimensions
+                    const lineHeight = fontSize + 2;
+                    const totalHeight = lines.length * lineHeight;
+                    const startY = canvasY - (totalHeight / 2) + (lineHeight / 2);
+                    
+                    // Draw each line
+                    lines.forEach((line, index) => {
+                        ctx.fillText(line, canvasX, startY + (index * lineHeight));
+                    });
+                    
+                    ctx.restore();
+                    labelsDrawn++;
+                });
+                
+                console.log(`✅ Drew ${labelsDrawn} room labels on canvas`);
+            };
+            
             // Helper function to capture after tab switch
             const captureFromTab = async (viewName, planType) => {
                 console.log(`📸 Switching to ${viewName} to capture ${planType} plan...`);
@@ -232,14 +328,41 @@ const InstallationTimeEstimator = ({
                 if (canvas) {
                     try {
                         // Remove grid lines before capturing
-                        const cleanCanvas = removeGridFromCanvas(canvas);
+                        let cleanCanvas = removeGridFromCanvas(canvas);
+                        
+                        // For wall plan, draw room labels on the canvas
+                        if (planType === 'wall' && rooms && rooms.length > 0) {
+                            console.log(`🔍 Attempting to draw room labels for ${rooms.length} rooms`);
+                            
+                            // Get transform values from canvas data attributes (set by Canvas2D)
+                            const scaleFactor = parseFloat(canvas.getAttribute('data-scale-factor')) || 1;
+                            const offsetX = parseFloat(canvas.getAttribute('data-offset-x')) || 0;
+                            const offsetY = parseFloat(canvas.getAttribute('data-offset-y')) || 0;
+                            
+                            console.log(`📐 Canvas transform values: scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
+                            
+                            // Create a new canvas with room labels drawn
+                            const labeledCanvas = document.createElement('canvas');
+                            labeledCanvas.width = canvas.width;
+                            labeledCanvas.height = canvas.height;
+                            const labeledCtx = labeledCanvas.getContext('2d');
+                            
+                            // Copy the clean canvas
+                            labeledCtx.drawImage(cleanCanvas, 0, 0);
+                            
+                            // Draw room labels using the actual transform values
+                            drawRoomLabelsOnCanvas(labeledCtx, rooms, scaleFactor, offsetX, offsetY);
+                            
+                            cleanCanvas = labeledCanvas;
+                        }
+                        
                         const imageData = cleanCanvas.toDataURL('image/png', 0.9);
                         
                         // Store via updateCanvasImage function
                         if (updateCanvasImage) {
                             updateCanvasImage(planType, imageData);
                         }
-                        console.log(`✅ Captured ${planType} plan image (without grid)`);
+                        console.log(`✅ Captured ${planType} plan image (without grid${planType === 'wall' ? ', with room labels' : ''})`);
                         capturedImages[planType] = true;
                         return imageData;
                     } catch (err) {
@@ -1092,8 +1215,12 @@ const InstallationTimeEstimator = ({
         
         setIsExporting(true);
         try {
-            // Create new PDF document
-            const doc = new jsPDF();
+            // Create new PDF document - always start with portrait for main content
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
             
             // Set initial position
             let yPos = 20;
@@ -1469,119 +1596,317 @@ const InstallationTimeEstimator = ({
             addText('Note: This estimate assumes parallel work where possible and includes a 20% buffer for coordination and unexpected issues.', 9);
             
             // Add Plan Images Section at the end
+            // Note: Only plan images use the orientation and single plan per page settings
             if (exportData.planImages) {
-                checkNewPage();
-                
-                // Blue theme like preview
-                addSectionHeader('Plan Views', [59, 130, 246], [239, 246, 255]); // blue-600, bg-blue-50
-                
-                const imageWidth = contentWidth * 0.75; // 75% of page width
-                const imageHeight = 70; // Compact size
-                const imageLeftMargin = margin + (contentWidth - imageWidth) / 2; // Center the image
-                
-                // Wall Plan
-                if (exportData.planImages.wallPlan) {
+                // Helper function to add a plan image with proper sizing
+                const addPlanImage = async (imageData, planName) => {
+                    if (!imageData) return;
+                    
                     try {
-                        checkNewPage();
+                        // Get image dimensions to maintain aspect ratio
+                        const img = new Image();
+                        await new Promise((resolve, reject) => {
+                            img.onload = resolve;
+                            img.onerror = reject;
+                            img.src = imageData;
+                        });
                         
-                        // Add white box background for image (like preview)
-                        doc.setFillColor(255, 255, 255);
-                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'F');
+                        const imageAspectRatio = img.width / img.height;
                         
-                        // Add border around image
-                        doc.setDrawColor(191, 219, 254); // blue-200
-                        doc.setLineWidth(0.5);
-                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'S');
-                        
-                        // Add image label inside the box
-                        doc.setFontSize(10);
-                        doc.setFont(undefined, 'bold');
-                        doc.setTextColor(55, 65, 81); // gray-800
-                        doc.text('Wall Plan (2D View)', imageLeftMargin + 3, yPos + 6);
-                        
-                        // Reset
-                        doc.setTextColor(0, 0, 0);
-                        yPos += 10;
-                        
-                        doc.addImage(exportData.planImages.wallPlan, 'PNG', imageLeftMargin + 2, yPos, imageWidth - 4, imageHeight - 8);
-                        yPos += imageHeight + 6;
-                        console.log('✅ Wall plan added to PDF');
+                        if (singlePlanPerPage) {
+                            // Each plan takes a full page with selected orientation
+                            // Note: jsPDF addPage signature is addPage(format, orientation)
+                            doc.addPage('a4', planPageOrientation);
+                            
+                            // Recalculate page dimensions after adding the new page
+                            const planPageWidth = doc.internal.pageSize.width;
+                            const planPageHeight = doc.internal.pageSize.height;
+                            const planMargin = 20;
+                            // If fitToPage, use minimal margins (5mm), otherwise use standard margins (20mm)
+                            const effectiveMargin = fitToPage ? 5 : planMargin;
+                            const planContentWidth = planPageWidth - (2 * effectiveMargin);
+                            const availableHeight = planPageHeight - (2 * effectiveMargin) - (fitToPage ? 0 : 30);
+                            
+                            console.log(`📄 Added ${planPageOrientation} page - Width: ${planPageWidth}mm, Height: ${planPageHeight}mm`);
+                            
+                            // Calculate image dimensions that fit within the page
+                            // Account for rotation - rotated images need more space
+                            const rad = planRotation * Math.PI / 180;
+                            const cos = Math.abs(Math.cos(rad));
+                            const sin = Math.abs(Math.sin(rad));
+                            
+                            // Calculate maximum image size that fits when rotated
+                            // When rotated, the bounding box is larger than the original image
+                            // If fitToPage is enabled, use the entire page dimensions (100%)
+                            let maxWidth, maxHeight;
+                            if (fitToPage) {
+                                // Use the entire page dimensions (100% - no margin at all)
+                                // Note: planPageWidth and planPageHeight are already correct for the selected orientation
+                                maxWidth = planPageWidth;
+                                maxHeight = planPageHeight;
+                                console.log(`📏 fitToPage: Using full page dimensions - maxWidth=${maxWidth.toFixed(2)}mm, maxHeight=${maxHeight.toFixed(2)}mm for ${planPageOrientation} orientation`);
+                            } else {
+                                // Use content area with margins
+                                maxWidth = planContentWidth * 0.9;
+                                maxHeight = availableHeight * 0.85;
+                            }
+                            
+                            // Calculate what the original image size should be so that when rotated, it fits
+                            // For a rotated rectangle: boundingWidth = width*cos + height*sin
+                            // We need to solve: width*cos + (width/aspectRatio)*sin <= maxWidth
+                            // and: width*sin + (width/aspectRatio)*cos <= maxHeight
+                            
+                            // Calculate initial image dimensions based on aspect ratio
+                            // Start with a reasonable base size, then scale to fit page
+                            let imageWidth, imageHeight;
+                            
+                            // Use the original image aspect ratio to calculate base dimensions
+                            // We'll scale these up to fill the page
+                            const baseSize = 100; // Arbitrary base size, will be scaled
+                            if (imageAspectRatio >= 1) {
+                                // Image is wider than tall
+                                imageWidth = baseSize;
+                                imageHeight = baseSize / imageAspectRatio;
+                            } else {
+                                // Image is taller than wide
+                                imageHeight = baseSize;
+                                imageWidth = baseSize * imageAspectRatio;
+                            }
+                            
+                            // Calculate bounding box size after rotation
+                            let boundingWidth = imageWidth * cos + imageHeight * sin;
+                            let boundingHeight = imageWidth * sin + imageHeight * cos;
+                            
+                            // Scale the image to fill the page
+                            if (fitToPage) {
+                                // Calculate scale factors for both dimensions
+                                const scaleX = maxWidth / boundingWidth;
+                                const scaleY = maxHeight / boundingHeight;
+                                
+                                // Use the LARGER scale to fill the page (will overflow one dimension, which we'll center)
+                                // This ensures the image fills the entire page
+                                const scale = Math.max(scaleX, scaleY);
+                                
+                                // Apply scale to image dimensions
+                                imageWidth *= scale;
+                                imageHeight *= scale;
+                                
+                                // Recalculate bounding box after scaling
+                                boundingWidth = imageWidth * cos + imageHeight * sin;
+                                boundingHeight = imageWidth * sin + imageHeight * cos;
+                                
+                                console.log(`📐 fitToPage: scale=${scale.toFixed(3)}, imageWidth=${imageWidth.toFixed(2)}mm, imageHeight=${imageHeight.toFixed(2)}mm, boundingWidth=${boundingWidth.toFixed(2)}mm, boundingHeight=${boundingHeight.toFixed(2)}mm`);
+                            } else {
+                                // Not fitToPage - scale down if needed with margin
+                                if (boundingWidth > maxWidth || boundingHeight > maxHeight) {
+                                    // Scale down to fit exactly
+                                    const scaleX = maxWidth / boundingWidth;
+                                    const scaleY = maxHeight / boundingHeight;
+                                    const scale = Math.min(scaleX, scaleY) * 0.95; // 95% margin
+                                    imageWidth *= scale;
+                                    imageHeight *= scale;
+                                    
+                                    // Recalculate bounding box after scaling
+                                    boundingWidth = imageWidth * cos + imageHeight * sin;
+                                    boundingHeight = imageWidth * sin + imageHeight * cos;
+                                }
+                            }
+                            
+                            // Center the image (accounting for rotation bounding box)
+                            // Use the already calculated bounding box dimensions
+                            const finalBoundingWidth = boundingWidth;
+                            const finalBoundingHeight = boundingHeight;
+                            
+                            // Position the image on the page - always center it
+                            let imageLeftMargin, imageTopMargin;
+                            if (fitToPage) {
+                                // Center the scaled image on the full page
+                                imageLeftMargin = (planPageWidth - finalBoundingWidth) / 2;
+                                imageTopMargin = (planPageHeight - finalBoundingHeight) / 2;
+                            } else {
+                                // Center in content area with margins
+                                imageLeftMargin = effectiveMargin + (planContentWidth - finalBoundingWidth) / 2;
+                                imageTopMargin = effectiveMargin + (availableHeight - finalBoundingHeight) / 2;
+                            }
+                            yPos = imageTopMargin;
+                            
+                            // Debug logging for fitToPage
+                            if (fitToPage) {
+                                console.log(`🔍 FitToPage Debug:`, {
+                                    pageWidth: planPageWidth,
+                                    pageHeight: planPageHeight,
+                                    maxWidth,
+                                    maxHeight,
+                                    imageWidth,
+                                    imageHeight,
+                                    boundingWidth: finalBoundingWidth,
+                                    boundingHeight: finalBoundingHeight,
+                                    imageLeftMargin,
+                                    imageTopMargin,
+                                    rotation: planRotation
+                                });
+                            }
+                            
+                            // Only add boundary box and label if fitToPage is false
+                            if (!fitToPage) {
+                                // Add white box background for image (use bounding box size)
+                                doc.setFillColor(255, 255, 255);
+                                doc.roundedRect(imageLeftMargin, yPos - 10, finalBoundingWidth, finalBoundingHeight + 12, 3, 3, 'F');
+                                
+                                // Add border around image
+                                doc.setDrawColor(191, 219, 254); // blue-200
+                                doc.setLineWidth(0.5);
+                                doc.roundedRect(imageLeftMargin, yPos - 10, finalBoundingWidth, finalBoundingHeight + 12, 3, 3, 'S');
+                                
+                                // Add image label
+                                doc.setFontSize(10);
+                                doc.setFont(undefined, 'bold');
+                                doc.setTextColor(55, 65, 81); // gray-800
+                                doc.text(planName, imageLeftMargin + 3, yPos - 4);
+                                
+                                // Reset
+                                doc.setTextColor(0, 0, 0);
+                            }
+                            
+                            // Rotate and add image
+                            if (planRotation !== 0) {
+                                // Create a canvas to rotate the image
+                                // Calculate proper scale factor from image pixels to PDF mm
+                                // We want the image to fill finalBoundingWidth x finalBoundingHeight in PDF
+                                const targetWidthMM = finalBoundingWidth;
+                                const targetHeightMM = finalBoundingHeight;
+                                
+                                // Calculate scale: how many mm per pixel
+                                const scaleFactorMMperPx = imageWidth / img.width;
+                                
+                                // Canvas should be large enough to hold the rotated image
+                                // Use the image's natural pixel dimensions scaled appropriately
+                                const canvasScale = 2; // Higher resolution for better quality
+                                const canvasWidthPx = Math.ceil(targetWidthMM / scaleFactorMMperPx * canvasScale);
+                                const canvasHeightPx = Math.ceil(targetHeightMM / scaleFactorMMperPx * canvasScale);
+                                
+                                // Calculate image size in pixels to fill the canvas when rotated
+                                const imageDisplayWidthPx = Math.ceil(imageWidth / scaleFactorMMperPx * canvasScale);
+                                const imageDisplayHeightPx = Math.ceil(imageHeight / scaleFactorMMperPx * canvasScale);
+                                
+                                const canvas = document.createElement('canvas');
+                                const ctx = canvas.getContext('2d');
+                                canvas.width = canvasWidthPx;
+                                canvas.height = canvasHeightPx;
+                                
+                                // Set white background (only if not fitToPage)
+                                if (!fitToPage) {
+                                    ctx.fillStyle = 'white';
+                                    ctx.fillRect(0, 0, canvasWidthPx, canvasHeightPx);
+                                }
+                                
+                                // Translate to center, rotate, then draw image
+                                ctx.translate(canvasWidthPx / 2, canvasHeightPx / 2);
+                                ctx.rotate(rad);
+                                ctx.drawImage(img, -imageDisplayWidthPx / 2, -imageDisplayHeightPx / 2, imageDisplayWidthPx, imageDisplayHeightPx);
+                                
+                                // Convert canvas to image data
+                                const rotatedImageData = canvas.toDataURL('image/png');
+                                doc.addImage(rotatedImageData, 'PNG', imageLeftMargin, yPos, finalBoundingWidth, finalBoundingHeight);
+                            } else {
+                                // No rotation - use full dimensions when fitToPage, otherwise center
+                                if (fitToPage) {
+                                    // Fill the entire page - use calculated imageWidth and imageHeight
+                                    // These should already fill one dimension completely
+                                    doc.addImage(imageData, 'PNG', imageLeftMargin, yPos, imageWidth, imageHeight);
+                                } else {
+                                    // Center the image within the bounding box
+                                    const offsetX = (finalBoundingWidth - imageWidth) / 2;
+                                    const offsetY = (finalBoundingHeight - imageHeight) / 2;
+                                    doc.addImage(imageData, 'PNG', imageLeftMargin + offsetX, yPos + offsetY, imageWidth, imageHeight);
+                                }
+                            }
+                            console.log(`✅ ${planName} added to PDF (rotated ${planRotation}°, full page)`);
+                        } else {
+                            // Compact mode - add to current page (portrait)
+                            checkNewPage();
+                            
+                            // Adjust aspect ratio if rotated (90 or 270 degrees swaps width/height)
+                            const effectiveAspectRatio = (planRotation === 90 || planRotation === 270) 
+                                ? 1 / imageAspectRatio 
+                                : imageAspectRatio;
+                            
+                            // Compact size for multiple plans per page
+                            let finalImageWidth = contentWidth * 1; // 75% of page width
+                            let finalImageHeight = finalImageWidth / effectiveAspectRatio; // Maintain aspect ratio
+                            
+                            // Limit height for compact mode
+                            if (finalImageHeight > 70) {
+                                finalImageHeight = 70;
+                                finalImageWidth = 70 * effectiveAspectRatio;
+                            }
+                            
+                            const imageLeftMargin = margin + (contentWidth - finalImageWidth) / 2;
+                            
+                            // Add white box background for image
+                            doc.setFillColor(255, 255, 255);
+                            doc.roundedRect(imageLeftMargin, yPos, finalImageWidth, finalImageHeight + 12, 3, 3, 'F');
+                            
+                            // Add border around image
+                            doc.setDrawColor(191, 219, 254); // blue-200
+                            doc.setLineWidth(0.5);
+                            doc.roundedRect(imageLeftMargin, yPos, finalImageWidth, finalImageHeight + 12, 3, 3, 'S');
+                            
+                            // Add image label inside the box
+                            doc.setFontSize(10);
+                            doc.setFont(undefined, 'bold');
+                            doc.setTextColor(55, 65, 81); // gray-800
+                            doc.text(planName, imageLeftMargin + 3, yPos + 6);
+                            
+                            // Reset
+                            doc.setTextColor(0, 0, 0);
+                            yPos += 10;
+                            
+                            // Rotate and add image
+                            if (planRotation !== 0) {
+                                // Create a canvas to rotate the image
+                                const canvas = document.createElement('canvas');
+                                const ctx = canvas.getContext('2d');
+                                
+                                // Calculate canvas size to accommodate rotation
+                                const rad = planRotation * Math.PI / 180;
+                                const cos = Math.abs(Math.cos(rad));
+                                const sin = Math.abs(Math.sin(rad));
+                                const canvasWidth = (finalImageWidth - 4) * cos + (finalImageHeight - 8) * sin;
+                                const canvasHeight = (finalImageWidth - 4) * sin + (finalImageHeight - 8) * cos;
+                                
+                                canvas.width = canvasWidth;
+                                canvas.height = canvasHeight;
+                                
+                                // Translate to center, rotate, then draw image
+                                ctx.translate(canvasWidth / 2, canvasHeight / 2);
+                                ctx.rotate(rad);
+                                ctx.drawImage(img, -(finalImageWidth - 4) / 2, -(finalImageHeight - 8) / 2, finalImageWidth - 4, finalImageHeight - 8);
+                                
+                                // Convert canvas to image data
+                                const rotatedImageData = canvas.toDataURL('image/png');
+                                doc.addImage(rotatedImageData, 'PNG', imageLeftMargin + 2, yPos, canvasWidth, canvasHeight);
+                            } else {
+                                doc.addImage(imageData, 'PNG', imageLeftMargin + 2, yPos, finalImageWidth - 4, finalImageHeight - 8);
+                            }
+                            yPos += finalImageHeight + 6;
+                            console.log(`✅ ${planName} added to PDF (rotated ${planRotation}°, compact mode)`);
+                        }
                     } catch (err) {
-                        console.warn('Failed to add wall plan to PDF:', err);
-                        addText('Wall Plan: (Unable to capture image)', 10);
+                        console.warn(`Failed to add ${planName} to PDF:`, err);
+                        addText(`${planName}: (Unable to capture image)`, 10);
                         yPos += 10;
                     }
+                };
+                
+                // Add all plan images
+                await addPlanImage(exportData.planImages.wallPlan, 'Wall Plan (2D View)');
+                await addPlanImage(exportData.planImages.ceilingPlan, 'Ceiling Plan');
+                await addPlanImage(exportData.planImages.floorPlan, 'Floor Plan');
+                
+                if (!singlePlanPerPage) {
+                    checkNewPage();
                 }
-                
-                checkNewPage();
-                
-                // Ceiling Plan
-                if (exportData.planImages.ceilingPlan) {
-                    try {
-                        checkNewPage();
-                        
-                        // Add white box background for image
-                        doc.setFillColor(255, 255, 255);
-                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'F');
-                        
-                        // Add border
-                        doc.setDrawColor(191, 219, 254); // blue-200
-                        doc.setLineWidth(0.5);
-                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'S');
-                        
-                        // Add label
-                        doc.setFontSize(10);
-                        doc.setFont(undefined, 'bold');
-                        doc.setTextColor(55, 65, 81);
-                        doc.text('Ceiling Plan', imageLeftMargin + 3, yPos + 6);
-                        doc.setTextColor(0, 0, 0);
-                        yPos += 10;
-                        
-                        doc.addImage(exportData.planImages.ceilingPlan, 'PNG', imageLeftMargin + 2, yPos, imageWidth - 4, imageHeight - 8);
-                        yPos += imageHeight + 6;
-                        console.log('✅ Ceiling plan added to PDF');
-                    } catch (err) {
-                        console.warn('Failed to add ceiling plan to PDF:', err);
-                        addText('Ceiling Plan: (Unable to capture image)', 10);
-                        yPos += 10;
-                    }
-                }
-                
-                checkNewPage();
-                
-                // Floor Plan
-                if (exportData.planImages.floorPlan) {
-                    try {
-                        checkNewPage();
-                        
-                        // Add white box background for image
-                        doc.setFillColor(255, 255, 255);
-                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'F');
-                        
-                        // Add border
-                        doc.setDrawColor(191, 219, 254); // blue-200
-                        doc.setLineWidth(0.5);
-                        doc.roundedRect(imageLeftMargin, yPos, imageWidth, imageHeight + 12, 3, 3, 'S');
-                        
-                        // Add label
-                        doc.setFontSize(10);
-                        doc.setFont(undefined, 'bold');
-                        doc.setTextColor(55, 65, 81);
-                        doc.text('Floor Plan', imageLeftMargin + 3, yPos + 6);
-                        doc.setTextColor(0, 0, 0);
-                        yPos += 10;
-                        
-                        doc.addImage(exportData.planImages.floorPlan, 'PNG', imageLeftMargin + 2, yPos, imageWidth - 4, imageHeight - 8);
-                        yPos += imageHeight + 6;
-                        console.log('✅ Floor plan added to PDF');
-                    } catch (err) {
-                        console.warn('Failed to add floor plan to PDF:', err);
-                        addText('Floor Plan: (Unable to capture image)', 10);
-                        yPos += 10;
-                    }
-                }
-                
-                checkNewPage();
             }
             
             // Generate and download the PDF
@@ -2771,61 +3096,105 @@ const InstallationTimeEstimator = ({
                             {/* Plan Images Preview - Moved to end */}
                             {exportData.planImages && (exportData.planImages.wallPlan || exportData.planImages.ceilingPlan || exportData.planImages.floorPlan) && (
                                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                    <h4 className="font-semibold text-blue-800 mb-3">📸 Captured Plan Views</h4>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h4 className="font-semibold text-blue-800">📸 Captured Plan Views</h4>
+                                    </div>
                                     <p className="text-sm text-blue-700 mb-4">These plan views will be included at the end of the PDF export:</p>
                                     
-                                    <div className="space-y-4">
+                                    <div className={`space-y-4 ${singlePlanPerPage ? '' : 'grid grid-cols-1 gap-4'}`}>
                                         {/* Wall Plan Preview */}
                                         {exportData.planImages.wallPlan && (
-                                            <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                            <div className={`bg-white rounded-lg p-3 border border-blue-200 ${singlePlanPerPage ? 'w-full' : ''}`}>
                                                 <h5 className="font-medium text-gray-800 mb-2 flex items-center">
                                                     <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                     </svg>
                                                     Wall Plan (2D View)
                                                 </h5>
-                                                <img 
-                                                    src={exportData.planImages.wallPlan} 
-                                                    alt="Wall Plan" 
-                                                    className="w-full h-auto rounded border border-gray-300"
-                                                    style={{ maxHeight: '300px', objectFit: 'contain' }}
-                                                />
+                                                <div 
+                                                    className="rounded border border-gray-300 overflow-hidden"
+                                                    style={{
+                                                        maxHeight: singlePlanPerPage ? '400px' : '200px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        backgroundColor: '#f9fafb'
+                                                    }}
+                                                >
+                                                    <img 
+                                                        src={exportData.planImages.wallPlan} 
+                                                        alt="Wall Plan" 
+                                                        className={`rounded ${singlePlanPerPage ? 'max-h-full max-w-full' : 'max-h-[200px] w-auto'}`}
+                                                        style={{ 
+                                                            objectFit: 'contain',
+                                                            transform: `rotate(${planRotation}deg)`
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
                                         )}
                                         
                                         {/* Ceiling Plan Preview */}
                                         {exportData.planImages.ceilingPlan && (
-                                            <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                            <div className={`bg-white rounded-lg p-3 border border-blue-200 ${singlePlanPerPage ? 'w-full' : ''}`}>
                                                 <h5 className="font-medium text-gray-800 mb-2 flex items-center">
                                                     <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                                                     </svg>
                                                     Ceiling Plan
                                                 </h5>
-                                                <img 
-                                                    src={exportData.planImages.ceilingPlan} 
-                                                    alt="Ceiling Plan" 
-                                                    className="w-full h-auto rounded border border-gray-300"
-                                                    style={{ maxHeight: '300px', objectFit: 'contain' }}
-                                                />
+                                                <div 
+                                                    className="rounded border border-gray-300 overflow-hidden"
+                                                    style={{
+                                                        maxHeight: singlePlanPerPage ? '400px' : '200px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        backgroundColor: '#f9fafb'
+                                                    }}
+                                                >
+                                                    <img 
+                                                        src={exportData.planImages.ceilingPlan} 
+                                                        alt="Ceiling Plan" 
+                                                        className={`rounded ${singlePlanPerPage ? 'max-h-full max-w-full' : 'max-h-[200px] w-auto'}`}
+                                                        style={{ 
+                                                            objectFit: 'contain',
+                                                            transform: `rotate(${planRotation}deg)`
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
                                         )}
                                         
                                         {/* Floor Plan Preview */}
                                         {exportData.planImages.floorPlan && (
-                                            <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                            <div className={`bg-white rounded-lg p-3 border border-blue-200 ${singlePlanPerPage ? 'w-full' : ''}`}>
                                                 <h5 className="font-medium text-gray-800 mb-2 flex items-center">
                                                     <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                                                     </svg>
                                                     Floor Plan
                                                 </h5>
-                                                <img 
-                                                    src={exportData.planImages.floorPlan} 
-                                                    alt="Floor Plan" 
-                                                    className="w-full h-auto rounded border border-gray-300"
-                                                    style={{ maxHeight: '300px', objectFit: 'contain' }}
-                                                />
+                                                <div 
+                                                    className="rounded border border-gray-300 overflow-hidden"
+                                                    style={{
+                                                        maxHeight: singlePlanPerPage ? '400px' : '200px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        backgroundColor: '#f9fafb'
+                                                    }}
+                                                >
+                                                    <img 
+                                                        src={exportData.planImages.floorPlan} 
+                                                        alt="Floor Plan" 
+                                                        className={`rounded ${singlePlanPerPage ? 'max-h-full max-w-full' : 'max-h-[200px] w-auto'}`}
+                                                        style={{ 
+                                                            objectFit: 'contain',
+                                                            transform: `rotate(${planRotation}deg)`
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -2835,11 +3204,116 @@ const InstallationTimeEstimator = ({
                                             <p className="text-sm">⚠️ No plan views were captured. Make sure you have generated plans before exporting.</p>
                                         </div>
                                     )}
+                                    
+                                    {/* Plan Images Export Settings - Moved here */}
+                                    <div className="mt-4 p-4 bg-white rounded-lg border border-blue-200">
+                                        <h5 className="font-semibold text-gray-800 mb-3 flex items-center text-sm">
+                                            <svg className="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                                            </svg>
+                                            Plan Export Settings
+                                        </h5>
+                                        <p className="text-xs text-gray-600 mb-3">These settings only affect the plan images above, not the rest of the PDF content.</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                            {/* Fit to Page Toggle */}
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <div>
+                                                    <label className="text-sm font-medium text-gray-700">Fit to Page</label>
+                                                    <p className="text-xs text-gray-500 mt-1">Remove boundary, fill page</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setFitToPage(!fitToPage)}
+                                                    className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
+                                                        fitToPage
+                                                            ? 'bg-orange-600 text-white'
+                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                    }`}
+                                                >
+                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        {fitToPage ? (
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                                        ) : (
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
+                                                        )}
+                                                    </svg>
+                                                    {fitToPage ? 'Fit' : 'Bordered'}
+                                                </button>
+                                            </div>
+                                            
+                                            {/* Page Orientation Toggle */}
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <div>
+                                                    <label className="text-sm font-medium text-gray-700">Page Orientation</label>
+                                                    <p className="text-xs text-gray-500 mt-1">Portrait or landscape</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setPlanPageOrientation(planPageOrientation === 'portrait' ? 'landscape' : 'portrait')}
+                                                    className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
+                                                        planPageOrientation === 'landscape'
+                                                            ? 'bg-purple-600 text-white'
+                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                    }`}
+                                                >
+                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        {planPageOrientation === 'portrait' ? (
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                        ) : (
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        )}
+                                                    </svg>
+                                                    {planPageOrientation === 'portrait' ? 'Portrait' : 'Landscape'}
+                                                </button>
+                                            </div>
+                                            
+                                            {/* Rotate Button */}
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <div>
+                                                    <label className="text-sm font-medium text-gray-700">Rotate Plans</label>
+                                                    <p className="text-xs text-gray-500 mt-1">Rotate plans 90° clockwise</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setPlanRotation((planRotation + 90) % 360)}
+                                                    className="px-4 py-2 rounded-lg font-medium transition-colors flex items-center bg-blue-600 text-white hover:bg-blue-700"
+                                                >
+                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                    </svg>
+                                                    Rotate {planRotation}°
+                                                </button>
+                                            </div>
+                                            
+                                            {/* Single Plan Per Page Toggle */}
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <div>
+                                                    <label className="text-sm font-medium text-gray-700">Plan Layout</label>
+                                                    <p className="text-xs text-gray-500 mt-1">One plan per page (full size) or compact</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setSinglePlanPerPage(!singlePlanPerPage)}
+                                                    className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
+                                                        singlePlanPerPage
+                                                            ? 'bg-green-600 text-white'
+                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                    }`}
+                                                >
+                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        {singlePlanPerPage ? (
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                                                        ) : (
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
+                                                        )}
+                                                    </svg>
+                                                    {singlePlanPerPage ? 'One per Page' : 'Compact'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>
 
                         <div className="p-6 border-t border-gray-200 bg-gray-50">
+                            
                             <div className="flex justify-between items-center">
                                 <p className="text-sm text-gray-600">
                                     This preview shows the data that will be exported. Plan images (without grids) will be included at the end of the PDF.

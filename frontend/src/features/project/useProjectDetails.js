@@ -50,6 +50,7 @@ export default function useProjectDetails(projectId) {
   const [storeyWizardAreas, setStoreyWizardAreas] = useState([]);
   const [storeyWizardRoomSelections, setStoreyWizardRoomSelections] = useState([]);
   const [storeyWizardRoomOverrides, setStoreyWizardRoomOverrides] = useState({});
+  const [storeyWizardAreaOverrides, setStoreyWizardAreaOverrides] = useState({});
   const [storeyWizardError, setStoreyWizardError] = useState('');
   const [isStoreyWizardMinimized, setStoreyWizardMinimized] = useState(false);
   const [isLevelEditMode, setIsLevelEditMode] = useState(false);
@@ -126,6 +127,22 @@ export default function useProjectDetails(projectId) {
       };
     });
   }, [initializeRoomOverride, rooms]);
+
+  const updateStoreyWizardAreaOverride = useCallback((areaId, updates) => {
+    setStoreyWizardAreaOverrides((prev) => {
+      const key = String(areaId);
+      const existing = prev[key] || {
+        height: storeyWizardDefaultHeight || 3000,
+      };
+      return {
+        ...prev,
+        [key]: {
+          ...existing,
+          ...updates,
+        },
+      };
+    });
+  }, [storeyWizardDefaultHeight]);
 
   const enterLevelEditMode = useCallback(() => {
     setIsLevelEditMode(true);
@@ -361,6 +378,7 @@ export default function useProjectDetails(projectId) {
     setStoreyWizardAreas([]);
     setStoreyWizardRoomSelections([]);
     setStoreyWizardRoomOverrides({});
+    setStoreyWizardAreaOverrides({});
     setStoreyWizardError('');
     setSelectionContext('room');
     setSelectedRoomPoints([]);
@@ -374,6 +392,7 @@ export default function useProjectDetails(projectId) {
     setStoreyWizardAreas([]);
     setStoreyWizardRoomSelections([]);
     setStoreyWizardRoomOverrides({});
+    setStoreyWizardAreaOverrides({});
     setStoreyWizardError('');
     setStoreyWizardStep(1);
     setStoreyWizardMinimized(false);
@@ -731,25 +750,70 @@ export default function useProjectDetails(projectId) {
 
     if (storeyWizardAreas.length > 0) {
       if (storeys.length > 0) {
-        const highestStorey = storeys.reduce((prev, cur) =>
-          (prev.elevation_mm ?? 0) + (prev.default_room_height_mm ?? 0) >
-          (cur.elevation_mm ?? 0) + (cur.default_room_height_mm ?? 0)
-            ? prev
-            : cur
-        );
-        const areaBase =
-          (highestStorey.elevation_mm ?? 0) +
-          (highestStorey.default_room_height_mm ?? 0);
-        minBase = Math.min(minBase, areaBase);
-        if (highestStorey.default_room_height_mm) {
-          maxHeight = Math.max(
-            maxHeight,
-            Number(highestStorey.default_room_height_mm) || 0
+        // Find the highest storey based on actual room top elevations, not just default heights
+        let maxTopElevation = -Infinity;
+        let highestStorey = null;
+        
+        storeys.forEach((storey) => {
+          // Find all rooms on this storey
+          const storeyRooms = rooms.filter((room) => 
+            String(room.storey) === String(storey.id)
           );
+          
+          // Calculate the top elevation for each room (base + height)
+          let storeyMaxTop = storey.elevation_mm ?? 0;
+          storeyRooms.forEach((room) => {
+            const roomBase = Number(room.base_elevation_mm) ?? Number(storey.elevation_mm) ?? 0;
+            const roomHeight = Number(room.height) ?? Number(storey.default_room_height_mm) ?? 0;
+            const roomTop = roomBase + roomHeight;
+            if (roomTop > storeyMaxTop) {
+              storeyMaxTop = roomTop;
+            }
+          });
+          
+          // If no rooms, use storey elevation + default height
+          if (storeyRooms.length === 0) {
+            storeyMaxTop = (storey.elevation_mm ?? 0) + (storey.default_room_height_mm ?? 0);
+          }
+          
+          if (storeyMaxTop > maxTopElevation) {
+            maxTopElevation = storeyMaxTop;
+            highestStorey = storey;
+          }
+        });
+        
+        if (highestStorey) {
+          // Use the calculated max top elevation as the base for the new storey
+          minBase = Math.min(minBase, maxTopElevation);
+          
+          // Also find the maximum room height from the highest storey for default height calculation
+          const highestStoreyRooms = rooms.filter((room) => 
+            String(room.storey) === String(highestStorey.id)
+          );
+          
+          if (highestStoreyRooms.length > 0) {
+            highestStoreyRooms.forEach((room) => {
+              const roomHeight = Number(room.height) ?? Number(highestStorey.default_room_height_mm) ?? 0;
+              maxHeight = Math.max(maxHeight, roomHeight);
+            });
+          } else {
+            if (highestStorey.default_room_height_mm) {
+              maxHeight = Math.max(
+                maxHeight,
+                Number(highestStorey.default_room_height_mm) || 0
+              );
+            }
+          }
         }
       } else if (!Number.isFinite(minBase)) {
         minBase = 0;
       }
+      // Consider area height overrides
+      storeyWizardAreas.forEach((area) => {
+        const areaOverride = storeyWizardAreaOverrides[area.id] || {};
+        const areaHeight = areaOverride.height ?? storeyWizardDefaultHeight ?? 3000;
+        maxHeight = Math.max(maxHeight, Number(areaHeight) || 0);
+      });
     }
 
     if (!Number.isFinite(minBase)) {
@@ -807,6 +871,13 @@ export default function useProjectDetails(projectId) {
     };
 
     setStoreyWizardAreas(prev => [...prev, newArea]);
+    // Initialize height for the new area
+    setStoreyWizardAreaOverrides(prev => ({
+      ...prev,
+      [newArea.id]: {
+        height: storeyWizardDefaultHeight || 3000,
+      },
+    }));
     setSelectedRoomPoints([]);
     setSelectedWallsForRoom([]);
     setSelectionContext('room');
@@ -1705,9 +1776,12 @@ export default function useProjectDetails(projectId) {
 
       for (let index = 0; index < storeyWizardAreas.length; index += 1) {
         const area = storeyWizardAreas[index];
+        const areaOverride = storeyWizardAreaOverrides[area.id] || {};
+        const areaHeight = areaOverride.height ?? storeyWizardDefaultHeight ?? 3000;
         await createRoomFromPolygon(area.points, newStorey.id, {
           room_name: `Area ${index + 1} - ${storeyWizardName}`,
           base_elevation_mm: storeyElevation,
+          height: areaHeight,
         });
       }
 
@@ -2604,6 +2678,9 @@ export default function useProjectDetails(projectId) {
     setStoreyWizardRoomSelections,
     storeyWizardRoomOverrides,
     updateStoreyWizardRoomOverride,
+    storeyWizardAreaOverrides,
+    setStoreyWizardAreaOverrides,
+    updateStoreyWizardAreaOverride,
     deleteStorey: async (storeyId) => {
       try {
         await api.delete(`/storeys/${storeyId}/`);

@@ -1,10 +1,19 @@
 // Event handler utilities for ThreeCanvas3D.js
 
+// Helper function to get coordinates from event (works for both mouse and touch)
+function getEventCoordinates(event) {
+  if (event.touches && event.touches.length > 0) {
+    return { clientX: event.touches[0].clientX, clientY: event.touches[0].clientY };
+  }
+  return { clientX: event.clientX, clientY: event.clientY };
+}
+
 export function onMouseMoveHandler(instance, event) {
   // Calculate mouse position in normalized device coordinates
   const rect = instance.renderer.domElement.getBoundingClientRect();
-  instance.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  instance.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  const coords = getEventCoordinates(event);
+  instance.mouse.x = ((coords.clientX - rect.left) / rect.width) * 2 - 1;
+  instance.mouse.y = -((coords.clientY - rect.top) / rect.height) * 2 + 1;
 
   // Update the raycaster
   instance.raycaster.setFromCamera(instance.mouse, instance.camera);
@@ -26,10 +35,20 @@ export function onMouseMoveHandler(instance, event) {
   }
 }
 
+// Touch move handler (for mobile hover effect)
+// Note: We don't preventDefault here to allow OrbitControls to handle camera rotation/pan
+export function onTouchMoveHandler(instance, event) {
+  // Only update hover if it's a single touch (multi-touch is for camera control)
+  if (event.touches.length === 1) {
+    onMouseMoveHandler(instance, event);
+  }
+}
+
 export function onCanvasClickHandler(instance, event) {
   const rect = instance.renderer.domElement.getBoundingClientRect();
-  instance.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  instance.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  const coords = getEventCoordinates(event);
+  instance.mouse.x = ((coords.clientX - rect.left) / rect.width) * 2 - 1;
+  instance.mouse.y = -((coords.clientY - rect.top) / rect.height) * 2 + 1;
 
   instance.raycaster.setFromCamera(instance.mouse, instance.camera);
   const intersects = instance.raycaster.intersectObjects(instance.doorObjects, true);
@@ -72,6 +91,59 @@ export function onCanvasClickHandler(instance, event) {
     instance.doorButton.disabled = true;
     instance.doorButton.style.opacity = '0.7';
     instance.doorButton.style.backgroundColor = '#999999';
+  }
+}
+
+// Touch start handler (for mobile tap)
+// Store touch data per instance to avoid conflicts
+const touchData = new WeakMap();
+
+function getTouchData(instance) {
+  if (!touchData.has(instance)) {
+    touchData.set(instance, {
+      touchStartTime: 0,
+      touchStartPos: { x: 0, y: 0 }
+    });
+  }
+  return touchData.get(instance);
+}
+
+const TAP_THRESHOLD = 300; // milliseconds
+const TAP_DISTANCE_THRESHOLD = 10; // pixels
+
+export function onTouchStartHandler(instance, event) {
+  // Only track single touch (multi-touch is for camera zoom/pan)
+  if (event.touches.length === 1) {
+    const data = getTouchData(instance);
+    data.touchStartTime = Date.now();
+    data.touchStartPos = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }
+}
+
+// Touch end handler (for mobile tap to select door)
+export function onTouchEndHandler(instance, event) {
+  // Only handle single touch end (not multi-touch gestures)
+  if (event.touches.length === 0 && event.changedTouches.length === 1) {
+    const data = getTouchData(instance);
+    const touchEndTime = Date.now();
+    const touchEndPos = { x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY };
+    const timeDiff = touchEndTime - data.touchStartTime;
+    const distance = Math.sqrt(
+      Math.pow(touchEndPos.x - data.touchStartPos.x, 2) + 
+      Math.pow(touchEndPos.y - data.touchStartPos.y, 2)
+    );
+    
+    // Only treat as tap if it was quick and didn't move much
+    // This prevents triggering door selection when user is rotating/panning the camera
+    if (timeDiff < TAP_THRESHOLD && distance < TAP_DISTANCE_THRESHOLD) {
+      // Create a synthetic event for the click handler
+      const syntheticEvent = {
+        touches: [{ clientX: touchEndPos.x, clientY: touchEndPos.y }],
+        clientX: touchEndPos.x,
+        clientY: touchEndPos.y
+      };
+      onCanvasClickHandler(instance, syntheticEvent);
+    }
   }
 }
 

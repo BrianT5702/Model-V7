@@ -1997,6 +1997,13 @@ const Canvas2D = ({
             });
         }
 
+        // Store transform values on canvas element for capture function
+        if (canvasRef.current) {
+            canvasRef.current.setAttribute('data-scale-factor', scaleFactor.current.toString());
+            canvasRef.current.setAttribute('data-offset-x', offsetX.current.toString());
+            canvasRef.current.setAttribute('data-offset-y', offsetY.current.toString());
+        }
+        
         // Draw doors
         drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
         // Draw rooms

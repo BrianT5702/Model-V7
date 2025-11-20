@@ -11,6 +11,114 @@ import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabel
 // Module-level Map that persists across renders
 const dimensionPlacementMemory = new Map();
 
+// Check if a label bounds rectangle overlaps with a wall line segment
+// Returns true if the label would overlap with the wall line
+function doesLabelOverlapWallLine(labelBounds, line, scaleFactor, offsetX, offsetY, padding = 1) {
+    // Convert line points to screen coordinates
+    const lineStartX = line[0].x * scaleFactor + offsetX;
+    const lineStartY = line[0].y * scaleFactor + offsetY;
+    const lineEndX = line[1].x * scaleFactor + offsetX;
+    const lineEndY = line[1].y * scaleFactor + offsetY;
+    
+    // Add padding to label bounds for safety margin
+    const paddedBounds = {
+        x: labelBounds.x - padding,
+        y: labelBounds.y - padding,
+        width: labelBounds.width + padding * 2,
+        height: labelBounds.height + padding * 2
+    };
+    
+    // Check if line segment intersects with the rectangle
+    // Using line-rectangle intersection algorithm
+    const rectLeft = paddedBounds.x;
+    const rectRight = paddedBounds.x + paddedBounds.width;
+    const rectTop = paddedBounds.y;
+    const rectBottom = paddedBounds.y + paddedBounds.height;
+    
+    // Check if line is completely outside the rectangle
+    const lineMinX = Math.min(lineStartX, lineEndX);
+    const lineMaxX = Math.max(lineStartX, lineEndX);
+    const lineMinY = Math.min(lineStartY, lineEndY);
+    const lineMaxY = Math.max(lineStartY, lineEndY);
+    
+    // Quick rejection test
+    if (lineMaxX < rectLeft || lineMinX > rectRight || lineMaxY < rectTop || lineMinY > rectBottom) {
+        return false;
+    }
+    
+    // Check if any point of the line is inside the rectangle
+    if ((lineStartX >= rectLeft && lineStartX <= rectRight && lineStartY >= rectTop && lineStartY <= rectBottom) ||
+        (lineEndX >= rectLeft && lineEndX <= rectRight && lineEndY >= rectTop && lineEndY <= rectBottom)) {
+        return true;
+    }
+    
+    // Check if line segment intersects rectangle edges
+    // Check intersection with top edge
+    if (lineMinY <= rectTop && lineMaxY >= rectTop) {
+        const t = (rectTop - lineStartY) / (lineEndY - lineStartY);
+        if (t >= 0 && t <= 1) {
+            const intersectX = lineStartX + t * (lineEndX - lineStartX);
+            if (intersectX >= rectLeft && intersectX <= rectRight) {
+                return true;
+            }
+        }
+    }
+    
+    // Check intersection with bottom edge
+    if (lineMinY <= rectBottom && lineMaxY >= rectBottom) {
+        const t = (rectBottom - lineStartY) / (lineEndY - lineStartY);
+        if (t >= 0 && t <= 1) {
+            const intersectX = lineStartX + t * (lineEndX - lineStartX);
+            if (intersectX >= rectLeft && intersectX <= rectRight) {
+                return true;
+            }
+        }
+    }
+    
+    // Check intersection with left edge
+    if (lineMinX <= rectLeft && lineMaxX >= rectLeft) {
+        const t = (rectLeft - lineStartX) / (lineEndX - lineStartX);
+        if (t >= 0 && t <= 1) {
+            const intersectY = lineStartY + t * (lineEndY - lineStartY);
+            if (intersectY >= rectTop && intersectY <= rectBottom) {
+                return true;
+            }
+        }
+    }
+    
+    // Check intersection with right edge
+    if (lineMinX <= rectRight && lineMaxX >= rectRight) {
+        const t = (rectRight - lineStartX) / (lineEndX - lineStartX);
+        if (t >= 0 && t <= 1) {
+            const intersectY = lineStartY + t * (lineEndY - lineStartY);
+            if (intersectY >= rectTop && intersectY <= rectBottom) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Check if label bounds overlap with any wall lines
+function doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) {
+    if (!wallLinesMap || wallLinesMap.size === 0) return false;
+    
+    for (const [, wallData] of wallLinesMap) {
+        const { line1, line2 } = wallData;
+        
+        // Check both line1 and line2
+        if (line1 && doesLabelOverlapWallLine(labelBounds, line1, scaleFactor, offsetX, offsetY)) {
+            return true;
+        }
+        if (line2 && doesLabelOverlapWallLine(labelBounds, line2, scaleFactor, offsetX, offsetY)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 // Utility function to normalize wall coordinates
 // Ensures horizontal walls are created from left to right
 // and vertical walls are created from top to bottom
@@ -234,7 +342,7 @@ export function compareDimensions(actualDimensions, declaredProject) {
 }
 
 // Draw overall project dimensions (actual dimensions from wall boundaries)
-export function drawOverallProjectDimensions(context, walls, scaleFactor, offsetX, offsetY, placedLabels = [], allLabels = [], initialScale = 1) {
+export function drawOverallProjectDimensions(context, walls, scaleFactor, offsetX, offsetY, placedLabels = [], allLabels = [], initialScale = 1, wallLinesMap = null) {
     if (!walls || walls.length === 0) return;
     
     const actualDimensions = calculateActualProjectDimensions(walls);
@@ -259,7 +367,7 @@ export function drawOverallProjectDimensions(context, walls, scaleFactor, offset
         scaleFactor, offsetX, offsetY,
         DIMENSION_CONFIG.COLORS.PROJECT,
         modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'horizontal',
-        initialScale
+        initialScale, wallLinesMap
     );
     
     // Draw overall length dimension (right side) with enhanced collision detection
@@ -270,12 +378,12 @@ export function drawOverallProjectDimensions(context, walls, scaleFactor, offset
         scaleFactor, offsetX, offsetY,
         DIMENSION_CONFIG.COLORS.PROJECT,
         modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'vertical',
-        initialScale
+        initialScale, wallLinesMap
     );
 }
 
 // Enhanced function to draw project dimensions with better collision detection
-function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color, modelBounds, placedLabels, allLabels, baseOffset, orientation, initialScale = 1) {
+function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color, modelBounds, placedLabels, allLabels, baseOffset, orientation, initialScale = 1, wallLinesMap = null) {
     const length = Math.sqrt(
         Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
@@ -344,14 +452,22 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
             const labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 10);
             const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
             
-            if (!hasOverlap) break;
+            // Check for overlaps with wall lines
+            const hasWallOverlap = wallLinesMap ? doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) : false;
             
-            // Increase offset more aggressively for project dimensions
-            offset += DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+            if (!hasOverlap && !hasWallOverlap) break;
+            
+            // Use smaller increment if only wall overlap (to keep text closer), otherwise use normal increment
+            // Scale-aware increment: 3mm in model units for wall avoidance, converted to screen pixels
+            const wallAvoidanceIncrementPx = hasWallOverlap && !hasOverlap ? 3 * scaleFactor : DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+            offset += wallAvoidanceIncrementPx;
             attempts++;
         } while (attempts < maxAttempts);
         
-        // Draw dimension lines
+        // Draw dimension lines with gap for text
+        const textPadding = 4;
+        const textLeft = labelX - textWidth / 2 - textPadding;
+        const textRight = labelX + textWidth / 2 + textPadding;
         context.beginPath();
         context.setLineDash([5, 5]);
         // Extension line from start of wall (perpendicular to wall)
@@ -360,17 +476,23 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
         // Extension line from end of wall (perpendicular to wall)
         context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
         context.lineTo(endX * scaleFactor + offsetX, labelY);
-        // Dimension line connecting the two extension lines
-        context.moveTo(startX * scaleFactor + offsetX, labelY);
-        context.lineTo(endX * scaleFactor + offsetX, labelY);
+        // Dimension line connecting the two extension lines (with gap for text)
+        const startXScreen = startX * scaleFactor + offsetX;
+        const endXScreen = endX * scaleFactor + offsetX;
+        if (startXScreen < textLeft) {
+            context.moveTo(startXScreen, labelY);
+            context.lineTo(textLeft, labelY);
+        }
+        if (endXScreen > textRight) {
+            context.moveTo(textRight, labelY);
+            context.lineTo(endXScreen, labelY);
+        }
         context.strokeStyle = color;
         context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
         context.stroke();
         context.setLineDash([]);
         
-        // Draw text with background
-        context.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        context.fillRect(labelX - textWidth / 2 - 4, labelY - 10, textWidth + 8, 20);
+        // Draw text without background
         context.fillStyle = color;
         context.font = `bold ${fontSize}px Arial`;
         context.textAlign = 'center';
@@ -410,14 +532,22 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
             const labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 10);
             const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
             
-            if (!hasOverlap) break;
+            // Check for overlaps with wall lines
+            const hasWallOverlap = wallLinesMap ? doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) : false;
             
-            // Increase offset more aggressively for project dimensions
-            offset += DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+            if (!hasOverlap && !hasWallOverlap) break;
+            
+            // Use smaller increment if only wall overlap (to keep text closer), otherwise use normal increment
+            // Scale-aware increment: 3mm in model units for wall avoidance, converted to screen pixels
+            const wallAvoidanceIncrementPx = hasWallOverlap && !hasOverlap ? 3 * scaleFactor : DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+            offset += wallAvoidanceIncrementPx;
             attempts++;
         } while (attempts < maxAttempts);
         
-        // Draw dimension lines
+        // Draw dimension lines with gap for text
+        const textPadding = 4;
+        const textTop = labelY - textWidth / 2 - textPadding;
+        const textBottom = labelY + textWidth / 2 + textPadding;
         context.beginPath();
         context.setLineDash([5, 5]);
         // Extension line from start of wall (perpendicular to wall)
@@ -426,9 +556,17 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
         // Extension line from end of wall (perpendicular to wall)
         context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
         context.lineTo(labelX, endY * scaleFactor + offsetY);
-        // Dimension line connecting the two extension lines
-        context.moveTo(labelX, startY * scaleFactor + offsetY);
-        context.lineTo(labelX, endY * scaleFactor + offsetY);
+        // Dimension line connecting the two extension lines (with gap for text)
+        const startYScreen = startY * scaleFactor + offsetY;
+        const endYScreen = endY * scaleFactor + offsetY;
+        if (startYScreen < textTop) {
+            context.moveTo(labelX, startYScreen);
+            context.lineTo(labelX, textTop);
+        }
+        if (endYScreen > textBottom) {
+            context.moveTo(labelX, textBottom);
+            context.lineTo(labelX, endYScreen);
+        }
         context.strokeStyle = color;
         context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
         context.stroke();
@@ -438,10 +576,8 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
         context.save();
         context.translate(labelX, labelY);
         context.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
-        context.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        context.fillRect(-textWidth / 2 - 4, -10, textWidth + 8, 20);
         context.fillStyle = color;
-        context.font = `bold ${fontSize}px Arial`;
+        context.font = `${fontSize}px Arial`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(text, 0, 0);
@@ -464,7 +600,7 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
 }
 
 // Draw wall dimensions
-export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false, initialScale = 1) {
+export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false, initialScale = 1, wallLinesMap = null) {
     // Debug: Log the scale factor being used
     // console.log('🔍 drawDimensions called with scaleFactor:', scaleFactor);
     
@@ -582,11 +718,38 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 dimensionPlacementMemory.set(dimensionKey, { side: placement.side });
             }
             
-            const labelX = placement.labelX;
-            const labelY = placement.labelY;
-            const side = placement.side === 'side1' ? 'top' : 'bottom';
+            let labelX = placement.labelX;
+            let labelY = placement.labelY;
+            let side = placement.side === 'side1' ? 'top' : 'bottom';
             
-            // Draw standard architectural dimensioning lines
+            // Additional check: ensure label doesn't overlap with wall lines
+            if (wallLinesMap) {
+                let labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
+                let hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
+                let wallCheckAttempts = 0;
+                const maxWallCheckAttempts = 10;
+                // Scale-aware increment: 2mm in model units, converted to screen pixels
+                const wallAvoidanceIncrement = 200 * scaleFactor;
+                
+                while (hasWallOverlap && wallCheckAttempts < maxWallCheckAttempts) {
+                    // Increase offset gradually to move label away from wall
+                    if (placement.side === 'side1') {
+                        // Top side - move up
+                        labelY = labelY - wallAvoidanceIncrement;
+                    } else {
+                        // Bottom side - move down
+                        labelY = labelY + wallAvoidanceIncrement;
+                    }
+                    labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
+                    hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
+                    wallCheckAttempts++;
+                }
+            }
+            
+            // Draw standard architectural dimensioning lines with gap for text
+            const textPadding = 2;
+            const textLeft = labelX - textWidth / 2 - textPadding;
+            const textRight = labelX + textWidth / 2 + textPadding;
             context.beginPath();
             context.setLineDash([5, 5]);
             // Extension line from start of wall (perpendicular to wall)
@@ -595,9 +758,17 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             // Extension line from end of wall (perpendicular to wall)
             context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
             context.lineTo(endX * scaleFactor + offsetX, labelY);
-            // Dimension line connecting the two extension lines
-            context.moveTo(startX * scaleFactor + offsetX, labelY);
-            context.lineTo(endX * scaleFactor + offsetX, labelY);
+            // Dimension line connecting the two extension lines (with gap for text)
+            const startXScreen = startX * scaleFactor + offsetX;
+            const endXScreen = endX * scaleFactor + offsetX;
+            if (startXScreen < textLeft) {
+                context.moveTo(startXScreen, labelY);
+                context.lineTo(textLeft, labelY);
+            }
+            if (endXScreen > textRight) {
+                context.moveTo(textRight, labelY);
+                context.lineTo(endXScreen, labelY);
+            }
             context.strokeStyle = color;
             context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
             context.stroke();
@@ -678,11 +849,38 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 dimensionPlacementMemory.set(dimensionKey, { side: placement.side });
             }
             
-            const labelX = placement.labelX;
-            const labelY = placement.labelY;
-            const side = placement.side === 'side1' ? 'left' : 'right';
+            let labelX = placement.labelX;
+            let labelY = placement.labelY;
+            let side = placement.side === 'side1' ? 'left' : 'right';
             
-            // Draw standard architectural dimensioning lines
+            // Additional check: ensure label doesn't overlap with wall lines
+            if (wallLinesMap) {
+                let labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+                let hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
+                let wallCheckAttempts = 0;
+                const maxWallCheckAttempts = 10;
+                // Scale-aware increment: 2mm in model units, converted to screen pixels
+                const wallAvoidanceIncrement = 2 * scaleFactor;
+                
+                while (hasWallOverlap && wallCheckAttempts < maxWallCheckAttempts) {
+                    // Increase offset gradually to move label away from wall
+                    if (placement.side === 'side1') {
+                        // Left side - move left
+                        labelX = labelX - wallAvoidanceIncrement;
+                    } else {
+                        // Right side - move right
+                        labelX = labelX + wallAvoidanceIncrement;
+                    }
+                    labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+                    hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
+                    wallCheckAttempts++;
+                }
+            }
+            
+            // Draw standard architectural dimensioning lines with gap for text
+            const textPadding = 2;
+            const textTop = labelY - textWidth / 2 - textPadding;
+            const textBottom = labelY + textWidth / 2 + textPadding;
             context.beginPath();
             context.setLineDash([5, 5]);
             // Extension line from start of wall (perpendicular to wall)
@@ -691,9 +889,17 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             // Extension line from end of wall (perpendicular to wall)
             context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
             context.lineTo(labelX, endY * scaleFactor + offsetY);
-            // Dimension line connecting the two extension lines
-            context.moveTo(labelX, startY * scaleFactor + offsetY);
-            context.lineTo(labelX, endY * scaleFactor + offsetY);
+            // Dimension line connecting the two extension lines (with gap for text)
+            const startYScreen = startY * scaleFactor + offsetY;
+            const endYScreen = endY * scaleFactor + offsetY;
+            if (startYScreen < textTop) {
+                context.moveTo(labelX, startYScreen);
+                context.lineTo(labelX, textTop);
+            }
+            if (endYScreen > textBottom) {
+                context.moveTo(labelX, textBottom);
+                context.lineTo(labelX, endYScreen);
+            }
             context.strokeStyle = color;
             context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
             context.stroke();
@@ -703,8 +909,6 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             context.save();
             context.translate(labelX, labelY);
             context.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
-            context.fillStyle = 'rgba(255, 255, 255, 0.95)';
-            context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
             context.fillStyle = color;
             // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
             const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
@@ -732,7 +936,7 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             
             // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
             fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-            context.font = `bold ${fontSize}px Arial`;
+            context.font = `${fontSize}px Arial`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(text, 0, 0);
@@ -770,8 +974,6 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             // Horizontal wall (original simple style)
             midX = ((startX + endX) / 2) * scaleFactor + offsetX;
             midY = ((startY + endY) / 2) * scaleFactor + offsetY - 15;
-            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            context.fillRect(midX - textWidth / 2 - 2, midY - 8, textWidth + 4, 16);
             context.fillStyle = color;
             context.fillText(text, midX - textWidth / 2, midY + 4);
         } else {
@@ -780,8 +982,6 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             midY = ((startY + endY) / 2) * scaleFactor + offsetY;
             context.translate(midX, midY);
             context.rotate(-Math.PI / 2);
-            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            context.fillRect(-textWidth / 2 - 2, -8, textWidth + 4, 16);
             context.fillStyle = color;
             context.fillText(text, -textWidth / 2, 4);
             context.restore();
@@ -1570,7 +1770,8 @@ export function drawWalls({
                 placedLabels,
                 allLabels,
                 true, // collectOnly
-                initialScale
+                initialScale,
+                wallLinesMap
             );
         }
         if (isEditingMode) {
@@ -1944,7 +2145,10 @@ export function drawPanelDivisions(
                 // Calculate final label bounds (use same function for consistency)
                 const finalLabelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
                 
-                // Draw standard architectural dimensioning lines for panel
+                // Draw standard architectural dimensioning lines for panel with gap for text
+                const textPadding = 2;
+                const textLeft = labelX - textWidth / 2 - textPadding;
+                const textRight = labelX + textWidth / 2 + textPadding;
                 context.beginPath();
                 context.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
                 // Extension line from start of panel (perpendicular to panel)
@@ -1953,9 +2157,17 @@ export function drawPanelDivisions(
                 // Extension line from end of panel (perpendicular to panel)
                 context.moveTo(mxEnd * scaleFactor + offsetX, myEnd * scaleFactor + offsetY);
                 context.lineTo(mxEnd * scaleFactor + offsetX, labelY);
-                // Dimension line connecting the two extension lines
-                context.moveTo(mxStart * scaleFactor + offsetX, labelY);
-                context.lineTo(mxEnd * scaleFactor + offsetX, labelY);
+                // Dimension line connecting the two extension lines (with gap for text)
+                const startXScreen = mxStart * scaleFactor + offsetX;
+                const endXScreen = mxEnd * scaleFactor + offsetX;
+                if (startXScreen < textLeft) {
+                    context.moveTo(startXScreen, labelY);
+                    context.lineTo(textLeft, labelY);
+                }
+                if (endXScreen > textRight) {
+                    context.moveTo(textRight, labelY);
+                    context.lineTo(endXScreen, labelY);
+                }
                 context.strokeStyle = specialColor; // Use special color for 1130mm panels
                 context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
                 context.stroke();
@@ -2017,7 +2229,10 @@ export function drawPanelDivisions(
                 // Calculate final label bounds (use same function for consistency)
                 const finalLabelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
                 
-                // Draw standard architectural dimensioning lines for panel
+                // Draw standard architectural dimensioning lines for panel with gap for text
+                const textPadding = 2;
+                const textTop = labelY - textWidth / 2 - textPadding;
+                const textBottom = labelY + textWidth / 2 + textPadding;
                 context.beginPath();
                 context.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
                 // Extension line from start of panel (perpendicular to panel)
@@ -2026,9 +2241,17 @@ export function drawPanelDivisions(
                 // Extension line from end of panel (perpendicular to panel)
                 context.moveTo(mxEnd * scaleFactor + offsetX, myEnd * scaleFactor + offsetY);
                 context.lineTo(labelX, myEnd * scaleFactor + offsetY);
-                // Dimension line connecting the two extension lines
-                context.moveTo(labelX, myStart * scaleFactor + offsetY);
-                context.lineTo(labelX, myEnd * scaleFactor + offsetY);
+                // Dimension line connecting the two extension lines (with gap for text)
+                const startYScreen = myStart * scaleFactor + offsetY;
+                const endYScreen = myEnd * scaleFactor + offsetY;
+                if (startYScreen < textTop) {
+                    context.moveTo(labelX, startYScreen);
+                    context.lineTo(labelX, textTop);
+                }
+                if (endYScreen > textBottom) {
+                    context.moveTo(labelX, textBottom);
+                    context.lineTo(labelX, endYScreen);
+                }
                 context.strokeStyle = specialColor; // Use special color for 1130mm panels
                 context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
                 context.stroke();
@@ -2076,8 +2299,6 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             const centerY = label.y + label.height / 2;
             context.translate(centerX, centerY);
             context.rotate(-Math.PI / 2);
-            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            context.fillRect(-label.height / 2, -label.width / 2, label.height, label.width);
             context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
             // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
             const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
@@ -2111,8 +2332,6 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             context.fillText(label.text, 0, 0);
         } else {
             // Horizontal
-            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            context.fillRect(label.x, label.y, label.width, label.height);
             context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
             // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
             const calculatedFontSize2 = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
