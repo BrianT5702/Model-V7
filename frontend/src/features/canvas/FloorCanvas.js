@@ -484,8 +484,11 @@ const FloorCanvas = ({
             console.log('Drawing wall:', wall);
             
             try {
-                // Use fixed gap for consistent double-line wall appearance (same as wall plan)
-                const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
+                // Calculate gap in pixels based on wall thickness
+                // Gap should represent half the wall thickness on each side
+                // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
+                const wallThickness = wall.thickness || 100; // Default to 100mm if not set
+                const gapPixels = (wallThickness * scaleFactor.current) / 2;
 
                 // Calculate offset points for double-line wall
                 let { line1, line2 } = calculateOffsetPoints(
@@ -493,7 +496,7 @@ const FloorCanvas = ({
                     wall.start_y,
                     wall.end_x,
                     wall.end_y,
-                    FIXED_GAP,
+                    gapPixels,
                     center,
                     scaleFactor.current
                 );
@@ -557,9 +560,11 @@ const FloorCanvas = ({
                         
                         if (shouldFlip) {
                             console.log(`🔍 FLIPPING inner face for wall ${wall.id}!`);
-                            // Recalculate line2 with flipped offset
-                            const offsetX = (FIXED_GAP * normalX) / scaleFactor.current;
-                            const offsetY = (FIXED_GAP * normalY) / scaleFactor.current;
+                            // Recalculate line2 with flipped offset using wall thickness
+                            const wallThickness = wall.thickness || 100; // Default to 100mm if not set
+                            const gapPixels = (wallThickness * scaleFactor.current) / 2;
+                            const offsetX = (gapPixels * normalX) / scaleFactor.current;
+                            const offsetY = (gapPixels * normalY) / scaleFactor.current;
                             
                             // Flip the offset based on the logic
                             const finalOffsetX = dotToCenter > 0 ? offsetX : -offsetX;

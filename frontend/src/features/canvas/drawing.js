@@ -422,7 +422,7 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
     
     // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
     fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-    context.font = `${fontSize}px Arial`;
+    context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
     const text = `${Math.round(length)}`;
     const textWidth = context.measureText(text).width;
     const dx = endX - startX;
@@ -494,7 +494,7 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
         
         // Draw text without background
         context.fillStyle = color;
-        context.font = `bold ${fontSize}px Arial`;
+        context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(text, labelX, labelY);
@@ -577,7 +577,7 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
         context.translate(labelX, labelY);
         context.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
         context.fillStyle = color;
-        context.font = `${fontSize}px Arial`;
+        context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(text, 0, 0);
@@ -643,7 +643,7 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
     fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
     // console.log('🔍 drawDimensions font size:', fontSize, 'scaleFactor:', scaleFactor);
-    context.font = `${fontSize}px Arial`;
+    context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
     const text = `${Math.round(length)}`;
     const textWidth = context.measureText(text).width;
     const dx = endX - startX;
@@ -936,7 +936,7 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
             
             // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
             fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-            context.font = `${fontSize}px Arial`;
+            context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(text, 0, 0);
@@ -1293,7 +1293,6 @@ export function drawWalls({
     scaleFactor,
     offsetX,
     offsetY,
-    FIXED_GAP,
     center,
     currentScaleFactor,
     SNAP_THRESHOLD,
@@ -1338,12 +1337,18 @@ export function drawWalls({
     const wallLinesMap = new Map(); // Store line1 and line2 for each wall
     
     walls.forEach((wall) => {
+        // Calculate gap in pixels based on wall thickness
+        // Gap should represent half the wall thickness on each side
+        // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
+        const wallThickness = wall.thickness; // Default to 100mm if not set
+        const gapPixels = (wallThickness * scaleFactor);
+        
         let { line1, line2 } = calculateOffsetPoints(
             wall.start_x,
             wall.start_y,
             wall.end_x,
             wall.end_y,
-            FIXED_GAP,
+            gapPixels,
             center,
             scaleFactor
         );
@@ -1730,6 +1735,10 @@ export function drawWalls({
         if (showPanelLines && wallPanelsMap && drawPanelDivisions) {
             const panels = wallPanelsMap[wall.id];
             if (panels && panels.length > 0) {
+                // Calculate gap in pixels based on wall thickness for panel divisions
+                const wallThickness = wall.thickness || 100; // Default to 100mm if not set
+                const gapPixels = (wallThickness * scaleFactor) / 2;
+                
                 drawPanelDivisions(
                     context,
                     wall,
@@ -1738,7 +1747,7 @@ export function drawWalls({
                     offsetX,
                     offsetY,
                     undefined,
-                    FIXED_GAP,
+                    gapPixels,
                     modelBounds,
                     placedLabels,
                     allPanelLabels,
@@ -1792,12 +1801,16 @@ export function drawWalls({
     });
     // Draw temporary wall while adding wall (skip label collection for temp wall)
     if (tempWall) {
+        // Calculate gap in pixels based on wall thickness for temp wall
+        const tempWallThickness = tempWall.thickness || 100; // Default to 100mm if not set
+        const tempGapPixels = (tempWallThickness * scaleFactor) / 2;
+        
         const { line1, line2 } = calculateOffsetPoints(
             tempWall.start_x,
             tempWall.start_y,
             tempWall.end_x,
             tempWall.end_y,
-            FIXED_GAP,
+            tempGapPixels,
             center,
             scaleFactor
         );
@@ -2111,7 +2124,7 @@ export function drawPanelDivisions(
             
             // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
             fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-            context.font = `${fontSize}px Arial`;
+            context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const textWidth = context.measureText(text).width;
 
             if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
@@ -2326,7 +2339,7 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             
             // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
             fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-            context.font = `${fontSize}px Arial`;
+            context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(label.text, 0, 0);
@@ -2359,7 +2372,7 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             
             // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
             fontSize2 = Math.max(fontSize2, DIMENSION_CONFIG.FONT_SIZE_MIN);
-            context.font = `${fontSize2}px Arial`;
+            context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize2}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             context.textAlign = 'left';
             context.textBaseline = 'top';
             context.fillText(label.text, label.x + 2, label.y + 2);

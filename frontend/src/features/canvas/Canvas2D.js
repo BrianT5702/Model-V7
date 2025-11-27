@@ -407,15 +407,15 @@ const Canvas2D = ({
     };
 
     const SNAP_THRESHOLD = 10;
-    const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
     const gridSize = 50;
 
     //start here about the room area defining
     const calculateRoomArea = (roomWalls) => {
         if (!roomWalls || roomWalls.length < 3) return null;
 
-        // Calculate ROOM_INSET using current scale factor
-        const ROOM_INSET = FIXED_GAP / currentScaleFactor + 150;
+        // Calculate ROOM_INSET using a default wall thickness (100mm) for room area calculation
+        const DEFAULT_WALL_THICKNESS = 100; // Default wall thickness in mm
+        const ROOM_INSET = (DEFAULT_WALL_THICKNESS / 2) + 150;
     
         // Create a map of wall thicknesses for each segment
         const wallThicknessMap = new Map();
@@ -1918,7 +1918,6 @@ const Canvas2D = ({
             scaleFactor: scaleFactor.current,
             offsetX: offsetX.current,
             offsetY: offsetY.current,
-            FIXED_GAP,
             center: project ? { x: project.width / 2, y: project.length / 2 } : { x: 0, y: 0 },
             currentScaleFactor,
             SNAP_THRESHOLD,
@@ -2024,7 +2023,7 @@ const Canvas2D = ({
                 context.save();
                 context.strokeStyle = '#94A3B8';
                 context.globalAlpha = 0.7;
-                context.lineWidth = Math.max(1, (ghostWall.thickness || FIXED_GAP / 2) * scaleFactor.current * 0.5);
+                context.lineWidth = Math.max(1, (ghostWall.thickness || 50) * scaleFactor.current * 0.5);
                 context.setLineDash([12, 6]);
                 context.beginPath();
                 context.moveTo(startX, startY);

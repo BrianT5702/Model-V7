@@ -19,21 +19,21 @@ export const DIMENSION_CONFIG = {
     FONT_SIZE: 200,               // Dimension text scaling multiplier - matches wall plan
     FONT_SIZE_MIN: 8,             // Minimum font size when scaled down
     FONT_FAMILY: "'Segoe UI', Arial, sans-serif",  // Modern font with fallbacks
-    FONT_WEIGHT: 'bold',          // Font weight for dimensions
+    FONT_WEIGHT: 'normal',          // Font weight for dimensions
     LINE_WIDTH: 1,              // Extension line width (px)
-    DIMENSION_LINE_WIDTH: 1.5,      // Main dimension line width (px)
+    DIMENSION_LINE_WIDTH: 1,      // Main dimension line width (px)
     EXTENSION_DASH: [5, 5],       // Dash pattern for extension lines
-    BACKGROUND_OPACITY: 0.8,     // Text background opacity
+    BACKGROUND_OPACITY: 1,     // Text background opacity
     LABEL_PADDING_H: 8,           // Horizontal label padding (px)
     LABEL_PADDING_V: 8,           // Vertical label padding (px)
     LABEL_BORDER_WIDTH: 1,        // Label border width (px)
     
     // Appearance - General Drawing
     GRID_LINE_WIDTH: 1,           // Grid line width
-    GRID_LINE_WIDTH_ACTIVE: 1.5,  // Grid line width when drawing
-    WALL_LINE_WIDTH: 2,           // Wall line width
-    WALL_CAP_LINE_WIDTH: 1.5,     // Wall cap line width
-    PARTITION_LINE_WIDTH: 1.5,    // Partition slash line width
+    GRID_LINE_WIDTH_ACTIVE: 0.9,  // Grid line width when drawing
+    WALL_LINE_WIDTH: 1,           // Wall line width
+    WALL_CAP_LINE_WIDTH: 1,     // Wall cap line width
+    PARTITION_LINE_WIDTH: 1,    // Partition slash line width
     ROOM_PREVIEW_LINE_WIDTH: 2,   // Room preview line width
     ROOM_PREVIEW_DASH: [5, 5],    // Room preview dash pattern
     ENDPOINT_SIZE: 2,             // Normal endpoint circle size

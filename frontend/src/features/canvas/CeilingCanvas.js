@@ -681,8 +681,11 @@ const CeilingCanvas = ({
         walls.forEach(wall => {
             
             try {
-                // Use fixed gap for consistent double-line wall appearance (same as wall plan)
-                const FIXED_GAP = 2.5; // Fixed gap in pixels for double-line walls
+                // Calculate gap in pixels based on wall thickness
+                // Gap should represent half the wall thickness on each side
+                // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
+                const wallThickness = wall.thickness || 100; // Default to 100mm if not set
+                const gapPixels = (wallThickness * scaleFactor.current) / 2;
 
                 // Calculate offset points for double-line wall
                 let { line1, line2 } = calculateOffsetPoints(
@@ -690,7 +693,7 @@ const CeilingCanvas = ({
                     wall.start_y,
                     wall.end_x,
                     wall.end_y,
-                    FIXED_GAP,
+                    gapPixels,
                     center,
                     scaleFactor.current
                 );
@@ -1718,7 +1721,7 @@ const CeilingCanvas = ({
         // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
         // This handles any edge cases or timing issues
         fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-        ctx.font = `bold ${fontSize}px 'Segoe UI', Arial, sans-serif`;
+        ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         
         if (isHorizontal) {
             // Horizontal text
@@ -1852,7 +1855,7 @@ const CeilingCanvas = ({
         // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
         // This handles any edge cases or timing issues
         fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-        const dimensionFont = `bold ${fontSize}px 'Segoe UI', Arial, sans-serif`;
+        const dimensionFont = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         const previousFont = ctx.font;
         ctx.font = dimensionFont;
 
