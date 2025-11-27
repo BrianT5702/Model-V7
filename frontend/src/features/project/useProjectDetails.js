@@ -1995,18 +1995,23 @@ export default function useProjectDetails(projectId) {
         if (wallsAtPt.length === 2) {
           const [w1, w2] = wallsAtPt;
           if (canMerge(w1, w2)) {
-            // Call merge API
-            const response = await api.post("/walls/merge_walls/", {
-              wall_ids: [w1.id, w2.id],
-            });
-            if (response.status === 201) {
-              const newWall = response.data;
-              updatedWalls = updatedWalls.filter(w => w.id !== w1.id && w.id !== w2.id);
-              updatedWalls.push(newWall);
-              mergeHappened = true;
-              // Recursively try to merge at both endpoints of the new wall
-              await tryMergeAtPoint({ x: newWall.start_x, y: newWall.start_y });
-              await tryMergeAtPoint({ x: newWall.end_x, y: newWall.end_y });
+            try {
+              // Call merge API
+              const response = await api.post("/walls/merge_walls/", {
+                wall_ids: [w1.id, w2.id],
+              });
+              if (response.status === 201) {
+                const newWall = response.data;
+                updatedWalls = updatedWalls.filter(w => w.id !== w1.id && w.id !== w2.id);
+                updatedWalls.push(newWall);
+                mergeHappened = true;
+                // Recursively try to merge at both endpoints of the new wall
+                await tryMergeAtPoint({ x: newWall.start_x, y: newWall.start_y });
+                await tryMergeAtPoint({ x: newWall.end_x, y: newWall.end_y });
+              }
+            } catch (mergeError) {
+              // Log merge errors but don't fail the entire deletion
+              console.warn('Could not merge walls at point:', pt, mergeError);
             }
           }
         }

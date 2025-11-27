@@ -23,7 +23,8 @@ import {
     FaEye,
     FaEyeSlash,
     FaArrowLeft,
-    FaLayerGroup
+    FaLayerGroup,
+    FaTimes
 } from 'react-icons/fa';
 
 const ProjectDetails = () => {
@@ -1318,7 +1319,7 @@ const ProjectDetails = () => {
                 )}
                 
                 {/* Left Sidebar - Controls */}
-                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-80 bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
+                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-72 min-w-[240px] max-w-[320px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 }`}>
                     <div className="p-4 sm:p-6">
@@ -1445,18 +1446,34 @@ const ProjectDetails = () => {
 
                                 {/* Wall Type Selection */}
                                 {projectDetails.currentMode === 'add-wall' && (
-                                    <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm">
-                                        <label className="block text-sm font-semibold text-blue-800 mb-3 uppercase tracking-wide">Wall Type:</label>
-                                        <select 
-                                            value={projectDetails.selectedWallType} 
-                                            onChange={(e) => projectDetails.setSelectedWallType(e.target.value)}
-                                            className="w-full px-4 py-3 rounded-lg border-2 border-blue-300 
-                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                bg-white text-blue-900 focus-ring font-medium shadow-sm"
-                                        >
-                                            <option value="wall">Wall</option>
-                                            <option value="partition">Partition</option>
-                                        </select>
+                                    <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm space-y-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Add Wall Mode</label>
+                                            <button
+                                                onClick={() => projectDetails.setCurrentMode(null)}
+                                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center gap-2 shadow-sm active:scale-95"
+                                                title="Cancel adding wall"
+                                            >
+                                                <FaTimes className="text-xs" />
+                                                <span>Cancel</span>
+                                            </button>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-blue-800 mb-2 uppercase tracking-wide">Wall Type:</label>
+                                            <select 
+                                                value={projectDetails.selectedWallType} 
+                                                onChange={(e) => projectDetails.setSelectedWallType(e.target.value)}
+                                                className="w-full px-4 py-3 rounded-lg border-2 border-blue-300 
+                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                    bg-white text-blue-900 focus-ring font-medium shadow-sm"
+                                            >
+                                                <option value="wall">Wall</option>
+                                                <option value="partition">Partition</option>
+                                            </select>
+                                        </div>
+                                        <p className="text-xs text-blue-700 mt-2">
+                                            Tap on canvas to start drawing. Tap again to finish. Press Cancel to exit.
+                                        </p>
                                     </div>
                                 )}
 
@@ -1729,6 +1746,7 @@ const ProjectDetails = () => {
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D
                                             walls={projectDetails.filteredWalls}
+                                            allWalls={projectDetails.walls}
                                             setWalls={projectDetails.setWalls}
                                             joints={projectDetails.filteredJoints}
                                             intersections={projectDetails.filteredJoints}
@@ -1739,6 +1757,7 @@ const ProjectDetails = () => {
                                             onWallDelete={projectDetails.handleWallDelete}
                                             isEditingMode={projectDetails.isEditingMode}
                                             currentMode={projectDetails.currentMode}
+                                            setCurrentMode={projectDetails.setCurrentMode}
                                             onWallSelect={projectDetails.handleWallSelect}
                                             selectedWallsForRoom={projectDetails.selectedWallsForRoom}
                                             onRoomWallsSelect={projectDetails.setSelectedWallsForRoom}
@@ -1748,6 +1767,7 @@ const ProjectDetails = () => {
                                             onRoomLabelPositionUpdate={projectDetails.handleRoomLabelPositionUpdate}
                                             onJointsUpdate={projectDetails.setJoints}
                                             doors={projectDetails.filteredDoors}
+                                            onRefreshWalls={projectDetails.refreshWalls}
                                             onDoorSelect={projectDetails.handleDoorSelect}
                                             onDoorWallSelect={(wall) => {
                                                 projectDetails.setSelectedDoorWall(wall);

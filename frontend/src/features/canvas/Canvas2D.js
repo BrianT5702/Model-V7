@@ -34,6 +34,7 @@ const Canvas2D = ({
     onWallTypeSelect,
     isEditingMode, 
     currentMode, 
+    setCurrentMode = () => {}, // Add prop to allow exiting modes
     onWallSelect, 
     onWallDelete, 
     selectedWallsForRoom = [], 
@@ -54,7 +55,9 @@ const Canvas2D = ({
     onManualWallSplit = null,
     wallSplitError = '',
     setWallSplitError = () => {},
-    wallSplitSuccess = false
+    wallSplitSuccess = false,
+    onRefreshWalls = null, // Callback to refresh walls from all storeys
+    allWalls = null // All walls (unfiltered) for panel calculations across all storeys
 }) => {
 
     const canvasRef = useRef(null);
@@ -278,16 +281,22 @@ const Canvas2D = ({
         isDraggingCanvas.current = false;
     };
 
-    // Handle right-click (context menu) for define-room mode
+    // Handle right-click (context menu) for define-room mode and cancel add-wall mode
     const handleCanvasContextMenu = (event) => {
         event.preventDefault();
-        // Only handle right-click in polygon modes
+        // Handle right-click in polygon modes
         if ((currentMode === 'define-room' || currentMode === 'storey-area') && selectedRoomPoints && selectedRoomPoints.length > 0) {
             const points = [...selectedRoomPoints];
             if (points.length > 0) {
                 points.pop();
                 onUpdateRoomPoints(points);
             }
+        }
+        // Cancel add-wall mode when right-clicking during drawing
+        else if (currentMode === 'add-wall' && isDrawing) {
+            setTempWall(null);
+            setIsDrawing(false);
+            setCurrentMode(null);
         }
     };
 
@@ -302,6 +311,34 @@ const Canvas2D = ({
             document.removeEventListener('mouseup', handleGlobalMouseUp);
         };
     }, []);
+
+    // Add ESC key handler to exit add-wall mode
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            // Exit add-wall mode when ESC is pressed
+            if (event.key === 'Escape' && currentMode === 'add-wall') {
+                setTempWall(null);
+                setIsDrawing(false);
+                setCurrentMode(null);
+            }
+        };
+        
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [currentMode, setCurrentMode]);
+
+    // Clean up drawing state when exiting add-wall mode
+    useEffect(() => {
+        if (currentMode !== 'add-wall') {
+            // Clear drawing state when not in add-wall mode
+            if (isDrawing || tempWall) {
+                setTempWall(null);
+                setIsDrawing(false);
+            }
+        }
+    }, [currentMode, isDrawing, tempWall]);
 
     // Handle room label position changes (optimized to avoid unnecessary re-renders)
     const handleRoomLabelPositionChange = (roomId, newPosition) => {
@@ -2586,7 +2623,7 @@ const Canvas2D = ({
                         {showMaterialNeeded && (
                             <div className="space-y-3 sm:space-y-4">
                                 <PanelCalculationControls 
-                                    walls={walls} 
+                                    walls={allWalls || walls} 
                                     intersections={intersections}
                                     doors={doors}
                                     showMaterialDetails={showMaterialDetails}
@@ -2595,6 +2632,7 @@ const Canvas2D = ({
                                     rooms={rooms}
                                     project={project}
                                     updateSharedPanelData={updateSharedPanelData}
+                                    onRefreshWalls={onRefreshWalls}
                                 />
                                 
                                 {/* Door Table */}

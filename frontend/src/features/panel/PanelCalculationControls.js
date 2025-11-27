@@ -12,7 +12,8 @@ const PanelCalculationControls = ({
     canvasRef,
     rooms = [],
     project = null,
-    updateSharedPanelData // Added prop for sharing data
+    updateSharedPanelData, // Added prop for sharing data
+    onRefreshWalls // Callback to refresh walls from all storeys
 }) => {
     const [calculatedPanels, setCalculatedPanels] = useState(null);
     const [showTable, setShowTable] = useState(false);
@@ -23,6 +24,8 @@ const PanelCalculationControls = ({
     const [showExportModal, setShowExportModal] = useState(false);
     const [exportTab, setExportTab] = useState('pdf'); // 'pdf', 'csv', 'sketch'
     const [isCalculating, setIsCalculating] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [refreshMessage, setRefreshMessage] = useState('');
 
     // Auto-show panel table when panels are calculated
     useEffect(() => {
@@ -520,8 +523,68 @@ const PanelCalculationControls = ({
                         {showTable ? 'Hide Details' : 'Show Details'}
                     </button>
                 )}
+                {/* Refresh Walls Button - to reload walls from all levels/storeys */}
+                {onRefreshWalls && (
+                    <button
+                        onClick={async () => {
+                            setIsRefreshing(true);
+                            setRefreshMessage('');
+                            try {
+                                await onRefreshWalls();
+                                // Recalculate panels after refresh
+                                if (showMaterialDetails) {
+                                    await calculateAllPanels();
+                                }
+                                setRefreshMessage(`✅ Successfully refreshed! Now showing ${walls.length} walls from all levels.`);
+                                setTimeout(() => setRefreshMessage(''), 5000);
+                                console.log('✅ Walls refreshed successfully. Wall count:', walls.length);
+                            } catch (error) {
+                                console.error('❌ Error refreshing walls:', error);
+                                setRefreshMessage('❌ Error refreshing walls. Please try again.');
+                                setTimeout(() => setRefreshMessage(''), 5000);
+                            } finally {
+                                setIsRefreshing(false);
+                            }
+                        }}
+                        disabled={isRefreshing || isCalculating}
+                        className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap flex items-center gap-2"
+                        title="Refresh walls from all levels/storeys"
+                    >
+                        {isRefreshing ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                <span>Refreshing...</span>
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                <span>Refresh Walls</span>
+                            </>
+                        )}
+                    </button>
+                )}
                 {/* Export removed in wall plan tab per requirements */}
             </div>
+            
+            {/* Refresh success/error message */}
+            {refreshMessage && (
+                <div className={`mb-3 p-3 rounded-lg text-sm ${
+                    refreshMessage.includes('✅') 
+                        ? 'bg-green-50 border border-green-200 text-green-700' 
+                        : 'bg-red-50 border border-red-200 text-red-700'
+                }`}>
+                    {refreshMessage}
+                </div>
+            )}
+            
+            {/* Info message when onRefreshWalls is not provided */}
+            {!onRefreshWalls && showMaterialDetails && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                    <strong>💡 Tip:</strong> Added new levels or walls? Go to the <strong>Installation Time Estimator</strong> tab and click the green <strong>"Refresh Data"</strong> button to update wall counts from all levels.
+                </div>
+            )}
 
             {/* Export UI removed */}
 

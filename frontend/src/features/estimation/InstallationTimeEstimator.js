@@ -163,6 +163,74 @@ const InstallationTimeEstimator = ({
         }
     };
 
+    // Manual refresh function to reload all project data
+    const handleManualRefresh = async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
+            console.log('🔄 Manual refresh triggered...');
+
+            // Fetch project details
+            const projectResponse = await api.get(`/projects/${projectId}/`);
+            setProjectData(projectResponse.data);
+
+            // Fetch storeys
+            const storeysResponse = await api.get(`/storeys/?project=${projectId}`);
+            setStoreys(storeysResponse.data);
+
+            // Fetch rooms
+            const roomsResponse = await api.get(`/rooms/?project=${projectId}`);
+            setRooms(roomsResponse.data);
+
+            // Fetch ceiling plans for all rooms
+            const ceilingPlansPromises = roomsResponse.data.map(room => 
+                api.get(`/ceiling-plans/?room=${room.id}`)
+            );
+            const ceilingResponses = await Promise.all(ceilingPlansPromises);
+            const allCeilingPlans = ceilingResponses.flatMap(response => response.data);
+            setCeilingPlans(allCeilingPlans);
+
+            // Fetch floor plans for all rooms
+            const floorPlansPromises = roomsResponse.data.map(room => 
+                api.get(`/floor-plans/?room=${room.id}`)
+            );
+            const floorResponses = await Promise.all(floorPlansPromises);
+            const allFloorPlans = floorResponses.flatMap(response => response.data);
+            setFloorPlans(allFloorPlans);
+
+            // Fetch walls for panel calculation
+            try {
+                const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+                setWalls(wallsResponse.data);
+                console.log(`✅ Refreshed walls: ${wallsResponse.data.length} walls loaded`);
+            } catch (wallErr) {
+                console.log('Walls not available');
+                setWalls([]);
+            }
+
+            // Fetch doors from project data
+            try {
+                const doorsResponse = await api.get(`/doors/?project=${projectId}`);
+                setDoors(doorsResponse.data);
+                console.log(`✅ Refreshed doors: ${doorsResponse.data.length} doors loaded`);
+            } catch (doorErr) {
+                console.log('Doors not available');
+                setDoors([]);
+            }
+
+            // Auto-fetch existing panel data if available
+            await autoFetchExistingPanelData(projectId, roomsResponse.data);
+
+            console.log('✅ Manual refresh completed successfully');
+            
+        } catch (err) {
+            console.error('Error refreshing project data:', err);
+            setError('Failed to refresh project data. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // Capture canvas images by temporarily switching tabs
     const captureAllCanvasImages = async (currentViewSetter) => {
         console.log('🖼️ Starting automatic canvas capture...');
@@ -1858,11 +1926,6 @@ const InstallationTimeEstimator = ({
                                 maxHeight = availableHeight * 0.85;
                             }
                             
-                            // Calculate what the original image size should be so that when rotated, it fits
-                            // For a rotated rectangle: boundingWidth = width*cos + height*sin
-                            // We need to solve: width*cos + (width/aspectRatio)*sin <= maxWidth
-                            // and: width*sin + (width/aspectRatio)*cos <= maxHeight
-                            
                             // Calculate initial image dimensions based on aspect ratio
                             // Start with a reasonable base size, then scale to fit page
                             let imageWidth, imageHeight;
@@ -2168,41 +2231,46 @@ const InstallationTimeEstimator = ({
 
     return (
         <div className="bg-white rounded-xl shadow-lg p-6">
-            <div className="mb-6 flex justify-between items-start">
-                <div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">
+            {/* Header with Refresh and Export Buttons */}
+            <div className="mb-6">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-2xl font-bold text-gray-900">
                         Project Summary & Installation Time Estimator
                     </h3>
-                    <p className="text-gray-600">
-                        Comprehensive project overview with installation time calculations
-                    </p>
+                    
+                    {/* Export Button */}
+                    <button
+                        onClick={prepareExportData}
+                        disabled={isLoading || isCapturingImages}
+                        className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-lg flex items-center disabled:opacity-50"
+                    >
+                        {isCapturingImages ? (
+                            <>
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                Capturing Images...
+                            </>
+                        ) : isLoading ? (
+                            <>
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                Auto-Fetching Data...
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Export Project Report
+                            </>
+                        )}
+                    </button>
                 </div>
                 
-                {/* Export Button */}
-                <button
-                    onClick={prepareExportData}
-                    disabled={isLoading || isCapturingImages}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-lg flex items-center disabled:opacity-50"
-                >
-                    {isCapturingImages ? (
-                        <>
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                            Capturing Images...
-                        </>
-                    ) : isLoading ? (
-                        <>
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                            Auto-Fetching Data...
-                        </>
-                    ) : (
-                        <>
-                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            Export Project Report
-                        </>
-                    )}
-                </button>
+                <p className="text-gray-600 mb-2">
+                    Comprehensive project overview with installation time calculations
+                </p>
+                <p className="text-sm text-blue-600">
+                    💡 Added new levels or walls? Use the green "Refresh Data" button below to update panel counts
+                </p>
             </div>
 
             {/* Auto-Fetch Status and Controls */}
@@ -2213,12 +2281,15 @@ const InstallationTimeEstimator = ({
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div>
-                            <h4 className="font-medium text-blue-800">Data Auto-Fetch Status</h4>
+                            <h4 className="font-medium text-blue-800">Materials & Data Management</h4>
                             <p className="text-sm text-blue-700 mt-1">
                                 {sharedPanelData && (sharedPanelData.wallPanels || sharedPanelData.ceilingPanels || sharedPanelData.floorPanels) 
                                     ? '✅ Project data is loaded and ready for export'
-                                    : '⏳ No project data found - click "Auto-Fetch Data" to load existing plans'
+                                    : '⏳ No project data found - click "Refresh Data" or "Fetch Data & Images"'
                                 }
+                            </p>
+                            <p className="text-xs text-blue-600 mt-1">
+                                🔄 Added new levels/walls? Click <strong>Refresh Data</strong> to reload all levels
                             </p>
                             {(!sharedPanelData?.wallPlanImage || !sharedPanelData?.ceilingPlanImage || !sharedPanelData?.floorPlanImage) && (
                                 <p className="text-xs text-orange-700 mt-2 flex items-center">
@@ -2231,31 +2302,56 @@ const InstallationTimeEstimator = ({
                         </div>
                     </div>
                     
-                    {/* Auto-Fetch Button */}
-                    <button
-                        onClick={() => triggerAutoFetch()}
-                        disabled={isLoading || isCapturingImages}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center"
-                    >
-                        {isCapturingImages ? (
-                            <>
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                Capturing Images...
-                            </>
-                        ) : isLoading ? (
-                            <>
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                Loading Data...
-                            </>
-                        ) : (
-                            <>
-                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Fetch Data & Images
-                            </>
-                        )}
-                    </button>
+                    {/* Refresh and Auto-Fetch Buttons */}
+                    <div className="flex gap-2">
+                        {/* Refresh Data Button */}
+                        <button
+                            onClick={handleManualRefresh}
+                            disabled={isLoading || isCapturingImages}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center font-medium"
+                            title="Refresh all data from all levels/storeys"
+                        >
+                            {isLoading ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                    Refreshing...
+                                </>
+                            ) : (
+                                <>
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Refresh Data
+                                </>
+                            )}
+                        </button>
+
+                        {/* Auto-Fetch Button */}
+                        <button
+                            onClick={() => triggerAutoFetch()}
+                            disabled={isLoading || isCapturingImages}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center"
+                        >
+                            {isCapturingImages ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                    Capturing Images...
+                                </>
+                            ) : isLoading ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                    Loading Data...
+                                </>
+                            ) : (
+                                <>
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Fetch Data & Images
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
                 
                 {/* Data Status Indicators */}
