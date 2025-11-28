@@ -73,6 +73,8 @@ const Canvas2D = ({
     const [tempWall, setTempWall] = useState(null);
     const [hoveredWall, setHoveredWall] = useState(null);
     const [hoveredPoint, setHoveredPoint] = useState(null);
+    const [showLengthInput, setShowLengthInput] = useState(false);
+    const [pendingWallData, setPendingWallData] = useState(null);
     const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
     const [intersections, setIntersections] = useState([]);
     const [selectedIntersection, setSelectedIntersection] = useState(null);
@@ -716,6 +718,19 @@ const Canvas2D = ({
         });
     
         return closestPoint;
+    };
+
+    // Check if a point actually snapped (within threshold)
+    // Returns true only if the point moved to a different location (snapped to something)
+    const didPointSnap = (originalPoint, snappedPoint) => {
+        const distance = Math.hypot(
+            originalPoint.x - snappedPoint.x,
+            originalPoint.y - snappedPoint.y
+        );
+        const threshold = SNAP_THRESHOLD / scaleFactor.current;
+        const epsilon = 0.001; // Minimum distance to consider it actually snapped
+        // Point snapped if it moved more than epsilon and is within threshold
+        return distance > epsilon && distance < threshold;
     };                   
 
     const snapToWallSegment = (x, y, wall) => {
@@ -1057,16 +1072,47 @@ const Canvas2D = ({
             if (isDrawing) {
                 setIsDrawing(false);
                 if (tempWall) {
+                    // Check if start point snapped (before any angle snapping)
+                    // Use original click position if stored, otherwise use current tempWall position
+                    const originalStartPoint = tempWall.originalStart_x !== undefined 
+                        ? { x: tempWall.originalStart_x, y: tempWall.originalStart_y }
+                        : { x: tempWall.start_x, y: tempWall.start_y };
                     let startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
+                    const startPointSnapped = didPointSnap(originalStartPoint, startPoint);
+                    console.log('Start point snap check:', { original: originalStartPoint, snapped: startPoint, didSnap: startPointSnapped });
+                    
+                    // Check if end point snapped (before any angle snapping)
+                    const originalEndPoint = { x, y };
                     let endPoint = hoveredPoint || snapToClosestPoint(x, y);
+                    const endPointSnapped = hoveredPoint ? true : didPointSnap(originalEndPoint, endPoint);
 
-                    // --- Snap to 90/180 degrees ---
+                    // Store original end point before angle snapping for modal
+                    const endPointBeforeAngleSnap = { ...endPoint };
+
+                    // --- Calculate angle and check for 90-degree snapping with dynamic threshold ---
                     let dx = endPoint.x - startPoint.x;
                     let dy = endPoint.y - startPoint.y;
+                    const wallLength = Math.hypot(dx, dy);
                     let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                    if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) {
+                    
+                    // Dynamic angle threshold: more sensitive for shorter walls
+                    // For very short walls (< 500mm), use 10 degrees threshold
+                    // For medium walls (500-2000mm), use 5 degrees
+                    // For long walls (> 2000mm), use 2 degrees
+                    let angleThreshold = 2; // Default for long walls
+                    if (wallLength < 500) {
+                        angleThreshold = 10; // Very sensitive for short walls
+                    } else if (wallLength < 2000) {
+                        angleThreshold = 5; // Medium sensitivity
+                    }
+                    
+                    const isNearVertical = Math.abs(angle - 90) <= angleThreshold || Math.abs(angle + 90) <= angleThreshold;
+                    const isNearHorizontal = Math.abs(angle) <= angleThreshold || Math.abs(angle - 180) <= angleThreshold || Math.abs(angle + 180) <= angleThreshold;
+                    
+                    // Apply 90-degree snapping
+                    if (isNearVertical) {
                         endPoint.x = startPoint.x; // Snap vertically
-                    } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
+                    } else if (isNearHorizontal) {
                         endPoint.y = startPoint.y; // Snap horizontally
                     }
 
@@ -1080,6 +1126,57 @@ const Canvas2D = ({
                             setWallSplitError('Cannot create walls in ghosted areas (double-height spaces from lower levels).');
                             setTimeout(() => setWallSplitError(''), 4000);
                         }
+                        setTempWall(null);
+                        return;
+                    }
+
+                    // Check if either point didn't snap - show length input modal
+                    console.log('Snap status:', { startPointSnapped, endPointSnapped, shouldShowModal: !startPointSnapped || !endPointSnapped });
+                    if (!startPointSnapped || !endPointSnapped) {
+                        console.log('Showing length input modal');
+                        // Use points before angle snapping for direction calculation
+                        const dirStartPoint = startPoint;
+                        const dirEndPoint = endPointBeforeAngleSnap;
+                        
+                        // Calculate current length and direction
+                        const currentLength = Math.hypot(dirEndPoint.x - dirStartPoint.x, dirEndPoint.y - dirStartPoint.y);
+                        const direction = currentLength > 0 ? {
+                            x: (dirEndPoint.x - dirStartPoint.x) / currentLength,
+                            y: (dirEndPoint.y - dirStartPoint.y) / currentLength
+                        } : { x: 1, y: 0 }; // Default direction if length is 0
+                        
+                        // If start didn't snap but end did, we'll use end as reference point
+                        // Otherwise, use start as reference point
+                        const referencePoint = (!startPointSnapped && endPointSnapped) ? endPointBeforeAngleSnap : startPoint;
+                        const useEndAsReference = !startPointSnapped && endPointSnapped;
+                        
+                        // Calculate angle threshold based on current wall length for modal
+                        const wallLengthForThreshold = currentLength || 1000;
+                        let angleThreshold = 2; // Default for long walls
+                        if (wallLengthForThreshold < 500) {
+                            angleThreshold = 10; // Very sensitive for short walls
+                        } else if (wallLengthForThreshold < 2000) {
+                            angleThreshold = 5; // Medium sensitivity
+                        }
+                        
+                        // Recalculate isNearVertical and isNearHorizontal with the dynamic threshold
+                        const recalculatedAngle = Math.atan2(dirEndPoint.y - dirStartPoint.y, dirEndPoint.x - dirStartPoint.x) * (180 / Math.PI);
+                        const recalculatedIsNearVertical = Math.abs(recalculatedAngle - 90) <= angleThreshold || Math.abs(recalculatedAngle + 90) <= angleThreshold;
+                        const recalculatedIsNearHorizontal = Math.abs(recalculatedAngle) <= angleThreshold || Math.abs(recalculatedAngle - 180) <= angleThreshold || Math.abs(recalculatedAngle + 180) <= angleThreshold;
+                        
+                        // Store pending wall data for the modal
+                        setPendingWallData({
+                            referencePoint,
+                            direction,
+                            currentLength: currentLength || 1000, // Default to 1000mm if length is 0
+                            startPointSnapped,
+                            endPointSnapped,
+                            useEndAsReference,
+                            isNearVertical: recalculatedIsNearVertical,
+                            isNearHorizontal: recalculatedIsNearHorizontal,
+                            angleThreshold // Store the threshold used for reference
+                        });
+                        setShowLengthInput(true);
                         setTempWall(null);
                         return;
                     }
@@ -1127,6 +1224,8 @@ const Canvas2D = ({
                     setTempWall(null);
                 }
             } else {
+                // Store original click position (before snapping) for accurate snap detection
+                const originalClickPoint = { x, y };
                 let snappedStart = hoveredPoint || snapToClosestPoint(x, y);
                 // Round the start point before showing temp wall
                 snappedStart = roundPoint(snappedStart);
@@ -1136,6 +1235,8 @@ const Canvas2D = ({
                     start_y: snappedStart.y,
                     end_x: snappedStart.x,
                     end_y: snappedStart.y,
+                    originalStart_x: originalClickPoint.x, // Store original for snap detection
+                    originalStart_y: originalClickPoint.y,
                 });
             }
             return;
@@ -1468,13 +1569,29 @@ const Canvas2D = ({
         // --- Update tempWall while drawing (snapping logic) ---
         if (isDrawing && tempWall && currentMode === 'add-wall') {
             let snapped = snapToClosestPoint(x, y);
-            // Snap to 90/180 degrees
+            // Snap to 90/180 degrees with dynamic threshold (more sensitive for short walls)
             let dx = snapped.x - tempWall.start_x;
             let dy = snapped.y - tempWall.start_y;
+            const wallLength = Math.hypot(dx, dy);
             let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-            if (Math.abs(angle - 90) <= 2 || Math.abs(angle + 90) <= 2) {
+            
+            // Dynamic angle threshold: more sensitive for shorter walls
+            // For very short walls (< 500mm), use 10 degrees threshold
+            // For medium walls (500-2000mm), use 5 degrees
+            // For long walls (> 2000mm), use 2 degrees
+            let angleThreshold = 2; // Default for long walls
+            if (wallLength < 500) {
+                angleThreshold = 10; // Very sensitive for short walls
+            } else if (wallLength < 2000) {
+                angleThreshold = 5; // Medium sensitivity
+            }
+            
+            const isNearVertical = Math.abs(angle - 90) <= angleThreshold || Math.abs(angle + 90) <= angleThreshold;
+            const isNearHorizontal = Math.abs(angle) <= angleThreshold || Math.abs(angle - 180) <= angleThreshold || Math.abs(angle + 180) <= angleThreshold;
+            
+            if (isNearVertical) {
                 snapped.x = tempWall.start_x;
-            } else if (Math.abs(angle) <= 2 || Math.abs(angle - 180) <= 2) {
+            } else if (isNearHorizontal) {
                 snapped.y = tempWall.start_y;
             }
             setTempWall({
@@ -2175,6 +2292,123 @@ const Canvas2D = ({
         rooms, walls, scaleFactor.current, offsetX.current, offsetY.current
         // Only depend on the actual data that affects label positions
     ]);
+
+    // Handle wall length input confirmation
+    const handleLengthConfirm = async () => {
+        if (!pendingWallData) return;
+        
+        const lengthInput = document.getElementById('wallLengthInput');
+        const desiredLength = parseFloat(lengthInput?.value);
+        
+        if (!desiredLength || desiredLength <= 0) {
+            if (setWallSplitError) {
+                setWallSplitError('Please enter a valid wall length greater than 0.');
+                setTimeout(() => setWallSplitError(''), 3000);
+            }
+            return;
+        }
+
+        // Round helper
+        const roundPoint = (pt) => ({ x: Math.round(pt.x), y: Math.round(pt.y) });
+        
+        // Calculate points based on which ones snapped
+        const { referencePoint, direction, useEndAsReference, isNearVertical, isNearHorizontal } = pendingWallData;
+        
+        let roundedStartPoint, roundedEndPoint;
+        
+        if (useEndAsReference) {
+            // Start didn't snap, end did - use end as reference, calculate start backwards
+            roundedEndPoint = roundPoint(referencePoint);
+            let calculatedStart = {
+                x: referencePoint.x - direction.x * desiredLength,
+                y: referencePoint.y - direction.y * desiredLength
+            };
+            
+            // Apply 90-degree snapping if angle was near 90 degrees
+            if (isNearVertical) {
+                calculatedStart.x = roundedEndPoint.x; // Snap vertically
+            } else if (isNearHorizontal) {
+                calculatedStart.y = roundedEndPoint.y; // Snap horizontally
+            }
+            
+            roundedStartPoint = roundPoint(calculatedStart);
+        } else {
+            // Use start as reference (or both didn't snap), calculate end from length
+            roundedStartPoint = roundPoint(referencePoint);
+            let calculatedEnd = {
+                x: referencePoint.x + direction.x * desiredLength,
+                y: referencePoint.y + direction.y * desiredLength
+            };
+            
+            // Apply 90-degree snapping if angle was near 90 degrees
+            if (isNearVertical) {
+                calculatedEnd.x = roundedStartPoint.x; // Snap vertically
+            } else if (isNearHorizontal) {
+                calculatedEnd.y = roundedStartPoint.y; // Snap horizontally
+            }
+            
+            roundedEndPoint = roundPoint(calculatedEnd);
+        }
+
+        // Check if start or end point is in a ghosted area
+        if (isPointInGhostedArea(roundedStartPoint) || isPointInGhostedArea(roundedEndPoint)) {
+            if (setWallSplitError) {
+                setWallSplitError('Cannot create walls in ghosted areas (double-height spaces from lower levels).');
+                setTimeout(() => setWallSplitError(''), 4000);
+            }
+            setShowLengthInput(false);
+            setPendingWallData(null);
+            return;
+        }
+
+        // Normalize wall coordinates to ensure proper direction
+        const normalizedCoords = normalizeWallCoordinates(roundedStartPoint, roundedEndPoint);
+        const finalStartPoint = normalizedCoords.startPoint;
+        const finalEndPoint = normalizedCoords.endPoint;
+
+        // Use modular handler for wall splitting/adding
+        const wallProperties = {
+            height: wallHeight,
+            thickness: wallThickness,
+            application_type: onWallTypeSelect,
+            inner_face_material: innerFaceMaterial,
+            inner_face_thickness: innerFaceThickness,
+            outer_face_material: outerFaceMaterial,
+            outer_face_thickness: outerFaceThickness
+        };
+
+        try {
+            if (typeof onNewWall === 'function' && onNewWall.name === 'handleAddWallWithSplitting') {
+                await onNewWall(finalStartPoint, finalEndPoint, wallProperties);
+            } else if (typeof onNewWall === 'function' && onNewWall.length === 3) {
+                await onNewWall(finalStartPoint, finalEndPoint, wallProperties);
+            } else {
+                // fallback: just add a single wall
+                await onNewWall({
+                    start_x: finalStartPoint.x,
+                    start_y: finalStartPoint.y,
+                    end_x: finalEndPoint.x,
+                    end_y: finalEndPoint.y,
+                    ...wallProperties
+                });
+            }
+        } catch (error) {
+            console.error('Error managing walls:', error);
+            if (isDatabaseConnectionError(error)) {
+                showDatabaseError();
+            }
+        }
+
+        // Close modal and reset state
+        setShowLengthInput(false);
+        setPendingWallData(null);
+    };
+
+    // Handle wall length input cancellation
+    const handleLengthCancel = () => {
+        setShowLengthInput(false);
+        setPendingWallData(null);
+    };
     
     return (
         <>
@@ -2781,6 +3015,63 @@ const Canvas2D = ({
                   <span className="font-medium">{wallMergeError}</span>
                 </div>
               </div>
+            )}
+
+            {/* Wall Length Input Modal */}
+            {showLengthInput && pendingWallData && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Enter Wall Length</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            {pendingWallData.startPointSnapped && !pendingWallData.endPointSnapped && 
+                                "The end point didn't snap to any existing walls or points. Please specify the desired wall length."}
+                            {!pendingWallData.startPointSnapped && pendingWallData.endPointSnapped && 
+                                "The start point didn't snap to any existing walls or points. Please specify the desired wall length."}
+                            {!pendingWallData.startPointSnapped && !pendingWallData.endPointSnapped && 
+                                "Neither point snapped to existing walls or points. Please specify the desired wall length."}
+                        </p>
+                        {pendingWallData.useEndAsReference && (
+                            <p className="text-xs text-blue-600 mb-2 italic">
+                                Note: The end point snapped, so the wall will be positioned from the end point backwards.
+                            </p>
+                        )}
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Wall Length (mm):
+                            </label>
+                            <input
+                                type="number"
+                                id="wallLengthInput"
+                                min="1"
+                                step="1"
+                                defaultValue={Math.round(pendingWallData.currentLength)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleLengthConfirm();
+                                    } else if (e.key === 'Escape') {
+                                        handleLengthCancel();
+                                    }
+                                }}
+                            />
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={handleLengthCancel}
+                                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleLengthConfirm}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </>
     );

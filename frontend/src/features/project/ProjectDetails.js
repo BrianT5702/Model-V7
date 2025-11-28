@@ -648,17 +648,17 @@ const ProjectDetails = () => {
             const maxHeight = viewportHeight * MAX_CANVAS_HEIGHT_RATIO;
             
             // Calculate height based on aspect ratio (similar to 2D view)
-            // Default aspect ratio: 600/1000 = 0.6, but allow more height on mobile
-            const calculatedHeight = containerWidth * 0.6;
+            // Increased aspect ratio for taller canvas: 0.75 (was 0.6)
+            const calculatedHeight = containerWidth * 0.75;
             const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
             const constrainedHeight = Math.min(preferredHeight, maxHeight);
             const finalHeight = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
 
-            // Mobile: use calculated height (fills more space), Desktop: calculated or 600px max
+            // Mobile: use calculated height (fills more space), Desktop: calculated or 800px max (increased from 600px)
             const isMobile = window.innerWidth < 640;
             const newHeight = isMobile 
                 ? Math.min(finalHeight, maxHeight) // On mobile, use more of the available space
-                : Math.min(finalHeight, 600); // On desktop, cap at 600px
+                : Math.min(finalHeight, 800); // On desktop, cap at 800px (increased from 600px)
 
             // Only update if height actually changed (prevents infinite loops)
             setThreeDContainerHeight(prevHeight => {
