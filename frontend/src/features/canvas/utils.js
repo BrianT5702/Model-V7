@@ -169,6 +169,54 @@ export function arePointsEqual(p1, p2, epsilon = 0.001) {
     return Math.abs(p1.x - p2.x) < epsilon && Math.abs(p1.y - p2.y) < epsilon;
 }
 
+// Check if two polygons overlap (simplified: checks if any vertex of one polygon is inside the other)
+export function doPolygonsOverlap(polygon1, polygon2) {
+    if (!polygon1 || !polygon2 || polygon1.length < 3 || polygon2.length < 3) {
+        return false;
+    }
+    
+    // Normalize polygons to have {x, y} format
+    const normalizePolygon = (poly) => {
+        return poly.map(pt => ({
+            x: Number(pt.x) || 0,
+            y: Number(pt.y) || 0
+        }));
+    };
+    
+    const normPoly1 = normalizePolygon(polygon1);
+    const normPoly2 = normalizePolygon(polygon2);
+    
+    // Check if any vertex of polygon1 is inside polygon2
+    for (const vertex of normPoly1) {
+        if (isPointInPolygon(vertex, normPoly2)) {
+            return true;
+        }
+    }
+    
+    // Check if any vertex of polygon2 is inside polygon1
+    for (const vertex of normPoly2) {
+        if (isPointInPolygon(vertex, normPoly1)) {
+            return true;
+        }
+    }
+    
+    // Also check if the centroid of one polygon is inside the other
+    const centroid1 = {
+        x: normPoly1.reduce((sum, p) => sum + p.x, 0) / normPoly1.length,
+        y: normPoly1.reduce((sum, p) => sum + p.y, 0) / normPoly1.length
+    };
+    const centroid2 = {
+        x: normPoly2.reduce((sum, p) => sum + p.x, 0) / normPoly2.length,
+        y: normPoly2.reduce((sum, p) => sum + p.y, 0) / normPoly2.length
+    };
+    
+    if (isPointInPolygon(centroid1, normPoly2) || isPointInPolygon(centroid2, normPoly1)) {
+        return true;
+    }
+    
+    return false;
+}
+
 // Calculate the distance between two points
 export function calculateDistance(p1, p2) {
     const dx = p1.x - p2.x;

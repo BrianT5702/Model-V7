@@ -13,7 +13,10 @@ const InstallationTimeEstimator = ({
     isCapturingImages = false,
     setIsCapturingImages = null,
     captureSuccess = false,
-    setCaptureSuccess = null
+    setCaptureSuccess = null,
+    activeStoreyId = null,
+    setActiveStoreyId = null,
+    allWalls = []
 }) => {
     const [projectData, setProjectData] = useState(null);
     const [rooms, setRooms] = useState([]);
@@ -39,7 +42,8 @@ const InstallationTimeEstimator = ({
     
     // Canvas image states for export
     const [planImages, setPlanImages] = useState({
-        wallPlan: null,
+        wallPlan: null, // Single image (legacy) or array of {storeyId, storeyName, imageData}
+        wallPlansByStorey: [], // Array of {storeyId, storeyName, imageData} for floor-by-floor wall plans
         ceilingPlan: null,
         floorPlan: null
     });
@@ -241,6 +245,9 @@ const InstallationTimeEstimator = ({
             floor: false
         };
         
+        // Store original activeStoreyId to restore later
+        const originalActiveStoreyId = activeStoreyId;
+        
         try {
             // Helper function to remove grid lines from canvas image
             const removeGridFromCanvas = (sourceCanvas) => {
@@ -347,23 +354,6 @@ const InstallationTimeEstimator = ({
                 return roomWidth >= labelWidth + margin && roomHeight >= labelHeight + margin;
             };
             
-            // Helper function to check if room is on ground floor
-            const isGroundFloorRoom = (room) => {
-                if (!room.storey) {
-                    // If no storey assigned, assume ground floor (legacy data)
-                    return true;
-                }
-                // Find the storey object
-                const storey = storeys.find(s => String(s.id) === String(room.storey));
-                if (!storey) {
-                    // If storey not found, assume ground floor
-                    return true;
-                }
-                // Ground floor has elevation_mm === 0 and order === 0
-                return (storey.elevation_mm === 0 || storey.elevation_mm === null) && 
-                       (storey.order === 0 || storey.order === null);
-            };
-            
             // Helper function to draw room labels on canvas
             const drawRoomLabelsOnCanvas = (ctx, rooms, scaleFactor, offsetX, offsetY) => {
                 if (!rooms || rooms.length === 0) {
@@ -371,18 +361,19 @@ const InstallationTimeEstimator = ({
                     return;
                 }
                 
-                // Filter to only ground floor rooms
-                const groundFloorRooms = rooms.filter(isGroundFloorRoom);
+                // Include all rooms from all storeys for PDF/summary export
+                // No longer filtering to only ground floor - show all floors
+                const allRooms = rooms;
                 
-                if (groundFloorRooms.length === 0) {
-                    console.log('⚠️ No ground floor rooms to draw labels for');
+                if (allRooms.length === 0) {
+                    console.log('⚠️ No rooms to draw labels for');
                     return;
                 }
                 
-                console.log(`🎨 Drawing labels for ${groundFloorRooms.length} ground floor rooms (out of ${rooms.length} total), scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
+                console.log(`🎨 Drawing labels for ${allRooms.length} rooms from all storeys, scaleFactor=${scaleFactor}, offsetX=${offsetX}, offsetY=${offsetY}`);
                 
                 let labelsDrawn = 0;
-                groundFloorRooms.forEach((room) => {
+                allRooms.forEach((room) => {
                     // Get label position - ALWAYS prioritize stored user position
                     let labelPos = null;
                     let usingStoredPosition = false;
@@ -647,8 +638,79 @@ const InstallationTimeEstimator = ({
                 return null;
             };
             
-            // Capture wall plan
-            await captureFromTab('wall-plan', 'wall');
+            // For wall plan capture, capture each storey separately
+            const wallPlansByStorey = [];
+            
+            if (setActiveStoreyId && storeys && storeys.length > 0) {
+                console.log(`📐 Capturing wall plans for ${storeys.length} storeys separately...`);
+                
+                // Capture each storey's wall plan
+                for (const storey of storeys) {
+                    console.log(`📸 Capturing wall plan for storey: ${storey.name} (ID: ${storey.id})`);
+                    
+                    // Set active storey to this storey
+                    setActiveStoreyId(storey.id);
+                    // Wait for canvas to update
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // Switch to wall-plan tab
+                    currentViewSetter('wall-plan');
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    
+                    // Capture the canvas for this storey
+                    const canvas = document.querySelector(`canvas[data-plan-type="wall"]`);
+                    if (canvas) {
+                        try {
+                            // Remove grid lines
+                            let cleanCanvas = removeGridFromCanvas(canvas);
+                            
+                            // Get rooms for this storey
+                            const storeyRooms = rooms.filter(room => 
+                                room.storey && String(room.storey) === String(storey.id)
+                            );
+                            
+                            // Draw room labels if there are rooms
+                            if (storeyRooms.length > 0) {
+                                const scaleFactorAttr = canvas.getAttribute('data-scale-factor');
+                                const offsetXAttr = canvas.getAttribute('data-offset-x');
+                                const offsetYAttr = canvas.getAttribute('data-offset-y');
+                                
+                                const scaleFactor = scaleFactorAttr ? parseFloat(scaleFactorAttr) : 1;
+                                const offsetX = offsetXAttr ? parseFloat(offsetXAttr) : 0;
+                                const offsetY = offsetYAttr ? parseFloat(offsetYAttr) : 0;
+                                
+                                const labeledCanvas = document.createElement('canvas');
+                                labeledCanvas.width = canvas.width;
+                                labeledCanvas.height = canvas.height;
+                                const labeledCtx = labeledCanvas.getContext('2d');
+                                
+                                labeledCtx.drawImage(cleanCanvas, 0, 0);
+                                drawRoomLabelsOnCanvas(labeledCtx, storeyRooms, scaleFactor, offsetX, offsetY);
+                                
+                                cleanCanvas = labeledCanvas;
+                            }
+                            
+                            const imageData = cleanCanvas.toDataURL('image/png', 0.9);
+                            wallPlansByStorey.push({
+                                storeyId: storey.id,
+                                storeyName: storey.name,
+                                imageData: imageData
+                            });
+                            
+                            console.log(`✅ Captured wall plan for ${storey.name}`);
+                        } catch (err) {
+                            console.warn(`Failed to capture wall plan for ${storey.name}:`, err);
+                        }
+                    }
+                }
+                
+                // Store all wall plans by storey
+                if (updateCanvasImage) {
+                    updateCanvasImage('wallPlansByStorey', wallPlansByStorey);
+                }
+                
+                console.log(`✅ Captured ${wallPlansByStorey.length} wall plans (one per storey)`);
+            }
             
             // Capture ceiling plan
             await captureFromTab('ceiling-plan', 'ceiling');
@@ -656,15 +718,29 @@ const InstallationTimeEstimator = ({
             // Capture floor plan
             await captureFromTab('floor-plan', 'floor');
             
+            // Restore original activeStoreyId after capture
+            if (setActiveStoreyId && originalActiveStoreyId !== null && originalActiveStoreyId !== undefined) {
+                console.log('↩️ Restoring original active storey:', originalActiveStoreyId);
+                setActiveStoreyId(originalActiveStoreyId);
+            }
+            
             // Return to original view
             console.log('↩️ Returning to summary tab...');
             currentViewSetter(originalView);
             
             console.log('🎉 Canvas capture complete!', capturedImages);
+            // Add wallPlansByStorey to capturedImages for return
+            if (wallPlansByStorey.length > 0) {
+                capturedImages.wallPlansByStorey = wallPlansByStorey;
+            }
             return capturedImages;
             
         } catch (error) {
             console.error('Error during automatic canvas capture:', error);
+            // Restore original activeStoreyId even if error occurs
+            if (setActiveStoreyId && originalActiveStoreyId !== null && originalActiveStoreyId !== undefined) {
+                setActiveStoreyId(originalActiveStoreyId);
+            }
             // Make sure we return to original view even if error occurs
             currentViewSetter(originalView);
             return capturedImages;
@@ -1356,6 +1432,7 @@ const InstallationTimeEstimator = ({
         
         const images = {
             wallPlan: sharedPanelData?.wallPlanImage || null,
+            wallPlansByStorey: sharedPanelData?.wallPlansByStorey || [],
             ceilingPlan: sharedPanelData?.ceilingPlanImage || null,
             floorPlan: sharedPanelData?.floorPlanImage || null
         };
@@ -1363,12 +1440,16 @@ const InstallationTimeEstimator = ({
         // Log what we found with more detail
         console.log('🖼️ Retrieved images:', {
             wallPlan: images.wallPlan ? `Found (${images.wallPlan.substring(0, 50)}...)` : 'Not found',
+            wallPlansByStorey: images.wallPlansByStorey.length > 0 ? `Found ${images.wallPlansByStorey.length} storey plans` : 'Not found',
             ceilingPlan: images.ceilingPlan ? `Found (${images.ceilingPlan.substring(0, 50)}...)` : 'Not found',
             floorPlan: images.floorPlan ? `Found (${images.floorPlan.substring(0, 50)}...)` : 'Not found'
         });
         
-        if (images.wallPlan) console.log('✅ Wall plan image found in shared data');
-        else console.warn('⚠️ Wall plan image not found - visit Wall Plan tab first');
+        if (images.wallPlan || images.wallPlansByStorey.length > 0) {
+            console.log(`✅ Wall plan image(s) found: ${images.wallPlansByStorey.length} storey-specific plans`);
+        } else {
+            console.warn('⚠️ Wall plan image not found - visit Wall Plan tab first');
+        }
         
         if (images.ceilingPlan) console.log('✅ Ceiling plan image found in shared data');
         else console.warn('⚠️ Ceiling plan image not found - visit Ceiling Plan tab first');
@@ -1457,7 +1538,10 @@ const InstallationTimeEstimator = ({
             },
             exportDate: new Date().toLocaleString(),
             // Add captured canvas images
-            planImages: capturedImages
+            planImages: {
+                ...capturedImages,
+                wallPlansByStorey: capturedImages.wallPlansByStorey || []
+            }
         };
         
         // Debug logging for support accessories
@@ -2169,8 +2253,18 @@ const InstallationTimeEstimator = ({
                     }
                 };
                 
-                // Add all plan images
-                await addPlanImage(exportData.planImages.wallPlan, 'Wall Plan (2D View)');
+                // Add wall plans - one per storey if available, otherwise use single wall plan
+                if (exportData.planImages.wallPlansByStorey && exportData.planImages.wallPlansByStorey.length > 0) {
+                    // Add each storey's wall plan separately
+                    for (const wallPlan of exportData.planImages.wallPlansByStorey) {
+                        await addPlanImage(wallPlan.imageData, `Wall Plan - ${wallPlan.storeyName}`);
+                    }
+                } else if (exportData.planImages.wallPlan) {
+                    // Fallback to single wall plan if storey-specific plans not available
+                    await addPlanImage(exportData.planImages.wallPlan, 'Wall Plan (2D View)');
+                }
+                
+                // Add ceiling and floor plans
                 await addPlanImage(exportData.planImages.ceilingPlan, 'Ceiling Plan');
                 await addPlanImage(exportData.planImages.floorPlan, 'Floor Plan');
                 

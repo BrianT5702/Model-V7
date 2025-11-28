@@ -1221,7 +1221,7 @@ const ProjectDetails = () => {
                     {/* Room Creation Interface */}
                     {projectDetails.showRoomManagerModal && !projectDetails.isRoomManagerMinimized && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-4">
-                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                                     <div>
                                         <h2 className="text-xl font-semibold text-gray-900">
@@ -1319,7 +1319,7 @@ const ProjectDetails = () => {
                 )}
                 
                 {/* Left Sidebar - Controls */}
-                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-72 min-w-[240px] max-w-[320px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
+                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-96 min-w-[320px] max-w-[400px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 }`}>
                     <div className="p-4 sm:p-6">
@@ -1446,7 +1446,7 @@ const ProjectDetails = () => {
 
                                 {/* Wall Type Selection */}
                                 {projectDetails.currentMode === 'add-wall' && (
-                                    <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm space-y-3">
+                                    <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm space-y-4 max-h-[80vh] overflow-y-auto">
                                         <div className="flex items-center justify-between mb-2">
                                             <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Add Wall Mode</label>
                                             <button
@@ -1458,20 +1458,121 @@ const ProjectDetails = () => {
                                                 <span>Cancel</span>
                                             </button>
                                         </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-blue-800 mb-2 uppercase tracking-wide">Wall Type:</label>
-                                            <select 
-                                                value={projectDetails.selectedWallType} 
-                                                onChange={(e) => projectDetails.setSelectedWallType(e.target.value)}
-                                                className="w-full px-4 py-3 rounded-lg border-2 border-blue-300 
-                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                    bg-white text-blue-900 focus-ring font-medium shadow-sm"
-                                            >
-                                                <option value="wall">Wall</option>
-                                                <option value="partition">Partition</option>
-                                            </select>
+                                        
+                                        {/* Basic Wall Properties */}
+                                        <div className="space-y-3">
+                                            <div>
+                                                <label className="block text-sm font-semibold text-blue-800 mb-2 uppercase tracking-wide">Wall Type:</label>
+                                                <select 
+                                                    value={projectDetails.selectedWallType} 
+                                                    onChange={(e) => projectDetails.setSelectedWallType(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border-2 border-blue-300 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                        bg-white text-blue-900 font-medium shadow-sm"
+                                                >
+                                                    <option value="wall">Wall</option>
+                                                    <option value="partition">Partition</option>
+                                                </select>
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-blue-800 mb-2">Height (mm):</label>
+                                                    <input
+                                                        type="number"
+                                                        value={projectDetails.wallHeight}
+                                                        onChange={(e) => projectDetails.setWallHeight(parseFloat(e.target.value) || 2800)}
+                                                        min="100"
+                                                        step="100"
+                                                        className="w-full px-4 py-2 rounded-lg border-2 border-blue-300 
+                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                            bg-white text-blue-900 font-medium shadow-sm"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-blue-800 mb-2">Thickness (mm):</label>
+                                                    <input
+                                                        type="number"
+                                                        value={projectDetails.wallThickness}
+                                                        onChange={(e) => projectDetails.setWallThickness(parseFloat(e.target.value) || 200)}
+                                                        min="25"
+                                                        step="25"
+                                                        className="w-full px-4 py-2 rounded-lg border-2 border-blue-300 
+                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                            bg-white text-blue-900 font-medium shadow-sm"
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
-                                        <p className="text-xs text-blue-700 mt-2">
+
+                                        {/* Face Finishes */}
+                                        <div className="space-y-3 border-t border-blue-300 pt-3">
+                                            <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Face Finishes</label>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-3 bg-white p-3 rounded-lg border border-blue-200">
+                                                    <label className="block text-sm font-semibold text-blue-800">Inner Face</label>
+                                                    <div>
+                                                        <label className="block text-xs text-blue-700 mb-1">Material:</label>
+                                                        <select
+                                                            value={projectDetails.innerFaceMaterial}
+                                                            onChange={(e) => projectDetails.setInnerFaceMaterial(e.target.value)}
+                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                                bg-white text-blue-900 text-sm"
+                                                        >
+                                                            <option value="PPGI">PPGI</option>
+                                                            <option value="S/Steel">S/Steel</option>
+                                                            <option value="PVC">PVC</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-blue-700 mb-1">Thickness (mm):</label>
+                                                        <input
+                                                            type="number"
+                                                            min="0.1"
+                                                            step="0.1"
+                                                            value={projectDetails.innerFaceThickness}
+                                                            onChange={(e) => projectDetails.setInnerFaceThickness(parseFloat(e.target.value) || 0.5)}
+                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                                bg-white text-blue-900 text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-3 bg-white p-3 rounded-lg border border-blue-200">
+                                                    <label className="block text-sm font-semibold text-blue-800">Outer Face</label>
+                                                    <div>
+                                                        <label className="block text-xs text-blue-700 mb-1">Material:</label>
+                                                        <select
+                                                            value={projectDetails.outerFaceMaterial}
+                                                            onChange={(e) => projectDetails.setOuterFaceMaterial(e.target.value)}
+                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                                bg-white text-blue-900 text-sm"
+                                                        >
+                                                            <option value="PPGI">PPGI</option>
+                                                            <option value="S/Steel">S/Steel</option>
+                                                            <option value="PVC">PVC</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-blue-700 mb-1">Thickness (mm):</label>
+                                                        <input
+                                                            type="number"
+                                                            min="0.1"
+                                                            step="0.1"
+                                                            value={projectDetails.outerFaceThickness}
+                                                            onChange={(e) => projectDetails.setOuterFaceThickness(parseFloat(e.target.value) || 0.5)}
+                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                                bg-white text-blue-900 text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <p className="text-xs text-blue-700 mt-2 pt-2 border-t border-blue-300">
                                             Tap on canvas to start drawing. Tap again to finish. Press Cancel to exit.
                                         </p>
                                     </div>
@@ -1552,32 +1653,6 @@ const ProjectDetails = () => {
                             </div>
                         )}
 
-                        {/* Project Stats */}
-                        <div className="mt-8 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                            <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wide mb-3">Project Stats</h3>
-                            <div className="space-y-3 text-sm">
-                                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
-                                    <span className="text-blue-700 font-medium">Walls:</span>
-                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.filteredWalls.length}</span>
-                                </div>
-                                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
-                                    <span className="text-blue-700 font-medium">Rooms:</span>
-                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.filteredRooms.length}</span>
-                                </div>
-                                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
-                                    <span className="text-blue-700 font-medium">Doors:</span>
-                                    <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full">{projectDetails.filteredDoors.length}</span>
-                                </div>
-                                {projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 && (
-                                    <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-blue-200">
-                                        <span className="text-blue-700 font-medium">Est. Install:</span>
-                                        <span className="font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded-full text-xs">
-                                            {Math.ceil(projectDetails.filteredRooms.length * 2 / 8)} days
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -1752,6 +1827,12 @@ const ProjectDetails = () => {
                                             intersections={projectDetails.filteredJoints}
                                             projectId={projectId}
                                             onWallTypeSelect={projectDetails.selectedWallType}
+                                            wallThickness={projectDetails.wallThickness}
+                                            wallHeight={projectDetails.wallHeight}
+                                            innerFaceMaterial={projectDetails.innerFaceMaterial}
+                                            innerFaceThickness={projectDetails.innerFaceThickness}
+                                            outerFaceMaterial={projectDetails.outerFaceMaterial}
+                                            outerFaceThickness={projectDetails.outerFaceThickness}
                                             onWallUpdate={projectDetails.handleWallUpdate}
                                             onNewWall={projectDetails.handleAddWallWithSplitting}
                                             onWallDelete={projectDetails.handleWallDelete}
@@ -1804,6 +1885,9 @@ const ProjectDetails = () => {
                                             setIsCapturingImages={setIsCapturingImages}
                                             captureSuccess={captureSuccess}
                                             setCaptureSuccess={setCaptureSuccess}
+                                            activeStoreyId={projectDetails.activeStoreyId}
+                                            setActiveStoreyId={projectDetails.setActiveStoreyId}
+                                            allWalls={projectDetails.walls}
                                         />
                                     ) : (
                                         <CeilingManager

@@ -32,6 +32,12 @@ const Canvas2D = ({
     joints = [],
     onNewWall, 
     onWallTypeSelect,
+    wallThickness = 200,
+    wallHeight = 2800,
+    innerFaceMaterial = 'PPGI',
+    innerFaceThickness = 0.5,
+    outerFaceMaterial = 'PPGI',
+    outerFaceThickness = 0.5,
     isEditingMode, 
     currentMode, 
     setCurrentMode = () => {}, // Add prop to allow exiting modes
@@ -739,7 +745,7 @@ const Canvas2D = ({
     function snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor) {
         let closestPoint = { x, y };
         // Make intersection snapping more sensitive (3x normal threshold)
-        let intersectionThreshold = SNAP_THRESHOLD * 3 / scaleFactor;
+        let intersectionThreshold = SNAP_THRESHOLD * 2 / scaleFactor;
         let minDistance = intersectionThreshold;
         // 1. Intersections (high sensitivity)
         intersections.forEach(inter => {
@@ -808,7 +814,7 @@ const Canvas2D = ({
     };
 
     const snapSplitPoint = (wall, x, y) => {
-        const intersectionThreshold = (SNAP_THRESHOLD * 3) / scaleFactor.current;
+        const intersectionThreshold = (SNAP_THRESHOLD * 2) / scaleFactor.current;
         const endpointThreshold = SNAP_THRESHOLD / scaleFactor.current;
         const segmentThreshold = (SNAP_THRESHOLD * 1.5) / scaleFactor.current;
 
@@ -1095,11 +1101,15 @@ const Canvas2D = ({
                     endPoint = normalizedCoords.endPoint;
 
                     // Use modular handler for wall splitting/adding
-                    const wallProperties = walls.length > 0 ? {
-                        height: walls[0].height,
-                        thickness: walls[0].thickness,
-                        application_type: onWallTypeSelect
-                    } : { height: 2800, thickness: 200, application_type: onWallTypeSelect };
+                    const wallProperties = {
+                        height: wallHeight,
+                        thickness: wallThickness,
+                        application_type: onWallTypeSelect,
+                        inner_face_material: innerFaceMaterial,
+                        inner_face_thickness: innerFaceThickness,
+                        outer_face_material: outerFaceMaterial,
+                        outer_face_thickness: outerFaceThickness
+                    };
                     try {
                         if (typeof onNewWall === 'function' && onNewWall.name === 'handleAddWallWithSplitting') {
                             await onNewWall(startPoint, endPoint, wallProperties);

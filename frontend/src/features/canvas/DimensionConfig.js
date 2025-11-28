@@ -35,9 +35,9 @@ export const DIMENSION_CONFIG = {
     WALL_CAP_LINE_WIDTH: 1,     // Wall cap line width
     PARTITION_LINE_WIDTH: 1,    // Partition slash line width
     ROOM_PREVIEW_LINE_WIDTH: 2,   // Room preview line width
-    ROOM_PREVIEW_DASH: [5, 5],    // Room preview dash pattern
+    ROOM_PREVIEW_DASH: [3, 5],    // Room preview dash pattern
     ENDPOINT_SIZE: 2,             // Normal endpoint circle size
-    ENDPOINT_SIZE_HOVER: 4,       // Hovered endpoint circle size
+    ENDPOINT_SIZE_HOVER: 3,       // Hovered endpoint circle size
     
     // Colors for different dimension types
     COLORS: {

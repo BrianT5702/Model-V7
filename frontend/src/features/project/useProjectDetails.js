@@ -3,6 +3,7 @@ import api from '../../api/api';
 import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
 import { areCollinearWalls, calculateIntersection, arePointsEqual, detectRoomWalls } from './projectUtils';
 import { normalizeWallCoordinates } from '../canvas/drawing';
+import { doPolygonsOverlap } from '../canvas/utils';
 
 export default function useProjectDetails(projectId) {
   // State
@@ -28,6 +29,12 @@ export default function useProjectDetails(projectId) {
   const [filteredGhostAreas, setFilteredGhostAreas] = useState([]);
   const [projectCalculatedHeight, setProjectCalculatedHeight] = useState(0);
   const [selectedWallType, setSelectedWallType] = useState('wall');
+  const [wallThickness, setWallThickness] = useState(200);
+  const [wallHeight, setWallHeight] = useState(2800);
+  const [innerFaceMaterial, setInnerFaceMaterial] = useState('PPGI');
+  const [innerFaceThickness, setInnerFaceThickness] = useState(0.5);
+  const [outerFaceMaterial, setOuterFaceMaterial] = useState('PPGI');
+  const [outerFaceThickness, setOuterFaceThickness] = useState(0.5);
   const [showWallEditor, setShowWallEditor] = useState(false);
   const [showRoomManagerModal, setShowRoomManagerModal] = useState(false);
   const [isRoomManagerMinimized, setRoomManagerMinimized] = useState(false);
@@ -111,6 +118,21 @@ export default function useProjectDetails(projectId) {
       return next;
     });
   }, [storeyWizardRoomSelections, rooms, initializeRoomOverride]);
+
+  // Initialize wall properties from existing walls when entering add-wall mode
+  useEffect(() => {
+    if (currentMode === 'add-wall' && walls.length > 0) {
+      const firstWall = walls[0];
+      if (firstWall) {
+        if (firstWall.height) setWallHeight(firstWall.height);
+        if (firstWall.thickness) setWallThickness(firstWall.thickness);
+        if (firstWall.inner_face_material) setInnerFaceMaterial(firstWall.inner_face_material);
+        if (firstWall.inner_face_thickness !== undefined) setInnerFaceThickness(firstWall.inner_face_thickness);
+        if (firstWall.outer_face_material) setOuterFaceMaterial(firstWall.outer_face_material);
+        if (firstWall.outer_face_thickness !== undefined) setOuterFaceThickness(firstWall.outer_face_thickness);
+      }
+    }
+  }, [currentMode, walls]);
 
   const updateStoreyWizardRoomOverride = useCallback((roomId, updates) => {
     setStoreyWizardRoomOverrides((prev) => {
@@ -600,22 +622,42 @@ export default function useProjectDetails(projectId) {
       setFilteredGhostAreas([]);
     } else {
       const normalizedRooms = Array.isArray(rooms) ? rooms : [];
+      const normalizedWalls = Array.isArray(walls) ? walls : [];
 
-      const activeRoomSignatures = new Set(
-        (Array.isArray(filteredRooms) ? filteredRooms : [])
-          .map((room) => {
-            if (!Array.isArray(room.room_points) || room.room_points.length < 3) {
-              return null;
-            }
-            const normalizedPoints = room.room_points.map((point) => [
-              Number(point.x) || 0,
-              Number(point.y) || 0,
-            ]);
-            return JSON.stringify(normalizedPoints);
-          })
-          .filter(Boolean)
+      // Check if there are walls on the current storey (even if no rooms)
+      const hasWallsOnCurrentStorey = normalizedWalls.some(
+        (wall) => String(wall.storey) === String(activeStoreyId)
       );
 
+      // Build a list of active rooms with their polygons and base elevations
+      const activeRooms = [];
+      (Array.isArray(filteredRooms) ? filteredRooms : []).forEach((room) => {
+        if (!Array.isArray(room.room_points) || room.room_points.length < 3) {
+          return;
+        }
+        const normalizedPoints = room.room_points.map((point) => ({
+          x: Number(point.x) || 0,
+          y: Number(point.y) || 0,
+        }));
+        
+        // Get base elevation - use explicit value if set, otherwise use storey elevation
+        let roomBaseElevation = targetElevation; // Default to storey elevation
+        if (room.base_elevation_mm !== undefined && room.base_elevation_mm !== null) {
+          const parsed = Number(room.base_elevation_mm);
+          if (!isNaN(parsed)) {
+            roomBaseElevation = parsed;
+          }
+        }
+        
+        activeRooms.push({
+          points: normalizedPoints,
+          baseElevation: roomBaseElevation,
+          signature: JSON.stringify(normalizedPoints.map(p => [p.x, p.y]))
+        });
+      });
+
+      // Build a set of active room signatures for quick exact match lookup
+      const activeRoomSignatures = new Set(activeRooms.map(r => r.signature));
       const occupiedSignatures = new Set(activeRoomSignatures);
       const descendingStoreys = sortedStoreys.slice(0, activeIndex).reverse();
       const ghostAreas = [];
@@ -630,12 +672,13 @@ export default function useProjectDetails(projectId) {
             return;
           }
 
-          const normalizedPoints = room.room_points.map((point) => [
-            Number(point.x) || 0,
-            Number(point.y) || 0,
-          ]);
-          const signature = JSON.stringify(normalizedPoints);
+          const normalizedPoints = room.room_points.map((point) => ({
+            x: Number(point.x) || 0,
+            y: Number(point.y) || 0,
+          }));
+          const signature = JSON.stringify(normalizedPoints.map(p => [p.x, p.y]));
 
+          // Skip if exact signature match (same location)
           if (occupiedSignatures.has(signature)) {
             return;
           }
@@ -650,7 +693,36 @@ export default function useProjectDetails(projectId) {
               : Number(storey.default_room_height_mm) || 0;
           const roomTop = baseElevation + roomHeight;
 
+          // If the lower room doesn't extend above the current storey elevation, don't show ghost
           if (roomTop + 1e-3 < targetElevation) {
+            return;
+          }
+
+          // If there are walls on the current storey but no rooms, treat the storey elevation as the floor
+          // So if the lower room's top is at or below the storey elevation, don't show ghost
+          if (hasWallsOnCurrentStorey && activeRooms.length === 0) {
+            // Walls exist but no rooms - assume floor is at storey elevation
+            if (roomTop <= targetElevation + 1e-3) {
+              return;
+            }
+          }
+
+          // Check if there's an active room that overlaps with this lower room
+          // and has a base elevation that's at or above the lower room's top
+          let shouldHideGhost = false;
+          for (const activeRoom of activeRooms) {
+            // Check if polygons overlap
+            if (doPolygonsOverlap(normalizedPoints, activeRoom.points)) {
+              // If the active room's base is at or above the lower room's top, don't show ghost
+              // This means the active room's floor is at or above the lower room's ceiling
+              if (activeRoom.baseElevation >= roomTop - 1e-3) {
+                shouldHideGhost = true;
+                break;
+              }
+            }
+          }
+
+          if (shouldHideGhost) {
             return;
           }
 
@@ -957,11 +1029,25 @@ export default function useProjectDetails(projectId) {
   
   // Function to update canvas images
   const updateCanvasImage = (planType, imageData) => {
-    setSharedPanelData(prev => ({
-      ...prev,
-      [`${planType}PlanImage`]: imageData
-    }));
-    console.log(`📸 Stored ${planType} plan image in shared data`);
+    setSharedPanelData(prev => {
+      // Special handling for wallPlansByStorey (array of storey-specific plans)
+      if (planType === 'wallPlansByStorey' && Array.isArray(imageData)) {
+        return {
+          ...prev,
+          wallPlansByStorey: imageData
+        };
+      }
+      // Regular plan images
+      return {
+        ...prev,
+        [`${planType}PlanImage`]: imageData
+      };
+    });
+    if (planType === 'wallPlansByStorey') {
+      console.log(`📸 Stored ${imageData.length} storey-specific wall plan images in shared data`);
+    } else {
+      console.log(`📸 Stored ${planType} plan image in shared data`);
+    }
   };
   
   // Function to get all panel data for the final summary tab
@@ -983,6 +1069,7 @@ export default function useProjectDetails(projectId) {
       lastUpdated: sharedPanelData.lastUpdated,
       // Canvas images for export
       wallPlanImage: sharedPanelData.wallPlanImage,
+      wallPlansByStorey: sharedPanelData.wallPlansByStorey || [],
       ceilingPlanImage: sharedPanelData.ceilingPlanImage,
       floorPlanImage: sharedPanelData.floorPlanImage
     };
@@ -2569,6 +2656,10 @@ export default function useProjectDetails(projectId) {
         height: wall.height,
         thickness: wall.thickness,
         application_type: wall.application_type,
+        inner_face_material: wall.inner_face_material || 'PPGI',
+        inner_face_thickness: wall.inner_face_thickness ?? 0.5,
+        outer_face_material: wall.outer_face_material || 'PPGI',
+        outer_face_thickness: wall.outer_face_thickness ?? 0.5,
         project: project.id,
         storey: wall.storey ?? activeStoreyId ?? defaultStoreyId
       });
@@ -2586,6 +2677,10 @@ export default function useProjectDetails(projectId) {
         height: wall.height,
         thickness: wall.thickness,
         application_type: wall.application_type,
+        inner_face_material: wall.inner_face_material || 'PPGI',
+        inner_face_thickness: wall.inner_face_thickness ?? 0.5,
+        outer_face_material: wall.outer_face_material || 'PPGI',
+        outer_face_thickness: wall.outer_face_thickness ?? 0.5,
         project: project.id,
         storey: wall.storey ?? activeStoreyId ?? defaultStoreyId
       });
@@ -2613,6 +2708,10 @@ export default function useProjectDetails(projectId) {
         height: wallProps.height,
         thickness: wallProps.thickness,
         application_type: wallProps.application_type,
+        inner_face_material: wallProps.inner_face_material || 'PPGI',
+        inner_face_thickness: wallProps.inner_face_thickness ?? 0.5,
+        outer_face_material: wallProps.outer_face_material || 'PPGI',
+        outer_face_thickness: wallProps.outer_face_thickness ?? 0.5,
         project: project.id,
         storey: wallProps.storey ?? activeStoreyId ?? defaultStoreyId
       });
@@ -2752,6 +2851,18 @@ export default function useProjectDetails(projectId) {
     projectCalculatedHeight,
     selectedWallType,
     setSelectedWallType,
+    wallThickness,
+    setWallThickness,
+    wallHeight,
+    setWallHeight,
+    innerFaceMaterial,
+    setInnerFaceMaterial,
+    innerFaceThickness,
+    setInnerFaceThickness,
+    outerFaceMaterial,
+    setOuterFaceMaterial,
+    outerFaceThickness,
+    setOuterFaceThickness,
     showWallEditor,
     setShowWallEditor,
     showRoomManagerModal,
