@@ -1203,9 +1203,6 @@ function generateThicknessColorMap(walls) {
     // Collect unique combination keys (full wall specs)
     const keys = [...new Set(walls.map(getWallFinishKey))];
     
-    // Also collect unique inner and outer face keys for separate color mapping
-    const innerFaceKeys = [...new Set(walls.map(getInnerFaceKey))];
-    const outerFaceKeys = [...new Set(walls.map(getOuterFaceKey))];
     
     // If only one combination, use default grayscale
     if (keys.length === 1) {
@@ -1217,8 +1214,6 @@ function generateThicknessColorMap(walls) {
         
         if (hasDiffFaces) {
             // Generate colors for inner and outer separately
-            const innerKey = getInnerFaceKey(wall);
-            const outerKey = getOuterFaceKey(wall);
             const innerHue = 200; // Blue-ish for inner
             const outerHue = 0; // Red-ish for outer
             colorMap.set(onlyKey, {
@@ -1665,11 +1660,10 @@ export function drawWalls({
         });
         
         // Apply 45° cut shortening at each end independently
-        // Scale-aware gap calculation for 45° cut
-        const targetVisualGap = 4.5;
-        const adjust = targetVisualGap / currentScaleFactor;
-        const minGapInModelUnits = Math.max(wall.thickness * 0.3, 30);
-        const finalAdjust = Math.max(adjust, minGapInModelUnits);
+        // Shorten by the full gap distance (2 * wall thickness) to match the visual gap
+        // The gap between line1 and line2 is 2 * wallThickness (each offset by wallThickness from center)
+        const wallThickness = wall.thickness || 100; // Default to 100mm if not set
+        const finalAdjust = wallThickness * 2; // Shorten by full gap to create seamless edge
         
         // Make copies of lines for modification
         line1 = [...line1.map(p => ({ ...p }))];
@@ -1737,7 +1731,7 @@ export function drawWalls({
             if (panels && panels.length > 0) {
                 // Calculate gap in pixels based on wall thickness for panel divisions
                 const wallThickness = wall.thickness || 100; // Default to 100mm if not set
-                const gapPixels = (wallThickness * scaleFactor) / 2;
+                const gapPixels = (wallThickness * scaleFactor);
                 
                 drawPanelDivisions(
                     context,

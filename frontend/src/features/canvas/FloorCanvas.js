@@ -591,11 +591,10 @@ const FloorCanvas = ({
                     const ux = len ? dx / len : 0;
                     const uy = len ? dy / len : 0;
                     
-                    // Scale-aware gap calculation for 45° cut
-                    const targetVisualGap = 4.5;
-                    const adjust = targetVisualGap / scaleFactor.current;
-                    const minGapInModelUnits = Math.max(100 * 0.3, 30); // Use fixed 100mm as base
-                    const finalAdjust = Math.max(adjust, minGapInModelUnits);
+                    // Shorten by the full gap distance (2 * wall thickness) to match the visual gap
+                    // The gap between line1 and line2 is 2 * wallThickness (each offset by wallThickness from center)
+                    // wallThickness is already declared above, reuse it
+                    const finalAdjust = wallThickness * 2; // Shorten by full gap to create seamless edge
                     
                     // Shorten both ends of the wall line for 45° cut
                     line2 = [...line2.map(p => ({ ...p }))];

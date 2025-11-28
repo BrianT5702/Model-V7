@@ -804,11 +804,10 @@ const CeilingCanvas = ({
                 });
                 
                 // Apply 45° cut shortening at each end independently
-                // Scale-aware gap calculation for 45° cut
-                const targetVisualGap = 4.5;
-                const adjust = targetVisualGap / scaleFactor.current;
-                const minGapInModelUnits = Math.max(100 * 0.3, 30);
-                const finalAdjust = Math.max(adjust, minGapInModelUnits);
+                // Shorten by the full gap distance (2 * wall thickness) to match the visual gap
+                // The gap between line1 and line2 is 2 * wallThickness (each offset by wallThickness from center)
+                // wallThickness is already declared above, reuse it
+                const finalAdjust = wallThickness * 2; // Shorten by full gap to create seamless edge
                 
                 // Make copies of lines for modification
                 line1 = [...line1.map(p => ({ ...p }))];
