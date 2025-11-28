@@ -755,17 +755,6 @@ const Canvas2D = ({
                 closestPoint = { x: inter.x, y: inter.y };
             }
         });
-        // 2. Wall segments (disabled in define-room mode)
-        // walls.forEach(wall => {
-        //     const segmentPoint = snapToWallSegment(x, y, wall);
-        //     if (segmentPoint) {
-        //         const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
-        //         if (distance < segmentThreshold && distance < minDistance) {
-        //             minDistance = distance;
-        //             closestPoint = segmentPoint;
-        //         }
-        //     }
-        // });
         // 3. Endpoints (normal threshold)
         let segmentThreshold = SNAP_THRESHOLD / scaleFactor;
         walls.forEach(wall => {

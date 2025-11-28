@@ -24,7 +24,9 @@ import {
     FaEyeSlash,
     FaArrowLeft,
     FaLayerGroup,
-    FaTimes
+    FaTimes,
+    FaLock,
+    FaUnlock
 } from 'react-icons/fa';
 
 const ProjectDetails = () => {
@@ -166,6 +168,7 @@ const ProjectDetails = () => {
 
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
+    const [isLengthLocked, setIsLengthLocked] = useState(false);
     
     // Capture canvas images when switching tabs
     useEffect(() => {
@@ -613,8 +616,10 @@ const ProjectDetails = () => {
         if (projectDetails.selectedWall !== null) {
             const wall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWall);
             setEditedWall(wall ? { ...wall } : null);
+            setIsLengthLocked(false); // Reset lock when opening modal
         } else {
             setEditedWall(null);
+            setIsLengthLocked(false);
         }
     }, [projectDetails.selectedWall, projectDetails.filteredWalls]);
 
@@ -1220,14 +1225,14 @@ const ProjectDetails = () => {
 
                     {/* Room Creation Interface */}
                     {projectDetails.showRoomManagerModal && !projectDetails.isRoomManagerMinimized && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-4">
-                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
-                                    <div>
-                                        <h2 className="text-xl font-semibold text-gray-900">
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-2 sm:p-4">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto">
+                                <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
+                                    <div className="flex-1 min-w-0 pr-2">
+                                        <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
                                             {projectDetails.editingRoom ? 'Edit Room' : 'Create New Room'}
                                         </h2>
-                                        <p className="text-sm text-gray-500">
+                                        <p className="text-xs sm:text-sm text-gray-500 mt-1">
                                             {projectDetails.currentMode === 'define-room' ? 'Click on the canvas to place points. Close the loop by clicking the first point.' : 'Define room properties'}
                                         </p>
                                     </div>
@@ -1251,7 +1256,7 @@ const ProjectDetails = () => {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="p-6">
+                                <div className="p-4 sm:p-6">
                                     <RoomManager
                                         projectId={projectId}
                                         walls={projectDetails.filteredWalls}
@@ -1658,71 +1663,63 @@ const ProjectDetails = () => {
 
                 {/* Main Content Area */}
                 <div className="flex-1 flex flex-col overflow-visible">
-                    {/* 3D Controls Bar - Only show when in 3D view */}
-                    {projectDetails.is3DView && (
-                        <div className="mx-3 sm:mx-6 mt-3 sm:mt-6 mb-2">
-                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4">
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                    <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-                                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">3D View Controls</h3>
-                                        <div className="text-xs sm:text-sm text-gray-500 hidden sm:block">
-                                            (Use pinch-to-zoom on mobile)
-                                        </div>
-                                        <button
-                                            onClick={projectDetails.handleViewToggle}
-                                            className="flex items-center px-3 sm:px-4 py-2 rounded-lg bg-green-600 text-white text-sm sm:text-base font-medium hover:bg-green-700 transition-all duration-200 shadow-lg"
-                                        >
-                                            {projectDetails.isInteriorView ? (
-                                                <>
-                                                    <FaEye className="mr-1 sm:mr-2" />
-                                                    <span className="hidden sm:inline">Switch to Exterior</span>
-                                                    <span className="sm:hidden">Exterior</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <FaEyeSlash className="mr-1 sm:mr-2" />
-                                                    <span className="hidden sm:inline">Switch to Interior</span>
-                                                    <span className="sm:hidden">Interior</span>
-                                                </>
-                                            )}
-                                        </button>
-                                        <button
-                                            onClick={projectDetails.togglePanelLines}
-                                            className={`flex items-center px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 shadow-lg ${
-                                                projectDetails.showPanelLines 
-                                                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                                                    : 'bg-gray-600 text-white hover:bg-gray-700'
-                                            }`}
-                                        >
-                                            <span className="hidden sm:inline">{projectDetails.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines'}</span>
-                                            <span className="sm:hidden">{projectDetails.showPanelLines ? 'Hide' : 'Show'}</span>
-                                        </button>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
-                                        <div className="text-sm text-gray-600">
-                                            <span className="font-medium">View:</span> {projectDetails.isInteriorView ? 'Interior' : 'Exterior'}
-                                        </div>
-                                        <div className="h-6 w-px bg-gray-300"></div>
-                                        <div className="text-sm text-gray-600">
-                                            <span className="font-medium">Canvas Controls:</span> Use buttons on 3D canvas
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    
                     {/* Canvas Container */}
                     <div className="bg-white m-3 sm:m-6 rounded-lg shadow-sm border border-gray-200 canvas-container">
                         {projectDetails.is3DView ? (
-                            <div 
-                                id="three-canvas-container" 
-                                className="w-full bg-gray-50 active relative overflow-hidden" 
-                                style={{ 
-                                    height: `${threeDContainerHeight}px`,
-                                    minHeight: `${MIN_CANVAS_HEIGHT}px`
-                                }}
-                            />
+                            <div className="flex flex-col">
+                                {/* Tab Navigation - Same structure as 2D */}
+                                <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                        <div className="flex flex-wrap gap-1 sm:space-x-1">
+                                            <button
+                                                onClick={projectDetails.handleViewToggle}
+                                                className="flex items-center px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 bg-green-600 text-white hover:bg-green-700 shadow-md"
+                                            >
+                                                {projectDetails.isInteriorView ? (
+                                                    <>
+                                                        <FaEye className="mr-1 sm:mr-2" />
+                                                        <span className="hidden sm:inline">Switch to Exterior</span>
+                                                        <span className="sm:hidden">Exterior</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <FaEyeSlash className="mr-1 sm:mr-2" />
+                                                        <span className="hidden sm:inline">Switch to Interior</span>
+                                                        <span className="sm:hidden">Interior</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={projectDetails.togglePanelLines}
+                                                className={`flex items-center px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 shadow-md ${
+                                                    projectDetails.showPanelLines 
+                                                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
+                                            >
+                                                <span className="hidden sm:inline">{projectDetails.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines'}</span>
+                                                <span className="sm:hidden">{projectDetails.showPanelLines ? 'Hide' : 'Show'}</span>
+                                            </button>
+                                        </div>
+                                        <div className="text-xs sm:text-sm text-gray-600">
+                                            <span className="font-medium">View:</span> {projectDetails.isInteriorView ? 'Interior' : 'Exterior'} • 
+                                            <span className="ml-1">Use pinch-to-zoom on mobile</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* 3D Canvas Content */}
+                                <div className="relative">
+                                    <div 
+                                        id="three-canvas-container" 
+                                        className="w-full bg-gray-50 active relative overflow-hidden" 
+                                        style={{ 
+                                            height: `${threeDContainerHeight}px`,
+                                            minHeight: `${MIN_CANVAS_HEIGHT}px`
+                                        }}
+                                    />
+                                </div>
+                            </div>
                         ) : (
                             <div className="flex flex-col">
                                 {/* Tab Navigation */}
@@ -2295,10 +2292,10 @@ const ProjectDetails = () => {
 
                 {/* Wall Editor Modal */}
                     {projectDetails.selectedWall !== null && projectDetails.currentMode === 'edit-wall' && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 modal-backdrop">
-                    <div className="bg-white p-6 rounded-lg shadow-xl max-w-2xl w-full mx-4">
-                                <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-semibold text-gray-900">Edit Wall</h3>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 modal-backdrop p-2 sm:p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
+                                <div className="flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900">Edit Wall</h3>
                                     <button 
                                         onClick={() => {
                                             projectDetails.setSelectedWall(null);
@@ -2312,59 +2309,306 @@ const ProjectDetails = () => {
                                     </button>
                                 </div>
                         {/* Wall editor content */}
-                                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-3">
-                                            <label className="block">
-                                                <span className="font-medium text-gray-700">Start X:</span>
-                                                <input
-                                                    type="number"
-                                                    value={editedWall?.start_x || ''}
-                                                    onChange={(e) => setEditedWall({ ...editedWall, start_x: parseFloat(e.target.value) })}
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                />
-                                            </label>
+                                <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 space-y-4 sm:space-y-6">
+                                    {/* Position & Dimensions Section */}
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position & Dimensions</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                            <div className="space-y-3">
+                                                <label className="block">
+                                                    <span className="text-sm font-medium text-gray-700">Start Point</span>
+                                                    <div className="grid grid-cols-2 gap-2 mt-1">
+                                                        <div>
+                                                            <span className="text-xs text-gray-500">X:</span>
+                                                            <input
+                                                                type="number"
+                                                                value={editedWall?.start_x || ''}
+                                                                onChange={(e) => {
+                                                                    const newStartX = parseFloat(e.target.value);
+                                                                    if (isNaN(newStartX) || !editedWall) return;
+                                                                    
+                                                                    if (isLengthLocked) {
+                                                                        // Calculate current direction vector and length
+                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                                        const length = Math.hypot(dx, dy);
+                                                                        
+                                                                        if (length === 0) {
+                                                                            setEditedWall({ ...editedWall, start_x: newStartX });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        // Calculate unit direction vector (normalized)
+                                                                        const unitX = dx / length;
+                                                                        const unitY = dy / length;
+                                                                        
+                                                                        // Apply the same direction from new start point with locked length
+                                                                        const newEndX = newStartX + unitX * length;
+                                                                        const newEndY = (editedWall.start_y || 0) + unitY * length;
+                                                                        
+                                                                        setEditedWall({ 
+                                                                            ...editedWall, 
+                                                                            start_x: newStartX,
+                                                                            end_x: newEndX,
+                                                                            end_y: newEndY
+                                                                        });
+                                                                    } else {
+                                                                        setEditedWall({ ...editedWall, start_x: newStartX });
+                                                                    }
+                                                                }}
+                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-xs text-gray-500">Y:</span>
+                                                            <input
+                                                                type="number"
+                                                                value={editedWall?.start_y || ''}
+                                                                onChange={(e) => {
+                                                                    const newStartY = parseFloat(e.target.value);
+                                                                    if (isNaN(newStartY) || !editedWall) return;
+                                                                    
+                                                                    if (isLengthLocked) {
+                                                                        // Calculate current direction vector and length
+                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                                        const length = Math.hypot(dx, dy);
+                                                                        
+                                                                        if (length === 0) {
+                                                                            setEditedWall({ ...editedWall, start_y: newStartY });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        // Calculate unit direction vector (normalized)
+                                                                        const unitX = dx / length;
+                                                                        const unitY = dy / length;
+                                                                        
+                                                                        // Apply the same direction from new start point with locked length
+                                                                        const newEndX = (editedWall.start_x || 0) + unitX * length;
+                                                                        const newEndY = newStartY + unitY * length;
+                                                                        
+                                                                        setEditedWall({ 
+                                                                            ...editedWall, 
+                                                                            start_y: newStartY,
+                                                                            end_x: newEndX,
+                                                                            end_y: newEndY
+                                                                        });
+                                                                    } else {
+                                                                        setEditedWall({ ...editedWall, start_y: newStartY });
+                                                                    }
+                                                                }}
+                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </label>
+                                            </div>
 
-                                            <label className="block">
-                                                <span className="font-medium text-gray-700">Start Y:</span>
-                                                <input
-                                                    type="number"
-                                                    value={editedWall?.start_y || ''}
-                                                    onChange={(e) => setEditedWall({ ...editedWall, start_y: parseFloat(e.target.value) })}
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                />
-                                            </label>
+                                            <div className="space-y-3">
+                                                <label className="block">
+                                                    <span className="text-sm font-medium text-gray-700">End Point</span>
+                                                    <div className="grid grid-cols-2 gap-2 mt-1">
+                                                        <div>
+                                                            <span className="text-xs text-gray-500">X:</span>
+                                                            <input
+                                                                type="number"
+                                                                value={editedWall?.end_x || ''}
+                                                                onChange={(e) => {
+                                                                    const newEndX = parseFloat(e.target.value);
+                                                                    if (isNaN(newEndX) || !editedWall) return;
+                                                                    
+                                                                    if (isLengthLocked) {
+                                                                        // Calculate locked length
+                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                                        const length = Math.hypot(dx, dy);
+                                                                        
+                                                                        if (length === 0) {
+                                                                            setEditedWall({ ...editedWall, end_x: newEndX });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        // Calculate new direction from start to new end X
+                                                                        const newDx = newEndX - (editedWall.start_x || 0);
+                                                                        const newDy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                                        const newLength = Math.hypot(newDx, newDy);
+                                                                        
+                                                                        if (newLength === 0) {
+                                                                            // If new length is 0, keep Y the same
+                                                                            setEditedWall({ ...editedWall, end_x: newEndX });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        // Adjust end Y to maintain locked length
+                                                                        // We have: length^2 = newDx^2 + newDy^2
+                                                                        // So: newDy = ±sqrt(length^2 - newDx^2)
+                                                                        // We'll use the sign of the original dy to maintain direction
+                                                                        const sign = dy >= 0 ? 1 : -1;
+                                                                        const newDySquared = length * length - newDx * newDx;
+                                                                        
+                                                                        if (newDySquared < 0) {
+                                                                            // Can't maintain length with this X change, just update X
+                                                                            setEditedWall({ ...editedWall, end_x: newEndX });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        const newEndY = (editedWall.start_y || 0) + sign * Math.sqrt(newDySquared);
+                                                                        
+                                                                        setEditedWall({ 
+                                                                            ...editedWall, 
+                                                                            end_x: newEndX,
+                                                                            end_y: newEndY
+                                                                        });
+                                                                    } else {
+                                                                        setEditedWall({ ...editedWall, end_x: newEndX });
+                                                                    }
+                                                                }}
+                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-xs text-gray-500">Y:</span>
+                                                            <input
+                                                                type="number"
+                                                                value={editedWall?.end_y || ''}
+                                                                onChange={(e) => {
+                                                                    const newEndY = parseFloat(e.target.value);
+                                                                    if (isNaN(newEndY) || !editedWall) return;
+                                                                    
+                                                                    if (isLengthLocked) {
+                                                                        // Calculate locked length
+                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                                        const length = Math.hypot(dx, dy);
+                                                                        
+                                                                        if (length === 0) {
+                                                                            setEditedWall({ ...editedWall, end_y: newEndY });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        // Calculate new direction from start to new end Y
+                                                                        const newDx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                                        const newDy = newEndY - (editedWall.start_y || 0);
+                                                                        const newLength = Math.hypot(newDx, newDy);
+                                                                        
+                                                                        if (newLength === 0) {
+                                                                            // If new length is 0, keep X the same
+                                                                            setEditedWall({ ...editedWall, end_y: newEndY });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        // Adjust end X to maintain locked length
+                                                                        // We have: length^2 = newDx^2 + newDy^2
+                                                                        // So: newDx = ±sqrt(length^2 - newDy^2)
+                                                                        // We'll use the sign of the original dx to maintain direction
+                                                                        const sign = dx >= 0 ? 1 : -1;
+                                                                        const newDxSquared = length * length - newDy * newDy;
+                                                                        
+                                                                        if (newDxSquared < 0) {
+                                                                            // Can't maintain length with this Y change, just update Y
+                                                                            setEditedWall({ ...editedWall, end_y: newEndY });
+                                                                            return;
+                                                                        }
+                                                                        
+                                                                        const newEndX = (editedWall.start_x || 0) + sign * Math.sqrt(newDxSquared);
+                                                                        
+                                                                        setEditedWall({ 
+                                                                            ...editedWall, 
+                                                                            end_x: newEndX,
+                                                                            end_y: newEndY
+                                                                        });
+                                                                    } else {
+                                                                        setEditedWall({ ...editedWall, end_y: newEndY });
+                                                                    }
+                                                                }}
+                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </label>
+                                            </div>
+
+                                            <div className="md:col-span-2">
+                                                <label className="block">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-sm font-medium text-gray-700">Wall Length (mm):</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setIsLengthLocked(!isLengthLocked)}
+                                                            className={`p-2 rounded-lg transition-colors ${
+                                                                isLengthLocked
+                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                            }`}
+                                                            title={isLengthLocked ? 'Unlock length' : 'Lock length'}
+                                                        >
+                                                            {isLengthLocked ? (
+                                                                <FaLock className="w-4 h-4" />
+                                                            ) : (
+                                                                <FaUnlock className="w-4 h-4" />
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                    <input 
+                                                        type="number" 
+                                                        value={editedWall ? Math.round(Math.hypot(
+                                                            (editedWall.end_x || 0) - (editedWall.start_x || 0),
+                                                            (editedWall.end_y || 0) - (editedWall.start_y || 0)
+                                                        ) * 100) / 100 : ''} 
+                                                        onChange={(e) => {
+                                                            if (isLengthLocked) return; // Ignore changes when locked
+                                                            
+                                                            const newLength = parseFloat(e.target.value);
+                                                            if (isNaN(newLength) || newLength <= 0 || !editedWall) return;
+                                                            
+                                                            // Calculate current direction vector
+                                                            const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                            const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                            const currentLength = Math.hypot(dx, dy);
+                                                            
+                                                            if (currentLength === 0) return; // Can't determine direction
+                                                            
+                                                            // Calculate unit direction vector
+                                                            const unitX = dx / currentLength;
+                                                            const unitY = dy / currentLength;
+                                                            
+                                                            // Calculate new end point keeping start point fixed
+                                                            const newEndX = (editedWall.start_x || 0) + unitX * newLength;
+                                                            const newEndY = (editedWall.start_y || 0) + unitY * newLength;
+                                                            
+                                                            setEditedWall({ 
+                                                                ...editedWall, 
+                                                                end_x: newEndX,
+                                                                end_y: newEndY
+                                                            });
+                                                        }}
+                                                        min="0"
+                                                        step="1"
+                                                        disabled={isLengthLocked}
+                                                        className={`mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                                                            ${isLengthLocked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                    />
+                                                    {isLengthLocked && (
+                                                        <p className="mt-1 text-xs text-blue-600">
+                                                            Length is locked. Changing start/end coordinates will adjust the other point to maintain this length.
+                                                        </p>
+                                                    )}
+                                                </label>
+                                            </div>
                                         </div>
+                                    </div>
 
-                                        <div className="space-y-3">
+                                    {/* Wall Properties Section */}
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Wall Properties</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
                                             <label className="block">
-                                                <span className="font-medium text-gray-700">End X:</span>
-                                                <input
-                                                    type="number"
-                                                    value={editedWall?.end_x || ''}
-                                                    onChange={(e) => setEditedWall({ ...editedWall, end_x: parseFloat(e.target.value) })}
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                />
-                                            </label>
-
-                                            <label className="block">
-                                                <span className="font-medium text-gray-700">End Y:</span>
-                                                <input
-                                                    type="number"
-                                                    value={editedWall?.end_y || ''}
-                                                    onChange={(e) => setEditedWall({ ...editedWall, end_y: parseFloat(e.target.value) })}
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                />
-                                            </label>
-                                        </div>
-
-                                        <div className="space-y-3">
-                                            <label className="block">
-                                                <span className="font-medium text-gray-700">Wall Height (mm):</span>
+                                                <span className="text-sm font-medium text-gray-700">Wall Height (mm):</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.height || ''} 
@@ -2377,7 +2621,7 @@ const ProjectDetails = () => {
                                             </label>
 
                                             <label className="block">
-                                                <span className="font-medium text-gray-700">Wall Thickness (mm):</span>
+                                                <span className="text-sm font-medium text-gray-700">Wall Thickness (mm):</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.thickness || ''} 
@@ -2388,11 +2632,9 @@ const ProjectDetails = () => {
                                                         focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 />
                                             </label>
-                                        </div>
 
-                                        <div className="space-y-3">
                                             <label className="block">
-                                                <span className="font-medium text-gray-700">Wall Type:</span>
+                                                <span className="text-sm font-medium text-gray-700">Wall Type:</span>
                                                 <select 
                                                     value={editedWall?.application_type || 'wall'} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, application_type: e.target.value })} 
@@ -2404,12 +2646,16 @@ const ProjectDetails = () => {
                                                 </select>
                                             </label>
                                         </div>
+                                    </div>
 
-                                        {/* Face Finishes */}
-                                        <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                                            <div className="space-y-3">
+                                    {/* Face Finishes Section */}
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Face Finishes</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                            <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
+                                                <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Inner Face</h5>
                                                 <label className="block">
-                                                    <span className="font-medium text-gray-700">Inner Face Material:</span>
+                                                    <span className="text-sm font-medium text-gray-700">Material:</span>
                                                     <select
                                                         value={editedWall?.inner_face_material || 'PPGI'}
                                                         onChange={(e) => setEditedWall({ ...editedWall, inner_face_material: e.target.value })}
@@ -2422,7 +2668,7 @@ const ProjectDetails = () => {
                                                     </select>
                                                 </label>
                                                 <label className="block">
-                                                    <span className="font-medium text-gray-700">Inner Face Thickness (mm):</span>
+                                                    <span className="text-sm font-medium text-gray-700">Thickness (mm):</span>
                                                     <input
                                                         type="number"
                                                         min="0.1"
@@ -2434,9 +2680,10 @@ const ProjectDetails = () => {
                                                     />
                                                 </label>
                                             </div>
-                                            <div className="space-y-3">
+                                            <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
+                                                <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Outer Face</h5>
                                                 <label className="block">
-                                                    <span className="font-medium text-gray-700">Outer Face Material:</span>
+                                                    <span className="text-sm font-medium text-gray-700">Material:</span>
                                                     <select
                                                         value={editedWall?.outer_face_material || 'PPGI'}
                                                         onChange={(e) => setEditedWall({ ...editedWall, outer_face_material: e.target.value })}
@@ -2449,7 +2696,7 @@ const ProjectDetails = () => {
                                                     </select>
                                                 </label>
                                                 <label className="block">
-                                                    <span className="font-medium text-gray-700">Outer Face Thickness (mm):</span>
+                                                    <span className="text-sm font-medium text-gray-700">Thickness (mm):</span>
                                                     <input
                                                         type="number"
                                                         min="0.1"
@@ -2462,12 +2709,15 @@ const ProjectDetails = () => {
                                                 </label>
                                             </div>
                                         </div>
+                                    </div>
 
-                                        {/* Gap-Fill Toggle Section */}
-                                        <div className="col-span-2 space-y-3 mt-4">
+                                    {/* Gap-Fill Toggle Section */}
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Advanced Options</h4>
+                                        <div className="mt-3">
                                             <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
                                                 <div className="flex-1">
-                                                    <h4 className="font-medium text-gray-800 mb-1">Fill Gap Between Rooms</h4>
+                                                    <h5 className="font-medium text-gray-800 mb-1">Fill Gap Between Rooms</h5>
                                                     <p className="text-sm text-gray-600">
                                                         Fill only the gap between rooms with different heights
                                                     </p>
@@ -2512,9 +2762,10 @@ const ProjectDetails = () => {
                                             </div>
                                         </div>
                                     </div>
+                                </div>
 
                                     {/* Action Buttons at the Bottom Right */}
-                                    <div className="mt-6 flex justify-end space-x-3">
+                                    <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 px-4 sm:px-6 pb-4 sm:pb-6">
                                         <button
                                             onClick={async () => {
                                                 // 1. Find which endpoints changed
@@ -2562,7 +2813,7 @@ const ProjectDetails = () => {
                                                 projectDetails.setSelectedWall(null);
                                                 setEditedWall(null);
                                             }}
-                                            className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-medium"
                                         >
                                             Save
                                         </button>
@@ -2572,15 +2823,14 @@ const ProjectDetails = () => {
                                                 projectDetails.setWallToDelete(projectDetails.selectedWall);
                                                 projectDetails.setShowWallDeleteConfirm(true);
                                             }}
-                                            className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 
-                                                transition-colors"
+                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 
+                                                transition-colors text-sm font-medium"
                                         >
                                             Remove Wall
                                         </button>
                                     </div>
                                 </div>
                             </div>
-                        </div>
                     )}
 
 
