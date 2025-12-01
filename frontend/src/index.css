@@ -94,7 +94,23 @@ code {
 
 .tool-button.active:hover {
   @apply border-blue-600 bg-blue-100;
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.2);
+}
+
+/* Ensure header scales with browser zoom on mobile */
+@media (max-width: 1023px) {
+  /* Header and navigation should scale with browser zoom */
+  header,
+  .bg-white.border-b {
+    transform: scale(1);
+    transform-origin: top left;
+  }
+  
+  /* Ensure text scales properly */
+  h1, h2, h3, p, button, select {
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
 }
 
 .tool-button svg {

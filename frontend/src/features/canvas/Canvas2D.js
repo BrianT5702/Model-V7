@@ -137,6 +137,9 @@ const Canvas2D = ({
     const isDraggingCanvas = useRef(false);
     const suppressNextContextMenu = useRef(false);
     const lastMousePos = useRef({ x: 0, y: 0 });
+    const lastTouchPos = useRef({ x: 0, y: 0 });
+    const isTouchDragging = useRef(false);
+    const touchStartTime = useRef(0);
 
     // Utility function to detect database connection errors
     const isDatabaseConnectionError = (error) => {
@@ -289,6 +292,70 @@ const Canvas2D = ({
         isDraggingCanvas.current = false;
     };
 
+    // Touch event handlers for mobile canvas dragging
+    const handleTouchStart = (e) => {
+        // Only allow dragging with single touch (not pinch-to-zoom)
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            touchStartTime.current = Date.now();
+            lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
+            isTouchDragging.current = false; // Will be set to true on move if movement is significant
+        }
+    };
+
+    const handleTouchMove = (e) => {
+        // Only handle single touch for dragging
+        if (e.touches.length === 1 && lastTouchPos.current) {
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - lastTouchPos.current.x;
+            const deltaY = touch.clientY - lastTouchPos.current.y;
+            
+            // Check if movement is significant enough to be considered dragging (not a tap)
+            const movementDistance = Math.hypot(deltaX, deltaY);
+            if (movementDistance > 5) { // 5px threshold to distinguish drag from tap
+                if (!isTouchDragging.current) {
+                    // Start dragging
+                    isTouchDragging.current = true;
+                    isDraggingCanvas.current = true;
+                    isZoomed.current = true;
+                    e.preventDefault(); // Prevent scrolling
+                }
+                
+                if (isTouchDragging.current) {
+                    // Update canvas offset
+                    offsetX.current += deltaX;
+                    offsetY.current += deltaY;
+                    
+                    lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
+                    
+                    // Trigger a re-render
+                    setForceRefresh(prev => prev + 1);
+                    e.preventDefault(); // Prevent scrolling
+                }
+            }
+        } else if (e.touches.length > 1) {
+            // Multi-touch detected, cancel dragging (likely pinch-to-zoom)
+            isTouchDragging.current = false;
+            isDraggingCanvas.current = false;
+        }
+    };
+
+    const handleTouchEnd = (e) => {
+        // Check if this was a tap (not a drag)
+        const touchDuration = Date.now() - touchStartTime.current;
+        const wasTap = !isTouchDragging.current && touchDuration < 300; // Less than 300ms
+        
+        isTouchDragging.current = false;
+        isDraggingCanvas.current = false;
+        lastTouchPos.current = null;
+        
+        // If it was a tap, don't prevent default to allow normal click handling
+        // The click event will be fired after touchend
+        if (!wasTap) {
+            e.preventDefault();
+        }
+    };
+
     // Handle right-click (context menu) for define-room mode and cancel add-wall mode
     const handleCanvasContextMenu = (event) => {
         event.preventDefault();
@@ -308,15 +375,25 @@ const Canvas2D = ({
         }
     };
 
-    // Add global mouse up event listener for canvas dragging
+    // Add global mouse up and touch end event listeners for canvas dragging
     useEffect(() => {
         const handleGlobalMouseUp = () => {
             isDraggingCanvas.current = false;
         };
         
+        const handleGlobalTouchEnd = () => {
+            isTouchDragging.current = false;
+            isDraggingCanvas.current = false;
+        };
+        
         document.addEventListener('mouseup', handleGlobalMouseUp);
+        document.addEventListener('touchend', handleGlobalTouchEnd);
+        document.addEventListener('touchcancel', handleGlobalTouchEnd);
+        
         return () => {
             document.removeEventListener('mouseup', handleGlobalMouseUp);
+            document.removeEventListener('touchend', handleGlobalTouchEnd);
+            document.removeEventListener('touchcancel', handleGlobalTouchEnd);
         };
     }, []);
 
@@ -2516,11 +2593,15 @@ const Canvas2D = ({
                                         onMouseMove={handleMouseMove}
                                         onMouseDown={handleCanvasMouseDown}
                                         onContextMenu={handleCanvasContextMenu}
+                                        onTouchStart={handleTouchStart}
+                                        onTouchMove={handleTouchMove}
+                                        onTouchEnd={handleTouchEnd}
                                         tabIndex={0}
                                         className="wall-canvas block w-full cursor-grab active:cursor-grabbing"
                                         style={{
                                             width: '100%',
-                                            height: '100%'
+                                            height: '100%',
+                                            touchAction: 'none' // Prevent default touch behaviors like scrolling
                                         }}
                                     />
                                     
