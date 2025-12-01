@@ -364,6 +364,50 @@ export function addFloor(instance) {
 }
 
 function getBuildingFootprint(instance) {
+  // Priority 1: Use room boundary points (room_points) if available
+  if (instance.project && instance.project.rooms && instance.project.rooms.length > 0) {
+    // Filter rooms with valid room_points
+    const validRooms = instance.project.rooms.filter(room => 
+      room.room_points && Array.isArray(room.room_points) && room.room_points.length >= 3
+    );
+    
+    if (validRooms.length === 1) {
+      // Single room: use room points directly in their original order
+      const room = validRooms[0];
+      return room.room_points.map(point => ({
+        x: point.x * instance.scalingFactor + instance.modelOffset.x,
+        z: point.y * instance.scalingFactor + instance.modelOffset.z
+      }));
+    } else if (validRooms.length > 1) {
+      // Multiple rooms: collect all points and compute convex hull for outer boundary
+      const allRoomPoints = [];
+      validRooms.forEach(room => {
+        room.room_points.forEach(point => {
+          allRoomPoints.push({
+            x: point.x * instance.scalingFactor + instance.modelOffset.x,
+            z: point.y * instance.scalingFactor + instance.modelOffset.z
+          });
+        });
+      });
+      
+      // Remove duplicate points
+      const uniquePoints = [];
+      const pointSet = new Set();
+      allRoomPoints.forEach(pt => {
+        const key = `${pt.x.toFixed(4)},${pt.z.toFixed(4)}`;
+        if (!pointSet.has(key)) {
+          pointSet.add(key);
+          uniquePoints.push(pt);
+        }
+      });
+      
+      if (uniquePoints.length >= 3) {
+        return computeConvexHull(uniquePoints);
+      }
+    }
+  }
+  
+  // Priority 2: Fallback to wall endpoints (original method)
   // Build a map of all wall endpoints and their connections
   const pointMap = new Map();
   const toKey = (x, z) => `${x.toFixed(4)},${z.toFixed(4)}`;
@@ -447,6 +491,61 @@ function getBuildingFootprint(instance) {
     return [];
   }
   return boundary;
+}
+
+// Helper function to compute convex hull using Graham scan algorithm
+function computeConvexHull(points) {
+  if (points.length < 3) {
+    return points;
+  }
+  
+  // Create a copy to avoid mutating the original array
+  const sortedPoints = [...points];
+  
+  // Find the bottom-most point (or leftmost in case of tie)
+  let bottom = 0;
+  for (let i = 1; i < sortedPoints.length; i++) {
+    if (sortedPoints[i].z < sortedPoints[bottom].z || 
+        (sortedPoints[i].z === sortedPoints[bottom].z && sortedPoints[i].x < sortedPoints[bottom].x)) {
+      bottom = i;
+    }
+  }
+  
+  // Swap bottom point to first position
+  [sortedPoints[0], sortedPoints[bottom]] = [sortedPoints[bottom], sortedPoints[0]];
+  
+  // Sort points by polar angle with respect to bottom point
+  const pivot = sortedPoints[0];
+  const rest = sortedPoints.slice(1);
+  rest.sort((a, b) => {
+    const angleA = Math.atan2(a.z - pivot.z, a.x - pivot.x);
+    const angleB = Math.atan2(b.z - pivot.z, b.x - pivot.x);
+    if (angleA !== angleB) {
+      return angleA - angleB;
+    }
+    // If angles are equal, sort by distance
+    const distA = Math.hypot(a.x - pivot.x, a.z - pivot.z);
+    const distB = Math.hypot(b.x - pivot.x, b.z - pivot.z);
+    return distA - distB;
+  });
+  
+  // Build convex hull
+  const hull = [sortedPoints[0], ...rest.slice(0, 1)];
+  
+  for (let i = 1; i < rest.length; i++) {
+    while (hull.length > 1 && 
+           crossProduct(hull[hull.length - 2], hull[hull.length - 1], rest[i]) <= 0) {
+      hull.pop();
+    }
+    hull.push(rest[i]);
+  }
+  
+  return hull;
+}
+
+// Helper function to calculate cross product for convex hull
+function crossProduct(o, a, b) {
+  return (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
 }
 
 export function buildModel(instance) {

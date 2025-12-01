@@ -160,10 +160,10 @@ const ProjectDetails = () => {
     const [captureSuccess, setCaptureSuccess] = useState(false);
     
     // Dynamic 3D container height for mobile responsiveness (matching Canvas2D pattern)
-    const [threeDContainerHeight, setThreeDContainerHeight] = useState(600);
+    const [threeDContainerHeight, setThreeDContainerHeight] = useState(800);
     
     // Mobile-specific constants (matching Canvas2D)
-    const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
+    const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.95 : 0.9;
     const MIN_CANVAS_HEIGHT = 240;
 
     // Add this state for the edited wall
@@ -648,17 +648,18 @@ const ProjectDetails = () => {
             const maxHeight = viewportHeight * MAX_CANVAS_HEIGHT_RATIO;
             
             // Calculate height based on aspect ratio (similar to 2D view)
-            // Increased aspect ratio for taller canvas: 0.75 (was 0.6)
-            const calculatedHeight = containerWidth * 0.75;
+            // Increased aspect ratio for taller canvas: 1.0 for mobile, 0.9 for desktop
+            const isMobile = window.innerWidth < 640;
+            const aspectRatio = isMobile ? 1.0 : 0.9; // Taller on mobile to match 2D view
+            const calculatedHeight = containerWidth * aspectRatio;
             const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
             const constrainedHeight = Math.min(preferredHeight, maxHeight);
             const finalHeight = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
 
-            // Mobile: use calculated height (fills more space), Desktop: calculated or 800px max (increased from 600px)
-            const isMobile = window.innerWidth < 640;
+            // Mobile: use calculated height (fills more space), Desktop: calculated or 1000px max
             const newHeight = isMobile 
-                ? Math.min(finalHeight, maxHeight) // On mobile, use more of the available space
-                : Math.min(finalHeight, 800); // On desktop, cap at 800px (increased from 600px)
+                ? Math.min(finalHeight, maxHeight) // On mobile, use more of the available space (up to 95% of viewport)
+                : Math.min(finalHeight, 1000); // On desktop, cap at 1000px
 
             // Only update if height actually changed (prevents infinite loops)
             setThreeDContainerHeight(prevHeight => {
@@ -794,7 +795,7 @@ const ProjectDetails = () => {
 
             {/* Navigation Bar */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
+                <div className="w-full px-4 sm:px-6 lg:max-w-7xl lg:mx-auto py-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2 sm:space-x-4">
                             <button
@@ -844,7 +845,7 @@ const ProjectDetails = () => {
 
             {/* Header Section */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div className="w-full px-4 sm:px-6 lg:px-8 lg:max-w-7xl lg:mx-auto py-4">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                         <div className="flex-shrink-0">
                     {(!projectDetails.project || !projectDetails.project.name) ? (
@@ -1709,10 +1710,10 @@ const ProjectDetails = () => {
                                 </div>
                                 
                                 {/* 3D Canvas Content */}
-                                <div className="relative">
+                                <div className="relative w-full">
                                     <div 
                                         id="three-canvas-container" 
-                                        className="w-full bg-gray-50 active relative overflow-hidden" 
+                                        className="w-full bg-gray-50 active relative overflow-visible" 
                                         style={{ 
                                             height: `${threeDContainerHeight}px`,
                                             minHeight: `${MIN_CANVAS_HEIGHT}px`
