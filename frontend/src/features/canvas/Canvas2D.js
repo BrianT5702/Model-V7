@@ -63,7 +63,10 @@ const Canvas2D = ({
     setWallSplitError = () => {},
     wallSplitSuccess = false,
     onRefreshWalls = null, // Callback to refresh walls from all storeys
-    allWalls = null // All walls (unfiltered) for panel calculations across all storeys
+    allWalls = null, // All walls (unfiltered) for panel calculations across all storeys
+    // Panel division visibility is controlled by parent (ProjectDetails/useProjectDetails)
+    showPanelLines = false,
+    onTogglePanelLines = () => {}
 }) => {
 
     const canvasRef = useRef(null);
@@ -120,7 +123,6 @@ const Canvas2D = ({
         wall: true,
         panel: false
     });
-    const [showPanelLines, setShowPanelLines] = useState(false);
     const [splitTargetWallId, setSplitTargetWallId] = useState(null);
     const [splitPreviewPoint, setSplitPreviewPoint] = useState(null);
     const [splitDistanceInput, setSplitDistanceInput] = useState('');
@@ -2907,7 +2909,7 @@ const Canvas2D = ({
                                                             type="checkbox"
                                                             className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                                             checked={showPanelLines}
-                                                            onChange={() => setShowPanelLines(!showPanelLines)}
+                                                            onChange={onTogglePanelLines}
                                                         />
                                                         <span>Panel division lines</span>
                                                     </label>

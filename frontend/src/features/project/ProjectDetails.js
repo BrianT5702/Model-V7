@@ -1862,6 +1862,8 @@ const ProjectDetails = () => {
                                             wallSplitSuccess={projectDetails.wallSplitSuccess}
                                             ghostWalls={projectDetails.filteredGhostWalls}
                                             ghostAreas={projectDetails.filteredGhostAreas}
+                                            showPanelLines={projectDetails.showPanelLines}
+                                            onTogglePanelLines={projectDetails.togglePanelLines}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager
