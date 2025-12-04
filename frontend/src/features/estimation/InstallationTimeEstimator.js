@@ -3,6 +3,8 @@ import api from '../../api/api';
 import PanelCalculator from '../panel/PanelCalculator';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { doPolygonsOverlap, findIntersectionPointsBetweenWalls } from '../canvas/utils';
+import { calculateOffsetPoints } from '../canvas/drawing';
 
 const InstallationTimeEstimator = ({ 
     projectId, 
@@ -1954,6 +1956,1609 @@ const InstallationTimeEstimator = ({
             // Add note about installation estimates
             addText('Note: This estimate assumes parallel work where possible and includes a 20% buffer for coordination and unexpected issues.', 9);
             
+            // Add Vector-Based Wall Plan (AutoCAD-style, sharp at any zoom)
+            // Use allWalls if available (more complete), otherwise use walls state
+            const wallsForVector = (allWalls && allWalls.length > 0) ? allWalls : walls;
+            if (wallsForVector && wallsForVector.length > 0) {
+                // Helper function to draw vector wall plan
+                const drawVectorWallPlan = (doc, wallsToDraw, roomsToDraw, doorsToDraw, storeyName = null, ghostWallsToDraw = [], ghostAreasToDraw = [], targetStoreyId = null, intersections = [], allWalls = []) => {
+                    // Add new page for vector plan
+                    doc.addPage('a4', planPageOrientation);
+                    const planPageWidth = doc.internal.pageSize.width;
+                    const planPageHeight = doc.internal.pageSize.height;
+                    const planMargin = fitToPage ? 5 : 20;
+                    const titleHeight = 15; // Space for title at top
+                    const scaleNoteHeight = 10; // Space for scale note at bottom
+                    const planContentWidth = planPageWidth - (2 * planMargin);
+                    const planContentHeight = planPageHeight - (2 * planMargin) - titleHeight - scaleNoteHeight;
+                    
+                    // Calculate center point of all rooms (for wall offset calculation)
+                    let centerX = 0, centerY = 0, centerCount = 0;
+                    roomsToDraw.forEach(room => {
+                        if (room.room_points && Array.isArray(room.room_points) && room.room_points.length > 0) {
+                            room.room_points.forEach(point => {
+                                const x = point.x || (Array.isArray(point) ? point[0] : 0);
+                                const y = point.y || (Array.isArray(point) ? point[1] : 0);
+                                centerX += x;
+                                centerY += y;
+                                centerCount++;
+                            });
+                        }
+                    });
+                    if (centerCount > 0) {
+                        centerX /= centerCount;
+                        centerY /= centerCount;
+                    } else {
+                        // Fallback: use center of walls
+                        let sumX = 0, sumY = 0, wallCount = 0;
+                        wallsToDraw.forEach(wall => {
+                            sumX += (wall.start_x || 0) + (wall.end_x || 0);
+                            sumY += (wall.start_y || 0) + (wall.end_y || 0);
+                            wallCount += 2;
+                        });
+                        if (wallCount > 0) {
+                            centerX = sumX / wallCount;
+                            centerY = sumY / wallCount;
+                        }
+                    }
+                    const center = { x: centerX, y: centerY };
+                    
+                    // Calculate bounding box of all geometry (account for wall thickness)
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    
+                    // From walls - account for double lines (wall thickness)
+                    wallsToDraw.forEach(wall => {
+                        const x1 = wall.start_x || 0;
+                        const y1 = wall.start_y || 0;
+                        const x2 = wall.end_x || 0;
+                        const y2 = wall.end_y || 0;
+                        const thickness = wall.thickness || 200;
+                        
+                        // Calculate offset points (same logic as calculateOffsetPoints)
+                        const dx = x2 - x1;
+                        const dy = y2 - y1;
+                        const length = Math.sqrt(dx * dx + dy * dy);
+                        if (length > 0) {
+                            const normalX = dy / length;
+                            const normalY = -dx / length;
+                            const midX = (x1 + x2) / 2;
+                            const midY = (y1 + y2) / 2;
+                            const dirToCenterX = center.x - midX;
+                            const dirToCenterY = center.y - midY;
+                            const dotProduct = normalX * dirToCenterX + normalY * dirToCenterY;
+                            const shouldFlip = dotProduct > 0;
+                            const offsetDist = thickness / 2; // Half thickness
+                            const offsetX = shouldFlip ? -normalX * offsetDist : normalX * offsetDist;
+                            const offsetY = shouldFlip ? -normalY * offsetDist : normalY * offsetDist;
+                            
+                            // Calculate both lines
+                            const line1X1 = x1;
+                            const line1Y1 = y1;
+                            const line1X2 = x2;
+                            const line1Y2 = y2;
+                            
+                            const line2X1 = x1 - offsetX * 2;
+                            const line2Y1 = y1 - offsetY * 2;
+                            const line2X2 = x2 - offsetX * 2;
+                            const line2Y2 = y2 - offsetY * 2;
+                            
+                            // Include both lines in bounding box
+                            minX = Math.min(minX, line1X1, line1X2, line2X1, line2X2);
+                            minY = Math.min(minY, line1Y1, line1Y2, line2Y1, line2Y2);
+                            maxX = Math.max(maxX, line1X1, line1X2, line2X1, line2X2);
+                            maxY = Math.max(maxY, line1Y1, line1Y2, line2Y1, line2Y2);
+                        } else {
+                            // Fallback for zero-length walls
+                            minX = Math.min(minX, x1, x2);
+                            minY = Math.min(minY, y1, y2);
+                            maxX = Math.max(maxX, x1, x2);
+                            maxY = Math.max(maxY, y1, y2);
+                        }
+                    });
+                    
+                    // From room points
+                    roomsToDraw.forEach(room => {
+                        if (room.room_points && Array.isArray(room.room_points)) {
+                            room.room_points.forEach(point => {
+                                const x = point.x || (Array.isArray(point) ? point[0] : 0);
+                                const y = point.y || (Array.isArray(point) ? point[1] : 0);
+                                minX = Math.min(minX, x);
+                                minY = Math.min(minY, y);
+                                maxX = Math.max(maxX, x);
+                                maxY = Math.max(maxY, y);
+                            });
+                        }
+                        // Also account for label position and arrow
+                        if (room.label_position) {
+                            const labelX = room.label_position.x || (Array.isArray(room.label_position) ? room.label_position[0] : null);
+                            const labelY = room.label_position.y || (Array.isArray(room.label_position) ? room.label_position[1] : null);
+                            if (labelX !== null && labelY !== null) {
+                                minX = Math.min(minX, labelX);
+                                minY = Math.min(minY, labelY);
+                                maxX = Math.max(maxX, labelX);
+                                maxY = Math.max(maxY, labelY);
+                            }
+                        }
+                    });
+                    
+                    // From doors (if they have position data)
+                    doorsToDraw.forEach(door => {
+                        if (door.position_x !== undefined && door.position_y !== undefined) {
+                            minX = Math.min(minX, door.position_x);
+                            minY = Math.min(minY, door.position_y);
+                            maxX = Math.max(maxX, door.position_x);
+                            maxY = Math.max(maxY, door.position_y);
+                        }
+                    });
+                    
+                    // From ghost walls (dashed walls from lower storeys)
+                    ghostWallsToDraw.forEach(ghostWall => {
+                        if (ghostWall.start_x !== undefined && ghostWall.start_y !== undefined &&
+                            ghostWall.end_x !== undefined && ghostWall.end_y !== undefined) {
+                            minX = Math.min(minX, ghostWall.start_x, ghostWall.end_x);
+                            minY = Math.min(minY, ghostWall.start_y, ghostWall.end_y);
+                            maxX = Math.max(maxX, ghostWall.start_x, ghostWall.end_x);
+                            maxY = Math.max(maxY, ghostWall.start_y, ghostWall.end_y);
+                        }
+                    });
+                    
+                    // From ghost areas (dashed areas from lower storeys)
+                    ghostAreasToDraw.forEach(ghostArea => {
+                        const points = Array.isArray(ghostArea.room_points)
+                            ? ghostArea.room_points
+                            : Array.isArray(ghostArea.points)
+                                ? ghostArea.points
+                                : [];
+                        points.forEach(point => {
+                            const x = point.x || (Array.isArray(point) ? point[0] : 0);
+                            const y = point.y || (Array.isArray(point) ? point[1] : 0);
+                            minX = Math.min(minX, x);
+                            minY = Math.min(minY, y);
+                            maxX = Math.max(maxX, x);
+                            maxY = Math.max(maxY, y);
+                        });
+                    });
+                    
+                    // If no geometry found, skip
+                    if (minX === Infinity || minY === Infinity) {
+                        console.warn('No geometry found for vector plan');
+                        return;
+                    }
+                    
+                    // Add padding to bounding box (account for labels and arrows extending beyond)
+                    const paddingX = (maxX - minX) * 0.05; // 5% padding
+                    const paddingY = (maxY - minY) * 0.05; // 5% padding
+                    minX -= paddingX; // Expand bounding box outward
+                    minY -= paddingY;
+                    maxX += paddingX;
+                    maxY += paddingY;
+                    
+                    // Calculate model dimensions
+                    const modelWidth = maxX - minX;
+                    const modelHeight = maxY - minY;
+                    
+                    // Ensure we have valid dimensions
+                    if (modelWidth <= 0 || modelHeight <= 0 || !isFinite(modelWidth) || !isFinite(modelHeight)) {
+                        console.warn('Invalid model dimensions for vector plan');
+                        return;
+                    }
+                    
+                    // Calculate scale to fit content area (use 90% to GUARANTEE everything fits on ONE page)
+                    const scaleX = (planContentWidth * 0.90) / modelWidth;
+                    const scaleY = (planContentHeight * 0.90) / modelHeight;
+                    const scale = Math.min(scaleX, scaleY);
+                    
+                    // Ensure scale is valid and reasonable
+                    if (scale <= 0 || !isFinite(scale)) {
+                        console.warn('Invalid scale calculated:', scale);
+                        return;
+                    }
+                    
+                    // Calculate offset to center the plan (account for title space)
+                    const scaledWidth = modelWidth * scale;
+                    const scaledHeight = modelHeight * scale;
+                    const offsetX = planMargin + (planContentWidth - scaledWidth) / 2;
+                    const offsetY = planMargin + titleHeight + (planContentHeight - scaledHeight) / 2;
+                    
+                    // Transform function: model coordinates to PDF coordinates
+                    const transformX = (x) => offsetX + (x - minX) * scale;
+                    const transformY = (y) => offsetY + (y - minY) * scale;
+                    
+                    // Draw room polygons first (as background) - ONLY current storey rooms
+                    // Note: Room labels are only drawn for current storey rooms (not ghost areas)
+                    // Ghost areas are drawn separately with their own labels
+                    // roomsToDraw is already filtered to only include rooms from the current storey
+                    // So we can draw all rooms in roomsToDraw without additional filtering
+                    roomsToDraw.forEach(room => {
+                        if (room.room_points && Array.isArray(room.room_points) && room.room_points.length >= 3) {
+                            const points = room.room_points.map(point => {
+                                const x = point.x || (Array.isArray(point) ? point[0] : 0);
+                                const y = point.y || (Array.isArray(point) ? point[1] : 0);
+                                return { x: transformX(x), y: transformY(y) };
+                            });
+                            
+                            // Draw room outline (closed polygon with lines)
+                            doc.setDrawColor(200, 200, 200);
+                            doc.setLineWidth(0.1);
+                            
+                            // Draw polygon outline by connecting points
+                            for (let i = 0; i < points.length; i++) {
+                                const current = points[i];
+                                const next = points[(i + 1) % points.length];
+                                doc.line(current.x, current.y, next.x, next.y);
+                            }
+                            
+                            // Note: jsPDF doesn't have direct polygon fill, so we draw outline only
+                            // The outline is sufficient for vector clarity - walls will be drawn on top
+                            
+                            // Draw room label with arrow ONLY for current storey rooms (not ghost areas here)
+                            // Ghost areas will be drawn separately with their labels
+                            if (room.label_position && room.room_points && room.room_points.length >= 3) {
+                                const labelX = room.label_position.x || (Array.isArray(room.label_position) ? room.label_position[0] : null);
+                                const labelY = room.label_position.y || (Array.isArray(room.label_position) ? room.label_position[1] : null);
+                                
+                                if (labelX !== null && labelY !== null) {
+                                    // Calculate room center (centroid)
+                                    const normalizedPolygon = room.room_points.map(pt => ({
+                                        x: Number(pt.x) || (Array.isArray(pt) ? Number(pt[0]) : 0),
+                                        y: Number(pt.y) || (Array.isArray(pt) ? Number(pt[1]) : 0)
+                                    }));
+                                    const roomCenterX = normalizedPolygon.reduce((sum, p) => sum + p.x, 0) / normalizedPolygon.length;
+                                    const roomCenterY = normalizedPolygon.reduce((sum, p) => sum + p.y, 0) / normalizedPolygon.length;
+                                    
+                                    // Calculate direction from label to room center
+                                    const dx = roomCenterX - labelX;
+                                    const dy = roomCenterY - labelY;
+                                    const absDx = Math.abs(dx);
+                                    const absDy = Math.abs(dy);
+                                    
+                                    if (absDx > 0 || absDy > 0) {
+                                        // Draw L-shaped arrow (matching wall plan view exactly)
+                                        const labelPdfX = transformX(labelX);
+                                        const labelPdfY = transformY(labelY);
+                                        const centerPdfX = transformX(roomCenterX);
+                                        const centerPdfY = transformY(roomCenterY);
+                                        
+                                        // Approximate label size in PDF space (for arrow start offset)
+                                        const labelSize = 30 * scale; // Approximate label size
+                                        const startOffset = labelSize / 2;
+                                        
+                                        let startX, startY, midX, midY, endX, endY;
+                                        
+                                        // Determine L-shape direction (matching InteractiveRoomLabel logic)
+                                        if (absDx > absDy) {
+                                            // Horizontal direction - extend horizontally first, then vertical
+                                            if (dx > 0) {
+                                                // Room is to the right, start from right edge
+                                                startX = labelPdfX + startOffset;
+                                                startY = labelPdfY;
+                                            } else {
+                                                // Room is to the left, start from left edge
+                                                startX = labelPdfX - startOffset;
+                                                startY = labelPdfY;
+                                            }
+                                            midX = centerPdfX; // Extend horizontally to room center X
+                                            midY = startY; // Keep same Y
+                                            endX = centerPdfX;
+                                            endY = centerPdfY; // Then go vertical to room center Y
+                                        } else {
+                                            // Vertical direction - extend vertically first, then horizontal
+                                            if (dy > 0) {
+                                                // Room is below, start from bottom edge
+                                                startX = labelPdfX;
+                                                startY = labelPdfY + startOffset;
+                                            } else {
+                                                // Room is above, start from top edge
+                                                startX = labelPdfX;
+                                                startY = labelPdfY - startOffset;
+                                            }
+                                            midX = startX; // Keep same X
+                                            midY = centerPdfY; // Extend vertically to room center Y
+                                            endX = centerPdfX; // Then go horizontal to room center X
+                                            endY = centerPdfY;
+                                        }
+                                        
+                                        // Draw L-shaped arrow (red, matching canvas)
+                                        doc.setDrawColor(255, 0, 0); // Red arrow like in canvas
+                                        doc.setLineWidth(0.3);
+                                        
+                                        // First segment (horizontal or vertical)
+                                        doc.line(startX, startY, midX, midY);
+                                        
+                                        // Second segment to room center
+                                        doc.line(midX, midY, endX, endY);
+                                        
+                                        // Draw arrowhead at room center
+                                        const arrowLength = 2; // 2mm arrowhead in PDF space
+                                        const angle = Math.atan2(endY - midY, endX - midX);
+                                        const arrowX1 = endX - arrowLength * Math.cos(angle - Math.PI / 6);
+                                        const arrowY1 = endY - arrowLength * Math.sin(angle - Math.PI / 6);
+                                        const arrowX2 = endX - arrowLength * Math.cos(angle + Math.PI / 6);
+                                        const arrowY2 = endY - arrowLength * Math.sin(angle + Math.PI / 6);
+                                        
+                                        doc.line(endX, endY, arrowX1, arrowY1);
+                                        doc.line(endX, endY, arrowX2, arrowY2);
+                                    }
+                                    
+                                    // Draw room label text
+                                    doc.setFontSize(8);
+                                    doc.setTextColor(100, 100, 100);
+                                    doc.text(room.room_name || 'Room', transformX(labelX), transformY(labelY), { align: 'center' });
+                                    doc.setTextColor(0, 0, 0);
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Draw ghost areas first (behind everything, matching canvas)
+                    ghostAreasToDraw.forEach(ghostArea => {
+                        const points = Array.isArray(ghostArea.room_points)
+                            ? ghostArea.room_points
+                            : Array.isArray(ghostArea.points)
+                                ? ghostArea.points
+                                : [];
+                        
+                        if (points.length >= 3) {
+                            // Draw ghost area polygon (dashed outline, light fill)
+                            const transformedPoints = points.map(point => {
+                                const x = point.x || (Array.isArray(point) ? point[0] : 0);
+                                const y = point.y || (Array.isArray(point) ? point[1] : 0);
+                                return { x: transformX(x), y: transformY(y) };
+                            });
+                            
+                            // Draw ghost area polygon (dashed outline, matching canvas)
+                            doc.setDrawColor(96, 165, 250); // #60A5FA (blue-400)
+                            doc.setLineWidth(0.2);
+                            
+                            // jsPDF uses setLineDash for dashed lines
+                            const dashPattern = [10 * scale, 6 * scale];
+                            doc.setLineDashPattern(dashPattern);
+                            
+                            // Draw polygon outline (closed path)
+                            for (let i = 0; i < transformedPoints.length; i++) {
+                                const current = transformedPoints[i];
+                                const next = transformedPoints[(i + 1) % transformedPoints.length];
+                                doc.line(current.x, current.y, next.x, next.y);
+                            }
+                            // Close the path
+                            const first = transformedPoints[0];
+                            const last = transformedPoints[transformedPoints.length - 1];
+                            doc.line(last.x, last.y, first.x, first.y);
+                            
+                            // Reset line dash
+                            doc.setLineDashPattern([]);
+                            
+                            // Draw ghost area label at centroid
+                            const centroidX = transformedPoints.reduce((sum, p) => sum + p.x, 0) / transformedPoints.length;
+                            const centroidY = transformedPoints.reduce((sum, p) => sum + p.y, 0) / transformedPoints.length;
+                            
+                            doc.setFontSize(8);
+                            doc.setTextColor(29, 78, 216); // #1D4ED8 (blue-800)
+                            const areaName = ghostArea.room_name || 'Area';
+                            const originLabel = ghostArea.source_storey_name
+                                ? ` (${ghostArea.source_storey_name})`
+                                : ' (Below)';
+                            doc.text(`${areaName}${originLabel}`, centroidX, centroidY, { align: 'center' });
+                        }
+                    });
+                    
+                    // Draw ghost walls (dashed lines from lower storeys, matching canvas)
+                    ghostWallsToDraw.forEach(ghostWall => {
+                        if (ghostWall.start_x !== undefined && ghostWall.start_y !== undefined &&
+                            ghostWall.end_x !== undefined && ghostWall.end_y !== undefined) {
+                            doc.setDrawColor(148, 163, 184); // #94A3B8 (slate-400)
+                            doc.setLineWidth(0.2);
+                            const dashPattern = [12 * scale, 6 * scale];
+                            doc.setLineDashPattern(dashPattern);
+                            doc.line(
+                                transformX(ghostWall.start_x),
+                                transformY(ghostWall.start_y),
+                                transformX(ghostWall.end_x),
+                                transformY(ghostWall.end_y)
+                            );
+                            doc.setLineDashPattern([]); // Reset
+                        }
+                    });
+                    
+                    // Draw walls using EXACT same logic as canvas (drawWalls from drawing.js)
+                    // First pass: Calculate all wall lines and store them
+                    const wallLinesMap = new Map(); // Store line1 and line2 for each wall
+                    const SNAP_THRESHOLD = 10; // Same as canvas
+                    
+                    wallsToDraw.forEach((wall) => {
+                        const wallThickness = wall.thickness || 100;
+                        // Use scale = 1 for model space calculations (we'll transform to PDF space later)
+                        const gapPixels = wallThickness; // In model space, gap = thickness
+                        
+                        let { line1, line2 } = calculateOffsetPoints(
+                            wall.start_x,
+                            wall.start_y,
+                            wall.end_x,
+                            wall.end_y,
+                            gapPixels,
+                            center,
+                            1 // scaleFactor = 1 for model space
+                        );
+                        wallLinesMap.set(wall.id, { line1, line2, wall });
+                    });
+                    
+                    // Second pass: Extend lines to intersections (before 45° cuts)
+                    intersections.forEach(inter => {
+                        const tolerance = SNAP_THRESHOLD; // In model space
+                        
+                        // Find all walls that meet at this intersection
+                        const wallsAtIntersection = [];
+                        
+                        wallsToDraw.forEach(wall => {
+                            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
+                            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
+                            
+                            if (isAtStart || isAtEnd) {
+                                const wallData = wallLinesMap.get(wall.id);
+                                if (wallData) {
+                                    wallsAtIntersection.push({
+                                        wall,
+                                        wallData,
+                                        isAtStart,
+                                        isAtEnd
+                                    });
+                                }
+                            }
+                        });
+                        
+                        // Only process vertical-horizontal intersections (2 walls)
+                        if (wallsAtIntersection.length === 2) {
+                            const [wall1Data, wall2Data] = wallsAtIntersection;
+                            const wall1 = wall1Data.wall;
+                            const wall2 = wall2Data.wall;
+                            
+                            // Determine if one is vertical and one is horizontal
+                            const wall1Dx = wall1.end_x - wall1.start_x;
+                            const wall1Dy = wall1.end_y - wall1.start_y;
+                            const wall2Dx = wall2.end_x - wall2.start_x;
+                            const wall2Dy = wall2.end_y - wall2.start_y;
+                            
+                            const wall1IsVertical = Math.abs(wall1Dx) < Math.abs(wall1Dy);
+                            const wall2IsVertical = Math.abs(wall2Dx) < Math.abs(wall2Dy);
+                            
+                            // Only process if one is vertical and one is horizontal
+                            if (wall1IsVertical !== wall2IsVertical) {
+                                const verticalWall = wall1IsVertical ? wall1Data : wall2Data;
+                                const horizontalWall = wall1IsVertical ? wall2Data : wall1Data;
+                                
+                                const vWall = verticalWall.wall;
+                                const hWall = horizontalWall.wall;
+                                const vLines = verticalWall.wallData;
+                                const hLines = horizontalWall.wallData;
+                                
+                                // Determine which end of vertical wall is at intersection
+                                const vIsAtStart = verticalWall.isAtStart;
+                                
+                                // Determine which end of horizontal wall is at intersection
+                                const hIsAtStart = horizontalWall.isAtStart;
+                                
+                                // For vertical wall: extend to upper/lower line of horizontal
+                                const hLine1Y = (hLines.line1[0].y + hLines.line1[1].y) / 2;
+                                const hLine2Y = (hLines.line2[0].y + hLines.line2[1].y) / 2;
+                                const hUpperLine = hLine1Y < hLine2Y ? hLines.line1 : hLines.line2;
+                                const hLowerLine = hLine1Y < hLine2Y ? hLines.line2 : hLines.line1;
+                                
+                                const vEndpointY = vIsAtStart ? vWall.start_y : vWall.end_y;
+                                const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
+                                const isTopEnd = vEndpointY < vOtherY;
+                                
+                                let targetY;
+                                if (isTopEnd) {
+                                    const hUpperStartX = hUpperLine[0].x;
+                                    const hUpperStartY = hUpperLine[0].y;
+                                    const hUpperEndX = hUpperLine[1].x;
+                                    const hUpperEndY = hUpperLine[1].y;
+                                    const hUpperDx = hUpperEndX - hUpperStartX;
+                                    const hUpperDy = hUpperEndY - hUpperStartY;
+                                    if (Math.abs(hUpperDx) > 0.001) {
+                                        const t = (inter.x - hUpperStartX) / hUpperDx;
+                                        targetY = hUpperStartY + t * hUpperDy;
+                                    } else {
+                                        targetY = hUpperStartY;
+                                    }
+                                } else {
+                                    const hLowerStartX = hLowerLine[0].x;
+                                    const hLowerStartY = hLowerLine[0].y;
+                                    const hLowerEndX = hLowerLine[1].x;
+                                    const hLowerEndY = hLowerLine[1].y;
+                                    const hLowerDx = hLowerEndX - hLowerStartX;
+                                    const hLowerDy = hLowerEndY - hLowerStartY;
+                                    if (Math.abs(hLowerDx) > 0.001) {
+                                        const t = (inter.x - hLowerStartX) / hLowerDx;
+                                        targetY = hLowerStartY + t * hLowerDy;
+                                    } else {
+                                        targetY = hLowerStartY;
+                                    }
+                                }
+                                
+                                // Extend vertical wall lines
+                                if (vIsAtStart) {
+                                    vLines.line1[0].y = targetY;
+                                    vLines.line2[0].y = targetY;
+                                } else {
+                                    vLines.line1[1].y = targetY;
+                                    vLines.line2[1].y = targetY;
+                                }
+                                
+                                // For horizontal wall: extend to leftmost/rightmost line of vertical
+                                const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
+                                const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
+                                const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
+                                const vRightmostLine = vLine1X < vLine2X ? vLines.line2 : vLines.line1;
+                                
+                                const hMidX = (hWall.start_x + hWall.end_x) / 2;
+                                const vIntersectionX = inter.x;
+                                const isHorizontalOnLeft = hMidX < vIntersectionX;
+                                
+                                let targetX;
+                                if (isHorizontalOnLeft) {
+                                    const vRightStartX = vRightmostLine[0].x;
+                                    const vRightStartY = vRightmostLine[0].y;
+                                    const vRightEndX = vRightmostLine[1].x;
+                                    const vRightEndY = vRightmostLine[1].y;
+                                    const vRightDx = vRightEndX - vRightStartX;
+                                    const vRightDy = vRightEndY - vRightStartY;
+                                    if (Math.abs(vRightDy) > 0.001) {
+                                        const t = (inter.y - vRightStartY) / vRightDy;
+                                        targetX = vRightStartX + t * vRightDx;
+                                    } else {
+                                        targetX = vRightStartX;
+                                    }
+                                } else {
+                                    const vLeftStartX = vLeftmostLine[0].x;
+                                    const vLeftStartY = vLeftmostLine[0].y;
+                                    const vLeftEndX = vLeftmostLine[1].x;
+                                    const vLeftEndY = vLeftmostLine[1].y;
+                                    const vLeftDx = vLeftEndX - vLeftStartX;
+                                    const vLeftDy = vLeftEndY - vLeftStartY;
+                                    if (Math.abs(vLeftDy) > 0.001) {
+                                        const t = (inter.y - vLeftStartY) / vLeftDy;
+                                        targetX = vLeftStartX + t * vLeftDx;
+                                    } else {
+                                        targetX = vLeftStartX;
+                                    }
+                                }
+                                
+                                // Extend horizontal wall lines
+                                if (hIsAtStart) {
+                                    hLines.line1[0].x = targetX;
+                                    hLines.line2[0].x = targetX;
+                                } else {
+                                    hLines.line1[1].x = targetX;
+                                    hLines.line2[1].x = targetX;
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Third pass: Apply 45° cuts and draw walls
+                    wallsToDraw.forEach((wall) => {
+                        // Get pre-calculated lines (already extended to intersections)
+                        let { line1, line2 } = wallLinesMap.get(wall.id);
+                        
+                        // Make copies for modification (45° cuts will modify these)
+                        line1 = [...line1.map(p => ({ ...p }))];
+                        line2 = [...line2.map(p => ({ ...p }))];
+                        
+                        // Check for 45° cuts at EACH END separately
+                        const wallDx = wall.end_x - wall.start_x;
+                        const wallDy = wall.end_y - wall.start_y;
+                        const wallLength = Math.hypot(wallDx, wallDy);
+                        const wallDirX = wallLength > 0 ? wallDx / wallLength : 0;
+                        const wallDirY = wallLength > 0 ? wallDy / wallLength : 0;
+                        
+                        const isVertical = Math.abs(wallDx) < Math.abs(wallDy);
+                        
+                        // Compare line positions at midpoint
+                        const line1MidX = (line1[0].x + line1[1].x) / 2;
+                        const line1MidY = (line1[0].y + line1[1].y) / 2;
+                        const line2MidX = (line2[0].x + line2[1].x) / 2;
+                        const line2MidY = (line2[0].y + line2[1].y) / 2;
+                        
+                        // Determine which line is on left vs right
+                        let line1IsLeft;
+                        if (isVertical) {
+                            line1IsLeft = line1MidX < line2MidX;
+                        } else {
+                            if (wallDirX > 0) {
+                                line1IsLeft = line1MidY < line2MidY;
+                            } else {
+                                line1IsLeft = line1MidY > line2MidY;
+                            }
+                        }
+                        
+                        // Check start end for 45° cut
+                        let startHas45 = false;
+                        let startIsOnLeftSide = false;
+                        
+                        // Check end end for 45° cut
+                        let endHas45 = false;
+                        let endIsOnLeftSide = false;
+                        
+                        // Check each intersection to find 45° cuts at each endpoint
+                        intersections.forEach(inter => {
+                            const tolerance = SNAP_THRESHOLD;
+                            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
+                            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
+                            
+                            if (isAtStart || isAtEnd) {
+                                let has45Cut = false;
+                                let joiningWallId = null;
+                                
+                                if (inter.pairs) {
+                                    inter.pairs.forEach(pair => {
+                                        if ((pair.wall1?.id === wall.id || pair.wall2?.id === wall.id) && pair.joining_method === '45_cut') {
+                                            has45Cut = true;
+                                            joiningWallId = pair.wall1?.id === wall.id ? pair.wall2?.id : pair.wall1?.id;
+                                        }
+                                    });
+                                }
+                                
+                                if (has45Cut && joiningWallId) {
+                                    const joiningWall = allWalls.find(w => w.id === joiningWallId);
+                                    if (joiningWall) {
+                                        const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
+                                        const joinMidY = (joiningWall.start_y + joiningWall.end_y) / 2;
+                                        
+                                        if (isAtStart) {
+                                            startHas45 = true;
+                                            if (isVertical) {
+                                                startIsOnLeftSide = joinMidX < wall.start_x;
+                                            } else {
+                                                if (wallDirX > 0) {
+                                                    startIsOnLeftSide = joinMidY < wall.start_y;
+                                                } else {
+                                                    startIsOnLeftSide = joinMidY > wall.start_y;
+                                                }
+                                            }
+                                        } else if (isAtEnd) {
+                                            endHas45 = true;
+                                            if (isVertical) {
+                                                endIsOnLeftSide = joinMidX < wall.end_x;
+                                            } else {
+                                                if (wallDirX > 0) {
+                                                    endIsOnLeftSide = joinMidY < wall.end_y;
+                                                } else {
+                                                    endIsOnLeftSide = joinMidY > wall.end_y;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        
+                        // Apply 45° cut shortening at each end independently
+                        const wallThickness = wall.thickness || 100;
+                        const finalAdjust = wallThickness * 2;
+                        
+                        // Shorten at START end
+                        if (startHas45) {
+                            if (startIsOnLeftSide) {
+                                if (line1IsLeft) {
+                                    line1[0].x += wallDirX * finalAdjust;
+                                    line1[0].y += wallDirY * finalAdjust;
+                                } else {
+                                    line2[0].x += wallDirX * finalAdjust;
+                                    line2[0].y += wallDirY * finalAdjust;
+                                }
+                            } else {
+                                if (line1IsLeft) {
+                                    line2[0].x += wallDirX * finalAdjust;
+                                    line2[0].y += wallDirY * finalAdjust;
+                                } else {
+                                    line1[0].x += wallDirX * finalAdjust;
+                                    line1[0].y += wallDirY * finalAdjust;
+                                }
+                            }
+                        }
+                        
+                        // Shorten at END end
+                        if (endHas45) {
+                            if (endIsOnLeftSide) {
+                                if (line1IsLeft) {
+                                    line1[1].x -= wallDirX * finalAdjust;
+                                    line1[1].y -= wallDirY * finalAdjust;
+                                } else {
+                                    line2[1].x -= wallDirX * finalAdjust;
+                                    line2[1].y -= wallDirY * finalAdjust;
+                                }
+                            } else {
+                                if (line1IsLeft) {
+                                    line2[1].x -= wallDirX * finalAdjust;
+                                    line2[1].y -= wallDirY * finalAdjust;
+                                } else {
+                                    line1[1].x -= wallDirX * finalAdjust;
+                                    line1[1].y -= wallDirY * finalAdjust;
+                                }
+                            }
+                        }
+                        
+                        // Store lines for wall caps
+                        wall._line1 = line1;
+                        wall._line2 = line2;
+                        
+                        // Draw wall line pair (outer solid, inner dashed)
+                        // Outer face (line1) - solid line
+                        const wallColor = wall.application_type === "partition" ? [100, 100, 100] : [0, 0, 0];
+                        doc.setDrawColor(wallColor[0], wallColor[1], wallColor[2]);
+                        doc.setLineWidth(0.15);
+                        doc.setLineDashPattern([]); // Solid line for outer face
+                        doc.line(transformX(line1[0].x), transformY(line1[0].y), transformX(line1[1].x), transformY(line1[1].y));
+                        
+                        // Inner face (line2) - dashed line
+                        doc.setDrawColor(107, 114, 128); // #6b7280 (gray-500)
+                        doc.setLineWidth(0.15);
+                        const dashPattern = [8 * scale, 4 * scale]; // Scaled dash pattern
+                        doc.setLineDashPattern(dashPattern);
+                        doc.line(transformX(line2[0].x), transformY(line2[0].y), transformX(line2[1].x), transformY(line2[1].y));
+                        doc.setLineDashPattern([]); // Reset
+                        
+                        // Draw wall caps (joints) - ALWAYS draw caps at endpoints
+                        const endpoints = [
+                            { label: 'start', x: wall.start_x, y: wall.start_y },
+                            { label: 'end', x: wall.end_x, y: wall.end_y }
+                        ];
+                        
+                        endpoints.forEach((pt) => {
+                            const cap1 = pt.label === 'start' ? wall._line1[0] : wall._line1[1];
+                            const cap2 = pt.label === 'start' ? wall._line2[0] : wall._line2[1];
+                            
+                            // Find intersection at this endpoint
+                            const relevantIntersections = intersections.filter(inter => {
+                                const tolerance = SNAP_THRESHOLD;
+                                const isAtPoint = Math.hypot(inter.x - pt.x, inter.y - pt.y) < tolerance;
+                                if (!isAtPoint) return false;
+                                
+                                // Check if this intersection involves our wall
+                                return (inter.wall_1 === wall.id || inter.wall_2 === wall.id) ||
+                                    (inter.pairs && inter.pairs.some(pair => 
+                                        (pair.wall1?.id === wall.id || pair.wall2?.id === wall.id)
+                                    ));
+                            });
+                            
+                            let joiningMethod = 'butt_in';
+                            let isPrimaryWall = true;
+                            let joiningWall = null;
+                            
+                            // Check all relevant intersections at this point
+                            relevantIntersections.forEach(inter => {
+                                if (inter.pairs) {
+                                    inter.pairs.forEach(pair => {
+                                        if ((pair.wall1?.id === wall.id || pair.wall2?.id === wall.id)) {
+                                            joiningMethod = pair.joining_method || 'butt_in';
+                                            if (pair.wall2?.id === wall.id) {
+                                                isPrimaryWall = false;
+                                                joiningWall = { id: pair.wall1?.id };
+                                            } else {
+                                                joiningWall = { id: pair.wall2?.id };
+                                            }
+                                        }
+                                    });
+                                } else if (inter.wall_1 === wall.id || inter.wall_2 === wall.id) {
+                                    joiningMethod = inter.joining_method || 'butt_in';
+                                    if (inter.wall_2 === wall.id) {
+                                        isPrimaryWall = false;
+                                        joiningWall = { id: inter.wall_1 };
+                                    } else {
+                                        joiningWall = { id: inter.wall_2 };
+                                    }
+                                }
+                            });
+                            
+                            // Skip if 45_cut and not primary wall (to avoid duplicates)
+                            if (joiningMethod === '45_cut' && !isPrimaryWall) {
+                                return;
+                            }
+                            
+                            if (joiningMethod === '45_cut' && joiningWall) {
+                                // Draw mitered cap at 45°
+                                const wallVec = pt.label === 'start'
+                                    ? { x: wall.end_x - wall.start_x, y: wall.end_y - wall.start_y }
+                                    : { x: wall.start_x - wall.end_x, y: wall.start_y - wall.end_y };
+                                
+                                const joiningWallObj = allWalls.find(w => w.id === joiningWall.id);
+                                let joinVec = null;
+                                if (joiningWallObj) {
+                                    if (Math.abs(joiningWallObj.start_x - pt.x) < 1e-3 && Math.abs(joiningWallObj.start_y - pt.y) < 1e-3) {
+                                        joinVec = { x: joiningWallObj.end_x - joiningWallObj.start_x, y: joiningWallObj.end_y - joiningWallObj.start_y };
+                                    } else {
+                                        joinVec = { x: joiningWallObj.start_x - joiningWallObj.end_x, y: joiningWallObj.start_y - joiningWallObj.end_y };
+                                    }
+                                }
+                                
+                                if (joinVec) {
+                                    const norm = v => {
+                                        const len = Math.hypot(v.x, v.y);
+                                        return len ? { x: v.x / len, y: v.y / len } : { x: 0, y: 0 };
+                                    };
+                                    const v1 = norm(wallVec);
+                                    const v2 = norm(joinVec);
+                                    const bisector = norm({ x: v1.x + v2.x, y: v1.y + v2.y });
+                                    const capLength = wall.thickness * 1.5;
+                                    
+                                    doc.setDrawColor(0, 0, 0); // Black for 45° cut
+                                    doc.setLineWidth(0.15);
+                                    doc.setLineDashPattern([]);
+                                    doc.line(transformX(cap1.x), transformY(cap1.y), transformX(cap1.x + bisector.x * capLength), transformY(cap1.y + bisector.y * capLength));
+                                    doc.line(transformX(cap2.x), transformY(cap2.y), transformX(cap2.x + bisector.x * capLength), transformY(cap2.y + bisector.y * capLength));
+                                }
+                            } else {
+                                // Default: perpendicular cap (butt_in) - ALWAYS draw this
+                                doc.setDrawColor(0, 0, 0);
+                                doc.setLineWidth(0.15);
+                                doc.setLineDashPattern([]);
+                                doc.line(transformX(cap1.x), transformY(cap1.y), transformX(cap2.x), transformY(cap2.y));
+                            }
+                        });
+                        
+                        // Draw partition slashes if partition
+                        if (wall.application_type === "partition") {
+                            const spacing = 15;
+                            const slashLength = 60;
+                            const dx = line1[1].x - line1[0].x;
+                            const dy = line1[1].y - line1[0].y;
+                            const wallLength = Math.sqrt(dx * dx + dy * dy);
+                            const numSlashes = Math.floor(wallLength / spacing);
+                            
+                            for (let i = 1; i < numSlashes - 1; i++) {
+                                const t = i / numSlashes;
+                                const midX = (line1[0].x + t * (line1[1].x - line1[0].x) + line2[0].x + t * (line2[1].x - line2[0].x)) / 2;
+                                const midY = (line1[0].y + t * (line1[1].y - line1[0].y) + line2[0].y + t * (line2[1].y - line2[0].y)) / 2;
+                                const diagX = Math.cos(Math.PI / 4) * slashLength;
+                                const diagY = Math.sin(Math.PI / 4) * slashLength;
+                                
+                                doc.setDrawColor(100, 100, 100);
+                                doc.setLineWidth(0.1);
+                                doc.setLineDashPattern([]);
+                                doc.line(
+                                    transformX(midX - diagX / 2), transformY(midY - diagY / 2),
+                                    transformX(midX + diagX / 2), transformY(midY + diagY / 2)
+                                );
+                            }
+                        }
+                    });
+                    
+                    // Draw doors using EXACT same logic as canvas (drawDoors from utils.js)
+                    doorsToDraw.forEach((door) => {
+                        const wall = wallsToDraw.find(w => w.id === door.linked_wall || w.id === door.wall_id);
+                        if (!wall) return;
+
+                        const x1 = wall.start_x;
+                        const y1 = wall.start_y;
+                        const x2 = wall.end_x;
+                        const y2 = wall.end_y;
+
+                        const wallLength = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+                        const slashLength = (door.door_type === 'swing') ? door.width : door.width * 0.85;
+                        const halfSlashRatio = (slashLength / wallLength) / 2;
+
+                        const gap = 200;
+                        const gapRatio = gap / wallLength;
+
+                        const clampedPosition = Math.min(
+                            Math.max(door.position_x, halfSlashRatio + gapRatio),
+                            1 - halfSlashRatio - gapRatio
+                        );
+
+                        const doorCenterX = x1 + (x2 - x1) * clampedPosition;
+                        const doorCenterY = y1 + (y2 - y1) * clampedPosition;
+
+                        let angle = Math.atan2(y2 - y1, x2 - x1);
+                        // Handle door side (interior/exterior) - rotate 180° if interior
+                        if (door.side === 'interior') {
+                            angle += Math.PI;
+                        }
+                        
+                        const doorWidth = door.width;
+                        const doorThickness = 150;
+
+                        const doorColor = [255, 165, 0]; // Orange
+                        const strokeColor = [0, 0, 0];
+                        const lineWidth = 0.2;
+
+                        // === Slashed Wall Section ===
+                        const slashHalf = slashLength / 2;
+                        const numSlashes = Math.max(2, Math.floor((doorWidth * scale) / 10));
+                        
+                        doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
+                        doc.setLineWidth(lineWidth);
+
+                        for (let i = 0; i < numSlashes; i++) {
+                            const t = i / (numSlashes - 1);
+                            const px = -slashHalf + (slashHalf * 2) * t;
+                            const py = 0;
+                            const slashAngle = Math.PI / 4;
+                            const lineLen = doorThickness * 0.6;
+
+                            // Calculate slash line endpoints in local door space
+                            const localX1 = px - Math.cos(slashAngle) * lineLen / 2;
+                            const localY1 = py - Math.sin(slashAngle) * lineLen / 2;
+                            const localX2 = px + Math.cos(slashAngle) * lineLen / 2;
+                            const localY2 = py + Math.sin(slashAngle) * lineLen / 2;
+                            
+                            // Rotate and translate to world coordinates, then scale and transform to PDF
+                            const cosA = Math.cos(angle);
+                            const sinA = Math.sin(angle);
+                            
+                            // Transform to world coordinates
+                            const worldX1 = doorCenterX + (localX1 * cosA - localY1 * sinA);
+                            const worldY1 = doorCenterY + (localX1 * sinA + localY1 * cosA);
+                            const worldX2 = doorCenterX + (localX2 * cosA - localY2 * sinA);
+                            const worldY2 = doorCenterY + (localX2 * sinA + localY2 * cosA);
+                            
+                            // Transform to PDF coordinates
+                            doc.line(
+                                transformX(worldX1),
+                                transformY(worldY1),
+                                transformX(worldX2),
+                                transformY(worldY2)
+                            );
+                        }
+
+                        // === SWING DOOR DRAWING ===
+                        if (door.door_type === 'swing') {
+                            const radius = doorWidth / (door.configuration === 'double_sided' ? 2 : 1);
+                            const thickness = doorThickness;
+                            
+                            const drawSwingPanel = (hingeOffset, direction) => {
+                                const isRight = direction === 'right';
+                                const arcStart = isRight ? Math.PI : 0;
+                                const arcEnd = isRight ? Math.PI * 1.5 : -Math.PI * 0.5;
+                                
+                                // Calculate hinge center in world coordinates
+                                const hingeWorldX = doorCenterX + hingeOffset * Math.cos(angle);
+                                const hingeWorldY = doorCenterY + hingeOffset * Math.sin(angle);
+                                
+                                // Draw arc segments (in local door space, then transform)
+                                const numSegments = 20;
+                                const arcPoints = [];
+                                for (let i = 0; i <= numSegments; i++) {
+                                    const t = i / numSegments;
+                                    const localAngle = arcStart + (arcEnd - arcStart) * t;
+                                    const localX = radius * Math.cos(localAngle);
+                                    const localY = radius * Math.sin(localAngle);
+                                    
+                                    // Transform to world coordinates
+                                    const worldX = hingeWorldX + (localX * Math.cos(angle) - localY * Math.sin(angle));
+                                    const worldY = hingeWorldY + (localX * Math.sin(angle) + localY * Math.cos(angle));
+                                    arcPoints.push({ x: worldX, y: worldY });
+                                }
+                                
+                                // Draw arc
+                                doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
+                                doc.setLineWidth(lineWidth);
+                                for (let i = 0; i < arcPoints.length - 1; i++) {
+                                    doc.line(
+                                        transformX(arcPoints[i].x),
+                                        transformY(arcPoints[i].y),
+                                        transformX(arcPoints[i + 1].x),
+                                        transformY(arcPoints[i + 1].y)
+                                    );
+                                }
+                                
+                                // Draw door panel rectangle at arc end
+                                const arcEndLocalX = radius * Math.cos(arcEnd);
+                                const arcEndLocalY = radius * Math.sin(arcEnd);
+                                const arcEndWorldX = hingeWorldX + (arcEndLocalX * Math.cos(angle) - arcEndLocalY * Math.sin(angle));
+                                const arcEndWorldY = hingeWorldY + (arcEndLocalX * Math.sin(angle) + arcEndLocalY * Math.cos(angle));
+                                
+                                // Panel extends from arc end back towards hinge
+                                const panelAngle = Math.atan2(arcEndLocalY, arcEndLocalX) + angle;
+                                const rectWidth = radius;
+                                const rectHeight = thickness;
+                                
+                                // Calculate rectangle corners
+                                const cosPanel = Math.cos(panelAngle);
+                                const sinPanel = Math.sin(panelAngle);
+                                const corners = [
+                                    { x: -rectWidth, y: -rectHeight / 2 },
+                                    { x: 0, y: -rectHeight / 2 },
+                                    { x: 0, y: rectHeight / 2 },
+                                    { x: -rectWidth, y: rectHeight / 2 }
+                                ].map(corner => ({
+                                    x: arcEndWorldX + (corner.x * cosPanel - corner.y * sinPanel),
+                                    y: arcEndWorldY + (corner.x * sinPanel + corner.y * cosPanel)
+                                }));
+                                
+                                // Draw and fill rectangle
+                                doc.setFillColor(doorColor[0], doorColor[1], doorColor[2]);
+                                doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
+                                doc.setLineWidth(lineWidth);
+                                
+                                // Draw rectangle outline
+                                for (let i = 0; i < corners.length; i++) {
+                                    const next = corners[(i + 1) % corners.length];
+                                    doc.line(
+                                        transformX(corners[i].x),
+                                        transformY(corners[i].y),
+                                        transformX(next.x),
+                                        transformY(next.y)
+                                    );
+                                }
+                                
+                                // Fill rectangle (draw filled polygon by drawing lines close together)
+                                const fillSteps = 5;
+                                for (let i = 0; i < fillSteps; i++) {
+                                    const t = i / fillSteps;
+                                    const x1 = corners[0].x + (corners[1].x - corners[0].x) * t;
+                                    const y1 = corners[0].y + (corners[1].y - corners[0].y) * t;
+                                    const x2 = corners[3].x + (corners[2].x - corners[3].x) * t;
+                                    const y2 = corners[3].y + (corners[2].y - corners[3].y) * t;
+                                    doc.line(transformX(x1), transformY(y1), transformX(x2), transformY(y2));
+                                }
+                            };
+
+                            if (door.configuration === 'single_sided') {
+                                const hingeOffset = door.swing_direction === 'right' ? slashHalf : -slashHalf;
+                                drawSwingPanel(hingeOffset, door.swing_direction);
+                            } else if (door.configuration === 'double_sided') {
+                                drawSwingPanel(-slashHalf, 'left');
+                                drawSwingPanel(slashHalf, 'right');
+                            }
+                        }
+
+                        // === SLIDE DOOR DRAWING ===
+                        if (door.door_type === 'slide') {
+                            const halfLength = (doorWidth) * 1.1;
+                            const thickness = doorThickness * 0.8;
+
+                            const drawSlidePanel = (offsetX, direction) => {
+                                // Calculate panel center in world coordinates
+                                const panelWorldX = doorCenterX + offsetX * Math.cos(angle);
+                                const panelWorldY = doorCenterY + offsetX * Math.sin(angle);
+                                
+                                // Panel extends perpendicular to wall
+                                const perpAngle = angle + Math.PI / 2;
+                                const panelCenterX = panelWorldX + thickness * Math.cos(perpAngle);
+                                const panelCenterY = panelWorldY + thickness * Math.sin(perpAngle);
+                                
+                                // Calculate rectangle corners
+                                const cosA = Math.cos(angle);
+                                const sinA = Math.sin(angle);
+                                const corners = [
+                                    { x: -halfLength / 2, y: -thickness / 2 },
+                                    { x: halfLength / 2, y: -thickness / 2 },
+                                    { x: halfLength / 2, y: thickness / 2 },
+                                    { x: -halfLength / 2, y: thickness / 2 }
+                                ].map(corner => ({
+                                    x: panelCenterX + (corner.x * cosA - corner.y * sinA),
+                                    y: panelCenterY + (corner.x * sinA + corner.y * cosA)
+                                }));
+                                
+                                doc.setFillColor(doorColor[0], doorColor[1], doorColor[2]);
+                                doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
+                                doc.setLineWidth(lineWidth);
+                                
+                                // Draw rectangle outline
+                                for (let i = 0; i < corners.length; i++) {
+                                    const next = corners[(i + 1) % corners.length];
+                                    doc.line(
+                                        transformX(corners[i].x),
+                                        transformY(corners[i].y),
+                                        transformX(next.x),
+                                        transformY(next.y)
+                                    );
+                                }
+                                
+                                // Fill rectangle
+                                const fillSteps = 5;
+                                for (let i = 0; i < fillSteps; i++) {
+                                    const t = i / fillSteps;
+                                    const x1 = corners[0].x + (corners[1].x - corners[0].x) * t;
+                                    const y1 = corners[0].y + (corners[1].y - corners[0].y) * t;
+                                    const x2 = corners[3].x + (corners[2].x - corners[3].x) * t;
+                                    const y2 = corners[3].y + (corners[2].y - corners[3].y) * t;
+                                    doc.line(transformX(x1), transformY(y1), transformX(x2), transformY(y2));
+                                }
+
+                                // Draw arrow
+                                const arrowOffset = thickness * 2;
+                                const arrowWorldX = panelCenterX + arrowOffset * Math.cos(perpAngle);
+                                const arrowWorldY = panelCenterY + arrowOffset * Math.sin(perpAngle);
+                                const arrowHeadSize = 4;
+                                const arrowDir = direction === 'right' ? 1 : -1;
+                                
+                                const arrowStartX = arrowWorldX - halfLength / 2 * Math.cos(angle);
+                                const arrowStartY = arrowWorldY - halfLength / 2 * Math.sin(angle);
+                                const arrowEndX = arrowWorldX + halfLength / 2 * Math.cos(angle);
+                                const arrowEndY = arrowWorldY + halfLength / 2 * Math.sin(angle);
+
+                                doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
+                                doc.setLineWidth(lineWidth);
+                                doc.line(transformX(arrowStartX), transformY(arrowStartY), transformX(arrowEndX), transformY(arrowEndY));
+                                
+                                if (arrowDir === 1) {
+                                    const arrowHead1X = arrowEndX - arrowHeadSize * Math.cos(angle) - arrowHeadSize * Math.cos(perpAngle);
+                                    const arrowHead1Y = arrowEndY - arrowHeadSize * Math.sin(angle) - arrowHeadSize * Math.sin(perpAngle);
+                                    const arrowHead2X = arrowEndX - arrowHeadSize * Math.cos(angle) + arrowHeadSize * Math.cos(perpAngle);
+                                    const arrowHead2Y = arrowEndY - arrowHeadSize * Math.sin(angle) + arrowHeadSize * Math.sin(perpAngle);
+                                    doc.line(transformX(arrowEndX), transformY(arrowEndY), transformX(arrowHead1X), transformY(arrowHead1Y));
+                                    doc.line(transformX(arrowEndX), transformY(arrowEndY), transformX(arrowHead2X), transformY(arrowHead2Y));
+                                } else {
+                                    const arrowHead1X = arrowStartX + arrowHeadSize * Math.cos(angle) - arrowHeadSize * Math.cos(perpAngle);
+                                    const arrowHead1Y = arrowStartY + arrowHeadSize * Math.sin(angle) - arrowHeadSize * Math.sin(perpAngle);
+                                    const arrowHead2X = arrowStartX + arrowHeadSize * Math.cos(angle) + arrowHeadSize * Math.cos(perpAngle);
+                                    const arrowHead2Y = arrowStartY + arrowHeadSize * Math.sin(angle) + arrowHeadSize * Math.sin(perpAngle);
+                                    doc.line(transformX(arrowStartX), transformY(arrowStartY), transformX(arrowHead1X), transformY(arrowHead1Y));
+                                    doc.line(transformX(arrowStartX), transformY(arrowStartY), transformX(arrowHead2X), transformY(arrowHead2Y));
+                                }
+                            };
+
+                            if (door.configuration === 'single_sided') {
+                                drawSlidePanel(0, door.slide_direction);
+                            } else if (door.configuration === 'double_sided') {
+                                drawSlidePanel(-slashHalf / 2, 'left');
+                                drawSlidePanel(slashHalf / 2, 'right');
+                            }
+                        }
+                    });
+                    
+                    // Add title at top (before drawing geometry)
+                    doc.setFontSize(12);
+                    doc.setFont(undefined, 'bold');
+                    doc.setTextColor(0, 0, 0);
+                    const title = storeyName ? `Vector Wall Plan - ${storeyName}` : 'Vector Wall Plan (Sharp)';
+                    doc.text(title, planPageWidth / 2, planMargin + 8, { align: 'center' });
+                    
+                    // Add scale note at bottom
+                    doc.setFontSize(8);
+                    doc.setFont(undefined, 'normal');
+                    doc.setTextColor(100, 100, 100);
+                    // Scale: model units (mm) to PDF units (mm)
+                    // If scale is 0.001, that means 1mm model = 0.001mm PDF, so 1:1000
+                    // Scale ratio = model units per PDF unit = 1/scale
+                    const scaleRatio = scale > 0 ? Math.round(1 / scale) : 0;
+                    const scaleText = scaleRatio > 0 ? `Scale: 1:${scaleRatio}` : 'Scale: N/A';
+                    doc.text(scaleText, planPageWidth - planMargin, planPageHeight - planMargin - 5, { align: 'right' });
+                };
+                
+                // Helper function to calculate ghost walls and areas for a storey
+                // EXACTLY matching useProjectDetails.js logic
+                const calculateGhostDataForStorey = (activeStoreyId, targetStorey, allStoreys, allWalls, filteredRooms) => {
+                    if (!activeStoreyId || !targetStorey) {
+                        return { ghostWalls: [], ghostAreas: [] };
+                    }
+                    
+                    const targetElevation = typeof targetStorey.elevation_mm === 'number'
+                        ? targetStorey.elevation_mm
+                        : Number(targetStorey.elevation_mm) || 0;
+                    const defaultHeight = typeof targetStorey.default_room_height_mm === 'number'
+                        ? targetStorey.default_room_height_mm
+                        : Number(targetStorey.default_room_height_mm) || 0;
+                    
+                    // Calculate ghost walls - EXACT same logic as useProjectDetails
+                    const ghostMap = new Map();
+                    const normalizedWalls = Array.isArray(allWalls) ? allWalls : [];
+                    const normalizedRooms = Array.isArray(filteredRooms) ? filteredRooms : [];
+                    
+                    normalizedRooms.forEach((room) => {
+                        const roomWalls = Array.isArray(room.walls) ? room.walls : [];
+                        const roomHeight = room.height !== undefined && room.height !== null
+                            ? Number(room.height) || 0
+                            : defaultHeight;
+                        const requiredTop = targetElevation + roomHeight;
+                        
+                        roomWalls.forEach((wallId) => {
+                            const wall = normalizedWalls.find((w) => String(w.id) === String(wallId));
+                            if (!wall) {
+                                return;
+                            }
+                            
+                            if (String(wall.storey) === String(activeStoreyId)) {
+                                return;
+                            }
+                            
+                            const sharedCount = Array.isArray(wall.rooms) ? wall.rooms.length : 0;
+                            if (sharedCount <= 1) {
+                                return;
+                            }
+                            
+                            const wallStorey = allStoreys.find(storey => String(storey.id) === String(wall.storey)) || null;
+                            const wallBaseElevation = wallStorey && wallStorey.elevation_mm !== undefined
+                                ? Number(wallStorey.elevation_mm) || 0
+                                : 0;
+                            const wallHeight = wall.height !== undefined && wall.height !== null
+                                ? Number(wall.height) || 0
+                                : 0;
+                            const wallTop = wallBaseElevation + wallHeight;
+                            
+                            if (wallTop + 1e-3 < requiredTop) {
+                                return;
+                            }
+                            
+                            if (ghostMap.has(wall.id)) {
+                                return;
+                            }
+                            
+                            ghostMap.set(wall.id, {
+                                id: `ghost-${wall.id}-${activeStoreyId}`,
+                                originalWallId: wall.id,
+                                storey: wall.storey,
+                                start_x: wall.start_x,
+                                start_y: wall.start_y,
+                                end_x: wall.end_x,
+                                end_y: wall.end_y,
+                                thickness: wall.thickness,
+                                height: wall.height,
+                            });
+                        });
+                    });
+                    
+                    const ghostWalls = Array.from(ghostMap.values());
+                    
+                    // Calculate ghost areas - EXACT same logic as useProjectDetails
+                    const sortedStoreys = [...allStoreys].sort((a, b) => {
+                        const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+                        if (orderDiff !== 0) return orderDiff;
+                        const elevationDiff = (Number(a.elevation_mm) || 0) - (Number(b.elevation_mm) || 0);
+                        if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
+                        return (a.id ?? 0) - (b.id ?? 0);
+                    });
+                    
+                    const activeIndex = sortedStoreys.findIndex(
+                        (storey) => String(storey.id) === String(activeStoreyId)
+                    );
+                    
+                    let ghostAreas = [];
+                    if (activeIndex > 0) {
+                        // Check if there are walls on the current storey (even if no rooms)
+                        const hasWallsOnCurrentStorey = normalizedWalls.some(
+                            (wall) => String(wall.storey) === String(activeStoreyId)
+                        );
+                        
+                        // Build a list of active rooms with their polygons and base elevations
+                        const activeRooms = [];
+                        normalizedRooms.forEach((room) => {
+                            if (!Array.isArray(room.room_points) || room.room_points.length < 3) {
+                                return;
+                            }
+                            const normalizedPoints = room.room_points.map((point) => ({
+                                x: Number(point.x) || 0,
+                                y: Number(point.y) || 0,
+                            }));
+                            
+                            // Get base elevation - use explicit value if set, otherwise use storey elevation
+                            let roomBaseElevation = targetElevation;
+                            if (room.base_elevation_mm !== undefined && room.base_elevation_mm !== null) {
+                                const parsed = Number(room.base_elevation_mm);
+                                if (!isNaN(parsed)) {
+                                    roomBaseElevation = parsed;
+                                }
+                            }
+                            
+                            activeRooms.push({
+                                points: normalizedPoints,
+                                baseElevation: roomBaseElevation,
+                                signature: JSON.stringify(normalizedPoints.map(p => [p.x, p.y]))
+                            });
+                        });
+                        
+                        // Build a set of active room signatures for quick exact match lookup
+                        const activeRoomSignatures = new Set(activeRooms.map(r => r.signature));
+                        const occupiedSignatures = new Set(activeRoomSignatures);
+                        const descendingStoreys = sortedStoreys.slice(0, activeIndex).reverse();
+                        const allNormalizedRooms = Array.isArray(rooms) ? rooms : [];
+                        
+                        descendingStoreys.forEach((storey) => {
+                            const storeyRooms = allNormalizedRooms.filter(
+                                (room) => String(room.storey) === String(storey.id)
+                            );
+                            
+                            storeyRooms.forEach((room) => {
+                                if (!Array.isArray(room.room_points) || room.room_points.length < 3) {
+                                    return;
+                                }
+                                
+                                const normalizedPoints = room.room_points.map((point) => ({
+                                    x: Number(point.x) || 0,
+                                    y: Number(point.y) || 0,
+                                }));
+                                const signature = JSON.stringify(normalizedPoints.map(p => [p.x, p.y]));
+                                
+                                // Skip if exact signature match (same location)
+                                if (occupiedSignatures.has(signature)) {
+                                    return;
+                                }
+                                
+                                const baseElevation =
+                                    room.base_elevation_mm !== undefined && room.base_elevation_mm !== null
+                                        ? Number(room.base_elevation_mm) || 0
+                                        : Number(storey.elevation_mm) || 0;
+                                const roomHeight =
+                                    room.height !== undefined && room.height !== null
+                                        ? Number(room.height) || 0
+                                        : Number(storey.default_room_height_mm) || 0;
+                                const roomTop = baseElevation + roomHeight;
+                                
+                                // If the lower room doesn't extend above the current storey elevation, don't show ghost
+                                if (roomTop + 1e-3 < targetElevation) {
+                                    return;
+                                }
+                                
+                                // If there are walls on the current storey but no rooms, treat the storey elevation as the floor
+                                if (hasWallsOnCurrentStorey && activeRooms.length === 0) {
+                                    if (roomTop <= targetElevation + 1e-3) {
+                                        return;
+                                    }
+                                }
+                                
+                                // Check if there's an active room that overlaps with this lower room
+                                // and has a base elevation that's at or above the lower room's top
+                                let shouldHideGhost = false;
+                                for (const activeRoom of activeRooms) {
+                                    // Check if polygons overlap - use EXACT same function as canvas
+                                    if (doPolygonsOverlap(normalizedPoints, activeRoom.points)) {
+                                        // If the active room's base is at or above the lower room's top, don't show ghost
+                                        // This means the active room's floor is at or above the lower room's ceiling
+                                        if (activeRoom.baseElevation >= roomTop - 1e-3) {
+                                            shouldHideGhost = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                if (shouldHideGhost) {
+                                    return;
+                                }
+                                
+                                occupiedSignatures.add(signature);
+                                ghostAreas.push({
+                                    id: `ghost-area-${room.id}-${activeStoreyId}`,
+                                    sourceRoomId: room.id,
+                                    room_name: room.room_name,
+                                    room_points: room.room_points,
+                                    storey: room.storey,
+                                    source_storey_name: storey.name,
+                                });
+                            });
+                        });
+                    }
+                    
+                    return { ghostWalls, ghostAreas };
+                };
+                
+                // Helper function to calculate ghost walls and areas for a storey (matching useProjectDetails logic)
+                // DEPRECATED: Use calculateGhostDataForStorey instead
+                const calculateGhostData = (targetStoreyId) => {
+                    const targetStorey = storeys.find(s => String(s.id) === String(targetStoreyId));
+                    if (!targetStorey) return { ghostWalls: [], ghostAreas: [] };
+                    
+                    const targetElevation = typeof targetStorey.elevation_mm === 'number'
+                        ? targetStorey.elevation_mm
+                        : Number(targetStorey.elevation_mm) || 0;
+                    const defaultHeight = typeof targetStorey.default_room_height_mm === 'number'
+                        ? targetStorey.default_room_height_mm
+                        : Number(targetStorey.default_room_height_mm) || 0;
+                    
+                    const ghostWalls = [];
+                    const ghostAreas = [];
+                    const ghostWallMap = new Map();
+                    
+                    // Sort storeys to find lower storeys
+                    const sortedStoreys = [...storeys].sort((a, b) => {
+                        const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+                        if (orderDiff !== 0) return orderDiff;
+                        const elevationDiff = (Number(a.elevation_mm) || 0) - (Number(b.elevation_mm) || 0);
+                        if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
+                        return (a.id ?? 0) - (b.id ?? 0);
+                    });
+                    
+                    const targetIndex = sortedStoreys.findIndex(s => String(s.id) === String(targetStoreyId));
+                    if (targetIndex <= 0) {
+                        // Ground floor or first floor - no ghost data
+                        return { ghostWalls: [], ghostAreas: [] };
+                    }
+                    
+                    // Find ALL walls from lower storeys that extend into this storey (not just from rooms)
+                    wallsForVector.forEach((wall) => {
+                        // Explicitly check if storey is null/undefined (not just falsy, since 0 is valid)
+                        const wallStorey = (wall.storey !== null && wall.storey !== undefined) 
+                            ? String(wall.storey) 
+                            : null;
+                        if (!wallStorey || wallStorey === String(targetStoreyId)) return;
+                        
+                        const wallStoreyObj = storeys.find(s => String(s.id) === wallStorey);
+                        if (!wallStoreyObj) return;
+                        
+                        // Check if this is a lower storey
+                        const wallStoreyIndex = sortedStoreys.findIndex(s => String(s.id) === wallStorey);
+                        if (wallStoreyIndex >= targetIndex) return; // Not a lower storey
+                        
+                        const wallBaseElevation = typeof wallStoreyObj.elevation_mm === 'number'
+                            ? wallStoreyObj.elevation_mm
+                            : Number(wallStoreyObj.elevation_mm) || 0;
+                        const wallHeight = wall.height !== undefined && wall.height !== null
+                            ? Number(wall.height) || 0
+                            : 0;
+                        const wallTop = wallBaseElevation + wallHeight;
+                        
+                        // Wall must extend above target elevation to be a ghost wall
+                        if (wallTop + 1e-3 > targetElevation && !ghostWallMap.has(wall.id)) {
+                            ghostWallMap.set(wall.id, true);
+                            ghostWalls.push({
+                                id: `ghost-${wall.id}-${targetStoreyId}`,
+                                originalWallId: wall.id,
+                                storey: wall.storey,
+                                start_x: wall.start_x,
+                                start_y: wall.start_y,
+                                end_x: wall.end_x,
+                                end_y: wall.end_y,
+                                thickness: wall.thickness,
+                                height: wall.height
+                            });
+                        }
+                    });
+                    
+                    // Find rooms from LOWER storeys ONLY that extend into this storey (for ghost areas)
+                    rooms.forEach((room) => {
+                        // Explicitly check if storey is null/undefined (not just falsy, since 0 is valid)
+                        const roomStorey = (room.storey !== null && room.storey !== undefined) 
+                            ? String(room.storey) 
+                            : null;
+                        
+                        // Skip rooms without storey or rooms from current storey
+                        if (!roomStorey || roomStorey === String(targetStoreyId)) return;
+                        
+                        const roomStoreyObj = storeys.find(s => String(s.id) === roomStorey);
+                        if (!roomStoreyObj) return;
+                        
+                        // CRITICAL: Only include rooms from LOWER storeys (not higher storeys)
+                        // Check if this room's storey is actually a lower storey
+                        const roomStoreyIndex = sortedStoreys.findIndex(s => String(s.id) === roomStorey);
+                        if (roomStoreyIndex < 0 || roomStoreyIndex >= targetIndex) {
+                            // Room is from same or higher storey - skip it
+                            return;
+                        }
+                        
+                        const roomStoreyElevation = typeof roomStoreyObj.elevation_mm === 'number'
+                            ? roomStoreyObj.elevation_mm
+                            : Number(roomStoreyObj.elevation_mm) || 0;
+                        const roomHeight = room.height !== undefined && room.height !== null
+                            ? Number(room.height) || 0
+                            : defaultHeight;
+                        const roomBaseElevation = room.base_elevation_mm !== undefined && room.base_elevation_mm !== null
+                            ? Number(room.base_elevation_mm) || 0
+                            : roomStoreyElevation;
+                        const roomTop = roomBaseElevation + roomHeight;
+                        
+                        // If room extends above target storey elevation, it's a ghost area
+                        if (roomTop > targetElevation && room.room_points && room.room_points.length >= 3) {
+                            ghostAreas.push({
+                                ...room,
+                                source_storey_name: roomStoreyObj.name || 'Below'
+                            });
+                        }
+                    });
+                    
+                    return { ghostWalls, ghostAreas };
+                };
+                
+                // Fetch intersections data for proper wall drawing (joints, 45° cuts, etc.)
+                let intersections = [];
+                try {
+                    const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
+                    intersections = intersectionsResponse.data || [];
+                    // Merge with calculated intersections (same as Canvas2D)
+                    const calculatedIntersections = findIntersectionPointsBetweenWalls(wallsForVector);
+                    const mergedIntersections = calculatedIntersections.map(inter => {
+                        const existing = intersections.find(i => 
+                            Math.abs(i.x - inter.x) < 1e-3 && 
+                            Math.abs(i.y - inter.y) < 1e-3 &&
+                            ((i.wall_1 === inter.pairs[0]?.wall1?.id && i.wall_2 === inter.pairs[0]?.wall2?.id) ||
+                             (i.wall_1 === inter.pairs[0]?.wall2?.id && i.wall_2 === inter.pairs[0]?.wall1?.id))
+                        );
+                        if (existing) {
+                            return {
+                                ...inter,
+                                pairs: inter.pairs.map(pair => ({
+                                    ...pair,
+                                    joining_method: existing.joining_method || 'butt_in'
+                                }))
+                            };
+                        }
+                        return inter;
+                    });
+                    intersections = mergedIntersections;
+                } catch (intersectionErr) {
+                    console.log('Intersections not available, calculating from walls');
+                    intersections = findIntersectionPointsBetweenWalls(wallsForVector);
+                }
+                
+                // Get default storey ID (first storey or lowest elevation)
+                const defaultStoreyId = storeys && storeys.length > 0
+                    ? storeys.sort((a, b) => {
+                        const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+                        if (orderDiff !== 0) return orderDiff;
+                        const elevationDiff = (Number(a.elevation_mm) || 0) - (Number(b.elevation_mm) || 0);
+                        if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
+                        return (a.id ?? 0) - (b.id ?? 0);
+                    })[0]?.id
+                    : null;
+                
+                // Helper function to match storey (matching canvas logic)
+                const matchesStorey = (itemStoreyId, targetStoreyId) => {
+                    if (!targetStoreyId) return true;
+                    if (itemStoreyId === null || itemStoreyId === undefined) {
+                        if (defaultStoreyId === null || defaultStoreyId === undefined) {
+                            return false; // No storey assigned and no default - exclude
+                        }
+                        return String(defaultStoreyId) === String(targetStoreyId);
+                    }
+                    return String(itemStoreyId) === String(targetStoreyId);
+                };
+                
+                // Draw vector plan for each storey if we have storey data
+                // Use EXACT same logic as canvas (useProjectDetails.js)
+                if (storeys && storeys.length > 0) {
+                    for (const storey of storeys) {
+                        const activeStoreyId = storey.id; // Simulate activeStoreyId for this storey
+                        
+                        // Use EXACT same matchesActiveStorey logic as canvas
+                        const matchesActiveStorey = (storeyId) => {
+                            if (!activeStoreyId) {
+                                return true;
+                            }
+                            if (storeyId === null || storeyId === undefined) {
+                                if (defaultStoreyId === null || defaultStoreyId === undefined) {
+                                    return false;
+                                }
+                                return String(defaultStoreyId) === String(activeStoreyId);
+                            }
+                            return String(storeyId) === String(activeStoreyId);
+                        };
+                        
+                        // Filter walls - EXACT same as canvas filteredWalls
+                        const normalizedWalls = Array.isArray(wallsForVector) ? wallsForVector : [];
+                        const storeyWalls = normalizedWalls.filter((wall) => matchesActiveStorey(wall.storey));
+                        
+                        // Filter rooms - EXACT same as canvas filteredRooms
+                        const normalizedRooms = Array.isArray(rooms) ? rooms : [];
+                        const storeyRooms = normalizedRooms.filter((room) => matchesActiveStorey(room.storey));
+                        
+                        // Filter doors - EXACT same as canvas filteredDoors
+                        const wallStoreyMap = new Map(
+                            normalizedWalls.map((wall) => [String(wall.id), wall.storey])
+                        );
+                        const normalizedDoors = Array.isArray(doors) ? doors : [];
+                        const storeyDoors = normalizedDoors.filter((door) => {
+                            const directStorey = door.storey ?? door.storey_id;
+                            if (directStorey !== null && directStorey !== undefined) {
+                                return matchesActiveStorey(directStorey);
+                            }
+                            const linkedWallId = door.linked_wall || door.wall || door.wall_id;
+                            if (!linkedWallId) {
+                                return matchesActiveStorey(null);
+                            }
+                            const wallStorey = wallStoreyMap.get(String(linkedWallId));
+                            return matchesActiveStorey(wallStorey);
+                        });
+                        
+                        // Calculate ghost walls and areas - EXACT same logic as canvas
+                        const { ghostWalls, ghostAreas } = calculateGhostDataForStorey(
+                            activeStoreyId, 
+                            storey, 
+                            storeys, 
+                            normalizedWalls, 
+                            storeyRooms
+                        );
+                        
+                        // Draw if we have any walls (regular or ghost) or rooms or ghost areas
+                        if (storeyWalls.length > 0 || ghostWalls.length > 0 || storeyRooms.length > 0 || ghostAreas.length > 0) {
+                            drawVectorWallPlan(doc, storeyWalls, storeyRooms, storeyDoors, storey.name, ghostWalls, ghostAreas, storey.id, intersections, wallsForVector);
+                        }
+                    }
+                } else {
+                    // Draw single vector plan for all walls (no storey filtering, no ghost data)
+                    drawVectorWallPlan(doc, wallsForVector, rooms, doors, null, [], [], null, intersections, wallsForVector);
+                }
+            }
+            
             // Add Plan Images Section at the end
             // Note: Only plan images use the orientation and single plan per page settings
             if (exportData.planImages) {
@@ -3611,7 +5216,7 @@ const InstallationTimeEstimator = ({
                                             Plan Export Settings
                                         </h5>
                                         <p className="text-xs text-gray-600 mb-3">These settings only affect the plan images above, not the rest of the PDF content.</p>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                             {/* Fit to Page Toggle */}
                                             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                                 <div>
@@ -3659,23 +5264,6 @@ const InstallationTimeEstimator = ({
                                                         )}
                                                     </svg>
                                                     {planPageOrientation === 'portrait' ? 'Portrait' : 'Landscape'}
-                                                </button>
-                                            </div>
-                                            
-                                            {/* Rotate Button */}
-                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                                <div>
-                                                    <label className="text-sm font-medium text-gray-700">Rotate Plans</label>
-                                                    <p className="text-xs text-gray-500 mt-1">Rotate plans 90° clockwise</p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setPlanRotation((planRotation + 90) % 360)}
-                                                    className="px-4 py-2 rounded-lg font-medium transition-colors flex items-center bg-blue-600 text-white hover:bg-blue-700"
-                                                >
-                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                                    </svg>
-                                                    Rotate {planRotation}°
                                                 </button>
                                             </div>
                                             
