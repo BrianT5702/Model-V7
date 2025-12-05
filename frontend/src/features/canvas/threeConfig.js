@@ -12,14 +12,14 @@ export const THREE_CONFIG = {
   CAMERA: {
     FOV: 75,
     NEAR: 0.1,
-    FAR: 2000,
+    FAR: 10000, // Increased from 2000 to prevent cut-off when zooming out
     DEFAULT_POSITION: { x: 200, y: 200, z: 200 }
   },
   
   // Grid settings
   GRID: {
-    SIZE: 1000,
-    DIVISIONS: 20,
+    SIZE: 10000, // Increased from 1000 to cover whole area
+    DIVISIONS: 100, // Increased divisions for better detail at larger size
     COLOR: 0x888888,
     SECONDARY_COLOR: 0xcccccc
   },

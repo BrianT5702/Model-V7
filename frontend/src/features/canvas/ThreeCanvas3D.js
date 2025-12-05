@@ -619,8 +619,47 @@ getModelBounds() {
       if (this.showCeilingPanelLines) {
         this.createCeilingPanelDivisionLines();
       }
+      
+      // Update grid size to cover the entire model area
+      this.updateGridSize();
     } catch (error) {
       console.error('Error building model:', error);
+    }
+  }
+
+  // Update grid size dynamically based on model bounds
+  updateGridSize() {
+    try {
+      const bounds = this.getModelBounds();
+      const modelWidth = Math.abs(bounds.maxX - bounds.minX);
+      const modelDepth = Math.abs(bounds.maxZ - bounds.minZ);
+      const modelSize = Math.max(modelWidth, modelDepth);
+      
+      // Make grid 3x larger than model size to ensure full coverage, with minimum of 5000
+      const newGridSize = Math.max(modelSize * 3, 5000);
+      // Round up to nearest 1000 for cleaner grid
+      const roundedSize = Math.ceil(newGridSize / 1000) * 1000;
+      
+      // Calculate appropriate divisions based on size
+      const divisions = Math.max(20, Math.min(100, Math.ceil(roundedSize / 100)));
+      
+      // Remove old grid if it exists
+      const oldGrid = this.scene.getObjectByName('grid');
+      if (oldGrid) {
+        oldGrid.geometry.dispose();
+        this.scene.remove(oldGrid);
+      }
+      
+      // Create new grid with calculated size
+      const gridHelper = new this.THREE.GridHelper(roundedSize, divisions, 0x888888, 0xcccccc);
+      gridHelper.position.y = 0.01;
+      gridHelper.name = 'grid';
+      this.scene.add(gridHelper);
+      this.gridHelper = gridHelper;
+      
+      debugLog(`📐 Grid updated: size=${roundedSize}, divisions=${divisions}, modelSize=${modelSize.toFixed(2)}`);
+    } catch (error) {
+      console.warn('Could not update grid size:', error);
     }
   }
 

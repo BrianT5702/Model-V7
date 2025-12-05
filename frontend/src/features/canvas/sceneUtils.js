@@ -4,11 +4,36 @@ import { OrbitControls } from './threeInstance';
 import earcut from 'earcut';
 
 export function addGrid(instance) {
-  const size = instance.gridSize;
-  const divisions = 20;
+  // Calculate dynamic grid size based on model bounds, or use default
+  let size = instance.gridSize || 10000;
+  
+  // Try to calculate grid size from model bounds if available
+  if (instance.walls && instance.walls.length > 0 && typeof instance.getModelBounds === 'function') {
+    try {
+      const bounds = instance.getModelBounds();
+      const modelWidth = Math.abs(bounds.maxX - bounds.minX);
+      const modelDepth = Math.abs(bounds.maxZ - bounds.minZ);
+      const modelSize = Math.max(modelWidth, modelDepth);
+      
+      // Make grid 3x larger than model size to ensure full coverage, with minimum of 5000
+      size = Math.max(modelSize * 3, 5000);
+      
+      // Round up to nearest 1000 for cleaner grid
+      size = Math.ceil(size / 1000) * 1000;
+    } catch (error) {
+      // Fallback to default size if calculation fails
+      console.warn('Could not calculate dynamic grid size, using default:', error);
+    }
+  }
+  
+  // Calculate appropriate divisions based on size (more divisions for larger grids)
+  const divisions = Math.max(20, Math.min(100, Math.ceil(size / 100)));
+  
   const gridHelper = new instance.THREE.GridHelper(size, divisions, 0x888888, 0xcccccc);
   gridHelper.position.y = 0.01;
+  gridHelper.name = 'grid'; // Name it so we can update it later
   instance.scene.add(gridHelper);
+  instance.gridHelper = gridHelper; // Store reference for potential updates
 }
 
 export function adjustModelScale(instance) {
