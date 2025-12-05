@@ -2594,9 +2594,13 @@ const CeilingCanvas = ({
                 }
             }
         }
-        
-        // Attempt panel selection (skip when actively placing supports)
+
+        // Check if clicked directly on a panel (for priority logic)
+        let clickedPanel = null;
+        let clickedPanelRoom = null;
+        let clickedPanelZone = null;
         if (!(enableAluSuspension && isPlacingSupport)) {
+            // Check panels in regular rooms
             for (let i = 0; i < effectiveRooms.length; i++) {
                 const room = effectiveRooms[i];
                 const roomPanels = effectiveCeilingPanelsMap[room.id] || [];
@@ -2616,14 +2620,16 @@ const CeilingCanvas = ({
                     const height = panelLengthRaw * scaleFactor.current;
                     
                     if (panelIdentifier && clickX >= x && clickX <= x + width && clickY >= y && clickY <= y + height) {
-                        onPanelSelect?.(panelIdentifier);
-                        onRoomSelect?.(room.id);
-                        return;
+                        clickedPanel = panelIdentifier;
+                        clickedPanelRoom = room;
+                        break;
                     }
                 }
+                if (clickedPanel) break;
             }
     
-            if (zonesAsRooms && zonesAsRooms.length > 0) {
+            // Check panels in zones
+            if (!clickedPanel && zonesAsRooms && zonesAsRooms.length > 0) {
                 for (const zoneRoom of zonesAsRooms) {
                     const zonePanels = effectiveCeilingPanelsMap[zoneRoom.id] || zoneRoom.ceiling_panels || [];
                     
@@ -2641,11 +2647,12 @@ const CeilingCanvas = ({
                         const height = panelLengthRaw * scaleFactor.current;
                         
                         if (panelIdentifier && clickX >= x && clickX <= x + width && clickY >= y && clickY <= y + (height || (panelLengthRaw || 0) * scaleFactor.current)) {
-                            onPanelSelect?.(panelIdentifier);
-                            onRoomSelect?.(zoneRoom.id);
-                            return;
+                            clickedPanel = panelIdentifier;
+                            clickedPanelZone = zoneRoom;
+                            break;
                         }
                     }
+                    if (clickedPanel) break;
                 }
             }
         }
@@ -2655,23 +2662,86 @@ const CeilingCanvas = ({
             // Room selection is disabled when aluminum suspension drawing is active
             // Only handle support placement logic below
         } else {
-            // If clicked on a zone, select the zone
-            if (clickedZone && onRoomSelect) {
-                onPanelSelect?.(null);
-                onRoomSelect(clickedZone.id);
-                return;
-            }
-
-            // If clicked on a room, select it (only when aluminum suspension drawing is NOT enabled)
-            if (clickedRoom && onRoomSelect) {
-                onRoomSelect(clickedRoom.id);
+            // Check if a room/zone is currently selected
+            const isRoomSelected = selectedRoomId !== null && selectedRoomId !== undefined;
+            const selectedRoomIdStr = selectedRoomId ? selectedRoomId.toString() : null;
+            const isZoneSelected = selectedRoomIdStr && selectedRoomIdStr.startsWith('zone-');
+            
+            // Determine which room/zone the clicked panel belongs to
+            const clickedPanelBelongsToRoomId = clickedPanelRoom ? clickedPanelRoom.id.toString() : null;
+            const clickedPanelBelongsToZoneId = clickedPanelZone ? clickedPanelZone.id.toString() : null;
+            const clickedPanelBelongsToZoneIdFormatted = clickedPanelZone ? `zone-${clickedPanelZone.id}` : null;
+            
+            // Check if clicked panel is in the currently selected room/zone
+            // Handle both numeric ID and "zone-{id}" format for comparison
+            const isPanelInSelectedRoom = isRoomSelected && clickedPanel && (
+                // Panel in a zone and zone is selected (check both formats)
+                (clickedPanelBelongsToZoneIdFormatted && (
+                    clickedPanelBelongsToZoneIdFormatted === selectedRoomIdStr ||
+                    clickedPanelBelongsToZoneId === selectedRoomIdStr
+                )) ||
+                // Panel in a room and room is selected
+                (clickedPanelBelongsToRoomId && clickedPanelBelongsToRoomId === selectedRoomIdStr)
+            );
+            
+            // PRIORITY 1: If a room is already selected AND user clicks on a panel in that room, select the panel
+            if (isRoomSelected && isPanelInSelectedRoom && clickedPanel) {
+                onPanelSelect?.(clickedPanel);
                 return;
             }
             
-            // If clicked on empty space (not on a room) and not placing support, deselect room
-            if (!clickedRoom && !isPlacingSupport && onRoomDeselect) {
+            // PRIORITY 2: If NO room is selected, clicking in a room/zone selects the room (even if clicking on panel)
+            if (!isRoomSelected) {
+                // If clicked on a zone, select the zone (even if also clicked on a panel)
+                if (clickedZone && onRoomSelect) {
+                    onPanelSelect?.(null);
+                    onRoomSelect(clickedZone.id);
+                    return;
+                }
+
+                // If clicked on a room, select it (even if also clicked on a panel)
+                if (clickedRoom && onRoomSelect) {
+                    onPanelSelect?.(null);
+                    onRoomSelect(clickedRoom.id);
+                    return;
+                }
+            } else {
+                // PRIORITY 3: If a room IS selected, allow selecting a different room/zone
+                // If clicked on a different zone, select that zone
+                if (clickedZone && onRoomSelect) {
+                    const clickedZoneId = clickedZone.id.toString();
+                    const clickedZoneIdFormatted = `zone-${clickedZone.id}`;
+                    // Check if it's a different zone (handle both ID formats)
+                    const isDifferentZone = clickedZoneId !== selectedRoomIdStr && 
+                                           clickedZoneIdFormatted !== selectedRoomIdStr &&
+                                           (!isZoneSelected || clickedZoneId !== selectedRoomIdStr.replace('zone-', ''));
+                    if (isDifferentZone) {
+                        onPanelSelect?.(null);
+                        onRoomSelect(clickedZone.id);
+                        return;
+                    }
+                }
+
+                // If clicked on a different room, select that room
+                if (clickedRoom && onRoomSelect) {
+                    const clickedRoomId = clickedRoom.id.toString();
+                    if (clickedRoomId !== selectedRoomIdStr) {
+                        onPanelSelect?.(null);
+                        onRoomSelect(clickedRoom.id);
+                        return;
+                    }
+                }
+            }
+            
+            // PRIORITY 4: If clicked on empty space (not on a room/zone/panel) and not placing support, deselect room
+            if (!clickedRoom && !clickedZone && !clickedPanel && !isPlacingSupport && onRoomDeselect) {
                 onRoomDeselect();
                 return;
+            }
+            
+            // If clicked on panel but not in selected room, deselect panel (room selection takes priority)
+            if (clickedPanel && !isPanelInSelectedRoom) {
+                onPanelSelect?.(null);
             }
         }
         
@@ -3362,7 +3432,7 @@ const CeilingCanvas = ({
                         </span>
                     </div>
                     <div className="text-center">
-                        <span className="font-medium">Click panels to select • Drag to pan • Use zoom buttons</span>
+                        <span className="font-medium">Click room to select, then click panel • Drag to pan • Use zoom buttons</span>
                     </div>
                     {enableAluSuspension && (
                         <div className="flex items-center gap-2">

@@ -156,6 +156,7 @@ function getWallJointTypes(wall, intersections, walls) {
         }
     });
     
+    // Treat 'none' as 'butt_in' for dimension calculations
     const leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
     const rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
     

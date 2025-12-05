@@ -1406,6 +1406,37 @@ export function drawWalls({
                 // Determine which end of horizontal wall is at intersection
                 const hIsAtStart = horizontalWall.isAtStart;
                 
+                // Check if this intersection has a butt-in joint
+                let hasButtIn = false;
+                let jointWall1Id = null;
+                let jointWall2Id = null;
+                
+                if (inter.pairs && Array.isArray(inter.pairs)) {
+                    inter.pairs.forEach(pair => {
+                        // Handle both object format { id: ... } and direct ID format
+                        const pairWall1Id = typeof pair.wall1 === 'object' ? (pair.wall1?.id ?? pair.wall1) : pair.wall1;
+                        const pairWall2Id = typeof pair.wall2 === 'object' ? (pair.wall2?.id ?? pair.wall2) : pair.wall2;
+                        
+                        // Convert to strings for comparison to handle number/string mismatches
+                        const vWallIdStr = String(vWall.id);
+                        const hWallIdStr = String(hWall.id);
+                        const pairWall1IdStr = String(pairWall1Id);
+                        const pairWall2IdStr = String(pairWall2Id);
+                        
+                        const matchesVertical = (pairWall1IdStr === vWallIdStr || pairWall2IdStr === vWallIdStr);
+                        const matchesHorizontal = (pairWall1IdStr === hWallIdStr || pairWall2IdStr === hWallIdStr);
+                        const isButtIn = pair.joining_method === 'butt_in';
+                        
+                        if (matchesVertical && matchesHorizontal && isButtIn) {
+                            hasButtIn = true;
+                            jointWall1Id = pairWall1Id;
+                            jointWall2Id = pairWall2Id;
+                            // Break after finding the match
+                            return;
+                        }
+                    });
+                }
+                
                 // For vertical wall: extend to upper/lower line of horizontal
                 // Determine which line of horizontal is upper and which is lower
                 const hLine1Y = (hLines.line1[0].y + hLines.line1[1].y) / 2;
@@ -1419,106 +1450,225 @@ export function drawWalls({
                 const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
                 const isTopEnd = vEndpointY < vOtherY;
                 
-                // Calculate intersection point on horizontal line
-                // Project intersection point onto horizontal line to get exact Y coordinate
-                // Get Y coordinate from the appropriate horizontal line at intersection X
-                let targetY;
-                if (isTopEnd) {
-                    // Top end -> extend to upper line
-                    // Get Y from upper line at intersection X
-                    const hUpperStartX = hUpperLine[0].x;
-                    const hUpperStartY = hUpperLine[0].y;
-                    const hUpperEndX = hUpperLine[1].x;
-                    const hUpperEndY = hUpperLine[1].y;
-                    const hUpperDx = hUpperEndX - hUpperStartX;
-                    const hUpperDy = hUpperEndY - hUpperStartY;
-                    if (Math.abs(hUpperDx) > 0.001) {
-                        const t = (inter.x - hUpperStartX) / hUpperDx;
-                        targetY = hUpperStartY + t * hUpperDy;
-                    } else {
-                        targetY = hUpperStartY; // Vertical line, use start Y
+                // Determine position of horizontal wall relative to vertical
+                // Check if horizontal wall is above or below the intersection
+                const hMidY = (hWall.start_y + hWall.end_y) / 2;
+                const vIntersectionY = inter.y;
+                const isHorizontalOnTop = hMidY < vIntersectionY; // Horizontal wall is above (top)
+                
+                if (hasButtIn) {
+                    // BUTT-IN JOINT: Disable extension, apply visual shortening instead
+                    // BUTT-IN JOINT: Visually shorten wall1 to connect to appropriate line of wall2
+                    // Determine which wall is wall1 and which is wall2 based on joint definition
+                    // wall1 is the one that should be shortened visually (first wall in the joint pair)
+                    // Use string comparison to handle number/string ID mismatches
+                    const isVerticalWall1 = String(jointWall1Id) === String(vWall.id);
+                    const isHorizontalWall1 = String(jointWall1Id) === String(hWall.id);
+                    
+                    // Case 1: Vertical is wall1, Horizontal is wall2
+                    if (isVerticalWall1 && !isHorizontalWall1) {
+                        // Determine target line based on horizontal wall (wall2) position relative to intersection
+                        // If horizontal (wall2) is on top → vertical (wall1) should connect to bottom line of wall2
+                        // If horizontal (wall2) is at bottom → vertical (wall1) should connect to upper line of wall2
+                        let targetLine;
+                        let targetY;
+                        
+                        if (isHorizontalOnTop) {
+                            // Horizontal wall2 is on top, vertical wall1 should connect to bottom line of wall2
+                            targetLine = hLowerLine;
+                        } else {
+                            // Horizontal wall2 is at bottom, vertical wall1 should connect to upper line of wall2
+                            targetLine = hUpperLine;
+                        }
+                        
+                        // Get Y from target line at intersection X
+                        const targetStartX = targetLine[0].x;
+                        const targetStartY = targetLine[0].y;
+                        const targetEndX = targetLine[1].x;
+                        const targetEndY = targetLine[1].y;
+                        const targetDx = targetEndX - targetStartX;
+                        const targetDy = targetEndY - targetStartY;
+                        if (Math.abs(targetDx) > 0.001) {
+                            const t = (inter.x - targetStartX) / targetDx;
+                            targetY = targetStartY + t * targetDy;
+                        } else {
+                            targetY = targetStartY;
+                        }
+                        
+                        // Shorten vertical wall (wall1) visually by moving both lines to target line
+                        // This creates the visual effect of the wall being shortened to connect to wall2
+                        // For vertical walls, we only modify Y coordinate, keeping X coordinates to maintain vertical orientation
+                        // Ensure both lines are modified by directly accessing the arrays
+                        const vLine1Endpoint = vIsAtStart ? vLines.line1[0] : vLines.line1[1];
+                        const vLine2Endpoint = vIsAtStart ? vLines.line2[0] : vLines.line2[1];
+                        
+                        vLine1Endpoint.y = targetY;
+                        vLine2Endpoint.y = targetY;
+                        
+                        // Keep X coordinates unchanged to maintain wall thickness
+                    }
+                    // Case 2: Horizontal is wall1, Vertical is wall2
+                    else if (isHorizontalWall1 && !isVerticalWall1) {
+                        // Determine which line of vertical (wall2) to connect to
+                        const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
+                        const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
+                        const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
+                        const vRightmostLine = vLine1X < vLine2X ? vLines.line2 : vLines.line1;
+                        
+                        // Determine which side of the horizontal wall the vertical wall (wall2) is on
+                        // Compare vertical wall's X position with horizontal wall's midpoint X
+                        // Since vertical wall's X is approximately constant, use intersection X (where they meet)
+                        const vIntersectionX = inter.x;
+                        const hMidX = (hWall.start_x + hWall.end_x) / 2;
+                        const isVerticalOnLeft = vIntersectionX < hMidX; // Vertical wall2 is on left side of horizontal
+                        const isVerticalOnRight = vIntersectionX > hMidX; // Vertical wall2 is on right side of horizontal
+                        
+                        // Determine target line based on vertical wall position relative to horizontal
+                        // If vertical is on LEFT of horizontal → horizontal should connect to RIGHT line of vertical
+                        // If vertical is on RIGHT of horizontal → horizontal should connect to LEFT line of vertical
+                        let targetVLine;
+                        let targetX;
+                        
+                        if (isVerticalOnLeft) {
+                            // Vertical is on LEFT of horizontal, horizontal wall1 should connect to RIGHT line of vertical wall2
+                            targetVLine = vRightmostLine;
+                        } else if (isVerticalOnRight) {
+                            // Vertical is on RIGHT of horizontal, horizontal wall1 should connect to LEFT line of vertical wall2
+                            targetVLine = vLeftmostLine;
+                        } else {
+                            // Default to right line if ambiguous (vertical aligns with horizontal center)
+                            targetVLine = vRightmostLine;
+                        }
+                        
+                        // Get X from target vertical line at intersection Y
+                        const targetVStartX = targetVLine[0].x;
+                        const targetVStartY = targetVLine[0].y;
+                        const targetVEndX = targetVLine[1].x;
+                        const targetVEndY = targetVLine[1].y;
+                        const targetVDx = targetVEndX - targetVStartX;
+                        const targetVDy = targetVEndY - targetVStartY;
+                        if (Math.abs(targetVDy) > 0.001) {
+                            const t = (inter.y - targetVStartY) / targetVDy;
+                            targetX = targetVStartX + t * targetVDx;
+                        } else {
+                            targetX = targetVStartX;
+                        }
+                        
+                        // Shorten horizontal wall (wall1) visually
+                        // This creates the visual effect of the wall being shortened to connect to wall2
+                        // For horizontal walls, we only modify X coordinate, keeping Y coordinates to maintain horizontal orientation
+                        // Ensure both lines are modified by directly accessing the arrays
+                        const hLine1Endpoint = hIsAtStart ? hLines.line1[0] : hLines.line1[1];
+                        const hLine2Endpoint = hIsAtStart ? hLines.line2[0] : hLines.line2[1];
+                        
+                        hLine1Endpoint.x = targetX;
+                        hLine2Endpoint.x = targetX;
+                        
+                        // Keep Y coordinates unchanged to maintain wall thickness
                     }
                 } else {
-                    // Bottom end -> extend to lower line
-                    // Get Y from lower line at intersection X
-                    const hLowerStartX = hLowerLine[0].x;
-                    const hLowerStartY = hLowerLine[0].y;
-                    const hLowerEndX = hLowerLine[1].x;
-                    const hLowerEndY = hLowerLine[1].y;
-                    const hLowerDx = hLowerEndX - hLowerStartX;
-                    const hLowerDy = hLowerEndY - hLowerStartY;
-                    if (Math.abs(hLowerDx) > 0.001) {
-                        const t = (inter.x - hLowerStartX) / hLowerDx;
-                        targetY = hLowerStartY + t * hLowerDy;
+                    // NOT butt-in: Extend walls normally (existing logic)
+                    // Calculate intersection point on horizontal line
+                    // Project intersection point onto horizontal line to get exact Y coordinate
+                    // Get Y coordinate from the appropriate horizontal line at intersection X
+                    let targetY;
+                    if (isTopEnd) {
+                        // Top end -> extend to upper line
+                        // Get Y from upper line at intersection X
+                        const hUpperStartX = hUpperLine[0].x;
+                        const hUpperStartY = hUpperLine[0].y;
+                        const hUpperEndX = hUpperLine[1].x;
+                        const hUpperEndY = hUpperLine[1].y;
+                        const hUpperDx = hUpperEndX - hUpperStartX;
+                        const hUpperDy = hUpperEndY - hUpperStartY;
+                        if (Math.abs(hUpperDx) > 0.001) {
+                            const t = (inter.x - hUpperStartX) / hUpperDx;
+                            targetY = hUpperStartY + t * hUpperDy;
+                        } else {
+                            targetY = hUpperStartY; // Vertical line, use start Y
+                        }
                     } else {
-                        targetY = hLowerStartY; // Vertical line, use start Y
+                        // Bottom end -> extend to lower line
+                        // Get Y from lower line at intersection X
+                        const hLowerStartX = hLowerLine[0].x;
+                        const hLowerStartY = hLowerLine[0].y;
+                        const hLowerEndX = hLowerLine[1].x;
+                        const hLowerEndY = hLowerLine[1].y;
+                        const hLowerDx = hLowerEndX - hLowerStartX;
+                        const hLowerDy = hLowerEndY - hLowerStartY;
+                        if (Math.abs(hLowerDx) > 0.001) {
+                            const t = (inter.x - hLowerStartX) / hLowerDx;
+                            targetY = hLowerStartY + t * hLowerDy;
+                        } else {
+                            targetY = hLowerStartY; // Vertical line, use start Y
+                        }
                     }
-                }
-                
-                // Extend vertical wall lines to horizontal wall's line
-                if (vIsAtStart) {
-                    vLines.line1[0].y = targetY;
-                    vLines.line2[0].y = targetY;
-                } else {
-                    vLines.line1[1].y = targetY;
-                    vLines.line2[1].y = targetY;
-                }
-                
-                // For horizontal wall: extend to leftmost/rightmost line of vertical
-                // Determine which line of vertical is leftmost and which is rightmost
-                const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
-                const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
-                const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
-                const vRightmostLine = vLine1X < vLine2X ? vLines.line2 : vLines.line1;
-                
-                // Determine which SIDE of the vertical wall the horizontal wall is on
-                // Compare horizontal wall midpoint X with vertical wall X at intersection
-                const hMidX = (hWall.start_x + hWall.end_x) / 2;
-                const vIntersectionX = inter.x;
-                const isHorizontalOnLeft = hMidX < vIntersectionX;
-                
-                // Calculate intersection point on vertical line
-                // Project intersection point onto vertical line to get exact X coordinate
-                let targetX;
-                if (isHorizontalOnLeft) {
-                    // Horizontal on LEFT of vertical -> extend to RIGHTMOST line (opposite side)
-                    // Get X from rightmost line at intersection Y
-                    const vRightStartX = vRightmostLine[0].x;
-                    const vRightStartY = vRightmostLine[0].y;
-                    const vRightEndX = vRightmostLine[1].x;
-                    const vRightEndY = vRightmostLine[1].y;
-                    const vRightDx = vRightEndX - vRightStartX;
-                    const vRightDy = vRightEndY - vRightStartY;
-                    if (Math.abs(vRightDy) > 0.001) {
-                        const t = (inter.y - vRightStartY) / vRightDy;
-                        targetX = vRightStartX + t * vRightDx;
+                    
+                    // Extend vertical wall lines to horizontal wall's line
+                    if (vIsAtStart) {
+                        vLines.line1[0].y = targetY;
+                        vLines.line2[0].y = targetY;
                     } else {
-                        targetX = vRightStartX; // Horizontal line, use start X
+                        vLines.line1[1].y = targetY;
+                        vLines.line2[1].y = targetY;
                     }
-                } else {
-                    // Horizontal on RIGHT of vertical -> extend to LEFTMOST line (opposite side)
-                    // Get X from leftmost line at intersection Y
-                    const vLeftStartX = vLeftmostLine[0].x;
-                    const vLeftStartY = vLeftmostLine[0].y;
-                    const vLeftEndX = vLeftmostLine[1].x;
-                    const vLeftEndY = vLeftmostLine[1].y;
-                    const vLeftDx = vLeftEndX - vLeftStartX;
-                    const vLeftDy = vLeftEndY - vLeftStartY;
-                    if (Math.abs(vLeftDy) > 0.001) {
-                        const t = (inter.y - vLeftStartY) / vLeftDy;
-                        targetX = vLeftStartX + t * vLeftDx;
+                    
+                    // For horizontal wall: extend to leftmost/rightmost line of vertical
+                    // Determine which line of vertical is leftmost and which is rightmost
+                    const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
+                    const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
+                    const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
+                    const vRightmostLine = vLine1X < vLine2X ? vLines.line2 : vLines.line1;
+                    
+                    // Determine which SIDE of the vertical wall the horizontal wall is on
+                    // Compare horizontal wall midpoint X with vertical wall X at intersection
+                    const hMidX = (hWall.start_x + hWall.end_x) / 2;
+                    const vIntersectionX = inter.x;
+                    const isHorizontalOnLeft = hMidX < vIntersectionX;
+                    
+                    // Calculate intersection point on vertical line
+                    // Project intersection point onto vertical line to get exact X coordinate
+                    let targetX;
+                    if (isHorizontalOnLeft) {
+                        // Horizontal on LEFT of vertical -> extend to RIGHTMOST line (opposite side)
+                        // Get X from rightmost line at intersection Y
+                        const vRightStartX = vRightmostLine[0].x;
+                        const vRightStartY = vRightmostLine[0].y;
+                        const vRightEndX = vRightmostLine[1].x;
+                        const vRightEndY = vRightmostLine[1].y;
+                        const vRightDx = vRightEndX - vRightStartX;
+                        const vRightDy = vRightEndY - vRightStartY;
+                        if (Math.abs(vRightDy) > 0.001) {
+                            const t = (inter.y - vRightStartY) / vRightDy;
+                            targetX = vRightStartX + t * vRightDx;
+                        } else {
+                            targetX = vRightStartX; // Horizontal line, use start X
+                        }
                     } else {
-                        targetX = vLeftStartX; // Horizontal line, use start X
+                        // Horizontal on RIGHT of vertical -> extend to LEFTMOST line (opposite side)
+                        // Get X from leftmost line at intersection Y
+                        const vLeftStartX = vLeftmostLine[0].x;
+                        const vLeftStartY = vLeftmostLine[0].y;
+                        const vLeftEndX = vLeftmostLine[1].x;
+                        const vLeftEndY = vLeftmostLine[1].y;
+                        const vLeftDx = vLeftEndX - vLeftStartX;
+                        const vLeftDy = vLeftEndY - vLeftStartY;
+                        if (Math.abs(vLeftDy) > 0.001) {
+                            const t = (inter.y - vLeftStartY) / vLeftDy;
+                            targetX = vLeftStartX + t * vLeftDx;
+                        } else {
+                            targetX = vLeftStartX; // Horizontal line, use start X
+                        }
                     }
-                }
-                
-                // Extend horizontal wall lines to vertical wall's line
-                if (hIsAtStart) {
-                    hLines.line1[0].x = targetX;
-                    hLines.line2[0].x = targetX;
-                } else {
-                    hLines.line1[1].x = targetX;
-                    hLines.line2[1].x = targetX;
+                    
+                    // Extend horizontal wall lines to vertical wall's line
+                    if (hIsAtStart) {
+                        hLines.line1[0].x = targetX;
+                        hLines.line2[0].x = targetX;
+                    } else {
+                        hLines.line1[1].x = targetX;
+                        hLines.line2[1].x = targetX;
+                    }
                 }
             }
         }

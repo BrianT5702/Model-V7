@@ -357,7 +357,7 @@ const PanelCalculationControls = ({
                 });
             });
 
-            // Set joint types, prioritizing 45_cut
+            // Set joint types, prioritizing 45_cut, treat 'none' as 'butt_in' for calculations
             leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
             rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
 

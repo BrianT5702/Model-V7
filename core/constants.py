@@ -55,6 +55,7 @@ DOOR_SLIDE_DIRECTIONS = [
 
 # Wall Joining Methods
 WALL_JOINING_METHODS = [
+    ('none', 'None'),
     ('butt_in', 'Butt-in'),
     ('45_cut', '45° Cut'),
 ]

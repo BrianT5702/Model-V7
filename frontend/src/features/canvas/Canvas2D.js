@@ -1732,38 +1732,45 @@ const Canvas2D = ({
         try {
             // Get all joints at this intersection from the passed data
             const anyIs45 = intersection.pairs.some(p => p.joining_method === '45_cut');
-            const allAreButtIn = intersection.pairs.every(p => p.joining_method === 'butt_in');
+            const allAreButtIn = intersection.pairs.every(p => p.joining_method === 'butt_in' || p.joining_method === 'none');
             const onlyOneJoint = intersection.pairs.length === 1;
     
-            const shouldShorten = joint.joining_method === 'butt_in' && (onlyOneJoint || (allAreButtIn && !anyIs45));
+            // Handle "none" - no wall adjustment needed
+            if (joint.joining_method === 'none') {
+                return; // Do not adjust walls when joint type is "none"
+            }
     
-            if (shouldShorten) {
-                const len1 = getWallLength(wall1);
-                const len2 = getWallLength(wall2);
-                const shorter = onlyOneJoint ? wall1 : (len1 <= len2 ? wall1 : wall2);
-                const longer = onlyOneJoint ? wall2 : (len1 > len2 ? wall1 : wall2);
-                const delta = onlyOneJoint ? wall2.thickness : longer.thickness / 2;
-    
-                if (!originalWallEndpoints.has(wall1.id)) {
-                    originalWallEndpoints.set(wall1.id, {
-                        start_x: wall1.start_x,
-                        start_y: wall1.start_y,
-                        end_x: wall1.end_x,
-                        end_y: wall1.end_y
-                    });
-                }
-    
-                if (wall1.id === shorter.id) {
-                    // Shorten the end that's closer to the intersection point
-                    if (isStartEnd) {
-                        updatedWall.start_x += ux * delta;
-                        updatedWall.start_y += uy * delta;
-                    } else {
-                        updatedWall.end_x -= ux * delta;
-                        updatedWall.end_y -= uy * delta;
-                    }
-                }
-            } else if (joint.joining_method === '45_cut') {
+            // COMMENTED OUT: Actual wall geometry shortening - now handled visually in rendering
+            // const shouldShorten = joint.joining_method === 'butt_in' && (onlyOneJoint || (allAreButtIn && !anyIs45));
+            // 
+            // if (shouldShorten) {
+            //     const len1 = getWallLength(wall1);
+            //     const len2 = getWallLength(wall2);
+            //     const shorter = onlyOneJoint ? wall1 : (len1 <= len2 ? wall1 : wall2);
+            //     const longer = onlyOneJoint ? wall2 : (len1 > len2 ? wall1 : wall2);
+            //     const delta = onlyOneJoint ? wall2.thickness : longer.thickness / 2;
+            // 
+            //     if (!originalWallEndpoints.has(wall1.id)) {
+            //         originalWallEndpoints.set(wall1.id, {
+            //             start_x: wall1.start_x,
+            //             start_y: wall1.start_y,
+            //             end_x: wall1.end_x,
+            //             end_y: wall1.end_y
+            //         });
+            //     }
+            // 
+            //     if (wall1.id === shorter.id) {
+            //         // Shorten the end that's closer to the intersection point
+            //         if (isStartEnd) {
+            //             updatedWall.start_x += ux * delta;
+            //             updatedWall.start_y += uy * delta;
+            //         } else {
+            //             updatedWall.end_x -= ux * delta;
+            //             updatedWall.end_y -= uy * delta;
+            //         }
+            //     }
+            // } else 
+            if (joint.joining_method === '45_cut') {
                 if (originalWallEndpoints.has(wall1.id)) {
                     const original = originalWallEndpoints.get(wall1.id);
                     updatedWall.start_x = original.start_x;
@@ -1806,7 +1813,7 @@ const Canvas2D = ({
                     ...pair,
                     wall1: joint ? { id: joint.wall_1 } : pair.wall1,
                     wall2: joint ? { id: joint.wall_2 } : pair.wall2,
-                    joining_method: joint?.joining_method || 'butt_in'
+                    joining_method: joint?.joining_method || 'none'
                 };
             })
         }));
@@ -3004,7 +3011,7 @@ const Canvas2D = ({
                     <span className="font-medium">Wall {pair.wall2.id}</span>
                     </div>
                     <select
-                    value={pair.joining_method || 'butt_in'}
+                    value={pair.joining_method || 'none'}
                     onChange={(e) => {
                         const updated = [...selectedIntersection.pairs];
                         updated[index].joining_method = e.target.value;
@@ -3012,6 +3019,7 @@ const Canvas2D = ({
                     }}
                     className="w-full mt-2 px-2 py-1 border border-gray-300 rounded"
                     >
+                    <option value="none">None</option>
                     <option value="butt_in">Butt-in</option>
                     <option value="45_cut">45° Cut</option>
                     </select>
@@ -3072,6 +3080,11 @@ const Canvas2D = ({
                           const response = await api.get(`/intersections/?projectid=${projectId}`);
                           onJointsUpdate(response.data);
                           alert("Joint types updated!");
+                          
+                          // Close the modal automatically after saving
+                          setSelectedIntersection(null);
+                          setHighlightWalls([]);
+                          setSelectedJointPair(null);
                         } catch (error) {
                           if (isDatabaseConnectionError(error)) {
                             showDatabaseError();
