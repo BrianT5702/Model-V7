@@ -128,6 +128,8 @@ export default class ThreeCanvas {
   init() {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.shadowMap.enabled = true;
+    // Set background color to white
+    this.renderer.setClearColor(0xffffff, 1);
     this.container.appendChild(this.renderer.domElement);
     
     // Prevent default touch behaviors that might interfere with OrbitControls

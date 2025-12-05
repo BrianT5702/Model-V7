@@ -29,7 +29,7 @@ export function addLighting(instance) {
 
 export function addControls(instance) {
   instance.controls = new OrbitControls(instance.camera, instance.renderer.domElement);
-  instance.controls.maxDistance = 1500;
+  instance.controls.maxDistance = 5000; // Increased from 1500 to allow more zoom out
   instance.controls.minDistance = 10;
   
   // Enable touch controls for mobile devices (pinch-to-zoom, pan, rotate)
