@@ -49,7 +49,17 @@ const ProjectDetails = () => {
 
     // Scroll to top when component mounts or projectId changes
     useEffect(() => {
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        // Some mobile browsers preserve scroll between route changes,
+        // so force a hard reset of window scroll position.
+        window.scrollTo(0, 0);
+        // Also try the options form for browsers that support it
+        if (window.scrollTo && typeof window.scrollTo === 'function') {
+            try {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            } catch (e) {
+                // Older browsers may not support the options object; ignore
+            }
+        }
     }, [projectId]);
     // Get rooms on the active storey to check for duplicates
     const activeStoreyRooms = (projectDetails.rooms || []).filter(
