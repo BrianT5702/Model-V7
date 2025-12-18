@@ -46,6 +46,11 @@ const ProjectDetails = () => {
         Number(projectDetails.project?.height) || 0,
         Number(projectDetails.projectCalculatedHeight) || 0
     );
+
+    // Scroll to top when component mounts or projectId changes
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+    }, [projectId]);
     // Get rooms on the active storey to check for duplicates
     const activeStoreyRooms = (projectDetails.rooms || []).filter(
         (room) => String(room.storey) === String(projectDetails.activeStoreyId)
