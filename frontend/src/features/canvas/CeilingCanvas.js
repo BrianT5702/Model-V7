@@ -1430,25 +1430,15 @@ const CeilingCanvas = ({
                     
                     // Only show dimensions for full panels (not cut panels - they're handled separately)
                     if (!panel.is_cut) {
-                        // Create unique key for full panel dimension
+                        // Create unique key for full panel dimension (by panel ID only)
                         const fullDimensionKey = `full_${panel.id}`;
                         
-                        // Calculate position for level-based duplicate detection
-                        const panelCenterX = (panel.start_x + panel.end_x) / 2;
-                        const panelCenterY = (panel.start_y + panel.end_y) / 2;
-                        const roundedCenterX = Math.round(panelCenterX / 10) * 10;
-                        const roundedCenterY = Math.round(panelCenterY / 10) * 10;
-                        const fullValueKeyH = `H_${panelWidth}_${roundedCenterY}`;
-                        const fullValueKeyV = `V_${panelWidth}_${roundedCenterX}`;
-                        
-                        // Check for duplicate full panel dimensions at same level
-                        if (drawnDimensions.has(fullDimensionKey) || 
-                            drawnValuesByLevel.has(fullValueKeyH) || 
-                            drawnValuesByLevel.has(fullValueKeyV)) return;
+                        // Check for duplicate full panel dimensions (by panel ID only)
+                        // Note: Individual panels are NOT filtered by level to ensure at least one is always shown
+                        // Level-based filtering only applies to grouped dimensions
+                        if (drawnDimensions.has(fullDimensionKey)) return;
                         
                         drawnDimensions.add(fullDimensionKey);
-                        drawnValuesByLevel.set(fullValueKeyH, true);
-                        drawnValuesByLevel.set(fullValueKeyV, true);
                         
                         // Only show dimension if it doesn't match room dimension
                         // For horizontal panels: check width against roomWidth
