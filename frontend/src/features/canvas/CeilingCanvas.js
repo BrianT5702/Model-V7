@@ -59,7 +59,7 @@ const CeilingCanvas = ({
     updateSharedPanelData = null,
     selectedPanelIds = [],
     // Dimension visibility (checkbox filter)
-    dimensionVisibility = { room: true, panel: true }
+    dimensionVisibility = { room: true, panel: true, cutPanel: false }
 }) => {
     // Determine if we're in multi-room mode or single-room mode - memoize to prevent recalculation
     const isMultiRoomMode = useMemo(() => rooms.length > 0, [rooms.length]);
@@ -74,7 +74,16 @@ const CeilingCanvas = ({
     }, [isMultiRoomMode, ceilingPanelsMap, room, ceilingPanels]);
     
     const effectiveCeilingPlans = useMemo(() => {
-        return isMultiRoomMode ? ceilingPlans : (ceilingPlan ? [ceilingPlan] : []);
+        const plans = isMultiRoomMode ? ceilingPlans : (ceilingPlan ? [ceilingPlan] : []);
+        // Debug: Log available ceiling plans
+        if (plans.length === 0) {
+            console.warn('⚠️ [CeilingCanvas] No ceiling plans available. isMultiRoomMode:', isMultiRoomMode, 
+                'ceilingPlans:', ceilingPlans?.length || 0, 'ceilingPlan:', ceilingPlan?.id || 'null');
+        } else {
+            console.log(`✅ [CeilingCanvas] Found ${plans.length} ceiling plan(s):`, 
+                plans.map(cp => ({ id: cp.id, room: cp.room, room_id: cp.room_id, orientation: cp.orientation_strategy })));
+        }
+        return plans;
     }, [isMultiRoomMode, ceilingPlans, ceilingPlan]);
 
     const getPanelIdentifier = useCallback((panel) => {
@@ -191,10 +200,6 @@ const CeilingCanvas = ({
             }
         }
     }, [isPlacingSupport]);
-    
-    // NOTE: Removed duplicate updateSharedPanelData call from CeilingCanvas
-    // CeilingManager already handles updating shared panel data to prevent infinite loops
-    // This was causing a circular dependency where both components were updating shared data
     
     // Canvas state refs
     const scaleFactor = useRef(1);
@@ -318,12 +323,23 @@ const CeilingCanvas = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
+        const context = canvas.getContext('2d');
 
-        const ctx = canvas.getContext('2d');
-        
-        // Set canvas dimensions
-        canvas.width = CANVAS_WIDTH;
-        canvas.height = CANVAS_HEIGHT;
+        // Handle high DPI displays to prevent blurriness (match Floor/Wall plan pattern)
+        const dpr = window.devicePixelRatio || 1;
+        const displayWidth = CANVAS_WIDTH;
+        const displayHeight = CANVAS_HEIGHT;
+
+        // Set the internal size to the display size * device pixel ratio
+        canvas.width = displayWidth * dpr;
+        canvas.height = displayHeight * dpr;
+
+        // Scale the context to match device pixel ratio
+        context.scale(dpr, dpr);
+
+        // Set the CSS size to the display size
+        canvas.style.width = displayWidth + 'px';
+        canvas.style.height = displayHeight + 'px';
 
         // Calculate optimal scale and offset for all rooms
         // Only recalculate if user hasn't manually positioned the view
@@ -332,7 +348,7 @@ const CeilingCanvas = ({
         }
 
         // Draw everything
-        drawCanvas(ctx);
+        drawCanvas(context);
 
     }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, zones, selectedRoomId, selectedPanelId, selectedPanelIdsList, CANVAS_WIDTH, CANVAS_HEIGHT]);
 
@@ -420,9 +436,16 @@ const CeilingCanvas = ({
         const globalAllLabels = [];
         
         // PASS 1: Draw all rooms and their ceiling panels (includes dimension LINES only)
+        // Draw room outlines first (room names will be added to collision detection)
         if (effectiveRooms && effectiveRooms.length > 0) {
             effectiveRooms.forEach(room => {
-                drawRoomOutline(ctx, room);
+                drawRoomOutline(ctx, room, globalPlacedLabels);
+            });
+        }
+        
+        // Then draw panels and dimensions (which will check against room names)
+        if (effectiveRooms && effectiveRooms.length > 0) {
+            effectiveRooms.forEach(room => {
                 drawCeilingPanels(ctx, room, globalPlacedLabels, globalAllLabels);
             });
         }
@@ -469,32 +492,50 @@ const CeilingCanvas = ({
         }
     };
 
-    // Check if room name position conflicts with ceiling panels
-    const checkNamePanelCollision = (labelX, labelY, roomId) => {
+    // Check if room name position conflicts with all text elements (panels, dimensions, other room names)
+    const checkNameTextCollision = (labelX, labelY, labelWidth, labelHeight, padding, roomId, placedLabels) => {
+        // Calculate room name label bounds in canvas coordinates
+        // labelX and labelY are in model coordinates, convert to canvas
+        const canvasX = labelX * scaleFactor.current + offsetX.current;
+        const canvasY = labelY * scaleFactor.current + offsetY.current;
+        
+        const labelBounds = {
+            x: canvasX - labelWidth / 2 - padding,
+            y: canvasY - labelHeight / 2 - padding,
+            width: labelWidth + padding * 2,
+            height: labelHeight + padding * 2
+        };
+        
+        // Check collision with all placed labels (dimensions, other room names, etc.)
+        // Use minimum separation of 5px for better spacing
+        if (hasLabelOverlap(labelBounds, placedLabels, 5)) {
+            return true; // Collision detected
+        }
+        
+        // Also check if position conflicts with ceiling panels (physical collision)
         const roomPanels = effectiveCeilingPanelsMap[roomId] || [];
         const labelRadius = 50; // Approximate radius around label to avoid
         
         for (const panel of roomPanels) {
             // Check if label position is within panel bounds (with buffer)
-            const panelLeft = panel.x - labelRadius;
-            const panelRight = panel.x + panel.width + labelRadius;
-            const panelTop = panel.y - labelRadius;
-            const panelBottom = panel.y + panel.length + labelRadius;
+            const panelLeft = panel.start_x - labelRadius;
+            const panelRight = Math.max(panel.start_x, panel.end_x) + labelRadius;
+            const panelTop = Math.min(panel.start_y, panel.end_y) - labelRadius;
+            const panelBottom = Math.max(panel.start_y, panel.end_y) + labelRadius;
             
             if (labelX >= panelLeft && labelX <= panelRight && 
                 labelY >= panelTop && labelY <= panelBottom) {
-                return true; // Collision detected
+                return true; // Collision detected with panel
             }
         }
+        
         return false; // No collision
     };
 
-    // Find optimal position for room name to avoid panel collisions
-    const findOptimalNamePosition = (room, baseX, baseY) => {
-        const roomPanels = effectiveCeilingPanelsMap[room.id] || [];
-        if (roomPanels.length === 0) {
-            return { x: baseX, y: baseY }; // No panels, use original position
-        }
+    // Find optimal position for room name to avoid all text collisions (dimensions, other room names, panels)
+    // Uses pre-calculated label dimensions to ensure exact match with drawn bounds
+    const findOptimalNamePositionWithDimensions = (room, baseX, baseY, labelWidth, labelHeight, padding, placedLabels) => {
+        if (!room.room_name) return { x: baseX, y: baseY };
         
         // Try positions in a spiral pattern around the base position
         const offsets = [
@@ -507,6 +548,10 @@ const CeilingCanvas = ({
             { x: 50, y: 50 },     // Down-right
             { x: -50, y: 50 },    // Down-left
             { x: -50, y: -50 },   // Up-left
+            { x: 0, y: -200 },    // Further up
+            { x: 200, y: 0 },     // Further right
+            { x: 0, y: 200 },     // Further down
+            { x: -200, y: 0 },    // Further left
         ];
         
         for (const offset of offsets) {
@@ -515,7 +560,7 @@ const CeilingCanvas = ({
             
             // Check if this position is still within room bounds
             if (isPointInPolygon(testX, testY, room.room_points)) {
-                if (!checkNamePanelCollision(testX, testY, room.id)) {
+                if (!checkNameTextCollision(testX, testY, labelWidth, labelHeight, padding, room.id, placedLabels)) {
                     return { x: testX, y: testY }; // Found good position
                 }
             }
@@ -526,7 +571,7 @@ const CeilingCanvas = ({
     };
 
     // Draw room outline
-    const drawRoomOutline = (ctx, room) => {
+    const drawRoomOutline = (ctx, room, placedLabels = []) => {
         if (!room.room_points || room.room_points.length < 3) return;
 
         const isSelected = room.id === selectedRoomId;
@@ -583,8 +628,44 @@ const CeilingCanvas = ({
         ctx.fill();
         ctx.stroke();
 
-        // Add room name label
+        // Add room name label (with collision detection against all text elements)
         if (room.room_name) {
+            const labelText = room.room_name;
+            
+            // Calculate label dimensions FIRST based on state (before finding position)
+            // This ensures collision detection uses exact same bounds as what will be drawn
+            let labelWidth, labelHeight, padding, textColor, bgColor, bgOpacity;
+            
+            if (isSelected) {
+                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                labelWidth = ctx.measureText(labelText).width;
+                labelHeight = Math.max(16, 18 * scaleFactor.current);
+                padding = 8;
+                textColor = '#ffffff';
+                bgColor = 'rgba(59, 130, 246, 0.9)';
+            } else if (isHovered) {
+                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                labelWidth = ctx.measureText(labelText).width;
+                labelHeight = Math.max(14, 16 * scaleFactor.current);
+                padding = 4;
+                textColor = '#3b82f6';
+                bgColor = 'rgba(59, 130, 246, 0.2)';
+            } else if (isRoomMode) {
+                ctx.font = `normal ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                labelWidth = ctx.measureText(labelText).width;
+                labelHeight = Math.max(14, 16 * scaleFactor.current);
+                padding = 4;
+                textColor = '#9ca3af';
+                bgColor = null; // No background
+            } else {
+                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                labelWidth = ctx.measureText(labelText).width;
+                labelHeight = Math.max(14, 16 * scaleFactor.current);
+                padding = 4;
+                textColor = '#6b7280';
+                bgColor = null; // No background
+            }
+            
             // Use stored label position if available, otherwise calculate smart center
             let baseX, baseY;
             if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
@@ -604,60 +685,52 @@ const CeilingCanvas = ({
                 }
             }
             
-            // Find optimal position to avoid panel collisions
-            const optimalPosition = findOptimalNamePosition(room, baseX, baseY);
+            // Find optimal position using EXACT label dimensions calculated above
+            const optimalPosition = findOptimalNamePositionWithDimensions(room, baseX, baseY, labelWidth, labelHeight, padding, placedLabels || []);
             const labelX = optimalPosition.x;
             const labelY = optimalPosition.y;
             
-            if (isSelected) {
-                // Add background for selected room label
-                const labelText = room.room_name;
-                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-                const labelWidth = ctx.measureText(labelText).width;
-                const labelHeight = Math.max(16, 18 * scaleFactor.current);
-                const padding = 8;
-                
-                // Draw background
-                ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+            // Draw background if needed
+            if (bgColor) {
+                ctx.fillStyle = bgColor;
                 ctx.fillRect(
                     labelX * scaleFactor.current + offsetX.current - labelWidth/2 - padding,
                     labelY * scaleFactor.current + offsetY.current - labelHeight/2 - padding,
                     labelWidth + padding * 2,
                     labelHeight + padding * 2
                 );
-                
-                // Draw text
-                ctx.fillStyle = '#ffffff';
-            } else if (isHovered) {
-                // Add subtle background for hovered room label
-                const labelText = room.room_name;
-                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-                const labelWidth = ctx.measureText(labelText).width;
-                const labelHeight = Math.max(14, 16 * scaleFactor.current);
-                const padding = 4;
-                
-                // Draw background
-                ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
-                ctx.fillRect(
-                    labelX * scaleFactor.current + offsetX.current - labelWidth/2 - padding,
-                    labelY * scaleFactor.current + offsetY.current - labelHeight/2 - padding,
-                    labelWidth + padding * 2,
-                    labelHeight + padding * 2
-                );
-                
-                // Draw text
-                ctx.fillStyle = '#3b82f6';
-            } else if (isRoomMode) {
-                ctx.fillStyle = '#9ca3af';
-                ctx.font = `normal ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-            } else {
-                ctx.fillStyle = '#6b7280';
-                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
             }
             
+            // Draw text
+            ctx.fillStyle = textColor;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(room.room_name, labelX * scaleFactor.current + offsetX.current, labelY * scaleFactor.current + offsetY.current);
+            ctx.fillText(labelText, labelX * scaleFactor.current + offsetX.current, labelY * scaleFactor.current + offsetY.current);
+            
+            // Add room name to collision detection system so dimensions and other text avoid it
+            // Use EXACT same bounds calculation as what was drawn (matching the fillRect call above)
+            if (placedLabels) {
+                // Calculate bounds exactly as drawn (matching the fillRect coordinates if bgColor exists, or text bounds if not)
+                const canvasX = labelX * scaleFactor.current + offsetX.current;
+                const canvasY = labelY * scaleFactor.current + offsetY.current;
+                
+                // Use the exact same calculation as the fillRect/drawing code
+                const roomNameBounds = {
+                    x: canvasX - labelWidth / 2 - padding,
+                    y: canvasY - labelHeight / 2 - padding,
+                    width: labelWidth + padding * 2,
+                    height: labelHeight + padding * 2,
+                    text: labelText,
+                    type: 'room_name'
+                };
+                
+                // Verify bounds are valid (not NaN or invalid)
+                if (isFinite(roomNameBounds.x) && isFinite(roomNameBounds.y) && 
+                    isFinite(roomNameBounds.width) && isFinite(roomNameBounds.height) &&
+                    roomNameBounds.width > 0 && roomNameBounds.height > 0) {
+                    placedLabels.push(roomNameBounds);
+                }
+            }
         }
     };
 
@@ -1083,7 +1156,7 @@ const CeilingCanvas = ({
         // Draw default nylon hanger supports if enabled (can be drawn alongside alu suspension)
         if (enableNylonHangers) {
             // Draw default nylon hanger supports automatically
-            drawPanelSupports(ctx, roomPanels, scaleFactor.current, offsetX.current, offsetY.current);
+            drawPanelSupports(ctx, roomPanels, scaleFactor.current, offsetX.current, offsetY.current, room.id);
         }
         
         // Draw custom supports if alu suspension is enabled (always show drawn supports, not just in drawing mode)
@@ -1161,11 +1234,77 @@ const CeilingCanvas = ({
         });
     };
 
+    // Helper function to get room orientation from ceiling plan
+    // Orientation is always available from the ceiling plan
+    const getRoomOrientation = useCallback((roomId) => {
+        // Normalize roomId to handle both string and number
+        const normalizedRoomId = typeof roomId === 'string' ? parseInt(roomId, 10) : roomId;
+        
+        // First, try to find in effectiveCeilingPlans
+        let ceilingPlan = effectiveCeilingPlans.find(cp => {
+            // Check if room is a number that matches
+            if (cp.room && (cp.room === roomId || cp.room === normalizedRoomId)) return true;
+            // Check if room_id matches
+            if (cp.room_id && (cp.room_id === roomId || cp.room_id === normalizedRoomId)) return true;
+            // Check if room is an object with an id property
+            if (cp.room && typeof cp.room === 'object' && (cp.room.id === roomId || cp.room.id === normalizedRoomId)) return true;
+            // Check if room is a string that matches when converted
+            if (cp.room && String(cp.room) === String(roomId)) return true;
+            return false;
+        });
+        
+        // If not found in effectiveCeilingPlans, try to get from room's ceiling_plan relationship
+        if (!ceilingPlan) {
+            const room = effectiveRooms.find(r => (r.id === roomId || r.id === normalizedRoomId));
+            if (room && room.ceiling_plan) {
+                ceilingPlan = room.ceiling_plan;
+                console.log(`🔍 [Orientation] Room ${roomId}: Found ceiling plan via room.ceiling_plan relationship`);
+            }
+        }
+        
+        if (ceilingPlan) {
+            console.log(`🔍 [Orientation] Room ${roomId}: Found ceiling plan ${ceilingPlan.id}, orientation_strategy: "${ceilingPlan.orientation_strategy}"`);
+            
+            if (ceilingPlan.orientation_strategy) {
+                const strategy = ceilingPlan.orientation_strategy.toLowerCase();
+                // Backend stores values like 'all_horizontal', 'all_vertical', 'horizontal', 'vertical', 'auto', etc.
+                // Check for both 'horizontal'/'all_horizontal' and 'vertical'/'all_vertical'
+                if (strategy === 'horizontal' || strategy === 'all_horizontal') {
+                    console.log(`✅ [Orientation] Room ${roomId}: Detected HORIZONTAL orientation`);
+                    return true;
+                }
+                if (strategy === 'vertical' || strategy === 'all_vertical') {
+                    console.log(`✅ [Orientation] Room ${roomId}: Detected VERTICAL orientation`);
+                    return false;
+                }
+                console.log(`⚠️ [Orientation] Room ${roomId}: Unknown strategy "${strategy}", defaulting to VERTICAL`);
+            } else {
+                console.log(`⚠️ [Orientation] Room ${roomId}: No orientation_strategy found, defaulting to VERTICAL`);
+            }
+        } else {
+            // Last resort: try to infer from panel dimensions
+            const roomPanels = effectiveCeilingPanelsMap[roomId] || effectiveCeilingPanelsMap[normalizedRoomId] || [];
+            if (roomPanels.length > 0) {
+                const firstPanel = roomPanels[0];
+                // For horizontal: width (X-axis span) > length (Y-axis, 1150mm)
+                // For vertical: width (X-axis, 1150mm) < length (Y-axis span)
+                const isHorizontal = firstPanel.width > firstPanel.length;
+                console.log(`🔍 [Orientation] Room ${roomId}: Inferred from panel dimensions (width: ${firstPanel.width}, length: ${firstPanel.length}) - ${isHorizontal ? 'HORIZONTAL' : 'VERTICAL'}`);
+                return isHorizontal;
+            }
+            console.log(`❌ [Orientation] Room ${roomId}: No ceiling plan found. Available plans:`, 
+                effectiveCeilingPlans.map(cp => ({ id: cp.id, room: cp.room, room_id: cp.room_id }))
+            );
+        }
+        // If orientation not found, return false (vertical) as default
+        return false;
+    }, [effectiveCeilingPlans, effectiveRooms, effectiveCeilingPanelsMap]);
+
     // Enhanced ceiling dimension drawing function
     const drawEnhancedCeilingDimensions = (ctx, room, roomPanels, roomModelBounds, placedLabels, allLabels) => {
         
         const roomWidth = Math.abs(Math.max(...room.room_points.map(p => p.x)) - Math.min(...room.room_points.map(p => p.x)));
-        const roomHeight = Math.abs(Math.max(...room.room_points.map(p => p.y)) - Math.min(...room.room_points.map(p => p.y)));
+        const roomLength = Math.abs(Math.max(...room.room_points.map(p => p.y)) - Math.min(...room.room_points.map(p => p.y)));
         
         // Calculate panel area bounds to avoid placing dimensions inside
         const panelBounds = {
@@ -1202,12 +1341,12 @@ const CeilingCanvas = ({
         //     room: room.id,
         //     roomBounds: roomBounds,
         //     roomWidth: roomWidth,
-        //     roomHeight: roomHeight
+        //     roomLength: roomLength
         // });
         
         // Draw room-level dimensions first (most important)
         if (dimensionVisibility?.room !== false) {
-            drawRoomDimensions(ctx, room, roomWidth, roomHeight, roomBounds, canvasPanelBounds, placedLabels, allLabels);
+            drawRoomDimensions(ctx, room, roomWidth, roomLength, roomBounds, canvasPanelBounds, placedLabels, allLabels);
         }
         
         // Draw panel-level dimensions - handle any number of panels intelligently
@@ -1223,10 +1362,11 @@ const CeilingCanvas = ({
                 if (panel.is_cut) return;
                 
                 // Use a more precise dimension grouping to handle floating-point precision
-                // For horizontal panels: group by LENGTH (e.g., 15000mm) - panels run left-to-right
-                // For vertical panels: group by WIDTH (e.g., 1150mm) - panels run up-to-down
-                const isHorizontal = panel.width < panel.length;
-                const groupingDimension = isHorizontal ? panel.length : panel.width; // Use length for horizontal, width for vertical
+                // Group by panel.width for both orientations because:
+                // - Horizontal panels: width (1150mm) builds up the Y-axis with multiple panels stacked vertically
+                // - Vertical panels: width (1150mm) builds up the X-axis with multiple panels placed side-by-side
+                // Always group by width - the dimension that builds up the project with multiple panels
+                const groupingDimension = panel.width;
                 const dimensionValue = Math.round(groupingDimension * 100) / 100;
                 
                 if (!panelsByDimension.has(dimensionValue)) {
@@ -1242,99 +1382,124 @@ const CeilingCanvas = ({
             // For rooms with many panels, only show grouped dimensions to avoid clutter
             const shouldShowIndividual = roomPanels.length <= 20; // Increased limit
             
-            const isHorizontalOrientation = roomPanels.length > 0 && 
-                roomPanels[0].width < roomPanels[0].length;
+            // Get orientation from ceiling plan, not from comparing dimensions
+            const isHorizontalOrientation = getRoomOrientation(room.id);
             
-            // Always show grouped dimensions for multiple panels with same dimension (length for horizontal, width for vertical)
+            // Always show grouped dimensions for multiple panels with same width (width builds up the project for both orientations)
             const drawnDimensions = new Set(); // Track drawn dimensions to prevent duplicates
             const drawnPositions = new Set(); // Track drawn positions to prevent overlapping dimensions
-            const drawnValues = new Set(); // Track dimension values to prevent duplicate measurements
+            const drawnValuesByLevel = new Map(); // Track dimension values by level/position to prevent duplicates at same level
+            // Key format: "orientation_value_level" where level is the coordinate (X for vertical lines, Y for horizontal lines)
             
             panelsByDimension.forEach((panels, dimensionValue) => {
                 if (panels.length > 1) {
                     // Multiple panels with same dimension - show grouped dimension
                     
-                    // Create a unique key for this dimension to prevent duplicates
-                    const dimensionKey = `grouped_${dimensionValue}_${panels.length}`;
-                    const valueKey = `${dimensionValue}mm_${panels.length}`;
+                    // Create a unique key for this dimension group to prevent exact duplicates
+                    // (same dimension value, same panel count, same room)
+                    const dimensionKey = `grouped_${dimensionValue}_${panels.length}_${room.id}`;
                     
-                    // Check for duplicate values and positions
-                    if (drawnDimensions.has(dimensionKey) || drawnValues.has(valueKey)) return;
+                    // Check for duplicate dimension keys (same dimension value and panel count in same room)
+                    if (drawnDimensions.has(dimensionKey)) {
+                        console.log(`🔍 [Dimension Filter] Skipping duplicate dimension group: ${dimensionValue}mm with ${panels.length} panels in room ${room.id}`);
+                        return;
+                    }
                     
                     drawnDimensions.add(dimensionKey);
-                    drawnValues.add(valueKey);
                     
-                    // For horizontal panels, show length dimension (which becomes width in horizontal view)
-                    // For vertical panels, show width dimension (which stays as width in vertical view)
+                    // dimensionValue is now always panel.width (the dimension that builds up the project)
+                    // For horizontal panels: width builds up Y-axis (panels stacked vertically)
+                    // For vertical panels: width builds up X-axis (panels placed side-by-side)
                     if (!isHorizontalOrientation){
-                        // Vertical panels: show "n × width" on the side
-                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, true);
+                        // Vertical panels: show grouped width dimension
+                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, false, roomWidth, roomLength, drawnValuesByLevel);
                     } else {
-                        // Horizontal panels: show "n × length" on top/bottom (length becomes width in horizontal view)
-                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, false);
+                        // Horizontal panels: show grouped width dimension
+                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, true, roomWidth, roomLength, drawnValuesByLevel);
                     }
                 } else if (panels.length === 1 && shouldShowIndividual) {
                     // Single panel - show individual dimension (only if not too many panels)
                     const panel = panels[0];
                     
-                    // For individual panels, show the panel width (not length)
+                    // For individual panels, determine which dimension to show and check if it matches room
                     const panelWidth = Math.round(panel.width * 100) / 100;
+                    
+                    // Filter: Don't show dimension if it matches room dimension
+                    const DIMENSION_TOLERANCE = 1;
+                    const shouldShowWidth = !(roomWidth !== null && Math.abs(panelWidth - roomWidth) <= DIMENSION_TOLERANCE);
                     
                     // Only show dimensions for full panels (not cut panels - they're handled separately)
                     if (!panel.is_cut) {
                         // Create unique key for full panel dimension
                         const fullDimensionKey = `full_${panel.id}`;
-                        const fullValueKey = `${panelWidth}mm_full`;
                         
-                        // Check for duplicate full panel dimensions
-                        if (drawnDimensions.has(fullDimensionKey) || drawnValues.has(fullValueKey)) return;
+                        // Calculate position for level-based duplicate detection
+                        const panelCenterX = (panel.start_x + panel.end_x) / 2;
+                        const panelCenterY = (panel.start_y + panel.end_y) / 2;
+                        const roundedCenterX = Math.round(panelCenterX / 10) * 10;
+                        const roundedCenterY = Math.round(panelCenterY / 10) * 10;
+                        const fullValueKeyH = `H_${panelWidth}_${roundedCenterY}`;
+                        const fullValueKeyV = `V_${panelWidth}_${roundedCenterX}`;
+                        
+                        // Check for duplicate full panel dimensions at same level
+                        if (drawnDimensions.has(fullDimensionKey) || 
+                            drawnValuesByLevel.has(fullValueKeyH) || 
+                            drawnValuesByLevel.has(fullValueKeyV)) return;
                         
                         drawnDimensions.add(fullDimensionKey);
-                        drawnValues.add(fullValueKey);
+                        drawnValuesByLevel.set(fullValueKeyH, true);
+                        drawnValuesByLevel.set(fullValueKeyV, true);
                         
-                        // Full panel: show normal individual dimension
-                        const                         individualDimension = {
-                            startX: panel.start_x,
-                            endX: panel.end_x,
-                            startY: panel.start_y,
-                            endY: panel.end_y,
-                            dimension: panelWidth,
-                            type: 'individual_panel',
-                            color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                            priority: 3,
-                            avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
-                            quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${panelWidth}`,
-                            drawnPositions: drawnPositions,
-                            roomId: room.id // Assign room ID
-                        };
-                        drawCeilingDimension(ctx, individualDimension, projectBounds, placedLabels, allLabels);
+                        // Only show dimension if it doesn't match room dimension
+                        // For horizontal panels: check width against roomWidth
+                        // For vertical panels: check width against roomWidth (width is horizontal)
+                        if (shouldShowWidth) {
+                            // Full panel: show normal individual dimension
+                            const individualDimension = {
+                                startX: panel.start_x,
+                                endX: panel.end_x,
+                                startY: panel.start_y,
+                                endY: panel.end_y,
+                                dimension: panelWidth,
+                                type: 'individual_panel',
+                                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                                priority: 3,
+                                avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
+                                quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
+                                panelLabel: `${panelWidth}`,
+                                drawnPositions: drawnPositions,
+                                roomId: room.id // Assign room ID
+                            };
+                            drawCeilingDimension(ctx, individualDimension, projectBounds, placedLabels, allLabels);
+                        }
                     }
                 }
             });
             
-            // Draw cut panel dimensions with RED color
-            if (cutPanels.length > 0) {
+            // Draw cut panel dimensions with RED color (only if cut panel visibility is enabled)
+            if (cutPanels.length > 0 && dimensionVisibility?.cutPanel === true) {
                 //console.log(`🔍 Drawing dimensions for ${cutPanels.length} cut panels with RED color`);
                 
                 cutPanels.forEach(panel => {
                     // For cut panels, show the correct dimension based on orientation
                     // Horizontal orientation: show panel WIDTH (perpendicular to panel direction)
                     // Vertical orientation: show panel LENGTH (perpendicular to panel direction)
-                    const isHorizontal = panel.width < panel.length;
+                    // Use orientation from ceiling plan, not from comparing dimensions
+                    const isHorizontal = getRoomOrientation(room.id);
                     const dimensionValue = isHorizontal ? panel.width : panel.length; // Use width for horizontal, length for vertical
                     
                     //console.log(`🔍 Cut panel ${panel.id}: ${dimensionValue}mm (${dimensionType}) - ${isHorizontal ? 'Horizontal' : 'Vertical'} orientation`);
                     
                     // Create unique key for cut panel dimension
                     const cutDimensionKey = `cut_${panel.id}`;
-                    const cutValueKey = `${dimensionValue}mm_cut`;
                     
-                    // Check for duplicate cut panel dimensions
-                    if (drawnDimensions.has(cutDimensionKey) || drawnValues.has(cutValueKey)) return;
+                    // Check for duplicate cut panel dimensions (by panel ID)
+                    if (drawnDimensions.has(cutDimensionKey)) return;
                     
                     drawnDimensions.add(cutDimensionKey);
-                    drawnValues.add(cutValueKey);
+                    
+                    // Note: We don't filter by level for cut panels to ensure at least one is shown
+                    // Level-based filtering is only for grouped dimensions
                     
                     let cutPanelDimension;
                     
@@ -1357,7 +1522,7 @@ const CeilingCanvas = ({
                             priority: 4, // Lower priority than full panels
                             avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
                             quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${dimensionValue} (CUT)`,
+                            panelLabel: `${dimensionValue}`,
                             drawnPositions: drawnPositions,
                             roomId: room.id, // Assign room ID
                             isHorizontal: true // This dimension line is HORIZONTAL (same as grouped dimensions for horizontal panels)
@@ -1380,7 +1545,7 @@ const CeilingCanvas = ({
                             priority: 4, // Lower priority than full panels
                             avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
                             quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${dimensionValue} (CUT)`,
+                            panelLabel: `${dimensionValue}`,
                             drawnPositions: drawnPositions,
                             roomId: room.id, // Assign room ID
                             isHorizontal: false // This dimension line is VERTICAL (same as grouped dimensions for vertical panels)
@@ -1397,11 +1562,13 @@ const CeilingCanvas = ({
                 const fullPanels = roomPanels.filter(p => !p.is_cut);
                 const cutPanels = roomPanels.filter(p => p.is_cut);
                 
-                // Group full panels by dimension
+                // Get orientation from ceiling plan (once, used for both full and cut panels)
+                const roomOrientation = getRoomOrientation(room.id);
+                
+                // Group full panels by dimension - always group by width (the dimension that builds up the project)
                 const fullPanelsByDimension = new Map();
                 fullPanels.forEach(panel => {
-                    const isHorizontal = panel.width < panel.length;
-                    const groupingDimension = isHorizontal ? panel.length : panel.width;
+                    const groupingDimension = panel.width; // Always group by width for both orientations
                     const dimensionValue = Math.round(groupingDimension * 100) / 100;
                     
                     if (!fullPanelsByDimension.has(dimensionValue)) {
@@ -1418,18 +1585,17 @@ const CeilingCanvas = ({
                 
                 // Add grouped full panels
                 fullPanelsByDimension.forEach((panels, dimension) => {
-                    const isHorizontal = panels[0].width < panels[0].length;
-                    const dimensionType = isHorizontal ? 'Length' : 'Width';
-                    panelListText += `${panels.length} × ${dimension}mm (${dimensionType})\n`;
+                    // dimension is always panel.width now, so it's always "Width"
+                    panelListText += `${panels.length} × ${dimension}mm (Width)\n`;
                 });
                 
                 // Add individual cut panels
                 if (cutPanels.length > 0) {
                     panelListText += `\nCut Panels:\n`;
                     cutPanels.forEach(panel => {
-                        const isHorizontal = panel.width < panel.length;
-                        const dimensionValue = isHorizontal ? panel.width : panel.length;
-                        const dimensionType = isHorizontal ? 'Width' : 'Length';
+                        // For cut panels, show the dimension perpendicular to panel direction
+                        const dimensionValue = roomOrientation ? panel.width : panel.length;
+                        const dimensionType = roomOrientation ? 'Width' : 'Length';
                         panelListText += `- ${dimensionValue}mm (${dimensionType}) - CUT\n`;
                     });
                 }
@@ -1446,7 +1612,7 @@ const CeilingCanvas = ({
     };
 
     // Draw room-level dimensions
-    const drawRoomDimensions = (ctx, room, roomWidth, roomHeight, roomBounds, canvasPanelBounds, placedLabels, allLabels) => {
+    const drawRoomDimensions = (ctx, room, roomWidth, roomLength, roomBounds, canvasPanelBounds, placedLabels, allLabels) => {
         const { minX, maxX, minY, maxY } = roomBounds;
         
         // Room width dimension (horizontal) - place BELOW the room, well outside panel area
@@ -1464,14 +1630,14 @@ const CeilingCanvas = ({
             roomId: room.id // Assign room ID
         };
         
-        // Room height dimension (vertical) - place to the LEFT of the room, well outside panel area
-        const heightDimension = {
+        // Room length dimension (vertical) - place to the LEFT of the room, well outside panel area
+        const lengthDimension = {
             startX: minX, // Use minX to place to the left
             endX: minX,
             startY: minY,
             endY: maxY,
-            dimension: roomHeight,
-            type: 'room_height',
+            dimension: roomLength,
+            type: 'room_length',
             color: '#1e40af', // Blue for room dimensions
             priority: 1,
             avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
@@ -1481,18 +1647,67 @@ const CeilingCanvas = ({
         
         // Draw room dimensions with optimal positioning
         drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
-        drawCeilingDimension(ctx, heightDimension, projectBounds, placedLabels, allLabels);
+        drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
         
     };
 
     // Draw grouped panel dimensions (for both horizontal and vertical panels)
-    const drawGroupedPanelDimensions = (ctx, panels, width, modelBounds, canvasPanelBounds, placedLabels, allLabels, isHorizontal = false) => {
+    // Filter: Don't show panel dimensions that match room dimensions (similar to wall plan filtering)
+    // Also filter duplicates at the same level (same position)
+    const drawGroupedPanelDimensions = (ctx, panels, width, modelBounds, canvasPanelBounds, placedLabels, allLabels, isHorizontal = false, roomWidth = null, roomLength = null, drawnDimensionsByLevel = null) => {
+        // Tolerance for comparing dimensions (1mm tolerance for floating point precision)
+        const DIMENSION_TOLERANCE = 1;
+        const LEVEL_TOLERANCE = 10; // 10mm tolerance for level matching
+        
+        // Helper function to check if panel dimension matches room dimension
+        const matchesRoomDimension = (panelDim, roomDim) => {
+            if (roomDim === null || roomDim === undefined) return false;
+            return Math.abs(panelDim - roomDim) <= DIMENSION_TOLERANCE;
+        };
+        
+        // Helper function to check if dimension already drawn at this level
+        // Returns true if already drawn, false if can draw
+        // Only filters duplicates at the SAME level with the SAME value
+        const isDimensionDrawnAtLevel = (dimensionValue, level, isHorizontalLine) => {
+            if (!drawnDimensionsByLevel) return false; // If no tracking map, allow drawing
+            
+            // Round level to nearest 10mm for tolerance matching (allows small variations)
+            const roundedLevel = Math.round(level / LEVEL_TOLERANCE) * LEVEL_TOLERANCE;
+            // Round dimension value to nearest mm for matching
+            const roundedValue = Math.round(dimensionValue);
+            const key = isHorizontalLine ? `H_${roundedValue}_${roundedLevel}` : `V_${roundedValue}_${roundedLevel}`;
+            
+            if (drawnDimensionsByLevel.has(key)) {
+                console.log(`🔍 [Dimension Filter] Duplicate dimension at same level: ${dimensionValue}mm at level ${roundedLevel} (${isHorizontalLine ? 'horizontal' : 'vertical'})`);
+                return true; // Already drawn at this level, skip
+            }
+            
+            // Mark as drawn AFTER checking (will be set when we actually draw)
+            return false; // Not drawn yet at this level, can draw
+        };
+        
+        // Helper function to mark dimension as drawn at this level
+        const markDimensionDrawnAtLevel = (dimensionValue, level, isHorizontalLine) => {
+            if (!drawnDimensionsByLevel) return;
+            
+            const roundedLevel = Math.round(level / LEVEL_TOLERANCE) * LEVEL_TOLERANCE;
+            const roundedValue = Math.round(dimensionValue);
+            const key = isHorizontalLine ? `H_${roundedValue}_${roundedLevel}` : `V_${roundedValue}_${roundedLevel}`;
+            drawnDimensionsByLevel.set(key, true);
+        };
+        
         // For grouped panel dimensions, we want to show BOTH WIDTH and LENGTH dimensions
         // This means for horizontal panels, show both width (horizontally) and length (vertically)
         // For vertical panels, show both width (horizontally) and length (vertically)
         
         if (isHorizontal) {
             // Horizontal panels: show BOTH dimensions
+            // IMPORTANT: Backend stores for horizontal orientation:
+            // - panel.width = X-axis span (horizontal dimension) - this is actually the panel LENGTH
+            // - panel.length = Y-axis span (vertical stacking dimension, 1150mm) - this is actually the panel WIDTH
+            // We need to SWAP because semantically:
+            // - panel.width (1150mm) should be on Y-axis (vertical stacking dimension)
+            // - panel.length (span) should be on X-axis (horizontal dimension)
             // Find the center and bounds of the panel group
             const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.end_x))) / 2;
             const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.end_y))) / 2;
@@ -1501,47 +1716,62 @@ const CeilingCanvas = ({
             const minY = Math.min(...panels.map(p => p.start_y));
             const maxY = Math.max(...panels.map(p => p.end_y));
             
-            // 1. Panel LENGTH dimension (vertical) - shows how tall each panel is
-            const panelLength = panels[0].length;
-            const lengthDimension = {
-                startX: centerX,
-                endX: centerX,
-                startY: minY,
-                endY: maxY,
-                dimension: panelLength,
-                type: 'grouped_length_horizontal',
-                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                priority: 2,
-                avoidArea: projectBounds,
-                quantity: panels.length,
-                drawnPositions: new Set(),
-                roomId: 'unknown',
-                isHorizontal: false // This dimension line is vertical
-            };
+            // SWAP: Backend stores width as X-axis and length as Y-axis, but semantically:
+            // - X-axis dimension should show panel.length (use backend's panel.width which is X-axis span)
+            // - Y-axis dimension should show panel.width (use backend's panel.length which is Y-axis stacking, 1150mm)
             
-            // 2. Panel WIDTH dimension (horizontal) - shows how wide each panel is
-            const panelWidth = panels[0].width;
-            const widthDimension = {
-                startX: minX,
-                endX: maxX,
-                startY: centerY,
-                endY: centerY,
-                dimension: panelWidth,
-                type: 'grouped_width_horizontal',
-                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                priority: 2,
-                avoidArea: projectBounds,
-                quantity: panels.length,
-                drawnPositions: new Set(),
-                roomId: 'unknown',
-                isHorizontal: true // This dimension line is horizontal
-            };
+            // 1. Panel LENGTH dimension (horizontal line) - X-axis dimension
+            // Use backend's panel.width (which is the X-axis span, semantically the panel length)
+            const panelLengthValue = panels[0].width; // Backend stores X-axis span as width
+            if (!matchesRoomDimension(panelLengthValue, roomWidth) && !isDimensionDrawnAtLevel(panelLengthValue, centerY, true)) {
+                const lengthDimension = {
+                    startX: minX,
+                    endX: maxX,
+                    startY: centerY,
+                    endY: centerY,
+                    dimension: panelLengthValue,
+                    type: 'grouped_length_horizontal',
+                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                    priority: 2,
+                    avoidArea: projectBounds,
+                    quantity: 0, // Length dimensions don't show quantity
+                    drawnPositions: new Set(),
+                    roomId: 'unknown',
+                    isHorizontal: true // This dimension line is horizontal (X-axis)
+                };
+                drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+                // Mark as drawn AFTER drawing
+                markDimensionDrawnAtLevel(panelLengthValue, centerY, true);
+            }
             
-            // Draw both dimensions
-            drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
-            drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+            // 2. Panel WIDTH dimension (vertical line) - Y-axis dimension
+            // Use backend's panel.length (which is the Y-axis stacking, 1150mm, semantically the panel width)
+            const panelWidthValue = panels[0].length; // Backend stores Y-axis stacking as length
+            if (!matchesRoomDimension(panelWidthValue, roomLength) && !isDimensionDrawnAtLevel(panelWidthValue, centerX, false)) {
+                const widthDimension = {
+                    startX: centerX,
+                    endX: centerX,
+                    startY: minY,
+                    endY: maxY,
+                    dimension: panelWidthValue,
+                    type: 'grouped_width_horizontal',
+                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                    priority: 2,
+                    avoidArea: projectBounds,
+                    quantity: panels.length, // Width dimensions show quantity (n × width)
+                    drawnPositions: new Set(),
+                    roomId: 'unknown',
+                    isHorizontal: false // This dimension line is vertical (Y-axis)
+                };
+                drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+                // Mark as drawn AFTER drawing
+                markDimensionDrawnAtLevel(panelWidthValue, centerX, false);
+            }
         } else {
             // Vertical panels: show BOTH dimensions
+            // IMPORTANT: For vertical orientation:
+            // - panel.width (1150mm) is on X-axis (horizontal stacking dimension) - THIS IS THE GROUPING DIMENSION
+            // - panel.length is on Y-axis (vertical dimension) - THIS IS THE SPAN DIMENSION
             // Find the center and bounds of the panel group
             const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.end_x))) / 2;
             const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.end_y))) / 2;
@@ -1550,45 +1780,66 @@ const CeilingCanvas = ({
             const minY = Math.min(...panels.map(p => p.start_y));
             const maxY = Math.max(...panels.map(p => p.end_y));
             
-            // 1. Panel WIDTH dimension (horizontal) - shows how wide each panel is
+            console.log(`📐 [Vertical Orientation] Drawing grouped dimensions:`, {
+                panelCount: panels.length,
+                panelWidth: panels[0].width,
+                panelLength: panels[0].length,
+                bounds: { minX, maxX, minY, maxY },
+                xAxisSpan: maxX - minX,
+                yAxisSpan: maxY - minY
+            });
+            
+            // 1. Panel WIDTH dimension (horizontal line) - X-axis dimension
+            // GROUPING DIMENSION: panel.width (1150mm) builds up X-axis (horizontal stacking)
+            // This should be drawn as a HORIZONTAL line (along X-axis)
             const actualPanelWidth = panels[0].width;
-            const widthDimension = {
-                startX: minX,
-                endX: maxX,
-                startY: centerY,
-                endY: centerY,
-                dimension: actualPanelWidth,
-                type: 'grouped_width_vertical',
-                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                priority: 2,
-                avoidArea: projectBounds,
-                quantity: panels.length,
-                drawnPositions: new Set(),
-                roomId: 'unknown',
-                isHorizontal: true // This dimension line is horizontal
-            };
+            if (!matchesRoomDimension(actualPanelWidth, roomWidth) && !isDimensionDrawnAtLevel(actualPanelWidth, centerY, true)) {
+                const widthDimension = {
+                    startX: minX,
+                    endX: maxX,
+                    startY: centerY,
+                    endY: centerY,
+                    dimension: actualPanelWidth,
+                    type: 'grouped_width_vertical',
+                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                    priority: 2,
+                    avoidArea: projectBounds,
+                    quantity: panels.length, // Width dimensions show quantity (n × width)
+                    drawnPositions: new Set(),
+                    roomId: 'unknown',
+                    isHorizontal: true // This dimension line is horizontal (X-axis) - GROUPING DIMENSION
+                };
+                console.log(`  → Drawing GROUPING dimension (panel.width=${actualPanelWidth}mm) as HORIZONTAL line (X-axis) with quantity ${panels.length}`);
+                drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+                // Mark as drawn AFTER drawing
+                markDimensionDrawnAtLevel(actualPanelWidth, centerY, true);
+            }
             
-            // 2. Panel LENGTH dimension (vertical) - shows how long each panel is
+            // 2. Panel LENGTH dimension (vertical line) - Y-axis dimension
+            // SPAN DIMENSION: panel.length spans Y-axis (vertical)
+            // This should be drawn as a VERTICAL line (along Y-axis)
             const panelLength = panels[0].length;
-            const lengthDimension = {
-                startX: centerX,
-                endX: centerX,
-                startY: minY,
-                endY: maxY,
-                dimension: panelLength,
-                type: 'grouped_length_vertical',
-                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                priority: 2,
-                avoidArea: projectBounds,
-                quantity: panels.length,
-                drawnPositions: new Set(),
-                roomId: 'unknown',
-                isHorizontal: false // This dimension line is vertical
-            };
-            
-            // Draw both dimensions
-            drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
-            drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+            if (!matchesRoomDimension(panelLength, roomLength) && !isDimensionDrawnAtLevel(panelLength, centerX, false)) {
+                const lengthDimension = {
+                    startX: centerX,
+                    endX: centerX,
+                    startY: minY,
+                    endY: maxY,
+                    dimension: panelLength,
+                    type: 'grouped_length_vertical',
+                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                    priority: 2,
+                    avoidArea: projectBounds,
+                    quantity: 0, // Length dimensions don't show quantity
+                    drawnPositions: new Set(),
+                    roomId: 'unknown',
+                    isHorizontal: false // This dimension line is vertical (Y-axis) - SPAN DIMENSION
+                };
+                console.log(`  → Drawing SPAN dimension (panel.length=${panelLength}mm) as VERTICAL line (Y-axis) without quantity`);
+                drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+                // Mark as drawn AFTER drawing
+                markDimensionDrawnAtLevel(panelLength, centerX, false);
+            }
         }
     };
 
@@ -1601,11 +1852,13 @@ const CeilingCanvas = ({
             return [];
         }
 
-        // Collect all panels from all rooms
+        // Collect all panels from all rooms with room context
         const allProjectPanels = [];
-        Object.values(effectiveCeilingPanelsMap).forEach(roomPanels => {
+        Object.entries(effectiveCeilingPanelsMap).forEach(([roomId, roomPanels]) => {
             // console.log('🔧 Adding room panels:', roomPanels);
-            allProjectPanels.push(...roomPanels);
+            roomPanels.forEach(panel => {
+                allProjectPanels.push({ ...panel, _roomId: parseInt(roomId) });
+            });
         });
         
         // console.log('🔧 Total project panels collected:', allProjectPanels.length);
@@ -1624,7 +1877,8 @@ const CeilingCanvas = ({
             // });
             
             // SWAP: For vertical panels, swap width and length values (keep horizontal unchanged)
-            const isVertical = panel.width >= panel.length;
+            // Get orientation from ceiling plan using the room ID stored with the panel
+            const isVertical = panel._roomId ? !getRoomOrientation(panel._roomId) : false;
             let displayWidth = panel.width;
             let displayLength = panel.length;
             
@@ -1666,9 +1920,13 @@ const CeilingCanvas = ({
         //     quantity: quantity
         // });
         
-        // For grouped dimensions, show "n × dimension" format
-        if ((dimension.type === 'grouped_width' || dimension.type === 'grouped_width_horizontal' || dimension.type === 'grouped_width_vertical' || 
-             dimension.type === 'grouped_length_horizontal') && quantity) {
+        // For length dimensions, don't show panel count (just show the dimension value)
+        if (dimension.type === 'grouped_length_horizontal' || dimension.type === 'grouped_length_vertical') {
+            return `${Math.round(dimension.dimension)}`;
+        }
+        
+        // For width dimensions, show "n × dimension" format
+        if ((dimension.type === 'grouped_width' || dimension.type === 'grouped_width_horizontal' || dimension.type === 'grouped_width_vertical') && quantity) {
             // Use the dimension.dimension value (which is the actual dimension value)
             return `${quantity} × ${dimension.dimension}`;
         } else {
@@ -1822,8 +2080,10 @@ const CeilingCanvas = ({
         let labelX, labelY;
         
         // For ceiling plan, always place dimensions externally (no near-wall placement)
-        // Always use external offset like wall plan (no BASE_OFFSET_SMALL)
+        // Use smaller offset for bottom dimensions to place them closer
         let baseOffset = DIMENSION_CONFIG.BASE_OFFSET;
+        // Check if this is a horizontal dimension that will likely be placed at bottom
+        // We'll adjust this after placement is determined
         const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
         
         // Find available position to avoid overlaps - use project bounds for initial positioning
@@ -1882,7 +2142,7 @@ const CeilingCanvas = ({
                         labelY: (avoidArea ? avoidArea.maxY : maxY) * scaleFactor.current + offsetY.current + offset
                     };
                 },
-                calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 8),
+                calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, 8, 12),
                 textWidth: textWidth,
                 placedLabels: placedLabels,
                 baseOffset: baseOffset,
@@ -1891,6 +2151,15 @@ const CeilingCanvas = ({
                 preferredSide: 'side1', // Prefer top for horizontal dimensions
                 lockedSide: lockedSide // Use stored side if available
             });
+            
+            // Adjust bottom placement to be closer - use much smaller offset for bottom dimensions
+            if (placement.side === 'side2') {
+                // For bottom dimensions, use a much smaller base offset (5px instead of 15px)
+                // Recalculate position with smaller offset
+                const bottomOffset = DIMENSION_CONFIG.BASE_OFFSET_SMALL; // 5px instead of 15px
+                placement.labelY = (avoidArea ? avoidArea.maxY : maxY) * scaleFactor.current + offsetY.current + bottomOffset;
+                placement.offset = bottomOffset; // Update offset for validation
+            }
         } else {
             // Vertical dimension: smart placement - try both left and right from outer bounds
             const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
@@ -1911,7 +2180,7 @@ const CeilingCanvas = ({
                         labelY: midY * scaleFactor.current + offsetY.current
                     };
                 },
-                calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 8),
+                calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, 8, 12),
                 textWidth: textWidth,
                 placedLabels: placedLabels,
                 baseOffset: baseVerticalOffset,
@@ -1950,23 +2219,26 @@ const CeilingCanvas = ({
             const maxValidationAttempts = 10;
             const minSeparation = 5; // Minimum separation in pixels
             // Track offset starting from placement offset, incrementing by fixed amount (like wall plan)
-            let validationOffset = (placement.offset || baseOffset);
+            // Use smaller initial offset for bottom dimensions
+            const isBottomDimension = isHorizontal && placement.side === 'side2';
+            let validationOffset = isBottomDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : (placement.offset || baseOffset);
             
             while (overlapsAvoidArea && validationAttempts < maxValidationAttempts) {
                 // Calculate label bounds in canvas coordinates
+                // Increased padding to ensure text fits within bounds
                 if (isHorizontal) {
                     labelBounds = {
-                        x: labelX - textWidth / 2 - 4,
-                        y: labelY - 8,
-                        width: textWidth + 8,
-                        height: 16
+                        x: labelX - textWidth / 2 - 8,
+                        y: labelY - 12,
+                        width: textWidth + 16,
+                        height: 24
                     };
                 } else {
                     labelBounds = {
-                        x: labelX - 8,
-                        y: labelY - textWidth / 2 - 4,
-                        width: 16,
-                        height: textWidth + 8
+                        x: labelX - 12,
+                        y: labelY - textWidth / 2 - 8,
+                        width: 24,
+                        height: textWidth + 16
                     };
                 }
                 
@@ -1980,18 +2252,25 @@ const CeilingCanvas = ({
                 
                 // Check if label bounds overlap with avoid area (with minimum separation)
                 const separation = minSeparation / scaleFactor.current;
-                overlapsAvoidArea = !(
+                const overlapsProjectArea = !(
                     labelModelBounds.maxX < avoidArea.minX - separation ||
                     labelModelBounds.minX > avoidArea.maxX + separation ||
                     labelModelBounds.maxY < avoidArea.minY - separation ||
                     labelModelBounds.minY > avoidArea.maxY + separation
                 );
                 
+                // ALSO check collision with other placed labels (room names, other dimensions)
+                // This is critical for bottom dimensions which often overlap with each other
+                const overlapsOtherLabels = hasLabelOverlap(labelBounds, placedLabels, 5);
+                
+                overlapsAvoidArea = overlapsProjectArea || overlapsOtherLabels;
+                
                 if (overlapsAvoidArea) {
-                    // Force placement further out if overlapping project area
-                    // Use fixed increment (like smartPlacement) instead of calculating from overlap
-                    // This prevents excessive spacing when there are collisions (consistent with wall plan)
-                    validationOffset += DIMENSION_CONFIG.OFFSET_INCREMENT;
+                    // Force placement further out if overlapping project area or other labels
+                    // Use smaller increment for bottom dimensions to prevent excessive spacing
+                    const isBottomPlacement = isHorizontal && placement.side === 'side2';
+                    const increment = isBottomPlacement ? 10 : DIMENSION_CONFIG.OFFSET_INCREMENT; // Smaller increment for bottom (10px vs 20px)
+                    validationOffset += increment;
                     
                     if (isHorizontal) {
                         const projectMidY = (avoidArea.minY + avoidArea.maxY) / 2;
@@ -2020,35 +2299,72 @@ const CeilingCanvas = ({
         }
         
         // Final label bounds
+        // Increased padding to ensure text fits within bounds
         let finalLabelBounds;
         if (isHorizontal) {
             finalLabelBounds = {
-                x: labelX - textWidth / 2 - 4,
-                y: labelY - 8,
-                width: textWidth + 8,
-                height: 16
+                x: labelX - textWidth / 2 - 8,
+                y: labelY - 12,
+                width: textWidth + 16,
+                height: 24
             };
         } else {
             finalLabelBounds = {
-                x: labelX - 8,
-                y: labelY - textWidth / 2 - 4,
-                width: 16,
-                height: textWidth + 8
+                x: labelX - 12,
+                y: labelY - textWidth / 2 - 8,
+                width: 24,
+                height: textWidth + 16
             };
+        }
+        
+        // Final collision check: ensure dimension doesn't overlap with any existing text (room names, other dimensions)
+        // This is a safety check in case smartPlacement didn't catch everything
+        if (hasLabelOverlap(finalLabelBounds, placedLabels, 5)) {
+            // If there's still a collision, try to adjust position slightly
+            // This handles edge cases where bounds calculation might have slight differences
+            const adjustment = 15; // pixels to move away from collision
+            if (isHorizontal) {
+                // Try moving up or down
+                const testBounds1 = { ...finalLabelBounds, y: finalLabelBounds.y - adjustment };
+                const testBounds2 = { ...finalLabelBounds, y: finalLabelBounds.y + adjustment };
+                if (!hasLabelOverlap(testBounds1, placedLabels, 5)) {
+                    finalLabelBounds = testBounds1;
+                    labelY -= adjustment;
+                } else if (!hasLabelOverlap(testBounds2, placedLabels, 5)) {
+                    finalLabelBounds = testBounds2;
+                    labelY += adjustment;
+                }
+            } else {
+                // Try moving left or right
+                const testBounds1 = { ...finalLabelBounds, x: finalLabelBounds.x - adjustment };
+                const testBounds2 = { ...finalLabelBounds, x: finalLabelBounds.x + adjustment };
+                if (!hasLabelOverlap(testBounds1, placedLabels, 5)) {
+                    finalLabelBounds = testBounds1;
+                    labelX -= adjustment;
+                } else if (!hasLabelOverlap(testBounds2, placedLabels, 5)) {
+                    finalLabelBounds = testBounds2;
+                    labelX += adjustment;
+                }
+            }
         }
         
         // PASS 1: Draw dimension lines FIRST (bottom layer)
         drawDimensionLines(ctx, startX, startY, endX, endY, labelX, labelY, isHorizontal, scaleFactor.current, offsetX.current, offsetY.current, color);
         
         // Add to placed labels for collision detection
-        placedLabels.push({
-            x: finalLabelBounds.x,
-            y: finalLabelBounds.y,
-            width: finalLabelBounds.width,
-            height: finalLabelBounds.height,
-            text: text,
-            type: type
-        });
+        // Verify bounds are valid before adding
+        if (isFinite(finalLabelBounds.x) && isFinite(finalLabelBounds.y) && 
+            isFinite(finalLabelBounds.width) && isFinite(finalLabelBounds.height) &&
+            finalLabelBounds.width > 0 && finalLabelBounds.height > 0) {
+            placedLabels.push({
+                x: finalLabelBounds.x,
+                y: finalLabelBounds.y,
+                width: finalLabelBounds.width,
+                height: finalLabelBounds.height,
+                text: text,
+                type: type
+            });
+        }
         
         // Add to all labels for global tracking AND deferred text drawing (PASS 2)
         allLabels.push({
@@ -2092,20 +2408,16 @@ const CeilingCanvas = ({
 
     // Draw title and information
     const drawTitle = (ctx) => {
-        const title = 'CEILING PLAN';
-        
-        // Title
+        // Match floor plan style: left-aligned at top
+        ctx.fillStyle = '#374151';
         ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = '#1f2937';
-        ctx.fillText(title, CANVAS_WIDTH / 2, 30);
-        
-        // Scale indicator
-        ctx.font = `${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-        ctx.fillStyle = '#9ca3af';
         ctx.textAlign = 'left';
-        ctx.fillText(`Scale: ${currentScale.toFixed(2)}x`, 20, CANVAS_HEIGHT - 30);
+        ctx.textBaseline = 'top';
+        ctx.fillText('Ceiling Plan', 20, 20);
+        
+        // Draw scale info (matching floor plan position)
+        ctx.font = `${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+        ctx.fillText(`Scale: ${currentScale.toFixed(2)}x`, 20, 50);
     };
 
     // Mouse event handlers
@@ -2391,12 +2703,12 @@ const CeilingCanvas = ({
             return false;
         }
 
-        // Determine panel orientation from the first available panel
+        // Determine panel orientation from ceiling plan (use first room's orientation)
         let isHorizontalOrientation = false;
         for (const roomId in effectiveCeilingPanelsMap) {
             const roomPanels = effectiveCeilingPanelsMap[roomId];
             if (roomPanels && roomPanels.length > 0) {
-                isHorizontalOrientation = roomPanels[0].width > roomPanels[0].length;
+                isHorizontalOrientation = getRoomOrientation(parseInt(roomId));
                 break;
             }
         }
@@ -2914,12 +3226,9 @@ const CeilingCanvas = ({
 
 
 
-    const drawPanelSupports = (ctx, roomPanels, scaleFactor, offsetX, offsetY) => {
-        // Determine panel orientation by checking if panels are wider than tall
-        // For ceiling panels: if width > length, it's horizontal (panels run left-to-right)
-        // If width < length, it's vertical (panels run up-to-down)
-        const isHorizontalOrientation = roomPanels.length > 0 && 
-            roomPanels[0].width > roomPanels[0].length;
+    const drawPanelSupports = (ctx, roomPanels, scaleFactor, offsetX, offsetY, roomId) => {
+        // Get orientation from ceiling plan (orientation is always available)
+        const isHorizontalOrientation = roomId ? getRoomOrientation(roomId) : false;
         
         console.log(`🔧 Drawing panel supports:`, {
             supportType,
@@ -3598,11 +3907,9 @@ const CeilingCanvas = ({
                                                     <span className="text-gray-600">Panels Needing Support:</span>
                                                     <span className="font-bold text-amber-600">
                                                         {(() => {
-                                                            // Determine panel orientation
+                                                            // Get orientation from ceiling plan (orientation is always available)
                                                             const isHorizontalOrientation = effectiveRooms.length > 0 && 
-                                                                effectiveRooms[0] && effectiveCeilingPanelsMap[effectiveRooms[0].id] && 
-                                                                effectiveCeilingPanelsMap[effectiveRooms[0].id].length > 0 &&
-                                                                effectiveCeilingPanelsMap[effectiveRooms[0].id][0].width > effectiveCeilingPanelsMap[effectiveRooms[0].id][0].length;
+                                                                effectiveRooms[0] ? getRoomOrientation(effectiveRooms[0].id) : false;
                                                             
                                                             if (ceilingPlan && ceilingPlan.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels)) {
                                                                 return ceilingPlan.enhanced_panels.filter(p => 

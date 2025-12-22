@@ -46,21 +46,6 @@ const ProjectDetails = () => {
         Number(projectDetails.project?.height) || 0,
         Number(projectDetails.projectCalculatedHeight) || 0
     );
-
-    // Scroll to top when component mounts or projectId changes
-    useEffect(() => {
-        // Some mobile browsers preserve scroll between route changes,
-        // so force a hard reset of window scroll position.
-        window.scrollTo(0, 0);
-        // Also try the options form for browsers that support it
-        if (window.scrollTo && typeof window.scrollTo === 'function') {
-            try {
-                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-            } catch (e) {
-                // Older browsers may not support the options object; ignore
-            }
-        }
-    }, [projectId]);
     // Get rooms on the active storey to check for duplicates
     const activeStoreyRooms = (projectDetails.rooms || []).filter(
         (room) => String(room.storey) === String(projectDetails.activeStoreyId)
@@ -743,6 +728,8 @@ const ProjectDetails = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 project-details-container">
+            {/* Wrapper to contain header and content for full-width header */}
+            <div className="w-full" style={{ display: 'flex', flexDirection: 'column', minWidth: 'max-content' }}>
             {/* Full-Screen Loading Modal for Image Capture */}
             {isCapturingImages && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
@@ -809,9 +796,9 @@ const ProjectDetails = () => {
             )}
 
             {/* Navigation Bar */}
-            <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="w-full px-4 sm:px-6 lg:max-w-7xl lg:mx-auto py-3">
-                    <div className="flex items-center justify-between">
+            <div className="bg-white border-b border-gray-200 shadow-sm" style={{ width: '100%', minWidth: '100%' }}>
+                <div className="w-full px-4 sm:px-6 py-3" style={{ width: '100%' }}>
+                    <div className="flex items-center justify-between w-full">
                         <div className="flex items-center space-x-2 sm:space-x-4">
                             <button
                                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -859,9 +846,9 @@ const ProjectDetails = () => {
             </div>
 
             {/* Header Section */}
-            <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="w-full px-4 sm:px-6 lg:px-8 lg:max-w-7xl lg:mx-auto py-4">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="bg-white border-b border-gray-200 shadow-sm" style={{ width: '100%', minWidth: '100%' }}>
+                <div className="w-full px-4 sm:px-6 lg:px-8 py-4" style={{ width: '100%' }}>
+                    <div className="flex flex-col lg:flex-row lg:items-center gap-4 w-full">
                         <div className="flex-shrink-0">
                     {(!projectDetails.project || !projectDetails.project.name) ? (
                                 <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Loading project...</h1>
@@ -876,7 +863,7 @@ const ProjectDetails = () => {
                         </div>
                         
                         {/* View Toggle Buttons */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4 lg:flex-1 lg:justify-end">
                             <button
                                 onClick={() => {
                                     const newViewState = !projectDetails.is3DView;
@@ -905,7 +892,7 @@ const ProjectDetails = () => {
                                 )}
                             </button>
                             <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full sm:w-auto">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full sm:w-auto lg:flex-1 lg:justify-end">
                                 <FaLayerGroup className="text-blue-600 hidden sm:block" />
                                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                                     <select
@@ -1330,7 +1317,7 @@ const ProjectDetails = () => {
                 </div>
             )}
 
-            <div className="flex min-h-[calc(100vh-120px)] relative">
+            <div className="flex min-h-[calc(100vh-120px)] relative" style={{ width: '100%', minWidth: 'max-content' }}>
                 {/* Mobile Sidebar Overlay */}
                 {sidebarOpen && (
                     <div 
@@ -1340,7 +1327,7 @@ const ProjectDetails = () => {
                 )}
                 
                 {/* Left Sidebar - Controls */}
-                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-96 min-w-[320px] max-w-[400px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
+                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-64 min-w-[240px] max-w-[280px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 }`}>
                     <div className="p-4 sm:p-6">
@@ -1469,7 +1456,7 @@ const ProjectDetails = () => {
                                 {projectDetails.currentMode === 'add-wall' && (
                                     <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm space-y-4 max-h-[80vh] overflow-y-auto">
                                         <div className="flex items-center justify-between mb-2">
-                                            <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Add Wall Mode</label>
+                                            <label className="block text-xs font-semibold text-blue-800 uppercase tracking-wide">Add Wall Mode</label>
                                             <button
                                                 onClick={() => projectDetails.setCurrentMode(null)}
                                                 className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center gap-2 shadow-sm active:scale-95"
@@ -2981,6 +2968,7 @@ const ProjectDetails = () => {
             )}
 
 
+            </div>
         </div>
     );
 };

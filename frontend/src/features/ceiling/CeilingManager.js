@@ -13,8 +13,11 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const [allWalls, setAllWalls] = useState([]);
     const [allIntersections, setAllIntersections] = useState([]);
     const [ceilingPlan, setCeilingPlan] = useState(null);
+    const [ceilingPlans, setCeilingPlans] = useState([]); // Array of all ceiling plans for multi-room mode
     const [ceilingPanels, setCeilingPanels] = useState([]);
     const [projectData, setProjectData] = useState(null);
+    const [storeys, setStoreys] = useState([]);
+    const [selectedStoreyId, setSelectedStoreyId] = useState(null); // null = show all levels
     // Cached project-wide waste % from latest POST, to ensure immediate UI update
     const [projectWastePercentage, setProjectWastePercentage] = useState(null);
     const [ceilingZones, setCeilingZones] = useState([]);
@@ -37,7 +40,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     // Dimension visibility filters (checkboxes)
     const [dimensionVisibility, setDimensionVisibility] = useState({
         room: true,
-        panel: true
+        panel: true,
+        cutPanel: false  // Cut panel dimensions unchecked by default
     });
     const toggleDimensionVisibility = (key) => {
         setDimensionVisibility(prev => ({ ...prev, [key]: !prev[key] }));
@@ -214,10 +218,28 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         previousSelectedRoomKeyRef.current = currentRoomKey;
     }, [selectedRoomId, normalizeRoomKey]);
 
+    // Filter rooms and zones by selected storey
+    const filteredRooms = useMemo(() => {
+        if (!selectedStoreyId) return allRooms; // Show all if no storey selected
+        return allRooms.filter(room => String(room.storey) === String(selectedStoreyId));
+    }, [allRooms, selectedStoreyId]);
+
+    const filteredZones = useMemo(() => {
+        if (!selectedStoreyId) return ceilingZones; // Show all if no storey selected
+        return ceilingZones.filter(zone => {
+            // Check if zone has rooms that match the selected storey
+            if (!zone.room_ids || zone.room_ids.length === 0) return false;
+            return zone.room_ids.some(roomId => {
+                const room = allRooms.find(r => r.id === roomId);
+                return room && String(room.storey) === String(selectedStoreyId);
+            });
+        });
+    }, [ceilingZones, allRooms, selectedStoreyId]);
+
     const roomsAvailableForMerge = useMemo(() => {
-        if (!allRooms || allRooms.length === 0) return [];
-        return allRooms.filter(room => !room.ceiling_zones || room.ceiling_zones.length === 0);
-    }, [allRooms]);
+        if (!filteredRooms || filteredRooms.length === 0) return [];
+        return filteredRooms.filter(room => !room.ceiling_zones || room.ceiling_zones.length === 0);
+    }, [filteredRooms]);
 
     const getPanelIdentifier = useCallback((panel) => {
         if (!panel) return null;
@@ -590,28 +612,62 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         };
     }, [customSupports, ceilingPlan, projectId, nylonHangerOptions, aluSuspensionCustomDrawing]);
     
+    // Track previous selectedRoomId to only reset config when room actually changes (not when allRooms updates)
+    const previousSelectedRoomIdForConfigRef = useRef(null);
+    
     // Sync room edit config when room is selected - use room's current ceiling plan settings if available
+    // Only reset when selectedRoomId actually changes, not when allRooms updates after generation
     useEffect(() => {
-        if (selectedRoomId) {
-            const selectedRoom = allRooms.find(r => r.id === selectedRoomId);
-            if (selectedRoom && selectedRoom.ceiling_plan) {
-                // Use the room's current ceiling plan settings
-                setRoomEditConfig({
-                    ceilingThickness: selectedRoom.ceiling_plan.ceiling_thickness || ceilingThickness,
-                    panelWidth: selectedRoom.ceiling_plan.panel_width || panelWidth,
-                    panelLength: selectedRoom.ceiling_plan.panel_length || panelLength,
-                    customPanelLength: selectedRoom.ceiling_plan.custom_panel_length || customPanelLength,
-                    orientationStrategy: selectedRoom.ceiling_plan.orientation_strategy || selectedOrientationStrategy
-                });
-            } else {
-                // Use global settings as fallback
-                setRoomEditConfig({
-                    ceilingThickness: ceilingThickness,
-                    panelWidth: panelWidth,
-                    panelLength: panelLength,
-                    customPanelLength: customPanelLength,
-                    orientationStrategy: selectedOrientationStrategy
-                });
+        const currentRoomId = selectedRoomId;
+        const previousRoomId = previousSelectedRoomIdForConfigRef.current;
+        
+        // Only reset config if the room actually changed (not when allRooms updates)
+        if (currentRoomId !== previousRoomId) {
+            previousSelectedRoomIdForConfigRef.current = currentRoomId;
+            
+            if (currentRoomId) {
+                const selectedRoom = allRooms.find(r => r.id === currentRoomId);
+                if (selectedRoom && selectedRoom.ceiling_plan) {
+                    // Use the room's current ceiling plan settings
+                    console.log(`🔄 [Room Config] Loading config for room ${currentRoomId} from ceiling plan:`, {
+                        orientation: selectedRoom.ceiling_plan.orientation_strategy
+                    });
+                    setRoomEditConfig({
+                        ceilingThickness: selectedRoom.ceiling_plan.ceiling_thickness || ceilingThickness,
+                        panelWidth: selectedRoom.ceiling_plan.panel_width || panelWidth,
+                        panelLength: selectedRoom.ceiling_plan.panel_length || panelLength,
+                        customPanelLength: selectedRoom.ceiling_plan.custom_panel_length || customPanelLength,
+                        orientationStrategy: selectedRoom.ceiling_plan.orientation_strategy || selectedOrientationStrategy
+                    });
+                } else {
+                    // Use global settings as fallback
+                    console.log(`🔄 [Room Config] Loading default config for room ${currentRoomId}`);
+                    setRoomEditConfig({
+                        ceilingThickness: ceilingThickness,
+                        panelWidth: panelWidth,
+                        panelLength: panelLength,
+                        customPanelLength: customPanelLength,
+                        orientationStrategy: selectedOrientationStrategy
+                    });
+                }
+            }
+        } else {
+            // Room hasn't changed, but allRooms might have updated (e.g., after generation)
+            // Only update if the ceiling plan's orientation_strategy actually changed
+            if (currentRoomId) {
+                const selectedRoom = allRooms.find(r => r.id === currentRoomId);
+                if (selectedRoom && selectedRoom.ceiling_plan && selectedRoom.ceiling_plan.orientation_strategy) {
+                    const savedOrientation = selectedRoom.ceiling_plan.orientation_strategy;
+                    // Only update if the saved orientation is different from current config
+                    // This prevents overwriting user's manual changes before they click "Apply"
+                    if (roomEditConfig.orientationStrategy !== savedOrientation) {
+                        console.log(`🔄 [Room Config] Ceiling plan updated for room ${currentRoomId}, but keeping user's manual change:`, {
+                            saved: savedOrientation,
+                            current: roomEditConfig.orientationStrategy
+                        });
+                        // Don't auto-update - let user's manual change persist until they click "Apply"
+                    }
+                }
             }
         }
     }, [selectedRoomId, allRooms, ceilingThickness, panelWidth, panelLength, customPanelLength, selectedOrientationStrategy]);
@@ -634,6 +690,15 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             // Load project data first
             const projectResponse = await api.get(`/projects/${parseInt(projectId)}/`);
             setProjectData(projectResponse.data || null);
+            
+            // Load storeys
+            const storeysResponse = await api.get(`/storeys/?project=${parseInt(projectId)}`);
+            const loadedStoreys = storeysResponse.data || [];
+            setStoreys(loadedStoreys);
+            // Set default storey to first one if available, or null to show all
+            if (loadedStoreys.length > 0 && selectedStoreyId === null) {
+                setSelectedStoreyId(loadedStoreys[0].id);
+            }
             
             // Load rooms
             const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
@@ -1231,6 +1296,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             setCeilingZones(zonesData);
 
             if (planResponse.data && planResponse.data.length > 0) {
+                // Update ceilingPlans array for multi-room mode
+                setCeilingPlans(planResponse.data);
+                console.log(`✅ [Load Existing] Updated ceilingPlans array with ${planResponse.data.length} plan(s)`);
+                
                 const existingPlan = planResponse.data[0];
                 const enhancedPlan = {
                     ...existingPlan,
@@ -1398,8 +1467,58 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
         console.log('🔄 Regenerating ceiling plan for room:', roomId);
         console.log('📊 Configuration:', config);
+        console.log('🎯 Orientation Strategy from config:', config.orientationStrategy);
+        console.log('🎯 Global Orientation Strategy:', selectedOrientationStrategy);
+        console.log('🎯 Current roomEditConfig.orientationStrategy:', roomEditConfig.orientationStrategy);
+        console.log('🎯 Dropdown value should match config:', config.orientationStrategy === roomEditConfig.orientationStrategy);
 
         try {
+            // Ensure roomId is an integer
+            const normalizedRoomId = typeof roomId === 'string' ? parseInt(roomId, 10) : roomId;
+            console.log('🔍 [Room Generation] Normalized room ID:', normalizedRoomId, 'Type:', typeof normalizedRoomId);
+            
+            // Validate config values
+            if (!config.orientationStrategy) {
+                console.error('❌ [Room Generation] Missing orientationStrategy in config');
+                setError('Orientation strategy is required. Please select an orientation.');
+                setIsRegeneratingRoom(false);
+                return;
+            }
+            
+            if (!config.panelWidth || config.panelWidth <= 0) {
+                console.error('❌ [Room Generation] Invalid panelWidth:', config.panelWidth);
+                setError('Panel width must be greater than 0.');
+                setIsRegeneratingRoom(false);
+                return;
+            }
+            
+            if (!config.ceilingThickness || config.ceilingThickness <= 0) {
+                console.error('❌ [Room Generation] Invalid ceilingThickness:', config.ceilingThickness);
+                setError('Ceiling thickness must be greater than 0.');
+                setIsRegeneratingRoom(false);
+                return;
+            }
+            
+            // Prepare room_specific_config with validated values
+            const roomSpecificConfig = {
+                room_id: normalizedRoomId,
+                panel_width: parseInt(config.panelWidth, 10),
+                panel_length: config.panelLength === 'auto' ? 'auto' : parseFloat(config.customPanelLength),
+                ceiling_thickness: parseFloat(config.ceilingThickness),
+                custom_panel_length: config.panelLength === 'auto' ? null : parseFloat(config.customPanelLength),
+                orientation_strategy: config.orientationStrategy,
+                support_type: supportType,
+                support_config: {
+                    enableNylonHangers: enableNylonHangers,
+                    enableAluSuspension: enableAluSuspension,
+                    ...nylonHangerOptions,
+                    aluSuspensionCustomDrawing,
+                    customSupports: customSupports
+                }
+            };
+            
+            console.log('📤 [Room Generation] Sending request with room_specific_config:', roomSpecificConfig);
+            
             // Send room-specific configuration to backend
             const response = await api.post('/ceiling-plans/generate_enhanced_ceiling_plan/', {
                 project_id: parseInt(projectId),
@@ -1417,22 +1536,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     customSupports: customSupports
                 },
                 // Room-specific configuration - ONLY this room will use these settings
-                room_specific_config: {
-                    room_id: roomId,
-                    panel_width: config.panelWidth,
-                    panel_length: config.panelLength === 'auto' ? 'auto' : config.customPanelLength,
-                    ceiling_thickness: config.ceilingThickness,
-                    custom_panel_length: config.panelLength === 'auto' ? null : config.customPanelLength,
-                    orientation_strategy: config.orientationStrategy,
-                    support_type: supportType,
-                    support_config: {
-                        enableNylonHangers: enableNylonHangers,
-                        enableAluSuspension: enableAluSuspension,
-                        ...nylonHangerOptions,
-                        aluSuspensionCustomDrawing,
-                        customSupports: customSupports
-                    }
-                }
+                room_specific_config: roomSpecificConfig
             });
             
             console.log('✅ API Response:', response.data);
@@ -1454,6 +1558,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 
                 // Update ceiling plan (take the first one or the one for this room)
                 if (response.data.ceiling_plans && response.data.ceiling_plans.length > 0) {
+                    // Update ceilingPlans array for multi-room mode
+                    setCeilingPlans(response.data.ceiling_plans);
+                    console.log(`✅ [Room Generation] Updated ceilingPlans array with ${response.data.ceiling_plans.length} plan(s)`);
+                    
                     // Try to find the ceiling plan for the selected room
                     const roomCeilingPlan = response.data.ceiling_plans.find(cp => cp.room_id === roomId);
                     setCeilingPlan(roomCeilingPlan || response.data.ceiling_plans[0]);
@@ -1470,6 +1578,13 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 // Update all panels
                 setCeilingPanels(newPanels);
                 
+                // Reload the room data FIRST to get updated ceiling plan details
+                // This ensures CeilingCanvas has the latest room.ceiling_plan relationship
+                console.log('🔄 [Room Generation] Reloading room data...');
+                const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
+                setAllRooms(roomsResponse.data || []);
+                console.log('✅ [Room Generation] Room data reloaded with updated ceiling_plan relationships');
+                
                 // Reload project data to ensure we have the latest data
                 await new Promise(resolve => setTimeout(resolve, 600));
                 await new Promise(resolve => setTimeout(resolve, 600));
@@ -1479,7 +1594,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 
                 // Update shared panel data if callback provided
                 if (updateSharedPanelData) {
-                    const processedPanels = processCeilingPanelsForSharing(newPanels, allRooms);
+                    const processedPanels = processCeilingPanelsForSharing(newPanels, roomsResponse.data || []);
                     updateSharedPanelData('ceiling', processedPanels);
                 }
 
@@ -1492,12 +1607,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     });
                 }
                 
-                console.log('✅ State updated successfully');
-                
-                // Reload the room data to get updated ceiling plan details
-                const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
-                setAllRooms(roomsResponse.data || []);
-                console.log('✅ Room data reloaded');
+                console.log('✅ [Room Generation] State updated successfully');
                 
                 // Update the roomEditConfig to reflect the new values from the database
                 const updatedRoom = roomsResponse.data.find(r => r.id === roomId);
@@ -1559,6 +1669,12 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             });
 
             if (response.data && !response.data.error) {
+                // Update ceilingPlans array for multi-room mode
+                if (response.data.ceiling_plans && Array.isArray(response.data.ceiling_plans)) {
+                    setCeilingPlans(response.data.ceiling_plans);
+                    console.log(`✅ [Full Generate] Updated ceilingPlans array with ${response.data.ceiling_plans.length} plan(s)`);
+                }
+                
                 setCeilingPlan(response.data);
                 setCeilingPanels(response.data.enhanced_panels || []);
 
@@ -1655,6 +1771,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     // Memoize ceilingPanelsMap to prevent infinite re-renders
+    // Filter panels by selected storey and room selection
     const ceilingPanelsMap = useMemo(() => {
         const panelsMap = {};
         if (ceilingPanels && Array.isArray(ceilingPanels)) {
@@ -1663,7 +1780,12 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 const roomId = panel.room_id;
                 const zoneId = panel.zone_id || panel.zone;
 
+                // Check if panel's room belongs to selected storey
                 if (roomId) {
+                    const room = allRooms.find(r => r.id === roomId);
+                    if (room && selectedStoreyId && String(room.storey) !== String(selectedStoreyId)) {
+                        return; // Skip panels from rooms not in selected storey
+                    }
                     if (showAllRooms || roomId === selectedRoomId) {
                         if (!panelsMap[roomId]) {
                             panelsMap[roomId] = [];
@@ -1671,6 +1793,17 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         panelsMap[roomId].push(panel);
                     }
                 } else if (zoneId) {
+                    // Check if zone belongs to selected storey
+                    const zone = ceilingZones.find(z => z.id === zoneId);
+                    if (zone && selectedStoreyId) {
+                        const zoneHasRoomsInStorey = zone.room_ids?.some(rid => {
+                            const room = allRooms.find(r => r.id === rid);
+                            return room && String(room.storey) === String(selectedStoreyId);
+                        });
+                        if (!zoneHasRoomsInStorey) {
+                            return; // Skip zones not in selected storey
+                        }
+                    }
                     const key = `zone-${zoneId}`;
                     if (showAllRooms || selectedRoomId === key) {
                         if (!panelsMap[key]) {
@@ -1682,12 +1815,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             });
         }
         return panelsMap;
-    }, [ceilingPanels, showAllRooms, selectedRoomId]);
-
-    // Memoize filtered rooms to prevent unnecessary re-renders
-    const filteredRooms = useMemo(() => {
-        return showAllRooms ? allRooms : allRooms.filter(room => room.id === selectedRoomId);
-    }, [allRooms, showAllRooms, selectedRoomId]);
+    }, [ceilingPanels, showAllRooms, selectedRoomId, selectedStoreyId, allRooms, ceilingZones]);
 
     const shouldShowPanelSwapCard = selectedPanelIds.length > 0 || Boolean(panelSwapError) || Boolean(panelSwapSuccess);
 
@@ -1827,9 +1955,35 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         </p>
                     </div>
                     
-                    {/* Room Selection Controls */}
-                    {allRooms.length > 1 && (
-                        <div className="flex items-center space-x-4">
+                    {/* Storey and Room Selection Controls */}
+                    <div className="flex items-center space-x-4">
+                        {/* Storey Selector */}
+                        {storeys.length > 1 && (
+                            <div className="flex items-center space-x-2">
+                                <label className="text-sm font-medium text-gray-700">Level:</label>
+                                <select
+                                    value={selectedStoreyId || 'all'}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setSelectedStoreyId(value === 'all' ? null : parseInt(value));
+                                        // Reset room selection when changing storey
+                                        setShowAllRooms(true);
+                                        setSelectedRoomId(null);
+                                    }}
+                                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="all">All Levels</option>
+                                    {storeys.map(storey => (
+                                        <option key={storey.id} value={storey.id}>
+                                            {storey.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                        
+                        {/* Room Selection Controls */}
+                        {filteredRooms.length > 1 && (
                             <div className="flex items-center space-x-2">
                                 <label className="text-sm font-medium text-gray-700">View:</label>
                                 <select
@@ -1846,21 +2000,21 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                     className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
                                     <option value="all">All Rooms</option>
-                                    {allRooms.map(room => (
+                                    {filteredRooms.map(room => (
                                         <option key={room.id} value={room.id}>
                                             {room.room_name}
                                         </option>
                                     ))}
                                 </select>
                             </div>
-                            
-                            {!showAllRooms && selectedRoomId && (
-                                <div className="text-sm text-gray-600">
-                                    <span className="font-medium">Selected:</span> {allRooms.find(r => r.id === selectedRoomId)?.room_name}
-                                </div>
-                            )}
-                        </div>
-                    )}
+                        )}
+                        
+                        {!showAllRooms && selectedRoomId && (
+                            <div className="text-sm text-gray-600">
+                                <span className="font-medium">Selected:</span> {filteredRooms.find(r => r.id === selectedRoomId)?.room_name}
+                            </div>
+                        )}
+                    </div>
                     {/* Dimension visibility checkboxes */}
                     <div className="flex items-center space-x-4">
                         <label className="flex items-center space-x-2 cursor-pointer">
@@ -1880,6 +2034,15 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                 onChange={() => toggleDimensionVisibility('panel')}
                             />
                             <span className="text-sm text-gray-700">Panel dimensions</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                checked={dimensionVisibility.cutPanel}
+                                onChange={() => toggleDimensionVisibility('cutPanel')}
+                            />
+                            <span className="text-sm text-gray-700">Cut panel dimensions</span>
                         </label>
                     </div>
                 </div>
@@ -2321,11 +2484,11 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                     </svg>
                                     Updating merged zones…
                                 </div>
-                            ) : ceilingZones.length === 0 ? (
+                            ) : filteredZones.length === 0 ? (
                                 <p className="text-sm text-gray-600">No merged zones created yet.</p>
                             ) : (
                                 <div className="space-y-3">
-                                    {ceilingZones.map(zone => (
+                                    {filteredZones.map(zone => (
                                         <div key={zone.id} className="border border-orange-100 rounded-lg px-3 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                                             <div>
                                                 <p className="text-sm font-semibold text-gray-800">Zone #{zone.id}</p>
@@ -2377,12 +2540,13 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             walls={allWalls}
                             intersections={allIntersections}
                             ceilingPlan={ceilingPlan}
+                            ceilingPlans={ceilingPlans}
                             ceilingPanels={ceilingPanels}
                             projectData={projectData}
                             projectWastePercentage={projectWastePercentage}
                             ceilingThickness={ceilingThickness}
                             ceilingPanelsMap={ceilingPanelsMap}
-                                zones={ceilingZones}
+                            zones={filteredZones}
                             orientationAnalysis={orientationAnalysis}
                             // Support configuration
                             supportType={supportType}

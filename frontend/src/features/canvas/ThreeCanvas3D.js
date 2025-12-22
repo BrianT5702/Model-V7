@@ -242,7 +242,9 @@ export default class ThreeCanvas {
       window.addEventListener('resize', this.handleWindowResize);
       window.addEventListener('orientationchange', this.handleOrientationChange);
       // Also listen for visual viewport changes (better for mobile)
-      window.visualViewport?.addEventListener('resize', this.handleWindowResize);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', this.handleWindowResize);
+      }
     }
 
     // Setup ResizeObserver for container size changes
@@ -276,7 +278,9 @@ export default class ThreeCanvas {
     // Remove orientation change listener
     if (this.handleOrientationChange && typeof window !== 'undefined') {
       window.removeEventListener('orientationchange', this.handleOrientationChange);
-      window.visualViewport?.removeEventListener('resize', this.handleWindowResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', this.handleWindowResize);
+      }
       this.handleOrientationChange = null;
     }
 

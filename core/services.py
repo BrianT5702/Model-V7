@@ -2214,6 +2214,20 @@ class CeilingService:
             # Calculate total area from room points
             total_area = CeilingService._calculate_room_area(room.room_points)
             
+            # Determine orientation from generated panels
+            # Check the first panel to determine orientation
+            # For horizontal: width (X-axis) > length (Y-axis, 1150mm)
+            # For vertical: width (X-axis, 1150mm) < length (Y-axis)
+            orientation_strategy = 'auto'
+            if panels:
+                first_panel = panels[0]
+                # If width > length, it's horizontal (panels span horizontally)
+                # If width < length, it's vertical (panels span vertically)
+                if first_panel.get('width', 0) > first_panel.get('length', 0):
+                    orientation_strategy = 'all_horizontal'
+                else:
+                    orientation_strategy = 'all_vertical'
+            
             # Create or update ceiling plan
             ceiling_plan, created = CeilingPlan.objects.get_or_create(
                 room=room,
@@ -2222,7 +2236,11 @@ class CeilingService:
                     'total_area': total_area,
                     'total_panels': len(panels),
                     'full_panels': len([p for p in panels if not p['is_cut']]),
-                    'cut_panels': len([p for p in panels if p['is_cut']])
+                    'cut_panels': len([p for p in panels if p['is_cut']]),
+                    'ceiling_thickness': ceiling_thickness,
+                    'orientation_strategy': orientation_strategy,
+                    'panel_width': 1150,
+                    'panel_length': 'auto'
                 }
             )
             
@@ -2231,6 +2249,10 @@ class CeilingService:
                 ceiling_plan.total_panels = len(panels)
                 ceiling_plan.full_panels = len([p for p in panels if not p['is_cut']])
                 ceiling_plan.cut_panels = len([p for p in panels if p['is_cut']])
+                ceiling_plan.ceiling_thickness = ceiling_thickness
+                ceiling_plan.orientation_strategy = orientation_strategy
+                ceiling_plan.panel_width = 1150
+                ceiling_plan.panel_length = 'auto'
                 ceiling_plan.save()
             
             # Clear existing panels and create new ones
@@ -5027,13 +5049,16 @@ class CeilingService:
             # Determine orientation type
             logger.debug(f"Processing room {room.id} ({room.room_name}) with orientation_strategy: {orientation_strategy}")
             
-            if orientation_strategy == 'all_vertical':
+            # Normalize orientation_strategy to handle both 'vertical'/'all_vertical' and 'horizontal'/'all_horizontal'
+            strategy_lower = str(orientation_strategy).lower() if orientation_strategy else 'auto'
+            
+            if strategy_lower in ('all_vertical', 'vertical'):
                 orientation_type = 'vertical'
-                logger.debug(f"  → Set to VERTICAL")
-            elif orientation_strategy == 'all_horizontal':
+                logger.debug(f"  → Set to VERTICAL (from strategy: {orientation_strategy})")
+            elif strategy_lower in ('all_horizontal', 'horizontal'):
                 orientation_type = 'horizontal'
-                logger.debug(f"  → Set to HORIZONTAL")
-            elif orientation_strategy == 'auto':
+                logger.debug(f"  → Set to HORIZONTAL (from strategy: {orientation_strategy})")
+            elif strategy_lower == 'auto':
                 # Analyze and pick best
                 analysis = CeilingService._analyze_single_room_orientation_strategies(
                     room, panel_width, panel_length, 150
@@ -5095,13 +5120,41 @@ class CeilingService:
             custom_orientation = room_specific_config.get('orientation_strategy', global_orientation_strategy)
             
             logger.info(f"Generating ceiling panels for {rooms.count()} rooms (room-specific mode)")
+            logger.info(f"  Custom room ID: {custom_room_id}")
+            logger.info(f"  Custom orientation from config: {custom_orientation}")
+            logger.info(f"  Global orientation: {global_orientation_strategy}")
+            
+            # Extract room-specific parameters from config
+            custom_panel_width = room_specific_config.get('panel_width', global_panel_width) if room_specific_config else global_panel_width
+            custom_panel_length = room_specific_config.get('panel_length', global_panel_length) if room_specific_config else global_panel_length
+            custom_custom_panel_length = room_specific_config.get('custom_panel_length', None) if room_specific_config else None
+            custom_ceiling_thickness = room_specific_config.get('ceiling_thickness', global_ceiling_thickness) if room_specific_config else global_ceiling_thickness
+            
+            logger.info(f"Room-specific config values: panel_width={custom_panel_width}, panel_length={custom_panel_length}, ceiling_thickness={custom_ceiling_thickness}")
             
             for room in rooms:
                 # Determine orientation for this room
                 if str(room.id) == str(custom_room_id):
-                    # This is the room being updated - use custom orientation
-                    room_orientation = custom_orientation
-                    logger.info(f"  Room {room.id} ({room.room_name}): Using CUSTOM orientation = {room_orientation}")
+                    # This is the room being updated - use custom orientation and room-specific parameters
+                    # Normalize orientation: convert 'vertical'/'horizontal' to 'all_vertical'/'all_horizontal'
+                    if custom_orientation:
+                        orientation_lower = str(custom_orientation).lower()
+                        if orientation_lower == 'vertical':
+                            room_orientation = 'all_vertical'
+                        elif orientation_lower == 'horizontal':
+                            room_orientation = 'all_horizontal'
+                        else:
+                            room_orientation = custom_orientation
+                    else:
+                        room_orientation = custom_orientation
+                    
+                    # Use room-specific parameters for this room
+                    room_panel_width = custom_panel_width
+                    room_panel_length = custom_panel_length
+                    room_custom_panel_length = custom_custom_panel_length
+                    room_ceiling_thickness = custom_ceiling_thickness
+                    
+                    logger.info(f"  Room {room.id} ({room.room_name}): Using CUSTOM config - orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
                 else:
                     # Check if room has existing ceiling plan with orientation
                     if hasattr(room, 'ceiling_plan') and room.ceiling_plan and room.ceiling_plan.orientation_strategy:
@@ -5110,11 +5163,18 @@ class CeilingService:
                     else:
                         room_orientation = global_orientation_strategy
                         logger.info(f"  Room {room.id} ({room.room_name}): Using GLOBAL orientation = {room_orientation}")
+                    
+                    # Use global parameters for other rooms
+                    room_panel_width = global_panel_width
+                    room_panel_length = global_panel_length
+                    room_custom_panel_length = None
+                    room_ceiling_thickness = global_ceiling_thickness
                 
-                # Generate panels for this room with its specific orientation (with leftover tracking)
+                # Generate panels for this room with its specific orientation and parameters (with leftover tracking)
+                logger.info(f"  Generating panels for room {room.id} with: orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
                 room_panels = CeilingService._generate_panels_for_single_room(
-                    room, room_orientation, global_panel_width, global_panel_length, 
-                    leftover_tracker, global_ceiling_thickness
+                    room, room_orientation, room_panel_width, room_panel_length, 
+                    leftover_tracker, room_ceiling_thickness
                 )
                 
                 logger.info(f"  > Generated {len(room_panels)} panels for room {room.id}")
@@ -5727,7 +5787,8 @@ class CeilingService:
                             'cut_panels': len([p for p in panels if p.get('is_cut', False)]),
                             # CRITICAL: Save all generation parameters (room-specific or global)
                             'ceiling_thickness': room_ceiling_thickness,
-                            'orientation_strategy': room_orientation_strategy,
+                            # Normalize orientation_strategy: convert 'vertical'/'horizontal' to 'all_vertical'/'all_horizontal' for consistency
+                            'orientation_strategy': 'all_vertical' if str(room_orientation_strategy).lower() == 'vertical' else ('all_horizontal' if str(room_orientation_strategy).lower() == 'horizontal' else room_orientation_strategy),
                             'panel_width': room_panel_width,
                             'panel_length': room_panel_length,
                             'custom_panel_length': room_custom_panel_length,
@@ -5744,13 +5805,22 @@ class CeilingService:
                         ceiling_plan.cut_panels = len([p for p in panels if p.get('is_cut', False)])
                         # CRITICAL: Update generation parameters (room-specific or global)
                         ceiling_plan.ceiling_thickness = room_ceiling_thickness
-                        ceiling_plan.orientation_strategy = room_orientation_strategy
+                        # Normalize orientation_strategy: convert 'vertical'/'horizontal' to 'all_vertical'/'all_horizontal' for consistency
+                        normalized_orientation = room_orientation_strategy
+                        if normalized_orientation:
+                            strategy_lower = str(normalized_orientation).lower()
+                            if strategy_lower == 'vertical':
+                                normalized_orientation = 'all_vertical'
+                            elif strategy_lower == 'horizontal':
+                                normalized_orientation = 'all_horizontal'
+                        ceiling_plan.orientation_strategy = normalized_orientation
                         ceiling_plan.panel_width = room_panel_width
                         ceiling_plan.panel_length = room_panel_length
                         ceiling_plan.custom_panel_length = room_custom_panel_length
                         ceiling_plan.support_type = room_support_type
                         ceiling_plan.support_config = room_support_config
                         ceiling_plan.save()
+                        logger.info(f"  Updated ceiling plan {ceiling_plan.id} with orientation_strategy: {normalized_orientation}")
                     
                     # Clear existing panels and create new ones
                     CeilingPanel.objects.filter(room=room).delete()

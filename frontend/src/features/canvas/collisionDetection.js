@@ -3,35 +3,60 @@
 
 /**
  * Check if two bounding boxes overlap using Axis-Aligned Bounding Box (AABB) algorithm
+ * Enhanced with minimum separation distance for better spacing
  * @param {Object} box1 - First bounding box {x, y, width, height}
  * @param {Object} box2 - Second bounding box {x, y, width, height}
- * @returns {boolean} - True if boxes overlap, false otherwise
+ * @param {number} minSeparation - Minimum separation distance in pixels (default: 0)
+ * @returns {boolean} - True if boxes overlap or are too close, false otherwise
  */
-export function checkBoxOverlap(box1, box2) {
-    // Two boxes DON'T overlap if any of these conditions are true:
-    // - box1 is completely to the left of box2
-    // - box1 is completely to the right of box2
-    // - box1 is completely above box2
-    // - box1 is completely below box2
+export function checkBoxOverlap(box1, box2, minSeparation = 0) {
+    // Two boxes DON'T overlap (with separation) if any of these conditions are true:
+    // - box1 is completely to the left of box2 (with separation)
+    // - box1 is completely to the right of box2 (with separation)
+    // - box1 is completely above box2 (with separation)
+    // - box1 is completely below box2 (with separation)
+    
+    // Apply separation margin to both boxes
+    const margin = minSeparation / 2;
     
     const noOverlap = (
-        box1.x + box1.width < box2.x ||      // box1 is left of box2
-        box2.x + box2.width < box1.x ||      // box1 is right of box2
-        box1.y + box1.height < box2.y ||     // box1 is above box2
-        box2.y + box2.height < box1.y        // box1 is below box2
+        box1.x + box1.width + margin < box2.x - margin ||      // box1 is left of box2 (with separation)
+        box2.x + box2.width + margin < box1.x - margin ||      // box1 is right of box2 (with separation)
+        box1.y + box1.height + margin < box2.y - margin ||     // box1 is above box2 (with separation)
+        box2.y + box2.height + margin < box1.y - margin        // box1 is below box2 (with separation)
     );
     
-    return !noOverlap; // If not separated, they overlap
+    return !noOverlap; // If not separated, they overlap or are too close
 }
 
 /**
  * Check if a label bounding box overlaps with any existing labels
+ * Enhanced with minimum separation and spatial optimization
  * @param {Object} labelBounds - The new label bounds {x, y, width, height}
  * @param {Array} placedLabels - Array of already placed label bounds
+ * @param {number} minSeparation - Minimum separation distance in pixels (default: 3)
  * @returns {boolean} - True if overlap detected, false otherwise
  */
-export function hasLabelOverlap(labelBounds, placedLabels) {
-    return placedLabels.some(existing => checkBoxOverlap(labelBounds, existing));
+export function hasLabelOverlap(labelBounds, placedLabels, minSeparation = 3) {
+    // Quick spatial optimization: only check labels that are potentially close
+    // Calculate approximate distance to filter out obviously far labels
+    const labelCenterX = labelBounds.x + labelBounds.width / 2;
+    const labelCenterY = labelBounds.y + labelBounds.height / 2;
+    const maxDistance = Math.max(labelBounds.width, labelBounds.height) + minSeparation * 2;
+    
+    // Filter labels that are potentially close (simple distance check)
+    const nearbyLabels = placedLabels.filter(existing => {
+        const existingCenterX = existing.x + existing.width / 2;
+        const existingCenterY = existing.y + existing.height / 2;
+        const distanceX = Math.abs(labelCenterX - existingCenterX);
+        const distanceY = Math.abs(labelCenterY - existingCenterY);
+        const maxDim = Math.max(existing.width, existing.height);
+        // Only check if within reasonable distance
+        return distanceX < maxDistance + maxDim && distanceY < maxDistance + maxDim;
+    });
+    
+    // Check overlap with nearby labels only
+    return nearbyLabels.some(existing => checkBoxOverlap(labelBounds, existing, minSeparation));
 }
 
 /**
@@ -106,8 +131,8 @@ export function findAvailableLabelPosition({
         // Calculate bounds for this position
         labelBounds = calculateBounds(labelX, labelY, textWidth);
         
-        // Check for overlaps
-        const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
+        // Check for overlaps with minimum separation
+        const hasOverlap = hasLabelOverlap(labelBounds, placedLabels, 3);
         
         if (!hasOverlap) break;
         
@@ -167,6 +192,47 @@ export function calculateLabelBounds(isHorizontal, labelX, labelY, textWidth, pa
 }
 
 /**
+ * Calculate the overlap area between two bounding boxes
+ * @param {Object} box1 - First bounding box {x, y, width, height}
+ * @param {Object} box2 - Second bounding box {x, y, width, height}
+ * @returns {number} - Overlap area in pixels (0 if no overlap)
+ */
+export function calculateOverlapArea(box1, box2) {
+    const overlapX = Math.max(0, Math.min(box1.x + box1.width, box2.x + box2.width) - Math.max(box1.x, box2.x));
+    const overlapY = Math.max(0, Math.min(box1.y + box1.height, box2.y + box2.height) - Math.max(box1.y, box2.y));
+    return overlapX * overlapY;
+}
+
+/**
+ * Calculate the total overlap area for a label with all existing labels
+ * @param {Object} labelBounds - The label bounds to check {x, y, width, height}
+ * @param {Array} placedLabels - Array of existing label bounds
+ * @returns {number} - Total overlap area in pixels
+ */
+export function calculateTotalOverlapArea(labelBounds, placedLabels) {
+    let totalOverlap = 0;
+    const labelCenterX = labelBounds.x + labelBounds.width / 2;
+    const labelCenterY = labelBounds.y + labelBounds.height / 2;
+    const maxDistance = Math.max(labelBounds.width, labelBounds.height) * 2;
+    
+    // Only check nearby labels for performance
+    const nearbyLabels = placedLabels.filter(existing => {
+        const existingCenterX = existing.x + existing.width / 2;
+        const existingCenterY = existing.y + existing.height / 2;
+        const distance = Math.hypot(labelCenterX - existingCenterX, labelCenterY - existingCenterY);
+        return distance < maxDistance;
+    });
+    
+    nearbyLabels.forEach(existing => {
+        if (checkBoxOverlap(labelBounds, existing, 0)) {
+            totalOverlap += calculateOverlapArea(labelBounds, existing);
+        }
+    });
+    
+    return totalOverlap;
+}
+
+/**
  * Debug function to log collision detection info
  * @param {Object} labelBounds - The label being placed
  * @param {Array} placedLabels - Existing labels
@@ -174,22 +240,40 @@ export function calculateLabelBounds(isHorizontal, labelX, labelY, textWidth, pa
  */
 export function debugCollision(labelBounds, placedLabels, hadCollision) {
     if (hadCollision) {
+        const overlapping = placedLabels.filter(existing => checkBoxOverlap(labelBounds, existing, 0));
         console.warn('⚠️ Collision detected:', {
             newLabel: labelBounds,
             existingLabels: placedLabels,
-            overlappingWith: placedLabels.filter(existing => checkBoxOverlap(labelBounds, existing))
+            overlappingWith: overlapping,
+            overlapArea: calculateTotalOverlapArea(labelBounds, placedLabels)
         });
     }
 }
 
 /**
  * Count the number of overlapping labels for a given label bounds
+ * Enhanced with minimum separation
  * @param {Object} labelBounds - The label bounds to check {x, y, width, height}
  * @param {Array} placedLabels - Array of existing label bounds
+ * @param {number} minSeparation - Minimum separation distance in pixels (default: 3)
  * @returns {number} - Number of overlapping labels
  */
-export function countOverlaps(labelBounds, placedLabels) {
-    return placedLabels.filter(existing => checkBoxOverlap(labelBounds, existing)).length;
+export function countOverlaps(labelBounds, placedLabels, minSeparation = 3) {
+    // Use spatial optimization for better performance
+    const labelCenterX = labelBounds.x + labelBounds.width / 2;
+    const labelCenterY = labelBounds.y + labelBounds.height / 2;
+    const maxDistance = Math.max(labelBounds.width, labelBounds.height) + minSeparation * 2;
+    
+    const nearbyLabels = placedLabels.filter(existing => {
+        const existingCenterX = existing.x + existing.width / 2;
+        const existingCenterY = existing.y + existing.height / 2;
+        const distanceX = Math.abs(labelCenterX - existingCenterX);
+        const distanceY = Math.abs(labelCenterY - existingCenterY);
+        const maxDim = Math.max(existing.width, existing.height);
+        return distanceX < maxDistance + maxDim && distanceY < maxDistance + maxDim;
+    });
+    
+    return nearbyLabels.filter(existing => checkBoxOverlap(labelBounds, existing, minSeparation)).length;
 }
 
 /**
@@ -229,7 +313,7 @@ export function smartPlacement({
         while (attempts < maxAttempts) {
             const position = calculatePosition(offset);
             const bounds = calculateBounds(position.labelX, position.labelY, textWidth);
-            const overlaps = countOverlaps(bounds, placedLabels);
+            const overlaps = countOverlaps(bounds, placedLabels, 3);
             
             if (overlaps === 0) {
                 // Perfect position found
@@ -258,7 +342,7 @@ export function smartPlacement({
             offset: offset - offsetIncrement,
             attempts: attempts,
             side: lockedSide,
-            overlaps: countOverlaps(finalBounds, placedLabels)
+            overlaps: countOverlaps(finalBounds, placedLabels, 3)
         };
     }
     
@@ -272,7 +356,7 @@ export function smartPlacement({
     while (attempts1 < maxAttempts) {
         const position1 = calculatePositionSide1(offset1);
         const bounds1 = calculateBounds(position1.labelX, position1.labelY, textWidth);
-        const overlaps1 = countOverlaps(bounds1, placedLabels);
+        const overlaps1 = countOverlaps(bounds1, placedLabels, 3);
         
         if (overlaps1 === 0) {
             // Perfect position found - use it immediately
@@ -298,7 +382,7 @@ export function smartPlacement({
     while (attempts2 < maxAttempts) {
         const position2 = calculatePositionSide2(offset2);
         const bounds2 = calculateBounds(position2.labelX, position2.labelY, textWidth);
-        const overlaps2 = countOverlaps(bounds2, placedLabels);
+        const overlaps2 = countOverlaps(bounds2, placedLabels, 3);
         
         if (overlaps2 === 0) {
             // Perfect position found - use it immediately
@@ -316,15 +400,26 @@ export function smartPlacement({
     }
     
     // Choose the side with fewer overlaps
-    // If equal, prefer the preferred side
+    // If equal overlaps, consider overlap area for better decision
+    // If still equal, prefer the preferred side
     let chosen;
     if (bestOverlaps1 < bestOverlaps2) {
         chosen = { ...bestSide1, side: 'side1' };
     } else if (bestOverlaps2 < bestOverlaps1) {
         chosen = { ...bestSide2, side: 'side2' };
     } else {
-        // Equal overlaps - use preferred side
-        chosen = preferredSide === 'side1' ? { ...bestSide1, side: 'side1' } : { ...bestSide2, side: 'side2' };
+        // Equal overlap count - compare overlap area for better decision
+        const overlapArea1 = bestSide1 ? calculateTotalOverlapArea(bestSide1.bounds, placedLabels) : Infinity;
+        const overlapArea2 = bestSide2 ? calculateTotalOverlapArea(bestSide2.bounds, placedLabels) : Infinity;
+        
+        if (overlapArea1 < overlapArea2) {
+            chosen = { ...bestSide1, side: 'side1' };
+        } else if (overlapArea2 < overlapArea1) {
+            chosen = { ...bestSide2, side: 'side2' };
+        } else {
+            // Equal overlaps and area - use preferred side
+            chosen = preferredSide === 'side1' ? { ...bestSide1, side: 'side1' } : { ...bestSide2, side: 'side2' };
+        }
     }
     
     return {

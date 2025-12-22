@@ -52,6 +52,29 @@ code {
   min-height: 100vh;
   height: auto;
   overflow: visible;
+  width: 100%;
+}
+
+/* Ensure headers span full width and match scrollable content */
+.project-details-container > div:first-of-type {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: max-content;
+}
+
+.project-details-container .bg-white.border-b.shadow-sm {
+  width: 100% !important;
+  min-width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+/* Ensure content area defines the scrollable width */
+.project-details-container .flex.min-h-\[calc\(100vh-120px\)\] {
+  width: 100%;
+  min-width: max-content;
+  flex-shrink: 0;
 }
 
 /* Ensure sidebar can scroll independently */
@@ -111,6 +134,25 @@ code {
     -moz-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
+}
+
+/* Ensure canvas containers scale properly with browser zoom */
+.ceiling-canvas-container,
+.wall-canvas-container,
+.floor-canvas-container {
+  /* Allow browser zoom to work naturally */
+  transform: none;
+  transform-origin: initial;
+}
+
+/* Ensure canvas elements scale with browser zoom */
+.ceiling-canvas,
+.wall-canvas,
+.floor-canvas {
+  /* Prevent individual element scaling that interferes with browser zoom */
+  image-rendering: auto;
+  -webkit-transform: none;
+  transform: none;
 }
 
 .tool-button svg {

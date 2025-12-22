@@ -663,7 +663,7 @@ export function exportCanvasAsImage(canvasRef, filename = '2d_sketch.png') {
 }
 
 // Export 2D canvas as SVG (for vector format)
-export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections, filename = '2d_sketch.svg') {
+export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections, filename = '2d_sketch.svg', wallPanelsMap = null, showPanelLines = false, joints = []) {
     try {
         if (!canvasRef || !canvasRef.current) {
             console.error('Canvas reference not found');
@@ -720,6 +720,7 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
             .dimension { stroke: #666; stroke-width: ${Math.max(0.5, 1 * scale)}; font-size: ${Math.max(8, 12 * scale)}px; font-family: Arial; }
             .room-label { font-size: ${Math.max(10, 14 * scale)}px; font-family: Arial; fill: #333; text-anchor: middle; }
             .grid { stroke: #ddd; stroke-width: ${Math.max(0.25, 0.5 * scale)}; opacity: 0.5; }
+            .panel-division { stroke: #333; stroke-width: ${Math.max(1, 2 * scale)}; fill: none; }
         </style>
     </defs>
     <rect width="${width}" height="${height}" fill="white"/>
@@ -817,6 +818,118 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
             svgContent += `<text x="${pos.x}" y="${currentY}" class="room-label">${description}</text>`;
         }
     });
+
+    // Add panel division lines if enabled and wallPanelsMap is provided
+    if (showPanelLines && wallPanelsMap) {
+        // Calculate center point for wall line calculations
+        const center = {
+            x: (minX + maxX) / 2,
+            y: (minY + maxY) / 2
+        };
+        
+        // Helper function to calculate offset points for a wall (similar to calculateOffsetPoints in drawing.js)
+        const calculateWallOffsetPoints = (wall) => {
+            const x1 = wall.start_x;
+            const y1 = wall.start_y;
+            const x2 = wall.end_x;
+            const y2 = wall.end_y;
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            
+            if (length === 0) {
+                return {
+                    line1: [{ x: x1, y: y1 }, { x: x2, y: y2 }],
+                    line2: [{ x: x1, y: y1 }, { x: x2, y: y2 }]
+                };
+            }
+            
+            const normalX = dy / length;
+            const normalY = -dx / length;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            const dirToCenterX = center.x - midX;
+            const dirToCenterY = center.y - midY;
+            const dotProduct = normalX * dirToCenterX + normalY * dirToCenterY;
+            const shouldFlip = dotProduct > 0;
+            
+            // Calculate gap based on wall thickness (in model coordinates)
+            const wallThickness = wall.thickness || 100; // Default 100mm
+            const gapPixels = wallThickness; // Gap in model coordinates (mm)
+            const offsetX = gapPixels * normalX;
+            const offsetY = gapPixels * normalY;
+            const finalOffsetX = shouldFlip ? -offsetX : offsetX;
+            const finalOffsetY = shouldFlip ? -offsetY : offsetY;
+            
+            return {
+                line1: [
+                    { x: x1, y: y1 },
+                    { x: x2, y: y2 }
+                ],
+                line2: [
+                    { x: x1 - finalOffsetX * 2, y: y1 - finalOffsetY * 2 },
+                    { x: x2 - finalOffsetX * 2, y: y2 - finalOffsetY * 2 }
+                ]
+            };
+        };
+        
+        svgContent += '<g class="panel-divisions">';
+        
+        walls.forEach(wall => {
+            const panels = wallPanelsMap[wall.id];
+            if (!panels || panels.length <= 1) return; // Need at least 2 panels to have divisions
+            
+            const { line1, line2 } = calculateWallOffsetPoints(wall);
+            const wallLength = Math.sqrt(
+                Math.pow(line1[1].x - line1[0].x, 2) + 
+                Math.pow(line1[1].y - line1[0].y, 2)
+            );
+            
+            if (wallLength === 0) return;
+            
+            let accumulated = 0;
+            
+            // Draw panel division lines
+            for (let i = 0; i < panels.length - 1; i++) {
+                accumulated += panels[i].width || 0;
+                const t = accumulated / wallLength;
+                
+                // Center point along the wall (centerline)
+                const cx = line1[0].x + (line1[1].x - line1[0].x) * t;
+                const cy = line1[0].y + (line1[1].y - line1[0].y) * t;
+                const c2x = line2[0].x + (line2[1].x - line2[0].x) * t;
+                const c2y = line2[0].y + (line2[1].y - line2[0].y) * t;
+                
+                // Midpoint between the two wall lines at t
+                const mx = (cx + c2x) / 2;
+                const my = (cy + c2y) / 2;
+                
+                // Direction vector along the wall
+                const dx = (line1[1].x - line1[0].x) / wallLength;
+                const dy = (line1[1].y - line1[0].y) / wallLength;
+                
+                // Perpendicular vector
+                const perpX = -dy;
+                const perpY = dx;
+                
+                // Half the gap between the wall lines at this t
+                const halfGap = Math.sqrt(Math.pow(cx - c2x, 2) + Math.pow(cy - c2y, 2)) / 2;
+                
+                // Endpoints of the perpendicular division line
+                const x1 = mx + perpX * halfGap;
+                const y1 = my + perpY * halfGap;
+                const x2 = mx - perpX * halfGap;
+                const y2 = my - perpY * halfGap;
+                
+                const p1 = transform(x1, y1);
+                const p2 = transform(x2, y2);
+                
+                svgContent += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" class="panel-division"/>`;
+            }
+        });
+        
+        svgContent += '</g>';
+    }
 
     svgContent += '</svg>';
 
