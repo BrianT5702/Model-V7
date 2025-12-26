@@ -93,6 +93,21 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const [selectedRoomId, setSelectedRoomId] = useState(null);
     const [showAllRooms, setShowAllRooms] = useState(true);
     const [showRoomDetails, setShowRoomDetails] = useState(false);
+    const [detailsPanelTab, setDetailsPanelTab] = useState('details'); // 'details', 'joints', 'panels'
+    
+    // Ceiling joint configuration state
+    const [wallJointConfigs, setWallJointConfigs] = useState({}); // {wallId: {jointType, horizontalExtension}}
+    const [isSavingJointConfigs, setIsSavingJointConfigs] = useState(false);
+    const [jointSaveSuccess, setJointSaveSuccess] = useState(false);
+    const [jointSaveError, setJointSaveError] = useState(null);
+    
+    // Clear feedback messages when switching tabs
+    useEffect(() => {
+        if (detailsPanelTab !== 'joints') {
+            setJointSaveSuccess(false);
+            setJointSaveError(null);
+        }
+    }, [detailsPanelTab]);
     
     // Handle room selection from canvas click
     const handleRoomSelection = (roomId) => {
@@ -113,6 +128,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             setActiveZoneId(null);
             setActiveDetailType('room');
             setIsDetailsPanelOpen(true);
+            setDetailsPanelTab('details'); // Default to details tab
         }
     };
     
@@ -627,28 +643,28 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             
             if (currentRoomId) {
                 const selectedRoom = allRooms.find(r => r.id === currentRoomId);
-                if (selectedRoom && selectedRoom.ceiling_plan) {
-                    // Use the room's current ceiling plan settings
+            if (selectedRoom && selectedRoom.ceiling_plan) {
+                // Use the room's current ceiling plan settings
                     console.log(`🔄 [Room Config] Loading config for room ${currentRoomId} from ceiling plan:`, {
                         orientation: selectedRoom.ceiling_plan.orientation_strategy
                     });
-                    setRoomEditConfig({
-                        ceilingThickness: selectedRoom.ceiling_plan.ceiling_thickness || ceilingThickness,
-                        panelWidth: selectedRoom.ceiling_plan.panel_width || panelWidth,
-                        panelLength: selectedRoom.ceiling_plan.panel_length || panelLength,
-                        customPanelLength: selectedRoom.ceiling_plan.custom_panel_length || customPanelLength,
-                        orientationStrategy: selectedRoom.ceiling_plan.orientation_strategy || selectedOrientationStrategy
-                    });
-                } else {
-                    // Use global settings as fallback
+                setRoomEditConfig({
+                    ceilingThickness: selectedRoom.ceiling_plan.ceiling_thickness || ceilingThickness,
+                    panelWidth: selectedRoom.ceiling_plan.panel_width || panelWidth,
+                    panelLength: selectedRoom.ceiling_plan.panel_length || panelLength,
+                    customPanelLength: selectedRoom.ceiling_plan.custom_panel_length || customPanelLength,
+                    orientationStrategy: selectedRoom.ceiling_plan.orientation_strategy || selectedOrientationStrategy
+                });
+            } else {
+                // Use global settings as fallback
                     console.log(`🔄 [Room Config] Loading default config for room ${currentRoomId}`);
-                    setRoomEditConfig({
-                        ceilingThickness: ceilingThickness,
-                        panelWidth: panelWidth,
-                        panelLength: panelLength,
-                        customPanelLength: customPanelLength,
-                        orientationStrategy: selectedOrientationStrategy
-                    });
+                setRoomEditConfig({
+                    ceilingThickness: ceilingThickness,
+                    panelWidth: panelWidth,
+                    panelLength: panelLength,
+                    customPanelLength: customPanelLength,
+                    orientationStrategy: selectedOrientationStrategy
+                });
                 }
             }
         } else {
@@ -671,6 +687,244 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             }
         }
     }, [selectedRoomId, allRooms, ceilingThickness, panelWidth, panelLength, customPanelLength, selectedOrientationStrategy]);
+    
+    // Helper function to get default Cut L horizontal extension based on wall thickness
+    const getCutLDefaultExtension = (wallThickness) => {
+        if (wallThickness >= 200) return 125.0;
+        if (wallThickness >= 150) return 100.0;
+        if (wallThickness >= 125) return 75.0;
+        if (wallThickness >= 100) return 75.0;
+        if (wallThickness >= 75) return 50.0;
+        return 50.0; // Default for thinner walls
+    };
+    
+    // Helper function to get wall direction/label for better UX
+    const getWallLabel = (wall, room) => {
+        if (!room || !room.room_points || room.room_points.length < 3) {
+            return `Wall #${wall.id}`;
+        }
+        
+        // Calculate room center and bounding box
+        const xs = room.room_points.map(p => p.x);
+        const ys = room.room_points.map(p => p.y);
+        const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+        const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        
+        // Calculate wall midpoint
+        const wallMidX = (wall.start_x + wall.end_x) / 2;
+        const wallMidY = (wall.start_y + wall.end_y) / 2;
+        
+        // Determine wall position relative to room
+        const tolerance = 10; // 10mm tolerance
+        
+        if (Math.abs(wall.start_x - minX) < tolerance && Math.abs(wall.end_x - minX) < tolerance) {
+            return 'Left Wall';
+        } else if (Math.abs(wall.start_x - maxX) < tolerance && Math.abs(wall.end_x - maxX) < tolerance) {
+            return 'Right Wall';
+        } else if (Math.abs(wall.start_y - minY) < tolerance && Math.abs(wall.end_y - minY) < tolerance) {
+            return 'Bottom Wall';
+        } else if (Math.abs(wall.start_y - maxY) < tolerance && Math.abs(wall.end_y - maxY) < tolerance) {
+            return 'Top Wall';
+        }
+        
+        // If not on a clear boundary, use direction
+        const dx = wall.end_x - wall.start_x;
+        const dy = wall.end_y - wall.start_y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        
+        if (length < tolerance) {
+            return `Wall #${wall.id}`;
+        }
+        
+        // Determine if primarily horizontal or vertical
+        if (Math.abs(dx) > Math.abs(dy)) {
+            // Horizontal wall
+            if (wallMidY < centerY) return 'Bottom Wall';
+            return 'Top Wall';
+        } else {
+            // Vertical wall
+            if (wallMidX < centerX) return 'Left Wall';
+            return 'Right Wall';
+        }
+    };
+    
+    // Helper function to get joint type icon/color
+    const getJointTypeDisplay = (jointType) => {
+        switch (jointType) {
+            case 'AA11':
+                return { icon: '📐', color: 'blue', label: 'AA11' };
+            case 'cut_l':
+                return { icon: '🔨', color: 'orange', label: 'Cut L' };
+            case 'cut_45':
+                return { icon: '📐', color: 'purple', label: 'Cut 45' };
+            default:
+                return { icon: '⚪', color: 'gray', label: 'Not Set' };
+        }
+    };
+    
+    // Get walls for selected room or zone
+    const getWallsForSelection = useMemo(() => {
+        if (!selectedRoomId) return [];
+        
+        // Check if it's a zone
+        if (typeof selectedRoomId === 'string' && selectedRoomId.startsWith('zone-')) {
+            const zoneId = parseInt(selectedRoomId.replace('zone-', ''));
+            const zone = ceilingZones.find(z => z.id === zoneId);
+            if (!zone) return [];
+            
+            // Get all rooms in the zone
+            const zoneRooms = allRooms.filter(room => 
+                zone.rooms && zone.rooms.some(r => r.id === room.id || r === room.id)
+            );
+            const zoneRoomIds = new Set(zoneRooms.map(r => r.id));
+            
+            // Get all walls for these rooms
+            const allZoneWalls = allWalls.filter(wall => {
+                if (!wall.rooms || !Array.isArray(wall.rooms)) return false;
+                // Check if wall belongs to any room in the zone
+                return wall.rooms.some(roomId => {
+                    const roomIdNum = typeof roomId === 'string' ? parseInt(roomId) : roomId;
+                    return zoneRoomIds.has(roomIdNum);
+                });
+            });
+            
+            // Filter to only perimeter walls (walls that are NOT shared between rooms in the zone)
+            // Internal walls are walls shared by 2+ rooms in the zone
+            const perimeterWalls = allZoneWalls.filter(wall => {
+                const wallRoomIds = Array.isArray(wall.rooms) ? wall.rooms.map(id => typeof id === 'string' ? parseInt(id) : id) : [];
+                const sharedByZoneRooms = wallRoomIds.filter(id => zoneRoomIds.has(id));
+                // If wall is only shared by rooms in this zone (all wall rooms are in zone), it's internal (exclude it)
+                // If wall has rooms outside the zone, it's perimeter (include it)
+                const allWallRoomsInZone = wallRoomIds.length > 0 && wallRoomIds.every(id => zoneRoomIds.has(id));
+                return !(allWallRoomsInZone && sharedByZoneRooms.length >= 2);
+            });
+            
+            return perimeterWalls;
+        } else {
+            // Single room - get all walls for this room
+            const roomIdNum = typeof selectedRoomId === 'string' ? parseInt(selectedRoomId) : selectedRoomId;
+            return allWalls.filter(wall => {
+                if (!wall.rooms || !Array.isArray(wall.rooms)) return false;
+                return wall.rooms.some(roomId => 
+                    String(roomId) === String(roomIdNum) || parseInt(roomId) === roomIdNum
+                );
+            });
+        }
+    }, [selectedRoomId, allWalls, allRooms, ceilingZones]);
+    
+    // Load wall joint configurations when room/zone is selected
+    useEffect(() => {
+        if (!selectedRoomId || getWallsForSelection.length === 0) {
+            setWallJointConfigs({});
+            return;
+        }
+        
+        // Load current joint configurations from walls
+        const configs = {};
+        getWallsForSelection.forEach(wall => {
+            configs[wall.id] = {
+                jointType: wall.ceiling_joint_type || null,
+                horizontalExtension: wall.ceiling_cut_l_horizontal_extension || null
+            };
+        });
+        setWallJointConfigs(configs);
+    }, [selectedRoomId, getWallsForSelection]);
+    
+    // Handle joint type change
+    const handleJointTypeChange = (wallId, jointType) => {
+        setWallJointConfigs(prev => {
+            const updated = { ...prev };
+            if (!updated[wallId]) {
+                updated[wallId] = {};
+            }
+            updated[wallId].jointType = jointType;
+            
+            // If Cut L is selected and no custom extension set, use default
+            if (jointType === 'cut_l' && !updated[wallId].horizontalExtension) {
+                const wall = allWalls.find(w => w.id === wallId);
+                if (wall) {
+                    updated[wallId].horizontalExtension = getCutLDefaultExtension(wall.thickness);
+                }
+            }
+            
+            return updated;
+        });
+    };
+    
+    // Handle Cut L horizontal extension change
+    const handleCutLExtensionChange = (wallId, value) => {
+        setWallJointConfigs(prev => {
+            const updated = { ...prev };
+            if (!updated[wallId]) {
+                updated[wallId] = {};
+            }
+            updated[wallId].horizontalExtension = value ? parseFloat(value) : null;
+            return updated;
+        });
+    };
+    
+    // Save wall joint configurations
+    const saveWallJointConfigs = async () => {
+        if (isSavingJointConfigs) return;
+        
+        setIsSavingJointConfigs(true);
+        setJointSaveSuccess(false);
+        setJointSaveError(null);
+        
+        try {
+            const configsToSave = Object.entries(wallJointConfigs).filter(([_, config]) => config.jointType);
+            const savedCount = configsToSave.length;
+            
+            if (savedCount === 0) {
+                setJointSaveError('No joint configurations to save. Please configure at least one wall.');
+                setIsSavingJointConfigs(false);
+                return;
+            }
+            
+            const updatePromises = configsToSave.map(async ([wallId, config]) => {
+                const wall = allWalls.find(w => w.id === parseInt(wallId));
+                if (!wall) return;
+                
+                const updateData = {
+                    ceiling_joint_type: config.jointType || null,
+                    ceiling_cut_l_horizontal_extension: config.jointType === 'cut_l' ? (config.horizontalExtension || null) : null
+                };
+                
+                await api.patch(`/walls/${wallId}/`, updateData);
+            });
+            
+            await Promise.all(updatePromises);
+            
+            // Reload walls to get updated data
+            const wallsResponse = await api.get(`/walls/?project=${projectId}`);
+            setAllWalls(wallsResponse.data || []);
+            
+            // Show success message
+            setJointSaveSuccess(true);
+            console.log(`✅ Saved ${savedCount} wall joint configuration(s)`);
+            
+            // Auto-hide success message after 3 seconds
+            setTimeout(() => {
+                setJointSaveSuccess(false);
+            }, 3000);
+            
+        } catch (error) {
+            console.error('Error saving wall joint configurations:', error);
+            const errorMessage = error.response?.data?.detail || error.message || 'Failed to save wall joint configurations. Please try again.';
+            setJointSaveError(errorMessage);
+            
+            // Auto-hide error message after 5 seconds
+            setTimeout(() => {
+                setJointSaveError(null);
+            }, 5000);
+        } finally {
+            setIsSavingJointConfigs(false);
+        }
+    };
 
     const loadCeilingZones = useCallback(async () => {
         if (!projectId) return;
@@ -1461,6 +1715,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
     // Generate ceiling plan for a specific room only
     const generateCeilingPlanForRoom = async (roomId, config) => {
+        // Save wall joint configurations before generating
+        if (selectedRoomId && Object.keys(wallJointConfigs).length > 0) {
+            await saveWallJointConfigs();
+        }
         setIsRegeneratingRoom(true);
         setError(null);
         setRoomRegenerationSuccess(false);
@@ -1642,6 +1900,15 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const generateCeilingPlan = async () => {
+        // Save wall joint configurations before generating (if any changes)
+        if (selectedRoomId && Object.keys(wallJointConfigs).length > 0) {
+            try {
+                await saveWallJointConfigs();
+            } catch (error) {
+                console.error('Error saving joint configs before generation:', error);
+                // Continue with generation even if save fails
+            }
+        }
         if (!projectId) {
             setError('No project selected');
             return;
@@ -1956,7 +2223,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     </div>
                     
                     {/* Storey and Room Selection Controls */}
-                    <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-4">
                         {/* Storey Selector */}
                         {storeys.length > 1 && (
                             <div className="flex items-center space-x-2">
@@ -2008,13 +2275,13 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                 </select>
                             </div>
                         )}
-                        
-                        {!showAllRooms && selectedRoomId && (
-                            <div className="text-sm text-gray-600">
+                            
+                            {!showAllRooms && selectedRoomId && (
+                                <div className="text-sm text-gray-600">
                                 <span className="font-medium">Selected:</span> {filteredRooms.find(r => r.id === selectedRoomId)?.room_name}
-                            </div>
-                        )}
-                    </div>
+                                </div>
+                            )}
+                        </div>
                     {/* Dimension visibility checkboxes */}
                     <div className="flex items-center space-x-4">
                         <label className="flex items-center space-x-2 cursor-pointer">
@@ -2156,6 +2423,9 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         </div>
                     </div>
                 </div>
+
+                {/* Ceiling Joint Configuration - Moved to Details Panel */}
+                {/* This section is now integrated into the details panel below */}
 
                 {/* Support Configuration Row */}
                 {panelsNeedSupport ? (
@@ -2610,12 +2880,13 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
                         {shouldShowDetailsPanel && (
                             <div className="w-full bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden">
+                                {/* Header */}
                                 <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200 gap-3">
                                     <div className="space-y-1">
                                         {showRoomDetailsPanel ? (
                                             <>
                                                 <h3 className="text-lg font-semibold text-gray-900">
-                                                    Room Details: {selectedRoom?.room_name || 'Room'}
+                                                    {selectedRoom?.room_name || 'Room'} Configuration
                                     </h3>
                                                 {selectedRoom && (
                                                     <p className="text-xs text-gray-500">
@@ -2646,14 +2917,6 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                 <span>Updating…</span>
                                             </div>
                                         )}
-                                        {showRoomDetailsPanel && (
-                                    <button
-                                        onClick={() => setShowRoomDetails(!showRoomDetails)}
-                                                className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
-                                    >
-                                        {showRoomDetails ? 'Hide Details' : 'Show Details'}
-                                            </button>
-                                        )}
                                         <button
                                             onClick={() => setIsDetailsPanelOpen(false)}
                                             className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
@@ -2668,8 +2931,353 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                     </button>
                                 </div>
                                 </div>
+                                
+                                {/* Tabs for Room Details Panel */}
+                                {showRoomDetailsPanel && (
+                                    <div className="border-b border-gray-200">
+                                        <div className="flex space-x-1 px-5">
+                                            <button
+                                                onClick={() => setDetailsPanelTab('details')}
+                                                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                                                    detailsPanelTab === 'details'
+                                                        ? 'border-blue-600 text-blue-600'
+                                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                                }`}
+                                            >
+                                                Room Details
+                                            </button>
+                                            {getWallsForSelection.length > 0 && (
+                                                <button
+                                                    onClick={() => setDetailsPanelTab('joints')}
+                                                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 relative ${
+                                                        detailsPanelTab === 'joints'
+                                                            ? 'border-indigo-600 text-indigo-600'
+                                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                                    }`}
+                                                >
+                                                    Joint Configuration
+                                                    {Object.keys(wallJointConfigs).filter(id => wallJointConfigs[id]?.jointType).length > 0 && (
+                                                        <span className="ml-2 px-1.5 py-0.5 text-xs bg-indigo-100 text-indigo-700 rounded-full">
+                                                            {Object.keys(wallJointConfigs).filter(id => wallJointConfigs[id]?.jointType).length}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                
                                 <div className="px-5 py-4 overflow-y-auto max-h-[60vh]">
                                     {showRoomDetailsPanel ? (
+                                        detailsPanelTab === 'joints' ? (
+                                            /* Joint Configuration Tab */
+                                            getWallsForSelection.length > 0 ? (
+                                                <div className="space-y-4">
+                                                    <p className="text-xs text-gray-600 mb-3">
+                                                        Configure how the ceiling joins with each wall. For merged zones, only perimeter walls are shown (internal walls are automatically AA11).
+                                                    </p>
+                                                    
+                                                    {/* Quick Actions */}
+                                                    <div className="flex flex-wrap gap-2 pb-2 border-b border-gray-200">
+                                                        <button
+                                                            onClick={() => {
+                                                                const updates = {};
+                                                                getWallsForSelection.forEach(wall => {
+                                                                    updates[wall.id] = { jointType: 'AA11', horizontalExtension: null };
+                                                                });
+                                                                setWallJointConfigs(prev => ({ ...prev, ...updates }));
+                                                            }}
+                                                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                                                            title="Set all walls to AA11"
+                                                        >
+                                                            Set All AA11
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                const updates = {};
+                                                                getWallsForSelection.forEach(wall => {
+                                                                    updates[wall.id] = { 
+                                                                        jointType: 'cut_l', 
+                                                                        horizontalExtension: getCutLDefaultExtension(wall.thickness)
+                                                                    };
+                                                                });
+                                                                setWallJointConfigs(prev => ({ ...prev, ...updates }));
+                                                            }}
+                                                            className="text-xs px-3 py-1 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors"
+                                                            title="Set all walls to Cut L with defaults"
+                                                        >
+                                                            Set All Cut L (Default)
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setWallJointConfigs({});
+                                                            }}
+                                                            className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                                                            title="Clear all joint configurations"
+                                                        >
+                                                            Clear All
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2">
+                                                        {getWallsForSelection.map(wall => {
+                                                            const config = wallJointConfigs[wall.id] || { jointType: null, horizontalExtension: null };
+                                                            const wallLength = Math.sqrt(
+                                                                Math.pow((wall.end_x || 0) - (wall.start_x || 0), 2) + 
+                                                                Math.pow((wall.end_y || 0) - (wall.start_y || 0), 2)
+                                                            );
+                                                            
+                                                            // Get current room for wall labeling
+                                                            const currentRoom = typeof selectedRoomId === 'string' && selectedRoomId.startsWith('zone-') 
+                                                                ? null 
+                                                                : allRooms.find(r => r.id === selectedRoomId);
+                                                            
+                                                            const wallLabel = getWallLabel(wall, currentRoom);
+                                                            const jointDisplay = getJointTypeDisplay(config.jointType);
+                                                            
+                                                            // Check if wall is shared (for display info)
+                                                            const wallRoomIds = Array.isArray(wall.rooms) ? wall.rooms.map(id => typeof id === 'string' ? parseInt(id) : id) : [];
+                                                            const isShared = wallRoomIds.length > 1;
+                                                            const sharedRooms = isShared ? allRooms.filter(r => wallRoomIds.includes(r.id)) : [];
+                                                            
+                                                            // Determine which room controls the joint type (for shared walls without fill_gap_mode)
+                                                            let controllingRoom = null;
+                                                            if (isShared && !wall.fill_gap_mode) {
+                                                                // Find room with higher height
+                                                                const roomsWithHeights = sharedRooms
+                                                                    .map(r => ({ room: r, height: r.height || 0 }))
+                                                                    .filter(r => r.height > 0)
+                                                                    .sort((a, b) => b.height - a.height);
+                                                                if (roomsWithHeights.length > 0) {
+                                                                    controllingRoom = roomsWithHeights[0].room;
+                                                                }
+                                                            }
+                                                            
+                                                            return (
+                                                                <div 
+                                                                    key={wall.id} 
+                                                                    className={`border rounded-lg p-3 transition-all ${
+                                                                        config.jointType 
+                                                                            ? config.jointType === 'AA11' 
+                                                                                ? 'border-blue-300 bg-blue-50/30' 
+                                                                                : config.jointType === 'cut_l'
+                                                                                ? 'border-orange-300 bg-orange-50/30'
+                                                                                : 'border-purple-300 bg-purple-50/30'
+                                                                            : 'border-gray-200 bg-gray-50'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-start justify-between mb-3">
+                                                                        <div className="flex-1">
+                                                                            <div className="flex items-center flex-wrap gap-2 mb-1">
+                                                                                <span className={`text-sm font-semibold ${
+                                                                                    config.jointType ? 'text-gray-900' : 'text-gray-600'
+                                                                                }`}>
+                                                                                    {wallLabel}
+                                                                                </span>
+                                                                                <span className="text-xs text-gray-500">#{wall.id}</span>
+                                                                                {config.jointType && (
+                                                                                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                                                                        config.jointType === 'AA11' 
+                                                                                            ? 'bg-blue-100 text-blue-700'
+                                                                                            : config.jointType === 'cut_l'
+                                                                                            ? 'bg-orange-100 text-orange-700'
+                                                                                            : 'bg-purple-100 text-purple-700'
+                                                                                    }`}>
+                                                                                        {jointDisplay.icon} {jointDisplay.label}
+                                                                                    </span>
+                                                                                )}
+                                                                                {isShared && (
+                                                                                    <>
+                                                                                        <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
+                                                                                            Shared ({sharedRooms.length} rooms)
+                                                                                        </span>
+                                                                                        {controllingRoom && (
+                                                                                            <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded">
+                                                                                                Controlled by: {controllingRoom.room_name}
+                                                                                            </span>
+                                                                                        )}
+                                                                                        {wall.fill_gap_mode && (
+                                                                                            <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded">
+                                                                                                Fill Gap Mode
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="text-xs text-gray-600 space-x-3">
+                                                                                <span>Thickness: <strong>{wall.thickness}mm</strong></span>
+                                                                                <span>•</span>
+                                                                                <span>Length: <strong>{Math.round(wallLength)}mm</strong></span>
+                                                                                <span>•</span>
+                                                                                <span>Position: ({Math.round(wall.start_x)}, {Math.round(wall.start_y)}) → ({Math.round(wall.end_x)}, {Math.round(wall.end_y)})</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <div className="space-y-2">
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                                                                                Joint Type
+                                                                            </label>
+                                                                            <select
+                                                                                value={config.jointType || ''}
+                                                                                onChange={(e) => handleJointTypeChange(wall.id, e.target.value || null)}
+                                                                                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                                            >
+                                                                                <option value="">⚪ Not Set</option>
+                                                                                <option value="AA11">📐 AA11 - No cutting, directly on top</option>
+                                                                                <option value="cut_l">🔨 Cut L - L-shaped cut in wall</option>
+                                                                                <option value="cut_45">📐 Cut 45 - 45-degree cut</option>
+                                                                            </select>
+                                                                        </div>
+                                                                        
+                                                                        {config.jointType === 'cut_l' && (
+                                                                            <div className="bg-orange-50 border border-orange-200 rounded-md p-2.5">
+                                                                                <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                                                                                    Horizontal Extension (mm)
+                                                                                    <span className="text-gray-500 font-normal ml-1">
+                                                                                        (Default: {getCutLDefaultExtension(wall.thickness)}mm)
+                                                                                    </span>
+                                                                                </label>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        min="0"
+                                                                                        max={wall.thickness}
+                                                                                        step="1"
+                                                                                        value={config.horizontalExtension || getCutLDefaultExtension(wall.thickness)}
+                                                                                        onChange={(e) => handleCutLExtensionChange(wall.id, e.target.value)}
+                                                                                        className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                                                                                        placeholder={getCutLDefaultExtension(wall.thickness).toString()}
+                                                                                    />
+                                                                                    <button
+                                                                                        onClick={() => handleCutLExtensionChange(wall.id, getCutLDefaultExtension(wall.thickness))}
+                                                                                        className="text-xs px-2 py-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+                                                                                        title="Reset to default"
+                                                                                    >
+                                                                                        Reset
+                                                                                    </button>
+                                                                                </div>
+                                                                                <p className="text-xs text-gray-600 mt-1.5">
+                                                                                    Vertical depth = ceiling thickness ({ceilingThickness}mm)
+                                                                                </p>
+                                                                            </div>
+                                                                        )}
+                                                                        
+                                                                        {config.jointType === 'AA11' && (
+                                                                            <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 p-2.5 rounded-md">
+                                                                                <strong>Auto-adjustment:</strong> Wall height will be set to room height - ceiling thickness ({ceilingThickness}mm)
+                                                                            </div>
+                                                                        )}
+                                                                        
+                                                                        {config.jointType === 'cut_45' && (
+                                                                            <div className="text-xs text-purple-700 bg-purple-50 border border-purple-200 p-2.5 rounded-md">
+                                                                                <strong>Note:</strong> Cut 45 is a marker type - no automatic calculations are applied.
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    
+                                                    {/* Success/Error Feedback Messages */}
+                                                    {jointSaveSuccess && (
+                                                        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 animate-fade-in">
+                                                            <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                            </svg>
+                                                            <div className="flex-1">
+                                                                <p className="text-sm font-medium text-green-800">
+                                                                    Joint configurations saved successfully!
+                                                                </p>
+                                                                <p className="text-xs text-green-600 mt-0.5">
+                                                                    {Object.keys(wallJointConfigs).filter(id => wallJointConfigs[id]?.jointType).length} wall{Object.keys(wallJointConfigs).filter(id => wallJointConfigs[id]?.jointType).length !== 1 ? 's' : ''} configured
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setJointSaveSuccess(false)}
+                                                                className="text-green-600 hover:text-green-800 transition-colors"
+                                                                aria-label="Dismiss"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {jointSaveError && (
+                                                        <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 animate-fade-in">
+                                                            <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            <div className="flex-1">
+                                                                <p className="text-sm font-medium text-red-800">
+                                                                    Failed to save joint configurations
+                                                                </p>
+                                                                <p className="text-xs text-red-600 mt-0.5">
+                                                                    {jointSaveError}
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setJointSaveError(null)}
+                                                                className="text-red-600 hover:text-red-800 transition-colors"
+                                                                aria-label="Dismiss"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div className="flex items-center justify-between pt-3 border-t border-gray-200 mt-3">
+                                                        <div className="flex-1">
+                                                            <p className="text-xs text-gray-500 mb-1">
+                                                                Configurations are saved automatically when you generate the ceiling plan.
+                                                            </p>
+                                                            {Object.keys(wallJointConfigs).length > 0 && (
+                                                                <p className="text-xs text-gray-600">
+                                                                    <strong>{Object.keys(wallJointConfigs).filter(id => wallJointConfigs[id]?.jointType).length}</strong> of {getWallsForSelection.length} wall{getWallsForSelection.length !== 1 ? 's' : ''} configured
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <button
+                                                            onClick={saveWallJointConfigs}
+                                                            disabled={isSavingJointConfigs || Object.keys(wallJointConfigs).filter(id => wallJointConfigs[id]?.jointType).length === 0}
+                                                            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors shadow-sm flex items-center gap-2 ${
+                                                                isSavingJointConfigs
+                                                                    ? 'bg-indigo-400 text-white cursor-wait'
+                                                                    : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                                                            }`}
+                                                        >
+                                                            {isSavingJointConfigs ? (
+                                                                <>
+                                                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                                                    </svg>
+                                                                    <span>Saving...</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                                    </svg>
+                                                                    <span>Save Now</span>
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-8 text-gray-500">
+                                                    <p className="text-sm">No walls available for this selection.</p>
+                                                </div>
+                                            )
+                                        ) : (
+                                            /* Room Details Tab */
                                         showRoomDetails ? (
                                             <>
                                                 {panelSwapCard}
@@ -2930,8 +3538,9 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                             </>
                                         ) : (
                                             <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
-                                                Details are hidden. Click "Show Details" to view room information.
+                                                Click "Show Details" to view room information and settings.
                                             </div>
+                                        )
                                         )
                                     ) : (
                                         <>

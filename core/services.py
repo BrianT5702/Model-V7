@@ -2168,6 +2168,405 @@ class CeilingService:
     DEFAULT_WALL_THICKNESS = 150  # Default wall thickness in mm
     
     @staticmethod
+    def get_cut_l_default_horizontal_extension(wall_thickness):
+        """Get default horizontal extension for Cut L joint based on wall thickness
+        
+        Args:
+            wall_thickness: Wall thickness in mm
+            
+        Returns:
+            Default horizontal extension in mm
+        """
+        if wall_thickness >= 200:
+            return 125.0
+        elif wall_thickness >= 150:
+            return 100.0
+        elif wall_thickness >= 125:
+            return 75.0
+        elif wall_thickness >= 100:
+            return 75.0
+        elif wall_thickness >= 75:
+            return 50.0
+        else:
+            # For walls thinner than 75mm, use 50mm as default
+            return 50.0
+    
+    @staticmethod
+    def get_cut_l_horizontal_extension(wall):
+        """Get horizontal extension for Cut L joint for a wall
+        
+        Returns the custom value if set, otherwise calculates default based on wall thickness.
+        
+        Args:
+            wall: Wall model instance
+            
+        Returns:
+            Horizontal extension in mm
+        """
+        if wall.ceiling_cut_l_horizontal_extension is not None:
+            return wall.ceiling_cut_l_horizontal_extension
+        return CeilingService.get_cut_l_default_horizontal_extension(wall.thickness)
+    
+    @staticmethod
+    def calculate_ceiling_area_reduction_for_room(room, ceiling_thickness):
+        """Calculate total ceiling area reduction for a room due to Cut L joints
+        
+        Args:
+            room: Room model instance
+            ceiling_thickness: Ceiling thickness in mm
+            
+        Returns:
+            Total area reduction in square mm
+        """
+        total_reduction = 0.0
+        
+        # Get all walls for this room
+        walls = room.walls.all()
+        
+        for wall in walls:
+            # Only calculate reduction for Cut L joints
+            if wall.ceiling_joint_type == 'cut_l':
+                # Get horizontal extension (custom or default)
+                horizontal_extension = CeilingService.get_cut_l_horizontal_extension(wall)
+                
+                # Calculate wall length
+                wall_length = ((wall.end_x - wall.start_x) ** 2 + (wall.end_y - wall.start_y) ** 2) ** 0.5
+                
+                # Calculate reduction: (wall_thickness - horizontal_extension) × wall_length
+                reduction = (wall.thickness - horizontal_extension) * wall_length
+                total_reduction += reduction
+                
+                logger.debug(f"Wall {wall.id}: Cut L reduction = ({wall.thickness} - {horizontal_extension}) × {wall_length} = {reduction}mm²")
+        
+        return total_reduction
+    
+    @staticmethod
+    def calculate_cut_l_wall_offsets(room):
+        """Calculate the offset for each wall with Cut L joints
+        
+        Returns a dict mapping wall_id to offset value (wall_thickness - horizontal_extension)
+        Only includes walls with Cut L joints.
+        
+        Args:
+            room: Room model instance
+            
+        Returns:
+            Dict of {wall_id: offset_mm}
+        """
+        offsets = {}
+        walls = room.walls.all()
+        
+        for wall in walls:
+            if wall.ceiling_joint_type == 'cut_l':
+                horizontal_extension = CeilingService.get_cut_l_horizontal_extension(wall)
+                offset = wall.thickness - horizontal_extension
+                offsets[wall.id] = offset
+                logger.debug(f"Wall {wall.id}: Cut L offset = {wall.thickness} - {horizontal_extension} = {offset}mm")
+        
+        return offsets
+    
+    @staticmethod
+    def adjust_bounding_box_for_cut_l(bounding_box, room, room_points, tolerance=1.0):
+        """Adjust bounding box to account for Cut L wall offsets
+        
+        For walls with Cut L joints, panels should be offset inward by (wall_thickness - horizontal_extension).
+        This function identifies which walls are on each boundary and applies the appropriate offset.
+        
+        Args:
+            bounding_box: Original bounding box dict with min_x, max_x, min_y, max_y
+            room: Room model instance
+            room_points: List of room boundary points
+            tolerance: Tolerance for determining if a wall is on a boundary (in mm)
+            
+        Returns:
+            Adjusted bounding box dict
+        """
+        # Get wall offsets for Cut L joints
+        wall_offsets = CeilingService.calculate_cut_l_wall_offsets(room)
+        
+        if not wall_offsets:
+            # No Cut L joints, return original bounding box
+            return bounding_box.copy()
+        
+        # Get all walls for this room
+        walls = room.walls.all()
+        
+        # Calculate adjusted bounding box
+        adjusted_box = {
+            'min_x': bounding_box['min_x'],
+            'max_x': bounding_box['max_x'],
+            'min_y': bounding_box['min_y'],
+            'max_y': bounding_box['max_y']
+        }
+        
+        # For each wall with Cut L, check if it's on a boundary and apply offset
+        for wall in walls:
+            if wall.id not in wall_offsets:
+                continue
+            
+            offset = wall_offsets[wall.id]
+            
+            # Check if wall is on left boundary (min_x)
+            if abs(wall.start_x - bounding_box['min_x']) < tolerance and abs(wall.end_x - bounding_box['min_x']) < tolerance:
+                adjusted_box['min_x'] += offset
+                logger.debug(f"Wall {wall.id}: On left boundary, offset min_x by {offset}mm")
+            
+            # Check if wall is on right boundary (max_x)
+            elif abs(wall.start_x - bounding_box['max_x']) < tolerance and abs(wall.end_x - bounding_box['max_x']) < tolerance:
+                adjusted_box['max_x'] -= offset
+                logger.debug(f"Wall {wall.id}: On right boundary, offset max_x by -{offset}mm")
+            
+            # Check if wall is on bottom boundary (min_y)
+            elif abs(wall.start_y - bounding_box['min_y']) < tolerance and abs(wall.end_y - bounding_box['min_y']) < tolerance:
+                adjusted_box['min_y'] += offset
+                logger.debug(f"Wall {wall.id}: On bottom boundary, offset min_y by {offset}mm")
+            
+            # Check if wall is on top boundary (max_y)
+            elif abs(wall.start_y - bounding_box['max_y']) < tolerance and abs(wall.end_y - bounding_box['max_y']) < tolerance:
+                adjusted_box['max_y'] -= offset
+                logger.debug(f"Wall {wall.id}: On top boundary, offset max_y by -{offset}mm")
+            
+            # For walls that span across boundaries, we need to check both endpoints
+            else:
+                # Check start point
+                if abs(wall.start_x - bounding_box['min_x']) < tolerance:
+                    adjusted_box['min_x'] = max(adjusted_box['min_x'], bounding_box['min_x'] + offset)
+                elif abs(wall.start_x - bounding_box['max_x']) < tolerance:
+                    adjusted_box['max_x'] = min(adjusted_box['max_x'], bounding_box['max_x'] - offset)
+                elif abs(wall.start_y - bounding_box['min_y']) < tolerance:
+                    adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
+                elif abs(wall.start_y - bounding_box['max_y']) < tolerance:
+                    adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
+                
+                # Check end point
+                if abs(wall.end_x - bounding_box['min_x']) < tolerance:
+                    adjusted_box['min_x'] = max(adjusted_box['min_x'], bounding_box['min_x'] + offset)
+                elif abs(wall.end_x - bounding_box['max_x']) < tolerance:
+                    adjusted_box['max_x'] = min(adjusted_box['max_x'], bounding_box['max_x'] - offset)
+                elif abs(wall.end_y - bounding_box['min_y']) < tolerance:
+                    adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
+                elif abs(wall.end_y - bounding_box['max_y']) < tolerance:
+                    adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
+        
+        # Recalculate width and height
+        adjusted_box['width'] = adjusted_box['max_x'] - adjusted_box['min_x']
+        adjusted_box['height'] = adjusted_box['max_y'] - adjusted_box['min_y']
+        
+        logger.info(f"Adjusted bounding box for room {room.id}: "
+                   f"({bounding_box['min_x']:.1f}, {bounding_box['min_y']:.1f}) to "
+                   f"({bounding_box['max_x']:.1f}, {bounding_box['max_y']:.1f}) -> "
+                   f"({adjusted_box['min_x']:.1f}, {adjusted_box['min_y']:.1f}) to "
+                   f"({adjusted_box['max_x']:.1f}, {adjusted_box['max_y']:.1f})")
+        
+        return adjusted_box
+    
+    @staticmethod
+    def adjust_room_points_for_cut_l_offset(room_points, room, adjusted_bounding_box, original_bounding_box, tolerance=1.0):
+        """Adjust room_points to match the adjusted bounding box for Cut L offsets
+        
+        This adjusts points that lie on boundaries to match the adjusted bounding box.
+        For rectangular rooms, this directly offsets boundary points.
+        
+        Args:
+            room_points: Original room boundary points
+            room: Room model instance
+            adjusted_bounding_box: Bounding box after Cut L adjustments
+            original_bounding_box: Original bounding box
+            tolerance: Tolerance for determining if a point is on a boundary
+            
+        Returns:
+            Adjusted room_points that match the adjusted bounding box
+        """
+        # Check if bounding box was actually adjusted
+        if (abs(adjusted_bounding_box['min_x'] - original_bounding_box['min_x']) < 0.1 and
+            abs(adjusted_bounding_box['max_x'] - original_bounding_box['max_x']) < 0.1 and
+            abs(adjusted_bounding_box['min_y'] - original_bounding_box['min_y']) < 0.1 and
+            abs(adjusted_bounding_box['max_y'] - original_bounding_box['max_y']) < 0.1):
+            # No adjustment, return original points
+            return room_points
+        
+        # Calculate boundary offsets
+        offset_min_x = adjusted_bounding_box['min_x'] - original_bounding_box['min_x']
+        offset_max_x = adjusted_bounding_box['max_x'] - original_bounding_box['max_x']
+        offset_min_y = adjusted_bounding_box['min_y'] - original_bounding_box['min_y']
+        offset_max_y = adjusted_bounding_box['max_y'] - original_bounding_box['max_y']
+        
+        # Adjust each point based on which boundary it's on
+        adjusted_points = []
+        for point in room_points:
+            # Convert to dict if needed
+            if not isinstance(point, dict):
+                if hasattr(point, 'x'):
+                    p = {'x': point.x, 'y': point.y}
+                else:
+                    p = {'x': point[0], 'y': point[1]}
+            else:
+                p = point.copy()
+            
+            adjusted_x = p['x']
+            adjusted_y = p['y']
+            
+            # Adjust x coordinate if on left or right boundary
+            if abs(p['x'] - original_bounding_box['min_x']) < tolerance:
+                adjusted_x = adjusted_bounding_box['min_x']
+            elif abs(p['x'] - original_bounding_box['max_x']) < tolerance:
+                adjusted_x = adjusted_bounding_box['max_x']
+            
+            # Adjust y coordinate if on bottom or top boundary
+            if abs(p['y'] - original_bounding_box['min_y']) < tolerance:
+                adjusted_y = adjusted_bounding_box['min_y']
+            elif abs(p['y'] - original_bounding_box['max_y']) < tolerance:
+                adjusted_y = adjusted_bounding_box['max_y']
+            
+            adjusted_points.append({'x': adjusted_x, 'y': adjusted_y})
+        
+        logger.debug(f"Adjusted {len(adjusted_points)} room points for Cut L offsets "
+                    f"(offsets: x=[{offset_min_x:.1f}, {offset_max_x:.1f}], y=[{offset_min_y:.1f}, {offset_max_y:.1f}])")
+        return adjusted_points
+    
+    @staticmethod
+    def adjust_room_points_for_cut_l(room_points, room, ceiling_thickness):
+        """Adjust room_points to account for Cut L ceiling area reduction
+        
+        This creates a slightly smaller effective ceiling area by offsetting walls inward.
+        Note: This is a simplified approach - for complex shapes, the reduction is applied
+        proportionally rather than geometrically modifying each point.
+        
+        Args:
+            room_points: List of room boundary points
+            room: Room model instance
+            ceiling_thickness: Ceiling thickness in mm
+            
+        Returns:
+            Adjusted room_points (or original if no Cut L joints)
+        """
+        # Calculate total reduction
+        total_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
+        
+        if total_reduction <= 0:
+            return room_points
+        
+        # Calculate original room area
+        original_area = CeilingService._calculate_room_area(room_points)
+        
+        if original_area <= 0:
+            return room_points
+        
+        # Calculate reduction factor (how much to shrink the area)
+        # We'll apply this by slightly offsetting points inward
+        # For simplicity, we'll use a uniform offset based on perimeter
+        # More accurate would be to offset each wall segment inward, but that's complex
+        
+        # Calculate perimeter to estimate average offset needed
+        perimeter = 0.0
+        n = len(room_points)
+        for i in range(n):
+            j = (i + 1) % n
+            dx = room_points[j]['x'] - room_points[i]['x']
+            dy = room_points[j]['y'] - room_points[i]['y']
+            perimeter += (dx ** 2 + dy ** 2) ** 0.5
+        
+        if perimeter <= 0:
+            return room_points
+        
+        # Estimate average offset needed (simplified calculation)
+        # Area reduction ≈ perimeter × average_offset
+        # So: average_offset ≈ area_reduction / perimeter
+        average_offset = total_reduction / perimeter
+        
+        # For now, return original points - the area reduction will be applied
+        # during panel generation by using a reduced effective area
+        # This is safer than modifying geometry which could cause issues
+        return room_points
+    
+    @staticmethod
+    def apply_aa11_wall_height_adjustment(wall, room):
+        """Apply AA11 wall height adjustment: wall_height = room_height - ceiling_thickness
+        
+        Args:
+            wall: Wall model instance
+            room: Room model instance (must have height set)
+            
+        Returns:
+            True if adjustment was made, False otherwise
+        """
+        if wall.ceiling_joint_type != 'AA11':
+            return False
+        
+        if not room.height or room.height <= 0:
+            return False
+        
+        # Get ceiling thickness from room or use default
+        ceiling_thickness = float(room.ceiling_thickness) if hasattr(room, 'ceiling_thickness') and room.ceiling_thickness else 150.0
+        
+        # Calculate new wall height
+        new_height = room.height - ceiling_thickness
+        
+        if new_height <= 0:
+            logger.warning(f"Cannot adjust wall {wall.id} height: room height {room.height}mm - ceiling thickness {ceiling_thickness}mm = {new_height}mm (must be > 0)")
+            return False
+        
+        # Only update if different
+        if abs(wall.height - new_height) > 0.1:  # Allow small floating point differences
+            logger.info(f"Adjusting wall {wall.id} height for AA11: {wall.height}mm -> {new_height}mm (room height {room.height}mm - ceiling {ceiling_thickness}mm)")
+            wall.height = new_height
+            wall.save()
+            return True
+        
+        return False
+    
+    @staticmethod
+    def auto_lower_internal_walls_for_merged_zone(zone, ceiling_thickness):
+        """Automatically lower internal/shared walls in a merged zone by ceiling thickness
+        
+        Internal walls (walls shared by 2+ rooms in the zone) are always AA11
+        and must be lowered by ceiling thickness.
+        
+        Args:
+            zone: CeilingZone model instance
+            ceiling_thickness: Ceiling thickness in mm
+            
+        Returns:
+            Number of walls adjusted
+        """
+        from .models import Wall
+        from django.db.models import Count
+        
+        # Get all rooms in the zone
+        zone_rooms = list(zone.rooms.all())
+        zone_room_ids = {room.id for room in zone_rooms}
+        
+        if len(zone_room_ids) < 2:
+            return 0  # Not a merged zone
+        
+        # Find internal walls (walls shared by 2+ rooms in this zone)
+        internal_walls = (Wall.objects
+                         .filter(rooms__in=zone_rooms)
+                         .annotate(shared_count=Count('rooms'))
+                         .filter(shared_count__gte=2)
+                         .distinct())
+        
+        adjusted_count = 0
+        for wall in internal_walls:
+            # Check if wall is only shared by rooms in this zone (internal wall)
+            wall_room_ids = {room.id for room in wall.rooms.all()}
+            if wall_room_ids.issubset(zone_room_ids):
+                # This is an internal wall - lower it by ceiling thickness
+                new_height = wall.height - ceiling_thickness
+                
+                if new_height <= 0:
+                    logger.warning(f"Cannot lower internal wall {wall.id}: height {wall.height}mm - ceiling {ceiling_thickness}mm = {new_height}mm (must be > 0)")
+                    continue
+                
+                if abs(wall.height - new_height) > 0.1:
+                    logger.info(f"Lowering internal wall {wall.id} for merged zone: {wall.height}mm -> {new_height}mm")
+                    wall.height = new_height
+                    wall.save()
+                    adjusted_count += 1
+        
+        return adjusted_count
+    
+    @staticmethod
     def generate_ceiling_plan(room_id):
         """Automatically generate a complete ceiling plan for a room
         
@@ -2420,6 +2819,11 @@ class CeilingService:
             waste_percentage=waste_percentage,
         )
         zone.rooms.set(rooms)
+        
+        # Auto-lower internal walls for merged zone (internal walls are always AA11)
+        adjusted_walls = CeilingService.auto_lower_internal_walls_for_merged_zone(zone, ceiling_thickness)
+        if adjusted_walls > 0:
+            logger.info(f"Auto-lowered {adjusted_walls} internal wall(s) for merged zone {zone.id}")
 
         zone_plan = CeilingPlan.objects.create(
             zone=zone,
@@ -3708,7 +4112,7 @@ class CeilingService:
         return panels
 
     @staticmethod
-    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, cut_l_area_reduction=0.0):
         """Generate panels that respect the actual room shape (L-shaped, U-shaped, etc.) with leftover tracking"""
         try:
             panels = []
@@ -5069,12 +5473,34 @@ class CeilingService:
                 orientation_type = 'vertical'  # Default
                 logger.warning(f"  → DEFAULTED to VERTICAL (unknown strategy: {orientation_strategy})")
             
+            # Calculate Cut L area reduction for this room
+            cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
+            if cut_l_reduction > 0:
+                logger.info(f"  Room {room.id}: Cut L area reduction = {cut_l_reduction:.2f}mm²")
+            
+            # Adjust bounding box for Cut L wall offsets (panels should be offset inward)
+            adjusted_bounding_box = CeilingService.adjust_bounding_box_for_cut_l(
+                bounding_box, room, room_points
+            )
+            
+            # Adjust room_points to match the adjusted bounding box for Cut L offsets
+            # This creates an "effective" room polygon that accounts for Cut L reductions
+            adjusted_room_points = CeilingService.adjust_room_points_for_cut_l_offset(
+                room_points, room, adjusted_bounding_box, bounding_box
+            )
+            
+            # Log the adjustments for debugging
+            if cut_l_reduction > 0:
+                logger.info(f"  Room {room.id}: Using adjusted bounding box for panel generation")
+                logger.info(f"    Original: ({bounding_box['min_x']:.1f}, {bounding_box['min_y']:.1f}) to ({bounding_box['max_x']:.1f}, {bounding_box['max_y']:.1f})")
+                logger.info(f"    Adjusted: ({adjusted_bounding_box['min_x']:.1f}, {adjusted_bounding_box['min_y']:.1f}) to ({adjusted_bounding_box['max_x']:.1f}, {adjusted_bounding_box['max_y']:.1f})")
+            
             # Generate panels for this room only (with leftover tracking if provided)
-            logger.debug(f"  Generating panels: {bounding_box['width']}x{bounding_box['height']}mm, {len(room_points)} points, {orientation_type}")
+            logger.debug(f"  Generating panels: {adjusted_bounding_box['width']}x{adjusted_bounding_box['height']}mm, {len(adjusted_room_points)} points, {orientation_type}")
             
             panels = CeilingService._generate_shape_aware_panels(
-                bounding_box, room_points, orientation_type, panel_width, panel_length, 
-                leftover_tracker, ceiling_thickness
+                adjusted_bounding_box, adjusted_room_points, orientation_type, panel_width, panel_length, 
+                leftover_tracker, ceiling_thickness, cut_l_area_reduction=cut_l_reduction
             )
             
             logger.debug(f"  Generated {len(panels)} raw panels")
@@ -5449,9 +5875,36 @@ class CeilingService:
             for i, room_info in enumerate(height_group['rooms']):
                 # Use room-specific bounding box instead of project-wide
                 room_bounding_box = CeilingService._calculate_room_bounding_box(room_info['points'])
+                room_points = room_info['points']
+                
+                # Get room object to apply Cut L adjustments
+                from .models import Room
+                try:
+                    room = Room.objects.get(id=room_info['id'])
+                    
+                    # Apply Cut L bounding box adjustments if room has Cut L joints
+                    adjusted_bounding_box = CeilingService.adjust_bounding_box_for_cut_l(
+                        room_bounding_box, room, room_points
+                    )
+                    
+                    # Adjust room_points to match
+                    adjusted_room_points = CeilingService.adjust_room_points_for_cut_l_offset(
+                        room_points, room, adjusted_bounding_box, room_bounding_box
+                    )
+                    
+                    # Use adjusted values
+                    room_bounding_box = adjusted_bounding_box
+                    room_points = adjusted_room_points
+                    
+                    cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
+                    if cut_l_reduction > 0:
+                        logger.info(f"  Room {room_info['id']}: Applied Cut L adjustments (reduction: {cut_l_reduction:.2f}mm²)")
+                except Room.DoesNotExist:
+                    logger.warning(f"  Room {room_info['id']} not found in database")
+                
                 # Generate panels for this specific room using its own bounding box with leftover tracking
                 room_panels = CeilingService._generate_advanced_panels(
-                    room_bounding_box, room_info['points'], 'horizontal', panel_width, panel_length, leftover_tracker, ceiling_thickness
+                    room_bounding_box, room_points, 'horizontal', panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
                 # Add room identifier to panels
                 for panel in room_panels:
@@ -5483,12 +5936,43 @@ class CeilingService:
                     logger.warning(f"  Could not get room info for room {room_id}")
                     continue
                 
+                # Get room object to apply Cut L adjustments
+                from .models import Room
+                try:
+                    room = Room.objects.get(id=room_id)
+                except Room.DoesNotExist:
+                    logger.warning(f"  Room {room_id} not found in database")
+                    room = None
+                
+                # Apply Cut L bounding box adjustments if room has Cut L joints
+                bounding_box = room_info['bounding_box']
+                room_points = room_info['points']
+                
+                if room:
+                    # Adjust bounding box for Cut L wall offsets
+                    adjusted_bounding_box = CeilingService.adjust_bounding_box_for_cut_l(
+                        bounding_box, room, room_points
+                    )
+                    
+                    # Adjust room_points to match
+                    adjusted_room_points = CeilingService.adjust_room_points_for_cut_l_offset(
+                        room_points, room, adjusted_bounding_box, bounding_box
+                    )
+                    
+                    # Use adjusted values
+                    bounding_box = adjusted_bounding_box
+                    room_points = adjusted_room_points
+                    
+                    cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
+                    if cut_l_reduction > 0:
+                        logger.info(f"  Room {room_id}: Applied Cut L adjustments (reduction: {cut_l_reduction:.2f}mm²)")
+                
                 # Generate panels with the specified orientation and leftover tracking
                 orientation = room_result['orientation']
                 logger.info(f"  Generating {orientation} panels for room {room_id}")
                 
                 panels = CeilingService._generate_advanced_panels(
-                    room_info['bounding_box'], room_info['points'], orientation, panel_width, panel_length, leftover_tracker, ceiling_thickness
+                    bounding_box, room_points, orientation, panel_width, panel_length, leftover_tracker, ceiling_thickness
                 )
                 
                 logger.info(f"  Generated {len(panels)} panels for room {room_id}")
@@ -5845,6 +6329,16 @@ class CeilingService:
                     # Create a dummy leftover tracker for individual room calculations
                     # The project-wide waste calculation is done at the service level
                     ceiling_plan.update_statistics()
+                    
+                    # Apply Cut L area reduction to total_area
+                    cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, room_ceiling_thickness)
+                    if cut_l_reduction > 0:
+                        # Adjust total_area to reflect the effective ceiling area after Cut L reduction
+                        # The panels are generated in the full area, but the effective ceiling area is reduced
+                        original_total_area = ceiling_plan.total_area
+                        ceiling_plan.total_area = max(0, original_total_area - cut_l_reduction)
+                        ceiling_plan.save()
+                        logger.info(f"  Room {room.id}: Applied Cut L reduction of {cut_l_reduction:.2f}mm² to total_area ({original_total_area:.2f} -> {ceiling_plan.total_area:.2f}mm²)")
                     
                     # Convert to serializable dictionary with ALL parameters
                     plan_dict = {

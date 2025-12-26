@@ -829,16 +829,30 @@ class IntersectionViewSet(viewsets.ModelViewSet):
             wall_1 = Wall.objects.get(pk=wall_1_id)
             wall_2 = Wall.objects.get(pk=wall_2_id)
             
-            intersection, created = Intersection.objects.get_or_create(
+            # Check for existing intersection with either wall order (wall_1/wall_2 or wall_2/wall_1)
+            # This prevents duplicate intersections for the same wall pair
+            intersection = Intersection.objects.filter(
+                project=wall_1.project
+            ).filter(
+                (Q(wall_1=wall_1) & Q(wall_2=wall_2)) | 
+                (Q(wall_1=wall_2) & Q(wall_2=wall_1))
+            ).first()
+            
+            if intersection:
+                # Update existing intersection with user-specified wall order and joining method
+                # The wall order matters for butt-in joints (wall_1 gets shortened)
+                intersection.wall_1 = wall_1
+                intersection.wall_2 = wall_2
+                intersection.joining_method = joining_method
+                intersection.save()
+            else:
+                # Create new intersection with the provided wall order
+                intersection = Intersection.objects.create(
                 project=wall_1.project,
                 wall_1=wall_1,
                 wall_2=wall_2,
-                defaults={'joining_method': joining_method}
+                    joining_method=joining_method
             )
-            
-            if not created:
-                intersection.joining_method = joining_method
-                intersection.save()
 
             return Response(IntersectionSerializer(intersection).data, status=status.HTTP_200_OK)
         except Wall.DoesNotExist:

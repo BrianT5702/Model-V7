@@ -44,6 +44,7 @@ class WallSerializer(serializers.ModelSerializer):
             'outer_face_material', 'outer_face_thickness',
             'is_default', 'has_concrete_base', 'concrete_base_height',
             'fill_gap_mode', 'gap_fill_height', 'gap_base_position',
+            'ceiling_joint_type', 'ceiling_cut_l_horizontal_extension',
             'rooms'
         ]
 
@@ -68,6 +69,38 @@ class WallSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Outer face thickness must be greater than 0")
         return value
+    
+    def update(self, instance, validated_data):
+        """Override update to apply AA11 wall height adjustment"""
+        from .services import CeilingService
+        
+        # Update the instance
+        instance = super().update(instance, validated_data)
+        
+        # Apply AA11 wall height adjustment if joint type is AA11
+        if instance.ceiling_joint_type == 'AA11':
+            # Get all rooms that contain this wall
+            rooms = instance.rooms.all()
+            for room in rooms:
+                CeilingService.apply_aa11_wall_height_adjustment(instance, room)
+        
+        return instance
+    
+    def create(self, validated_data):
+        """Override create to apply AA11 wall height adjustment"""
+        from .services import CeilingService
+        
+        # Create the instance
+        instance = super().create(validated_data)
+        
+        # Apply AA11 wall height adjustment if joint type is AA11
+        if instance.ceiling_joint_type == 'AA11':
+            # Get all rooms that contain this wall
+            rooms = instance.rooms.all()
+            for room in rooms:
+                CeilingService.apply_aa11_wall_height_adjustment(instance, room)
+        
+        return instance
 
 
 class CeilingPanelSerializer(serializers.ModelSerializer):

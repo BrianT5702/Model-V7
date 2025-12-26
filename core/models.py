@@ -5,7 +5,7 @@ from .constants import (
     WALL_APPLICATION_TYPES, ROOM_FLOOR_TYPES, ROOM_FLOOR_THICKNESS_CHOICES,
     DOOR_TYPES, DOOR_CONFIGURATIONS, DOOR_SIDES, DOOR_SWING_DIRECTIONS,
     DOOR_SLIDE_DIRECTIONS, WALL_JOINING_METHODS, FACE_MATERIALS,
-    DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT, DEFAULT_DOOR_SIDE,
+    CEILING_JOINT_TYPES, DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT, DEFAULT_DOOR_SIDE,
     DEFAULT_DOOR_SWING_DIRECTION, DEFAULT_DOOR_SLIDE_DIRECTION,
     DEFAULT_DOOR_TYPE, DEFAULT_DOOR_CONFIGURATION, DEFAULT_ROOM_FLOOR_TYPE,
     DEFAULT_FACE_THICKNESS
@@ -109,6 +109,18 @@ class Wall(models.Model):
     fill_gap_mode = models.BooleanField(default=False, help_text="Fill only the gap between rooms with different heights")
     gap_fill_height = models.FloatField(null=True, blank=True, help_text="Height of the wall when filling gap between rooms in mm")
     gap_base_position = models.FloatField(null=True, blank=True, help_text="Y position (height) where the gap-fill wall starts in mm")
+    ceiling_joint_type = models.CharField(
+        max_length=20,
+        choices=CEILING_JOINT_TYPES,
+        null=True,
+        blank=True,
+        help_text="How the ceiling joins with this wall: AA11 (no cutting), Cut L (L-shaped cut), or Cut 45 (45-degree cut)"
+    )
+    ceiling_cut_l_horizontal_extension = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Horizontal extension for Cut L joint type in mm (defaults based on wall thickness if not specified)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

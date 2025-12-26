@@ -981,6 +981,92 @@ const CeilingCanvas = ({
                     // Removed 45_cut joint drawing from ceiling plan
                 }
 
+                // Draw ceiling joint type indicators
+                if (wall.ceiling_joint_type) {
+                    const midX = (wall.start_x + wall.end_x) / 2;
+                    const midY = (wall.start_y + wall.end_y) / 2;
+                    const screenX = midX * scaleFactor.current + offsetX.current;
+                    const screenY = midY * scaleFactor.current + offsetY.current;
+                    
+                    // Calculate wall angle for proper icon orientation
+                    const wallAngle = Math.atan2(wall.end_y - wall.start_y, wall.end_x - wall.start_x);
+                    const perpAngle = wallAngle + Math.PI / 2; // Perpendicular to wall
+                    
+                    // Offset icon position slightly away from wall (towards room center)
+                    const iconOffset = 15; // pixels
+                    const iconX = screenX + Math.cos(perpAngle) * iconOffset;
+                    const iconY = screenY + Math.sin(perpAngle) * iconOffset;
+                    
+                    ctx.save();
+                    ctx.translate(iconX, iconY);
+                    ctx.rotate(wallAngle); // Rotate icon to align with wall
+                    
+                    // Draw different indicators based on joint type
+                    if (wall.ceiling_joint_type === 'AA11') {
+                        // AA11: Simple circle with "AA11" text
+                        ctx.fillStyle = '#3b82f6'; // Blue
+                        ctx.strokeStyle = '#1e40af';
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                        
+                        // Draw "AA11" text
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = `bold ${Math.max(8, 10 * scaleFactor.current)}px Arial`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('AA', 0, -2);
+                        ctx.fillText('11', 0, 4);
+                    } else if (wall.ceiling_joint_type === 'cut_l') {
+                        // Cut L: Draw L-shaped indicator
+                        ctx.fillStyle = '#f97316'; // Orange
+                        ctx.strokeStyle = '#c2410c';
+                        ctx.lineWidth = 2;
+                        
+                        // Draw L shape
+                        const lSize = 10;
+                        ctx.beginPath();
+                        ctx.moveTo(-lSize, -lSize);
+                        ctx.lineTo(-lSize, lSize);
+                        ctx.lineTo(lSize, lSize);
+                        ctx.stroke();
+                        
+                        // Fill corner
+                        ctx.fillRect(-lSize - 1, lSize - 2, 3, 3);
+                        
+                        // Add "L" text
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = `bold ${Math.max(8, 10 * scaleFactor.current)}px Arial`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('L', 0, 0);
+                    } else if (wall.ceiling_joint_type === 'cut_45') {
+                        // Cut 45: Draw 45-degree angle indicator
+                        ctx.fillStyle = '#a855f7'; // Purple
+                        ctx.strokeStyle = '#7c3aed';
+                        ctx.lineWidth = 2;
+                        
+                        // Draw 45-degree angle
+                        const angleSize = 10;
+                        ctx.beginPath();
+                        ctx.moveTo(-angleSize, -angleSize);
+                        ctx.lineTo(0, 0);
+                        ctx.lineTo(-angleSize, angleSize);
+                        ctx.stroke();
+                        
+                        // Add "45" text
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = `bold ${Math.max(7, 9 * scaleFactor.current)}px Arial`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('45', 2, 0);
+                    }
+                    
+                    ctx.restore();
+                }
+                
                 // Reset line dash
                 ctx.setLineDash([]);
             } catch (error) {

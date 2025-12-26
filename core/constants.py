@@ -60,6 +60,13 @@ WALL_JOINING_METHODS = [
     ('45_cut', '45° Cut'),
 ]
 
+# Ceiling-to-wall joint types
+CEILING_JOINT_TYPES = [
+    ('AA11', 'AA11 - No cutting, directly on top'),
+    ('cut_l', 'Cut L - L-shaped cut in wall'),
+    ('cut_45', 'Cut 45 - 45-degree cut'),
+]
+
 # Face Materials (for inner/outer finishes)
 FACE_MATERIALS = [
     ('PPGI', 'PPGI'),

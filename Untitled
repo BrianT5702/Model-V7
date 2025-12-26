@@ -1,0 +1,133 @@
+Compiled with problems:
+×
+ERROR in ./src/features/canvas/drawing.js
+Module build failed (from ./node_modules/babel-loader/lib/index.js):
+SyntaxError: C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\src\features\canvas\drawing.js: Unexpected token, expected "," (1794:8)
+
+  1792 |                 }
+  1793 |             }
+> 1794 |         }
+       |         ^
+  1795 |     });
+  1796 |     
+  1797 |     // Third pass: Apply 45° cuts and draw walls
+    at constructor (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:359:19)
+    at FlowParserMixin.raise (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:3327:19)
+    at FlowParserMixin.unexpected (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:3347:16)
+    at FlowParserMixin.expect (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:3657:12)
+    at FlowParserMixin.parseCallExpressionArguments (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10894:14)
+    at FlowParserMixin.parseCoverCallAndAsyncArrowHead (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10837:29)
+    at FlowParserMixin.parseSubscript (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10774:19)
+    at FlowParserMixin.parseSubscript (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5874:18)
+    at FlowParserMixin.parseSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10747:19)
+    at FlowParserMixin.parseSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5840:18)
+    at FlowParserMixin.parseExprSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10738:17)
+    at FlowParserMixin.parseUpdate (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10719:21)
+    at FlowParserMixin.parseMaybeUnary (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10699:23)
+    at FlowParserMixin.parseMaybeUnaryOrPrivate (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10553:61)
+    at FlowParserMixin.parseExprOps (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10558:23)
+    at FlowParserMixin.parseMaybeConditional (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10535:23)
+    at FlowParserMixin.parseMaybeAssign (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10498:21)
+    at FlowParserMixin.parseMaybeAssign (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5773:18)
+    at FlowParserMixin.parseExpressionBase (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10452:23)
+    at C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10448:39
+    at FlowParserMixin.allowInAnd (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12064:16)
+    at FlowParserMixin.parseExpression (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10448:17)
+    at FlowParserMixin.parseStatementContent (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12508:23)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12375:17)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5140:24)
+    at FlowParserMixin.parseStatementListItem (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12355:17)
+    at FlowParserMixin.parseBlockOrModuleBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12929:61)
+    at FlowParserMixin.parseBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12922:10)
+    at FlowParserMixin.parseBlock (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12910:10)
+    at FlowParserMixin.parseStatementContent (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12465:21)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12375:17)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5140:24)
+    at FlowParserMixin.parseStatementOrSloppyAnnexBFunctionDeclaration (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12365:17)
+    at FlowParserMixin.parseIfStatement (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12743:28)
+    at FlowParserMixin.parseStatementContent (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12404:21)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12375:17)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5140:24)
+    at FlowParserMixin.parseStatementListItem (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12355:17)
+    at FlowParserMixin.parseBlockOrModuleBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12929:61)
+    at FlowParserMixin.parseBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12922:10)
+    at FlowParserMixin.parseBlock (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12910:10)
+    at FlowParserMixin.parseFunctionBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:11752:24)
+    at C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5114:63
+    at FlowParserMixin.forwardNoArrowParamsConversionAt (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5290:16)
+    at FlowParserMixin.parseFunctionBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5114:12)
+    at FlowParserMixin.parseArrowExpression (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:11727:10)
+    at FlowParserMixin.parseExprAtom (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:11098:25)
+    at FlowParserMixin.parseExprAtom (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:6937:20)
+    at FlowParserMixin.parseExprSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10734:23)
+    at FlowParserMixin.parseUpdate (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10719:21)
+ERROR
+[eslint] 
+src\features\canvas\drawing.js
+  Line 1794:8:  Parsing error: Unexpected token, expected "," (1794:8)
+
+ERROR in ./src/features/canvas/drawing.js
+Module build failed (from ./node_modules/babel-loader/lib/index.js):
+SyntaxError: C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\src\features\canvas\drawing.js: Unexpected token, expected "," (1794:8)
+
+  1792 |                 }
+  1793 |             }
+> 1794 |         }
+       |         ^
+  1795 |     });
+  1796 |     
+  1797 |     // Third pass: Apply 45° cuts and draw walls
+    at constructor (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:359:19)
+    at FlowParserMixin.raise (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:3327:19)
+    at FlowParserMixin.unexpected (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:3347:16)
+    at FlowParserMixin.expect (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:3657:12)
+    at FlowParserMixin.parseCallExpressionArguments (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10894:14)
+    at FlowParserMixin.parseCoverCallAndAsyncArrowHead (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10837:29)
+    at FlowParserMixin.parseSubscript (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10774:19)
+    at FlowParserMixin.parseSubscript (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5874:18)
+    at FlowParserMixin.parseSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10747:19)
+    at FlowParserMixin.parseSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5840:18)
+    at FlowParserMixin.parseExprSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10738:17)
+    at FlowParserMixin.parseUpdate (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10719:21)
+    at FlowParserMixin.parseMaybeUnary (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10699:23)
+    at FlowParserMixin.parseMaybeUnaryOrPrivate (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10553:61)
+    at FlowParserMixin.parseExprOps (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10558:23)
+    at FlowParserMixin.parseMaybeConditional (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10535:23)
+    at FlowParserMixin.parseMaybeAssign (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10498:21)
+    at FlowParserMixin.parseMaybeAssign (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5773:18)
+    at FlowParserMixin.parseExpressionBase (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10452:23)
+    at C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10448:39
+    at FlowParserMixin.allowInAnd (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12064:16)
+    at FlowParserMixin.parseExpression (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10448:17)
+    at FlowParserMixin.parseStatementContent (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12508:23)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12375:17)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5140:24)
+    at FlowParserMixin.parseStatementListItem (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12355:17)
+    at FlowParserMixin.parseBlockOrModuleBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12929:61)
+    at FlowParserMixin.parseBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12922:10)
+    at FlowParserMixin.parseBlock (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12910:10)
+    at FlowParserMixin.parseStatementContent (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12465:21)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12375:17)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5140:24)
+    at FlowParserMixin.parseStatementOrSloppyAnnexBFunctionDeclaration (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12365:17)
+    at FlowParserMixin.parseIfStatement (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12743:28)
+    at FlowParserMixin.parseStatementContent (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12404:21)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12375:17)
+    at FlowParserMixin.parseStatementLike (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5140:24)
+    at FlowParserMixin.parseStatementListItem (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12355:17)
+    at FlowParserMixin.parseBlockOrModuleBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12929:61)
+    at FlowParserMixin.parseBlockBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12922:10)
+    at FlowParserMixin.parseBlock (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:12910:10)
+    at FlowParserMixin.parseFunctionBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:11752:24)
+    at C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5114:63
+    at FlowParserMixin.forwardNoArrowParamsConversionAt (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5290:16)
+    at FlowParserMixin.parseFunctionBody (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:5114:12)
+    at FlowParserMixin.parseArrowExpression (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:11727:10)
+    at FlowParserMixin.parseExprAtom (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:11098:25)
+    at FlowParserMixin.parseExprAtom (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:6937:20)
+    at FlowParserMixin.parseExprSubscripts (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10734:23)
+    at FlowParserMixin.parseUpdate (C:\Users\brian\OneDrive\Desktop\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\frontend\node_modules\@babel\parser\lib\index.js:10719:21)
+ERROR
+[eslint] 
+src\features\canvas\drawing.js
+  Line 1794:8:  Parsing error: Unexpected token, expected "," (1794:8)
