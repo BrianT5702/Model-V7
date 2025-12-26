@@ -1362,14 +1362,51 @@ export function drawWalls({
             const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
             const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
             
-            if (isAtStart || isAtEnd) {
+            // Check if intersection point lies on the wall body (not just at endpoints)
+            // Only mark as isOnBody if it's clearly in the middle, not near endpoints
+            let isOnBody = false;
+            if (!isAtStart && !isAtEnd) {
+                const dx = wall.end_x - wall.start_x;
+                const dy = wall.end_y - wall.start_y;
+                const wallLength = Math.hypot(dx, dy);
+                
+                if (wallLength > 0) {
+                    // Vector from wall start to intersection point
+                    const toInterX = inter.x - wall.start_x;
+                    const toInterY = inter.y - wall.start_y;
+                    
+                    // Project intersection point onto wall direction
+                    const wallDirX = dx / wallLength;
+                    const wallDirY = dy / wallLength;
+                    const projectionLength = toInterX * wallDirX + toInterY * wallDirY;
+                    
+                    // Perpendicular distance from intersection to wall line
+                    const perpX = toInterX - projectionLength * wallDirX;
+                    const perpY = toInterY - projectionLength * wallDirY;
+                    const perpDistance = Math.hypot(perpX, perpY);
+                    
+                    // Check if point is on the wall segment and within tolerance
+                    // Also check that it's not too close to endpoints (account for floating point precision)
+                    const distanceFromStart = projectionLength;
+                    const distanceFromEnd = wallLength - projectionLength;
+                    const isNearEndpoint = distanceFromStart < tolerance * 2 || distanceFromEnd < tolerance * 2;
+                    
+                    if (projectionLength >= -tolerance && projectionLength <= wallLength + tolerance && 
+                        perpDistance < tolerance && !isNearEndpoint) {
+                        isOnBody = true;
+                    }
+                }
+            }
+            
+            if (isAtStart || isAtEnd || isOnBody) {
                 const wallData = wallLinesMap.get(wall.id);
                 if (wallData) {
                     wallsAtIntersection.push({
                         wall,
                         wallData,
                         isAtStart,
-                        isAtEnd
+                        isAtEnd,
+                        isOnBody
                     });
                 }
             }
@@ -1422,18 +1459,19 @@ export function drawWalls({
                                 const matchesHorizontal = (pairWall1IdStr === hWallIdStr || pairWall2IdStr === hWallIdStr);
                                 
                                 if (matchesVertical && matchesHorizontal) {
-                                    joiningMethod = pair.joining_method || 'butt_in';
+                                    joiningMethod = pair.joining_method || 'none';
                                     jointWall1Id = pairWall1Id;
                                     jointWall2Id = pairWall2Id;
                                 }
                             });
                         }
                         
-                        // If no joint method found in pairs, default to butt_in
+                        // If no joint method found, default to 'none' (extension only, no shortening)
                         if (!joiningMethod) {
-                            joiningMethod = 'butt_in';
+                            joiningMethod = 'none';
                         }
                         
+                        // Always process intersections (for extension), but only shorten for butt_in
                         vhPairs.push({
                             verticalWall,
                             horizontalWall,
@@ -1455,10 +1493,22 @@ export function drawWalls({
                 const hLines = horizontalWall.wallData;
                 
                 // Determine which end of vertical wall is at intersection
-                const vIsAtStart = verticalWall.isAtStart;
+                // If intersection is on body, determine which endpoint is closer
+                let vIsAtStart = verticalWall.isAtStart;
+                if (verticalWall.isOnBody) {
+                    const distToStart = Math.hypot(inter.x - vWall.start_x, inter.y - vWall.start_y);
+                    const distToEnd = Math.hypot(inter.x - vWall.end_x, inter.y - vWall.end_y);
+                    vIsAtStart = distToStart < distToEnd;
+                }
                 
                 // Determine which end of horizontal wall is at intersection
-                const hIsAtStart = horizontalWall.isAtStart;
+                // If intersection is on body, determine which endpoint is closer
+                let hIsAtStart = horizontalWall.isAtStart;
+                if (horizontalWall.isOnBody) {
+                    const distToStart = Math.hypot(inter.x - hWall.start_x, inter.y - hWall.start_y);
+                    const distToEnd = Math.hypot(inter.x - hWall.end_x, inter.y - hWall.end_y);
+                    hIsAtStart = distToStart < distToEnd;
+                }
                 
                 const hasButtIn = joiningMethod === 'butt_in';
                 
@@ -1494,7 +1544,9 @@ export function drawWalls({
                     
                     // First, extend wall2 (the one that should remain extended)
                     // Case A: Vertical is wall2, Horizontal is wall1
-                    if (isHorizontalWall1 && !isVerticalWall1) {
+                    // Only extend wall2 if the intersection is at an actual endpoint of wall2
+                    // If wall2 is intersected in the middle (isOnBody), skip extension (it should remain full length)
+                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody) {
                         // Extend vertical wall (wall2) to horizontal wall's line
                         const vEndpointY = vIsAtStart ? vWall.start_y : vWall.end_y;
                         const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
@@ -1541,7 +1593,9 @@ export function drawWalls({
                         }
                     }
                     // Case B: Horizontal is wall2, Vertical is wall1
-                    else if (isVerticalWall1 && !isHorizontalWall1) {
+                    // Only extend wall2 if the intersection is at an actual endpoint of wall2
+                    // If wall2 is intersected in the middle (isOnBody), skip extension (it should remain full length)
+                    else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody) {
                         // Extend horizontal wall (wall2) to vertical wall's line
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -1594,8 +1648,10 @@ export function drawWalls({
                     }
                     
                     // Now shorten wall1 to connect to wall2
+                    // Only shorten wall1 if the intersection is at an actual endpoint of wall1
+                    // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
                     // Case 1: Vertical is wall1, Horizontal is wall2
-                    if (isVerticalWall1 && !isHorizontalWall1) {
+                    if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody) {
                         // Determine target line based on horizontal wall (wall2) position relative to intersection
                         // If horizontal (wall2) is on top → vertical (wall1) should connect to bottom line of wall2
                         // If horizontal (wall2) is at bottom → vertical (wall1) should connect to upper line of wall2
@@ -1628,7 +1684,9 @@ export function drawWalls({
                         // Keep X coordinates unchanged to maintain wall thickness
                     }
                     // Case 2: Horizontal is wall1, Vertical is wall2
-                    else if (isHorizontalWall1 && !isVerticalWall1) {
+                    // Only shorten wall1 if the intersection is at an actual endpoint of wall1
+                    // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
+                    else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody) {
                         // Determine which line of vertical (wall2) to connect to
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -1725,12 +1783,15 @@ export function drawWalls({
                     }
                     
                     // Extend vertical wall lines to horizontal wall's line
-                    if (vIsAtStart) {
-                        vLines.line1[0].y = targetY;
-                        vLines.line2[0].y = targetY;
-                    } else {
-                        vLines.line1[1].y = targetY;
-                        vLines.line2[1].y = targetY;
+                    // Only extend if intersection is at an endpoint (not in the middle)
+                    if (!verticalWall.isOnBody) {
+                        if (vIsAtStart) {
+                            vLines.line1[0].y = targetY;
+                            vLines.line2[0].y = targetY;
+                        } else {
+                            vLines.line1[1].y = targetY;
+                            vLines.line2[1].y = targetY;
+                        }
                     }
                     
                     // For horizontal wall: extend to leftmost/rightmost line of vertical
@@ -1782,12 +1843,15 @@ export function drawWalls({
                     }
                     
                     // Extend horizontal wall lines to vertical wall's line
-                    if (hIsAtStart) {
-                        hLines.line1[0].x = targetX;
-                        hLines.line2[0].x = targetX;
-                    } else {
-                        hLines.line1[1].x = targetX;
-                        hLines.line2[1].x = targetX;
+                    // Only extend if intersection is at an endpoint (not in the middle)
+                    if (!horizontalWall.isOnBody) {
+                        if (hIsAtStart) {
+                            hLines.line1[0].x = targetX;
+                            hLines.line2[0].x = targetX;
+                        } else {
+                            hLines.line1[1].x = targetX;
+                            hLines.line2[1].x = targetX;
+                        }
                     }
                 }
             }); // End of vhPairs.forEach
