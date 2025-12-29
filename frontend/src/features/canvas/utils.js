@@ -259,13 +259,19 @@ export function detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY) {
     
     // For dock doors, check the area extending outward from the wall
     if (door.door_type === 'dock') {
-      const dockDoorWidth = door.width; // Width parallel to wall: door width
-      const dockDoorHeight = door.width + 500; // Height extending outward: door width + 500mm
+      const dockDoorWidth = door.width * 0.6; // Width parallel to wall: 60% of door width
+      const dockDoorHeight = door.width * 0.6 + 500; // Height extending outward: 60% of door width + 500mm
       
-      // Check if click is within the dock door rectangle (extending outward from wall, starting at y=0)
+      // Check if click is within the dock door rectangle
+      // If interior side, rectangle extends in negative y direction
+      // If exterior side, rectangle extends in positive y direction
+      const isInterior = door.side === 'interior';
+      const minY = isInterior ? -dockDoorHeight : 0;
+      const maxY = isInterior ? 0 : dockDoorHeight;
+      
       if (Math.abs(localX) <= dockDoorWidth / 2 && 
-          localY >= 0 && 
-          localY <= dockDoorHeight) {
+          localY >= minY && 
+          localY <= maxY) {
         return door;
       }
     } else {
@@ -394,7 +400,8 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         ctx.save();
         ctx.translate(doorCenterX * scale + offsetX, doorCenterY * scale + offsetY);
         ctx.rotate(angle);
-        // Only rotate for interior side on swing/slide doors (not dock doors)
+        // Rotate for interior side on swing/slide doors
+        // For dock doors, side flip is handled by rectangle position (y coordinate), not rotation
         if (door.door_type !== 'dock' && door.side === 'interior') {
             ctx.rotate(Math.PI);
         }
@@ -524,17 +531,28 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         // === DOCK DOOR DRAWING ===
         if (door.door_type === 'dock') {
-            // Rectangle: width (parallel to wall) = door.width, height (extending outward) = door.width + 500mm
+            // Rectangle: width (parallel to wall) = door.width * 0.6, height (extending outward) = door.width * 0.6 + 300mm
             // Note: door.height field is not used for dock door rectangle dimensions
-            const rectWidth = door.width; // Width parallel to wall: door width
-            const rectHeight = door.width + 500; // Height extending outward from wall: door width + 500mm
+            const rectWidth = door.width * 0.6; // Width parallel to wall: 60% of door width
+            const rectHeight = door.width * 0.6 + 300; // Height extending outward from wall: 60% of door width + 500mm
             
             // Position rectangle extending outward from the wall
-            // The wall line is at y=0, rectangle starts at the wall and extends outward (positive y direction)
+            // The wall line is at y=0
+            // If side is 'exterior', extend in positive y direction (outward)
+            // If side is 'interior', extend in negative y direction (inward)
             const rectX = -rectWidth / 2 * scale;
-            const rectY = 0; // Start at the wall line (y=0)
             const rectW = rectWidth * scale;
             const rectH = rectHeight * scale;
+            
+            // Determine rectangle position based on side
+            let rectY;
+            if (door.side === 'interior') {
+                // Extend in negative y direction (toward interior)
+                rectY = -rectH;
+            } else {
+                // Extend in positive y direction (toward exterior, default)
+                rectY = 0;
+            }
             
             // Draw rectangle outline
             ctx.strokeStyle = strokeColor;
@@ -543,15 +561,37 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
             
             // Draw cross inside rectangle
             ctx.beginPath();
-            // Diagonal from top-left to bottom-right
-            ctx.moveTo(rectX, rectY);
-            ctx.lineTo(rectX + rectW, rectY + rectH);
-            // Diagonal from top-right to bottom-left
-            ctx.moveTo(rectX + rectW, rectY);
-            ctx.lineTo(rectX, rectY + rectH);
+            if (door.side === 'interior') {
+                // For interior side (extending in negative y), adjust cross coordinates
+                // Diagonal from top-left to bottom-right
+                ctx.moveTo(rectX, rectY + rectH);
+                ctx.lineTo(rectX + rectW, rectY);
+                // Diagonal from top-right to bottom-left
+                ctx.moveTo(rectX + rectW, rectY + rectH);
+                ctx.lineTo(rectX, rectY);
+            } else {
+                // For exterior side (extending in positive y), use standard coordinates
+                // Diagonal from top-left to bottom-right
+                ctx.moveTo(rectX, rectY);
+                ctx.lineTo(rectX + rectW, rectY + rectH);
+                // Diagonal from top-right to bottom-left
+                ctx.moveTo(rectX + rectW, rectY);
+                ctx.lineTo(rectX, rectY + rectH);
+            }
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth = lineWidth;
             ctx.stroke();
+            
+            // Draw "DL" text in the center of the rectangle
+            ctx.save();
+            ctx.fillStyle = strokeColor;
+            ctx.font = `${Math.max(5, rectW * 0.29)}px Arial`; // Font size based on rectangle width
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const textX = 0; // Center horizontally
+            const textY = rectY + rectH - 10; // Center vertically
+            ctx.fillText('DL', textX, textY);
+            ctx.restore();
         }
 
         ctx.restore();

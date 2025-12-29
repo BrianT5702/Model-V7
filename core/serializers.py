@@ -256,6 +256,7 @@ class IntersectionSerializer(serializers.ModelSerializer):
 class RoomSerializer(serializers.ModelSerializer):
     walls = serializers.PrimaryKeyRelatedField(many=True, queryset=Wall.objects.all(), required=False)
     ceiling_plan = CeilingPlanSerializer(read_only=True)
+    floor_plan = FloorPlanSerializer(read_only=True)
 
     class Meta:
         model = Room

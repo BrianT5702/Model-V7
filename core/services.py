@@ -241,12 +241,52 @@ class WallService:
     @staticmethod
     def merge_walls(wall_1, wall_2):
         """Merge two walls if they share endpoints and have matching properties."""
+        # Helper function to safely compare values (handles None)
+        def values_match(val1, val2):
+            if val1 is None and val2 is None:
+                return True
+            if val1 is None or val2 is None:
+                return False
+            return val1 == val2
+        
+        # Check basic properties that must match
         if (
             wall_1.application_type != wall_2.application_type or
             wall_1.height != wall_2.height or
             wall_1.thickness != wall_2.thickness
         ):
-            raise ValueError('Walls must have the same type, height, and thickness to merge.')
+            raise ValueError('Walls must have the same application type, height, and thickness to merge.')
+        
+        # Check face material properties
+        if (
+            wall_1.inner_face_material != wall_2.inner_face_material or
+            wall_1.inner_face_thickness != wall_2.inner_face_thickness or
+            wall_1.outer_face_material != wall_2.outer_face_material or
+            wall_1.outer_face_thickness != wall_2.outer_face_thickness
+        ):
+            raise ValueError('Walls must have the same face materials and thicknesses to merge.')
+        
+        # Check concrete base properties
+        if (
+            wall_1.has_concrete_base != wall_2.has_concrete_base or
+            not values_match(wall_1.concrete_base_height, wall_2.concrete_base_height)
+        ):
+            raise ValueError('Walls must have the same concrete base configuration to merge.')
+        
+        # Check gap fill properties
+        if (
+            wall_1.fill_gap_mode != wall_2.fill_gap_mode or
+            not values_match(wall_1.gap_fill_height, wall_2.gap_fill_height) or
+            not values_match(wall_1.gap_base_position, wall_2.gap_base_position)
+        ):
+            raise ValueError('Walls must have the same gap fill configuration to merge.')
+        
+        # Check ceiling joint properties
+        if (
+            not values_match(wall_1.ceiling_joint_type, wall_2.ceiling_joint_type) or
+            not values_match(wall_1.ceiling_cut_l_horizontal_extension, wall_2.ceiling_cut_l_horizontal_extension)
+        ):
+            raise ValueError('Walls must have the same ceiling joint configuration to merge.')
 
         # Check if walls share endpoints
         if wall_1.end_x == wall_2.start_x and wall_1.end_y == wall_2.start_y:
@@ -269,7 +309,8 @@ class WallService:
             new_start_x, new_start_y, new_end_x, new_end_y
         )
         
-        # Create the merged wall
+        # Create the merged wall with all attributes inherited from wall_1
+        # (Since all attributes are validated to match, we can safely use wall_1's values)
         merged_wall = Wall.objects.create(
             project=wall_1.project,
             storey=wall_1.storey,
@@ -279,7 +320,19 @@ class WallService:
             end_y=norm_end_y,
             height=wall_1.height,
             thickness=wall_1.thickness,
-            application_type=wall_1.application_type
+            application_type=wall_1.application_type,
+            inner_face_material=wall_1.inner_face_material,
+            inner_face_thickness=wall_1.inner_face_thickness,
+            outer_face_material=wall_1.outer_face_material,
+            outer_face_thickness=wall_1.outer_face_thickness,
+            has_concrete_base=wall_1.has_concrete_base,
+            concrete_base_height=wall_1.concrete_base_height,
+            fill_gap_mode=wall_1.fill_gap_mode,
+            gap_fill_height=wall_1.gap_fill_height,
+            gap_base_position=wall_1.gap_base_position,
+            ceiling_joint_type=wall_1.ceiling_joint_type,
+            ceiling_cut_l_horizontal_extension=wall_1.ceiling_cut_l_horizontal_extension,
+            is_default=wall_1.is_default
         )
 
         wall_1.delete()

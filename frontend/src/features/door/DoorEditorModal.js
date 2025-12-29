@@ -149,27 +149,27 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
             </div>
           </div>
 
-          {/* Control Buttons Section - Only show for non-dock doors */}
-          {form.doorType !== 'dock' && (
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Controls</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+          {/* Control Buttons Section */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Controls</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+              {form.doorType !== 'dock' && (
                 <button
                   onClick={form.handleFlipDirection}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   Flip Opening Direction
                 </button>
+              )}
 
-                <button
-                  onClick={form.handleFlipSide}
-                  className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
-                >
-                  Flip Installing Side
-                </button>
-              </div>
+              <button
+                onClick={form.handleFlipSide}
+                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                Flip Installing Side
+              </button>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Footer Actions */}

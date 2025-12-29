@@ -103,9 +103,9 @@ const DoorManager = ({
       doorData.slide_direction = slideDirection;
       doorData.side = side;
     } else {
-      // Dock doors don't need these fields, but set defaults to satisfy backend requirements
+      // Dock doors: include side field, but set defaults for other fields
       doorData.configuration = "single_sided"; // Default value
-      doorData.side = "exterior"; // Default value for dock doors (卷帘门 typically face exterior)
+      doorData.side = side; // Include side for dock doors (can be flipped)
       doorData.swing_direction = null;
       doorData.slide_direction = null;
     }
@@ -157,19 +157,7 @@ const DoorManager = ({
   const handleConfigChange = (e) => {
     setConfiguration(e.target.value);
   };
-
-  const handleFlipDirection = () => {
-    if (doorType === 'swing') {
-      setSwingDirection(swingDirection === 'left' ? 'right' : 'left');
-    } else if (doorType === 'slide') {
-      setSlideDirection(slideDirection === 'left' ? 'right' : 'left');
-    }
-    // Dock doors don't have direction settings
-  };
-
-  const handleFlipSide = () => {
-    setSide(side === 'interior' ? 'exterior' : 'interior');
-  };
+  
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">

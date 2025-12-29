@@ -37,11 +37,6 @@ export function createWallMesh(instance, wall) {
   let startZ = snap(start_y * scale);
   let endX = snap(end_x * scale);
   let endZ = snap(end_y * scale);
-  const dx = endX - startX;
-  const dz = endZ - startZ;
-  const wallLength = Math.hypot(dx, dz);
-  const wallDirX = dx / wallLength;
-  const wallDirZ = dz / wallLength;
   // Calculate the wall's midpoint
   const wallMidX = (startX + endX) / 2;
   const wallMidZ = (startZ + endZ) / 2;
@@ -71,13 +66,6 @@ export function createWallMesh(instance, wall) {
       finalNormX = 1;
       finalNormZ = 0;
     }
-  } else {
-    // Diagonal wall: use original logic
-    const normX = -dz / wallLength;
-    const normZ = dx / wallLength;
-    const dotProduct = normX * toCenterX + normZ * toCenterZ;
-    finalNormX = dotProduct < 0 ? -normX : normX;
-    finalNormZ = dotProduct < 0 ? -normZ : normZ;
   }
   // Wall thickness positioning logic will be handled here
   // (Joint flipping logic removed for now)
@@ -262,8 +250,6 @@ export function createWallMesh(instance, wall) {
   wallShape.lineTo(finalWallLength, 0);
   wallShape.lineTo(0, 0);
   
-  let lastX = 0;
-  
   // Add door cutouts
   // IMPORTANT: When wall start/end points are flipped (for joint alignment or model center positioning),
   // door positions must also be flipped to maintain correct visual placement.
@@ -425,7 +411,6 @@ export function createDoorMesh(instance, door, wall) {
   }
   const doorWidth = width * scale * 1.05;
   const doorThickness = thickness * instance.scalingFactor;
-  const sideCoefficient = side === 'exterior' ? 1 : -1;
   const doorMaterial = new instance.THREE.MeshStandardMaterial({
     color: door_type === 'swing' ? 0xF8F8FF : 0xF8F8FF,
     roughness: 0.5,
@@ -434,10 +419,6 @@ export function createDoorMesh(instance, door, wall) {
     opacity: 1
   });
   if (door_type === 'slide') {
-    // Offset the sliding door to align with the wall face based on side
-    // For interior doors: position on inner face (toward room interior)
-    // For exterior doors: position on outer face (toward outside)
-    const doorOffsetZ = wallDepth/2;
     
     if (configuration === 'double_sided') {
       // Create double sliding doors

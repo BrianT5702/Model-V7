@@ -981,92 +981,6 @@ const CeilingCanvas = ({
                     // Removed 45_cut joint drawing from ceiling plan
                 }
 
-                // Draw ceiling joint type indicators
-                if (wall.ceiling_joint_type) {
-                    const midX = (wall.start_x + wall.end_x) / 2;
-                    const midY = (wall.start_y + wall.end_y) / 2;
-                    const screenX = midX * scaleFactor.current + offsetX.current;
-                    const screenY = midY * scaleFactor.current + offsetY.current;
-                    
-                    // Calculate wall angle for proper icon orientation
-                    const wallAngle = Math.atan2(wall.end_y - wall.start_y, wall.end_x - wall.start_x);
-                    const perpAngle = wallAngle + Math.PI / 2; // Perpendicular to wall
-                    
-                    // Offset icon position slightly away from wall (towards room center)
-                    const iconOffset = 15; // pixels
-                    const iconX = screenX + Math.cos(perpAngle) * iconOffset;
-                    const iconY = screenY + Math.sin(perpAngle) * iconOffset;
-                    
-                    ctx.save();
-                    ctx.translate(iconX, iconY);
-                    ctx.rotate(wallAngle); // Rotate icon to align with wall
-                    
-                    // Draw different indicators based on joint type
-                    if (wall.ceiling_joint_type === 'AA11') {
-                        // AA11: Simple circle with "AA11" text
-                        ctx.fillStyle = '#3b82f6'; // Blue
-                        ctx.strokeStyle = '#1e40af';
-                        ctx.lineWidth = 1.5;
-                        ctx.beginPath();
-                        ctx.arc(0, 0, 8, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.stroke();
-                        
-                        // Draw "AA11" text
-                        ctx.fillStyle = '#ffffff';
-                        ctx.font = `bold ${Math.max(8, 10 * scaleFactor.current)}px Arial`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('AA', 0, -2);
-                        ctx.fillText('11', 0, 4);
-                    } else if (wall.ceiling_joint_type === 'cut_l') {
-                        // Cut L: Draw L-shaped indicator
-                        ctx.fillStyle = '#f97316'; // Orange
-                        ctx.strokeStyle = '#c2410c';
-                        ctx.lineWidth = 2;
-                        
-                        // Draw L shape
-                        const lSize = 10;
-                        ctx.beginPath();
-                        ctx.moveTo(-lSize, -lSize);
-                        ctx.lineTo(-lSize, lSize);
-                        ctx.lineTo(lSize, lSize);
-                        ctx.stroke();
-                        
-                        // Fill corner
-                        ctx.fillRect(-lSize - 1, lSize - 2, 3, 3);
-                        
-                        // Add "L" text
-                        ctx.fillStyle = '#ffffff';
-                        ctx.font = `bold ${Math.max(8, 10 * scaleFactor.current)}px Arial`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('L', 0, 0);
-                    } else if (wall.ceiling_joint_type === 'cut_45') {
-                        // Cut 45: Draw 45-degree angle indicator
-                        ctx.fillStyle = '#a855f7'; // Purple
-                        ctx.strokeStyle = '#7c3aed';
-                        ctx.lineWidth = 2;
-                        
-                        // Draw 45-degree angle
-                        const angleSize = 10;
-                        ctx.beginPath();
-                        ctx.moveTo(-angleSize, -angleSize);
-                        ctx.lineTo(0, 0);
-                        ctx.lineTo(-angleSize, angleSize);
-                        ctx.stroke();
-                        
-                        // Add "45" text
-                        ctx.fillStyle = '#ffffff';
-                        ctx.font = `bold ${Math.max(7, 9 * scaleFactor.current)}px Arial`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('45', 2, 0);
-                    }
-                    
-                    ctx.restore();
-                }
-                
                 // Reset line dash
                 ctx.setLineDash([]);
             } catch (error) {
@@ -1554,81 +1468,74 @@ const CeilingCanvas = ({
             
             // Draw cut panel dimensions with RED color (only if cut panel visibility is enabled)
             if (cutPanels.length > 0 && dimensionVisibility?.cutPanel === true) {
-                //console.log(`🔍 Drawing dimensions for ${cutPanels.length} cut panels with RED color`);
-                
                 cutPanels.forEach(panel => {
-                    // For cut panels, show the correct dimension based on orientation
-                    // Horizontal orientation: show panel WIDTH (perpendicular to panel direction)
-                    // Vertical orientation: show panel LENGTH (perpendicular to panel direction)
-                    // Use orientation from ceiling plan, not from comparing dimensions
-                    const isHorizontal = getRoomOrientation(room.id);
-                    const dimensionValue = isHorizontal ? panel.width : panel.length; // Use width for horizontal, length for vertical
+                    // Determine Orientation strictly from Geometry
+                    // If Width > Length, panels are running Horizontally (strips L-R)
+                    // If Width < Length, panels are running Vertically (strips Top-Bottom)
+                    const isHorizontal = panel.width > panel.length;
                     
-                    //console.log(`🔍 Cut panel ${panel.id}: ${dimensionValue}mm (${dimensionType}) - ${isHorizontal ? 'Horizontal' : 'Vertical'} orientation`);
+                    // MATCHING FLOOR PLAN LOGIC:
+                    // Horizontal Plan: Measure the Y-axis (Length) -> Draw Vertical Line
+                    // Vertical Plan: Measure the X-axis (Width) -> Draw Horizontal Line
+                    const dimensionValue = isHorizontal ? panel.length : panel.width;
                     
                     // Create unique key for cut panel dimension
                     const cutDimensionKey = `cut_${panel.id}`;
                     
-                    // Check for duplicate cut panel dimensions (by panel ID)
                     if (drawnDimensions.has(cutDimensionKey)) return;
                     
                     drawnDimensions.add(cutDimensionKey);
                     
-                    // Note: We don't filter by level for cut panels to ensure at least one is shown
-                    // Level-based filtering is only for grouped dimensions
-                    
                     let cutPanelDimension;
                     
-                   
                     if (isHorizontal) {
-                        // Horizontal panel: should create HORIZONTAL dimension line (same as grouped dimensions)
-                        // Same as grouped dimensions: horizontal line spanning minX to maxX, at centerY
+                        // Horizontal Plan -> Draw Vertical Dimension Line (Measuring Length/Y-axis)
+                        const centerX = panel.start_x + (panel.width / 2); 
+                        const minY = panel.start_y;
+                        const maxY = panel.start_y + panel.length;
+
+                        cutPanelDimension = {
+                            startX: centerX,
+                            endX: centerX,
+                            startY: minY,
+                            endY: maxY,
+                            dimension: dimensionValue, 
+                            type: 'cut_panel',
+                            color: '#dc2626',
+                            priority: 4,
+                            avoidArea: projectBounds,
+                            quantity: 0,
+                            panelLabel: `${Math.round(dimensionValue)}`,
+                            drawnPositions: drawnPositions,
+                            roomId: room.id,
+                            isHorizontal: false, // Vertical Line
+                            isCut: true
+                        };
+                    } else {
+                        // Vertical Plan -> Draw Horizontal Dimension Line (Measuring Width/X-axis)
                         const minX = panel.start_x;
                         const maxX = panel.start_x + panel.width;
-                        const centerY = panel.start_y + (panel.length / 2); // Center vertically
+                        const centerY = panel.start_y + (panel.length / 2); 
                         
                         cutPanelDimension = {
                             startX: minX,
                             endX: maxX,
                             startY: centerY,
                             endY: centerY,
-                            dimension: dimensionValue, // This is panel.width for horizontal panels
+                            dimension: dimensionValue, 
                             type: 'cut_panel',
-                            color: '#dc2626', // RED for cut panels
-                            priority: 4, // Lower priority than full panels
-                            avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
-                            quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${dimensionValue}`,
+                            color: '#dc2626',
+                            priority: 4,
+                            avoidArea: projectBounds,
+                            quantity: 0,
+                            panelLabel: `${Math.round(dimensionValue)}`, 
                             drawnPositions: drawnPositions,
-                            roomId: room.id, // Assign room ID
-                            isHorizontal: true // This dimension line is HORIZONTAL (same as grouped dimensions for horizontal panels)
-                        };
-                    } else {
-                        // Vertical panel: should create VERTICAL dimension line (same as grouped dimensions)
-                        // Same as grouped dimensions: vertical line at centerX, spanning minY to maxY
-                        const centerX = panel.start_x + (panel.width / 2); // Center horizontally
-                        const minY = panel.start_y;
-                        const maxY = panel.start_y + panel.length;
-                        
-                        cutPanelDimension = {
-                            startX: centerX,
-                            endX: centerX,
-                            startY: minY,
-                            endY: maxY,
-                            dimension: dimensionValue, // This is panel.length for vertical panels
-                            type: 'cut_panel',
-                            color: '#dc2626', // RED for cut panels
-                            priority: 4, // Lower priority than full panels
-                            avoidArea: projectBounds, // Use project bounds to avoid drawing dimensions inside project area
-                            quantity: 0, // Use 0 to show just the dimension without "(1 panel)"
-                            panelLabel: `${dimensionValue}`,
-                            drawnPositions: drawnPositions,
-                            roomId: room.id, // Assign room ID
-                            isHorizontal: false // This dimension line is VERTICAL (same as grouped dimensions for vertical panels)
+                            roomId: room.id,
+                            isHorizontal: true, // Horizontal Line
+                            isCut: true
                         };
                     }
                     
-                    // Draw cut panel dimension
                     drawCeilingDimension(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels);
                 });
             }
@@ -1810,7 +1717,7 @@ const CeilingCanvas = ({
                     color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
                     priority: 2,
                     avoidArea: projectBounds,
-                    quantity: 0, // Length dimensions don't show quantity
+                    quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
                     drawnPositions: new Set(),
                     roomId: 'unknown',
                     isHorizontal: true // This dimension line is horizontal (X-axis)
@@ -1906,7 +1813,7 @@ const CeilingCanvas = ({
                     color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
                     priority: 2,
                     avoidArea: projectBounds,
-                    quantity: 0, // Length dimensions don't show quantity
+                    quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
                     drawnPositions: new Set(),
                     roomId: 'unknown',
                     isHorizontal: false // This dimension line is vertical (Y-axis) - SPAN DIMENSION
@@ -1986,27 +1893,20 @@ const CeilingCanvas = ({
         return panelList;
     };
 
-    // Helper function to get dimension text
+    // Helper function to get dimension text (matches FloorCanvas formatting)
     const getDimensionText = (dimension, length, quantity) => {
-        // console.log(`🔍 getDimensionText called with:`, {
-        //     type: dimension.type,
-        //     panelLabel: dimension.panelLabel,
-        //     dimension: dimension.dimension,
-        //     length: length,
-        //     quantity: quantity
-        // });
-        
-        // For length dimensions, don't show panel count (just show the dimension value)
-        if (dimension.type === 'grouped_length_horizontal' || dimension.type === 'grouped_length_vertical') {
-            return `${Math.round(dimension.dimension)}`;
-        }
-        
-        // For width dimensions, show "n × dimension" format
-        if ((dimension.type === 'grouped_width' || dimension.type === 'grouped_width_horizontal' || dimension.type === 'grouped_width_vertical') && quantity) {
-            // Use the dimension.dimension value (which is the actual dimension value)
-            return `${quantity} × ${dimension.dimension}`;
+        // Match FloorCanvas.js text formatting logic exactly (lines 900-908)
+        if (dimension.type === 'cut_panel' || dimension.isCut) {
+            // [CHANGED] Removed the (CUT) text to keep it clean (matching FloorCanvas)
+            return `${Math.round(length)}`;
         } else {
-            return dimension.panelLabel || (quantity ? `${dimension.dimension} (${quantity} panels)` : `${Math.round(dimension.dimension)}`);
+            // Use dimension.quantity if available, otherwise use quantity parameter
+            const qty = dimension.quantity || quantity;
+            if (qty && qty > 1) {
+                return `${qty} × ${Math.round(length)}`;
+            } else {
+                return `${Math.round(length)}`;
+            }
         }
     };
 
@@ -2020,9 +1920,9 @@ const CeilingCanvas = ({
         ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
         ctx.fillRect(x, y, width, height);
         
-        // Draw border
+        // Draw border (matching FloorCanvas)
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = DIMENSION_CONFIG.LABEL_BORDER_WIDTH;
         ctx.strokeRect(x, y, width, height);
         
         // Draw text
@@ -2134,13 +2034,17 @@ const CeilingCanvas = ({
         const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea, quantity } = dimension;
         const { minX, maxX, minY, maxY } = bounds;
         
-        // Calculate dimension line properties - use proper angle calculation like wall plan
-        const dx = endX - startX;
-        const dy = endY - startY;
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        
-        // Determine if dimension is horizontal or vertical based on angle (like wall plan)
-        const isHorizontal = Math.abs(angle) < 45 || Math.abs(angle) > 135;
+        // Determine if dimension is horizontal or vertical (matching FloorCanvas)
+        let isHorizontal;
+        if (dimension.isHorizontal !== undefined) {
+            isHorizontal = dimension.isHorizontal;
+        } else {
+            // Calculate from angle if not explicitly set
+            const dx = endX - startX;
+            const dy = endY - startY;
+            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            isHorizontal = Math.abs(angle) < 45 || Math.abs(angle) > 135;
+        }
         
         const midX = (startX + endX) / 2;
         const midY = (startY + endY) / 2;

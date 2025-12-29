@@ -198,9 +198,9 @@ export default function useDoorForm({
       doorData.slide_direction = slideDirection;
       doorData.side = side;
     } else {
-      // Dock doors don't need these fields, but set defaults to satisfy backend requirements
+      // Dock doors: include side field, but set defaults for other fields
       doorData.configuration = 'single_sided'; // Default value
-      doorData.side = 'exterior'; // Default value for dock doors (卷帘门 typically face exterior)
+      doorData.side = side; // Include side for dock doors (can be flipped)
       doorData.swing_direction = null;
       doorData.slide_direction = null;
     }
