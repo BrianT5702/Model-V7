@@ -245,6 +245,26 @@ export function toggleDoorHandler(instance) {
         }
       }
     }
+  } else if (doorInfo.door_type === 'dock') {
+    // Dock door: Show/hide cover panel
+    const doorContainer = instance.activeDoor;
+    const coverPanel = doorInfo.coverPanel || doorContainer.children.find(child => child.userData?.isCoverPanel);
+    
+    if (coverPanel) {
+      // newState = true means open (cover hidden), false means closed (cover visible)
+      if (window.gsap) {
+        window.gsap.to(coverPanel.material, {
+          opacity: newState ? 0 : 1,
+          duration: 0.5,
+          ease: 'power2.inOut',
+          onComplete: () => {
+            coverPanel.visible = !newState; // Invisible when open, visible when closed
+          }
+        });
+      } else {
+        coverPanel.visible = !newState; // Invisible when open, visible when closed
+      }
+    }
   }
   // Update button text and style
   instance.doorButton.textContent = newState ? 'Close Door' : 'Open Door';

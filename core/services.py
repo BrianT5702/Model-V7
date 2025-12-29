@@ -944,8 +944,115 @@ class FloorService:
             return {'error': f'Error analyzing floor orientations: {str(e)}'}
     
     @staticmethod
+    def _determine_wall_side_for_room(wall, room):
+        """Determine which side of a wall is 'inner' for a given room
+        
+        Returns:
+            'inner' if the room is on the inner side (should reduce area)
+            'outer' if the room is on the outer side (should not reduce area)
+            None if wall doesn't belong to room
+        """
+        # Check if wall belongs to this room
+        if not hasattr(room, 'walls') or wall not in room.walls.all():
+            return None
+        
+        # Calculate room center
+        if not room.room_points or len(room.room_points) < 3:
+            return None
+        
+        room_center_x = sum(p['x'] for p in room.room_points) / len(room.room_points)
+        room_center_y = sum(p['y'] for p in room.room_points) / len(room.room_points)
+        
+        # Calculate wall direction vector
+        wall_dx = wall.end_x - wall.start_x
+        wall_dy = wall.end_y - wall.start_y
+        wall_length = (wall_dx ** 2 + wall_dy ** 2) ** 0.5
+        
+        if wall_length == 0:
+            return None
+        
+        # Calculate wall midpoint
+        wall_mid_x = (wall.start_x + wall.end_x) / 2
+        wall_mid_y = (wall.start_y + wall.end_y) / 2
+        
+        # Calculate normal vector pointing outward (90° counterclockwise from wall direction)
+        # Normal = (-dy, dx) normalized
+        normal_x = -wall_dy / wall_length
+        normal_y = wall_dx / wall_length
+        
+        # Vector from wall midpoint to room center
+        to_room_x = room_center_x - wall_mid_x
+        to_room_y = room_center_y - wall_mid_y
+        
+        # Dot product: positive means room is on the side the normal points to (outer side)
+        # negative means room is on the opposite side (inner side)
+        dot_product = normal_x * to_room_x + normal_y * to_room_y
+        
+        # Check if wall is shared (belongs to multiple rooms)
+        wall_rooms = wall.rooms.all()
+        is_shared = len(wall_rooms) > 1
+        
+        if is_shared:
+            # For shared walls, only the room on the inner side should reduce area
+            # Inner side is where dot_product < 0 (room center is opposite to normal)
+            return 'inner' if dot_product < 0 else 'outer'
+        else:
+            # For non-shared walls (exterior), both sides are outer
+            # But we still need to reduce by full thickness for exterior walls
+            # So we return 'inner' to indicate this room should reduce area
+            return 'inner'
+    
+    @staticmethod
+    def _get_wall_reduction_info(room, all_rooms=None):
+        """Get information about which walls require area reduction for a room
+        
+        Returns:
+            dict with keys:
+            - 'shared_walls_inner': list of shared walls where this room is on inner side
+            - 'exterior_walls': list of non-shared walls (exterior)
+            - 'wall_segments': list of wall segments with reduction info
+        """
+        if not hasattr(room, 'walls'):
+            return {'shared_walls_inner': [], 'exterior_walls': [], 'wall_segments': []}
+        
+        room_walls = room.walls.all()
+        shared_walls_inner = []
+        exterior_walls = []
+        wall_segments = []
+        
+        for wall in room_walls:
+            wall_rooms = wall.rooms.all()
+            is_shared = len(wall_rooms) > 1
+            
+            side = FloorService._determine_wall_side_for_room(wall, room)
+            
+            if is_shared and side == 'inner':
+                shared_walls_inner.append(wall)
+                wall_segments.append({
+                    'wall': wall,
+                    'length': ((wall.end_x - wall.start_x) ** 2 + (wall.end_y - wall.start_y) ** 2) ** 0.5,
+                    'reduction': wall.thickness,  # Only reduce by thickness (inner side only)
+                    'is_shared': True
+                })
+            elif not is_shared:
+                # Exterior wall - reduce by full thickness
+                exterior_walls.append(wall)
+                wall_segments.append({
+                    'wall': wall,
+                    'length': ((wall.end_x - wall.start_x) ** 2 + (wall.end_y - wall.start_y) ** 2) ** 0.5,
+                    'reduction': wall.thickness,  # Full thickness for exterior
+                    'is_shared': False
+                })
+        
+        return {
+            'shared_walls_inner': shared_walls_inner,
+            'exterior_walls': exterior_walls,
+            'wall_segments': wall_segments
+        }
+    
+    @staticmethod
     def _calculate_room_floor_area(room, wall_thickness):
-        """Calculate floor area excluding walls"""
+        """Calculate floor area excluding walls, considering shared walls"""
         if not room.room_points or len(room.room_points) < 3:
             return 0.0
         
@@ -961,16 +1068,14 @@ class FloorService:
         
         room_area = abs(area) / 2.0
         
-        # Calculate perimeter
-        perimeter = 0.0
-        for i in range(n):
-            j = (i + 1) % n
-            dx = points[j]['x'] - points[i]['x']
-            dy = points[j]['y'] - points[i]['y']
-            perimeter += (dx * dx + dy * dy) ** 0.5
+        # Get wall reduction info for this room
+        wall_info = FloorService._get_wall_reduction_info(room)
         
-        # Wall area = perimeter * wall_thickness
-        wall_area = perimeter * wall_thickness
+        # Calculate wall area based on actual wall segments
+        wall_area = 0.0
+        for segment in wall_info['wall_segments']:
+            # Only count wall area for walls that affect this room
+            wall_area += segment['length'] * segment['reduction']
         
         # Floor area = room area - wall area
         floor_area = room_area - wall_area
@@ -1043,19 +1148,70 @@ class FloorService:
     
     @staticmethod
     def _calculate_room_floor_bounding_box(room):
-        """Calculate bounding box for floor area (excluding walls)"""
+        """Calculate bounding box for floor area (excluding walls), considering shared walls"""
         if not room.room_points or len(room.room_points) < 3:
             return None
         
-        # Get wall thickness
-        wall_thickness = room.project.wall_thickness if room.project else 200
-        
-        # Calculate inner bounding box by reducing room dimensions by wall thickness
+        # Get initial bounding box from room points
         points = room.room_points
-        min_x = min(p['x'] for p in points) + wall_thickness
-        max_x = max(p['x'] for p in points) - wall_thickness
-        min_y = min(p['y'] for p in points) + wall_thickness
-        max_y = max(p['y'] for p in points) - wall_thickness
+        initial_min_x = min(p['x'] for p in points)
+        initial_max_x = max(p['x'] for p in points)
+        initial_min_y = min(p['y'] for p in points)
+        initial_max_y = max(p['y'] for p in points)
+        
+        # Get wall reduction info for this room
+        wall_info = FloorService._get_wall_reduction_info(room)
+        
+        # Default wall thickness (for exterior walls or fallback)
+        default_wall_thickness = room.project.wall_thickness if room.project else 200
+        
+        # Calculate reductions for each side based on walls
+        reduction_min_x = 0
+        reduction_max_x = 0
+        reduction_min_y = 0
+        reduction_max_y = 0
+        
+        # Tolerance for determining if a wall is on a particular edge
+        tolerance = 10.0  # 10mm tolerance
+        
+        for segment in wall_info['wall_segments']:
+            wall = segment['wall']
+            reduction = segment['reduction']
+            
+            # Check which edge(s) this wall is close to
+            wall_min_x = min(wall.start_x, wall.end_x)
+            wall_max_x = max(wall.start_x, wall.end_x)
+            wall_min_y = min(wall.start_y, wall.end_y)
+            wall_max_y = max(wall.start_y, wall.end_y)
+            
+            # Check if wall is on left edge (min_x)
+            if abs(wall_min_x - initial_min_x) < tolerance or abs(wall_max_x - initial_min_x) < tolerance:
+                reduction_min_x = max(reduction_min_x, reduction)
+            
+            # Check if wall is on right edge (max_x)
+            if abs(wall_min_x - initial_max_x) < tolerance or abs(wall_max_x - initial_max_x) < tolerance:
+                reduction_max_x = max(reduction_max_x, reduction)
+            
+            # Check if wall is on top edge (min_y)
+            if abs(wall_min_y - initial_min_y) < tolerance or abs(wall_max_y - initial_min_y) < tolerance:
+                reduction_min_y = max(reduction_min_y, reduction)
+            
+            # Check if wall is on bottom edge (max_y)
+            if abs(wall_min_y - initial_max_y) < tolerance or abs(wall_max_y - initial_max_y) < tolerance:
+                reduction_max_y = max(reduction_max_y, reduction)
+        
+        # If no walls found on edges, use default reduction (exterior walls)
+        if reduction_min_x == 0 and reduction_max_x == 0 and reduction_min_y == 0 and reduction_max_y == 0:
+            reduction_min_x = default_wall_thickness
+            reduction_max_x = default_wall_thickness
+            reduction_min_y = default_wall_thickness
+            reduction_max_y = default_wall_thickness
+        
+        # Apply reductions
+        min_x = initial_min_x + reduction_min_x
+        max_x = initial_max_x - reduction_max_x
+        min_y = initial_min_y + reduction_min_y
+        max_y = initial_max_y - reduction_max_y
         
         # Ensure valid dimensions
         if min_x >= max_x or min_y >= max_y:

@@ -120,107 +120,24 @@ export function createWallMesh(instance, wall) {
   
   const wallThickness = thickness * scale;
   
-  // Flip start/end coordinates based on model center position and joint considerations
+  // Flip start/end coordinates based on model center position
   let finalStartX = startX;
   let finalStartZ = startZ;
   let finalEndX = endX;
   let finalEndZ = endZ;
   
-  // Check for 45° cut joints first
-  let shouldFlipForJoint = false;
-  if (instance.joints && Array.isArray(instance.joints)) {
-    for (const joint of instance.joints) {
-      if ((joint.wall_1 === id || joint.wall_2 === id) && joint.joining_method === '45_cut') {
-        // Find the connecting wall (the other wall in the joint)
-        const connectingWallId = joint.wall_1 === id ? joint.wall_2 : joint.wall_1;
-        const connectingWall = instance.walls.find(w => String(w.id) === String(connectingWallId));
-        
-        if (connectingWall) {
-          // Calculate connecting wall midpoint
-          const connectMidX = (connectingWall.start_x + connectingWall.end_x) / 2 * scale;
-          const connectMidZ = (connectingWall.start_y + connectingWall.end_y) / 2 * scale;
-          
-          // Calculate current wall midpoint
-          const wallMidX = (startX + endX) / 2;
-          const wallMidZ = (startZ + endZ) / 2;
-          
-          // Determine if connecting wall and model center are on the same side
-          let sameSide = false;
-          
-          if (isHorizontal) {
-            // For horizontal wall, compare Z positions
-            const modelCenterZ = modelCenter.z * scale;
-            const wallZ = wallMidZ;
-            const connectZ = connectMidZ;
-            
-            // Check if both model center and connecting wall are on the same side of the wall
-            // For horizontal wall, we compare if both are above or both are below the wall
-            const modelAboveWall = modelCenterZ > wallZ;
-            const connectAboveWall = connectZ > wallZ;
-            sameSide = modelAboveWall === connectAboveWall;
-          } else if (isVertical) {
-            // For vertical wall, compare X positions
-            const modelCenterX = modelCenter.x * scale;
-            const wallX = wallMidX;
-            const connectX = connectMidX;
-            
-            // Check if both model center and connecting wall are on the same side of the wall
-            // For vertical wall, we compare if both are to the right or both are to the left of the wall
-            const modelRightOfWall = modelCenterX > wallX;
-            const connectRightOfWall = connectX > wallX;
-            sameSide = modelRightOfWall === connectRightOfWall;
-          }
-          
-          // // Debug logging for all cases
-          // console.log('[Joint Check]', {
-          //   wallId: id,
-          //   connectingWallId,
-          //   isHorizontal,
-          //   modelCenterZ: modelCenter.z * scale,
-          //   modelCenterX: modelCenter.x * scale,
-          //   wallMidZ,
-          //   wallMidX,
-          //   connectMidZ,
-          //   connectMidX,
-          //   sameSide,
-          //   shouldFlip: !sameSide
-          // });
-          
-          // If they're on opposite sides, we need to flip
-          if (!sameSide) {
-            shouldFlipForJoint = true;
-            break;
-          }
-        }
-      }
-    }
-  }
-  
-  // Apply flipping based on joint logic first, then model center logic
-  if (shouldFlipForJoint) {
-    if (isHorizontal) {
-      // Flip start X with end X for horizontal wall
+  // Apply model center logic for wall orientation
+  if (isHorizontal) {
+    // For horizontal walls: if model center is at < Z position, flip start X with end X
+    if (modelCenter.z * scale < startZ) {
       finalStartX = endX;
       finalEndX = startX;
-    } else if (isVertical) {
-      // Flip start Y with end Y (which becomes start Z and end Z in 3D) for vertical wall
+    }
+  } else if (isVertical) {
+    // For vertical walls: if model center is at > X position, flip start Y with end Y
+    if (modelCenter.x * scale > startX) {
       finalStartZ = endZ;
       finalEndZ = startZ;
-    }
-  } else {
-    // Original model center logic (only if no joint flipping was applied)
-    if (isHorizontal) {
-      // For horizontal walls: if model center is at < Z position, flip start X with end X
-      if (modelCenter.z * scale < startZ) {
-        finalStartX = endX;
-        finalEndX = startX;
-      }
-    } else if (isVertical) {
-      // For vertical walls: if model center is at > X position, flip start Y with end Y
-      if (modelCenter.x * scale > startX) {
-        finalStartZ = endZ;
-        finalEndZ = startZ;
-      }
     }
   }
   
@@ -360,8 +277,9 @@ export function createWallMesh(instance, wall) {
   wallDoors.sort((a, b) => a.position_x - b.position_x);
   const cutouts = wallDoors.map(door => {
     const isSlideDoor = (door.door_type === 'slide');
+    const isDockDoor = (door.door_type === 'dock');
     const doorWidth = door.width * scale;
-    const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : 1.05);
+    const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05);
     const doorHeight = door.height * scale * 1.02;
     
     // If wall was flipped, flip the door position
@@ -765,5 +683,54 @@ export function createDoorMesh(instance, door, wall) {
       return doorContainer;
     }
   }
+  
+  // === DOCK DOOR IMPLEMENTATION ===
+  else if (door_type === 'dock') {
+    // Dock door: Just create a cover panel that can be shown/hidden
+    // The hole is already created in the wall mesh
+    // Dock doors (卷帘门) open upward, so no side or direction settings needed
+    const doorContainer = new instance.THREE.Object3D();
+    const room = instance.project?.rooms?.find(r => r.id === door.room);
+    const baseElevation = (room?.base_elevation_mm ?? 0) * instance.scalingFactor;
+    doorContainer.position.set(doorPosX, baseElevation + doorHeight/2, doorPosZ);
+    doorContainer.rotation.y = -wallAngle;
+    
+    // Create a cover panel (flat rectangle) that covers the door opening
+    const coverMaterial = new instance.THREE.MeshStandardMaterial({
+      color: 0xCCCCCC, // Gray color for dock door cover
+      roughness: 0.7,
+      metalness: 0.2,
+      transparent: false,
+      opacity: 1
+    });
+    
+    // Create cover panel - positioned at the wall face (exterior side by default)
+    const coverPanel = new instance.THREE.Mesh(
+      new instance.THREE.BoxGeometry(cutoutWidth, doorHeight, 0.1 * instance.scalingFactor), // Thin cover
+      coverMaterial
+    );
+    
+    // Position cover on exterior side of the wall (dock doors typically face outward)
+    coverPanel.position.z = wallDepth * 1.2;
+    
+    // Start with cover hidden (door open by default)
+    coverPanel.visible = false;
+    coverPanel.userData.isCoverPanel = true; // Mark as cover panel for easy lookup
+    
+    doorContainer.add(coverPanel);
+    
+    // Register as a door object with metadata
+    doorContainer.userData.isDoor = true;
+    doorContainer.userData.doorId = `door_${door.id}`;
+    doorContainer.userData.doorInfo = {
+      ...door,
+      coverPanel: coverPanel // Store reference to cover panel
+    };
+    instance.doorObjects.push(doorContainer);
+    instance.doorStates.set(`door_${door.id}`, true); // Start open (cover hidden)
+    
+    return doorContainer;
+  }
+  
   return null;
 } 

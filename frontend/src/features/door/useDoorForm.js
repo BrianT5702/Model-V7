@@ -94,9 +94,13 @@ export default function useDoorForm({
     if (newType === 'swing') {
       setSwingDirection('right');
       setSlideDirection(null);
-    } else {
+    } else if (newType === 'slide') {
       setSlideDirection('right');
       setSwingDirection(null);
+    } else if (newType === 'dock') {
+      // Dock doors don't need direction settings
+      setSwingDirection(null);
+      setSlideDirection(null);
     }
   };
 
@@ -107,9 +111,10 @@ export default function useDoorForm({
   const handleFlipDirection = () => {
     if (doorType === 'swing') {
       setSwingDirection(swingDirection === 'left' ? 'right' : 'left');
-    } else {
+    } else if (doorType === 'slide') {
       setSlideDirection(slideDirection === 'left' ? 'right' : 'left');
     }
+    // Dock doors don't have direction settings
   };
 
   const handleFlipSide = () => {
@@ -178,17 +183,27 @@ export default function useDoorForm({
       project: projectId,
       linked_wall: wallId,
       door_type: doorType,
-      configuration: configuration === 'single' ? 'single_sided' : 'double_sided',
       width: widthValue,
       height: heightValue,
       thickness: thicknessValue,
       position_x: localPosition,
       position_y: 0,
-      swing_direction: swingDirection,
-      slide_direction: slideDirection,
-      side: side,
       orientation: 'horizontal',
     };
+    
+    // Only include these fields for non-dock doors
+    if (doorType !== 'dock') {
+      doorData.configuration = configuration === 'single' ? 'single_sided' : 'double_sided';
+      doorData.swing_direction = swingDirection;
+      doorData.slide_direction = slideDirection;
+      doorData.side = side;
+    } else {
+      // Dock doors don't need these fields, but set defaults to satisfy backend requirements
+      doorData.configuration = 'single_sided'; // Default value
+      doorData.side = 'exterior'; // Default value for dock doors (卷帘门 typically face exterior)
+      doorData.swing_direction = null;
+      doorData.slide_direction = null;
+    }
     try {
       if (isEditMode && initialDoor) {
         await onUpdate({ ...doorData, id: initialDoor.id });

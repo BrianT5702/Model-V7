@@ -42,20 +42,23 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
                 >
                   <option value="swing">Swing</option>
                   <option value="slide">Slide</option>
+                  <option value="dock">Dock Door</option>
                 </select>
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-gray-700">Configuration</label>
-                <select
-                  value={form.configuration}
-                  onChange={form.handleConfigChange}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="single">Single-Sided</option>
-                  <option value="double">Double-Sided</option>
-                </select>
-              </div>
+              {form.doorType !== 'dock' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Configuration</label>
+                  <select
+                    value={form.configuration}
+                    onChange={form.handleConfigChange}
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="single">Single-Sided</option>
+                    <option value="double">Double-Sided</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -146,25 +149,27 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
             </div>
           </div>
 
-          {/* Control Buttons Section */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Controls</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              <button
-                onClick={form.handleFlipDirection}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Flip Opening Direction
-              </button>
+          {/* Control Buttons Section - Only show for non-dock doors */}
+          {form.doorType !== 'dock' && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Controls</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                <button
+                  onClick={form.handleFlipDirection}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Flip Opening Direction
+                </button>
 
-              <button
-                onClick={form.handleFlipSide}
-                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                Flip Installing Side
-              </button>
+                <button
+                  onClick={form.handleFlipSide}
+                  className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  Flip Installing Side
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer Actions */}

@@ -88,17 +88,27 @@ const DoorManager = ({
       project: projectId,
       wall: wallId,
       door_type: doorType,
-      configuration: configuration === "single" ? "single_sided" : "double_sided",
       width: widthValue,
       height: heightValue,
       thickness: thicknessValue,
       position_x: localPosition,
       position_y: 0,
-      swing_direction: swingDirection,
-      slide_direction: slideDirection,
-      side: side,
       storey: activeStoreyId
     };
+    
+    // Only include these fields for non-dock doors
+    if (doorType !== 'dock') {
+      doorData.configuration = configuration === "single" ? "single_sided" : "double_sided";
+      doorData.swing_direction = swingDirection;
+      doorData.slide_direction = slideDirection;
+      doorData.side = side;
+    } else {
+      // Dock doors don't need these fields, but set defaults to satisfy backend requirements
+      doorData.configuration = "single_sided"; // Default value
+      doorData.side = "exterior"; // Default value for dock doors (卷帘门 typically face exterior)
+      doorData.swing_direction = null;
+      doorData.slide_direction = null;
+    }
     if (isEditMode && editingDoor) {
       onUpdateDoor({ ...doorData, id: editingDoor.id });
     } else {
@@ -134,9 +144,13 @@ const DoorManager = ({
     if (newType === 'swing') {
       setSwingDirection('right');
       setSlideDirection('');
-    } else {
+    } else if (newType === 'slide') {
       setSlideDirection('right');
       setSwingDirection('');
+    } else if (newType === 'dock') {
+      // Dock doors don't need direction settings
+      setSwingDirection('');
+      setSlideDirection('');
     }
   };
 
@@ -147,9 +161,10 @@ const DoorManager = ({
   const handleFlipDirection = () => {
     if (doorType === 'swing') {
       setSwingDirection(swingDirection === 'left' ? 'right' : 'left');
-    } else {
+    } else if (doorType === 'slide') {
       setSlideDirection(slideDirection === 'left' ? 'right' : 'left');
     }
+    // Dock doors don't have direction settings
   };
 
   const handleFlipSide = () => {
@@ -205,20 +220,23 @@ const DoorManager = ({
                 >
                   <option value="swing">Swing</option>
                   <option value="slide">Slide</option>
+                  <option value="dock">Dock Door</option>
                 </select>
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-gray-700">Configuration</label>
-                <select 
-                  value={configuration} 
-                  onChange={handleConfigChange} 
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="single">Single-Sided</option>
-                  <option value="double">Double-Sided</option>
-                </select>
-              </div>
+              {doorType !== 'dock' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Configuration</label>
+                  <select 
+                    value={configuration} 
+                    onChange={handleConfigChange} 
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="single">Single-Sided</option>
+                    <option value="double">Double-Sided</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 

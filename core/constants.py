@@ -27,6 +27,7 @@ ROOM_FLOOR_THICKNESS_CHOICES = [
 DOOR_TYPES = [
     ('swing', 'Swing Door'),
     ('slide', 'Slide Door'),
+    ('dock', 'Dock Door'),
 ]
 
 # Door Configurations

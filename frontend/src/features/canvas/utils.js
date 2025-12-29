@@ -257,9 +257,22 @@ export function detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY) {
     const halfW = door.width / 2;
     const halfT = wall.thickness * 1.5; // Make it a bit larger for easier selection
     
-    // Check main door area (slashed wall portion)
-    if (Math.abs(localX) <= halfW && Math.abs(localY) <= halfT) {
-      return door;
+    // For dock doors, check the area extending outward from the wall
+    if (door.door_type === 'dock') {
+      const dockDoorWidth = door.width; // Width parallel to wall: door width
+      const dockDoorHeight = door.width + 500; // Height extending outward: door width + 500mm
+      
+      // Check if click is within the dock door rectangle (extending outward from wall, starting at y=0)
+      if (Math.abs(localX) <= dockDoorWidth / 2 && 
+          localY >= 0 && 
+          localY <= dockDoorHeight) {
+        return door;
+      }
+    } else {
+      // Check main door area (slashed wall portion) for swing/slide doors
+      if (Math.abs(localX) <= halfW && Math.abs(localY) <= halfT) {
+        return door;
+      }
     }
     
     // For swing doors, also check the arc and door panel area
@@ -350,7 +363,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         const y2 = wall.end_y;
 
         const wallLength = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-        const slashLength = (door.door_type === 'swing') ? door.width : door.width * 0.85;
+        const slashLength = (door.door_type === 'swing') ? door.width : (door.door_type === 'dock') ? door.width : door.width * 0.85;
         const halfSlashRatio = (slashLength / wallLength) / 2;
 
         const gap = 200;
@@ -381,35 +394,40 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         ctx.save();
         ctx.translate(doorCenterX * scale + offsetX, doorCenterY * scale + offsetY);
         ctx.rotate(angle);
-        if (door.side === 'interior') {
+        // Only rotate for interior side on swing/slide doors (not dock doors)
+        if (door.door_type !== 'dock' && door.side === 'interior') {
             ctx.rotate(Math.PI);
         }
 
-        // === Slashed Wall Section ===
-        const slashHalf = slashLength / 2;
-        const slashStart = { x: -slashHalf, y: 0 };
-        const slashEnd = { x: slashHalf, y: 0 };
-        const numSlashes = Math.max(2, Math.floor((doorWidth * scale) / 10));
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWidth;
+        // Calculate slashHalf for swing and slide doors (needed for door panel positioning)
+        const slashHalf = door.door_type !== 'dock' ? slashLength / 2 : 0;
 
-        for (let i = 0; i < numSlashes; i++) {
-            const t = i / (numSlashes - 1);
-            const px = slashStart.x + (slashEnd.x - slashStart.x) * t;
-            const py = 0;
-            const slashAngle = Math.PI / 4;
-            const lineLen = doorThickness * 0.6;
+        // === Slashed Wall Section === (skip for dock doors)
+        if (door.door_type !== 'dock') {
+            const slashStart = { x: -slashHalf, y: 0 };
+            const slashEnd = { x: slashHalf, y: 0 };
+            const numSlashes = Math.max(2, Math.floor((doorWidth * scale) / 10));
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lineWidth;
 
-            ctx.beginPath();
-            ctx.moveTo(
-                (px - Math.cos(slashAngle) * lineLen / 2) * scale,
-                (py - Math.sin(slashAngle) * lineLen / 2) * scale
-            );
-            ctx.lineTo(
-                (px + Math.cos(slashAngle) * lineLen / 2) * scale,
-                (py + Math.sin(slashAngle) * lineLen / 2) * scale
-            );
-            ctx.stroke();
+            for (let i = 0; i < numSlashes; i++) {
+                const t = i / (numSlashes - 1);
+                const px = slashStart.x + (slashEnd.x - slashStart.x) * t;
+                const py = 0;
+                const slashAngle = Math.PI / 4;
+                const lineLen = doorThickness * 0.6;
+
+                ctx.beginPath();
+                ctx.moveTo(
+                    (px - Math.cos(slashAngle) * lineLen / 2) * scale,
+                    (py - Math.sin(slashAngle) * lineLen / 2) * scale
+                );
+                ctx.lineTo(
+                    (px + Math.cos(slashAngle) * lineLen / 2) * scale,
+                    (py + Math.sin(slashAngle) * lineLen / 2) * scale
+                );
+                ctx.stroke();
+            }
         }
 
         if (isHovered) {
@@ -502,6 +520,38 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
                 drawSlidePanel(-slashHalf / 2, 'left');
                 drawSlidePanel(slashHalf / 2, 'right');
             }
+        }
+
+        // === DOCK DOOR DRAWING ===
+        if (door.door_type === 'dock') {
+            // Rectangle: width (parallel to wall) = door.width, height (extending outward) = door.width + 500mm
+            // Note: door.height field is not used for dock door rectangle dimensions
+            const rectWidth = door.width; // Width parallel to wall: door width
+            const rectHeight = door.width + 500; // Height extending outward from wall: door width + 500mm
+            
+            // Position rectangle extending outward from the wall
+            // The wall line is at y=0, rectangle starts at the wall and extends outward (positive y direction)
+            const rectX = -rectWidth / 2 * scale;
+            const rectY = 0; // Start at the wall line (y=0)
+            const rectW = rectWidth * scale;
+            const rectH = rectHeight * scale;
+            
+            // Draw rectangle outline
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lineWidth;
+            ctx.strokeRect(rectX, rectY, rectW, rectH);
+            
+            // Draw cross inside rectangle
+            ctx.beginPath();
+            // Diagonal from top-left to bottom-right
+            ctx.moveTo(rectX, rectY);
+            ctx.lineTo(rectX + rectW, rectY + rectH);
+            // Diagonal from top-right to bottom-left
+            ctx.moveTo(rectX + rectW, rectY);
+            ctx.lineTo(rectX, rectY + rectH);
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
         }
 
         ctx.restore();
