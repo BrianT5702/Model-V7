@@ -104,25 +104,51 @@ class WallSerializer(serializers.ModelSerializer):
 
 
 class CeilingPanelSerializer(serializers.ModelSerializer):
+    # Custom read-only fields for convenience
     is_cut = serializers.BooleanField(source='is_cut_panel', read_only=True)
     room_id = serializers.IntegerField(source='room.id', read_only=True)
     zone_id = serializers.IntegerField(source='zone.id', read_only=True)
-    zone = serializers.PrimaryKeyRelatedField(queryset=CeilingZone.objects.all(), allow_null=True, required=False)
     
+    # Zone relation
+    zone = serializers.PrimaryKeyRelatedField(queryset=CeilingZone.objects.all(), allow_null=True, required=False)
+
+    # --- NEW FIELD FOR L-SHAPE FIX ---
+    # Maps the DB field 'shape_data' to 'shape_points' for the frontend
+    shape_points = serializers.JSONField(source='shape_data', required=False, allow_null=True)
+
     class Meta:
         model = CeilingPanel
         fields = [
-            'id', 'room', 'room_id', 'zone', 'zone_id', 'panel_id', 'start_x', 'start_y', 'end_x', 'end_y',
-            'width', 'length', 'thickness', 'material_type', 'is_cut_panel', 'cut_notes', 'is_cut'
+            'id', 
+            'room', 
+            'room_id', 
+            'zone', 
+            'zone_id', 
+            'panel_id', 
+            'start_x', 
+            'start_y', 
+            'end_x', 
+            'end_y',
+            'width', 
+            'length', 
+            'thickness', 
+            'material_type', 
+            'is_cut_panel', 
+            'cut_notes', 
+            'is_cut',
+            'shape_points' # <--- Added this to expose the geometry
         ]
 
     def validate(self, attrs):
         room = attrs.get('room') or getattr(self.instance, 'room', None)
         zone = attrs.get('zone') or getattr(self.instance, 'zone', None)
+        
+        # Ensure it belongs to exactly one container (Room OR Zone)
         if not room and not zone:
             raise serializers.ValidationError('A ceiling panel must belong to a room or a zone.')
         if room and zone:
             raise serializers.ValidationError('A ceiling panel cannot belong to both a room and a zone.')
+            
         return super().validate(attrs)
 
     def validate_width(self, value):
@@ -172,26 +198,47 @@ class FloorPlanSerializer(serializers.ModelSerializer):
         return data
 
 class CeilingPlanSerializer(serializers.ModelSerializer):
+    # Use the updated CeilingPanelSerializer
+    # Default source is 'room.ceiling_panels' (for standard rooms)
     ceiling_panels = CeilingPanelSerializer(many=True, read_only=True, source='room.ceiling_panels')
+    
+    # Zone fields
     zone_id = serializers.IntegerField(source='zone.id', read_only=True)
     zone = serializers.PrimaryKeyRelatedField(queryset=CeilingZone.objects.all(), required=False, allow_null=True)
     
     class Meta:
         model = CeilingPlan
         fields = [
-            'id', 'room', 'zone', 'zone_id', 'total_area', 'total_panels', 'full_panels', 
-            'cut_panels', 'waste_percentage', 'generation_method', 
-            'ceiling_thickness', 'orientation_strategy', 'panel_width', 
-            'panel_length', 'custom_panel_length', 'support_type', 
-            'support_config', 'notes', 'ceiling_panels'
+            'id', 
+            'room', 
+            'zone', 
+            'zone_id', 
+            'total_area', 
+            'total_panels', 
+            'full_panels', 
+            'cut_panels', 
+            'waste_percentage', 
+            'generation_method', 
+            'ceiling_thickness', 
+            'orientation_strategy', 
+            'panel_width', 
+            'panel_length', 
+            'custom_panel_length', 
+            'support_type', 
+            'support_config', 
+            'notes', 
+            'ceiling_panels'
         ]
 
     def to_representation(self, instance):
+        """
+        Custom logic: If this plan belongs to a Zone, fetch panels from the Zone relation
+        instead of the Room relation.
+        """
         data = super().to_representation(instance)
         if instance.zone:
             data['ceiling_panels'] = CeilingPanelSerializer(instance.zone.ceiling_panels.all(), many=True).data
         return data
-
 
 class CeilingZoneSerializer(serializers.ModelSerializer):
     ceiling_plan = CeilingPlanSerializer(read_only=True)

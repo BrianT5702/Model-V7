@@ -128,6 +128,14 @@ const CeilingCanvas = ({
     const [supportPreview, setSupportPreview] = useState(null);
     const [hoveredRoomId, setHoveredRoomId] = useState(null);
 
+    // [NEW] Local state for checkboxes (copying logic from FloorCanvas)
+    const [visibilityState, setVisibilityState] = useState(dimensionVisibility);
+
+    // [NEW] Sync state if parent props change
+    useEffect(() => {
+        setVisibilityState(dimensionVisibility);
+    }, [dimensionVisibility]);
+
     // Track available drawing space for responsive canvas sizing
     useEffect(() => {
         const container = canvasContainerRef.current;
@@ -350,7 +358,7 @@ const CeilingCanvas = ({
         // Draw everything
         drawCanvas(context);
 
-    }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, zones, selectedRoomId, selectedPanelId, selectedPanelIdsList, CANVAS_WIDTH, CANVAS_HEIGHT]);
+    }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, zones, selectedRoomId, selectedPanelId, selectedPanelIdsList, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState]);
 
     // Sync external scale prop with internal zoom
     useEffect(() => {
@@ -1020,17 +1028,15 @@ const CeilingCanvas = ({
         });
     };
 
-    // Draw ceiling panels
+    // Helper to shrink a polygon by a specific offset (in mm)
+    // This creates the "Gap Mask" so panels don't touch the walls visually
     const drawCeilingPanels = (ctx, room, placedLabels = [], allLabels = []) => {
-        // Get panels for this room first
         const roomPanels = effectiveCeilingPanelsMap[room.id] || [];
         const isZoneSelectionActive = typeof selectedRoomId === 'string' && selectedRoomId.startsWith('zone-');
         const isZoneRoom = typeof room.id === 'string' && room.id.startsWith('zone-');
-        if (isZoneSelectionActive && !isZoneRoom) {
-            return;
-        }
-        
-        // Calculate local panel bounds for this room
+        if (isZoneSelectionActive && !isZoneRoom) return;
+
+        // Calculate bounds (Standard logic)
         const localPanelBounds = roomPanels.length > 0 ? {
             minX: Math.min(...roomPanels.map(p => Math.min(p.start_x, p.end_x))),
             maxX: Math.max(...roomPanels.map(p => Math.max(p.start_x, p.end_x))),
@@ -1038,84 +1044,101 @@ const CeilingCanvas = ({
             maxY: Math.max(...roomPanels.map(p => Math.max(p.start_y, p.end_y)))
         } : null;
 
-        // Note: placedLabels and allLabels are now passed from parent for global collision detection
-
-        // Check if this room is selected or if we're in single room mode
         const isRoomSelected = room.id === selectedRoomId;
         const isRoomMode = (!showAllRooms && selectedRoomId) || isZoneSelectionActive;
         const shouldDimPanels = isRoomMode && !isRoomSelected && !isZoneRoom;
 
-        // First pass: draw panels and collect dimension info
+        // --- DRAW PANELS ---
         roomPanels.forEach(panel => {
-            const startX = panel.start_x ?? panel.x ?? 0;
-            const startY = panel.start_y ?? panel.y ?? 0;
-            const endX = panel.end_x ?? (panel.width !== undefined ? startX + panel.width : panel.x_end ?? startX);
-            const endY = panel.end_y ?? (panel.length !== undefined ? startY + panel.length : panel.y_end ?? startY);
-            const panelWidthRaw = panel.width ?? Math.abs(endX - startX);
-            const panelLengthRaw = panel.length ?? Math.abs(endY - startY);
-
             const panelIdentifier = getPanelIdentifier(panel);
             const selectionIndex = panelIdentifier ? selectedPanelIdsList.indexOf(panelIdentifier) : -1;
             const isMultiSelectSelected = selectionIndex !== -1;
             const isPrimarySelected = normalizedSelectedPanelId && panelIdentifier === normalizedSelectedPanelId;
             const isSelected = isMultiSelectSelected || isPrimarySelected;
             
-            // Panel dimensions
-            const x = startX * scaleFactor.current + offsetX.current;
-            const y = startY * scaleFactor.current + offsetY.current;
-            const width = panelWidthRaw * scaleFactor.current;
-            const height = panelLengthRaw * scaleFactor.current;
-
             const isCutPanel = panel.is_cut || panel.is_cut_panel;
 
-            // Panel styling - use same color scheme as FloorCanvas
+            // --- STYLING ---
             if (isSelected) {
                 const fillColors = ['rgba(37, 99, 235, 0.75)', 'rgba(249, 115, 22, 0.65)'];
                 const borderColors = ['#1d4ed8', '#c2410c'];
                 const highlightIndex = selectionIndex !== -1 ? selectionIndex : 0;
-
                 ctx.fillStyle = fillColors[highlightIndex] ?? 'rgba(37, 99, 235, 0.75)';
                 ctx.strokeStyle = borderColors[highlightIndex] ?? '#1d4ed8';
                 ctx.lineWidth = 14 * scaleFactor.current;
             } else {
-                // Use same colors as FloorCanvas: blue for full panels, green for cut panels
                 if (isCutPanel) {
-                    if (shouldDimPanels) {
-                        ctx.fillStyle = 'rgba(34, 197, 94, 0.1)'; // Dimmed green for cut panels
-                        ctx.strokeStyle = '#9ca3af'; // Gray border for dimmed panels
-                    } else {
-                        ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'; // Green for cut panels (same as FloorCanvas)
-                        ctx.strokeStyle = '#22c55e'; // Green border for cut panels
-                    }
+                    ctx.fillStyle = shouldDimPanels ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.5)';
+                    ctx.strokeStyle = shouldDimPanels ? '#9ca3af' : '#22c55e';
                 } else {
-                    if (shouldDimPanels) {
-                        ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; // Dimmed blue for full panels
-                        ctx.strokeStyle = '#9ca3af'; // Gray border for dimmed panels
-                    } else {
-                        ctx.fillStyle = 'rgba(59, 130, 246, 0.5)'; // Blue for full panels (same as FloorCanvas)
-                        ctx.strokeStyle = '#3b82f6'; // Blue border for full panels
-                    }
+                    ctx.fillStyle = shouldDimPanels ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.5)';
+                    ctx.strokeStyle = shouldDimPanels ? '#9ca3af' : '#3b82f6';
                 }
                 ctx.lineWidth = shouldDimPanels ? 5 * scaleFactor.current : (isRoomSelected ? 12 * scaleFactor.current : 10 * scaleFactor.current);
             }
 
-            // Draw panel
-            ctx.fillRect(x, y, width, height);
-            ctx.strokeRect(x, y, width, height);
+            // === DRAWING LOGIC ===
+            ctx.beginPath();
 
-            // Draw cut panel indicator with dashed border (same as FloorCanvas)
-            if (isCutPanel) {
-                ctx.strokeStyle = '#22c55e'; // Green dashed border for cut panels
-                ctx.lineWidth = 10 * scaleFactor.current; // Increased from 2 to 3 for better visibility
+            // 1. CHECK FOR EXACT SHAPE (L-SHAPED PANEL)
+            // This is the fix: If shape_points exist, draw the custom polygon
+            if (panel.shape_points && Array.isArray(panel.shape_points) && panel.shape_points.length > 2) {
+                const p0 = panel.shape_points[0];
+                ctx.moveTo(
+                    p0.x * scaleFactor.current + offsetX.current,
+                    p0.y * scaleFactor.current + offsetY.current
+                );
+                for (let i = 1; i < panel.shape_points.length; i++) {
+                    const p = panel.shape_points[i];
+                    ctx.lineTo(
+                        p.x * scaleFactor.current + offsetX.current,
+                        p.y * scaleFactor.current + offsetY.current
+                    );
+                }
+                ctx.closePath();
+            } 
+            // 2. FALLBACK TO RECTANGLE (STANDARD PANEL)
+            else {
+                const startX = panel.start_x ?? panel.x ?? 0;
+                const startY = panel.start_y ?? panel.y ?? 0;
+                const width = (panel.width) * scaleFactor.current;
+                const height = (panel.length) * scaleFactor.current;
+                
+                const x = startX * scaleFactor.current + offsetX.current;
+                const y = startY * scaleFactor.current + offsetY.current;
+                
+                ctx.rect(x, y, width, height);
+            }
+
+            ctx.fill();
+            ctx.stroke();
+
+            // --- CUT INDICATOR (Only for Standard Rectangles) ---
+            // We skip this for L-shapes because the shape itself indicates the cut
+            if (isCutPanel && (!panel.shape_points || panel.shape_points.length === 0)) {
+                const startX = panel.start_x ?? panel.x ?? 0;
+                const startY = panel.start_y ?? panel.y ?? 0;
+                const width = (panel.width) * scaleFactor.current;
+                const height = (panel.length) * scaleFactor.current;
+                const x = startX * scaleFactor.current + offsetX.current;
+                const y = startY * scaleFactor.current + offsetY.current;
+
+                ctx.strokeStyle = '#22c55e';
+                ctx.lineWidth = 10 * scaleFactor.current;
                 ctx.setLineDash([8 * scaleFactor.current, 4 * scaleFactor.current]);
                 ctx.strokeRect(x + 2, y + 2, width - 4, height - 4);
                 ctx.setLineDash([]);
             }
-            
-            // Removed dimension text in the middle of panels
 
-            // Panel ID label for selected panels (keep this for selection feedback)
+            // --- SELECTION BADGE ---
             if (isSelected) {
+                const startX = panel.start_x ?? panel.x ?? 0;
+                const startY = panel.start_y ?? panel.y ?? 0;
+                const width = (panel.width) * scaleFactor.current;
+                const height = (panel.length) * scaleFactor.current;
+                const x = startX * scaleFactor.current + offsetX.current;
+                const y = startY * scaleFactor.current + offsetY.current;
+                
                 const highlightIndex = selectionIndex !== -1 ? selectionIndex : 0;
                 const badgeColors = ['rgba(37, 99, 235, 0.9)', 'rgba(234, 88, 12, 0.9)'];
                 const badgeColor = badgeColors[highlightIndex] ?? 'rgba(37, 99, 235, 0.9)';
@@ -1127,7 +1150,6 @@ const CeilingCanvas = ({
                 ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-
                 const textWidth = ctx.measureText(displayText).width;
                 const textHeight = Math.max(16, 18 * scaleFactor.current);
                 const padding = 10 * scaleFactor.current;
@@ -1135,41 +1157,26 @@ const CeilingCanvas = ({
                 const centerY = y + height / 2;
 
                 ctx.fillStyle = badgeColor;
-                ctx.fillRect(
-                    centerX - textWidth / 2 - padding,
-                    centerY - textHeight / 2 - padding,
-                    textWidth + padding * 2,
-                    textHeight + padding * 2
-                );
-
+                ctx.fillRect(centerX - textWidth / 2 - padding, centerY - textHeight / 2 - padding, textWidth + padding * 2, textHeight + padding * 2);
                 ctx.fillStyle = textColor;
                 ctx.fillText(displayText, centerX, centerY);
                 ctx.restore();
             }
         });
 
-        // Draw enhanced dimensions for ceiling panels
+        // --- Supports & Dimensions ---
         if (localPanelBounds && roomPanels.length > 0) {
             drawEnhancedCeilingDimensions(ctx, room, roomPanels, modelBounds, placedLabels, allLabels);
         }
-
-        // Draw default nylon hanger supports if enabled (can be drawn alongside alu suspension)
         if (enableNylonHangers) {
-            // Draw default nylon hanger supports automatically
             drawPanelSupports(ctx, roomPanels, scaleFactor.current, offsetX.current, offsetY.current, room.id);
         }
-        
-        // Draw custom supports if alu suspension is enabled (always show drawn supports, not just in drawing mode)
         if (enableAluSuspension && effectiveCustomSupports.length > 0) {
             drawCustomSupports(ctx, effectiveCustomSupports, scaleFactor.current, offsetX.current, offsetY.current);
         }
-        
-        // Draw support preview line if placing support
         if (supportPreview && isPlacingSupport) {
             drawSupportPreview(ctx, supportPreview, scaleFactor.current, offsetX.current, offsetY.current);
         }
-        
-        // Only draw mouse position dimensions when placing support
         if (isPlacingSupport && supportPreview && supportPreview.mousePosition && supportPreview.distances) {
             drawMousePositionDimensions(ctx, supportPreview.mousePosition, supportPreview.distances, scaleFactor.current, offsetX.current, offsetY.current);
         }
@@ -1345,12 +1352,14 @@ const CeilingCanvas = ({
         // });
         
         // Draw room-level dimensions first (most important)
-        if (dimensionVisibility?.room !== false) {
+        // [UPDATED] Use visibilityState
+        if (visibilityState.room !== false) {
             drawRoomDimensions(ctx, room, roomWidth, roomLength, roomBounds, canvasPanelBounds, placedLabels, allLabels);
         }
-        
-        // Draw panel-level dimensions - handle any number of panels intelligently
-        if (roomPanels.length > 0 && dimensionVisibility?.panel !== false) {
+
+        // Draw panel-level dimensions
+        // [UPDATED] Use visibilityState
+        if (roomPanels.length > 0 && visibilityState.panel !== false) {
             // Group panels by their dimension to show grouped dimensions (EXCLUDE cut panels)
             const panelsByDimension = new Map();
             const cutPanels = roomPanels.filter(p => p.is_cut);
@@ -1467,7 +1476,7 @@ const CeilingCanvas = ({
             });
             
             // Draw cut panel dimensions with RED color (only if cut panel visibility is enabled)
-            if (cutPanels.length > 0 && dimensionVisibility?.cutPanel === true) {
+            if (cutPanels.length > 0 && visibilityState.cutPanel !== false) {
                 cutPanels.forEach(panel => {
                     // Determine Orientation strictly from Geometry
                     // If Width > Length, panels are running Horizontally (strips L-R)
@@ -3128,35 +3137,37 @@ const CeilingCanvas = ({
     // Support visualization functions
     const drawNylonHanger = (ctx, panel, scaleFactor, offsetX, offsetY) => {
         // Calculate panel center using the same transformation as drawCeilingPanels
-        const x = panel.start_x * scaleFactor + offsetX;
-        const y = panel.start_y * scaleFactor + offsetY;
-        const width = panel.width * scaleFactor;
-        const height = panel.length * scaleFactor;
+        const startX = panel.start_x ?? panel.x ?? 0;
+        const startY = panel.start_y ?? panel.y ?? 0;
+        
+        const x = startX * scaleFactor + offsetX;
+        const y = startY * scaleFactor + offsetY;
+        const width = (panel.width ?? 0) * scaleFactor;
+        const height = (panel.length ?? 0) * scaleFactor;
         
         // Calculate center of the transformed panel
         const canvasX = x + width / 2;
         const canvasY = y + height / 2;
         
-        // Draw circle for nylon hanger - made much bigger and no fill
+        // 1. Draw Main Circle (Hanger)
         ctx.beginPath();
         ctx.arc(canvasX, canvasY, 75 * scaleFactor, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#000000'; // Black
-        ctx.lineWidth = 30 * scaleFactor; // Much thicker line for better visibility
+        ctx.strokeStyle = '#ef4444'; // Changed to Red for better visibility (optional)
+        ctx.lineWidth = 30 * scaleFactor; 
         ctx.stroke();
         
-        // Draw accessories indicator if enabled - adjusted for bigger circle
-        if (nylonHangerOptions.includeAccessories) {
+        // 2. Draw Accessories (If enabled) - NOW SOLID LINE
+        if (nylonHangerOptions && nylonHangerOptions.includeAccessories) {
             ctx.beginPath();
             ctx.arc(canvasX, canvasY, 45 * scaleFactor, 0, 2 * Math.PI);
             ctx.strokeStyle = '#f59e0b'; // Orange
             ctx.lineWidth = 2 * scaleFactor;
-            ctx.setLineDash([5 * scaleFactor, 5 * scaleFactor]);
+            // Removed ctx.setLineDash to make it solid
             ctx.stroke();
-            ctx.setLineDash([]);
         }
         
-        // Draw cable indicator if enabled - adjusted for bigger circle
-        if (nylonHangerOptions.includeCable) {
+        // 3. Draw Cable (If enabled)
+        if (nylonHangerOptions && nylonHangerOptions.includeCable) {
             ctx.beginPath();
             ctx.moveTo(canvasX, canvasY + 35 * scaleFactor);
             ctx.lineTo(canvasX, canvasY + 60 * scaleFactor);
@@ -3207,59 +3218,34 @@ const CeilingCanvas = ({
 
 
     const drawPanelSupports = (ctx, roomPanels, scaleFactor, offsetX, offsetY, roomId) => {
-        // Get orientation from ceiling plan (orientation is always available)
-        const isHorizontalOrientation = roomId ? getRoomOrientation(roomId) : false;
+        // Robust Support Logic:
+        // We don't care about the room orientation flag.
+        // We simply check if the PANEL is long enough to need support.
         
-        console.log(`🔧 Drawing panel supports:`, {
-            supportType,
-            enableNylonHangers,
-            enableAluSuspension,
-            totalPanels: roomPanels.length,
-            orientation: isHorizontalOrientation ? 'horizontal' : 'vertical',
-            firstPanel: roomPanels.length > 0 ? {
-                width: roomPanels[0].width,
-                length: roomPanels[0].length,
-                ratio: roomPanels[0].width / roomPanels[0].length
-            } : 'No panels',
-            panelsNeedingSupport: roomPanels.filter(p => {
-                // For horizontal orientation: check width > 6000mm
-                // For vertical orientation: check length > 6000mm
-                return isHorizontalOrientation ? p.width > 6000 : p.length > 6000;
-            }).length
-        });
+        console.log(`🔧 Drawing panel supports for room ${roomId}: ${roomPanels.length} panels`);
         
         roomPanels.forEach(panel => {
-            // Check if panel needs support based on orientation
-            const needsSupport = isHorizontalOrientation ? 
-                panel.width > 6000 :  // Horizontal: check width
-                panel.length > 6000;  // Vertical: check length
+            // Determine the physical long dimension
+            // Some panels might have width > length (Horizontal), some length > width (Vertical)
+            const physicalLength = Math.max(panel.width, panel.length);
             
-            console.log(`🔧 Panel ${panel.id} support check:`, {
-                panelId: panel.id,
-                width: panel.width,
-                length: panel.length,
-                orientation: isHorizontalOrientation ? 'horizontal' : 'vertical',
-                dimensionChecked: isHorizontalOrientation ? panel.width : panel.length,
-                needsSupport: needsSupport,
-                supportType
-            });
+            // Threshold for support (e.g. 6000mm)
+            const NEEDS_SUPPORT_THRESHOLD = 6000;
+            const needsSupport = physicalLength > NEEDS_SUPPORT_THRESHOLD;
             
             if (needsSupport) {
-                console.log(`🔧 Panel ${panel.id} needs support:`, {
-                    panelId: panel.id,
-                    width: panel.width,
-                    length: panel.length,
-                    orientation: isHorizontalOrientation ? 'horizontal' : 'vertical',
-                    dimensionChecked: isHorizontalOrientation ? panel.width : panel.length,
-                    supportType,
-                    enableNylonHangers
-                });
+                // Determine orientation for drawing the line
+                // If width is the long side, the panel is horizontal -> Draw vertical support lines? 
+                // Wait, support usually runs perpendicular to the long span, or parallel?
+                // Standard: Support hangs the long span.
+                // Nylon Hanger usually runs ALONG the center of the long span.
                 
-                // Draw nylon hanger supports if enabled (can be alongside alu suspension)
+                // Let's pass the orientation derived from dimensions to the drawer
+                const isHorizontalShape = panel.width > panel.length;
+                
                 if (enableNylonHangers) {
-                    drawNylonHanger(ctx, panel, scaleFactor, offsetX, offsetY);
+                    drawNylonHanger(ctx, panel, scaleFactor, offsetX, offsetY, isHorizontalShape);
                 }
-                // ALU suspension is only available through custom drawing (handled separately)
             }
         });
     };
@@ -3936,7 +3922,7 @@ const CeilingCanvas = ({
                                     </div>
                                 </div>
 
-                                {/* Dimension Legend */}
+                                {/* Dimension Legend & Filter (Updated to match FloorCanvas) */}
                                 <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
                                     <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
                                         <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3944,19 +3930,57 @@ const CeilingCanvas = ({
                                         </svg>
                                         Dimension Legend
                                     </h5>
+                                    
                                     <div className="space-y-3 text-sm">
-                                        <div className="flex items-center">
-                                            <div className="w-4 h-4 bg-blue-600 rounded mr-3"></div>
-                                            <span className="text-gray-700">Room Dimensions</span>
+                                        {/* Room Dimensions - Toggleable */}
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center">
+                                                <div className="w-4 h-4 bg-blue-600 rounded mr-3"></div>
+                                                <span className="text-gray-700">Room Dimensions</span>
+                                            </div>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={visibilityState.room !== false}
+                                                onChange={(e) => setVisibilityState(prev => ({ ...prev, room: e.target.checked }))}
+                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                title="Toggle Room Dimensions"
+                                            />
                                         </div>
-                                        <div className="flex items-center">
-                                            <div className="w-4 h-4 bg-gray-600 rounded mr-3"></div>
-                                            <span className="text-gray-700">Panel Dimensions</span>
+
+                                        {/* Panel Dimensions - Toggleable */}
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center">
+                                                <div className="w-4 h-4 bg-gray-600 rounded mr-3"></div>
+                                                <span className="text-gray-700">Panel Dimensions</span>
+                                            </div>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={visibilityState.panel !== false}
+                                                onChange={(e) => setVisibilityState(prev => ({ ...prev, panel: e.target.checked }))}
+                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                title="Toggle Panel Dimensions"
+                                            />
                                         </div>
-                                        <div className="flex items-center">
-                                            <div className="w-4 h-4 bg-red-600 rounded mr-3"></div>
-                                            <span className="text-gray-700">Cut Panel Dimensions</span>
+
+                                        {/* Cut Dimensions - Toggleable */}
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center">
+                                                <div className="w-4 h-4 bg-red-600 rounded mr-3"></div>
+                                                <span className="text-gray-700">Cut Dimensions</span>
+                                            </div>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={visibilityState.cutPanel !== false} 
+                                                onChange={(e) => setVisibilityState(prev => ({ ...prev, cutPanel: e.target.checked }))}
+                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                title="Toggle Cut Panel Dimensions"
+                                            />
                                         </div>
+                                        
+                                        {/* Divider */}
+                                        <div className="border-t border-gray-100 my-2"></div>
+
+                                        {/* Static Legend Items */}
                                         <div className="flex items-center">
                                             <div className="w-4 h-4 bg-gray-800 rounded mr-3"></div>
                                             <span className="text-gray-700">Walls (Outer Face)</span>
@@ -3964,7 +3988,8 @@ const CeilingCanvas = ({
                                         <div className="flex items-center">
                                             <div className="w-4 h-4 border-2 border-gray-600 border-dashed mr-3"></div>
                                             <span className="text-gray-700">Walls (Inner Face)</span>
-                                    </div>
+                                        </div>
+                                        
                                         {calculatePanelsNeedSupport && (
                                             <>
                                                 {supportType === 'nylon' && (

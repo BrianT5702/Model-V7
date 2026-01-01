@@ -241,52 +241,12 @@ class WallService:
     @staticmethod
     def merge_walls(wall_1, wall_2):
         """Merge two walls if they share endpoints and have matching properties."""
-        # Helper function to safely compare values (handles None)
-        def values_match(val1, val2):
-            if val1 is None and val2 is None:
-                return True
-            if val1 is None or val2 is None:
-                return False
-            return val1 == val2
-        
-        # Check basic properties that must match
         if (
             wall_1.application_type != wall_2.application_type or
             wall_1.height != wall_2.height or
             wall_1.thickness != wall_2.thickness
         ):
-            raise ValueError('Walls must have the same application type, height, and thickness to merge.')
-        
-        # Check face material properties
-        if (
-            wall_1.inner_face_material != wall_2.inner_face_material or
-            wall_1.inner_face_thickness != wall_2.inner_face_thickness or
-            wall_1.outer_face_material != wall_2.outer_face_material or
-            wall_1.outer_face_thickness != wall_2.outer_face_thickness
-        ):
-            raise ValueError('Walls must have the same face materials and thicknesses to merge.')
-        
-        # Check concrete base properties
-        if (
-            wall_1.has_concrete_base != wall_2.has_concrete_base or
-            not values_match(wall_1.concrete_base_height, wall_2.concrete_base_height)
-        ):
-            raise ValueError('Walls must have the same concrete base configuration to merge.')
-        
-        # Check gap fill properties
-        if (
-            wall_1.fill_gap_mode != wall_2.fill_gap_mode or
-            not values_match(wall_1.gap_fill_height, wall_2.gap_fill_height) or
-            not values_match(wall_1.gap_base_position, wall_2.gap_base_position)
-        ):
-            raise ValueError('Walls must have the same gap fill configuration to merge.')
-        
-        # Check ceiling joint properties
-        if (
-            not values_match(wall_1.ceiling_joint_type, wall_2.ceiling_joint_type) or
-            not values_match(wall_1.ceiling_cut_l_horizontal_extension, wall_2.ceiling_cut_l_horizontal_extension)
-        ):
-            raise ValueError('Walls must have the same ceiling joint configuration to merge.')
+            raise ValueError('Walls must have the same type, height, and thickness to merge.')
 
         # Check if walls share endpoints
         if wall_1.end_x == wall_2.start_x and wall_1.end_y == wall_2.start_y:
@@ -309,8 +269,7 @@ class WallService:
             new_start_x, new_start_y, new_end_x, new_end_y
         )
         
-        # Create the merged wall with all attributes inherited from wall_1
-        # (Since all attributes are validated to match, we can safely use wall_1's values)
+        # Create the merged wall
         merged_wall = Wall.objects.create(
             project=wall_1.project,
             storey=wall_1.storey,
@@ -320,19 +279,7 @@ class WallService:
             end_y=norm_end_y,
             height=wall_1.height,
             thickness=wall_1.thickness,
-            application_type=wall_1.application_type,
-            inner_face_material=wall_1.inner_face_material,
-            inner_face_thickness=wall_1.inner_face_thickness,
-            outer_face_material=wall_1.outer_face_material,
-            outer_face_thickness=wall_1.outer_face_thickness,
-            has_concrete_base=wall_1.has_concrete_base,
-            concrete_base_height=wall_1.concrete_base_height,
-            fill_gap_mode=wall_1.fill_gap_mode,
-            gap_fill_height=wall_1.gap_fill_height,
-            gap_base_position=wall_1.gap_base_position,
-            ceiling_joint_type=wall_1.ceiling_joint_type,
-            ceiling_cut_l_horizontal_extension=wall_1.ceiling_cut_l_horizontal_extension,
-            is_default=wall_1.is_default
+            application_type=wall_1.application_type
         )
 
         wall_1.delete()
@@ -930,7 +877,7 @@ class FloorService:
             
             # Add ROOM OPTIMAL strategy (global optimization across all panel floor rooms)
             if len(panel_floor_rooms) >= 2:
-                logger.info(f"🎯 Evaluating Room Optimal strategy for {len(panel_floor_rooms)} panel floor rooms")
+                logger.info(f"[TARGET] Evaluating Room Optimal strategy for {len(panel_floor_rooms)} panel floor rooms")
                 
                 # Prepare rooms_data for room optimal evaluation
                 rooms_data = []
@@ -971,11 +918,11 @@ class FloorService:
                         'description': 'Global optimization across all rooms with leftover reuse'
                     })
                     
-                    logger.info(f"✅ Room Optimal strategy added: {room_optimal_result['leftover_waste_percentage']:.2f}% waste")
+                    logger.info(f"[SUCCESS] Room Optimal strategy added: {room_optimal_result['leftover_waste_percentage']:.2f}% waste")
                 else:
-                    logger.info(f"⏭️  Room Optimal not available: only {len(rooms_data)} valid room(s), need 2+")
+                    logger.info(f"[SKIP] Room Optimal not available: only {len(rooms_data)} valid room(s), need 2+")
             else:
-                logger.info(f"⏭️  Room Optimal not available: only {len(panel_floor_rooms)} panel floor room(s), need 2+")
+                logger.info(f"[SKIP] Room Optimal not available: only {len(panel_floor_rooms)} panel floor room(s), need 2+")
             
             if not strategies:
                 return {'error': 'No valid floor strategies found'}
@@ -997,115 +944,8 @@ class FloorService:
             return {'error': f'Error analyzing floor orientations: {str(e)}'}
     
     @staticmethod
-    def _determine_wall_side_for_room(wall, room):
-        """Determine which side of a wall is 'inner' for a given room
-        
-        Returns:
-            'inner' if the room is on the inner side (should reduce area)
-            'outer' if the room is on the outer side (should not reduce area)
-            None if wall doesn't belong to room
-        """
-        # Check if wall belongs to this room
-        if not hasattr(room, 'walls') or wall not in room.walls.all():
-            return None
-        
-        # Calculate room center
-        if not room.room_points or len(room.room_points) < 3:
-            return None
-        
-        room_center_x = sum(p['x'] for p in room.room_points) / len(room.room_points)
-        room_center_y = sum(p['y'] for p in room.room_points) / len(room.room_points)
-        
-        # Calculate wall direction vector
-        wall_dx = wall.end_x - wall.start_x
-        wall_dy = wall.end_y - wall.start_y
-        wall_length = (wall_dx ** 2 + wall_dy ** 2) ** 0.5
-        
-        if wall_length == 0:
-            return None
-        
-        # Calculate wall midpoint
-        wall_mid_x = (wall.start_x + wall.end_x) / 2
-        wall_mid_y = (wall.start_y + wall.end_y) / 2
-        
-        # Calculate normal vector pointing outward (90° counterclockwise from wall direction)
-        # Normal = (-dy, dx) normalized
-        normal_x = -wall_dy / wall_length
-        normal_y = wall_dx / wall_length
-        
-        # Vector from wall midpoint to room center
-        to_room_x = room_center_x - wall_mid_x
-        to_room_y = room_center_y - wall_mid_y
-        
-        # Dot product: positive means room is on the side the normal points to (outer side)
-        # negative means room is on the opposite side (inner side)
-        dot_product = normal_x * to_room_x + normal_y * to_room_y
-        
-        # Check if wall is shared (belongs to multiple rooms)
-        wall_rooms = wall.rooms.all()
-        is_shared = len(wall_rooms) > 1
-        
-        if is_shared:
-            # For shared walls, only the room on the inner side should reduce area
-            # Inner side is where dot_product < 0 (room center is opposite to normal)
-            return 'inner' if dot_product < 0 else 'outer'
-        else:
-            # For non-shared walls (exterior), both sides are outer
-            # But we still need to reduce by full thickness for exterior walls
-            # So we return 'inner' to indicate this room should reduce area
-            return 'inner'
-    
-    @staticmethod
-    def _get_wall_reduction_info(room, all_rooms=None):
-        """Get information about which walls require area reduction for a room
-        
-        Returns:
-            dict with keys:
-            - 'shared_walls_inner': list of shared walls where this room is on inner side
-            - 'exterior_walls': list of non-shared walls (exterior)
-            - 'wall_segments': list of wall segments with reduction info
-        """
-        if not hasattr(room, 'walls'):
-            return {'shared_walls_inner': [], 'exterior_walls': [], 'wall_segments': []}
-        
-        room_walls = room.walls.all()
-        shared_walls_inner = []
-        exterior_walls = []
-        wall_segments = []
-        
-        for wall in room_walls:
-            wall_rooms = wall.rooms.all()
-            is_shared = len(wall_rooms) > 1
-            
-            side = FloorService._determine_wall_side_for_room(wall, room)
-            
-            if is_shared and side == 'inner':
-                shared_walls_inner.append(wall)
-                wall_segments.append({
-                    'wall': wall,
-                    'length': ((wall.end_x - wall.start_x) ** 2 + (wall.end_y - wall.start_y) ** 2) ** 0.5,
-                    'reduction': wall.thickness,  # Only reduce by thickness (inner side only)
-                    'is_shared': True
-                })
-            elif not is_shared:
-                # Exterior wall - reduce by full thickness
-                exterior_walls.append(wall)
-                wall_segments.append({
-                    'wall': wall,
-                    'length': ((wall.end_x - wall.start_x) ** 2 + (wall.end_y - wall.start_y) ** 2) ** 0.5,
-                    'reduction': wall.thickness,  # Full thickness for exterior
-                    'is_shared': False
-                })
-        
-        return {
-            'shared_walls_inner': shared_walls_inner,
-            'exterior_walls': exterior_walls,
-            'wall_segments': wall_segments
-        }
-    
-    @staticmethod
     def _calculate_room_floor_area(room, wall_thickness):
-        """Calculate floor area excluding walls, considering shared walls"""
+        """Calculate floor area excluding walls"""
         if not room.room_points or len(room.room_points) < 3:
             return 0.0
         
@@ -1121,14 +961,16 @@ class FloorService:
         
         room_area = abs(area) / 2.0
         
-        # Get wall reduction info for this room
-        wall_info = FloorService._get_wall_reduction_info(room)
+        # Calculate perimeter
+        perimeter = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            dx = points[j]['x'] - points[i]['x']
+            dy = points[j]['y'] - points[i]['y']
+            perimeter += (dx * dx + dy * dy) ** 0.5
         
-        # Calculate wall area based on actual wall segments
-        wall_area = 0.0
-        for segment in wall_info['wall_segments']:
-            # Only count wall area for walls that affect this room
-            wall_area += segment['length'] * segment['reduction']
+        # Wall area = perimeter * wall_thickness
+        wall_area = perimeter * wall_thickness
         
         # Floor area = room area - wall area
         floor_area = room_area - wall_area
@@ -1201,70 +1043,19 @@ class FloorService:
     
     @staticmethod
     def _calculate_room_floor_bounding_box(room):
-        """Calculate bounding box for floor area (excluding walls), considering shared walls"""
+        """Calculate bounding box for floor area (excluding walls)"""
         if not room.room_points or len(room.room_points) < 3:
             return None
         
-        # Get initial bounding box from room points
+        # Get wall thickness
+        wall_thickness = room.project.wall_thickness if room.project else 200
+        
+        # Calculate inner bounding box by reducing room dimensions by wall thickness
         points = room.room_points
-        initial_min_x = min(p['x'] for p in points)
-        initial_max_x = max(p['x'] for p in points)
-        initial_min_y = min(p['y'] for p in points)
-        initial_max_y = max(p['y'] for p in points)
-        
-        # Get wall reduction info for this room
-        wall_info = FloorService._get_wall_reduction_info(room)
-        
-        # Default wall thickness (for exterior walls or fallback)
-        default_wall_thickness = room.project.wall_thickness if room.project else 200
-        
-        # Calculate reductions for each side based on walls
-        reduction_min_x = 0
-        reduction_max_x = 0
-        reduction_min_y = 0
-        reduction_max_y = 0
-        
-        # Tolerance for determining if a wall is on a particular edge
-        tolerance = 10.0  # 10mm tolerance
-        
-        for segment in wall_info['wall_segments']:
-            wall = segment['wall']
-            reduction = segment['reduction']
-            
-            # Check which edge(s) this wall is close to
-            wall_min_x = min(wall.start_x, wall.end_x)
-            wall_max_x = max(wall.start_x, wall.end_x)
-            wall_min_y = min(wall.start_y, wall.end_y)
-            wall_max_y = max(wall.start_y, wall.end_y)
-            
-            # Check if wall is on left edge (min_x)
-            if abs(wall_min_x - initial_min_x) < tolerance or abs(wall_max_x - initial_min_x) < tolerance:
-                reduction_min_x = max(reduction_min_x, reduction)
-            
-            # Check if wall is on right edge (max_x)
-            if abs(wall_min_x - initial_max_x) < tolerance or abs(wall_max_x - initial_max_x) < tolerance:
-                reduction_max_x = max(reduction_max_x, reduction)
-            
-            # Check if wall is on top edge (min_y)
-            if abs(wall_min_y - initial_min_y) < tolerance or abs(wall_max_y - initial_min_y) < tolerance:
-                reduction_min_y = max(reduction_min_y, reduction)
-            
-            # Check if wall is on bottom edge (max_y)
-            if abs(wall_min_y - initial_max_y) < tolerance or abs(wall_max_y - initial_max_y) < tolerance:
-                reduction_max_y = max(reduction_max_y, reduction)
-        
-        # If no walls found on edges, use default reduction (exterior walls)
-        if reduction_min_x == 0 and reduction_max_x == 0 and reduction_min_y == 0 and reduction_max_y == 0:
-            reduction_min_x = default_wall_thickness
-            reduction_max_x = default_wall_thickness
-            reduction_min_y = default_wall_thickness
-            reduction_max_y = default_wall_thickness
-        
-        # Apply reductions
-        min_x = initial_min_x + reduction_min_x
-        max_x = initial_max_x - reduction_max_x
-        min_y = initial_min_y + reduction_min_y
-        max_y = initial_max_y - reduction_max_y
+        min_x = min(p['x'] for p in points) + wall_thickness
+        max_x = max(p['x'] for p in points) - wall_thickness
+        min_y = min(p['y'] for p in points) + wall_thickness
+        max_y = max(p['y'] for p in points) - wall_thickness
         
         # Ensure valid dimensions
         if min_x >= max_x or min_y >= max_y:
@@ -1286,21 +1077,15 @@ class FloorService:
     
     @staticmethod
     def _generate_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
-        """Generate floor panels for a specific orientation (excluding wall areas) with leftover tracking"""
-        panels = []
-        
-        # Use the same approach as ceiling plan: shape-aware panel generation
-        # This properly handles L-shaped rooms by splitting them into rectangular regions
-       
-        # Check if room is L-shaped and split into regions if needed
-        if len(room_points) > 4:
-            return FloorService._generate_shape_aware_floor_panels(
-                bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
-            )
-        else:
-            return FloorService._generate_standard_floor_panels(
-                bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
-            )
+        """
+        Generate floor panels.
+        Redirects to the robust shape-aware generator for all cases to ensure consistent handling of 
+        walls, L-shapes, and irregularities using geometry intersection.
+        """
+        return FloorService._generate_shape_aware_floor_panels(
+            bounding_box, room_points, orientation, panel_width, panel_length, 
+            wall_thickness, leftover_tracker, floor_thickness
+        )
     
     @staticmethod
     def _generate_standard_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
@@ -1495,36 +1280,197 @@ class FloorService:
     
     @staticmethod
     def _generate_shape_aware_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
-        """Generate shape-aware floor panels for L-shaped or complex rooms (like ceiling plan does) with leftover tracking"""
+        """
+        Robust Geometry Generator:
+        - Uses Shapely to handle ANY room shape (L, U, Diagonal, etc.).
+        - Applies precise wall thickness shrinking with Mitre joints.
+        - Falls back to rectangular filling if geometry engine fails (prevents empty results).
+        """
         try:
             panels = []
-            panel_id = 1
             
-            # Analyze room shape to identify distinct rectangular regions
-            room_regions = FloorService._analyze_floor_room_shape(room_points, bounding_box, orientation)
+            # 1. CLEAN DATA
+            clean_points = []
+            for p in room_points:
+                x_val = float(p.get('x', p.get(0, 0)))
+                y_val = float(p.get('y', p.get(1, 0)))
+                clean_points.append({'x': x_val, 'y': y_val})
             
-            if not room_regions:
-                # Fallback to standard approach if shape analysis fails
-                return FloorService._generate_standard_floor_panels(
-                    bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
-                )
-            
-            # Generate panels for each region based on orientation
-            for i, region in enumerate(room_regions):
-                region_panels = FloorService._generate_panels_for_floor_region(
-                    region, orientation, panel_width, panel_id, panel_length
-                )
+            # 2. ROBUST GEOMETRY SETUP
+            room_poly = None
+            try:
+                from shapely.geometry import Polygon, box
+                from shapely.ops import orient
                 
-                panels.extend(region_panels)
-                panel_id += len(region_panels)
+                # Create base polygon from points
+                original_poly = Polygon([(p['x'], p['y']) for p in clean_points]).buffer(0)
+                
+                # Force Counter-Clockwise orientation
+                original_poly = orient(original_poly, sign=1.0)
+                
+                # Apply Wall Thickness Offset (Shrink the room)
+                if wall_thickness > 0:
+                    # join_style=2 (MITRE) is critical for L-shapes
+                    room_poly = original_poly.buffer(-wall_thickness, join_style=2)
+                else:
+                    room_poly = original_poly
+                    
+                # Safety check
+                if room_poly.is_empty or not room_poly.is_valid:
+                    room_poly = original_poly
+
+            except Exception as e:
+                # CRITICAL FIX: Do not crash here. Just set room_poly to None.
+                # If None, the loop below will assume a rectangular fill (valid fallback).
+                print(f"Geometry engine fallback: {str(e)}")
+                room_poly = None
+
+            # 3. DIMENSIONS & GRID SETUP
+            if orientation == 'horizontal':
+                # Horizontal: Panels run Left-to-Right (Width is variable/long, Height is fixed 1150)
+                p_width = float(panel_length) if panel_length != 'auto' else bounding_box['width']
+                p_height = panel_width # Usually 1150
+            else:
+                # Vertical: Panels run Top-to-Bottom (Width is fixed 1150, Height is variable/long)
+                p_width = panel_width # Usually 1150
+                p_height = float(panel_length) if panel_length != 'auto' else bounding_box['height']
+
+            is_single_span_x = (orientation == 'horizontal' and p_width > (bounding_box['width'] * 0.9))
+            is_single_span_y = (orientation == 'vertical' and p_height > (bounding_box['height'] * 0.9))
+
+            # Grid Alignment
+            if room_poly:
+                minx, miny, maxx, maxy = room_poly.bounds
+            else:
+                minx = bounding_box['min_x']
+                miny = bounding_box['min_y']
+                maxx = bounding_box['max_x']
+                maxy = bounding_box['max_y']
             
+            # FIXED: Correct loop limits to prevent empty result for single-span panels
+            start_x = minx
+            limit_x = maxx
+            start_y = miny
+            limit_y = maxy
+
+            # 4. GENERATE LOOP
+            panel_counter = 1
+            curr_y = start_y
+            
+            # Iterate through the grid
+            while curr_y < limit_y - 1.0: 
+                curr_x = start_x
+                while curr_x < limit_x - 1.0:
+                    
+                    p_end_x = curr_x + p_width
+                    p_end_y = curr_y + p_height
+                    
+                    # 5. INTERSECTION Logic
+                    isValid = False
+                    is_cut = False
+                    cut_notes = ""
+                    from_leftover = False
+                    
+                    final_start_x = curr_x
+                    final_start_y = curr_y
+                    final_draw_width = p_width
+                    final_draw_length = p_height
+                    
+                    if room_poly:
+                        try:
+                            from shapely.geometry import box
+                            p_poly = box(curr_x, curr_y, p_end_x, p_end_y)
+                            intersection = room_poly.intersection(p_poly)
+                            
+                            if not intersection.is_empty and intersection.area > 500.0:
+                                isValid = True
+                                i_minx, i_miny, i_maxx, i_maxy = intersection.bounds
+                                
+                                final_start_x = i_minx
+                                final_start_y = i_miny
+                                final_draw_width = i_maxx - i_minx
+                                final_draw_length = i_maxy - i_miny
+                                
+                                # Cut Detection
+                                rect_area = final_draw_width * final_draw_length
+                                is_rectangular = (intersection.area / rect_area) > 0.98
+                                
+                                if orientation == 'horizontal':
+                                    is_full_standard = final_draw_length >= (p_height - 2.0)
+                                    check_dim = final_draw_length
+                                    standard_dim = p_height
+                                else:
+                                    is_full_standard = final_draw_width >= (p_width - 2.0)
+                                    check_dim = final_draw_width
+                                    standard_dim = p_width
+                                
+                                if not is_rectangular:
+                                    is_cut = True
+                                    cut_notes = "Shape Fit (L-Cut)"
+                                elif not is_full_standard:
+                                    is_cut = True
+                                    cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
+                                    
+                                    # LEFTOVER LOGIC
+                                    if leftover_tracker:
+                                        if orientation == 'horizontal':
+                                            needed_width = final_draw_length 
+                                            needed_length = final_draw_width
+                                        else:
+                                            needed_width = final_draw_width
+                                            needed_length = final_draw_length
+                                            
+                                        compatible = leftover_tracker.find_compatible_leftover(
+                                            needed_width, needed_length, floor_thickness
+                                        )
+                                        
+                                        if compatible:
+                                            leftover_tracker.use_leftover(compatible, needed_width)
+                                            cut_notes = f"From leftover {compatible['id']}"
+                                            from_leftover = True
+                                        else:
+                                            leftover_size = standard_dim - check_dim
+                                            if leftover_size > 50.0:
+                                                leftover_tracker.add_leftover(
+                                                    length=needed_length, 
+                                                    thickness=floor_thickness, 
+                                                    width_remaining=leftover_size
+                                                )
+                                
+                        except Exception as e:
+                            # Fallback if intersection math fails
+                            isValid = True
+                    else:
+                        # Fallback if room_poly is None (no Shapely)
+                        # Assume valid rectangle
+                        isValid = True
+                        # Ensure we don't draw beyond bounds in fallback mode
+                        if p_end_x > limit_x: final_draw_width = limit_x - curr_x
+                        if p_end_y > limit_y: final_draw_length = limit_y - curr_y
+
+                    if isValid:
+                        panels.append({
+                            'panel_id': f'FP_{panel_counter:03d}',
+                            'start_x': final_start_x,
+                            'start_y': final_start_y,
+                            'width': final_draw_width,
+                            'length': final_draw_length,
+                            'is_cut': is_cut,
+                            'cut_notes': cut_notes,
+                            'from_leftover': from_leftover,
+                            'end_x': final_start_x + final_draw_width,
+                            'end_y': final_start_y + final_draw_length
+                        })
+                        panel_counter += 1
+                        
+                    curr_x += p_width
+                curr_y += p_height
+
             return panels
-            
+
         except Exception as e:
-            # Fallback to standard approach
-            return FloorService._generate_standard_floor_panels(
-                bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness
-            )
+            print(f"CRITICAL ERROR in Shape Gen: {e}")
+            return []
     
     @staticmethod
     def _analyze_floor_room_shape(room_points, bounding_box, orientation='horizontal'):
@@ -2476,68 +2422,48 @@ class CeilingService:
     
     @staticmethod
     def adjust_bounding_box_for_cut_l(bounding_box, room, room_points, tolerance=1.0):
-        """Adjust bounding box to account for Cut L wall offsets
-        
-        For walls with Cut L joints, panels should be offset inward by (wall_thickness - horizontal_extension).
-        This function identifies which walls are on each boundary and applies the appropriate offset.
-        
-        Args:
-            bounding_box: Original bounding box dict with min_x, max_x, min_y, max_y
-            room: Room model instance
-            room_points: List of room boundary points
-            tolerance: Tolerance for determining if a wall is on a boundary (in mm)
-            
-        Returns:
-            Adjusted bounding box dict
+        """
+        Fixed: Uses max/min logic to prevent double-counting offsets when multiple walls 
+        touch the same boundary.
         """
         # Get wall offsets for Cut L joints
         wall_offsets = CeilingService.calculate_cut_l_wall_offsets(room)
         
         if not wall_offsets:
-            # No Cut L joints, return original bounding box
             return bounding_box.copy()
         
-        # Get all walls for this room
         walls = room.walls.all()
         
-        # Calculate adjusted bounding box
-        adjusted_box = {
-            'min_x': bounding_box['min_x'],
-            'max_x': bounding_box['max_x'],
-            'min_y': bounding_box['min_y'],
-            'max_y': bounding_box['max_y']
-        }
+        # Initialize with copy
+        adjusted_box = bounding_box.copy()
         
-        # For each wall with Cut L, check if it's on a boundary and apply offset
         for wall in walls:
             if wall.id not in wall_offsets:
                 continue
             
             offset = wall_offsets[wall.id]
             
-            # Check if wall is on left boundary (min_x)
+            # --- LEFT BOUNDARY (min_x) ---
+            # Use MAX to ensure we push the boundary inward, but don't double-add
             if abs(wall.start_x - bounding_box['min_x']) < tolerance and abs(wall.end_x - bounding_box['min_x']) < tolerance:
-                adjusted_box['min_x'] += offset
-                logger.debug(f"Wall {wall.id}: On left boundary, offset min_x by {offset}mm")
+                adjusted_box['min_x'] = max(adjusted_box['min_x'], bounding_box['min_x'] + offset)
             
-            # Check if wall is on right boundary (max_x)
+            # --- RIGHT BOUNDARY (max_x) ---
+            # Use MIN to ensure we pull the boundary inward
             elif abs(wall.start_x - bounding_box['max_x']) < tolerance and abs(wall.end_x - bounding_box['max_x']) < tolerance:
-                adjusted_box['max_x'] -= offset
-                logger.debug(f"Wall {wall.id}: On right boundary, offset max_x by -{offset}mm")
+                adjusted_box['max_x'] = min(adjusted_box['max_x'], bounding_box['max_x'] - offset)
             
-            # Check if wall is on bottom boundary (min_y)
+            # --- BOTTOM BOUNDARY (min_y) ---
             elif abs(wall.start_y - bounding_box['min_y']) < tolerance and abs(wall.end_y - bounding_box['min_y']) < tolerance:
-                adjusted_box['min_y'] += offset
-                logger.debug(f"Wall {wall.id}: On bottom boundary, offset min_y by {offset}mm")
+                adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
             
-            # Check if wall is on top boundary (max_y)
+            # --- TOP BOUNDARY (max_y) ---
             elif abs(wall.start_y - bounding_box['max_y']) < tolerance and abs(wall.end_y - bounding_box['max_y']) < tolerance:
-                adjusted_box['max_y'] -= offset
-                logger.debug(f"Wall {wall.id}: On top boundary, offset max_y by -{offset}mm")
+                adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
             
-            # For walls that span across boundaries, we need to check both endpoints
+            # --- SPANNING / TOUCHING WALLS ---
             else:
-                # Check start point
+                # Check Start Point
                 if abs(wall.start_x - bounding_box['min_x']) < tolerance:
                     adjusted_box['min_x'] = max(adjusted_box['min_x'], bounding_box['min_x'] + offset)
                 elif abs(wall.start_x - bounding_box['max_x']) < tolerance:
@@ -2547,7 +2473,7 @@ class CeilingService:
                 elif abs(wall.start_y - bounding_box['max_y']) < tolerance:
                     adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
                 
-                # Check end point
+                # Check End Point
                 if abs(wall.end_x - bounding_box['min_x']) < tolerance:
                     adjusted_box['min_x'] = max(adjusted_box['min_x'], bounding_box['min_x'] + offset)
                 elif abs(wall.end_x - bounding_box['max_x']) < tolerance:
@@ -2557,15 +2483,9 @@ class CeilingService:
                 elif abs(wall.end_y - bounding_box['max_y']) < tolerance:
                     adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
         
-        # Recalculate width and height
+        # Recalculate dimensions
         adjusted_box['width'] = adjusted_box['max_x'] - adjusted_box['min_x']
         adjusted_box['height'] = adjusted_box['max_y'] - adjusted_box['min_y']
-        
-        logger.info(f"Adjusted bounding box for room {room.id}: "
-                   f"({bounding_box['min_x']:.1f}, {bounding_box['min_y']:.1f}) to "
-                   f"({bounding_box['max_x']:.1f}, {bounding_box['max_y']:.1f}) -> "
-                   f"({adjusted_box['min_x']:.1f}, {adjusted_box['min_y']:.1f}) to "
-                   f"({adjusted_box['max_x']:.1f}, {adjusted_box['max_y']:.1f})")
         
         return adjusted_box
     
@@ -2815,22 +2735,17 @@ class CeilingService:
             ceiling_thickness = float(room.ceiling_thickness) if hasattr(room, 'ceiling_thickness') and room.ceiling_thickness else 20.0
             
             # Generate optimal panel layout with leftover tracking
+            # Note: _generate_panel_layout calls _generate_shape_aware_panels internally
             panels = CeilingService._generate_panel_layout(bounding_box, room.room_points, 1150, 'auto', ceiling_leftover_tracker, ceiling_thickness)
             logger.info(f"Generated {len(panels)} panels")
-            logger.info(f"Leftover stats: {ceiling_leftover_tracker.get_stats()}")
             
             # Calculate total area from room points
             total_area = CeilingService._calculate_room_area(room.room_points)
             
-            # Determine orientation from generated panels
-            # Check the first panel to determine orientation
-            # For horizontal: width (X-axis) > length (Y-axis, 1150mm)
-            # For vertical: width (X-axis, 1150mm) < length (Y-axis)
+            # Determine orientation strategy
             orientation_strategy = 'auto'
             if panels:
                 first_panel = panels[0]
-                # If width > length, it's horizontal (panels span horizontally)
-                # If width < length, it's vertical (panels span vertically)
                 if first_panel.get('width', 0) > first_panel.get('length', 0):
                     orientation_strategy = 'all_horizontal'
                 else:
@@ -2868,28 +2783,36 @@ class CeilingService:
             
             # Create panel objects
             created_panels = []
-            for panel_data in panels:
+            for p_data in panels:
+                # Ensure we are accessing the dict keys correctly
                 panel = CeilingPanel.objects.create(
                     room=room,
-                    panel_id=panel_data.get('panel_id', f"CP_{room.id}_{len(created_panels)+1:03d}"),
-                    start_x=panel_data['start_x'],
-                    start_y=panel_data['start_y'],
-                    end_x=panel_data['end_x'],
-                    end_y=panel_data['end_y'],
-                    width=panel_data['width'],
-                    length=panel_data['length'],
-                    thickness=ceiling_thickness,  # Use actual ceiling thickness
-                    material_type='standard',
-                    is_cut_panel=panel_data['is_cut'],
-                    cut_notes=panel_data.get('cut_notes', '')
+                    panel_id=p_data.get('panel_id', f"CP_{room.id}_{len(created_panels)+1:03d}"),
+                    start_x=p_data['start_x'],
+                    start_y=p_data['start_y'],
+                    end_x=p_data['end_x'],
+                    end_y=p_data['end_y'],
+                    width=p_data['width'],
+                    length=p_data['length'],
+                    thickness=ceiling_thickness,
+                    is_cut_panel=p_data.get('is_cut', False),
+                    cut_notes=p_data.get('cut_notes', ''),
+                    shape_data=p_data.get('shape_points', []) # Save to model field
                 )
                 created_panels.append(panel)
             
             # Update ceiling plan statistics with leftover tracker
             ceiling_plan.update_statistics(ceiling_leftover_tracker)
-            logger.info(f"Successfully created ceiling plan with {len(created_panels)} panels")
+            logger.info(f"Successfully created ceiling plan with {len(created_panels)} panels (geometry shapes stored)")
             
             return ceiling_plan
+            
+        except Room.DoesNotExist:
+            logger.error(f"Room {room_id} not found")
+            return None
+        except Exception as e:
+            logger.error(f"Error generating ceiling plan: {str(e)}")
+            return None
             
         except Room.DoesNotExist:
             logger.error(f"Room with ID {room_id} not found")
@@ -3414,28 +3337,27 @@ class CeilingService:
     
     @staticmethod
     def _generate_panel_layout(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
-        """Generate optimal panel layout to cover the room with professional precision and leftover tracking
-        
-        Args:
-            bounding_box: Room bounding box
-            room_points: Room boundary points
-            panel_width: Maximum panel width in mm
-            panel_length: Panel length ('auto' or custom value in mm)
-            leftover_tracker: LeftoverTracker instance for reuse tracking
-            ceiling_thickness: Ceiling panel thickness in mm
-        """
-        panels = []
-        max_width = panel_width  # Use user-specified panel width
-        
-        room_width = bounding_box['width']
-        room_height = bounding_box['height']
-        
-        # Use the advanced shape-aware panel generation with leftover tracking
-        # This properly handles L-shaped rooms and tracks leftover reuse
-        panels = CeilingService._generate_shape_aware_panels(
-            bounding_box, room_points, 'vertical', max_width, panel_length, leftover_tracker, ceiling_thickness
+        # 1. Call the V11 Generator
+        # Note: Added cut_l_offset parameter support
+        raw_panels = CeilingService._generate_shape_aware_panels(
+            bounding_box, room_points, 'vertical', panel_width, panel_length, leftover_tracker, ceiling_thickness
         )
         
+        # 2. Map the data while preserving shape_points
+        panels = []
+        for p in raw_panels:
+            panels.append({
+                'panel_id': p.get('panel_id'),
+                'start_x': p.get('start_x'),
+                'start_y': p.get('start_y'),
+                'end_x': p.get('end_x'),
+                'end_y': p.get('end_y'),
+                'width': p.get('width'),
+                'length': p.get('length'),
+                'is_cut': p.get('is_cut', False),
+                'cut_notes': p.get('cut_notes', ''),
+                'shape_points': p.get('shape_points', []) # <--- PRESERVE THIS
+            })
         return panels
     
     @staticmethod
@@ -3473,10 +3395,9 @@ class CeilingService:
     
     @staticmethod
     def _is_point_in_polygon(x, y, polygon_points):
-        """Check if a point is inside a polygon using ray casting algorithm"""
+        """Ray casting algorithm to check if point is in polygon"""
         n = len(polygon_points)
         inside = False
-        
         p1x, p1y = polygon_points[0]['x'], polygon_points[0]['y']
         for i in range(n + 1):
             p2x, p2y = polygon_points[i % n]['x'], polygon_points[i % n]['y']
@@ -3488,7 +3409,6 @@ class CeilingService:
                         if p1x == p2x or x <= xinters:
                             inside = not inside
             p1x, p1y = p2x, p2y
-        
         return inside
     
     @staticmethod
@@ -4321,41 +4241,250 @@ class CeilingService:
         return panels
 
     @staticmethod
-    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, cut_l_area_reduction=0.0):
-        """Generate panels that respect the actual room shape (L-shaped, U-shaped, etc.) with leftover tracking"""
+    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, cut_l_offset=0.0):
+        """
+        Final Generator v11 (Exact Shape Transmission):
+        - Calculates the intersection (L-Shape or Rect) including the cut_l gap.
+        - Extracts the EXACT polygon vertices from Shapely.
+        - Returns 'shape_points' which will be saved to the database.
+        """
         try:
             panels = []
-            panel_id = 1
+            import math
             
-            # Analyze room shape to identify distinct rectangular regions
-            room_regions = CeilingService._analyze_room_shape(room_points, bounding_box, orientation)
+            # 1. CLEAN DATA
+            clean_points = []
+            for p in room_points:
+                x_val = float(p.get('x', p.get(0, 0)))
+                y_val = float(p.get('y', p.get(1, 0)))
+                clean_points.append({'x': x_val, 'y': y_val})
             
-            if not room_regions:
-                # Fallback to simple approach if shape analysis fails
-                return CeilingService._generate_simple_panels_fallback(
-                    bounding_box, room_points, orientation, max_panel_width, panel_length, leftover_tracker, ceiling_thickness
-                )
-            
-            # Generate panels for each region based on orientation
-            for i, region in enumerate(room_regions):
-                region_panels = CeilingService._generate_panels_for_region(
-                    region, orientation, max_panel_width, panel_id, panel_length, leftover_tracker, ceiling_thickness
-                )
+            # 2. ROBUST GEOMETRY (Void Expansion)
+            room_poly = None
+            try:
+                from shapely.geometry import Polygon, box
+                from shapely.ops import orient
                 
-                panels.extend(region_panels)
-                panel_id += len(region_panels)
+                # Base polygon from room points
+                original_poly = Polygon([(p['x'], p['y']) for p in clean_points]).buffer(0)
+                original_poly = orient(original_poly, sign=1.0) 
+                
+                # Apply the gap (shrink) logic here in backend
+                # This physically removes the 50mm (or offset) from the calculation area
+                if cut_l_offset > 0:
+                    outer_shrunk = original_poly.buffer(-cut_l_offset, join_style=2)
+                    room_box = box(bounding_box['min_x'], bounding_box['min_y'], 
+                                   bounding_box['max_x'], bounding_box['max_y'])
+                    void_poly = room_box.difference(original_poly)
+                    
+                    if not void_poly.is_empty:
+                        expanded_void = void_poly.buffer(cut_l_offset, join_style=2)
+                        room_poly = outer_shrunk.difference(expanded_void)
+                    else:
+                        room_poly = outer_shrunk
+                else:
+                    room_poly = original_poly
+
+            except Exception as e:
+                print(f"⚠️ Shapely init failed: {e}")
+                room_poly = None
+
+            # 3. DIMENSIONS SETUP
+            if orientation == 'horizontal':
+                p_width = float(panel_length) if panel_length != 'auto' else bounding_box['width']
+                p_height = max_panel_width 
+            else:
+                p_width = max_panel_width 
+                p_height = float(panel_length) if panel_length != 'auto' else bounding_box['height']
+
+            is_single_span_x = (orientation == 'horizontal' and p_width > (bounding_box['width'] * 0.9))
+            is_single_span_y = (orientation == 'vertical' and p_height > (bounding_box['height'] * 0.9))
+
+            # Adjust grid start points to respect the gap
+            start_x = bounding_box['min_x'] + cut_l_offset
+            limit_x = start_x + 0.1 if is_single_span_x else (bounding_box['max_x'] - cut_l_offset)
+            start_y = bounding_box['min_y'] + cut_l_offset
+            limit_y = start_y + 0.1 if is_single_span_y else (bounding_box['max_y'] - cut_l_offset)
+
+            # 4. GENERATE LOOP
+            panel_counter = 1
+            curr_y = start_y
             
-            # Optimize panel placement within the actual room boundaries
-            optimized_panels = CeilingService._optimize_panels_for_room_shape(
-                panels, room_points, bounding_box
-            )
-            return optimized_panels
-            
+            while curr_y < limit_y:
+                curr_x = start_x
+                while curr_x < limit_x:
+                    
+                    this_p_width = p_width
+                    this_p_height = p_height
+                    
+                    p_start_x = curr_x
+                    p_start_y = curr_y
+                    p_end_x = curr_x + this_p_width
+                    p_end_y = curr_y + this_p_height
+                    
+                    # Ensure we don't calculate beyond room bounds
+                    if not is_single_span_x and p_end_x > bounding_box['max_x']:
+                        p_end_x = bounding_box['max_x']
+                        this_p_width = p_end_x - p_start_x
+                    if not is_single_span_y and p_end_y > bounding_box['max_y']:
+                        p_end_y = bounding_box['max_y']
+                        this_p_height = p_end_y - p_start_y
+
+                    if this_p_width < 5 or this_p_height < 5:
+                        curr_x += p_width
+                        continue
+
+                    # --- INTERSECTION CALCULATION ---
+                    isValid = False
+                    is_cut = False
+                    cut_notes = ""
+                    shape_points = [] # This will hold the L-shape coordinates
+                    
+                    # Defaults for rectangular bounds
+                    final_start_x = p_start_x
+                    final_start_y = p_start_y
+                    final_draw_width = this_p_width
+                    final_draw_length = this_p_height
+                    
+                    if room_poly:
+                        try:
+                            # Create a box for the current panel in the grid
+                            p_poly = box(p_start_x, p_start_y, p_end_x, p_end_y)
+                            # Intersection of current panel box and the shrunk room area
+                            intersection = room_poly.intersection(p_poly)
+                            
+                            if not intersection.is_empty and intersection.area > 100.0:
+                                isValid = True
+                                minx, miny, maxx, maxy = intersection.bounds
+                                
+                                final_start_x = minx
+                                final_start_y = miny
+                                geo_width_x = maxx - minx
+                                geo_height_y = maxy - miny
+                                final_draw_width = geo_width_x
+                                final_draw_length = geo_height_y
+
+                                # Check if it's a rectangle or an L-shape/complex cut
+                                rect_area = geo_width_x * geo_height_y
+                                is_rectangular = (intersection.area / rect_area) > 0.99
+                                
+                                # Logic for standard dimension check
+                                if orientation == 'horizontal':
+                                    is_full_standard = geo_height_y >= (p_height - 5.0)
+                                    check_dim = geo_height_y
+                                else:
+                                    is_full_standard = geo_width_x >= (p_width - 5.0)
+                                    check_dim = geo_width_x
+
+                                if not is_rectangular:
+                                    is_cut = True
+                                    cut_notes = "Shape Fit (L-Cut)"
+                                    # --- EXTRACT EXACT SHAPE ---
+                                    # This logic extracts the vertices of the L-shape cut
+                                    if intersection.geom_type == 'Polygon':
+                                        shape_points = [{'x': x, 'y': y} for x, y in intersection.exterior.coords]
+                                    elif intersection.geom_type == 'MultiPolygon':
+                                         # Take the largest part of a multi-polygon result
+                                         largest = max(intersection.geoms, key=lambda a: a.area)
+                                         shape_points = [{'x': x, 'y': y} for x, y in largest.exterior.coords]
+                                    
+                                elif not is_full_standard:
+                                    is_cut = True
+                                    cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
+                                else:
+                                    is_cut = False 
+
+                                # Waste Tracking
+                                if leftover_tracker:
+                                    try:
+                                        if orientation == 'horizontal':
+                                            raw_panel = box(minx, miny, minx + geo_width_x, miny + p_height)
+                                        else:
+                                            raw_panel = box(minx, miny, minx + p_width, miny + geo_height_y)
+                                        waste_poly = raw_panel.difference(room_poly)
+                                        if not waste_poly.is_empty:
+                                            geoms = waste_poly.geoms if hasattr(waste_poly, 'geoms') else [waste_poly]
+                                            for waste_piece in geoms:
+                                                if waste_piece.area > 5000.0:
+                                                    wm_minx, wm_miny, wm_maxx, wm_maxy = waste_piece.bounds
+                                                    w_val = (wm_maxy - wm_miny) if orientation == 'horizontal' else (wm_maxx - wm_minx)
+                                                    l_val = (wm_maxx - wm_minx) if orientation == 'horizontal' else (wm_maxy - wm_miny)
+                                                    if w_val > 50.0 and l_val > 50.0:
+                                                        leftover_tracker.add_leftover(l_val, ceiling_thickness, w_val)
+                                    except Exception: pass
+
+                        except Exception as e:
+                            print(f"Intersection Error: {e}")
+                            isValid = True
+                    
+                    if isValid:
+                        panel_data = {
+                            'panel_id': f"CP_RAW_{panel_counter:03d}",
+                            'start_x': final_start_x,
+                            'start_y': final_start_y,
+                            'width': final_draw_width,
+                            'length': final_draw_length,
+                            'thickness': ceiling_thickness,
+                            'is_cut': is_cut,
+                            'cut_notes': cut_notes,
+                            'area': final_draw_width * final_draw_length,
+                            # THE CRITICAL DATA:
+                            'shape_points': shape_points  
+                        }
+                        # Legacy support
+                        panel_data['end_x'] = panel_data['start_x'] + panel_data['width']
+                        panel_data['end_y'] = panel_data['start_y'] + panel_data['length']
+                        
+                        panels.append(panel_data)
+                        panel_counter += 1
+                        
+                    curr_x += p_width
+                curr_y += p_height
+
+            return panels
+
         except Exception as e:
-            # Fallback to simple approach
-            return CeilingService._generate_simple_panels_fallback(
-                bounding_box, room_points, orientation, max_panel_width, panel_length, leftover_tracker, ceiling_thickness
-            )
+            print(f"CRITICAL ERROR in Shape Gen: {e}")
+            return []      
+
+    @staticmethod
+    def _optimize_panels_dense_fallback(panels, room_points):
+        """
+        Fallback Method: Checks a 5x5 grid of dots inside each panel.
+        If ANY dot is inside the room, we keep the panel.
+        This allows panels that bridge a corner (L-shape) to be detected even without advanced math.
+        """
+        optimized_panels = []
+        for panel in panels:
+            hits = 0
+            total_checks = 0
+            
+            # Check a 5x5 grid of points inside the panel
+            step_x = panel['width'] / 5
+            step_y = panel['length'] / 5
+            
+            is_touching = False
+            
+            for i in range(6): 
+                for j in range(6):
+                    test_x = panel['start_x'] + (i * step_x)
+                    test_y = panel['start_y'] + (j * step_y)
+                    
+                    # Use existing point-in-polygon check
+                    if CeilingService._is_point_in_polygon(test_x, test_y, room_points):
+                        hits += 1
+                        is_touching = True
+                    total_checks += 1
+            
+            if is_touching:
+                coverage = hits / total_checks
+                # If partial coverage, it's a cut panel
+                if coverage < 0.95:
+                    panel['is_cut'] = True
+                    panel['cut_notes'] = f"L-Cut (Dense Scan {int(coverage*100)}%)"
+                optimized_panels.append(panel)
+                
+        return optimized_panels
 
     @staticmethod
     def _analyze_room_shape(room_points, bounding_box, orientation='horizontal'):
@@ -5457,7 +5586,7 @@ class CeilingService:
                     thickness=20.0,
                     material_type='standard',
                     is_cut_panel=panel_data['is_cut'],
-                    cut_notes=panel_data.get('cut_notes', '')
+                    cut_notes=panel_data.get('cut_notes', ''),
                 )
             
             ceiling_plan.update_statistics()
@@ -6129,75 +6258,99 @@ class CeilingService:
 
     @staticmethod
     def _generate_enhanced_room_panels(strategy, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20):
-        """Generate enhanced panels for individual rooms with leftover tracking"""
+        """
+        Smart Orchestrator:
+        - Calculates Cut-L offsets (Gaps).
+        - Handles 'Auto' by trying both orientations and picking the one with less material usage.
+        - Calls the V9 Generator.
+        """
         try:
+            import logging
+            logger = logging.getLogger(__name__)
             all_panels = []
             
-            logger.info(f"_generate_enhanced_room_panels: Processing {len(strategy.get('room_results', []))} rooms")
+            logger.info(f"Processing {len(strategy.get('room_results', []))} rooms for ceiling generation")
             
             for room_result in strategy.get('room_results', []):
                 room_id = room_result.get('room_id')
-                logger.info(f"  Processing room {room_id}: {room_result.get('room_name')}")
                 
-                # Get room info from height analysis
+                # 1. Get Room Info & Geometry
                 room_info = CeilingService._get_room_info_by_id(room_id)
-                if not room_info:
-                    logger.warning(f"  Could not get room info for room {room_id}")
-                    continue
+                if not room_info: continue
                 
-                # Get room object to apply Cut L adjustments
                 from .models import Room
                 try:
                     room = Room.objects.get(id=room_id)
-                except Room.DoesNotExist:
-                    logger.warning(f"  Room {room_id} not found in database")
-                    room = None
+                except Room.DoesNotExist: continue
                 
-                # Apply Cut L bounding box adjustments if room has Cut L joints
                 bounding_box = room_info['bounding_box']
                 room_points = room_info['points']
                 
-                if room:
-                    # Adjust bounding box for Cut L wall offsets
-                    adjusted_bounding_box = CeilingService.adjust_bounding_box_for_cut_l(
-                        bounding_box, room, room_points
-                    )
-                    
-                    # Adjust room_points to match
-                    adjusted_room_points = CeilingService.adjust_room_points_for_cut_l_offset(
-                        room_points, room, adjusted_bounding_box, bounding_box
-                    )
-                    
-                    # Use adjusted values
-                    bounding_box = adjusted_bounding_box
-                    room_points = adjusted_room_points
-                    
-                    cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
-                    if cut_l_reduction > 0:
-                        logger.info(f"  Room {room_id}: Applied Cut L adjustments (reduction: {cut_l_reduction:.2f}mm²)")
+                # 2. Calculate Gap (Cut-L Offset)
+                cut_l_offset = 0.0
+                walls = room.walls.filter(ceiling_joint_type='cut_l')
+                if walls.exists():
+                    w = walls.first()
+                    ext = CeilingService.get_cut_l_horizontal_extension(w)
+                    cut_l_offset = max(0.0, w.thickness - ext)
+
+                # 3. Determine Orientation (Smart Auto)
+                req_orientation = room_result.get('orientation', 'auto')
                 
-                # Generate panels with the specified orientation and leftover tracking
-                orientation = room_result['orientation']
-                logger.info(f"  Generating {orientation} panels for room {room_id}")
+                # Map complex strategy names to simple ones
+                if req_orientation == 'all_vertical': req_orientation = 'vertical'
+                elif req_orientation == 'all_horizontal': req_orientation = 'horizontal'
                 
-                panels = CeilingService._generate_advanced_panels(
-                    bounding_box, room_points, orientation, panel_width, panel_length, leftover_tracker, ceiling_thickness
+                final_orientation = 'vertical' # Default
+                
+                if req_orientation == 'auto':
+                    # Trial 1: Vertical
+                    v_panels = CeilingService._generate_shape_aware_panels(
+                        bounding_box, room_points, 'vertical', panel_width, panel_length, 
+                        leftover_tracker=None, ceiling_thickness=ceiling_thickness, cut_l_offset=cut_l_offset
+                    )
+                    v_usage = sum(p['width'] * p['length'] for p in v_panels)
+                    
+                    # Trial 2: Horizontal
+                    h_panels = CeilingService._generate_shape_aware_panels(
+                        bounding_box, room_points, 'horizontal', panel_width, panel_length, 
+                        leftover_tracker=None, ceiling_thickness=ceiling_thickness, cut_l_offset=cut_l_offset
+                    )
+                    h_usage = sum(p['width'] * p['length'] for p in h_panels)
+                    
+                    # Pick Winner (Least Material Used)
+                    if h_usage < v_usage:
+                        final_orientation = 'horizontal'
+                        logger.info(f"  Room {room_id}: Auto selected HORIZONTAL (Usage: {int(h_usage)} < {int(v_usage)})")
+                    else:
+                        final_orientation = 'vertical'
+                        logger.info(f"  Room {room_id}: Auto selected VERTICAL (Usage: {int(v_usage)} <= {int(h_usage)})")
+                else:
+                    final_orientation = req_orientation
+
+                # 4. Final Generation
+                panels = CeilingService._generate_shape_aware_panels(
+                    bounding_box, 
+                    room_points, 
+                    final_orientation, 
+                    panel_width, 
+                    panel_length, 
+                    leftover_tracker, 
+                    ceiling_thickness, 
+                    cut_l_offset=cut_l_offset 
                 )
                 
-                logger.info(f"  Generated {len(panels)} panels for room {room_id}")
-                
-                # Add room identifier to panels
+                # Add Metadata
                 for panel in panels:
                     panel['room_id'] = room_id
-                    panel['room_name'] = room_result['room_name']
+                    panel['room_name'] = room_result.get('room_name', f'Room {room_id}')
                 
                 all_panels.extend(panels)
             
-            logger.info(f"_generate_enhanced_room_panels: Total panels generated: {len(all_panels)}")
             return all_panels
             
         except Exception as e:
-            logger.error(f"Error in _generate_enhanced_room_panels: {e}")
+            print(f"Error in orchestrator: {e}")
             return []
 
     @staticmethod
@@ -6529,10 +6682,9 @@ class CeilingService:
                             end_y=panel_data['end_y'],
                             width=panel_data['width'],
                             length=panel_data['length'],
-                            thickness=room_ceiling_thickness,  # Use room-specific or global thickness
-                            material_type='standard',
+                            thickness=room_ceiling_thickness,
                             is_cut_panel=panel_data.get('is_cut', False),
-                            cut_notes=panel_data.get('cut_notes', '')
+                            shape_data=panel_data.get('shape_points', []) # Ensure this is here!
                         )
                     
                     # Create a dummy leftover tracker for individual room calculations

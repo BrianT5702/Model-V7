@@ -23,8 +23,8 @@ const FloorCanvas = ({
     floorPanelsMap,
     orientationAnalysis,
     projectWastePercentage = null,
-    // Dimension visibility (checkbox filter)
-    dimensionVisibility = { room: true, panel: true }
+    // [UPDATED] Default prop includes cutPanel
+    dimensionVisibility = { room: true, panel: true, cutPanel: false }
 }) => {
     const canvasRef = useRef(null);
     const canvasContainerRef = useRef(null);
@@ -33,6 +33,22 @@ const FloorCanvas = ({
         height: DEFAULT_CANVAS_HEIGHT
     });
     const [currentScale, setCurrentScale] = useState(1);
+    
+    // [NEW] Local state for checkboxes
+    const [visibilityState, setVisibilityState] = useState({
+        room: true,
+        panel: true,
+        cutPanel: false, // <--- EXPLICITLY FALSE INITIALLY
+        ...dimensionVisibility
+    });
+
+    // [NEW] Sync with props if they change
+    useEffect(() => {
+        setVisibilityState(prev => ({
+            ...prev,
+            ...dimensionVisibility
+        }));
+    }, [dimensionVisibility]);
     
     // Canvas state refs
     const scaleFactor = useRef(1);
@@ -211,7 +227,6 @@ const FloorCanvas = ({
         return { total: 0, full: 0, cut: 0 };
     };
 
-    // Initialize and draw canvas
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -232,7 +247,8 @@ const FloorCanvas = ({
         calculateCanvasTransform();
         drawCanvas(ctx);
 
-    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT]);
+    // [UPDATED] Added visibilityState to dependencies so it redraws when you click checkboxes
+    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState]);
 
     // Calculate optimal canvas transformation
     const calculateCanvasTransform = () => {
@@ -299,7 +315,14 @@ const FloorCanvas = ({
         if (rooms && rooms.length > 0) {
             rooms.forEach(room => {
                 drawRoomOutline(ctx, room);
-                drawFloorPanels(ctx, room);
+                
+                // --- FIX STARTS HERE ---
+                // 1. Get the panels for this specific room
+                const roomPanels = effectiveFloorPanelsMap[room.id] || [];
+                
+                // 2. Pass the panels to the function
+                drawFloorPanels(ctx, room, roomPanels);
+                // --- FIX ENDS HERE ---
             });
             
             // PASS 1: Draw dimensions (lines only) and collect text box info
@@ -507,55 +530,83 @@ const FloorCanvas = ({
         });
     };
 
-    // Draw floor panels, slab calculation, or "No floor plan available" message
-    const drawFloorPanels = (ctx, room) => {
-        const isPanelFloor = room.floor_type === 'panel' || room.floor_type === 'Panel';
-        const isSlabFloor = room.floor_type === 'slab' || room.floor_type === 'Slab';
-        const isNoneFloor = room.floor_type === 'none' || room.floor_type === 'None';
-        
-        if (isSlabFloor) {
-            drawSlabCalculationMessage(ctx, room);
-            return;
-        }
-        
-        if (!isPanelFloor) {
-            if (isNoneFloor) {
-                drawNoPlanNeededMessage(ctx, room);
-            } else {
-                drawNoFloorPlanMessage(ctx, room);
-            }
-            return;
-        }
-        
-        const roomPanels = effectiveFloorPanelsMap[room.id] || [];
-        
-        if (!roomPanels || roomPanels.length === 0) {
-            drawNoFloorPlanMessage(ctx, room);
-            return;
-        }
-        
-        roomPanels.forEach((panel, index) => {
-            if (panel.start_x === null || panel.start_x === undefined || 
-                panel.start_y === null || panel.start_y === undefined || 
-                panel.width === null || panel.width === undefined || 
-                panel.length === null || panel.length === undefined) {
-                return;
-            }
-            
-            ctx.fillStyle = panel.is_cut_panel ? 'rgba(34, 197, 94, 0.5)' : 'rgba(59, 130, 246, 0.5)';
-            ctx.strokeStyle = panel.is_cut_panel ? '#22c55e' : '#3b82f6';
-            ctx.lineWidth = 10 * scaleFactor.current; 
-            
-            const panelX = panel.start_x * scaleFactor.current + offsetX.current;
-            const panelY = panel.start_y * scaleFactor.current + offsetY.current;
-            const panelWidth = panel.width * scaleFactor.current;
-            const panelLength = panel.length * scaleFactor.current;
-            
+    // Draw floor panels with clipping mask (Fix for L-shaped rooms)
+    const drawFloorPanels = (ctx, room, panels) => {
+        if (!panels || panels.length === 0) return;
+
+        // ============================================================
+        // 1. START CLIPPING
+        // Define the room shape as a clipping mask so panels don't draw in the void
+        // ============================================================
+        ctx.save(); // Save state before clipping
+
+        if (room.room_points && room.room_points.length > 0) {
             ctx.beginPath();
-            ctx.rect(panelX, panelY, panelWidth, panelLength);
-            ctx.fill();
-            ctx.stroke();
+            
+            // Move to the first point of the room polygon
+            // Applying scale and offset to match the canvas coordinate system
+            const startX = room.room_points[0].x * scaleFactor.current + offsetX.current;
+            const startY = room.room_points[0].y * scaleFactor.current + offsetY.current;
+            ctx.moveTo(startX, startY);
+            
+            // Draw lines to the rest of the points
+            for (let i = 1; i < room.room_points.length; i++) {
+                const px = room.room_points[i].x * scaleFactor.current + offsetX.current;
+                const py = room.room_points[i].y * scaleFactor.current + offsetY.current;
+                ctx.lineTo(px, py);
+            }
+            
+            ctx.closePath();
+            ctx.clip(); // <--- ACTIVATES THE MASK: Nothing draws outside this polygon now
+        }
+
+        // ============================================================
+        // 2. DRAW PANELS
+        // ============================================================
+        panels.forEach(panel => {
+            // Coordinate transformation
+            const x = panel.start_x * scaleFactor.current + offsetX.current;
+            const y = panel.start_y * scaleFactor.current + offsetY.current;
+            
+            const width = panel.width * scaleFactor.current;
+            const height = panel.length * scaleFactor.current;
+
+            // Check if it is a cut panel (handling various naming conventions)
+            const isCut = panel.is_cut_panel || panel.is_cut || panel.type === 'Cut';
+
+            // Styling matches standard Floor Plan colors
+            if (isCut) {
+                // Green for cut panels
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'; 
+                ctx.strokeStyle = '#22c55e';
+            } else {
+                // Blue for full panels
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.5)'; 
+                ctx.strokeStyle = '#3b82f6';
+            }
+            
+            ctx.lineWidth = 1;
+
+            // Draw the panel
+            // Because of ctx.clip(), any part of this rect outside the room_points is hidden
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeRect(x, y, width, height);
+
+            // Optional: Inner dashed border for cut panels (Visual indicator)
+            if (isCut) {
+                ctx.save();
+                ctx.strokeStyle = '#22c55e'; // Green dash
+                ctx.setLineDash([5, 3]);
+                ctx.strokeRect(x + 2, y + 2, width - 4, height - 4);
+                ctx.restore();
+            }
         });
+
+        // ============================================================
+        // 3. END CLIPPING
+        // Restore context so subsequent drawings (text, dimensions) are NOT clipped
+        // ============================================================
+        ctx.restore();
     };
     
     // Draw "No floor plan available" message
@@ -725,7 +776,7 @@ const FloorCanvas = ({
         return Math.abs(area) / 2;
     };
 
-    // Draw floor dimensions
+    // [UPDATED] Draw floor dimensions with visibility checks
     const drawFloorDimensions = (ctx) => {
         if (!modelBounds) return;
 
@@ -784,19 +835,21 @@ const FloorCanvas = ({
                 const widthGlobalKey = `room_width_${Math.round(roomWidth)}`;
                 const heightGlobalKey = `room_height_${Math.round(roomHeight)}`;
                 
-                if (!globalDimensionTracker.has(widthGlobalKey) && (dimensionVisibility?.room !== false)) {
+                // [UPDATED] Check visibilityState.room
+                if (!globalDimensionTracker.has(widthGlobalKey) && (visibilityState.room !== false)) {
                     drawRoomDimensions(ctx, widthDimension, projectBounds, placedLabels, allLabels);
                     globalDimensionTracker.set(widthGlobalKey, true);
                 }
                 
-                if (!globalDimensionTracker.has(heightGlobalKey) && (dimensionVisibility?.room !== false)) {
+                // [UPDATED] Check visibilityState.room
+                if (!globalDimensionTracker.has(heightGlobalKey) && (visibilityState.room !== false)) {
                     drawRoomDimensions(ctx, heightDimension, projectBounds, placedLabels, allLabels);
                     globalDimensionTracker.set(heightGlobalKey, true);
                 }
             });
         }
 
-        // 2. Draw Panel Dimensions (Grouped by Strategy)
+        // 2. Draw Panel Dimensions
         if (rooms && rooms.length > 0) {
             rooms.forEach(room => {
                 const roomPanels = effectiveFloorPanelsMap[room.id] || [];
@@ -805,13 +858,190 @@ const FloorCanvas = ({
                 const isPanelFloor = room.floor_type === 'panel' || room.floor_type === 'Panel';
                 if (!isPanelFloor) return;
 
-                // [CRITICAL] Pass the strategy to the panel drawer
                 const strategy = roomStrategies[room.id] || 'auto';
                 drawPanelDimensions(ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy);
             });
         }
         
         return allLabels;
+    };
+
+    // [UPDATED] Draw Panel Dimensions with specific Cut Panel filter
+    const drawPanelDimensions = (ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy) => {
+        if (roomPanels.length === 0) return;
+
+        const fullPanels = roomPanels.filter(panel => !panel.is_cut_panel);
+        const cutPanels = roomPanels.filter(panel => panel.is_cut_panel);
+
+        let isHorizontalStrategy;
+        if (strategy === 'auto' || strategy === 'room_optimal' || strategy === 'best_orientation') {
+            const refPanel = fullPanels.length > 0 ? fullPanels[0] : roomPanels[0];
+            isHorizontalStrategy = refPanel.width > refPanel.length;
+        } else {
+            isHorizontalStrategy = strategy.includes('horizontal');
+        }
+        
+        const panelsByDimension = new Map();
+        
+        fullPanels.forEach(panel => {
+            let groupingDimension;
+            if (isHorizontalStrategy) {
+                groupingDimension = panel.length;
+            } else {
+                groupingDimension = panel.width;
+            }
+            const dimensionValue = Math.round(groupingDimension * 100) / 100;
+            
+            if (!panelsByDimension.has(dimensionValue)) {
+                panelsByDimension.set(dimensionValue, []);
+            }
+            panelsByDimension.get(dimensionValue).push(panel);
+        });
+
+        const shouldShowIndividual = roomPanels.length <= 20;
+        const drawnValues = new Set();
+
+        panelsByDimension.forEach((panels, dimensionValue) => {
+            if (panels.length > 1) {
+                const orientationSuffix = isHorizontalStrategy ? 'H' : 'V';
+                const dimensionKey = `grouped_${dimensionValue}_${panels.length}_${orientationSuffix}`;
+                const valueKey = `${dimensionValue}mm_${panels.length}_${orientationSuffix}`;
+                
+                if (drawnDimensions.has(dimensionKey) || drawnValues.has(valueKey)) return;
+                
+                drawnDimensions.add(dimensionKey);
+                drawnValues.add(valueKey);
+                
+                // [UPDATED] Check visibilityState.panel
+                if (visibilityState.panel !== false) {
+                    drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker);
+                }
+
+            } else if (panels.length === 1 && shouldShowIndividual) {
+                const panel = panels[0];
+                const dimVal = Math.round(dimensionValue * 100) / 100;
+                
+                const fullDimensionKey = `full_${panel.id}`;
+                const fullValueKey = `${dimVal}mm_full`;
+                
+                if (drawnDimensions.has(fullDimensionKey) || drawnValues.has(fullValueKey)) return;
+                
+                drawnDimensions.add(fullDimensionKey);
+                drawnValues.add(fullValueKey);
+                
+                let individualDimension;
+                
+                if (isHorizontalStrategy) {
+                    const centerX = panel.start_x + (panel.width / 2);
+                    individualDimension = {
+                        startX: centerX,
+                        endX: centerX,
+                        startY: panel.start_y,
+                        endY: panel.start_y + panel.length,
+                        dimension: dimVal,
+                        type: 'individual_panel',
+                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
+                        priority: 3,
+                        avoidArea: projectBounds,
+                        drawnPositions: new Set(),
+                        roomId: room.id,
+                        isHorizontal: false 
+                    };
+                } else {
+                    const centerY = panel.start_y + (panel.length / 2);
+                    individualDimension = {
+                        startX: panel.start_x,
+                        endX: panel.start_x + panel.width,
+                        startY: centerY,
+                        endY: centerY,
+                        dimension: dimVal,
+                        type: 'individual_panel',
+                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
+                        priority: 3,
+                        avoidArea: projectBounds,
+                        drawnPositions: new Set(),
+                        roomId: room.id,
+                        isHorizontal: true 
+                    };
+                }
+                
+                // [UPDATED] Check visibilityState.panel
+                if (visibilityState.panel !== false) {
+                    drawRoomDimensions(ctx, individualDimension, projectBounds, placedLabels, allLabels);
+                }
+            }
+        });
+
+        // 3. DRAW CUT PANELS
+        if (cutPanels.length > 0) {
+            cutPanels.forEach(panel => {
+                let dimensionValue;
+                let isDimensionLineHorizontal; 
+
+                if (isHorizontalStrategy) {
+                    dimensionValue = panel.length;
+                    isDimensionLineHorizontal = false; 
+                } else {
+                    dimensionValue = panel.width;
+                    isDimensionLineHorizontal = true; 
+                }
+                
+                const cutDimensionKey = `cut_${panel.id}`;
+                const cutValueKey = `${dimensionValue}mm_cut`;
+                
+                if (drawnDimensions.has(cutDimensionKey) || drawnValues.has(cutValueKey)) return;
+                
+                drawnDimensions.add(cutDimensionKey);
+                drawnValues.add(cutValueKey);
+                
+                let cutPanelDimension;
+                
+                if (isDimensionLineHorizontal) {
+                    const centerY = panel.start_y + (panel.length / 2);
+                    cutPanelDimension = {
+                        startX: panel.start_x,
+                        endX: panel.start_x + panel.width,
+                        startY: centerY,
+                        endY: centerY,
+                        dimension: dimensionValue,
+                        type: 'cut_panel',
+                        color: '#dc2626',
+                        priority: 4,
+                        avoidArea: projectBounds,
+                        drawnPositions: new Set(),
+                        roomId: room.id,
+                        isHorizontal: true,
+                        isCut: true
+                    };
+                } else {
+                    const centerX = panel.start_x + (panel.width / 2);
+                    cutPanelDimension = {
+                        startX: centerX,
+                        endX: centerX,
+                        startY: panel.start_y,
+                        endY: panel.start_y + panel.length,
+                        dimension: dimensionValue,
+                        type: 'cut_panel',
+                        color: '#dc2626',
+                        priority: 4,
+                        avoidArea: projectBounds,
+                        drawnPositions: new Set(),
+                        roomId: room.id,
+                        isHorizontal: false,
+                        isCut: true
+                    };
+                }
+                
+                // [UPDATED] Check visibilityState.cutPanel specifically
+                const showCutPanels = visibilityState.cutPanel !== undefined 
+                    ? visibilityState.cutPanel 
+                    : visibilityState.panel !== false;
+
+                if (showCutPanels) {
+                    drawRoomDimensions(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels);
+                }
+            });
+        }
     };
 
     // PASS 2: Draw dimension text box
@@ -1024,201 +1254,7 @@ const FloorCanvas = ({
         
         ctx.restore();
     };
-
-    // [UPDATED] Draw Panel Dimensions using Explicit Strategy + Auto Detection
-    const drawPanelDimensions = (ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy) => {
-        if (roomPanels.length === 0) return;
-
-        // SEPARATE FULL AND CUT PANELS FIRST
-        const fullPanels = roomPanels.filter(panel => !panel.is_cut_panel);
-        const cutPanels = roomPanels.filter(panel => panel.is_cut_panel);
-
-        // 1. DETERMINE ORIENTATION
-        let isHorizontalStrategy;
-
-        // Check if strategy is one of the auto/optimal ones
-        if (strategy === 'auto' || strategy === 'room_optimal' || strategy === 'best_orientation') {
-            // [CHANGED] PRIORITIZE FULL PANELS FOR DETECTION
-            // Using a cut panel to guess orientation causes errors (small cuts look like wrong orientation)
-            const refPanel = fullPanels.length > 0 ? fullPanels[0] : roomPanels[0];
-            
-            // If panels are wider than they are long (width > length), it resulted in Horizontal (flat strips)
-            isHorizontalStrategy = refPanel.width > refPanel.length;
-        } else {
-            // If DB says specific direction, trust it
-            isHorizontalStrategy = strategy.includes('horizontal');
-        }
-        
-        const panelsByDimension = new Map();
-        
-        fullPanels.forEach(panel => {
-            // [LOGIC CHANGE]
-            // Vertical Orientation: Group by WIDTH (X-axis is the fixed 1150mm side)
-            // Horizontal Orientation: Group by LENGTH (Y-axis is the fixed 1150mm side)
-            let groupingDimension;
-            
-            if (isHorizontalStrategy) {
-                // Horizontal Plan: Group by LENGTH (Y-axis is the fixed module side)
-                groupingDimension = panel.length;
-            } else {
-                // Vertical Plan (Default): Group by WIDTH (X-axis is the fixed module side)
-                groupingDimension = panel.width;
-            }
-
-            const dimensionValue = Math.round(groupingDimension * 100) / 100;
-            
-            if (!panelsByDimension.has(dimensionValue)) {
-                panelsByDimension.set(dimensionValue, []);
-            }
-            panelsByDimension.get(dimensionValue).push(panel);
-        });
-
-        const shouldShowIndividual = roomPanels.length <= 20;
-        const drawnValues = new Set();
-
-        panelsByDimension.forEach((panels, dimensionValue) => {
-            if (panels.length > 1) {
-                // GROUPED PANELS
-                // [KEY FIX] Add orientation suffix to key so "1150_H" doesn't block "1150_V"
-                const orientationSuffix = isHorizontalStrategy ? 'H' : 'V';
-                const dimensionKey = `grouped_${dimensionValue}_${panels.length}_${orientationSuffix}`;
-                const valueKey = `${dimensionValue}mm_${panels.length}_${orientationSuffix}`;
-                
-                if (drawnDimensions.has(dimensionKey) || drawnValues.has(valueKey)) return;
-                
-                drawnDimensions.add(dimensionKey);
-                drawnValues.add(valueKey);
-                
-                drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker);
-
-            } else if (panels.length === 1 && shouldShowIndividual) {
-                // INDIVIDUAL FULL PANELS
-                const panel = panels[0];
-                const dimVal = Math.round(dimensionValue * 100) / 100;
-                
-                const fullDimensionKey = `full_${panel.id}`;
-                const fullValueKey = `${dimVal}mm_full`;
-                
-                if (drawnDimensions.has(fullDimensionKey) || drawnValues.has(fullValueKey)) return;
-                
-                drawnDimensions.add(fullDimensionKey);
-                drawnValues.add(fullValueKey);
-                
-                let individualDimension;
-                
-                if (isHorizontalStrategy) {
-                    // Horizontal Plan: Vertical dimension line for Y-axis (Length)
-                    const centerX = panel.start_x + (panel.width / 2);
-                    
-                    individualDimension = {
-                        startX: centerX,
-                        endX: centerX,
-                        startY: panel.start_y,
-                        endY: panel.start_y + panel.length,
-                        dimension: dimVal,
-                        type: 'individual_panel',
-                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
-                        priority: 3,
-                        avoidArea: projectBounds,
-                        drawnPositions: new Set(),
-                        roomId: room.id,
-                        isHorizontal: false 
-                    };
-                } else {
-                    // Vertical Plan: Horizontal dimension line for X-axis (Width)
-                    const centerY = panel.start_y + (panel.length / 2);
-                    
-                    individualDimension = {
-                        startX: panel.start_x,
-                        endX: panel.start_x + panel.width,
-                        startY: centerY,
-                        endY: centerY,
-                        dimension: dimVal,
-                        type: 'individual_panel',
-                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
-                        priority: 3,
-                        avoidArea: projectBounds,
-                        drawnPositions: new Set(),
-                        roomId: room.id,
-                        isHorizontal: true 
-                    };
-                }
-                
-                if (dimensionVisibility?.panel !== false) {
-                    drawRoomDimensions(ctx, individualDimension, projectBounds, placedLabels, allLabels);
-                }
-            }
-        });
-
-        // 3. DRAW CUT PANELS
-        if (cutPanels.length > 0) {
-            cutPanels.forEach(panel => {
-                let dimensionValue;
-                let isDimensionLineHorizontal; 
-
-                if (isHorizontalStrategy) {
-                    // Horizontal Plan: Measure the Y-axis (Length)
-                    dimensionValue = panel.length;
-                    isDimensionLineHorizontal = false; 
-                } else {
-                    // Vertical Plan: Measure the X-axis (Width)
-                    dimensionValue = panel.width;
-                    isDimensionLineHorizontal = true; 
-                }
-                
-                const cutDimensionKey = `cut_${panel.id}`;
-                const cutValueKey = `${dimensionValue}mm_cut`;
-                
-                if (drawnDimensions.has(cutDimensionKey) || drawnValues.has(cutValueKey)) return;
-                
-                drawnDimensions.add(cutDimensionKey);
-                drawnValues.add(cutValueKey);
-                
-                let cutPanelDimension;
-                
-                if (isDimensionLineHorizontal) {
-                    const centerY = panel.start_y + (panel.length / 2);
-                    cutPanelDimension = {
-                        startX: panel.start_x,
-                        endX: panel.start_x + panel.width,
-                        startY: centerY,
-                        endY: centerY,
-                        dimension: dimensionValue,
-                        type: 'cut_panel',
-                        color: '#dc2626',
-                        priority: 4,
-                        avoidArea: projectBounds,
-                        drawnPositions: new Set(),
-                        roomId: room.id,
-                        isHorizontal: true,
-                        isCut: true
-                    };
-                } else {
-                    const centerX = panel.start_x + (panel.width / 2);
-                    cutPanelDimension = {
-                        startX: centerX,
-                        endX: centerX,
-                        startY: panel.start_y,
-                        endY: panel.start_y + panel.length,
-                        dimension: dimensionValue,
-                        type: 'cut_panel',
-                        color: '#dc2626',
-                        priority: 4,
-                        avoidArea: projectBounds,
-                        drawnPositions: new Set(),
-                        roomId: room.id,
-                        isHorizontal: false,
-                        isCut: true
-                    };
-                }
-                
-                if (dimensionVisibility?.panel !== false) {
-                    drawRoomDimensions(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels);
-                }
-            });
-        }
-    };
-
+    
     // Draw Grouped Dimensions
     const drawGroupedPanelDimensions = (ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker) => {
         const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.start_x + p.width))) / 2;
@@ -1494,6 +1530,7 @@ const FloorCanvas = ({
     return (
         <div className="floor-canvas-container">
             <div className="flex gap-6">
+                {/* Main Canvas Area */}
                 <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg flex-1">
                     <div
                         ref={canvasContainerRef}
@@ -1503,53 +1540,54 @@ const FloorCanvas = ({
                             minHeight: `${MIN_CANVAS_HEIGHT}px`
                         }}
                     >
-                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-                        <button
-                            onClick={handleZoomIn}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom In"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                            </svg>
-                        </button>
-                        
-                        <button
-                            onClick={handleZoomOut}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom Out"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
-                            </svg>
-                        </button>
-                        
-                        <button
-                            onClick={handleResetZoom}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-purple-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Reset Zoom"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                        </button>
-                    </div>
+                        {/* Zoom Controls */}
+                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                            <button
+                                onClick={handleZoomIn}
+                                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                                title="Zoom In"
+                            >
+                                <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                                </svg>
+                            </button>
+                            
+                            <button
+                                onClick={handleZoomOut}
+                                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
+                                title="Zoom Out"
+                            >
+                                <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
+                                </svg>
+                            </button>
+                            
+                            <button
+                                onClick={handleResetZoom}
+                                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-purple-400 transition-all duration-200 flex items-center justify-center group"
+                                title="Reset Zoom"
+                            >
+                                <svg className="w-5 h-5 text-gray-600 group-hover:text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </button>
+                        </div>
 
-                    <canvas
-                        ref={canvasRef}
-                        data-plan-type="floor"
-                        className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
-                        style={{
+                        <canvas
+                            ref={canvasRef}
+                            data-plan-type="floor"
+                            className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
+                            style={{
                                 width: '100%',
                                 height: '100%'
-                        }}
-                        onWheel={handleWheel}
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
-                        onClick={handleCanvasClick}
-                    />
+                            }}
+                            onWheel={handleWheel}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                            onClick={handleCanvasClick}
+                        />
                     </div>
                     
                     <div className="mt-4 flex items-center justify-between text-sm text-gray-600 p-3 bg-gray-50 border-t border-gray-200">
@@ -1565,6 +1603,7 @@ const FloorCanvas = ({
                     </div>
                 </div>
 
+                {/* Sidebar */}
                 <div className="w-80 bg-white border-2 border-gray-200 rounded-xl shadow-lg p-6 h-fit">
                     <div className="flex items-center mb-4">
                         <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1574,6 +1613,7 @@ const FloorCanvas = ({
                     </div>
                     
                     <div className="space-y-4">
+                        {/* Stats Grid 1 */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <div className="text-sm text-gray-600">Total Panels</div>
@@ -1585,6 +1625,7 @@ const FloorCanvas = ({
                             </div>
                         </div>
                         
+                        {/* Stats Grid 2 */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <div className="text-sm text-gray-600">Full Panels</div>
@@ -1596,6 +1637,7 @@ const FloorCanvas = ({
                             </div>
                         </div>
                         
+                        {/* Stats Grid 3 */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <div className="text-sm text-gray-600">Waste %</div>
@@ -1616,6 +1658,7 @@ const FloorCanvas = ({
                             </div>
                         </div>
                         
+                        {/* Recommended Strategy */}
                         <div>
                             <div className="text-sm text-gray-600">Recommended</div>
                             <div className="text-lg font-semibold text-green-600">
@@ -1645,62 +1688,67 @@ const FloorCanvas = ({
                             </div>
                         </div>
                         
-                            <div className="pt-4 border-t border-gray-200">
-                             <div className="text-sm text-gray-600">Panel Floor Area</div>
-                             <div className="text-lg font-semibold text-gray-900">
-                                 {(() => {
-                                     const calculatedArea = calculatePanelFloorArea();
-                                     if (calculatedArea === 0) return '0.00 m²';
-                                     return `${calculatedArea.toFixed(2)} m²`;
-                                 })()}
-                             </div>
-                             <div className="text-xs text-gray-500 mt-1">
-                                 {(() => {
-                                     const panelRooms = rooms?.filter(room => 
-                                         room.floor_type === 'panel' || room.floor_type === 'Panel'
-                                     ) || [];
-                                     const totalRooms = rooms?.length || 0;
-                                     return `${panelRooms.length} of ${totalRooms} rooms have panel floors`;
-                                 })()}
-                             </div>
-                         </div>
-                         
-                         <div className="pt-4 border-t border-gray-200">
-                             <div className="text-sm text-gray-600">Slab Floor Summary</div>
-                             <div className="text-lg font-semibold text-green-600">
-                                 {(() => {
-                                     const slabRooms = rooms?.filter(room => 
-                                         room.floor_type === 'slab' || room.floor_type === 'Slab'
-                                     ) || [];
-                                     
-                                     if (slabRooms.length === 0) return 'No slab floors';
-                                     
-                                     let totalSlabs = 0;
-                                     let totalArea = 0;
-                                     
-                                     slabRooms.forEach(room => {
-                                         const roomArea = calculateRoomArea(room);
-                                         const slabArea = 1210 * 3000; 
-                                         const slabsNeeded = Math.ceil(roomArea / slabArea);
-                                         totalSlabs += slabsNeeded;
-                                         totalArea += roomArea;
-                                     });
-                                     
-                                     return `${totalSlabs} slabs needed`;
-                                 })()}
-                             </div>
-                             <div className="text-xs text-gray-500 mt-1">
-                                 {(() => {
-                                     const slabRooms = rooms?.filter(room => 
-                                         room.floor_type === 'slab' || room.floor_type === 'Slab'
-                                     ) || [];
-                                     const totalRooms = rooms?.length || 0;
-                                     if (slabRooms.length === 0) return 'No rooms with slab floors';
-                                     return `${slabRooms.length} of ${totalRooms} rooms have slab floors`;
-                                 })()}
-                             </div>
-                         </div>
+                        {/* Panel Floor Area */}
+                        <div className="pt-4 border-t border-gray-200">
+                            <div className="text-sm text-gray-600">Panel Floor Area</div>
+                            <div className="text-lg font-semibold text-gray-900">
+                                {(() => {
+                                    const calculatedArea = calculatePanelFloorArea();
+                                    if (calculatedArea === 0) return '0.00 m²';
+                                    return `${calculatedArea.toFixed(2)} m²`;
+                                })()}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                {(() => {
+                                    const panelRooms = rooms?.filter(room => 
+                                        room.floor_type === 'panel' || room.floor_type === 'Panel'
+                                    ) || [];
+                                    const totalRooms = rooms?.length || 0;
+                                    return `${panelRooms.length} of ${totalRooms} rooms have panel floors`;
+                                })()}
+                            </div>
+                        </div>
                         
+                        {/* Slab Floor Summary */}
+                        <div className="pt-4 border-t border-gray-200">
+                            <div className="text-sm text-gray-600">Slab Floor Summary</div>
+                            <div className="text-lg font-semibold text-green-600">
+                                {(() => {
+                                    const slabRooms = rooms?.filter(room => 
+                                        room.floor_type === 'slab' || room.floor_type === 'Slab'
+                                    ) || [];
+                                    
+                                    if (slabRooms.length === 0) return 'No slab floors';
+                                    
+                                    let totalSlabs = 0;
+                                    let totalArea = 0;
+                                    
+                                    slabRooms.forEach(room => {
+                                        const roomArea = calculateRoomArea(room);
+                                        const slabArea = 1210 * 3000; 
+                                        const slabsNeeded = Math.ceil(roomArea / slabArea);
+                                        totalSlabs += slabsNeeded;
+                                        totalArea += roomArea;
+                                    });
+                                    
+                                    return `${totalSlabs} slabs needed`;
+                                })()}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                {(() => {
+                                    const slabRooms = rooms?.filter(room => 
+                                        room.floor_type === 'slab' || room.floor_type === 'Slab'
+                                    ) || [];
+                                    const totalRooms = rooms?.length || 0;
+                                    if (slabRooms.length === 0) return 'No rooms with slab floors';
+                                    return `${slabRooms.length} of ${totalRooms} rooms have slab floors`;
+                                })()}
+                            </div>
+                        </div>
+                        
+                        {/* ------------------------------------------------------- */}
+                        {/* COMBINED Dimension Legend & Filter                      */}
+                        {/* ------------------------------------------------------- */}
                         <div className="mt-6 pt-4 border-t border-gray-200">
                             <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                                 <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1708,37 +1756,76 @@ const FloorCanvas = ({
                                 </svg>
                                 Dimension Legend
                             </h4>
-                                                         <div className="space-y-3 text-sm">
-                                 <div className="flex items-center">
-                                     <div className="w-4 h-4 bg-blue-600 rounded mr-3"></div>
-                                     <span className="text-gray-700">Room Dimensions</span>
-                                 </div>
-                                 <div className="flex items-center">
-                                     <div className="w-4 h-4 bg-gray-600 rounded mr-3"></div>
-                                     <span className="text-gray-700">Panel Dimensions</span>
-                                 </div>
-                                 <div className="flex items-center">
-                                     <div className="w-4 h-4 bg-red-600 rounded mr-3"></div>
-                                     <span className="text-gray-700">Cut Panel Dimensions</span>
-                                 </div>
-                                 <div className="flex items-center">
-                                     <div className="w-4 h-4 bg-green-500 rounded mr-3"></div>
-                                     <span className="text-gray-700">Slab Floor Calculations</span>
-                                 </div>
-                                 <div className="flex items-center">
-                                     <div className="w-4 h-4 bg-gray-800 rounded mr-3"></div>
-                                     <span className="text-gray-700">Walls (Outer Face)</span>
-                                 </div>
-                                 <div className="flex items-center">
-                                     <div className="w-4 h-4 border-2 border-gray-600 border-dashed mr-3"></div>
-                                     <span className="text-gray-700">Walls (Inner Face)</span>
-                                 </div>
-                             </div>
+                            
+                            <div className="space-y-3 text-sm">
+                                {/* Room Dimensions - Toggleable Legend Item */}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center">
+                                        <div className="w-4 h-4 bg-blue-600 rounded mr-3"></div>
+                                        <span className="text-gray-700">Room Dimensions</span>
+                                    </div>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={visibilityState.room !== false}
+                                        onChange={(e) => setVisibilityState(prev => ({ ...prev, room: e.target.checked }))}
+                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                        title="Toggle Room Dimensions"
+                                    />
+                                </div>
+
+                                {/* Panel Dimensions - Toggleable Legend Item */}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center">
+                                        <div className="w-4 h-4 bg-gray-600 rounded mr-3"></div>
+                                        <span className="text-gray-700">Panel Dimensions</span>
+                                    </div>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={visibilityState.panel !== false}
+                                        onChange={(e) => setVisibilityState(prev => ({ ...prev, panel: e.target.checked }))}
+                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                        title="Toggle Panel Dimensions"
+                                    />
+                                </div>
+
+                                {/* Cut Dimensions - Toggleable Legend Item */}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center">
+                                        <div className="w-4 h-4 bg-red-600 rounded mr-3"></div>
+                                        <span className="text-gray-700">Cut Dimensions</span>
+                                    </div>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={visibilityState.cutPanel !== false} 
+                                        onChange={(e) => setVisibilityState(prev => ({ ...prev, cutPanel: e.target.checked }))}
+                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                        title="Toggle Cut Panel Dimensions"
+                                    />
+                                </div>
+                                
+                                {/* Divider */}
+                                <div className="border-t border-gray-100 my-2"></div>
+
+                                {/* Static Legend Items */}
+                                <div className="flex items-center">
+                                    <div className="w-4 h-4 bg-green-500 rounded mr-3"></div>
+                                    <span className="text-gray-700">Slab Floor Calculations</span>
+                                </div>
+                                <div className="flex items-center">
+                                    <div className="w-4 h-4 bg-gray-800 rounded mr-3"></div>
+                                    <span className="text-gray-700">Walls (Outer Face)</span>
+                                </div>
+                                <div className="flex items-center">
+                                    <div className="w-4 h-4 border-2 border-gray-600 border-dashed mr-3"></div>
+                                    <span className="text-gray-700">Walls (Inner Face)</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            {/* Panel List Table */}
             <div className="mt-6 p-4 bg-white rounded-lg shadow-md border border-gray-200">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold text-gray-800">Floor Panel List</h3>
@@ -1878,7 +1965,6 @@ const FloorCanvas = ({
                     </div>
                 )}
             </div>
-
         </div>
     );
 };

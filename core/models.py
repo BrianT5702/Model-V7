@@ -260,9 +260,12 @@ class CeilingZone(models.Model):
         return abs(area) / 2.0
 
 
+from django.db import models
+# Ensure Room and CeilingZone are imported or available
+
 class CeilingPanel(models.Model):
     """Individual ceiling panel that covers a specific area of a room or merged zone"""
-    room = models.ForeignKey(Room, related_name='ceiling_panels', on_delete=models.CASCADE, null=True, blank=True)
+    room = models.ForeignKey('Room', related_name='ceiling_panels', on_delete=models.CASCADE, null=True, blank=True)
     zone = models.ForeignKey('CeilingZone', related_name='ceiling_panels', on_delete=models.CASCADE, null=True, blank=True)
     panel_id = models.CharField(max_length=50, help_text="Unique identifier for the panel")
     start_x = models.FloatField(help_text="X-coordinate of the panel's start point")
@@ -284,6 +287,14 @@ class CeilingPanel(models.Model):
     )
     is_cut_panel = models.BooleanField(default=False, help_text="Whether this panel was cut to fit")
     cut_notes = models.TextField(blank=True, null=True, help_text="Notes about any cuts made to the panel")
+    
+    # --- NEW FIELD FOR L-SHAPES ---
+    shape_data = models.JSONField(
+        null=True, 
+        blank=True, 
+        help_text="List of {x,y} points defining the exact polygon shape for non-rectangular panels"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -295,7 +306,7 @@ class CeilingPanel(models.Model):
 
     def __str__(self):
         if self.room:
-            target = self.room.room_name
+            target = self.room.room_name if hasattr(self.room, 'room_name') else f"Room {self.room.id}"
         elif self.zone:
             target = f"Zone {self.zone.id}"
         else:
@@ -313,7 +324,6 @@ class CeilingPanel(models.Model):
             'length': self.length,
             'thickness': self.thickness
         }
-
 class CeilingPlan(models.Model):
     """Represents the complete ceiling plan for a room or merged zone"""
     room = models.OneToOneField(

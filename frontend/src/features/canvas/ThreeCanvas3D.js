@@ -2354,257 +2354,145 @@ getModelBounds() {
     }
   }
 
-  // Create ceiling panel division lines in 3D
-  // This method creates visual lines on ceilings showing the actual panel layout
-  // It uses the ceiling plan data from the database to show where panels are placed
-  // Lines are colored differently for cut panels (red) vs full panels (teal)
-  // Grid lines (gray) show the overall panel arrangement
+  clipPolygonByRect(polyPoints, minX, minZ, maxX, maxZ) {
+    if (!polyPoints || polyPoints.length < 3) return [];
+    
+    let output = polyPoints;
+
+    // Clip against Min X
+    let input = output; output = [];
+    if (input.length === 0) return [];
+    let S = input[input.length - 1];
+    for (const E of input) {
+      if (E.x >= minX) {
+        if (S.x < minX) output.push({ x: minX, z: S.z + (E.z - S.z) * (minX - S.x) / (E.x - S.x) });
+        output.push(E);
+      } else if (S.x >= minX) {
+        output.push({ x: minX, z: S.z + (E.z - S.z) * (minX - S.x) / (E.x - S.x) });
+      }
+      S = E;
+    }
+
+    // Clip against Max X
+    input = output; output = [];
+    if (input.length === 0) return [];
+    S = input[input.length - 1];
+    for (const E of input) {
+      if (E.x <= maxX) {
+        if (S.x > maxX) output.push({ x: maxX, z: S.z + (E.z - S.z) * (maxX - S.x) / (E.x - S.x) });
+        output.push(E);
+      } else if (S.x <= maxX) {
+        output.push({ x: maxX, z: S.z + (E.z - S.z) * (maxX - S.x) / (E.x - S.x) });
+      }
+      S = E;
+    }
+
+    // Clip against Min Z
+    input = output; output = [];
+    if (input.length === 0) return [];
+    S = input[input.length - 1];
+    for (const E of input) {
+      if (E.z >= minZ) {
+        if (S.z < minZ) output.push({ x: S.x + (E.x - S.x) * (minZ - S.z) / (E.z - S.z), z: minZ });
+        output.push(E);
+      } else if (S.z >= minZ) {
+        output.push({ x: S.x + (E.x - S.x) * (minZ - S.z) / (E.z - S.z), z: minZ });
+      }
+      S = E;
+    }
+
+    // Clip against Max Z
+    input = output; output = [];
+    if (input.length === 0) return [];
+    S = input[input.length - 1];
+    for (const E of input) {
+      if (E.z <= maxZ) {
+        if (S.z > maxZ) output.push({ x: S.x + (E.x - S.x) * (maxZ - S.z) / (E.z - S.z), z: maxZ });
+        output.push(E);
+      } else if (S.z <= maxZ) {
+        output.push({ x: S.x + (E.x - S.x) * (maxZ - S.z) / (E.z - S.z), z: maxZ });
+      }
+      S = E;
+    }
+
+    return output;
+  }
+
   createCeilingPanelDivisionLines() {
     try {
-      debugLog('🏠 Starting ceiling panel division lines creation...');
-      
-      // Clear existing ceiling panel lines
-      this.ceilingPanelLines.forEach(line => {
-        this.scene.remove(line);
-      });
+      // 1. Clear existing lines
+      this.ceilingPanelLines.forEach(line => this.scene.remove(line));
       this.ceilingPanelLines = [];
       
       const ceilingPanelsMap = this.calculateCeilingPanels();
-      debugLog('🏠 Ceiling panels map:', ceilingPanelsMap);
-      
-      let roomsWithCeilingPanels = 0;
-      let totalCeilingPanelLines = 0;
       
       Object.values(ceilingPanelsMap).forEach(({ room, panels }) => {
-        if (!panels || panels.length <= 1) {
-          return;
-        }
+        if (!panels || panels.length === 0) return;
         
-        roomsWithCeilingPanels++;
-        
-        // Get ceiling height for this room
+        // Determine height
         const roomCeilingHeight = this.determineRoomCeilingHeight(room, new Map(), new Map());
-        if (!roomCeilingHeight) {
-          return;
-        }
+        if (!roomCeilingHeight) return;
         
-        debugLog(`🏠 Creating ceiling panel lines for room ${room.id} (${room.room_name || 'Unnamed'}) with ${panels.length} panels`);
+        const scale = this.scalingFactor;
+        // FIX 1: Include base_elevation in height calculation to match ceiling mesh position
+        const baseElevation = (room.base_elevation_mm ?? 0) * scale;
+        const ceilingY = baseElevation + (roomCeilingHeight * scale);
         
-        // Convert room points to 3D coordinates
+        // 2. Prepare Room Geometry (in 3D coords)
         const roomVertices = room.room_points.map(point => ({
-          x: point.x * this.scalingFactor + this.modelOffset.x,
-          z: point.y * this.scalingFactor + this.modelOffset.z
+          x: point.x * scale + this.modelOffset.x,
+          z: point.y * scale + this.modelOffset.z
         }));
-        
-        // Create ceiling panel lines
-        this.createCeilingPanelLinesForRoom(room, panels, roomVertices, roomCeilingHeight);
-        
-        totalCeilingPanelLines += this.calculateCeilingPanelLineCount(panels);
+
+        // 3. Draw Each Panel (Clipped)
+        panels.forEach((panel) => {
+           // Calculate Panel Box
+           const pStartX = panel.start_x * scale + this.modelOffset.x;
+           const pStartZ = panel.start_y * scale + this.modelOffset.z;
+           const pEndX = pStartX + (panel.width * scale);
+           const pEndZ = pStartZ + (panel.length * scale);
+
+           // CLIP: Intersect Panel Box with Room Polygon
+           // This produces the L-shape if the panel hits a corner
+           const clippedShape = this.clipPolygonByRect(roomVertices, pStartX, pStartZ, pEndX, pEndZ);
+
+           if (clippedShape.length > 2) {
+             // Create Geometry from clipped points
+             const vertices = [];
+             clippedShape.forEach(p => vertices.push(p.x, ceilingY, p.z));
+             // Close loop
+             vertices.push(clippedShape[0].x, ceilingY, clippedShape[0].z);
+
+             const lineGeometry = new this.THREE.BufferGeometry();
+             lineGeometry.setAttribute('position', new this.THREE.Float32BufferAttribute(vertices, 3));
+
+             // Create Material (Thicker and Solid)
+             const lineMaterial = new this.THREE.LineBasicMaterial({
+               color: panel.is_cut_panel ? 0xFF0000 : 0x00AAAA, // Red for cut, Teal for full
+               linewidth: 3, // Request thicker lines
+               transparent: false,
+               opacity: 1.0,
+               depthTest: true
+             });
+
+             const line = new this.THREE.Line(lineGeometry, lineMaterial);
+             
+             // FIX 2: Offset UPWARDS (+5mm) to sit ON TOP of the ceiling mesh
+             // Previous -0.05 put it inside/below the top face.
+             line.position.y = 5 * scale; 
+             
+             line.userData.isCeilingPanelLine = true;
+             line.visible = this.showCeilingPanelLines;
+             
+             this.scene.add(line);
+             this.ceilingPanelLines.push(line);
+           }
+        });
       });
-      
-      debugLog(`🏠 Created ceiling panel lines for ${roomsWithCeilingPanels} rooms, ${totalCeilingPanelLines} total lines`);
       
     } catch (error) {
-      console.error('Error creating ceiling panel division lines:', error);
+      console.error('Error creating ceiling panel lines:', error);
     }
-  }
-
-  // Create ceiling panel lines for a specific room
-  createCeilingPanelLinesForRoom(room, panels, roomVertices, roomCeilingHeight) {
-    const scale = this.scalingFactor;
-    const ceilingY = roomCeilingHeight * scale;
-    
-    // Create panel boundary lines
-    this.createCeilingPanelBoundaryLines(room, panels, roomVertices, ceilingY);
-    
-    // Create panel grid lines (internal panel divisions)
-    this.createCeilingPanelGridLines(room, panels, roomVertices, ceilingY);
-  }
-
-  // Create boundary lines around ceiling panels
-  createCeilingPanelBoundaryLines(room, panels, roomVertices, ceilingY) {
-    const scale = this.scalingFactor;
-    
-    debugLog(`🏠 Creating boundary lines for room ${room.id} with ${panels.length} panels`);
-    
-    // Create lines along panel boundaries
-    panels.forEach((panel, panelIndex) => {
-      debugLog(`🏠 Panel ${panelIndex + 1} (${panel.id}):`, {
-        start: { x: panel.start_x, y: panel.start_y },
-        end: { x: panel.end_x, y: panel.end_y },
-        width: panel.width,
-        length: panel.length,
-        is_cut_panel: panel.is_cut_panel
-      });
-      
-      // Convert panel coordinates to 3D
-      const panelStartX = panel.start_x * scale + this.modelOffset.x;
-      const panelStartZ = panel.start_y * scale + this.modelOffset.z;
-      const panelEndX = panel.end_x * scale + this.modelOffset.x;
-      const panelEndZ = panel.end_y * scale + this.modelOffset.z;
-      
-      // Create boundary lines for this panel (4 edges)
-      // Top edge
-      this.createCeilingPanelBoundaryLine(
-        panelStartX, panelStartZ, panelEndX, panelStartZ, ceilingY,
-        room.id, panel.id, panel.is_cut_panel
-      );
-      
-      // Right edge
-      this.createCeilingPanelBoundaryLine(
-        panelEndX, panelStartZ, panelEndX, panelEndZ, ceilingY,
-        room.id, panel.id, panel.is_cut_panel
-      );
-      
-      // Bottom edge
-      this.createCeilingPanelBoundaryLine(
-        panelEndX, panelEndZ, panelStartX, panelEndZ, ceilingY,
-        room.id, panel.id, panel.is_cut_panel
-      );
-      
-      // Left edge
-      this.createCeilingPanelBoundaryLine(
-        panelStartX, panelEndZ, panelStartX, panelStartZ, ceilingY,
-        room.id, panel.id, panel.is_cut_panel
-      );
-    });
-  }
-
-  // Create a single ceiling panel boundary line
-  createCeilingPanelBoundaryLine(startX, startZ, endX, endZ, ceilingY, roomId, panelId, isCutPanel) {
-    const scale = this.scalingFactor;
-    
-    debugLog(`🏠 Creating ceiling panel line:`, {
-      start: { x: startX, z: startZ },
-      end: { x: endX, z: endZ },
-      ceilingY: ceilingY,
-      roomId: roomId,
-      panelId: panelId,
-      isCutPanel: isCutPanel
-    });
-    
-    // Create line geometry
-    const lineGeometry = new this.THREE.BufferGeometry();
-    const vertices = new Float32Array([
-      // Line at ceiling surface
-      startX, ceilingY, startZ,
-      endX, ceilingY, endZ
-    ]);
-    
-    lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
-    
-    // Create line material with different colors for cut vs full panels
-    const lineMaterial = new this.THREE.LineBasicMaterial({
-      color: isCutPanel ? 0xFF6B6B : 0x4ECDC4, // Red for cut panels, teal for full panels
-      linewidth: 2,
-      transparent: true,
-      opacity: 0.7
-    });
-    
-    // Create line mesh
-    const line = new this.THREE.Line(lineGeometry, lineMaterial);
-    line.userData.isCeilingPanelLine = true;
-    line.userData.roomId = roomId;
-    line.userData.panelId = panelId;
-    line.userData.isCutPanel = isCutPanel;
-    line.visible = this.showCeilingPanelLines;
-    
-    // Add to scene and store reference
-    this.scene.add(line);
-    this.ceilingPanelLines.push(line);
-    
-    debugLog(`🏠 Added ceiling panel line to scene. Total ceiling panel lines: ${this.ceilingPanelLines.length}`);
-  }
-
-  // Create grid lines showing internal panel divisions
-  createCeilingPanelGridLines(room, panels, roomVertices, ceilingY) {
-    const scale = this.scalingFactor;
-    
-    // Group panels by their Y position to create horizontal grid lines
-    const panelRows = new Map();
-    const panelCols = new Map();
-    
-    panels.forEach(panel => {
-      const rowKey = Math.round(panel.start_y);
-      const colKey = Math.round(panel.start_x);
-      
-      if (!panelRows.has(rowKey)) {
-        panelRows.set(rowKey, []);
-      }
-      if (!panelCols.has(colKey)) {
-        panelCols.set(colKey, []);
-      }
-      
-      panelRows.get(rowKey).push(panel);
-      panelCols.get(colKey).push(panel);
-    });
-    
-    // Create horizontal grid lines
-    panelRows.forEach((rowPanels, rowKey) => {
-      if (rowPanels.length > 1) {
-        rowPanels.sort((a, b) => a.start_x - b.start_x);
-        
-        // Create line from first panel start to last panel end
-        const firstPanel = rowPanels[0];
-        const lastPanel = rowPanels[rowPanels.length - 1];
-        
-        const startX = firstPanel.start_x * scale + this.modelOffset.x;
-        const startZ = firstPanel.start_y * scale + this.modelOffset.z;
-        const endX = lastPanel.end_x * scale + this.modelOffset.x;
-        const endZ = lastPanel.start_y * scale + this.modelOffset.z;
-        
-        this.createCeilingGridLine(startX, startZ, endX, endZ, ceilingY, room.id, 'horizontal');
-      }
-    });
-    
-    // Create vertical grid lines
-    panelCols.forEach((colPanels, colKey) => {
-      if (colPanels.length > 1) {
-        colPanels.sort((a, b) => a.start_y - b.start_y);
-        
-        // Create line from first panel start to last panel end
-        const firstPanel = colPanels[0];
-        const lastPanel = colPanels[colPanels.length - 1];
-        
-        const startX = firstPanel.start_x * scale + this.modelOffset.x;
-        const startZ = firstPanel.start_y * scale + this.modelOffset.z;
-        const endX = firstPanel.start_x * scale + this.modelOffset.x;
-        const endZ = lastPanel.end_y * scale + this.modelOffset.z;
-        
-        this.createCeilingGridLine(startX, startZ, endX, endZ, ceilingY, room.id, 'vertical');
-      }
-    });
-  }
-
-  // Create a single ceiling grid line
-  createCeilingGridLine(startX, startZ, endX, endZ, ceilingY, roomId, direction) {
-    const lineGeometry = new this.THREE.BufferGeometry();
-    const vertices = new Float32Array([
-      startX, ceilingY, startZ,
-      endX, ceilingY, endZ
-    ]);
-    
-    lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
-    
-    // Create line material for grid lines
-    const lineMaterial = new this.THREE.LineBasicMaterial({
-      color: 0x95A5A6, // Gray color for grid lines
-      linewidth: 1,
-      transparent: true,
-      opacity: 0.5
-    });
-    
-    // Create line mesh
-    const line = new this.THREE.Line(lineGeometry, lineMaterial);
-    line.userData.isCeilingPanelLine = true;
-    line.userData.roomId = roomId;
-    line.userData.isGridLine = true;
-    line.userData.direction = direction;
-    line.visible = this.showCeilingPanelLines;
-    
-    // Add to scene and store reference
-    this.scene.add(line);
-    this.ceilingPanelLines.push(line);
   }
 
   // Calculate the number of ceiling panel lines that will be created

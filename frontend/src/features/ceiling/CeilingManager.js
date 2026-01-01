@@ -2282,36 +2282,6 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                 </div>
                             )}
                         </div>
-                    {/* Dimension visibility checkboxes */}
-                    <div className="flex items-center space-x-4">
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                checked={dimensionVisibility.room}
-                                onChange={() => toggleDimensionVisibility('room')}
-                            />
-                            <span className="text-sm text-gray-700">Room dimensions</span>
-                        </label>
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                checked={dimensionVisibility.panel}
-                                onChange={() => toggleDimensionVisibility('panel')}
-                            />
-                            <span className="text-sm text-gray-700">Panel dimensions</span>
-                        </label>
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                checked={dimensionVisibility.cutPanel}
-                                onChange={() => toggleDimensionVisibility('cutPanel')}
-                            />
-                            <span className="text-sm text-gray-700">Cut panel dimensions</span>
-                        </label>
-                    </div>
                 </div>
             </div>
 
