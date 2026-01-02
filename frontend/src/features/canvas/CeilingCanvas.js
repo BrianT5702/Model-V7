@@ -1688,149 +1688,143 @@ const CeilingCanvas = ({
             drawnDimensionsByLevel.set(key, true);
         };
         
-        // For grouped panel dimensions, we want to show BOTH WIDTH and LENGTH dimensions
-        // This means for horizontal panels, show both width (horizontally) and length (vertically)
-        // For vertical panels, show both width (horizontally) and length (vertically)
+        // Determine panel orientation based on actual dimensions:
+        // - If length > width: vertical orientation (only show width grouping)
+        // - If width > length: horizontal orientation (only show length grouping)
+        const panelWidth = panels[0].width;
+        const panelLength = panels[0].length;
+        const isVerticalPanel = panelLength > panelWidth; // Vertical: length > width
+        const isHorizontalPanel = panelWidth > panelLength; // Horizontal: width > length
+        
+        // Find the center and bounds of the panel group
+        const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.end_x))) / 2;
+        const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.end_y))) / 2;
+        const minX = Math.min(...panels.map(p => p.start_x));
+        const maxX = Math.max(...panels.map(p => p.end_x));
+        const minY = Math.min(...panels.map(p => p.start_y));
+        const maxY = Math.max(...panels.map(p => p.end_y));
         
         if (isHorizontal) {
-            // Horizontal panels: show BOTH dimensions
+            // Room orientation is horizontal
             // IMPORTANT: Backend stores for horizontal orientation:
             // - panel.width = X-axis span (horizontal dimension) - this is actually the panel LENGTH
             // - panel.length = Y-axis span (vertical stacking dimension, 1150mm) - this is actually the panel WIDTH
-            // We need to SWAP because semantically:
-            // - panel.width (1150mm) should be on Y-axis (vertical stacking dimension)
-            // - panel.length (span) should be on X-axis (horizontal dimension)
-            // Find the center and bounds of the panel group
-            const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.end_x))) / 2;
-            const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.end_y))) / 2;
-            const minX = Math.min(...panels.map(p => p.start_x));
-            const maxX = Math.max(...panels.map(p => p.end_x));
-            const minY = Math.min(...panels.map(p => p.start_y));
-            const maxY = Math.max(...panels.map(p => p.end_y));
             
-            // SWAP: Backend stores width as X-axis and length as Y-axis, but semantically:
-            // - X-axis dimension should show panel.length (use backend's panel.width which is X-axis span)
-            // - Y-axis dimension should show panel.width (use backend's panel.length which is Y-axis stacking, 1150mm)
+            // Only show grouping dimension based on panel orientation:
+            // - If horizontal panel (width > length): only show length grouping (panel.width in backend terms)
+            // - If vertical panel (length > width): only show width grouping (panel.length in backend terms)
             
-            // 1. Panel LENGTH dimension (horizontal line) - X-axis dimension
-            // Use backend's panel.width (which is the X-axis span, semantically the panel length)
-            const panelLengthValue = panels[0].width; // Backend stores X-axis span as width
-            if (!matchesRoomDimension(panelLengthValue, roomWidth) && !isDimensionDrawnAtLevel(panelLengthValue, centerY, true)) {
-                const lengthDimension = {
-                    startX: minX,
-                    endX: maxX,
-                    startY: centerY,
-                    endY: centerY,
-                    dimension: panelLengthValue,
-                    type: 'grouped_length_horizontal',
-                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                    priority: 2,
-                    avoidArea: projectBounds,
-                    quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
-                    drawnPositions: new Set(),
-                    roomId: 'unknown',
-                    isHorizontal: true // This dimension line is horizontal (X-axis)
-                };
-                drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
-                // Mark as drawn AFTER drawing
-                markDimensionDrawnAtLevel(panelLengthValue, centerY, true);
-            }
-            
-            // 2. Panel WIDTH dimension (vertical line) - Y-axis dimension
-            // Use backend's panel.length (which is the Y-axis stacking, 1150mm, semantically the panel width)
-            const panelWidthValue = panels[0].length; // Backend stores Y-axis stacking as length
-            if (!matchesRoomDimension(panelWidthValue, roomLength) && !isDimensionDrawnAtLevel(panelWidthValue, centerX, false)) {
-                const widthDimension = {
-                    startX: centerX,
-                    endX: centerX,
-                    startY: minY,
-                    endY: maxY,
-                    dimension: panelWidthValue,
-                    type: 'grouped_width_horizontal',
-                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                    priority: 2,
-                    avoidArea: projectBounds,
-                    quantity: panels.length, // Width dimensions show quantity (n × width)
-                    drawnPositions: new Set(),
-                    roomId: 'unknown',
-                    isHorizontal: false // This dimension line is vertical (Y-axis)
-                };
-                drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
-                // Mark as drawn AFTER drawing
-                markDimensionDrawnAtLevel(panelWidthValue, centerX, false);
+            if (isHorizontalPanel) {
+                // Horizontal panel (width > length): only show LENGTH grouping (X-axis dimension)
+                // Use backend's panel.width (which is the X-axis span, semantically the panel length)
+                const panelLengthValue = panelWidth; // Backend stores X-axis span as width
+                if (!matchesRoomDimension(panelLengthValue, roomWidth) && !isDimensionDrawnAtLevel(panelLengthValue, centerY, true)) {
+                    const lengthDimension = {
+                        startX: minX,
+                        endX: maxX,
+                        startY: centerY,
+                        endY: centerY,
+                        dimension: panelLengthValue,
+                        type: 'grouped_length_horizontal',
+                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                        priority: 2,
+                        avoidArea: projectBounds,
+                        quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
+                        drawnPositions: new Set(),
+                        roomId: 'unknown',
+                        isHorizontal: true // This dimension line is horizontal (X-axis)
+                    };
+                    drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+                    // Mark as drawn AFTER drawing
+                    markDimensionDrawnAtLevel(panelLengthValue, centerY, true);
+                }
+            } else if (isVerticalPanel) {
+                // Vertical panel (length > width): only show WIDTH grouping (Y-axis dimension)
+                // Use backend's panel.length (which is the Y-axis stacking, semantically the panel width)
+                const panelWidthValue = panelLength; // Backend stores Y-axis stacking as length
+                if (!matchesRoomDimension(panelWidthValue, roomLength) && !isDimensionDrawnAtLevel(panelWidthValue, centerX, false)) {
+                    const widthDimension = {
+                        startX: centerX,
+                        endX: centerX,
+                        startY: minY,
+                        endY: maxY,
+                        dimension: panelWidthValue,
+                        type: 'grouped_width_horizontal',
+                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                        priority: 2,
+                        avoidArea: projectBounds,
+                        quantity: panels.length, // Width dimensions show quantity (n × width)
+                        drawnPositions: new Set(),
+                        roomId: 'unknown',
+                        isHorizontal: false // This dimension line is vertical (Y-axis)
+                    };
+                    drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+                    // Mark as drawn AFTER drawing
+                    markDimensionDrawnAtLevel(panelWidthValue, centerX, false);
+                }
             }
         } else {
-            // Vertical panels: show BOTH dimensions
+            // Room orientation is vertical
             // IMPORTANT: For vertical orientation:
             // - panel.width (1150mm) is on X-axis (horizontal stacking dimension) - THIS IS THE GROUPING DIMENSION
             // - panel.length is on Y-axis (vertical dimension) - THIS IS THE SPAN DIMENSION
-            // Find the center and bounds of the panel group
-            const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.end_x))) / 2;
-            const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.end_y))) / 2;
-            const minX = Math.min(...panels.map(p => p.start_x));
-            const maxX = Math.max(...panels.map(p => p.end_x));
-            const minY = Math.min(...panels.map(p => p.start_y));
-            const maxY = Math.max(...panels.map(p => p.end_y));
             
-            console.log(`📐 [Vertical Orientation] Drawing grouped dimensions:`, {
-                panelCount: panels.length,
-                panelWidth: panels[0].width,
-                panelLength: panels[0].length,
-                bounds: { minX, maxX, minY, maxY },
-                xAxisSpan: maxX - minX,
-                yAxisSpan: maxY - minY
-            });
+            // Only show grouping dimension based on panel orientation:
+            // - If vertical panel (length > width): only show width grouping (panel.width)
+            // - If horizontal panel (width > length): only show length grouping (panel.length)
             
-            // 1. Panel WIDTH dimension (horizontal line) - X-axis dimension
-            // GROUPING DIMENSION: panel.width (1150mm) builds up X-axis (horizontal stacking)
-            // This should be drawn as a HORIZONTAL line (along X-axis)
-            const actualPanelWidth = panels[0].width;
-            if (!matchesRoomDimension(actualPanelWidth, roomWidth) && !isDimensionDrawnAtLevel(actualPanelWidth, centerY, true)) {
-                const widthDimension = {
-                    startX: minX,
-                    endX: maxX,
-                    startY: centerY,
-                    endY: centerY,
-                    dimension: actualPanelWidth,
-                    type: 'grouped_width_vertical',
-                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                    priority: 2,
-                    avoidArea: projectBounds,
-                    quantity: panels.length, // Width dimensions show quantity (n × width)
-                    drawnPositions: new Set(),
-                    roomId: 'unknown',
-                    isHorizontal: true // This dimension line is horizontal (X-axis) - GROUPING DIMENSION
-                };
-                console.log(`  → Drawing GROUPING dimension (panel.width=${actualPanelWidth}mm) as HORIZONTAL line (X-axis) with quantity ${panels.length}`);
-                drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
-                // Mark as drawn AFTER drawing
-                markDimensionDrawnAtLevel(actualPanelWidth, centerY, true);
-            }
-            
-            // 2. Panel LENGTH dimension (vertical line) - Y-axis dimension
-            // SPAN DIMENSION: panel.length spans Y-axis (vertical)
-            // This should be drawn as a VERTICAL line (along Y-axis)
-            const panelLength = panels[0].length;
-            if (!matchesRoomDimension(panelLength, roomLength) && !isDimensionDrawnAtLevel(panelLength, centerX, false)) {
-                const lengthDimension = {
-                    startX: centerX,
-                    endX: centerX,
-                    startY: minY,
-                    endY: maxY,
-                    dimension: panelLength,
-                    type: 'grouped_length_vertical',
-                    color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
-                    priority: 2,
-                    avoidArea: projectBounds,
-                    quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
-                    drawnPositions: new Set(),
-                    roomId: 'unknown',
-                    isHorizontal: false // This dimension line is vertical (Y-axis) - SPAN DIMENSION
-                };
-                console.log(`  → Drawing SPAN dimension (panel.length=${panelLength}mm) as VERTICAL line (Y-axis) without quantity`);
-                drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
-                // Mark as drawn AFTER drawing
-                markDimensionDrawnAtLevel(panelLength, centerX, false);
+            if (isVerticalPanel) {
+                // Vertical panel (length > width): only show WIDTH grouping (X-axis dimension)
+                // GROUPING DIMENSION: panel.width builds up X-axis (horizontal stacking)
+                // This should be drawn as a HORIZONTAL line (along X-axis)
+                const actualPanelWidth = panelWidth;
+                if (!matchesRoomDimension(actualPanelWidth, roomWidth) && !isDimensionDrawnAtLevel(actualPanelWidth, centerY, true)) {
+                    const widthDimension = {
+                        startX: minX,
+                        endX: maxX,
+                        startY: centerY,
+                        endY: centerY,
+                        dimension: actualPanelWidth,
+                        type: 'grouped_width_vertical',
+                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                        priority: 2,
+                        avoidArea: projectBounds,
+                        quantity: panels.length, // Width dimensions show quantity (n × width)
+                        drawnPositions: new Set(),
+                        roomId: 'unknown',
+                        isHorizontal: true // This dimension line is horizontal (X-axis) - GROUPING DIMENSION
+                    };
+                    console.log(`  → Drawing GROUPING dimension (panel.width=${actualPanelWidth}mm) as HORIZONTAL line (X-axis) with quantity ${panels.length}`);
+                    drawCeilingDimension(ctx, widthDimension, projectBounds, placedLabels, allLabels);
+                    // Mark as drawn AFTER drawing
+                    markDimensionDrawnAtLevel(actualPanelWidth, centerY, true);
+                }
+            } else if (isHorizontalPanel) {
+                // Horizontal panel (width > length): only show LENGTH grouping (Y-axis dimension)
+                // SPAN DIMENSION: panel.length spans Y-axis (vertical)
+                // This should be drawn as a VERTICAL line (along Y-axis)
+                const actualPanelLength = panelLength;
+                if (!matchesRoomDimension(actualPanelLength, roomLength) && !isDimensionDrawnAtLevel(actualPanelLength, centerX, false)) {
+                    const lengthDimension = {
+                        startX: centerX,
+                        endX: centerX,
+                        startY: minY,
+                        endY: maxY,
+                        dimension: actualPanelLength,
+                        type: 'grouped_length_vertical',
+                        color: DIMENSION_CONFIG.COLORS.PANEL_GROUP, // Grey for panel dimensions
+                        priority: 2,
+                        avoidArea: projectBounds,
+                        quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
+                        drawnPositions: new Set(),
+                        roomId: 'unknown',
+                        isHorizontal: false // This dimension line is vertical (Y-axis) - SPAN DIMENSION
+                    };
+                    console.log(`  → Drawing GROUPING dimension (panel.length=${actualPanelLength}mm) as VERTICAL line (Y-axis) with quantity ${panels.length}`);
+                    drawCeilingDimension(ctx, lengthDimension, projectBounds, placedLabels, allLabels);
+                    // Mark as drawn AFTER drawing
+                    markDimensionDrawnAtLevel(actualPanelLength, centerX, false);
+                }
             }
         }
     };

@@ -17,7 +17,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const [ceilingPanels, setCeilingPanels] = useState([]);
     const [projectData, setProjectData] = useState(null);
     const [storeys, setStoreys] = useState([]);
-    const [selectedStoreyId, setSelectedStoreyId] = useState(null); // null = show all levels
+    const [selectedStoreyId, setSelectedStoreyId] = useState("");
     // Cached project-wide waste % from latest POST, to ensure immediate UI update
     const [projectWastePercentage, setProjectWastePercentage] = useState(null);
     const [ceilingZones, setCeilingZones] = useState([]);
@@ -236,7 +236,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
     // Filter rooms and zones by selected storey
     const filteredRooms = useMemo(() => {
-        if (!selectedStoreyId) return allRooms; // Show all if no storey selected
+        // Remove the null check: if (!selectedStoreyId) return allRooms;
         return allRooms.filter(room => String(room.storey) === String(selectedStoreyId));
     }, [allRooms, selectedStoreyId]);
 
@@ -950,7 +950,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             const loadedStoreys = storeysResponse.data || [];
             setStoreys(loadedStoreys);
             // Set default storey to first one if available, or null to show all
-            if (loadedStoreys.length > 0 && selectedStoreyId === null) {
+            if (loadedStoreys.length > 0 && !selectedStoreyId) {
                 setSelectedStoreyId(loadedStoreys[0].id);
             }
             
@@ -2239,7 +2239,6 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                     }}
                                     className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
-                                    <option value="all">All Levels</option>
                                     {storeys.map(storey => (
                                         <option key={storey.id} value={storey.id}>
                                             {storey.name}

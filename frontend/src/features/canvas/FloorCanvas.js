@@ -530,222 +530,104 @@ const FloorCanvas = ({
         });
     };
 
-    // Draw floor panels with clipping mask (Fix for L-shaped rooms)
+    // Draw floor panels with winding-aware clipping mask
     const drawFloorPanels = (ctx, room, panels) => {
-        if (!panels || panels.length === 0) return;
+        if (!panels || panels.length === 0 || !room.room_points || room.room_points.length < 3) return;
+
+        const wallThickness = projectData?.wall_thickness || 150;
+        ctx.save(); 
 
         // ============================================================
-        // 1. START CLIPPING
-        // Define the room shape as a clipping mask so panels don't draw in the void
+        // 1. DETECT WINDING ORDER (Clockwise vs Counter-Clockwise)
+        // This prevents the "expand vs shrink" issue.
         // ============================================================
-        ctx.save(); // Save state before clipping
+        const pts = room.room_points;
+        let windingSum = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const p1 = pts[i];
+            const p2 = pts[(i + 1) % pts.length];
+            windingSum += (p2.x - p1.x) * (p2.y + p1.y);
+        }
+        // In Canvas (Y-down), sum > 0 is Clockwise. 
+        // We want the offset to always point INWARD.
+        const directionSign = windingSum > 0 ? -1 : 1;
 
-        if (room.room_points && room.room_points.length > 0) {
-            ctx.beginPath();
-            
-            // Move to the first point of the room polygon
-            // Applying scale and offset to match the canvas coordinate system
-            const startX = room.room_points[0].x * scaleFactor.current + offsetX.current;
-            const startY = room.room_points[0].y * scaleFactor.current + offsetY.current;
-            ctx.moveTo(startX, startY);
-            
-            // Draw lines to the rest of the points
-            for (let i = 1; i < room.room_points.length; i++) {
-                const px = room.room_points[i].x * scaleFactor.current + offsetX.current;
-                const py = room.room_points[i].y * scaleFactor.current + offsetY.current;
-                ctx.lineTo(px, py);
+        // ============================================================
+        // 2. GENERATE ROBUST PARALLEL INNER CLIPPING PATH
+        // ============================================================
+        ctx.beginPath();
+        const n = pts.length;
+        const offsetInner = [];
+
+        for (let i = 0; i < n; i++) {
+            const p1 = pts[(i + n - 1) % n];
+            const p2 = pts[i];
+            const p3 = pts[(i + 1) % n];
+
+            // Edge 1 Vector (p1 -> p2)
+            const dx1 = p2.x - p1.x;
+            const dy1 = p2.y - p1.y;
+            const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) || 1;
+            const n1x = -dy1 / len1; // Perpendicular Normal
+            const n1y = dx1 / len1;
+
+            // Edge 2 Vector (p2 -> p3)
+            const dx2 = p3.x - p2.x;
+            const dy2 = p3.y - p2.y;
+            const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1;
+            const n2x = -dy2 / len2; // Perpendicular Normal
+            const n2y = dx2 / len2;
+
+            // Bisector direction
+            let bx = n1x + n2x;
+            let by = n1y + n2y;
+            let bMag = Math.sqrt(bx * bx + by * by);
+
+            if (bMag < 0.0001) {
+                bx = n1x;
+                by = n1y;
+            } else {
+                bx /= bMag;
+                by /= bMag;
             }
-            
-            ctx.closePath();
-            ctx.clip(); // <--- ACTIVATES THE MASK: Nothing draws outside this polygon now
+
+            // Miter Length calculation to keep inner corner sharp
+            const cosAngle = n1x * n2x + n1y * n2y;
+            const miterLen = wallThickness / Math.sqrt((1 + cosAngle) / 2);
+
+            // Apply Winding-Aware Offset
+            const finalX = (p2.x + bx * miterLen * directionSign) * scaleFactor.current + offsetX.current;
+            const finalY = (p2.y + by * miterLen * directionSign) * scaleFactor.current + offsetY.current;
+
+            offsetInner.push({ x: finalX, y: finalY });
         }
 
+        ctx.moveTo(offsetInner[0].x, offsetInner[0].y);
+        for (let i = 1; i < offsetInner.length; i++) {
+            ctx.lineTo(offsetInner[i].x, offsetInner[i].y);
+        }
+        ctx.closePath();
+        ctx.clip(); 
+
         // ============================================================
-        // 2. DRAW PANELS
+        // 3. DRAW PANELS
         // ============================================================
         panels.forEach(panel => {
-            // Coordinate transformation
             const x = panel.start_x * scaleFactor.current + offsetX.current;
             const y = panel.start_y * scaleFactor.current + offsetY.current;
-            
             const width = panel.width * scaleFactor.current;
             const height = panel.length * scaleFactor.current;
 
-            // Check if it is a cut panel (handling various naming conventions)
-            const isCut = panel.is_cut_panel || panel.is_cut || panel.type === 'Cut';
-
-            // Styling matches standard Floor Plan colors
-            if (isCut) {
-                // Green for cut panels
-                ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'; 
-                ctx.strokeStyle = '#22c55e';
-            } else {
-                // Blue for full panels
-                ctx.fillStyle = 'rgba(59, 130, 246, 0.5)'; 
-                ctx.strokeStyle = '#3b82f6';
-            }
-            
+            const isCut = panel.is_cut_panel || panel.is_cut;
+            ctx.fillStyle = isCut ? 'rgba(34, 197, 94, 0.4)' : 'rgba(59, 130, 246, 0.4)';
+            ctx.strokeStyle = isCut ? '#22c55e' : '#3b82f6';
             ctx.lineWidth = 1;
 
-            // Draw the panel
-            // Because of ctx.clip(), any part of this rect outside the room_points is hidden
             ctx.fillRect(x, y, width, height);
             ctx.strokeRect(x, y, width, height);
-
-            // Optional: Inner dashed border for cut panels (Visual indicator)
-            if (isCut) {
-                ctx.save();
-                ctx.strokeStyle = '#22c55e'; // Green dash
-                ctx.setLineDash([5, 3]);
-                ctx.strokeRect(x + 2, y + 2, width - 4, height - 4);
-                ctx.restore();
-            }
         });
 
-        // ============================================================
-        // 3. END CLIPPING
-        // Restore context so subsequent drawings (text, dimensions) are NOT clipped
-        // ============================================================
         ctx.restore();
-    };
-    
-    // Draw "No floor plan available" message
-    const drawNoFloorPlanMessage = (ctx, room) => {
-        const centerX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
-        const centerY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
-        
-        const messageX = centerX * scaleFactor.current + offsetX.current;
-        const messageY = centerY * scaleFactor.current + offsetY.current;
-        
-        const messageText = 'No floor plan available';
-        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-        const textMetrics = ctx.measureText(messageText);
-        const textWidth = textMetrics.width;
-        const textHeight = 20 * scaleFactor.current;
-        
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.fillRect(
-            messageX - textWidth/2 - 10 * scaleFactor.current,
-            messageY - textHeight/2 - 5 * scaleFactor.current,
-            textWidth + 20 * scaleFactor.current,
-            textHeight + 10 * scaleFactor.current
-        );
-        
-        ctx.strokeStyle = '#9ca3af';
-        ctx.lineWidth = 1 * scaleFactor.current;
-        ctx.strokeRect(
-            messageX - textWidth/2 - 10 * scaleFactor.current,
-            messageY - textHeight/2 - 5 * scaleFactor.current,
-            textWidth + 20 * scaleFactor.current,
-            textHeight + 10 * scaleFactor.current
-        );
-        
-        ctx.fillStyle = '#6b7280';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(messageText, messageX, messageY);
-    };
-
-    // Draw slab calculation message
-    const drawSlabCalculationMessage = (ctx, room) => {
-        let labelX, labelY;
-        
-        if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
-            labelX = room.label_position.x;
-            labelY = room.label_position.y;
-        } else {
-            labelX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
-            labelY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
-        }
-        
-        const messageX = labelX * scaleFactor.current + offsetX.current;
-        const lineHeight = Math.max(16, 18 * scaleFactor.current);
-        const messageY = labelY * scaleFactor.current + offsetY.current + lineHeight;
-        
-        const roomArea = calculateRoomArea(room);
-        const slabArea = 1210 * 3000; 
-        const slabsNeeded = Math.ceil(roomArea / slabArea);
-        
-        const messageText = `Est. ${slabsNeeded} pieces of slab needed`;
-        
-        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-        const textMetrics = ctx.measureText(messageText);
-        const textWidth = textMetrics.width;
-        const textHeight = 16 * scaleFactor.current;
-        
-        const paddingH = 8 * scaleFactor.current;
-        const paddingV = 6 * scaleFactor.current;
-        
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.fillRect(
-            messageX - textWidth/2 - paddingH,
-            messageY - textHeight/2 - paddingV,
-            textWidth + paddingH * 2,
-            textHeight + paddingV * 2
-        );
-        
-        ctx.strokeStyle = '#10b981'; 
-        ctx.lineWidth = 1 * scaleFactor.current;
-        ctx.strokeRect(
-            messageX - textWidth/2 - paddingH,
-            messageY - textHeight/2 - paddingV,
-            textWidth + paddingH * 2,
-            textHeight + paddingV * 2
-        );
-        
-        ctx.fillStyle = '#10b981'; 
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(messageText, messageX, messageY);
-    };
-
-    // Draw "No floor plan needed" message
-    const drawNoPlanNeededMessage = (ctx, room) => {
-        let labelX, labelY;
-        
-        if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
-            labelX = room.label_position.x;
-            labelY = room.label_position.y;
-        } else {
-            labelX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
-            labelY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
-        }
-        
-        const messageX = labelX * scaleFactor.current + offsetX.current;
-        const lineHeight = Math.max(16, 18 * scaleFactor.current);
-        const messageY = labelY * scaleFactor.current + offsetY.current + lineHeight;
-        
-        const messageText = 'No floor plan needed';
-        
-        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-        const textMetrics = ctx.measureText(messageText);
-        const textWidth = textMetrics.width;
-        const textHeight = 16 * scaleFactor.current;
-        
-        const paddingH = 8 * scaleFactor.current;
-        const paddingV = 6 * scaleFactor.current;
-        
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.fillRect(
-            messageX - textWidth/2 - paddingH,
-            messageY - textHeight/2 - paddingV,
-            textWidth + paddingH * 2,
-            textHeight + paddingV * 2
-        );
-        
-        ctx.strokeStyle = '#9ca3af';
-        ctx.lineWidth = 1 * scaleFactor.current;
-        ctx.strokeRect(
-            messageX - textWidth/2 - paddingH,
-            messageY - textHeight/2 - paddingV,
-            textWidth + paddingH * 2,
-            textHeight + paddingV * 2
-        );
-        
-        ctx.fillStyle = '#6b7280';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(messageText, messageX, messageY);
     };
 
     // Draw title and info

@@ -1280,196 +1280,110 @@ class FloorService:
     
     @staticmethod
     def _generate_shape_aware_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
-        """
-        Robust Geometry Generator:
-        - Uses Shapely to handle ANY room shape (L, U, Diagonal, etc.).
-        - Applies precise wall thickness shrinking with Mitre joints.
-        - Falls back to rectangular filling if geometry engine fails (prevents empty results).
-        """
         try:
             panels = []
-            
-            # 1. CLEAN DATA
             clean_points = []
             for p in room_points:
                 x_val = float(p.get('x', p.get(0, 0)))
                 y_val = float(p.get('y', p.get(1, 0)))
                 clean_points.append({'x': x_val, 'y': y_val})
             
-            # 2. ROBUST GEOMETRY SETUP
             room_poly = None
             try:
                 from shapely.geometry import Polygon, box
                 from shapely.ops import orient
-                
-                # Create base polygon from points
                 original_poly = Polygon([(p['x'], p['y']) for p in clean_points]).buffer(0)
-                
-                # Force Counter-Clockwise orientation
                 original_poly = orient(original_poly, sign=1.0)
-                
-                # Apply Wall Thickness Offset (Shrink the room)
-                if wall_thickness > 0:
-                    # join_style=2 (MITRE) is critical for L-shapes
-                    room_poly = original_poly.buffer(-wall_thickness, join_style=2)
-                else:
-                    room_poly = original_poly
-                    
-                # Safety check
-                if room_poly.is_empty or not room_poly.is_valid:
-                    room_poly = original_poly
-
+                room_poly = original_poly.buffer(-wall_thickness, join_style=2) if wall_thickness > 0 else original_poly
             except Exception as e:
-                # CRITICAL FIX: Do not crash here. Just set room_poly to None.
-                # If None, the loop below will assume a rectangular fill (valid fallback).
-                print(f"Geometry engine fallback: {str(e)}")
                 room_poly = None
 
-            # 3. DIMENSIONS & GRID SETUP
             if orientation == 'horizontal':
-                # Horizontal: Panels run Left-to-Right (Width is variable/long, Height is fixed 1150)
                 p_width = float(panel_length) if panel_length != 'auto' else bounding_box['width']
-                p_height = panel_width # Usually 1150
+                p_height = panel_width 
             else:
-                # Vertical: Panels run Top-to-Bottom (Width is fixed 1150, Height is variable/long)
-                p_width = panel_width # Usually 1150
+                p_width = panel_width 
                 p_height = float(panel_length) if panel_length != 'auto' else bounding_box['height']
 
-            is_single_span_x = (orientation == 'horizontal' and p_width > (bounding_box['width'] * 0.9))
-            is_single_span_y = (orientation == 'vertical' and p_height > (bounding_box['height'] * 0.9))
-
-            # Grid Alignment
             if room_poly:
                 minx, miny, maxx, maxy = room_poly.bounds
             else:
-                minx = bounding_box['min_x']
-                miny = bounding_box['min_y']
-                maxx = bounding_box['max_x']
-                maxy = bounding_box['max_y']
+                minx, miny, maxx, maxy = bounding_box['min_x'], bounding_box['min_y'], bounding_box['max_x'], bounding_box['max_y']
             
-            # FIXED: Correct loop limits to prevent empty result for single-span panels
-            start_x = minx
-            limit_x = maxx
-            start_y = miny
-            limit_y = maxy
-
-            # 4. GENERATE LOOP
             panel_counter = 1
-            curr_y = start_y
-            
-            # Iterate through the grid
-            while curr_y < limit_y - 1.0: 
-                curr_x = start_x
-                while curr_x < limit_x - 1.0:
-                    
-                    p_end_x = curr_x + p_width
-                    p_end_y = curr_y + p_height
-                    
-                    # 5. INTERSECTION Logic
-                    isValid = False
-                    is_cut = False
+            curr_y = miny
+            while curr_y < maxy - 1.0: 
+                curr_x = minx
+                while curr_x < maxx - 1.0:
+                    p_end_x, p_end_y = curr_x + p_width, curr_y + p_height
+                    isValid, is_cut, from_leftover = False, False, False
                     cut_notes = ""
-                    from_leftover = False
-                    
-                    final_start_x = curr_x
-                    final_start_y = curr_y
-                    final_draw_width = p_width
-                    final_draw_length = p_height
                     
                     if room_poly:
-                        try:
-                            from shapely.geometry import box
-                            p_poly = box(curr_x, curr_y, p_end_x, p_end_y)
-                            intersection = room_poly.intersection(p_poly)
-                            
-                            if not intersection.is_empty and intersection.area > 500.0:
-                                isValid = True
-                                i_minx, i_miny, i_maxx, i_maxy = intersection.bounds
-                                
-                                final_start_x = i_minx
-                                final_start_y = i_miny
-                                final_draw_width = i_maxx - i_minx
-                                final_draw_length = i_maxy - i_miny
-                                
-                                # Cut Detection
-                                rect_area = final_draw_width * final_draw_length
-                                is_rectangular = (intersection.area / rect_area) > 0.98
-                                
-                                if orientation == 'horizontal':
-                                    is_full_standard = final_draw_length >= (p_height - 2.0)
-                                    check_dim = final_draw_length
-                                    standard_dim = p_height
-                                else:
-                                    is_full_standard = final_draw_width >= (p_width - 2.0)
-                                    check_dim = final_draw_width
-                                    standard_dim = p_width
-                                
-                                if not is_rectangular:
-                                    is_cut = True
-                                    cut_notes = "Shape Fit (L-Cut)"
-                                elif not is_full_standard:
-                                    is_cut = True
-                                    cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
-                                    
-                                    # LEFTOVER LOGIC
-                                    if leftover_tracker:
-                                        if orientation == 'horizontal':
-                                            needed_width = final_draw_length 
-                                            needed_length = final_draw_width
-                                        else:
-                                            needed_width = final_draw_width
-                                            needed_length = final_draw_length
-                                            
-                                        compatible = leftover_tracker.find_compatible_leftover(
-                                            needed_width, needed_length, floor_thickness
-                                        )
-                                        
-                                        if compatible:
-                                            leftover_tracker.use_leftover(compatible, needed_width)
-                                            cut_notes = f"From leftover {compatible['id']}"
-                                            from_leftover = True
-                                        else:
-                                            leftover_size = standard_dim - check_dim
-                                            if leftover_size > 50.0:
-                                                leftover_tracker.add_leftover(
-                                                    length=needed_length, 
-                                                    thickness=floor_thickness, 
-                                                    width_remaining=leftover_size
-                                                )
-                                
-                        except Exception as e:
-                            # Fallback if intersection math fails
-                            isValid = True
-                    else:
-                        # Fallback if room_poly is None (no Shapely)
-                        # Assume valid rectangle
-                        isValid = True
-                        # Ensure we don't draw beyond bounds in fallback mode
-                        if p_end_x > limit_x: final_draw_width = limit_x - curr_x
-                        if p_end_y > limit_y: final_draw_length = limit_y - curr_y
-
-                    if isValid:
-                        panels.append({
-                            'panel_id': f'FP_{panel_counter:03d}',
-                            'start_x': final_start_x,
-                            'start_y': final_start_y,
-                            'width': final_draw_width,
-                            'length': final_draw_length,
-                            'is_cut': is_cut,
-                            'cut_notes': cut_notes,
-                            'from_leftover': from_leftover,
-                            'end_x': final_start_x + final_draw_width,
-                            'end_y': final_start_y + final_draw_length
-                        })
-                        panel_counter += 1
+                        from shapely.geometry import box
+                        # 1. TEMPORARY GRID BOX
+                        grid_poly = box(curr_x, curr_y, p_end_x, p_end_y)
+                        intersection = room_poly.intersection(grid_poly)
                         
+                        if not intersection.is_empty and intersection.area > 500.0:
+                            isValid = True
+                            i_minx, i_miny, i_maxx, i_maxy = intersection.bounds
+                            
+                            # 2. DEFINE THE ACTUAL PANEL ENVELOPE (The cut size)
+                            final_draw_width = i_maxx - i_minx
+                            final_draw_length = i_maxy - i_miny
+                            
+                            # 3. CREATE A TIGHT PANEL BOX (This is the fix)
+                            # We create a box that matches the standard width but ONLY the cut length
+                            if orientation == 'vertical':
+                                p_poly = box(curr_x, i_miny, p_end_x, i_maxy)
+                                standard_dim = p_width
+                                check_dim = final_draw_width
+                            else:
+                                p_poly = box(i_minx, curr_y, i_maxx, p_end_y)
+                                standard_dim = p_height
+                                check_dim = final_draw_length
+
+                            # Cut Detection
+                            rect_area = final_draw_width * final_draw_length
+                            is_rectangular = (intersection.area / rect_area) > 0.98
+                            is_full_standard = check_dim >= (standard_dim - 2.0)
+                            
+                            if not is_rectangular:
+                                is_cut = True
+                                cut_notes = "Shape Fit (L-Cut)"
+                            elif not is_full_standard:
+                                is_cut = True
+                                cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
+
+                            # --- LEFTOVER TRACKING ---
+                            if leftover_tracker and is_cut:
+                                # PHYSICAL DIFFERENCE using the tight box
+                                waste_poly = p_poly.difference(intersection)
+                                if not waste_poly.is_empty:
+                                    waste_geoms = waste_poly.geoms if hasattr(waste_poly, 'geoms') else [waste_poly]
+                                    for part in waste_geoms:
+                                        if part.area > 5000.0:
+                                            w_minx, w_miny, w_maxx, w_maxy = part.bounds
+                                            scrap_w = w_maxx - w_minx if orientation == 'vertical' else w_maxy - w_miny
+                                            scrap_l = w_maxy - w_miny if orientation == 'vertical' else w_maxx - w_minx
+                                            
+                                            if scrap_w > 50.0:
+                                                # LO2 will now be 750 x 5100
+                                                leftover_tracker.add_leftover(scrap_l, floor_thickness, scrap_w)
+                                
+                            panels.append({
+                                'panel_id': f'FP_{panel_counter:03d}',
+                                'start_x': i_minx, 'start_y': i_miny,
+                                'width': final_draw_width, 'length': final_draw_length,
+                                'is_cut': is_cut, 'cut_notes': cut_notes, 'from_leftover': from_leftover,
+                                'end_x': i_maxx, 'end_y': i_maxy
+                            })
+                            panel_counter += 1
                     curr_x += p_width
                 curr_y += p_height
-
             return panels
-
         except Exception as e:
-            print(f"CRITICAL ERROR in Shape Gen: {e}")
             return []
     
     @staticmethod
