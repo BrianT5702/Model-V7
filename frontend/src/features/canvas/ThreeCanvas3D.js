@@ -24,11 +24,6 @@ const debugWarn = (...args) => {
 
 window.gsap = gsap;
 
-// Mobile-specific constants (matching Canvas2D)
-const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
-const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
-const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
-
 export default class ThreeCanvas {
   constructor(containerId, walls, joints = [], doors = [], scalingFactor = 0.01, project = null) {
     this.container = document.getElementById(containerId);
@@ -468,9 +463,6 @@ animateToExteriorView() {
         floorLevels.push(child);
       }
     });
-
-    // Debug: Exterior view animation
-    // debugLog(`🏠 Exterior view: Animating ${ceilingLevels.length} ceilings and ${floorLevels.length} floors into view`);
 
     // Animate all ceiling levels
     ceilingLevels.forEach(ceiling => {
@@ -2501,82 +2493,6 @@ getModelBounds() {
     // This is a simplified calculation - actual count may vary based on panel arrangement
     return panels.length * 2; // Rough estimate: 2 lines per panel on average
   }
-
-  // Method to create a simple 3D demonstration of 45-degree joints
-  create45DegreeJointDemo() {
-    try {
-      debugLog('🔨 Creating 45-degree joint demonstration...');
-      
-      // Clear existing demo objects
-      this.scene.traverse((object) => {
-        if (object.userData?.isDemo45Joint) {
-          this.scene.remove(object);
-        }
-      });
-      
-      // Create two walls for demonstration
-      // Wall A: Vertical wall (from bottom to top)
-      const wallA = {
-        id: 'demo_wall_a',
-        start_x: 0,
-        start_y: 0,
-        end_x: 0,
-        end_y: 3000, // 3m tall vertical wall
-        height: 2500, // 2.5m high
-        thickness: 150,
-        application_type: 'wall'
-      };
-      
-      // Wall B: Horizontal wall (from left to right)
-      const wallB = {
-        id: 'demo_wall_b', 
-        start_x: 0,
-        start_y: 0,
-        end_x: 3000, // 3m long horizontal wall
-        end_y: 0,
-        height: 2500, // 2.5m high
-        thickness: 150,
-        application_type: 'wall'
-      };
-      
-      // Create intersection data for 45-degree joint
-      const joint = {
-        id: 'demo_joint',
-        wall_1: 'demo_wall_a',
-        wall_2: 'demo_wall_b',
-        joining_method: '45_cut'
-      };
-      
-      // Create the walls using the existing mesh creation logic
-      const wallAMesh = this.createWallMeshWith45Cut(wallA, [joint]);
-      const wallBMesh = this.createWallMeshWith45Cut(wallB, [joint]);
-      
-      if (wallAMesh) {
-        wallAMesh.userData.isDemo45Joint = true;
-        wallAMesh.userData.wallId = 'demo_wall_a';
-        wallAMesh.material.color.setHex(0x4ECDC4); // Teal for Wall A
-        this.scene.add(wallAMesh);
-        debugLog('✅ Created demo Wall A (vertical)');
-      }
-      
-      if (wallBMesh) {
-        wallBMesh.userData.isDemo45Joint = true;
-        wallBMesh.userData.wallId = 'demo_wall_b';
-        wallBMesh.material.color.setHex(0xFF6B6B); // Red for Wall B
-        this.scene.add(wallBMesh);
-        debugLog('✅ Created demo Wall B (horizontal)');
-      }
-      
-      debugLog('🎯 45-degree joint demonstration created!');
-      debugLog('   - Wall A (Vertical): Teal color');
-      debugLog('   - Wall B (Horizontal): Red color');
-      debugLog('   - Joint: 45-degree mitered corner');
-      
-    } catch (error) {
-      console.error('❌ Error creating 45-degree joint demo:', error);
-    }
-  }
-  
   // Helper method to create wall mesh with 45-degree cuts
   createWallMeshWith45Cut(wall, joints) {
     try {
@@ -2646,169 +2562,6 @@ getModelBounds() {
     } catch (error) {
       console.error(`❌ Error creating wall mesh for ${wall.id}:`, error);
       return null;
-    }
-  }
-
-  // Test method for ceiling panel lines functionality
-  testCeilingPanelLinesFunctionality() {
-    debugLog('🧪 Testing ceiling panel lines functionality...');
-    
-    // First, let's check what project data we have
-    debugLog('🏠 Project data:', this.project);
-    if (this.project && this.project.rooms) {
-      debugLog('🏠 Rooms data:', this.project.rooms);
-      this.project.rooms.forEach(room => {
-        debugLog(`🏠 Room ${room.id} (${room.room_name}):`, {
-          ceiling_plan: room.ceiling_plan,
-          ceiling_panels_from_plan: room.ceiling_plan?.ceiling_panels,
-          ceiling_panels_count: room.ceiling_plan?.ceiling_panels ? room.ceiling_plan.ceiling_panels.length : 0,
-          room_points: room.room_points,
-          room_points_count: room.room_points ? room.room_points.length : 0
-        });
-        
-        // If we have ceiling panels, show some sample data
-        if (room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0) {
-          debugLog(`🏠 Sample ceiling panels for room ${room.id}:`, room.ceiling_plan.ceiling_panels.slice(0, 3));
-        }
-      });
-    }
-    
-    // Test ceiling panel calculation
-    const ceilingPanelsMap = this.calculateCeilingPanels();
-    debugLog('🏠 Ceiling panels map:', ceilingPanelsMap);
-    
-    // Test individual methods
-    Object.values(ceilingPanelsMap).forEach(({ room, panels }) => {
-      debugLog(`🏠 Room ${room.id} (${room.room_name}): ${panels.length} panels`);
-      panels.forEach((panel, index) => {
-        debugLog(`  Panel ${index + 1}: ${panel.width}x${panel.length}mm at (${panel.start_x}, ${panel.start_y}) - (${panel.end_x}, ${panel.end_y})`);
-        if (panel.is_cut_panel) {
-          debugLog(`    ⚠️ Cut panel: ${panel.cut_notes || 'No notes'}`);
-        }
-      });
-    });
-    
-    // Test toggle functionality
-    debugLog('🔄 Testing ceiling panel lines toggle...');
-    this.toggleCeilingPanelLines();
-    debugLog('✅ Ceiling panel lines toggled ON');
-    
-    setTimeout(() => {
-      this.toggleCeilingPanelLines();
-      debugLog('✅ Ceiling panel lines toggled OFF');
-    }, 2000);
-    
-    // Test combined toggle
-    setTimeout(() => {
-      debugLog('🔄 Testing combined panel lines toggle...');
-      this.toggleAllPanelLines();
-      debugLog('✅ All panel lines toggled ON');
-    }, 4000);
-    
-    setTimeout(() => {
-      this.toggleAllPanelLines();
-      debugLog('✅ All panel lines toggled OFF');
-    }, 6000);
-  }
-
-  // Test method for ceiling and floor functionality
-  testCeilingFunctionality() {
-    debugLog('🧪 Testing ceiling and floor functionality...');
-    
-    // Log all scene objects
-    debugLog('🔍 All scene objects:', this.scene.children.map(child => ({
-      name: child.name,
-      type: child.type,
-      userData: child.userData,
-      visible: child.visible
-    })));
-    
-    // Find all ceilings
-    const allCeilings = this.scene.children.filter(child => 
-      child.name && child.name.toLowerCase().includes('ceiling')
-    );
-    
-    // Find all floors
-    const allFloors = this.scene.children.filter(child => 
-      child.name && child.name.toLowerCase().includes('floor')
-    );
-    
-    
-    // Test direct opacity change for ceilings
-    allCeilings.forEach(ceiling => {
-      if (ceiling.material) {
-        
-        // Try to change opacity directly
-        ceiling.material.opacity = 0.3;
-        ceiling.material.transparent = true;
-        
-        // Force render update
-        if (this.renderer) {
-          this.renderer.render(this.scene, this.camera);
-        }
-        
-        debugLog(`  - New opacity: ${ceiling.material.opacity}`);
-      }
-    });
-    
-    // Test direct opacity change for floors
-    allFloors.forEach(floor => {
-      if (floor.material) {
-        
-        // Try to change opacity directly
-        floor.material.opacity = 0.3;
-        floor.material.transparent = true;
-        
-        // Force render update
-        if (this.renderer) {
-          this.renderer.render(this.scene, this.camera);
-        }
-      }
-    });
-    
-    // Test GSAP for ceilings
-    if (allCeilings.length > 0 && allCeilings[0].material) {
-      try {
-        gsap.to(allCeilings[0].material, {
-          opacity: 0,
-          duration: 2,
-          ease: "power2.inOut",
-          onUpdate: () => {
-            debugLog(`🔄 GSAP update - ceiling opacity: ${allCeilings[0].material.opacity}`);
-            if (this.renderer) {
-              this.renderer.render(this.scene, this.camera);
-            }
-          },
-          onComplete: () => {
-            debugLog('✅ GSAP animation for ceilings completed');
-          }
-        });
-      } catch (error) {
-        console.error('❌ GSAP test for ceilings failed:', error);
-      }
-    }
-    
-    // Test GSAP for floors
-    if (allFloors.length > 0 && allFloors[0].material) {
-      debugLog('🧪 Testing GSAP animation for floors...');
-      try {
-        gsap.to(allFloors[0].material, {
-          opacity: 0,
-          duration: 2,
-          ease: "power2.inOut",
-          onUpdate: () => {
-            debugLog(`🔄 GSAP update - floor opacity: ${allFloors[0].material.opacity}`);
-            if (this.renderer) {
-              this.renderer.render(this.scene, this.camera);
-            }
-          },
-          onComplete: () => {
-            debugLog('✅ GSAP animation for floors completed');
-          }
-        });
-      } catch (error) {
-        console.error('❌ GSAP test for floors failed:', error);
-      }
     }
   }
 
@@ -3220,12 +2973,5 @@ getModelBounds() {
       console.error('Error creating floor:', error);
       // Don't crash the app if floor creation fails
     }
-  }
-  
-  // Method to test 45-degree joint demonstration
-  test45DegreeJointDemo() {
-    debugLog('🧪 Testing 45-degree joint demonstration...');
-    this.create45DegreeJointDemo();
-    debugLog('✅ 45-degree joint demo created! Check the 3D view.');
   }
 }
