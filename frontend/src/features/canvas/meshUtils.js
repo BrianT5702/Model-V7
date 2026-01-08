@@ -426,7 +426,9 @@ export function createWallMesh(instance, wall) {
   // Determine which face to cut from (inner vs outer) at start/end based on joining wall side
   let startCutOnInner = false;
   let endCutOnInner = false;
-  const jointTolerance = 0.01; // 1cm tolerance for joint detection at extended endpoints
+  // CRITICAL: Use more lenient tolerance for 45_cut joints (10cm instead of 1cm)
+  // After extension, walls should meet, but floating point precision might cause slight differences
+  const jointTolerance = 0.1; // 10cm tolerance - more lenient for 45_cut joints
   // After extension, check for 45_cut joints at the extended endpoints
   // Use the intersection points that were already calculated during extension
   if (instance.joints && instance.joints.length) {
@@ -456,12 +458,14 @@ export function createWallMesh(instance, wall) {
           const jointX = snap(intersection.x);
           const jointZ = snap(intersection.z);
           // After extension, check if this joint is at start or end of THIS wall
-          // Use tighter tolerance since endpoints should match exactly after extension
+          // Use lenient tolerance to account for floating point precision after extension
           const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
           const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
+          // Determine which endpoint is closer to the intersection
+          const isCloserToStart = startDist < endDist;
           // Check if joint is at start endpoint (after extension)
-          // After extension, the endpoint should be very close to the intersection point
-          if (startDist < jointTolerance) {
+          // Use the closer endpoint if within tolerance, or if significantly closer than the other
+          if (isCloserToStart && (startDist < jointTolerance || startDist < endDist * 0.5)) {
             hasStart45 = true;
             startJointInfo = {
               otherWall,
@@ -513,8 +517,8 @@ export function createWallMesh(instance, wall) {
             });
           }
           // Check if joint is at end endpoint (after extension)
-          // After extension, the endpoint should be very close to the intersection point
-          if (endDist < jointTolerance) {
+          // Use the closer endpoint if within tolerance, or if significantly closer than the other
+          if (!isCloserToStart && (endDist < jointTolerance || endDist < startDist * 0.5)) {
             hasEnd45 = true;
             endJointInfo = {
               otherWall,
@@ -711,7 +715,9 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
 
   const lenX = Math.max(1e-8, Math.abs(maxX - minX));
   const thickness = Math.max(1e-8, maxZ - minZ);
-  const epsEndX = Math.max(1e-6 * lenX, 1e-5);
+  // CRITICAL: Use more lenient tolerance for vertex detection (at least 1cm or 0.1% of wall length)
+  // This ensures vertices are detected correctly for extended walls with floating-point inaccuracies
+  const epsEndX = Math.max(0.001 * lenX, 0.01);
   console.log(`[apply45DegreeCuts] Geometry bounds:`, {
     minX,
     maxX,
@@ -764,8 +770,30 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
     totalVertices: vcount
   });
 
+  // CRITICAL: Force complete geometry update
+  // For extended walls, recreate the position attribute to ensure Three.js recognizes changes
   pos.needsUpdate = true;
+  
+  // CRITICAL: Create a new Float32Array copy to ensure Three.js sees the changes
+  // This is especially important for extended walls where geometry might be cached
+  const modifiedArray = new Float32Array(arr);
+  wallMesh.geometry.setAttribute('position', new instance.THREE.BufferAttribute(modifiedArray, 3));
+  wallMesh.geometry.attributes.position.needsUpdate = true;
+  
+  // Recompute bounding box after vertex modifications
+  wallMesh.geometry.computeBoundingBox();
+  
+  // Recompute normals - this is essential for proper rendering
   wallMesh.geometry.computeVertexNormals();
+  
+  // Force update of all attributes
+  if (wallMesh.geometry.attributes.normal) {
+    wallMesh.geometry.attributes.normal.needsUpdate = true;
+  }
+  
+  // Force geometry to be marked as changed
+  wallMesh.geometry.computeBoundingSphere();
+  
   return wallMesh;
 }
 
