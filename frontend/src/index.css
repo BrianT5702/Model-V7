@@ -51,8 +51,10 @@ code {
 .project-details-container {
   min-height: 100vh;
   height: auto;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
   width: 100%;
+  max-width: 100%;
 }
 
 /* Ensure headers span full width and match scrollable content */
@@ -60,7 +62,8 @@ code {
   display: flex;
   flex-direction: column;
   width: 100%;
-  min-width: max-content;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .project-details-container .bg-white.border-b.shadow-sm {
@@ -73,7 +76,8 @@ code {
 /* Ensure content area defines the scrollable width */
 .project-details-container .flex.min-h-\[calc\(100vh-120px\)\] {
   width: 100%;
-  min-width: max-content;
+  min-width: 0;
+  max-width: 100%;
   flex-shrink: 0;
 }
 
@@ -143,6 +147,34 @@ code {
   /* Allow browser zoom to work naturally */
   transform: none;
   transform-origin: initial;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Ensure flex layouts are responsive and don't overflow */
+.wall-canvas-wrapper,
+.ceiling-canvas-wrapper {
+  min-width: 0;
+  flex: 1 1 0%;
+  max-width: 100%;
+}
+
+/* Make sidebars responsive */
+.wall-summary-sidebar,
+.ceiling-summary-sidebar {
+  min-width: 0;
+  flex-shrink: 1;
+  max-width: 256px;
+}
+
+/* Ensure flex containers with gaps don't overflow */
+.wall-canvas-container > div:first-of-type > div.flex.gap-6,
+.ceiling-canvas-container > div.flex.gap-6,
+.floor-canvas-container > div.flex.gap-6 {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* Ensure canvas elements scale with browser zoom */

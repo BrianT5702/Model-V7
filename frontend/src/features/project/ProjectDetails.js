@@ -729,7 +729,7 @@ const ProjectDetails = () => {
     return (
         <div className="min-h-screen bg-gray-50 project-details-container">
             {/* Wrapper to contain header and content for full-width header */}
-            <div className="w-full" style={{ display: 'flex', flexDirection: 'column', minWidth: 'max-content' }}>
+            <div className="w-full" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '100%' }}>
             {/* Full-Screen Loading Modal for Image Capture */}
             {isCapturingImages && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
@@ -1317,7 +1317,7 @@ const ProjectDetails = () => {
                 </div>
             )}
 
-            <div className="flex min-h-[calc(100vh-120px)] relative" style={{ width: '100%', minWidth: 'max-content' }}>
+            <div className="flex min-h-[calc(100vh-120px)] relative" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
                 {/* Mobile Sidebar Overlay */}
                 {sidebarOpen && (
                     <div 
@@ -1795,23 +1795,6 @@ const ProjectDetails = () => {
                                                 <span className="lg:hidden hidden sm:inline">Summary</span>
                                                 <span className="sm:hidden">Time</span>
                                             </button>
-                                        </div>
-                                        <div className="text-xs sm:text-sm text-gray-600">
-                                            {projectDetails.currentView === 'wall-plan' 
-                                                ? ''
-                                                : projectDetails.currentView === 'ceiling-plan'
-                                                ? 'Generate and manage ceiling panels for optimal coverage'
-                                                : projectDetails.currentView === 'floor-plan'
-                                                ? 'Generate and manage floor panels for optimal coverage (only for rooms with floor_type = "panel")'
-                                                : projectDetails.currentView === 'installation-estimator'
-                                                ? 'Project overview with installation time calculations'
-                                                : 'Click and drag to navigate, use scroll to zoom'
-                                            }
-                                            {projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 && !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel') && projectDetails.currentView === 'floor-plan' && (
-                                                <span className="text-orange-600 font-medium ml-2">
-                                                    ⚠️ No rooms with panel floors found
-                                                </span>
-                                            )}
                                         </div>
                                     </div>
                                 </div>

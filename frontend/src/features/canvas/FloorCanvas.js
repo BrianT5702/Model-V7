@@ -1411,9 +1411,9 @@ const FloorCanvas = ({
 
     return (
         <div className="floor-canvas-container">
-            <div className="flex gap-6">
+            <div className="flex gap-6 min-w-0 w-full max-w-full">
                 {/* Main Canvas Area */}
-                <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg flex-1">
+                <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg flex-1 min-w-0">
                     <div
                         ref={canvasContainerRef}
                         className="relative"
@@ -1486,7 +1486,7 @@ const FloorCanvas = ({
                 </div>
 
                 {/* Sidebar */}
-                <div className="w-80 bg-white border-2 border-gray-200 rounded-xl shadow-lg p-6 h-fit">
+                <div className="flex-shrink min-w-0 max-w-64 w-full bg-white border-2 border-gray-200 rounded-xl shadow-lg p-6 h-fit">
                     <div className="flex items-center mb-4">
                         <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
