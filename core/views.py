@@ -139,10 +139,21 @@ class WallViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         
-        # After updating a wall, recalculate room boundaries for all rooms that contain this wall
+        # After updating a wall, recalculate room boundaries ONLY for rooms on the same storey
+        # This prevents cross-level contamination when editing walls on different levels
         from .services import RoomService
         rooms_with_wall = instance.rooms.all()
-        for room in rooms_with_wall:
+        
+        # Filter rooms by the wall's storey to prevent affecting other levels
+        if instance.storey_id:
+            # Only recalculate rooms on the same storey as the wall
+            rooms_to_update = rooms_with_wall.filter(storey_id=instance.storey_id)
+        else:
+            # If wall has no storey, only update rooms that also have no storey
+            # (This handles legacy data or unassigned walls)
+            rooms_to_update = rooms_with_wall.filter(storey__isnull=True)
+        
+        for room in rooms_to_update:
             RoomService.recalculate_room_boundary_from_walls(room.id)
         
         return Response(serializer.data)
@@ -309,10 +320,12 @@ class RoomViewSet(viewsets.ModelViewSet):
             logger.info(f"Updated room height to: {updated_room.height}")
             
             # If height is being updated, update wall heights
+            # Pass the room's storey_id to prevent cross-level contamination
             if 'height' in request.data and request.data['height'] is not None:
                 wall_ids = list(updated_room.walls.values_list('id', flat=True))
-                logger.info(f"Updating {len(wall_ids)} walls with new height: {request.data['height']}")
-                updated_count = RoomService.update_wall_heights_for_room(wall_ids, request.data['height'])
+                room_storey_id = updated_room.storey_id if updated_room.storey_id else None
+                logger.info(f"Updating {len(wall_ids)} walls with new height: {request.data['height']}, room storey: {room_storey_id}")
+                updated_count = RoomService.update_wall_heights_for_room(wall_ids, request.data['height'], room_storey_id=room_storey_id)
                 logger.info(f"Successfully updated {updated_count} walls")
             
             # Always recalculate room boundaries after any room update to ensure consistency

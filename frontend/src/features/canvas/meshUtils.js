@@ -108,20 +108,58 @@ export function createWallMesh(instance, wall) {
     wallHeight = gap_fill_height * scale;
   } else {
     // Normal mode: floor to ceiling
-    // Find rooms that contain this wall and use the minimum base elevation
-    // This ensures walls are positioned correctly for raised rooms
+    // Find rooms that contain this wall ON THE SAME STOREY and use the minimum base elevation
+    // This ensures walls are positioned correctly for raised rooms and prevents cross-level contamination
     let minBaseElevation = 0;
-    if (instance.project && instance.project.rooms) {
-      const roomsWithWall = instance.project.rooms.filter(room => 
+    const wallStoreyId = wall.storey ?? wall.storey_id;
+    
+    if (instance.project && instance.project.rooms && instance.project.storeys) {
+      // Filter rooms by the wall's storey to prevent cross-level contamination
+      let roomsWithWall = instance.project.rooms.filter(room => 
         room.walls && room.walls.some(wallId => String(wallId) === String(id))
       );
+      
+      // CRITICAL: Only consider rooms on the same storey as the wall
+      if (wallStoreyId) {
+        roomsWithWall = roomsWithWall.filter(room => 
+          String(room.storey) === String(wallStoreyId) || String(room.storey_id) === String(wallStoreyId)
+        );
+      } else {
+        // If wall has no storey, only consider rooms with no storey (legacy data)
+        roomsWithWall = roomsWithWall.filter(room => 
+          !room.storey && !room.storey_id
+        );
+      }
+      
       if (roomsWithWall.length > 0) {
-        // Use the minimum base elevation (lowest room) so wall starts from the lowest point
+        // Get the storey for elevation calculation
+        const wallStorey = instance.project.storeys.find(s => 
+          String(s.id) === String(wallStoreyId)
+        );
+        const storeyElevation = wallStorey ? (wallStorey.elevation_mm ?? 0) : 0;
+        
+        // Calculate absolute elevation: storey elevation + room base elevation
         const baseElevations = roomsWithWall
-          .map(room => room.base_elevation_mm ?? 0)
+          .map(room => {
+            const roomBaseElevation = room.base_elevation_mm ?? 0;
+            const absoluteElevation = storeyElevation + roomBaseElevation; // Absolute elevation
+            console.log(`[Wall ${id}] Room ${room.id}: storey=${wallStoreyId}, storeyElevation=${storeyElevation}, roomBaseElevation=${roomBaseElevation}, absoluteElevation=${absoluteElevation}`);
+            return absoluteElevation;
+          })
           .filter(elev => !isNaN(elev));
+        
         if (baseElevations.length > 0) {
           minBaseElevation = Math.min(...baseElevations);
+          console.log(`[Wall ${id}] Final minBaseElevation: ${minBaseElevation}mm`);
+        }
+      } else if (wallStoreyId) {
+        // If wall has a storey but no rooms, use the storey's base elevation
+        const wallStorey = instance.project.storeys.find(s => 
+          String(s.id) === String(wallStoreyId)
+        );
+        if (wallStorey) {
+          minBaseElevation = wallStorey.elevation_mm ?? 0;
+          console.log(`[Wall ${id}] No rooms, using storey elevation: ${minBaseElevation}mm`);
         }
       }
     }

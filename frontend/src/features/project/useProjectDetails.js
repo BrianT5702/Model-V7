@@ -1197,7 +1197,13 @@ export default function useProjectDetails(projectId) {
         const container = document.getElementById('three-canvas-container');
         if (container) {
           try {
-            const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors, 0.01, project);
+            // Create combined project object with storeys and rooms for 3D canvas
+            const projectWithData = project ? {
+              ...project,
+              storeys: storeys || [],
+              rooms: rooms || []
+            } : null;
+            const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors, 0.01, projectWithData);
             threeCanvasInstance.current = threeCanvas;
           } catch (error) {
             console.error('Error creating 3D canvas:', error);
@@ -1237,12 +1243,18 @@ export default function useProjectDetails(projectId) {
     // eslint-disable-next-line
   }, [is3DView, walls, joints, doors]);
 
-  // Update 3D canvas when walls, joints, or doors change
+  // Update 3D canvas when walls, joints, doors, project, storeys, or rooms change
   useEffect(() => {
     if (is3DView && threeCanvasInstance.current) {
-      threeCanvasInstance.current.updateData(walls, joints, doors);
+      // Create combined project object with storeys and rooms for 3D canvas
+      const projectWithData = project ? {
+        ...project,
+        storeys: storeys || [],
+        rooms: rooms || []
+      } : null;
+      threeCanvasInstance.current.updateData(walls, joints, doors, projectWithData);
     }
-  }, [is3DView, walls, joints, doors]);
+  }, [is3DView, walls, joints, doors, project, storeys, rooms]);
 
   // Sync panel lines visibility with 3D canvas
   useEffect(() => {
@@ -2594,7 +2606,18 @@ export default function useProjectDetails(projectId) {
     startPoint = normalizedCoords.startPoint;
     endPoint = normalizedCoords.endPoint;
     
-    // 1. Find all intersections between the new wall and existing walls (not at endpoints)
+    // CRITICAL: Only check intersections with walls on the same storey to prevent cross-level splitting
+    const targetStoreyId = activeStoreyId ?? defaultStoreyId;
+    const wallsOnSameStorey = walls.filter(wall => {
+      const wallStoreyId = wall.storey ?? wall.storey_id;
+      if (targetStoreyId === null || targetStoreyId === undefined) {
+        // If no active storey, only match walls with no storey
+        return wallStoreyId === null || wallStoreyId === undefined;
+      }
+      return String(wallStoreyId) === String(targetStoreyId);
+    });
+    
+    // 1. Find all intersections between the new wall and existing walls on the same storey (not at endpoints)
     const intersections = [];
     const isAtEndpoint = (pt, w) =>
       (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
@@ -2612,7 +2635,7 @@ export default function useProjectDetails(projectId) {
       const closest = { x: wall.start_x + t * dx, y: wall.start_y + t * dy };
       return Math.abs(closest.x - pt.x) < 0.001 && Math.abs(closest.y - pt.y) < 0.001;
     };
-    walls.forEach(wall => {
+    wallsOnSameStorey.forEach(wall => {
       // 1a. Standard intersection
       const intersection = calculateIntersection(
         { x: startPoint.x, y: startPoint.y },
@@ -2648,6 +2671,9 @@ export default function useProjectDetails(projectId) {
         { x: wall.start_x, y: wall.start_y },
         { x: intersection.x, y: intersection.y }
       );
+      // CRITICAL: Preserve the original wall's storey for split segments
+      const wallStoreyId = wall.storey ?? wall.storey_id ?? activeStoreyId ?? defaultStoreyId;
+      
       wallsToAdd.push({
         start_x: segment1Coords.startPoint.x,
         start_y: segment1Coords.startPoint.y,
@@ -2661,7 +2687,7 @@ export default function useProjectDetails(projectId) {
         outer_face_material: wall.outer_face_material || 'PPGI',
         outer_face_thickness: wall.outer_face_thickness ?? 0.5,
         project: project.id,
-        storey: wall.storey ?? activeStoreyId ?? defaultStoreyId
+        storey: wallStoreyId  // Use the original wall's storey
       });
       
       // Normalize second segment
@@ -2682,7 +2708,7 @@ export default function useProjectDetails(projectId) {
         outer_face_material: wall.outer_face_material || 'PPGI',
         outer_face_thickness: wall.outer_face_thickness ?? 0.5,
         project: project.id,
-        storey: wall.storey ?? activeStoreyId ?? defaultStoreyId
+        storey: wallStoreyId  // Use the original wall's storey
       });
     });
 
@@ -2713,7 +2739,7 @@ export default function useProjectDetails(projectId) {
         outer_face_material: wallProps.outer_face_material || 'PPGI',
         outer_face_thickness: wallProps.outer_face_thickness ?? 0.5,
         project: project.id,
-        storey: wallProps.storey ?? activeStoreyId ?? defaultStoreyId
+        storey: activeStoreyId ?? defaultStoreyId  // Always use active storey for new walls
       });
     }
 

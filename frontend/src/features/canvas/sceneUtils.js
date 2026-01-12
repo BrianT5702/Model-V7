@@ -105,7 +105,54 @@ export function addCeiling(instance) {
     instance.scene.remove(existingCeiling);
   }
 
-  // Get the building footprint vertices
+  // CRITICAL: Only create ceiling if there are declared rooms
+  // Do not create ceiling based on wall endpoints alone
+  if (!instance.project || !instance.project.rooms || instance.project.rooms.length === 0) {
+    console.log('No rooms declared - skipping ceiling creation');
+    return;
+  }
+
+  // Check if there are rooms with valid room_points
+  const validRooms = instance.project.rooms.filter(room => 
+    room.room_points && Array.isArray(room.room_points) && room.room_points.length >= 3
+  );
+
+  if (validRooms.length === 0) {
+    console.log('No rooms with valid room_points - skipping ceiling creation');
+    return;
+  }
+
+  // Calculate ceiling elevation based on storey elevation + room base elevation + room height
+  // Use the maximum top elevation (highest room) for the ceiling
+  let maxCeilingElevation = 0;
+  if (instance.project && instance.project.storeys && instance.project.storeys.length > 0) {
+    validRooms.forEach(room => {
+      const roomStoreyId = room.storey ?? room.storey_id;
+      const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
+      const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
+      const roomBaseElevation = room.base_elevation_mm ?? 0;
+      const roomHeight = room.height ?? 0;
+      const absoluteTop = storeyElevation + roomBaseElevation + roomHeight;
+      console.log(`[Ceiling] Room ${room.id}: storey=${roomStoreyId}, storeyElevation=${storeyElevation}, baseElevation=${roomBaseElevation}, height=${roomHeight}, absoluteTop=${absoluteTop}`);
+      if (absoluteTop > maxCeilingElevation) {
+        maxCeilingElevation = absoluteTop;
+      }
+    });
+    console.log(`[Ceiling] Final maxCeilingElevation: ${maxCeilingElevation}mm`);
+  } else {
+    console.warn('[Ceiling] No storeys found in project, using fallback calculation');
+    // Fallback: use room base + height if no storeys
+    validRooms.forEach(room => {
+      const roomBaseElevation = room.base_elevation_mm ?? 0;
+      const roomHeight = room.height ?? 0;
+      const absoluteTop = roomBaseElevation + roomHeight;
+      if (absoluteTop > maxCeilingElevation) {
+        maxCeilingElevation = absoluteTop;
+      }
+    });
+  }
+
+  // Get the building footprint vertices (will use room points since rooms exist)
   const vertices = getBuildingFootprint(instance);
   if (vertices.length < 3) {
     return;
@@ -216,9 +263,8 @@ export function addCeiling(instance) {
   // Create mesh
   const ceiling = new instance.THREE.Mesh(geometry, material);
   ceiling.name = 'ceiling';
-  // Position the ceiling at the top of the walls
-  const maxWallHeight = Math.max(...instance.walls.map(wall => wall.height));
-  ceiling.position.y = maxWallHeight * instance.scalingFactor;
+  // Position the ceiling at the calculated elevation (storey elevation + room base + room height)
+  ceiling.position.y = maxCeilingElevation * instance.scalingFactor;
   
   // Add edge lines to match wall appearance
   const edges = new instance.THREE.EdgesGeometry(geometry);
@@ -248,7 +294,56 @@ export function addFloor(instance) {
     instance.scene.remove(existingFloor);
   }
 
-  // Get the building footprint vertices
+  // CRITICAL: Only create floor if there are declared rooms
+  // Do not create floor based on wall endpoints alone
+  if (!instance.project || !instance.project.rooms || instance.project.rooms.length === 0) {
+    console.log('No rooms declared - skipping floor creation');
+    return;
+  }
+
+  // Check if there are rooms with valid room_points
+  const validRooms = instance.project.rooms.filter(room => 
+    room.room_points && Array.isArray(room.room_points) && room.room_points.length >= 3
+  );
+
+  if (validRooms.length === 0) {
+    console.log('No rooms with valid room_points - skipping floor creation');
+    return;
+  }
+
+  // Calculate floor elevation based on storey elevation + room base elevation
+  // Use the minimum base elevation (lowest room) for the floor
+  let minFloorElevation = Infinity;
+  if (instance.project && instance.project.storeys && instance.project.storeys.length > 0) {
+    validRooms.forEach(room => {
+      const roomStoreyId = room.storey ?? room.storey_id;
+      const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
+      const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
+      const roomBaseElevation = room.base_elevation_mm ?? 0;
+      const absoluteBase = storeyElevation + roomBaseElevation;
+      console.log(`[Floor] Room ${room.id}: storey=${roomStoreyId}, storeyElevation=${storeyElevation}, baseElevation=${roomBaseElevation}, absoluteBase=${absoluteBase}`);
+      if (absoluteBase < minFloorElevation) {
+        minFloorElevation = absoluteBase;
+      }
+    });
+    console.log(`[Floor] Final minFloorElevation: ${minFloorElevation}mm`);
+  } else {
+    console.warn('[Floor] No storeys found in project, using fallback calculation');
+    // Fallback: use room base elevation if no storeys
+    validRooms.forEach(room => {
+      const roomBaseElevation = room.base_elevation_mm ?? 0;
+      if (roomBaseElevation < minFloorElevation) {
+        minFloorElevation = roomBaseElevation;
+      }
+    });
+  }
+  
+  // If no valid elevation found, default to 0
+  if (minFloorElevation === Infinity) {
+    minFloorElevation = 0;
+  }
+
+  // Get the building footprint vertices (will use room points since rooms exist)
   const vertices = getBuildingFootprint(instance);
   if (vertices.length < 3) {
     return;
@@ -364,8 +459,8 @@ export function addFloor(instance) {
   const floor = new instance.THREE.Mesh(geometry, material);
   floor.name = 'floor';
   
-  // Position the floor at ground level
-  floor.position.y = 0;
+  // Position the floor at the calculated elevation (storey elevation + room base elevation)
+  floor.position.y = minFloorElevation * instance.scalingFactor;
   
   // Add edge lines to match wall appearance
   const edges = new instance.THREE.EdgesGeometry(geometry);

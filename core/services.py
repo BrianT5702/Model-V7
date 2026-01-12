@@ -574,15 +574,22 @@ class RoomService:
         return min_height
 
     @staticmethod
-    def update_wall_heights_for_room(wall_ids, new_height):
+    def update_wall_heights_for_room(wall_ids, new_height, room_storey_id=None):
         """Update the height of all walls in a room to match the room height.
         For shared walls (walls that belong to multiple rooms), the wall height
-        will be set to the maximum height of all rooms that share the wall."""
+        will be set to the maximum height of all rooms that share the wall ON THE SAME STOREY.
+        This prevents cross-level contamination when editing walls on different levels.
+        
+        Args:
+            wall_ids: List of wall IDs to update
+            new_height: New height value
+            room_storey_id: Optional storey ID to filter rooms by (prevents cross-level updates)
+        """
         from .models import Wall, Room
         import logging
         
         logger = logging.getLogger(__name__)
-        logger.info(f"update_wall_heights_for_room called with wall_ids: {wall_ids}, new_height: {new_height}")
+        logger.info(f"update_wall_heights_for_room called with wall_ids: {wall_ids}, new_height: {new_height}, room_storey_id: {room_storey_id}")
         
         if not wall_ids or new_height is None:
             logger.warning(f"Invalid parameters: wall_ids={wall_ids}, new_height={new_height}")
@@ -603,27 +610,37 @@ class RoomService:
         
         # Process each wall individually to handle shared walls
         for wall in walls:
-            logger.info(f"Processing wall {wall.id}: current height = {wall.height}")
+            logger.info(f"Processing wall {wall.id}: current height = {wall.height}, storey_id = {wall.storey_id}")
             
-            # Get all rooms that contain this wall
-            rooms_containing_wall = wall.rooms.all()
-            logger.info(f"Wall {wall.id} is shared by {rooms_containing_wall.count()} room(s)")
+            # Get rooms that contain this wall, filtered by storey to prevent cross-level contamination
+            if wall.storey_id:
+                # Only consider rooms on the same storey as the wall
+                rooms_containing_wall = wall.rooms.filter(storey_id=wall.storey_id)
+                logger.info(f"Wall {wall.id} (storey {wall.storey_id}) is shared by {rooms_containing_wall.count()} room(s) on the same storey")
+            elif room_storey_id:
+                # If wall has no storey but we have a room storey, use that
+                rooms_containing_wall = wall.rooms.filter(storey_id=room_storey_id)
+                logger.info(f"Wall {wall.id} (no storey) filtered by room storey {room_storey_id}: {rooms_containing_wall.count()} room(s)")
+            else:
+                # Fallback: only rooms with no storey (legacy data)
+                rooms_containing_wall = wall.rooms.filter(storey__isnull=True)
+                logger.info(f"Wall {wall.id} (no storey, no room_storey_id): {rooms_containing_wall.count()} room(s) with no storey")
             
-            # Collect heights from all rooms that contain this wall
+            # Collect heights from filtered rooms only
             room_heights = []
             for room in rooms_containing_wall:
                 if room.height is not None:
                     room_heights.append(room.height)
-                    logger.info(f"  Room {room.id} ({room.room_name}): height = {room.height}")
+                    logger.info(f"  Room {room.id} ({room.room_name}, storey {room.storey_id}): height = {room.height}")
             
-            # If wall is not in any room, use the provided new_height
+            # If wall is not in any room on this storey, use the provided new_height
             if not room_heights:
                 target_height = new_height
-                logger.info(f"Wall {wall.id} is not in any room, using provided height: {target_height}")
+                logger.info(f"Wall {wall.id} is not in any room on this storey, using provided height: {target_height}")
             else:
-                # Use the maximum height of all rooms sharing this wall
+                # Use the maximum height of all rooms sharing this wall ON THE SAME STOREY
                 target_height = max(room_heights)
-                logger.info(f"Wall {wall.id} is shared by {len(room_heights)} room(s), using max height: {target_height}")
+                logger.info(f"Wall {wall.id} is shared by {len(room_heights)} room(s) on the same storey, using max height: {target_height}")
             
             # Update the wall height
             wall.height = target_height
@@ -734,7 +751,9 @@ class RoomService:
                 walls_to_update = [wall.id for wall in walls]
             
             if walls_to_update:
-                updated_count = RoomService.update_wall_heights_for_room(walls_to_update, room_data['height'])
+                # Pass the room's storey_id to prevent cross-level contamination
+                room_storey_id = room.storey_id if room.storey_id else None
+                updated_count = RoomService.update_wall_heights_for_room(walls_to_update, room_data['height'], room_storey_id=room_storey_id)
                 logger.info(f"Updated {updated_count} walls for room {room.id}")
         
         return room
@@ -757,10 +776,12 @@ class RoomService:
             logger.info(f"Updated room height to: {room.height}")
             
             # Update all wall heights for this room
+            # Pass the room's storey_id to prevent cross-level contamination
             wall_ids = list(room.walls.values_list('id', flat=True))
-            logger.info(f"Found {len(wall_ids)} walls associated with room: {wall_ids}")
+            room_storey_id = room.storey_id if room.storey_id else None
+            logger.info(f"Found {len(wall_ids)} walls associated with room: {wall_ids}, room storey: {room_storey_id}")
             
-            updated_count = RoomService.update_wall_heights_for_room(wall_ids, new_height)
+            updated_count = RoomService.update_wall_heights_for_room(wall_ids, new_height, room_storey_id=room_storey_id)
             logger.info(f"Updated {updated_count} walls for room {room_id}")
             
             return room

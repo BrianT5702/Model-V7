@@ -240,6 +240,15 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         return allRooms.filter(room => String(room.storey) === String(selectedStoreyId));
     }, [allRooms, selectedStoreyId]);
 
+    // Filter walls by selected storey
+    const filteredWalls = useMemo(() => {
+        if (!selectedStoreyId) return allWalls; // Show all if no storey selected
+        return allWalls.filter(wall => {
+            const wallStoreyId = wall.storey ?? wall.storey_id;
+            return String(wallStoreyId) === String(selectedStoreyId);
+        });
+    }, [allWalls, selectedStoreyId]);
+
     const filteredZones = useMemo(() => {
         if (!selectedStoreyId) return ceilingZones; // Show all if no storey selected
         return ceilingZones.filter(zone => {
@@ -2776,7 +2785,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         {/* Canvas */}
                         <CeilingCanvas
                             rooms={filteredRooms}
-                            walls={allWalls}
+                            walls={filteredWalls}
                             intersections={allIntersections}
                             ceilingPlan={ceilingPlan}
                             ceilingPlans={ceilingPlans}
