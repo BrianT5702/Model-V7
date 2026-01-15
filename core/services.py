@@ -5776,22 +5776,38 @@ class CeilingService:
     
     @staticmethod
     def _generate_panels_for_single_room(room, orientation_strategy, panel_width, panel_length, leftover_tracker=None, ceiling_thickness=150):
-        """Generate panels for a single room with specified orientation, with optional leftover tracking and reuse"""
+        """Generate panels for a single room with specified orientation, with optional leftover tracking and reuse."""
         try:
-            # Convert room_points to proper format if needed
-            if not room.room_points:
+            # Ensure we have valid room_points; if missing/invalid, try to recalculate from walls once
+            room_points = getattr(room, 'room_points', None)
+
+            if not room_points or not isinstance(room_points, (list, tuple)) or len(room_points) < 3:
+                try:
+                    # Lazy import to avoid circular dependencies
+                    from .services import RoomService  # type: ignore
+                    logger.info(f"Room {room.id} has invalid room_points; attempting boundary recalculation from walls")
+                    if RoomService.recalculate_room_boundary_from_walls(room.id):
+                        # Refresh room instance to get updated room_points
+                        room.refresh_from_db()
+                        room_points = getattr(room, 'room_points', None)
+                except Exception as e:
+                    logger.error(f"Failed to recalculate room boundary for room {getattr(room, 'id', 'unknown')}: {e}")
+
+            # If still invalid after recalculation, abort gracefully
+            if not room_points or not isinstance(room_points, (list, tuple)) or len(room_points) < 3:
+                logger.warning(f"Room {getattr(room, 'id', 'unknown')} has no valid room_points even after recalculation; skipping panel generation")
                 return []
-            
+
             # Ensure room_points is a list of dicts
-            room_points = room.room_points
             if isinstance(room_points, list) and len(room_points) > 0:
                 # Convert to list of dicts if needed
                 if not isinstance(room_points[0], dict):
-                    room_points = [{'x': p.x, 'y': p.y} if hasattr(p, 'x') else {'x': p[0], 'y': p[1]} for p in room_points]
+                    room_points = [
+                        {'x': p.x, 'y': p.y} if hasattr(p, 'x') else {'x': p[0], 'y': p[1]}
+                        for p in room_points
+                    ]
             else:
-                return []
-            
-            if len(room_points) < 3:
+                logger.warning(f"Room {getattr(room, 'id', 'unknown')} room_points structure is invalid; skipping panel generation")
                 return []
             
             # Calculate bounding box for this room
@@ -5829,34 +5845,29 @@ class CeilingService:
                 orientation_type = 'vertical'  # Default
                 logger.warning(f"  → DEFAULTED to VERTICAL (unknown strategy: {orientation_strategy})")
             
-            # Calculate Cut L area reduction for this room
+            # Calculate Cut L area reduction for this room (for logging)
             cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
             if cut_l_reduction > 0:
                 logger.info(f"  Room {room.id}: Cut L area reduction = {cut_l_reduction:.2f}mm²")
             
-            # Adjust bounding box for Cut L wall offsets (panels should be offset inward)
-            adjusted_bounding_box = CeilingService.adjust_bounding_box_for_cut_l(
-                bounding_box, room, room_points
-            )
+            # Calculate Cut L offset distance (like project-wide generation does)
+            # This is the actual offset distance, not the area reduction
+            cut_l_offset = 0.0
+            walls = room.walls.filter(ceiling_joint_type='cut_l')
+            if walls.exists():
+                w = walls.first()
+                ext = CeilingService.get_cut_l_horizontal_extension(w)
+                cut_l_offset = max(0.0, w.thickness - ext)
+                logger.debug(f"  Room {room.id}: Cut L offset distance = {cut_l_offset}mm (wall thickness: {w.thickness}mm, extension: {ext}mm)")
             
-            # Adjust room_points to match the adjusted bounding box for Cut L offsets
-            # This creates an "effective" room polygon that accounts for Cut L reductions
-            adjusted_room_points = CeilingService.adjust_room_points_for_cut_l_offset(
-                room_points, room, adjusted_bounding_box, bounding_box
-            )
-            
-            # Log the adjustments for debugging
-            if cut_l_reduction > 0:
-                logger.info(f"  Room {room.id}: Using adjusted bounding box for panel generation")
-                logger.info(f"    Original: ({bounding_box['min_x']:.1f}, {bounding_box['min_y']:.1f}) to ({bounding_box['max_x']:.1f}, {bounding_box['max_y']:.1f})")
-                logger.info(f"    Adjusted: ({adjusted_bounding_box['min_x']:.1f}, {adjusted_bounding_box['min_y']:.1f}) to ({adjusted_bounding_box['max_x']:.1f}, {adjusted_bounding_box['max_y']:.1f})")
-            
-            # Generate panels for this room only (with leftover tracking if provided)
-            logger.debug(f"  Generating panels: {adjusted_bounding_box['width']}x{adjusted_bounding_box['height']}mm, {len(adjusted_room_points)} points, {orientation_type}")
+            # Use the same approach as project-wide generation: use original bounding box and room_points
+            # and pass cut_l_offset to _generate_shape_aware_panels (it handles the offset internally)
+            # This matches the behavior of _generate_enhanced_room_panels which works correctly
+            logger.debug(f"  Generating panels: {bounding_box['width']}x{bounding_box['height']}mm, {len(room_points)} points, {orientation_type}, cut_l_offset={cut_l_offset}mm")
             
             panels = CeilingService._generate_shape_aware_panels(
-                adjusted_bounding_box, adjusted_room_points, orientation_type, panel_width, panel_length, 
-                leftover_tracker, ceiling_thickness, cut_l_area_reduction=cut_l_reduction
+                bounding_box, room_points, orientation_type, panel_width, panel_length, 
+                leftover_tracker, ceiling_thickness, cut_l_offset=cut_l_offset
             )
             
             logger.debug(f"  Generated {len(panels)} raw panels")
@@ -5896,15 +5907,47 @@ class CeilingService:
             
             all_panels = []
             rooms = Room.objects.filter(project_id=project_id)
+            rooms_count = rooms.count()
+            logger.info(f"Found {rooms_count} rooms in project {project_id}")
+            
+            if rooms_count == 0:
+                logger.error(f"No rooms found for project {project_id}!")
+                return [], leftover_tracker
             
             # Get the room ID that has custom configuration
             custom_room_id = room_specific_config.get('room_id')
+            
+            if custom_room_id is None:
+                logger.error("room_specific_config missing 'room_id'!")
+                return [], leftover_tracker
+            
+            # Verify target room exists in queryset
+            target_room_exists = rooms.filter(id=custom_room_id).exists()
+            logger.info(f"Target room {custom_room_id} exists in project: {target_room_exists}")
+            if not target_room_exists:
+                logger.error(f"Target room {custom_room_id} not found in project {project_id}!")
+                # Try to get the room directly to see if it exists
+                try:
+                    target_room = Room.objects.get(id=custom_room_id, project_id=project_id)
+                    logger.info(f"Room {custom_room_id} exists but was filtered out of queryset!")
+                except Room.DoesNotExist:
+                    logger.error(f"Room {custom_room_id} does not exist in database!")
+                    return [], leftover_tracker
+                except Exception as e:
+                    logger.error(f"Error checking room {custom_room_id}: {e}")
+                    return [], leftover_tracker
+            
             custom_orientation = room_specific_config.get('orientation_strategy', global_orientation_strategy)
             
-            logger.info(f"Generating ceiling panels for {rooms.count()} rooms (room-specific mode)")
+            rooms_list = list(rooms)  # Convert to list to ensure we can iterate
+            logger.info(f"Generating ceiling panels for {len(rooms_list)} rooms (room-specific mode)")
             logger.info(f"  Custom room ID: {custom_room_id}")
             logger.info(f"  Custom orientation from config: {custom_orientation}")
             logger.info(f"  Global orientation: {global_orientation_strategy}")
+            
+            if len(rooms_list) == 0:
+                logger.error(f"❌ No rooms found for project {project_id}!")
+                return [], leftover_tracker
             
             # Extract room-specific parameters from config
             custom_panel_width = room_specific_config.get('panel_width', global_panel_width) if room_specific_config else global_panel_width
@@ -5914,10 +5957,18 @@ class CeilingService:
             
             logger.info(f"Room-specific config values: panel_width={custom_panel_width}, panel_length={custom_panel_length}, ceiling_thickness={custom_ceiling_thickness}")
             
-            for room in rooms:
+            rooms_processed = 0
+            for room in rooms_list:
+                rooms_processed += 1
                 # Determine orientation for this room
-                if str(room.id) == str(custom_room_id):
+                room_id_str = str(room.id)
+                custom_room_id_str = str(custom_room_id) if custom_room_id else None
+                
+                logger.debug(f"Processing room {room.id} (name: {room.room_name}), comparing with custom_room_id: {custom_room_id} (str: {custom_room_id_str})")
+                
+                if room_id_str == custom_room_id_str or int(room.id) == int(custom_room_id):
                     # This is the room being updated - use custom orientation and room-specific parameters
+                    logger.info(f"  ✓ MATCH: Room {room.id} matches target room {custom_room_id}")
                     # Normalize orientation: convert 'vertical'/'horizontal' to 'all_vertical'/'all_horizontal'
                     if custom_orientation:
                         orientation_lower = str(custom_orientation).lower()
@@ -5938,6 +5989,8 @@ class CeilingService:
                     
                     logger.info(f"  Room {room.id} ({room.room_name}): Using CUSTOM config - orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
                 else:
+                    # This room is not the target - use existing or global settings
+                    logger.debug(f"  Room {room.id} does not match target {custom_room_id}, using default config")
                     # Check if room has existing ceiling plan with orientation
                     if hasattr(room, 'ceiling_plan') and room.ceiling_plan and room.ceiling_plan.orientation_strategy:
                         room_orientation = room.ceiling_plan.orientation_strategy
@@ -5954,6 +6007,14 @@ class CeilingService:
                 
                 # Generate panels for this room with its specific orientation and parameters (with leftover tracking)
                 logger.info(f"  Generating panels for room {room.id} with: orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
+                
+                # Check room_points before generation
+                room_points = getattr(room, 'room_points', None)
+                if room_points:
+                    logger.debug(f"  Room {room.id} has {len(room_points)} room_points")
+                else:
+                    logger.warning(f"  Room {room.id} has NO room_points!")
+                
                 room_panels = CeilingService._generate_panels_for_single_room(
                     room, room_orientation, room_panel_width, room_panel_length, 
                     leftover_tracker, room_ceiling_thickness
@@ -5961,10 +6022,27 @@ class CeilingService:
                 
                 logger.info(f"  > Generated {len(room_panels)} panels for room {room.id}")
                 
+                # Verify room_id assignment
+                if room_panels:
+                    sample_panel = room_panels[0]
+                    assigned_room_id = sample_panel.get('room_id')
+                    logger.debug(f"  Sample panel room_id: {assigned_room_id} (expected: {room.id}, match: {assigned_room_id == room.id})")
+                else:
+                    logger.warning(f"  ⚠️ No panels generated for room {room.id}!")
+                
                 # Add to all panels
                 all_panels.extend(room_panels)
             
-            logger.info(f"Total panels generated: {len(all_panels)}")
+            logger.info(f"Processed {rooms_processed} rooms, generated {len(all_panels)} total panels")
+            
+            if len(all_panels) == 0:
+                logger.error(f"⚠️ WARNING: No panels were generated for any room in project {project_id}!")
+                logger.error(f"  Processed {rooms_count} rooms")
+                logger.error(f"  Target room ID: {custom_room_id}")
+                # Try to get more info about why panels weren't generated
+                for room in rooms[:5]:  # Check first 5 rooms
+                    room_points = getattr(room, 'room_points', None)
+                    logger.error(f"  Room {room.id} ({room.room_name}): room_points={len(room_points) if room_points else 0}")
             
             # Log leftover statistics
             leftover_stats = leftover_tracker.get_stats()
@@ -5973,9 +6051,10 @@ class CeilingService:
             return all_panels, leftover_tracker
             
         except Exception as e:
-            logger.error(f"Error in _generate_panels_with_room_specific_orientation: {str(e)}")
+            logger.error(f"❌ EXCEPTION in _generate_panels_with_room_specific_orientation: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            # Return empty list but log the error clearly
             return [], LeftoverTracker(context='GENERATION')
     
     @staticmethod
@@ -6009,26 +6088,57 @@ class CeilingService:
                 logger.debug(f"Config: {room_specific_config}")
                 
                 # Room-specific generation: generate each room with its own orientation (with leftover tracking)
+                logger.info(f"Calling _generate_panels_with_room_specific_orientation for project {project_id}, room {room_specific_config.get('room_id')}")
                 enhanced_panels, project_leftover_tracker = CeilingService._generate_panels_with_room_specific_orientation(
                     project_id, panel_width, panel_length, ceiling_thickness,
                     orientation_strategy, room_specific_config
                 )
+                
+                logger.info(f"Received {len(enhanced_panels)} panels from _generate_panels_with_room_specific_orientation")
                 
                 # Get leftover stats from tracker
                 leftover_stats = project_leftover_tracker.get_stats()
                 logger.info(f"ROOM-SPECIFIC GENERATION - Leftover stats: {leftover_stats}")
                 target_room_id = room_specific_config.get('room_id')
                 if target_room_id is not None:
-                    generated_for_target_room = any(
-                        str(panel.get('room_id')) == str(target_room_id) for panel in enhanced_panels
-                    )
+                    # Normalize target_room_id to ensure consistent comparison
+                    target_room_id_normalized = int(target_room_id) if target_room_id else None
+                    logger.info(f"Checking for panels for target room ID: {target_room_id} (normalized: {target_room_id_normalized})")
+                    logger.info(f"Total panels generated: {len(enhanced_panels)}")
+                    
+                    # Log all unique room_ids in generated panels for debugging
+                    unique_room_ids = set()
+                    for panel in enhanced_panels:
+                        room_id = panel.get('room_id')
+                        if room_id is not None:
+                            unique_room_ids.add(str(room_id))
+                    logger.info(f"Unique room IDs in generated panels: {sorted(unique_room_ids)}")
+                    
+                    # Check if panels were generated for the target room
+                    generated_for_target_room = False
+                    matching_panels = []
+                    for panel in enhanced_panels:
+                        panel_room_id = panel.get('room_id')
+                        if panel_room_id is not None:
+                            # Try both string and integer comparison
+                            if (str(panel_room_id) == str(target_room_id) or 
+                                str(panel_room_id) == str(target_room_id_normalized) or
+                                int(panel_room_id) == int(target_room_id) or
+                                int(panel_room_id) == target_room_id_normalized):
+                                generated_for_target_room = True
+                                matching_panels.append(panel)
+                    
+                    logger.info(f"Found {len(matching_panels)} panels matching target room ID {target_room_id}")
+                    
                     if not generated_for_target_room:
-                        return {
-                            'error': (
-                                'Failed to regenerate ceiling plan for the selected room because no panels '
-                                'could be generated. Please verify the room geometry and try again.'
-                            )
-                        }
+                        # Provide more detailed error message
+                        error_msg = (
+                            f'Failed to regenerate ceiling plan for room {target_room_id} because no panels '
+                            f'could be generated. Generated {len(enhanced_panels)} panels total for rooms: {sorted(unique_room_ids)}. '
+                            f'Please verify the room geometry and try again.'
+                        )
+                        logger.error(error_msg)
+                        return {'error': error_msg}
                 
                 # Use a dummy strategy for metadata
                 orientation_analysis = CeilingService.analyze_orientation_strategies(

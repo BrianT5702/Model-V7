@@ -107,24 +107,57 @@ export function createWallMesh(instance, wall) {
     basePositionY = gap_base_position * scale;
     wallHeight = gap_fill_height * scale;
   } else {
-    // Normal mode: use wall's base_elevation_mm field for positioning
-    // If base_elevation_manual=true, wall.base_elevation_mm was manually set and takes priority over room base elevations
-    // Otherwise, wall.base_elevation_mm is automatically set based on room relationships (minimum of all rooms containing the wall)
-    const wallStoreyId = wall.storey ?? wall.storey_id;
-    let wallBaseElevation = wall.base_elevation_mm ?? 0;
+    // Normal mode: determine base elevation based on whether it was manually set
+    // Use room or wall base elevation directly (absolute values), don't add storey elevation
+    // since rooms on the new level might have different elevations
+    let wallBaseElevation = 0;
     
-    // Add storey elevation if wall has a storey (wall.base_elevation_mm is relative to storey, like room.base_elevation_mm)
-    if (instance.project && instance.project.storeys && wallStoreyId) {
-      const wallStorey = instance.project.storeys.find(s => 
-        String(s.id) === String(wallStoreyId)
-      );
-      const storeyElevation = wallStorey ? (wallStorey.elevation_mm ?? 0) : 0;
-      wallBaseElevation = storeyElevation + wallBaseElevation;
-      const manualNote = wall.base_elevation_manual ? ' (MANUAL)' : '';
-      console.log(`[Wall ${id}] Using wall.base_elevation_mm=${wall.base_elevation_mm}mm${manualNote} + storeyElevation=${storeyElevation}mm = total=${wallBaseElevation}mm`);
+    // If base_elevation_manual is true, use wall's base_elevation_mm (manually set, absolute value)
+    // Otherwise, use the minimum base_elevation_mm from rooms containing this wall (absolute value)
+    if (wall.base_elevation_manual) {
+      // Use manually set wall base elevation (absolute value)
+      wallBaseElevation = wall.base_elevation_mm ?? 0;
+      console.log(`[Wall ${id}] Using wall.base_elevation_mm=${wallBaseElevation}mm (MANUAL - absolute value)`);
     } else {
-      const manualNote = wall.base_elevation_manual ? ' (MANUAL)' : '';
-      console.log(`[Wall ${id}] Using wall.base_elevation_mm=${wall.base_elevation_mm}mm${manualNote} (no storey)`);
+      // Use room base elevation (minimum of all rooms containing this wall, absolute value)
+      const roomsContainingWall = [];
+      
+      // Get rooms from instance.project.rooms that contain this wall
+      if (instance.project && instance.project.rooms) {
+        instance.project.rooms.forEach(room => {
+          const roomWalls = Array.isArray(room.walls) ? room.walls : [];
+          // Check if room.walls contains this wall ID (handle both ID arrays and object arrays)
+          const hasWall = roomWalls.some(w => {
+            const wallId = typeof w === 'object' ? w.id : w;
+            return String(wallId) === String(id);
+          });
+          
+          if (hasWall) {
+            roomsContainingWall.push(room);
+          }
+        });
+      }
+      
+      // Get minimum base_elevation_mm from rooms containing this wall
+      if (roomsContainingWall.length > 0) {
+        const roomBaseElevations = roomsContainingWall
+          .map(room => room.base_elevation_mm)
+          .filter(elev => elev !== undefined && elev !== null)
+          .map(elev => Number(elev) || 0);
+        
+        if (roomBaseElevations.length > 0) {
+          wallBaseElevation = Math.min(...roomBaseElevations);
+          console.log(`[Wall ${id}] Using room base_elevation=${wallBaseElevation}mm (AUTO - minimum from ${roomsContainingWall.length} room(s), absolute value)`);
+        } else {
+          // Fallback to wall's base_elevation_mm if no room base elevations found
+          wallBaseElevation = wall.base_elevation_mm ?? 0;
+          console.log(`[Wall ${id}] Fallback to wall.base_elevation_mm=${wallBaseElevation}mm (no room elevations found)`);
+        }
+      } else {
+        // No rooms found, fallback to wall's base_elevation_mm
+        wallBaseElevation = wall.base_elevation_mm ?? 0;
+        console.log(`[Wall ${id}] Fallback to wall.base_elevation_mm=${wallBaseElevation}mm (no rooms found)`);
+      }
     }
     
     // basePositionY is the Y position for the bottom of the wall in 3D space

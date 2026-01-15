@@ -1418,6 +1418,8 @@ export default function useProjectDetails(projectId) {
         
         setRoomCreateSuccess(true);
         setTimeout(() => setRoomCreateSuccess(false), 3000);
+        // Clear editing room state so form fields are reset for next room
+        setEditingRoom(null);
         setShowRoomManagerModal(false);
         updateRoomPointsAndDetectWalls([]);
         setCurrentMode(null);
@@ -1451,6 +1453,8 @@ export default function useProjectDetails(projectId) {
         }
       }
       
+      // Clear editing room state so form fields are reset for next room
+      setEditingRoom(null);
       setShowRoomManagerModal(false);
       updateRoomPointsAndDetectWalls([]);
       setCurrentMode(null);
@@ -2744,6 +2748,34 @@ export default function useProjectDetails(projectId) {
       });
     });
 
+    // 2.5. Find walls touching start/end points to inherit base_elevation_mm
+    // Check all walls (not just same storey) to find touching walls from any level
+    const ENDPOINT_TOLERANCE = 0.001; // 1mm tolerance for endpoint matching
+    let baseElevationToUse = null;
+    
+    // Find wall touching start point
+    const startTouchingWall = walls.find(wall => {
+      const distToStart = Math.hypot(wall.start_x - startPoint.x, wall.start_y - startPoint.y);
+      const distToEnd = Math.hypot(wall.end_x - startPoint.x, wall.end_y - startPoint.y);
+      return distToStart < ENDPOINT_TOLERANCE || distToEnd < ENDPOINT_TOLERANCE;
+    });
+    
+    // Find wall touching end point
+    const endTouchingWall = walls.find(wall => {
+      const distToStart = Math.hypot(wall.start_x - endPoint.x, wall.start_y - endPoint.y);
+      const distToEnd = Math.hypot(wall.end_x - endPoint.x, wall.end_y - endPoint.y);
+      return distToStart < ENDPOINT_TOLERANCE || distToEnd < ENDPOINT_TOLERANCE;
+    });
+    
+    // Prefer start wall's base elevation, then end wall's base elevation
+    if (startTouchingWall && startTouchingWall.base_elevation_mm !== undefined && startTouchingWall.base_elevation_mm !== null) {
+      baseElevationToUse = Number(startTouchingWall.base_elevation_mm);
+      console.log(`[Wall Creation] Using base_elevation_mm=${baseElevationToUse}mm from start touching wall ${startTouchingWall.id}`);
+    } else if (endTouchingWall && endTouchingWall.base_elevation_mm !== undefined && endTouchingWall.base_elevation_mm !== null) {
+      baseElevationToUse = Number(endTouchingWall.base_elevation_mm);
+      console.log(`[Wall Creation] Using base_elevation_mm=${baseElevationToUse}mm from end touching wall ${endTouchingWall.id}`);
+    }
+
     // 3. Split the new wall at intersection points (sort by distance from start)
     let splitPoints = [startPoint, ...intersections.map(i => i.intersection), endPoint];
     splitPoints = splitPoints.sort((a, b) => {
@@ -2758,7 +2790,7 @@ export default function useProjectDetails(projectId) {
         { x: splitPoints[i].x, y: splitPoints[i].y },
         { x: splitPoints[i+1].x, y: splitPoints[i+1].y }
       );
-      newWallSegments.push({
+      const wallData = {
         start_x: segmentCoords.startPoint.x,
         start_y: segmentCoords.startPoint.y,
         end_x: segmentCoords.endPoint.x,
@@ -2772,7 +2804,14 @@ export default function useProjectDetails(projectId) {
         outer_face_thickness: wallProps.outer_face_thickness ?? 0.5,
         project: project.id,
         storey: activeStoreyId ?? defaultStoreyId  // Always use active storey for new walls
-      });
+      };
+      
+      // Set base_elevation_mm if we found a touching wall
+      if (baseElevationToUse !== null) {
+        wallData.base_elevation_mm = baseElevationToUse;
+      }
+      
+      newWallSegments.push(wallData);
     }
 
     // --- Filter out zero-length segments ---

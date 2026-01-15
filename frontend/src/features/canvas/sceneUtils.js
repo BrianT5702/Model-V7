@@ -122,35 +122,20 @@ export function addCeiling(instance) {
     return;
   }
 
-  // Calculate ceiling elevation based on storey elevation + room base elevation + room height
+  // Calculate ceiling elevation based on room base elevation + room height (absolute values)
+  // Don't add storey elevation since room.base_elevation_mm is already an absolute value
   // Use the maximum top elevation (highest room) for the ceiling
   let maxCeilingElevation = 0;
-  if (instance.project && instance.project.storeys && instance.project.storeys.length > 0) {
-    validRooms.forEach(room => {
-      const roomStoreyId = room.storey ?? room.storey_id;
-      const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
-      const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
-      const roomBaseElevation = room.base_elevation_mm ?? 0;
-      const roomHeight = room.height ?? 0;
-      const absoluteTop = storeyElevation + roomBaseElevation + roomHeight;
-      console.log(`[Ceiling] Room ${room.id}: storey=${roomStoreyId}, storeyElevation=${storeyElevation}, baseElevation=${roomBaseElevation}, height=${roomHeight}, absoluteTop=${absoluteTop}`);
-      if (absoluteTop > maxCeilingElevation) {
-        maxCeilingElevation = absoluteTop;
-      }
-    });
-    console.log(`[Ceiling] Final maxCeilingElevation: ${maxCeilingElevation}mm`);
-  } else {
-    console.warn('[Ceiling] No storeys found in project, using fallback calculation');
-    // Fallback: use room base + height if no storeys
-    validRooms.forEach(room => {
-      const roomBaseElevation = room.base_elevation_mm ?? 0;
-      const roomHeight = room.height ?? 0;
-      const absoluteTop = roomBaseElevation + roomHeight;
-      if (absoluteTop > maxCeilingElevation) {
-        maxCeilingElevation = absoluteTop;
-      }
-    });
-  }
+  validRooms.forEach(room => {
+    const roomBaseElevation = room.base_elevation_mm ?? 0;
+    const roomHeight = room.height ?? 0;
+    const absoluteTop = roomBaseElevation + roomHeight;
+    console.log(`[Ceiling] Room ${room.id}: baseElevation=${roomBaseElevation}mm, height=${roomHeight}mm, absoluteTop=${absoluteTop}mm`);
+    if (absoluteTop > maxCeilingElevation) {
+      maxCeilingElevation = absoluteTop;
+    }
+  });
+  console.log(`[Ceiling] Final maxCeilingElevation: ${maxCeilingElevation}mm`);
 
   // Get the building footprint vertices (will use room points since rooms exist)
   const vertices = getBuildingFootprint(instance);
@@ -263,13 +248,10 @@ export function addCeiling(instance) {
       if (isInside) {
         // Point is inside this room
         const wallHeight = findWallHeightAtPoint(x, z, room);
-        const roomStoreyId = room.storey ?? room.storey_id;
-        const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
-        const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
         const roomBaseElevation = room.base_elevation_mm ?? 0;
         
-        // Ceiling height = storey elevation + room base + wall height
-        return (storeyElevation + roomBaseElevation + wallHeight) * instance.scalingFactor;
+        // Ceiling height = room base elevation + wall height (absolute values, no storey elevation)
+        return (roomBaseElevation + wallHeight) * instance.scalingFactor;
       }
       
       // Calculate distance to room center as fallback
@@ -286,12 +268,10 @@ export function addCeiling(instance) {
     // Use best room found
     if (bestRoom) {
       const wallHeight = findWallHeightAtPoint(x, z, bestRoom);
-      const roomStoreyId = bestRoom.storey ?? bestRoom.storey_id;
-      const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
-      const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
       const roomBaseElevation = bestRoom.base_elevation_mm ?? 0;
       
-      return (storeyElevation + roomBaseElevation + wallHeight) * instance.scalingFactor;
+      // Ceiling height = room base elevation + wall height (absolute values, no storey elevation)
+      return (roomBaseElevation + wallHeight) * instance.scalingFactor;
     }
     
     // Final fallback: use max ceiling elevation
@@ -479,32 +459,18 @@ export function addFloor(instance) {
     return;
   }
 
-  // Calculate floor elevation based on storey elevation + room base elevation
+  // Calculate floor elevation based on room base elevation (absolute value)
+  // Don't add storey elevation since room.base_elevation_mm is already an absolute value
   // Use the minimum base elevation (lowest room) for the floor
   let minFloorElevation = Infinity;
-  if (instance.project && instance.project.storeys && instance.project.storeys.length > 0) {
-    validRooms.forEach(room => {
-      const roomStoreyId = room.storey ?? room.storey_id;
-      const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
-      const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
-      const roomBaseElevation = room.base_elevation_mm ?? 0;
-      const absoluteBase = storeyElevation + roomBaseElevation;
-      console.log(`[Floor] Room ${room.id}: storey=${roomStoreyId}, storeyElevation=${storeyElevation}, baseElevation=${roomBaseElevation}, absoluteBase=${absoluteBase}`);
-      if (absoluteBase < minFloorElevation) {
-        minFloorElevation = absoluteBase;
-      }
-    });
-    console.log(`[Floor] Final minFloorElevation: ${minFloorElevation}mm`);
-  } else {
-    console.warn('[Floor] No storeys found in project, using fallback calculation');
-    // Fallback: use room base elevation if no storeys
-    validRooms.forEach(room => {
-      const roomBaseElevation = room.base_elevation_mm ?? 0;
-      if (roomBaseElevation < minFloorElevation) {
-        minFloorElevation = roomBaseElevation;
-      }
-    });
-  }
+  validRooms.forEach(room => {
+    const roomBaseElevation = room.base_elevation_mm ?? 0;
+    console.log(`[Floor] Room ${room.id}: baseElevation=${roomBaseElevation}mm`);
+    if (roomBaseElevation < minFloorElevation) {
+      minFloorElevation = roomBaseElevation;
+    }
+  });
+  console.log(`[Floor] Final minFloorElevation: ${minFloorElevation}mm`);
   
   // If no valid elevation found, default to 0
   if (minFloorElevation === Infinity) {

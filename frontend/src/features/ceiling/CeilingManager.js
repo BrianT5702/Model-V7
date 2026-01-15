@@ -1767,6 +1767,9 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             }
             
             // Prepare room_specific_config with validated values
+            // Match the format used in project-wide generation: panel_length should be 'auto' or the actual value
+            // When not 'auto', send the number directly as panel_length (backend handles both formats)
+            // Note: Backend uses panel_length directly, custom_panel_length is for database storage only
             const roomSpecificConfig = {
                 room_id: normalizedRoomId,
                 panel_width: parseInt(config.panelWidth, 10),
@@ -1783,6 +1786,36 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     customSupports: customSupports
                 }
             };
+            
+            // Ensure room_id is an integer (not string) for proper backend matching
+            // Backend compares room IDs as strings, but we ensure it's an integer for consistency
+            if (typeof roomSpecificConfig.room_id === 'string') {
+                roomSpecificConfig.room_id = parseInt(roomSpecificConfig.room_id, 10);
+            }
+            
+            // Validate that room exists before attempting generation
+            const targetRoom = allRooms.find(r => r.id === normalizedRoomId);
+            if (!targetRoom) {
+                console.error('❌ [Room Generation] Room not found:', normalizedRoomId);
+                setError(`Room with ID ${normalizedRoomId} not found. Please refresh and try again.`);
+                setIsRegeneratingRoom(false);
+                return;
+            }
+            
+            // Validate room has valid geometry
+            if (!targetRoom.room_points || !Array.isArray(targetRoom.room_points) || targetRoom.room_points.length < 3) {
+                console.error('❌ [Room Generation] Room has invalid geometry:', targetRoom);
+                setError('Room geometry is invalid. Please check the room has at least 3 points.');
+                setIsRegeneratingRoom(false);
+                return;
+            }
+            
+            console.log('✅ [Room Generation] Room validation passed:', {
+                roomId: normalizedRoomId,
+                roomName: targetRoom.room_name,
+                pointCount: targetRoom.room_points.length,
+                config: roomSpecificConfig
+            });
             
             console.log('📤 [Room Generation] Sending request with room_specific_config:', roomSpecificConfig);
             

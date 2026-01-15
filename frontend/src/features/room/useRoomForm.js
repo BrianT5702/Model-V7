@@ -103,9 +103,10 @@ export default function useRoomForm({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
 
-  // Sync state when editing a different room
+  // Sync state when editing a different room, or clear when not editing
   useEffect(() => {
     if (initialRoom) {
+      // Populate form with room data when editing
       setRoomName(initialRoom.room_name);
       setFloorType(initialRoom.floor_type);
       setFloorThickness(initialRoom.floor_thickness);
@@ -123,6 +124,20 @@ export default function useRoomForm({
         normaliseStoreyId(
           initialRoom.storey ?? initialRoom.storey_id ?? activeStoreyId ?? (storeys[0]?.id ?? null)
         )
+      );
+    } else {
+      // Clear form fields when not editing (for creating new room)
+      setRoomName('');
+      setFloorType('');
+      setFloorThickness('');
+      setFloorLayers(1);
+      setRemarks('');
+      setTemperature('');
+      setRoomHeight('');
+      setAllowVariableWallHeights(false);
+      setBaseElevation('0');
+      setStoreyId(
+        normaliseStoreyId(activeStoreyId ?? (storeys[0]?.id ?? null))
       );
     }
   }, [initialRoom, activeStoreyId, storeys]);

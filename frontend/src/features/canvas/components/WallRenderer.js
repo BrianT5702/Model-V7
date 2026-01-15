@@ -61,19 +61,53 @@ export class WallRenderer {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       
-      // Use wall's base_elevation_mm field for positioning
-      // If base_elevation_manual=true, this respects the manually set value (ignoring room base elevations)
-      // Otherwise, this uses the automatically calculated value based on room relationships
-      const wallStoreyId = wall.storey ?? wall.storey_id;
-      let wallBaseElevation = wall.base_elevation_mm ?? 0;
+      // Determine base elevation based on whether it was manually set
+      // Use room or wall base elevation directly (absolute values), don't add storey elevation
+      // since rooms on the new level might have different elevations
+      let wallBaseElevation = 0;
+      
+      // If base_elevation_manual is true, use wall's base_elevation_mm (manually set, absolute value)
+      // Otherwise, use the minimum base_elevation_mm from rooms containing this wall (absolute value)
+      if (wall.base_elevation_manual) {
+        // Use manually set wall base elevation (absolute value)
+        wallBaseElevation = wall.base_elevation_mm ?? 0;
+      } else {
+        // Use room base elevation (minimum of all rooms containing this wall, absolute value)
+        const roomsContainingWall = [];
         
-      // Add storey elevation if wall has a storey
-      if (this.instance.project && this.instance.project.storeys && wallStoreyId) {
-          const wallStorey = this.instance.project.storeys.find(s => 
-            String(s.id) === String(wallStoreyId)
-          );
-          const storeyElevation = wallStorey ? (wallStorey.elevation_mm ?? 0) : 0;
-        wallBaseElevation = storeyElevation + wallBaseElevation;
+        // Get rooms from instance.project.rooms that contain this wall
+        if (this.instance.project && this.instance.project.rooms) {
+          this.instance.project.rooms.forEach(room => {
+            const roomWalls = Array.isArray(room.walls) ? room.walls : [];
+            // Check if room.walls contains this wall ID (handle both ID arrays and object arrays)
+            const hasWall = roomWalls.some(w => {
+              const wallId = typeof w === 'object' ? w.id : w;
+              return String(wallId) === String(wall.id);
+            });
+            
+            if (hasWall) {
+              roomsContainingWall.push(room);
+            }
+          });
+        }
+        
+        // Get minimum base_elevation_mm from rooms containing this wall
+        if (roomsContainingWall.length > 0) {
+          const roomBaseElevations = roomsContainingWall
+            .map(room => room.base_elevation_mm)
+            .filter(elev => elev !== undefined && elev !== null)
+            .map(elev => Number(elev) || 0);
+          
+          if (roomBaseElevations.length > 0) {
+            wallBaseElevation = Math.min(...roomBaseElevations);
+          } else {
+            // Fallback to wall's base_elevation_mm if no room base elevations found
+            wallBaseElevation = wall.base_elevation_mm ?? 0;
+          }
+        } else {
+          // No rooms found, fallback to wall's base_elevation_mm
+          wallBaseElevation = wall.base_elevation_mm ?? 0;
+        }
       }
       
       // Position the wall
