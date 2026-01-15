@@ -1019,8 +1019,8 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
             { x: x2, y: y2 },
         ],
         line2: [
-            { x: x1 - finalOffsetX * 2, y: y1 - finalOffsetY * 2 },
-            { x: x2 - finalOffsetX * 2, y: y2 - finalOffsetY * 2 },
+            { x: x1 - finalOffsetX, y: y1 - finalOffsetY },
+            { x: x2 - finalOffsetX, y: y2 - finalOffsetY },
         ],
     };
 }
@@ -1994,10 +1994,9 @@ export function drawWalls({
         });
         
         // Apply 45° cut shortening at each end independently
-        // Shorten by the full gap distance (2 * wall thickness) to match the visual gap
-        // The gap between line1 and line2 is 2 * wallThickness (each offset by wallThickness from center)
+        // Shorten by wall thickness to match the visual gap
         const wallThickness = wall.thickness || 100; // Default to 100mm if not set
-        const finalAdjust = wallThickness * 2; // Shorten by full gap to create seamless edge
+        const finalAdjust = wallThickness; // Shorten by wall thickness
         
         // Make copies of lines for modification
         line1 = [...line1.map(p => ({ ...p }))];

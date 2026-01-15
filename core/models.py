@@ -75,6 +75,14 @@ class Wall(models.Model):
     end_y = models.FloatField(help_text="Y-coordinate of the wall's end point")
     height = models.FloatField(default=DEFAULT_WALL_HEIGHT, help_text="Height of the wall in mm")
     thickness = models.FloatField(default=DEFAULT_WALL_THICKNESS, help_text="Wall thickness in mm")
+    base_elevation_mm = models.FloatField(
+        default=0.0,
+        help_text="Base elevation of the wall relative to ground level in mm. Set automatically based on room base elevations, or 0 if not related to any room."
+    )
+    base_elevation_manual = models.BooleanField(
+        default=False,
+        help_text="If True, base_elevation_mm was manually set by the user and should not be automatically updated based on room relationships."
+    )
 
     # Face finishes (materials and sheet thickness)
     inner_face_material = models.CharField(
@@ -168,6 +176,10 @@ class Room(models.Model):
     base_elevation_mm = models.FloatField(
         default=0.0,
         help_text="Base elevation of the room relative to ground level in mm. Positive = raised, Negative = sunken. Default is 0 (ground level)."
+    )
+    allow_variable_wall_heights = models.BooleanField(
+        default=False,
+        help_text="If True, allows walls in this room to have different heights (for sloped roofs). When enabled, room height updates will not automatically modify wall heights."
     )
     remarks = models.TextField(blank=True, null=True)
     
@@ -691,6 +703,38 @@ class Door(models.Model):
 
     def __str__(self):
         return f"Door {self.id} ({self.door_type}, {self.configuration}) in Project {self.project.name}"
+
+class Window(models.Model):
+    """Window that can be placed on a door."""
+    door = models.ForeignKey(Door, related_name='windows', on_delete=models.CASCADE, help_text="Door this window belongs to")
+    position_x = models.FloatField(
+        default=0.5,
+        help_text="Horizontal position of window center relative to door width (0-1 ratio, 0.5 = center)"
+    )
+    position_y = models.FloatField(
+        default=0.5,
+        help_text="Vertical position of window center relative to door height (0-1 ratio, 0.5 = center)"
+    )
+    width = models.FloatField(help_text="Width of the window in mm")
+    height = models.FloatField(help_text="Height of the window in mm")
+    window_type = models.CharField(
+        max_length=50,
+        default='glass',
+        choices=[
+            ('glass', 'Glass'),
+            ('panel', 'Panel'),
+            ('louver', 'Louver'),
+        ],
+        help_text="Type of window"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['position_y', 'position_x']
+
+    def __str__(self):
+        return f"Window {self.id} on Door {self.door.id} ({self.width}mm × {self.height}mm)"
 
 class Intersection(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='intersections')

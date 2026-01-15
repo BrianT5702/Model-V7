@@ -165,6 +165,67 @@ def normalize_wall_coordinates(start_x, start_y, end_x, end_y):
 
 class WallService:
     @staticmethod
+    def update_wall_base_elevations(wall_ids=None):
+        """Update base_elevation_mm for walls based on their room relationships.
+        
+        If wall_ids is provided, only update those walls.
+        Otherwise, update all walls.
+        
+        For walls related to rooms: use the minimum base_elevation_mm of all rooms containing the wall.
+        For walls not related to any room: set to 0.
+        """
+        from .models import Wall, Room
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        if wall_ids:
+            walls = Wall.objects.filter(id__in=wall_ids).prefetch_related('rooms')
+        else:
+            walls = Wall.objects.all().prefetch_related('rooms')
+        
+        updated_count = 0
+        for wall in walls:
+            # Skip walls with manually set base elevation (user has higher priority)
+            if wall.base_elevation_manual:
+                logger.debug(f"Wall {wall.id}: skipping auto-update (base_elevation_manual=True)")
+                continue
+            
+            # Get all rooms that contain this wall
+            rooms_containing_wall = wall.rooms.all()
+            
+            if rooms_containing_wall.exists():
+                # Use the minimum base elevation of all rooms containing this wall
+                base_elevations = [
+                    room.base_elevation_mm for room in rooms_containing_wall 
+                    if room.base_elevation_mm is not None
+                ]
+                
+                if base_elevations:
+                    new_base_elevation = min(base_elevations)
+                    if wall.base_elevation_mm != new_base_elevation:
+                        wall.base_elevation_mm = new_base_elevation
+                        wall.save(update_fields=['base_elevation_mm'])
+                        updated_count += 1
+                        logger.info(f"Wall {wall.id}: updated base_elevation_mm to {new_base_elevation}mm (from {len(rooms_containing_wall)} room(s))")
+                else:
+                    # No valid base elevations found, set to 0
+                    if wall.base_elevation_mm != 0:
+                        wall.base_elevation_mm = 0
+                        wall.save(update_fields=['base_elevation_mm'])
+                        updated_count += 1
+            else:
+                # Wall not related to any room, set to 0
+                if wall.base_elevation_mm != 0:
+                    wall.base_elevation_mm = 0
+                    wall.save(update_fields=['base_elevation_mm'])
+                    updated_count += 1
+                    logger.info(f"Wall {wall.id}: not in any room, set base_elevation_mm to 0")
+        
+        logger.info(f"Updated base_elevation_mm for {updated_count} wall(s)")
+        return updated_count
+    
+    @staticmethod
     def create_default_walls(project, storey=None):
         """Create default boundary walls for a project."""
         width = project.width
@@ -192,10 +253,15 @@ class WallService:
                 'end_x': norm_end_x, 
                 'end_y': norm_end_y, 
                 'height': height, 
-                'thickness': thickness
+                'thickness': thickness,
+                'base_elevation_mm': 0.0  # Default walls start at 0
             })
 
-        return Wall.objects.bulk_create([Wall(**wall) for wall in walls])
+        created_walls = Wall.objects.bulk_create([Wall(**wall) for wall in walls])
+        # Update base elevations for any walls that might be related to rooms
+        wall_ids = [w.id for w in created_walls]
+        WallService.update_wall_base_elevations(wall_ids)
+        return created_walls
 
     @staticmethod
     def split_wall(wall_id, intersection_x, intersection_y):
@@ -626,6 +692,13 @@ class RoomService:
                 rooms_containing_wall = wall.rooms.filter(storey__isnull=True)
                 logger.info(f"Wall {wall.id} (no storey, no room_storey_id): {rooms_containing_wall.count()} room(s) with no storey")
             
+            # Check if any room sharing this wall has allow_variable_wall_heights enabled
+            # If so, skip updating this wall to preserve individual wall heights for sloped roofs
+            has_variable_heights = any(room.allow_variable_wall_heights for room in rooms_containing_wall)
+            if has_variable_heights:
+                logger.info(f"Wall {wall.id}: Skipping height update because at least one room has allow_variable_wall_heights=True (for sloped roof)")
+                continue
+            
             # Collect heights from filtered rooms only
             room_heights = []
             for room in rooms_containing_wall:
@@ -703,15 +776,16 @@ class RoomService:
             temperature=room_data.get('temperature'),
             height=room_data.get('height'),
             base_elevation_mm=base_elevation if base_elevation is not None else 0.0,
+            allow_variable_wall_heights=room_data.get('allow_variable_wall_heights', False),
             remarks=room_data.get('remarks', ''),
             room_points=normalized_points
         )
         
-        logger.info(f"Created room with ID: {room.id}, height: {room.height}")
+        logger.info(f"Created room with ID: {room.id}, height: {room.height}, allow_variable_wall_heights: {room.allow_variable_wall_heights}")
         
-        # Add walls to room and update their heights
-        if room_data.get('walls') and room_data.get('height'):
-            logger.info(f"Adding {len(room_data['walls'])} walls to room and updating heights")
+        # Add walls to room
+        if room_data.get('walls'):
+            logger.info(f"Adding {len(room_data['walls'])} walls to room")
             
             # Convert wall IDs to integers
             try:
@@ -750,11 +824,20 @@ class RoomService:
             else:
                 walls_to_update = [wall.id for wall in walls]
             
-            if walls_to_update:
+            # Only update wall heights if allow_variable_wall_heights is False
+            # If True, walls can have different heights for sloped roofs
+            if walls_to_update and room_data.get('height') and not room.allow_variable_wall_heights:
                 # Pass the room's storey_id to prevent cross-level contamination
                 room_storey_id = room.storey_id if room.storey_id else None
                 updated_count = RoomService.update_wall_heights_for_room(walls_to_update, room_data['height'], room_storey_id=room_storey_id)
                 logger.info(f"Updated {updated_count} walls for room {room.id}")
+            elif room.allow_variable_wall_heights:
+                logger.info(f"Skipping wall height update for room {room.id} because allow_variable_wall_heights=True (for sloped roof)")
+            
+            # Update wall base elevations based on room relationships
+            from .services import WallService
+            WallService.update_wall_base_elevations(walls_to_update)
+            logger.info(f"Updated base elevations for walls in room {room.id}")
         
         return room
 

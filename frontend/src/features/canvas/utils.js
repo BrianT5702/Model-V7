@@ -957,8 +957,8 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
                     { x: x2, y: y2 }
                 ],
                 line2: [
-                    { x: x1 - finalOffsetX * 2, y: y1 - finalOffsetY * 2 },
-                    { x: x2 - finalOffsetX * 2, y: y2 - finalOffsetY * 2 }
+                    { x: x1 - finalOffsetX, y: y1 - finalOffsetY },
+                    { x: x2 - finalOffsetX, y: y2 - finalOffsetY }
                 ]
             };
         };

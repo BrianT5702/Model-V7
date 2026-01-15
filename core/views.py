@@ -6,11 +6,11 @@ from rest_framework import serializers, viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
-from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Intersection, CeilingZone
+from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, Intersection, CeilingZone
 from .serializers import (
     ProjectSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
-    DoorSerializer, IntersectionSerializer, CeilingZoneSerializer
+    DoorSerializer, WindowSerializer, IntersectionSerializer, CeilingZoneSerializer
 )
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
 
@@ -129,8 +129,20 @@ class WallViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        wall = serializer.save()
+        
+        # If user provided base_elevation_mm, mark it as manual and skip auto-update
+        # Otherwise, auto-update based on room relationships
+        from .services import WallService
+        if 'base_elevation_mm' in request.data:
+            wall.base_elevation_manual = True
+            wall.save(update_fields=['base_elevation_manual'])
+        else:
+            WallService.update_wall_base_elevations([wall.id])
+        
+        # Refresh the wall to get updated base_elevation_mm
+        wall.refresh_from_db()
+        return Response(WallSerializer(wall).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         """Update wall properties"""
@@ -138,6 +150,15 @@ class WallViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        
+        # If user provided base_elevation_mm, mark it as manual and skip auto-update
+        # Otherwise, auto-update based on room relationships (will respect existing manual flag)
+        from .services import WallService
+        if 'base_elevation_mm' in request.data:
+            instance.base_elevation_manual = True
+            instance.save(update_fields=['base_elevation_manual'])
+        else:
+            WallService.update_wall_base_elevations([instance.id])
         
         # After updating a wall, recalculate room boundaries ONLY for rooms on the same storey
         # This prevents cross-level contamination when editing walls on different levels
@@ -319,17 +340,27 @@ class RoomViewSet(viewsets.ModelViewSet):
             updated_room = serializer.save()
             logger.info(f"Updated room height to: {updated_room.height}")
             
-            # If height is being updated, update wall heights
+            # If height is being updated, update wall heights (unless allow_variable_wall_heights is enabled)
             # Pass the room's storey_id to prevent cross-level contamination
-            if 'height' in request.data and request.data['height'] is not None:
+            if 'height' in request.data and request.data['height'] is not None and not updated_room.allow_variable_wall_heights:
                 wall_ids = list(updated_room.walls.values_list('id', flat=True))
                 room_storey_id = updated_room.storey_id if updated_room.storey_id else None
                 logger.info(f"Updating {len(wall_ids)} walls with new height: {request.data['height']}, room storey: {room_storey_id}")
                 updated_count = RoomService.update_wall_heights_for_room(wall_ids, request.data['height'], room_storey_id=room_storey_id)
                 logger.info(f"Successfully updated {updated_count} walls")
+            elif updated_room.allow_variable_wall_heights and 'height' in request.data:
+                logger.info(f"Skipping wall height update for room {updated_room.id} because allow_variable_wall_heights=True (for sloped roof)")
             
             # Always recalculate room boundaries after any room update to ensure consistency
             RoomService.recalculate_room_boundary_from_walls(updated_room.id)
+            
+            # Update wall base elevations if room base elevation changed
+            if 'base_elevation_mm' in request.data:
+                from .services import WallService
+                wall_ids = list(updated_room.walls.values_list('id', flat=True))
+                if wall_ids:
+                    WallService.update_wall_base_elevations(wall_ids)
+                    logger.info(f"Updated base elevations for {len(wall_ids)} walls after room base elevation change")
             
             return Response(serializer.data, status=status.HTTP_200_OK)
         except ValueError as e:
@@ -782,14 +813,14 @@ class CeilingZoneViewSet(viewsets.ModelViewSet):
 
 
 class DoorViewSet(viewsets.ModelViewSet):
-    queryset = Door.objects.all()
+    queryset = Door.objects.prefetch_related('windows').all()
     serializer_class = DoorSerializer
 
     def get_queryset(self):
         """Optionally filter doors by project ID"""
         project_id = self.request.query_params.get('project')
         if project_id:
-            return Door.objects.filter(project_id=project_id)
+            return Door.objects.prefetch_related('windows').filter(project_id=project_id)
         return super().get_queryset()
 
     @action(detail=True, methods=['get'])
@@ -813,6 +844,42 @@ class DoorViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class WindowViewSet(viewsets.ModelViewSet):
+    queryset = Window.objects.all()
+    serializer_class = WindowSerializer
+
+    def get_queryset(self):
+        """Optionally filter windows by door ID"""
+        door_id = self.request.query_params.get('door')
+        if door_id:
+            return Window.objects.filter(door_id=door_id)
+        return super().get_queryset()
+
+    def perform_create(self, serializer):
+        """Validate window fits within door dimensions"""
+        door = serializer.validated_data['door']
+        window_width = serializer.validated_data['width']
+        window_height = serializer.validated_data['height']
+        position_x = serializer.validated_data['position_x']
+        position_y = serializer.validated_data['position_y']
+        
+        # Check if window fits within door
+        door_width = door.width
+        door_height = door.height
+        
+        # Calculate window bounds
+        window_left = (position_x - window_width / (2 * door_width)) * door_width
+        window_right = (position_x + window_width / (2 * door_width)) * door_width
+        window_bottom = (position_y - window_height / (2 * door_height)) * door_height
+        window_top = (position_y + window_height / (2 * door_height)) * door_height
+        
+        if window_left < 0 or window_right > door_width:
+            raise serializers.ValidationError("Window extends beyond door width")
+        if window_bottom < 0 or window_top > door_height:
+            raise serializers.ValidationError("Window extends beyond door height")
+        
+        serializer.save()
 
 class IntersectionViewSet(viewsets.ModelViewSet):
     queryset = Intersection.objects.all()

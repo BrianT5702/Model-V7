@@ -194,11 +194,35 @@ const RoomManager = ({
                                         {form.validationErrors.roomHeight && (
                                             <p className="text-xs text-red-500 mt-1">{form.validationErrors.roomHeight}</p>
                                         )}
-                                        {form.roomHeight && (
+                                        {form.roomHeight && !form.allowVariableWallHeights && (
                                             <p className="text-xs text-blue-600 mt-1 font-medium">
                                                 This will update all wall heights in the room to {form.roomHeight} mm
                                             </p>
                                         )}
+                                        {form.roomHeight && form.allowVariableWallHeights && (
+                                            <p className="text-xs text-amber-600 mt-1 font-medium">
+                                                ⚠️ Variable wall heights enabled: Wall heights will NOT be automatically updated (for sloped roofs)
+                                            </p>
+                                        )}
+                                        <div className="mt-3 flex items-start">
+                                            <div className="flex items-center h-5">
+                                                <input
+                                                    id="allow-variable-wall-heights"
+                                                    type="checkbox"
+                                                    checked={form.allowVariableWallHeights}
+                                                    onChange={(e) => form.setAllowVariableWallHeights(e.target.checked)}
+                                                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                                />
+                                            </div>
+                                            <div className="ml-3 text-sm">
+                                                <label htmlFor="allow-variable-wall-heights" className="font-medium text-gray-700 cursor-pointer">
+                                                    Allow Variable Wall Heights
+                                                </label>
+                                                <p className="text-xs text-gray-500 mt-0.5">
+                                                    Enable this for sloped roofs. When enabled, room height changes will NOT automatically update wall heights, allowing you to set different heights for each wall.
+                                                </p>
+                                            </div>
+                                        </div>
                                         {selectedWallIds.length > 0 && (
                                             <button
                                                 type="button"

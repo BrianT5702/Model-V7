@@ -161,6 +161,143 @@ export function addCeiling(instance) {
   // Use a reasonable default thickness for fallback ceiling
   const ceilingThickness = 150 * instance.scalingFactor; // 150mm default thickness
   
+  // Function to find the closest wall to a point and return its height
+  const findWallHeightAtPoint = (x, z, room) => {
+    // Convert 3D coordinates back to 2D (divide by scaling factor and subtract offset)
+    const pointX = (x - instance.modelOffset.x) / instance.scalingFactor;
+    const pointY = (z - instance.modelOffset.z) / instance.scalingFactor;
+    
+    // Get walls for this room - room.walls can be array of IDs or wall objects
+    let roomWallIds = [];
+    if (Array.isArray(room.walls)) {
+      roomWallIds = room.walls.map(w => (typeof w === 'object' ? w.id : w));
+    }
+    
+    if (!roomWallIds.length && instance.walls) {
+      // Try to find walls by matching room points to wall endpoints
+      const roomPoints = room.room_points || [];
+      roomWallIds = instance.walls.filter(wall => {
+        // Check if wall endpoints match any room points
+        return roomPoints.some(p => {
+          const dist1 = Math.sqrt(Math.pow(p.x - wall.start_x, 2) + Math.pow(p.y - wall.start_y, 2));
+          const dist2 = Math.sqrt(Math.pow(p.x - wall.end_x, 2) + Math.pow(p.y - wall.end_y, 2));
+          return dist1 < 1 || dist2 < 1; // 1mm tolerance
+        });
+      }).map(w => w.id);
+    }
+    
+    let closestWall = null;
+    let minDistance = Infinity;
+    
+    // Find the closest wall to this point
+    instance.walls.forEach(wall => {
+      if (roomWallIds.length > 0 && !roomWallIds.includes(wall.id)) {
+        return; // Skip walls not in this room
+      }
+      
+      // Calculate distance from point to wall line segment
+      const wallStartX = wall.start_x;
+      const wallStartY = wall.start_y;
+      const wallEndX = wall.end_x;
+      const wallEndY = wall.end_y;
+      
+      // Vector from wall start to end
+      const wallDx = wallEndX - wallStartX;
+      const wallDy = wallEndY - wallStartY;
+      const wallLengthSq = wallDx * wallDx + wallDy * wallDy;
+      
+      if (wallLengthSq === 0) {
+        // Wall is a point, use distance to that point
+        const dist = Math.sqrt(Math.pow(pointX - wallStartX, 2) + Math.pow(pointY - wallStartY, 2));
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestWall = wall;
+        }
+      } else {
+        // Calculate projection of point onto wall line
+        const t = Math.max(0, Math.min(1, ((pointX - wallStartX) * wallDx + (pointY - wallStartY) * wallDy) / wallLengthSq));
+        const projX = wallStartX + t * wallDx;
+        const projY = wallStartY + t * wallDy;
+        const dist = Math.sqrt(Math.pow(pointX - projX, 2) + Math.pow(pointY - projY, 2));
+        
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestWall = wall;
+        }
+      }
+    });
+    
+    if (closestWall) {
+      return closestWall.height || 0;
+    }
+    
+    // Fallback: use room height if no wall found
+    return room.height || 0;
+  };
+  
+  // Function to calculate ceiling height at a vertex based on wall heights
+  const calculateCeilingHeightAtVertex = (x, z) => {
+    // Find which room this vertex belongs to
+    let bestRoom = null;
+    let minDistance = Infinity;
+    
+    validRooms.forEach(room => {
+      if (!room.room_points || room.room_points.length < 3) return;
+      
+      // Convert 3D coordinates to 2D
+      const pointX = (x - instance.modelOffset.x) / instance.scalingFactor;
+      const pointY = (z - instance.modelOffset.z) / instance.scalingFactor;
+      
+      // Check if point is inside or near this room's polygon
+      const roomPoints = room.room_points;
+      let isInside = false;
+      
+      // Simple point-in-polygon test
+      for (let i = 0, j = roomPoints.length - 1; i < roomPoints.length; j = i++) {
+        const xi = roomPoints[i].x, yi = roomPoints[i].y;
+        const xj = roomPoints[j].x, yj = roomPoints[j].y;
+        const intersect = ((yi > pointY) !== (yj > pointY)) && (pointX < (xj - xi) * (pointY - yi) / (yj - yi) + xi);
+        if (intersect) isInside = !isInside;
+      }
+      
+      if (isInside) {
+        // Point is inside this room
+        const wallHeight = findWallHeightAtPoint(x, z, room);
+        const roomStoreyId = room.storey ?? room.storey_id;
+        const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
+        const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
+        const roomBaseElevation = room.base_elevation_mm ?? 0;
+        
+        // Ceiling height = storey elevation + room base + wall height
+        return (storeyElevation + roomBaseElevation + wallHeight) * instance.scalingFactor;
+      }
+      
+      // Calculate distance to room center as fallback
+      const centerX = roomPoints.reduce((sum, p) => sum + p.x, 0) / roomPoints.length;
+      const centerY = roomPoints.reduce((sum, p) => sum + p.y, 0) / roomPoints.length;
+      const dist = Math.sqrt(Math.pow(pointX - centerX, 2) + Math.pow(pointY - centerY, 2));
+      
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestRoom = room;
+      }
+    });
+    
+    // Use best room found
+    if (bestRoom) {
+      const wallHeight = findWallHeightAtPoint(x, z, bestRoom);
+      const roomStoreyId = bestRoom.storey ?? bestRoom.storey_id;
+      const roomStorey = instance.project.storeys.find(s => String(s.id) === String(roomStoreyId));
+      const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
+      const roomBaseElevation = bestRoom.base_elevation_mm ?? 0;
+      
+      return (storeyElevation + roomBaseElevation + wallHeight) * instance.scalingFactor;
+    }
+    
+    // Final fallback: use max ceiling elevation
+    return maxCeilingElevation * instance.scalingFactor;
+  };
+  
   // Convert vertices to format required by earcut
   const flatVertices = [];
   vertices.forEach(vertex => {
@@ -173,7 +310,23 @@ export function addCeiling(instance) {
     return;
   }
   
-  // Create the top surface (flat ceiling)
+  // Create a map to store vertex heights based on actual wall heights
+  // Heights are stored relative to maxCeilingElevation (so we subtract it to get relative height)
+  const vertexHeightMap = new Map();
+  for (let i = 0; i < flatVertices.length; i += 2) {
+    const x = flatVertices[i];
+    const z = flatVertices[i + 1];
+    const key = `${x.toFixed(6)},${z.toFixed(6)}`;
+    if (!vertexHeightMap.has(key)) {
+      // Calculate absolute ceiling height at this vertex
+      const absoluteHeight = calculateCeilingHeightAtVertex(x, z);
+      // Convert to relative height (relative to maxCeilingElevation)
+      const relativeHeight = absoluteHeight - (maxCeilingElevation * instance.scalingFactor);
+      vertexHeightMap.set(key, relativeHeight);
+    }
+  }
+  
+  // Create the top surface (sloped ceiling)
   const topGeometry = new instance.THREE.BufferGeometry();
   const topPositions = new Float32Array(triangles.length * 3);
   
@@ -181,14 +334,17 @@ export function addCeiling(instance) {
     const vertexIndex = triangles[i];
     const x = flatVertices[vertexIndex * 2];
     const z = flatVertices[vertexIndex * 2 + 1];
+    const key = `${x.toFixed(6)},${z.toFixed(6)}`;
+    const height = vertexHeightMap.get(key) || 0;
+    
     topPositions[i * 3] = x;
-    topPositions[i * 3 + 1] = 0; // Top surface at Y=0
+    topPositions[i * 3 + 1] = height; // Top surface with slope
     topPositions[i * 3 + 2] = z;
   }
   topGeometry.setAttribute('position', new instance.THREE.BufferAttribute(topPositions, 3));
   topGeometry.computeVertexNormals();
   
-  // Create the bottom surface (thickness bottom)
+  // Create the bottom surface (thickness bottom, also sloped to match top)
   const bottomGeometry = new instance.THREE.BufferGeometry();
   const bottomPositions = new Float32Array(triangles.length * 3);
   
@@ -196,8 +352,11 @@ export function addCeiling(instance) {
     const vertexIndex = triangles[i];
     const x = flatVertices[vertexIndex * 2];
     const z = flatVertices[vertexIndex * 2 + 1];
+    const key = `${x.toFixed(6)},${z.toFixed(6)}`;
+    const height = vertexHeightMap.get(key) || 0;
+    
     bottomPositions[i * 3] = x;
-    bottomPositions[i * 3 + 1] = -ceilingThickness; // Bottom surface at Y=-thickness
+    bottomPositions[i * 3 + 1] = height - ceilingThickness; // Bottom surface follows slope, offset by thickness
     bottomPositions[i * 3 + 2] = z;
   }
   bottomGeometry.setAttribute('position', new instance.THREE.BufferAttribute(bottomPositions, 3));
@@ -212,19 +371,27 @@ export function addCeiling(instance) {
     const current = vertices[i];
     const next = vertices[(i + 1) % vertices.length];
     
-    // Side wall quad (two triangles)
+        // Calculate heights for current and next vertices
+        const currentKey = `${current.x.toFixed(6)},${current.z.toFixed(6)}`;
+        const nextKey = `${next.x.toFixed(6)},${next.z.toFixed(6)}`;
+        const currentTopHeight = vertexHeightMap.get(currentKey) || 0;
+        const nextTopHeight = vertexHeightMap.get(nextKey) || 0;
+    const currentBottomHeight = currentTopHeight - ceilingThickness;
+    const nextBottomHeight = nextTopHeight - ceilingThickness;
+    
+    // Side wall quad (two triangles) - connects top and bottom surfaces
     // Triangle 1
     sidePositions.push(
-      current.x, 0, current.z,                    // Top front
-      next.x, 0, next.z,                          // Top back
-      current.x, -ceilingThickness, current.z      // Bottom front
+      current.x, currentTopHeight, current.z,                    // Top front
+      next.x, nextTopHeight, next.z,                            // Top back
+      current.x, currentBottomHeight, current.z                  // Bottom front
     );
     
     // Triangle 2
     sidePositions.push(
-      next.x, 0, next.z,                          // Top back
-      next.x, -ceilingThickness, next.z,           // Bottom back
-      current.x, -ceilingThickness, current.z      // Bottom front
+      next.x, nextTopHeight, next.z,                            // Top back
+      next.x, nextBottomHeight, next.z,                          // Bottom back
+      current.x, currentBottomHeight, current.z                   // Bottom front
     );
   }
   
@@ -274,9 +441,10 @@ export function addCeiling(instance) {
   );
   ceiling.add(edgeLines);
   
-  // Set shadow properties to match walls
-  ceiling.castShadow = true;
-  ceiling.receiveShadow = true;
+  // Set shadow properties
+  // Disable shadow receiving on ceiling to avoid dark shadow rectangles from walls
+  ceiling.castShadow = false; // Ceilings don't need to cast shadows
+  ceiling.receiveShadow = false; // Disable receiving shadows to prevent dark rectangles on ceiling surface
   
   // Store thickness in userData
   ceiling.userData = {

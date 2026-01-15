@@ -2609,6 +2609,19 @@ const ProjectDetails = () => {
                                             </label>
 
                                             <label className="block">
+                                                <span className="text-sm font-medium text-gray-700">Wall Base Elevation (mm):</span>
+                                                <input 
+                                                    type="number" 
+                                                    value={editedWall?.base_elevation_mm ?? 0} 
+                                                    onChange={(e) => setEditedWall({ ...editedWall, base_elevation_mm: parseFloat(e.target.value) || 0 })} 
+                                                    step="10"
+                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
+                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    placeholder="0"
+                                                />
+                                            </label>
+
+                                            <label className="block">
                                                 <span className="text-sm font-medium text-gray-700">Wall Thickness (mm):</span>
                                                 <input 
                                                     type="number" 

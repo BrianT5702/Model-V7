@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import useDoorForm from './useDoorForm';
+import api from '../../api/api';
 
 const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
   const form = useDoorForm({
@@ -10,6 +11,141 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
     onClose,
     wall
   });
+
+  // Window management state
+  const [windows, setWindows] = useState([]);
+  const [showWindowForm, setShowWindowForm] = useState(false);
+  const [editingWindow, setEditingWindow] = useState(null);
+  const [windowFormData, setWindowFormData] = useState({
+    position_x: 0.5,
+    position_y: 0.5,
+    width: 300,
+    height: 400,
+    window_type: 'glass'
+  });
+
+  // Load windows when door changes
+  useEffect(() => {
+    if (door?.id) {
+      loadWindows(door.id);
+    }
+  }, [door?.id]);
+
+  // Load windows for a door
+  const loadWindows = async (doorId) => {
+    try {
+      const response = await api.get(`/windows/?door=${doorId}`);
+      setWindows(response.data || []);
+    } catch (error) {
+      console.error('Error loading windows:', error);
+      setWindows([]);
+    }
+  };
+
+  // Window management functions
+  const handleAddWindow = () => {
+    setEditingWindow(null);
+    setWindowFormData({
+      position_x: 0.5,
+      position_y: 0.5,
+      width: 300,
+      height: 400,
+      window_type: 'glass'
+    });
+    setShowWindowForm(true);
+  };
+
+  const handleEditWindow = (window) => {
+    setEditingWindow(window);
+    setWindowFormData({
+      position_x: window.position_x,
+      position_y: window.position_y,
+      width: window.width,
+      height: window.height,
+      window_type: window.window_type || 'glass'
+    });
+    setShowWindowForm(true);
+  };
+
+  const handleSaveWindow = async () => {
+    if (!door?.id) {
+      form.setValidationError("Please save the door first before adding windows.");
+      setTimeout(() => form.setValidationError(""), 4000);
+      return;
+    }
+
+    // Validate window fits within door
+    const doorWidthValue = parseFloat(form.width) || 0;
+    const doorHeightValue = parseFloat(form.height) || 0;
+    const windowWidthValue = parseFloat(windowFormData.width);
+    const windowHeightValue = parseFloat(windowFormData.height);
+
+    if (windowWidthValue <= 0 || windowHeightValue <= 0) {
+      form.setValidationError("Window width and height must be greater than 0");
+      setTimeout(() => form.setValidationError(""), 4000);
+      return;
+    }
+
+    // Check if window fits within door bounds
+    const windowLeft = (windowFormData.position_x - windowWidthValue / (2 * doorWidthValue)) * doorWidthValue;
+    const windowRight = (windowFormData.position_x + windowWidthValue / (2 * doorWidthValue)) * doorWidthValue;
+    const windowBottom = (windowFormData.position_y - windowHeightValue / (2 * doorHeightValue)) * doorHeightValue;
+    const windowTop = (windowFormData.position_y + windowHeightValue / (2 * doorHeightValue)) * doorHeightValue;
+
+    if (windowLeft < 0 || windowRight > doorWidthValue) {
+      form.setValidationError("Window extends beyond door width");
+      setTimeout(() => form.setValidationError(""), 4000);
+      return;
+    }
+    if (windowBottom < 0 || windowTop > doorHeightValue) {
+      form.setValidationError("Window extends beyond door height");
+      setTimeout(() => form.setValidationError(""), 4000);
+      return;
+    }
+
+    try {
+      const windowData = {
+        door: door.id,
+        position_x: windowFormData.position_x,
+        position_y: windowFormData.position_y,
+        width: windowWidthValue,
+        height: windowHeightValue,
+        window_type: windowFormData.window_type
+      };
+
+      if (editingWindow) {
+        // Update existing window
+        await api.put(`/windows/${editingWindow.id}/`, windowData);
+      } else {
+        // Create new window
+        await api.post('/windows/', windowData);
+      }
+
+      // Reload windows
+      await loadWindows(door.id);
+      setShowWindowForm(false);
+      setEditingWindow(null);
+    } catch (error) {
+      console.error('Error saving window:', error);
+      form.setValidationError(error.response?.data?.error || "Failed to save window");
+      setTimeout(() => form.setValidationError(""), 4000);
+    }
+  };
+
+  const handleDeleteWindow = async (windowId) => {
+    if (!window.confirm('Are you sure you want to delete this window?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/windows/${windowId}/`);
+      await loadWindows(door.id);
+    } catch (error) {
+      console.error('Error deleting window:', error);
+      form.setValidationError("Failed to delete window");
+      setTimeout(() => form.setValidationError(""), 4000);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
@@ -170,6 +306,62 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
               </button>
             </div>
           </div>
+
+          {/* Windows Section */}
+          {door?.id && (
+            <div>
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700">Windows on Door</h4>
+                <button
+                  onClick={handleAddWindow}
+                  className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Window
+                </button>
+              </div>
+              
+              {windows.length === 0 ? (
+                <p className="text-sm text-gray-500 italic mt-2">No windows added yet. Click "Add Window" to add one.</p>
+              ) : (
+                <div className="space-y-2 mt-3">
+                  {windows.map((window) => (
+                    <div key={window.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">
+                            {window.window_type || 'glass'} window
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {window.width}mm × {window.height}mm
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Position: {Math.round(window.position_x * 100)}% horizontal, {Math.round(window.position_y * 100)}% vertical
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEditWindow(window)}
+                          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteWindow(window.id)}
+                          className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -224,6 +416,120 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
             <span className="font-medium">{form.validationError}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Window Form Modal */}
+      {showWindowForm && door?.id && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {editingWindow ? 'Edit Window' : 'Add Window'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowWindowForm(false);
+                  setEditingWindow(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Window Type</label>
+                <select
+                  value={windowFormData.window_type}
+                  onChange={(e) => setWindowFormData({ ...windowFormData, window_type: e.target.value })}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled
+                >
+                  <option value="glass">Glass</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Only glass windows are supported</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Width (mm)</label>
+                  <input
+                    type="number"
+                    value={windowFormData.width}
+                    onChange={(e) => setWindowFormData({ ...windowFormData, width: e.target.value })}
+                    min="50"
+                    step="50"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Height (mm)</label>
+                  <input
+                    type="number"
+                    value={windowFormData.height}
+                    onChange={(e) => setWindowFormData({ ...windowFormData, height: e.target.value })}
+                    min="50"
+                    step="50"
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Horizontal Position (0 = left, 1 = right, 0.5 = center)</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={windowFormData.position_x}
+                  onChange={(e) => setWindowFormData({ ...windowFormData, position_x: parseFloat(e.target.value) })}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  {Math.round(windowFormData.position_x * 100)}% from left
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Vertical Position (0 = bottom, 1 = top, 0.5 = center)</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={windowFormData.position_y}
+                  onChange={(e) => setWindowFormData({ ...windowFormData, position_y: parseFloat(e.target.value) })}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  {Math.round(windowFormData.position_y * 100)}% from bottom
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowWindowForm(false);
+                  setEditingWindow(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveWindow}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                {editingWindow ? 'Update' : 'Add'} Window
+              </button>
+            </div>
           </div>
         </div>
       )}

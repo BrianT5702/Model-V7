@@ -61,63 +61,26 @@ export class WallRenderer {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       
-      // Find rooms that contain this wall ON THE SAME STOREY and use the minimum base elevation
-      // This prevents cross-level contamination when rooms are deleted
-      let minBaseElevation = 0;
+      // Use wall's base_elevation_mm field for positioning
+      // If base_elevation_manual=true, this respects the manually set value (ignoring room base elevations)
+      // Otherwise, this uses the automatically calculated value based on room relationships
       const wallStoreyId = wall.storey ?? wall.storey_id;
-      
-      if (this.instance.project && this.instance.project.rooms && this.instance.project.storeys) {
-        // Filter rooms by the wall's storey to prevent cross-level contamination
-        let roomsWithWall = this.instance.project.rooms.filter(room => 
-          room.walls && room.walls.some(wallId => String(wallId) === String(wall.id))
-        );
+      let wallBaseElevation = wall.base_elevation_mm ?? 0;
         
-        // CRITICAL: Only consider rooms on the same storey as the wall
-        if (wallStoreyId) {
-          roomsWithWall = roomsWithWall.filter(room => 
-            String(room.storey) === String(wallStoreyId) || String(room.storey_id) === String(wallStoreyId)
-          );
-        } else {
-          // If wall has no storey, only consider rooms with no storey (legacy data)
-          roomsWithWall = roomsWithWall.filter(room => 
-            !room.storey && !room.storey_id
-          );
-        }
-        
-        if (roomsWithWall.length > 0) {
-          // Get the storey for elevation calculation
+      // Add storey elevation if wall has a storey
+      if (this.instance.project && this.instance.project.storeys && wallStoreyId) {
           const wallStorey = this.instance.project.storeys.find(s => 
             String(s.id) === String(wallStoreyId)
           );
           const storeyElevation = wallStorey ? (wallStorey.elevation_mm ?? 0) : 0;
-          
-          // Calculate absolute elevation: storey elevation + room base elevation
-          const baseElevations = roomsWithWall
-            .map(room => {
-              const roomBaseElevation = room.base_elevation_mm ?? 0;
-              return storeyElevation + roomBaseElevation; // Absolute elevation
-            })
-            .filter(elev => !isNaN(elev));
-          
-          if (baseElevations.length > 0) {
-            minBaseElevation = Math.min(...baseElevations);
-          }
-        } else if (wallStoreyId) {
-          // If wall has a storey but no rooms, use the storey's base elevation
-          const wallStorey = this.instance.project.storeys.find(s => 
-            String(s.id) === String(wallStoreyId)
-          );
-          if (wallStorey) {
-            minBaseElevation = wallStorey.elevation_mm ?? 0;
-          }
-        }
+        wallBaseElevation = storeyElevation + wallBaseElevation;
       }
       
       // Position the wall
       const midX = (start_x + end_x) / 2 * scale;
       const midZ = (start_y + end_y) / 2 * scale;
       const angle = Math.atan2(end_y - start_y, end_x - start_x);
-      const baseElevationY = minBaseElevation * scale;
+      const baseElevationY = wallBaseElevation * scale;
       
       mesh.position.set(
         midX + this.instance.modelOffset.x, 

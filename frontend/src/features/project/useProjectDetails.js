@@ -1155,8 +1155,19 @@ export default function useProjectDetails(projectId) {
       setStoreyError('');
       const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
       setWalls(wallsResponse.data);
+      console.log('📐 Current Walls:', wallsResponse.data);
+      console.log('📐 Total number of walls:', wallsResponse.data.length);
       const doorsResponse = await api.get(`/doors/?project=${projectId}`);
-      setDoors(doorsResponse.data);
+      const doorsData = doorsResponse.data;
+      
+      // Debug: Check if doors have windows
+      doorsData.forEach(door => {
+        if (door.windows && door.windows.length > 0) {
+          console.log(`[useProjectDetails] Door ${door.id} has ${door.windows.length} window(s)`, door.windows);
+        }
+      });
+      
+      setDoors(doorsData);
       const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
       setJoints(intersectionsResponse.data);
       setProjectLoadError('');
@@ -1174,6 +1185,27 @@ export default function useProjectDetails(projectId) {
     fetchProjectDetails();
     // eslint-disable-next-line
   }, [projectId]);
+
+  // Log walls whenever they change
+  useEffect(() => {
+    if (walls && walls.length > 0) {
+      console.log('📐 Current Walls (updated):', walls);
+      console.log('📐 Wall Details:');
+      walls.forEach((wall, index) => {
+        console.log(`  Wall ${index + 1} (ID: ${wall.id}):`, {
+          start: `(${wall.start_x}, ${wall.start_y})`,
+          end: `(${wall.end_x}, ${wall.end_y})`,
+          height: `${wall.height}mm`,
+          thickness: `${wall.thickness}mm`,
+          storey: wall.storey || wall.storey_id,
+          application_type: wall.application_type,
+          is_default: wall.is_default
+        });
+      });
+    } else if (walls && walls.length === 0) {
+      console.log('📐 No walls found in project');
+    }
+  }, [walls]);
 
   // Fetch rooms
   useEffect(() => {

@@ -9,6 +9,7 @@ from .models import (
     FloorPanel,
     FloorPlan,
     Door,
+    Window,
     Intersection,
     CeilingZone,
 )
@@ -39,7 +40,7 @@ class WallSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'project', 'storey',
             'start_x', 'start_y', 'end_x', 'end_y',
-            'height', 'thickness', 'application_type',
+            'height', 'thickness', 'base_elevation_mm', 'base_elevation_manual', 'application_type',
             'inner_face_material', 'inner_face_thickness',
             'outer_face_material', 'outer_face_thickness',
             'is_default', 'has_concrete_base', 'concrete_base_height',
@@ -270,7 +271,39 @@ class CeilingZoneSerializer(serializers.ModelSerializer):
         return instance
 
 
+class WindowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Window
+        fields = '__all__'
+
+    def validate_width(self, value):
+        """Validate that width is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Width must be greater than 0")
+        return value
+
+    def validate_height(self, value):
+        """Validate that height is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Height must be greater than 0")
+        return value
+
+    def validate_position_x(self, value):
+        """Validate that position_x is between 0 and 1"""
+        if value < 0 or value > 1:
+            raise serializers.ValidationError("Position X must be between 0 and 1")
+        return value
+
+    def validate_position_y(self, value):
+        """Validate that position_y is between 0 and 1"""
+        if value < 0 or value > 1:
+            raise serializers.ValidationError("Position Y must be between 0 and 1")
+        return value
+
+
 class DoorSerializer(serializers.ModelSerializer):
+    windows = WindowSerializer(many=True, read_only=True)
+    
     class Meta:
         model = Door
         fields = '__all__'

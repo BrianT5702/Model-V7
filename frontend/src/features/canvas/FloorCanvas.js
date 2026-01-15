@@ -473,8 +473,8 @@ const FloorCanvas = ({
                             const finalOffsetX = dotToCenter > 0 ? offsetX : -offsetX;
                             const finalOffsetY = dotToCenter > 0 ? offsetY : -offsetY;
                             
-                            line2[0] = { x: wall.start_x - finalOffsetX * 2, y: wall.start_y - finalOffsetY * 2 };
-                            line2[1] = { x: wall.end_x - finalOffsetX * 2, y: wall.end_y - finalOffsetY * 2 };
+                            line2[0] = { x: wall.start_x - finalOffsetX, y: wall.start_y - finalOffsetY };
+                            line2[1] = { x: wall.end_x - finalOffsetX, y: wall.end_y - finalOffsetY };
                         }
                     }
                 }

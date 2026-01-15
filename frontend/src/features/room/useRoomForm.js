@@ -98,6 +98,7 @@ export default function useRoomForm({
     }
   };
   const [remarks, setRemarks] = useState(initialRoom?.remarks || '');
+  const [allowVariableWallHeights, setAllowVariableWallHeights] = useState(initialRoom?.allow_variable_wall_heights || false);
   const [displayWalls, setDisplayWalls] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
@@ -112,6 +113,7 @@ export default function useRoomForm({
       setRemarks(initialRoom.remarks);
       setTemperature(initialRoom.temperature || '');
       setRoomHeight(initialRoom.height || '');
+      setAllowVariableWallHeights(initialRoom?.allow_variable_wall_heights || false);
       setBaseElevation(
         initialRoom.base_elevation_mm !== undefined && initialRoom.base_elevation_mm !== null
           ? initialRoom.base_elevation_mm.toString()
@@ -230,6 +232,7 @@ export default function useRoomForm({
       temperature: temperature,
       height: roomHeight,
       base_elevation_mm: baseElevation === '' || baseElevation === '-' ? 0 : parseFloat(baseElevation) || 0,
+      allow_variable_wall_heights: allowVariableWallHeights,
       remarks: remarks,
       walls: selectedWallIds,
       project: projectId,
@@ -276,6 +279,8 @@ export default function useRoomForm({
     setBaseElevation: setBaseElevationSafe,
     remarks,
     setRemarks,
+    allowVariableWallHeights,
+    setAllowVariableWallHeights,
     displayWalls,
     showDeleteConfirm,
     setShowDeleteConfirm,

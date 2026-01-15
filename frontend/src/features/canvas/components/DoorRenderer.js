@@ -14,6 +14,13 @@ export class DoorRenderer {
     
     doors.forEach(door => {
       try {
+        // Debug: Check if door has windows
+        if (door.windows && door.windows.length > 0) {
+          console.log(`[DoorRenderer] Door ${door.id} has ${door.windows.length} window(s)`, door.windows);
+        } else {
+          console.log(`[DoorRenderer] Door ${door.id} has no windows. Door keys:`, Object.keys(door));
+        }
+        
         if (door.calculatedPosition) {
           const doorMesh = this.createDoorMesh(door, null);
           if (doorMesh) {
