@@ -10,6 +10,7 @@ from .models import (
     FloorPlan,
     Door,
     Window,
+    WallWindow,
     Intersection,
     CeilingZone,
 )
@@ -32,8 +33,39 @@ class StoreySerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
 
+class WallWindowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WallWindow
+        fields = '__all__'
+
+    def validate_width(self, value):
+        """Validate that width is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Width must be greater than 0")
+        return value
+
+    def validate_height(self, value):
+        """Validate that height is greater than 0"""
+        if value <= 0:
+            raise serializers.ValidationError("Height must be greater than 0")
+        return value
+
+    def validate_position_x(self, value):
+        """Validate that position_x is between 0 and 1"""
+        if value < 0 or value > 1:
+            raise serializers.ValidationError("Position X must be between 0 and 1")
+        return value
+
+    def validate_position_y(self, value):
+        """Validate that position_y is between 0 and 1"""
+        if value < 0 or value > 1:
+            raise serializers.ValidationError("Position Y must be between 0 and 1")
+        return value
+
+
 class WallSerializer(serializers.ModelSerializer):
     rooms = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    windows = WallWindowSerializer(many=True, read_only=True)
 
     class Meta:
         model = Wall
@@ -46,7 +78,7 @@ class WallSerializer(serializers.ModelSerializer):
             'is_default', 'has_concrete_base', 'concrete_base_height',
             'fill_gap_mode', 'gap_fill_height', 'gap_base_position',
             'ceiling_joint_type', 'ceiling_cut_l_horizontal_extension',
-            'rooms'
+            'rooms', 'windows'
         ]
 
     def validate_height(self, value):
@@ -337,10 +369,26 @@ class RoomSerializer(serializers.ModelSerializer):
     walls = serializers.PrimaryKeyRelatedField(many=True, queryset=Wall.objects.all(), required=False)
     ceiling_plan = CeilingPlanSerializer(read_only=True)
     floor_plan = FloorPlanSerializer(read_only=True)
+    # Include zone information and zone's ceiling plan for rooms in zones
+    ceiling_zones = serializers.SerializerMethodField()
+    zone_ceiling_plan = serializers.SerializerMethodField()
 
     class Meta:
         model = Room
         fields = '__all__'
+    
+    def get_ceiling_zones(self, obj):
+        """Get zones this room belongs to"""
+        zones = obj.ceiling_zones.all()
+        return [{'id': zone.id, 'name': getattr(zone, 'name', f'Zone {zone.id}')} for zone in zones]
+    
+    def get_zone_ceiling_plan(self, obj):
+        """Get ceiling plan from zone if room is in a zone"""
+        zones = obj.ceiling_zones.all()
+        for zone in zones:
+            if hasattr(zone, 'ceiling_plan') and zone.ceiling_plan:
+                return CeilingPlanSerializer(zone.ceiling_plan).data
+        return None
 
     def update(self, instance, validated_data):
         """Override update to handle partial updates properly"""

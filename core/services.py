@@ -3007,7 +3007,8 @@ class CeilingService:
                 thickness=ceiling_thickness,
                 material_type='standard',
                 is_cut_panel=panel_data.get('is_cut', False),
-                cut_notes=panel_data.get('cut_notes', '')
+                cut_notes=panel_data.get('cut_notes', ''),
+                shape_data=panel_data.get('shape_points', [])  # Preserve L-shape geometry
             )
             created_panels.append(panel)
 
@@ -3147,7 +3148,8 @@ class CeilingService:
                 thickness=ceiling_thickness,
                 material_type='standard',
                 is_cut_panel=panel_data.get('is_cut', False),
-                cut_notes=panel_data.get('cut_notes', '')
+                cut_notes=panel_data.get('cut_notes', ''),
+                shape_data=panel_data.get('shape_points', [])  # Preserve L-shape geometry
             )
             created_panels.append(panel)
 
@@ -3279,8 +3281,11 @@ class CeilingService:
 
         for orientation in orientations_to_try:
             tracker = LeftoverTracker(context=f'ZONE-{orientation.upper()}')
-            panels = CeilingService._generate_advanced_panels(
-                bounding_box,
+            # Use shape-aware generation directly to ensure L-shapes are handled correctly
+            # Calculate zone-specific bounding box from outline_points to ensure accuracy
+            zone_bounding_box = CeilingService._calculate_room_bounding_box(outline_points)
+            panels = CeilingService._generate_shape_aware_panels(
+                zone_bounding_box,
                 outline_points,
                 orientation,
                 panel_width,
@@ -6734,6 +6739,11 @@ class CeilingService:
                     # Calculate room area
                     room_area = CeilingService._calculate_room_area(room.room_points)
                     
+                    # Ensure room_area is valid (not None and >= 0)
+                    if room_area is None or room_area < 0:
+                        logger.warning(f"Invalid room_area ({room_area}) for room {room_id}, using 0.0")
+                        room_area = 0.0
+                    
                     # Get room-specific config or use defaults
                     room_config = room_specific_config if room_specific_config and str(room_id) == str(room_specific_config.get('room_id')) else None
                     
@@ -6855,10 +6865,17 @@ class CeilingService:
                     created_plans.append(plan_dict)
                     
                 except Room.DoesNotExist:
-                    print(f"Room {room_id} not found")
+                    logger.error(f"Room {room_id} not found when creating ceiling plan")
                     continue
                 except Exception as e:
-                    print(f"Error creating ceiling plan for room {room_id}: {str(e)}")
+                    logger.exception(f"Error creating ceiling plan for room {room_id}: {str(e)}")
+                    # If ceiling plan creation fails, we should not create panels either
+                    # Delete any panels that might have been created before the error
+                    try:
+                        CeilingPanel.objects.filter(room_id=room_id).delete()
+                        logger.warning(f"Deleted panels for room {room_id} due to ceiling plan creation failure")
+                    except Exception as delete_error:
+                        logger.error(f"Error deleting panels for room {room_id}: {str(delete_error)}")
                     continue
             
             return created_plans

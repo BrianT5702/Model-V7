@@ -244,38 +244,6 @@ const Canvas2D = ({
         }
     };
 
-    // Zoom to center of canvas
-    const zoomToCenter = (newScale) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        // Use display dimensions, not scaled dimensions
-        const canvasCenterX = canvasSize.width / 2;
-        const canvasCenterY = canvasSize.height / 2;
-        
-        const scaleRatio = newScale / scaleFactor.current;
-        
-        offsetX.current = canvasCenterX - (canvasCenterX - offsetX.current) * scaleRatio;
-        offsetY.current = canvasCenterY - (canvasCenterY - offsetY.current) * scaleRatio;
-        
-        // Update the scale factor FIRST
-        scaleFactor.current = newScale;
-        // Mark that user has manually zoomed
-        isZoomed.current = true;
-        
-        // Update the state
-        setCurrentScaleFactor(newScale);
-        
-        // Redraw
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            console.log('Got canvas context, clearing and redrawing...');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // Trigger a re-render
-            setForceRefresh(prev => prev + 1);
-        }
-    };
-
     // Canvas dragging functions
     const handleCanvasMouseDown = (e) => {
         // Only initiate dragging with the right mouse button
@@ -288,10 +256,6 @@ const Canvas2D = ({
         isZoomed.current = true; // Mark that user has positioned the view
         lastMousePos.current = { x: e.clientX, y: e.clientY };
         e.preventDefault();
-    };
-
-    const handleCanvasMouseUp = () => {
-        isDraggingCanvas.current = false;
     };
 
     // Touch event handlers for mobile canvas dragging
@@ -1538,8 +1502,6 @@ const Canvas2D = ({
         }
     };
 
-
-
     const handleMouseMove = (event) => {
         // Handle canvas dragging regardless of editing mode (right mouse button only)
         if (isDraggingCanvas.current) {
@@ -1710,31 +1672,8 @@ const Canvas2D = ({
         if (!wall1 || !wall2) return;
     
         const updatedWall = { ...wall1 };
-        const dx = wall1.end_x - wall1.start_x;
-        const dy = wall1.end_y - wall1.start_y;
-        const length = Math.hypot(dx, dy);
-        const ux = dx / length;
-        const uy = dy / length;
-    
-        // Calculate distances from intersection point to both ends of wall1
-        const distToStart = Math.hypot(
-            intersection.x - wall1.start_x,
-            intersection.y - wall1.start_y
-        );
-        const distToEnd = Math.hypot(
-            intersection.x - wall1.end_x,
-            intersection.y - wall1.end_y
-        );
-        
-        // Determine which end is closer to the intersection point
-        const isStartEnd = distToStart < distToEnd;
     
         try {
-            // Get all joints at this intersection from the passed data
-            const anyIs45 = intersection.pairs.some(p => p.joining_method === '45_cut');
-            const allAreButtIn = intersection.pairs.every(p => p.joining_method === 'butt_in' || p.joining_method === 'none');
-            const onlyOneJoint = intersection.pairs.length === 1;
-    
             // Handle "none" - no wall adjustment needed
             if (joint.joining_method === 'none') {
                 return; // Do not adjust walls when joint type is "none"
@@ -2374,10 +2313,7 @@ const Canvas2D = ({
                 walls: walls.map(wall => ({ ...wall }))
             };
         }
-    }, [
-        rooms, walls, scaleFactor.current, offsetX.current, offsetY.current
-        // Only depend on the actual data that affects label positions
-    ]);
+    }, [rooms, walls, scaleFactor.current, offsetX.current, offsetY.current]);
 
     // Handle wall length input confirmation
     const handleLengthConfirm = async () => {

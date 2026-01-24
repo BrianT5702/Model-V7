@@ -325,8 +325,6 @@ const CeilingCanvas = ({
         };
     }, [ceilingPlan, effectiveCeilingPanelsMap, ceilingPanels, zones]);
 
-
-
     // Initialize and draw canvas
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -1374,7 +1372,6 @@ const CeilingCanvas = ({
                 // - If width > length: horizontal panel
                 // - If length > width: vertical panel
                 const isHorizontalPanel = panel.width > panel.length;
-                const isVerticalPanel = panel.length > panel.width;
                 
                 // Group by the appropriate dimension based on panel orientation:
                 // - Horizontal panel (width > length): group by LENGTH
@@ -2735,20 +2732,6 @@ const CeilingCanvas = ({
 
     const handleMouseUp = () => {
         isDragging.current = false;
-        isDraggingCanvas.current = false;
-    };
-
-    // Canvas dragging functions
-    const handleCanvasMouseDown = (e) => {
-        // Only start dragging if not placing supports
-        if (isPlacingSupport) return;
-        
-        isDraggingCanvas.current = true;
-        lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };
-        e.preventDefault();
-    };
-
-    const handleCanvasMouseUp = () => {
         isDraggingCanvas.current = false;
     };
 

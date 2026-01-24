@@ -6,11 +6,11 @@ from rest_framework import serializers, viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
-from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, Intersection, CeilingZone
+from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
 from .serializers import (
     ProjectSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
-    DoorSerializer, WindowSerializer, IntersectionSerializer, CeilingZoneSerializer
+    DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer
 )
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
 
@@ -104,7 +104,7 @@ def csrf_token_view(request):
     return Response({'csrfToken': get_token(request)})
 
 class WallViewSet(viewsets.ModelViewSet):
-    queryset = Wall.objects.all()
+    queryset = Wall.objects.all().prefetch_related('windows')
     serializer_class = WallSerializer
 
     def get_queryset(self):
@@ -299,9 +299,12 @@ class RoomViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Optionally filter rooms by project ID"""
         project_id = self.request.query_params.get('project')
+        queryset = Room.objects.select_related('ceiling_plan', 'floor_plan').prefetch_related(
+            'walls', 'ceiling_zones', 'ceiling_zones__ceiling_plan'
+        )
         if project_id:
-            return Room.objects.filter(project_id=project_id)
-        return super().get_queryset()
+            queryset = queryset.filter(project_id=project_id)
+        return queryset
 
     def create(self, request, *args, **kwargs):
         """Create a new room with validation and automatic height calculation"""
@@ -878,6 +881,42 @@ class WindowViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError("Window extends beyond door width")
         if window_bottom < 0 or window_top > door_height:
             raise serializers.ValidationError("Window extends beyond door height")
+        
+        serializer.save()
+
+class WallWindowViewSet(viewsets.ModelViewSet):
+    queryset = WallWindow.objects.all()
+    serializer_class = WallWindowSerializer
+
+    def get_queryset(self):
+        """Optionally filter windows by wall ID"""
+        wall_id = self.request.query_params.get('wall')
+        if wall_id:
+            return WallWindow.objects.filter(wall_id=wall_id)
+        return super().get_queryset()
+
+    def perform_create(self, serializer):
+        """Validate window fits within wall dimensions"""
+        wall = serializer.validated_data['wall']
+        window_width = serializer.validated_data['width']
+        window_height = serializer.validated_data['height']
+        position_x = serializer.validated_data['position_x']
+        position_y = serializer.validated_data['position_y']
+        
+        # Calculate wall length
+        wall_length = ((wall.end_x - wall.start_x) ** 2 + (wall.end_y - wall.start_y) ** 2) ** 0.5
+        wall_height = wall.height
+        
+        # Calculate window bounds
+        window_left = (position_x - window_width / (2 * wall_length)) * wall_length
+        window_right = (position_x + window_width / (2 * wall_length)) * wall_length
+        window_bottom = (position_y - window_height / (2 * wall_height)) * wall_height
+        window_top = (position_y + window_height / (2 * wall_height)) * wall_height
+        
+        if window_left < 0 or window_right > wall_length:
+            raise serializers.ValidationError("Window extends beyond wall length")
+        if window_bottom < 0 or window_top > wall_height:
+            raise serializers.ValidationError("Window extends beyond wall height")
         
         serializer.save()
 

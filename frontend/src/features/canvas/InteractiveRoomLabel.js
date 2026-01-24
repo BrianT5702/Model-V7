@@ -109,35 +109,6 @@ const InteractiveRoomLabel = ({
         return roomWidth >= labelWidth + margin && roomHeight >= labelHeight + margin;
     }, [room.room_points, scaleFactor]);
 
-    // Helper function to find closest point on room boundary
-    const findClosestPointOnRoomBoundary = useCallback((point) => {
-        if (!room.room_points || room.room_points.length < 3) {
-            return null;
-        }
-        
-        const normalizedPolygon = room.room_points.map(pt => ({
-            x: Number(pt.x) || 0,
-            y: Number(pt.y) || 0
-        }));
-        
-        let closestPoint = null;
-        let minDistance = Infinity;
-        
-        for (let i = 0; i < normalizedPolygon.length; i++) {
-            const p1 = normalizedPolygon[i];
-            const p2 = normalizedPolygon[(i + 1) % normalizedPolygon.length];
-            const segmentPoint = closestPointOnSegment(point.x, point.y, p1.x, p1.y, p2.x, p2.y);
-            const distance = Math.hypot(segmentPoint.x - point.x, segmentPoint.y - point.y);
-            
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestPoint = segmentPoint;
-            }
-        }
-        
-        return closestPoint;
-    }, [room.room_points]);
-
     // Helper function to constrain a point to be inside the room polygon
     // But allow it outside if room is too small
     const constrainToRoomBoundary = useCallback((point) => {

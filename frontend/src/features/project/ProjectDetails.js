@@ -170,6 +170,18 @@ const ProjectDetails = () => {
     const [editedWall, setEditedWall] = useState(null);
     const [isLengthLocked, setIsLengthLocked] = useState(false);
     
+    // Window management state for walls
+    const [wallWindows, setWallWindows] = useState([]);
+    const [showWallWindowForm, setShowWallWindowForm] = useState(false);
+    const [editingWallWindow, setEditingWallWindow] = useState(null);
+    const [wallWindowFormData, setWallWindowFormData] = useState({
+        position_x: 0.5,
+        position_y: 0.5,
+        width: 600,
+        height: 800,
+        window_type: 'glass'
+    });
+    
     // Capture canvas images when switching tabs
     useEffect(() => {
         // Helper function to remove grid lines from canvas
@@ -622,6 +634,113 @@ const ProjectDetails = () => {
             setIsLengthLocked(false);
         }
     }, [projectDetails.selectedWall, projectDetails.filteredWalls]);
+    
+    // Load windows when wall changes
+    useEffect(() => {
+        if (editedWall?.id) {
+            loadWallWindows(editedWall.id);
+        } else {
+            setWallWindows([]);
+        }
+    }, [editedWall?.id]);
+    
+    // Load windows for a wall
+    const loadWallWindows = async (wallId) => {
+        try {
+            const response = await api.get(`/wall-windows/?wall=${wallId}`);
+            setWallWindows(response.data || []);
+        } catch (error) {
+            console.error('Error loading wall windows:', error);
+            setWallWindows([]);
+        }
+    };
+    
+    // Window management functions for walls
+    const handleAddWallWindow = () => {
+        setEditingWallWindow(null);
+        setWallWindowFormData({
+            position_x: 0.5,
+            position_y: 0.5,
+            width: 600,
+            height: 800,
+            window_type: 'glass'
+        });
+        setShowWallWindowForm(true);
+    };
+    
+    const handleEditWallWindow = (window) => {
+        setEditingWallWindow(window);
+        setWallWindowFormData({
+            position_x: window.position_x,
+            position_y: window.position_y,
+            width: window.width,
+            height: window.height,
+            window_type: window.window_type || 'glass'
+        });
+        setShowWallWindowForm(true);
+    };
+    
+    const handleSaveWallWindow = async () => {
+        if (!editedWall?.id) return;
+        
+        try {
+            if (editingWallWindow) {
+                // Update existing window
+                await api.put(`/wall-windows/${editingWallWindow.id}/`, {
+                    ...wallWindowFormData,
+                    wall: editedWall.id
+                });
+            } else {
+                // Create new window
+                await api.post('/wall-windows/', {
+                    ...wallWindowFormData,
+                    wall: editedWall.id
+                });
+            }
+            
+            // Reload windows
+            await loadWallWindows(editedWall.id);
+            setShowWallWindowForm(false);
+            setEditingWallWindow(null);
+            
+            // Refresh walls to get updated window data
+            const wallsResponse = await api.get(`/walls/?project=${projectId}`);
+            projectDetails.setWalls(wallsResponse.data);
+            
+            // Rebuild 3D scene
+            if (projectDetails.threeCanvas) {
+                projectDetails.threeCanvas.buildModel();
+            }
+        } catch (error) {
+            console.error('Error saving wall window:', error);
+            alert('Failed to save window: ' + (error.response?.data?.error || error.message));
+        }
+    };
+    
+    const handleDeleteWallWindow = async (windowId) => {
+        if (!windowId || !editedWall?.id) return;
+        
+        if (!window.confirm('Are you sure you want to delete this window?')) {
+            return;
+        }
+        
+        try {
+            await api.delete(`/wall-windows/${windowId}/`);
+            await loadWallWindows(editedWall.id);
+            
+            // Refresh walls
+            const wallsResponse = await api.get(`/walls/?project=${projectId}`);
+            projectDetails.setWalls(wallsResponse.data);
+            
+            // Rebuild 3D scene
+            if (projectDetails.threeCanvas) {
+                projectDetails.threeCanvas.buildModel();
+            }
+        } catch (error) {
+            console.error('Error deleting wall window:', error);
+            alert('Failed to delete window: ' + (error.response?.data?.error || error.message));
+        }
+    };
 
     // Calculate dynamic 3D container height for mobile responsiveness
     useEffect(() => {
@@ -2763,7 +2882,262 @@ const ProjectDetails = () => {
                                             </div>
                                         </div>
                                     </div>
+                                    
+                                    {/* Windows Section */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+                                            <h4 className="text-sm font-semibold text-gray-700">Windows on Wall</h4>
+                                            <button
+                                                onClick={handleAddWallWindow}
+                                                disabled={!editedWall?.id}
+                                                className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 ${
+                                                    editedWall?.id
+                                                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                }`}
+                                                title={!editedWall?.id ? 'Save the wall first to add windows' : ''}
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                </svg>
+                                                Add Window
+                                            </button>
+                                        </div>
+                                        
+                                        {!editedWall?.id ? (
+                                            <p className="text-sm text-gray-500 italic mt-2">Save the wall first to add windows.</p>
+                                        ) : wallWindows.length === 0 ? (
+                                            <p className="text-sm text-gray-500 italic mt-2">No windows added yet. Click "Add Window" to add one.</p>
+                                        ) : (
+                                            <div className="space-y-2 mt-3">
+                                                {wallWindows.map((window) => (
+                                                    <div key={window.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-sm font-medium text-gray-700">
+                                                                    {window.window_type || 'glass'} window
+                                                                </span>
+                                                                <span className="text-xs text-gray-500">
+                                                                    {window.width}mm × {window.height}mm
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                Position: {Math.round(window.position_x * 100)}% along wall, {Math.round(window.position_y * 100)}% height
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => handleEditWallWindow(window)}
+                                                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteWallWindow(window.id)}
+                                                                className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
+                                
+                                {/* Window Form Modal */}
+                                {showWallWindowForm && (
+                                    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+                                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+                                            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+                                                <h3 className="text-lg font-semibold text-gray-900">
+                                                    {editingWallWindow ? 'Edit Window' : 'Add Window'}
+                                                </h3>
+                                                <button
+                                                    onClick={() => {
+                                                        setShowWallWindowForm(false);
+                                                        setEditingWallWindow(null);
+                                                    }}
+                                                    className="text-gray-400 hover:text-gray-600"
+                                                >
+                                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="p-6 space-y-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">Window Type</label>
+                                                    <select
+                                                        value={wallWindowFormData.window_type}
+                                                        onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, window_type: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    >
+                                                        <option value="glass">Glass</option>
+                                                    </select>
+                                                </div>
+                                                
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Width (mm)</label>
+                                                        <input
+                                                            type="number"
+                                                            value={wallWindowFormData.width}
+                                                            onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, width: parseFloat(e.target.value) || 0 })}
+                                                            min="100"
+                                                            step="50"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Height (mm)</label>
+                                                        <input
+                                                            type="number"
+                                                            value={wallWindowFormData.height}
+                                                            onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, height: parseFloat(e.target.value) || 0 })}
+                                                            min="100"
+                                                            step="50"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Position Along Wall */}
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position Along Wall</h4>
+                                                    <div className="mt-3 space-y-4">
+                                                        <div>
+                                                            <label className="text-sm font-medium text-gray-700 mb-2 block">Position Slider</label>
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max="1"
+                                                                step="0.01"
+                                                                value={wallWindowFormData.position_x}
+                                                                onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, position_x: parseFloat(e.target.value) })}
+                                                                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                                            />
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            <div>
+                                                                <label className="text-sm font-medium text-gray-700">Distance from Left (mm)</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={Math.round((wallWindowFormData.position_x || 0) * (editedWall ? Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0)) : 0)) || 0}
+                                                                    onChange={(e) => {
+                                                                        const wallLength = editedWall ? Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0)) : 0;
+                                                                        const distance = Math.max(0, Math.min(wallLength, Number(e.target.value) || 0));
+                                                                        const newPos = wallLength > 0 ? distance / wallLength : 0;
+                                                                        setWallWindowFormData({ ...wallWindowFormData, position_x: Number.isFinite(newPos) ? newPos : 0 });
+                                                                    }}
+                                                                    min="0"
+                                                                    max={editedWall ? Math.round(Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0))) : 0}
+                                                                    step="1"
+                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-sm font-medium text-gray-700">Distance from Right (mm)</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={Math.round((1 - (wallWindowFormData.position_x || 0)) * (editedWall ? Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0)) : 0)) || 0}
+                                                                    onChange={(e) => {
+                                                                        const wallLength = editedWall ? Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0)) : 0;
+                                                                        const distance = Math.max(0, Math.min(wallLength, Number(e.target.value) || 0));
+                                                                        const left = Math.max(0, wallLength - distance);
+                                                                        const newPos = wallLength > 0 ? left / wallLength : 0;
+                                                                        setWallWindowFormData({ ...wallWindowFormData, position_x: Number.isFinite(newPos) ? newPos : 0 });
+                                                                    }}
+                                                                    min="0"
+                                                                    max={editedWall ? Math.round(Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0))) : 0}
+                                                                    step="1"
+                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Position Height */}
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position Height</h4>
+                                                    <div className="mt-3 space-y-4">
+                                                        <div>
+                                                            <label className="text-sm font-medium text-gray-700 mb-2 block">Position Slider</label>
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max="1"
+                                                                step="0.01"
+                                                                value={wallWindowFormData.position_y}
+                                                                onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, position_y: parseFloat(e.target.value) })}
+                                                                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                                            />
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            <div>
+                                                                <label className="text-sm font-medium text-gray-700">Distance from Bottom (mm)</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={Math.round((wallWindowFormData.position_y || 0) * (editedWall?.height || 0)) || 0}
+                                                                    onChange={(e) => {
+                                                                        const wallHeight = editedWall?.height || 0;
+                                                                        const distance = Math.max(0, Math.min(wallHeight, Number(e.target.value) || 0));
+                                                                        const newPos = wallHeight > 0 ? distance / wallHeight : 0;
+                                                                        setWallWindowFormData({ ...wallWindowFormData, position_y: Number.isFinite(newPos) ? newPos : 0 });
+                                                                    }}
+                                                                    min="0"
+                                                                    max={Math.round(editedWall?.height || 0)}
+                                                                    step="1"
+                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-sm font-medium text-gray-700">Distance from Top (mm)</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={Math.round((1 - (wallWindowFormData.position_y || 0)) * (editedWall?.height || 0)) || 0}
+                                                                    onChange={(e) => {
+                                                                        const wallHeight = editedWall?.height || 0;
+                                                                        const distance = Math.max(0, Math.min(wallHeight, Number(e.target.value) || 0));
+                                                                        const bottom = Math.max(0, wallHeight - distance);
+                                                                        const newPos = wallHeight > 0 ? bottom / wallHeight : 0;
+                                                                        setWallWindowFormData({ ...wallWindowFormData, position_y: Number.isFinite(newPos) ? newPos : 0 });
+                                                                    }}
+                                                                    min="0"
+                                                                    max={Math.round(editedWall?.height || 0)}
+                                                                    step="1"
+                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowWallWindowForm(false);
+                                                        setEditingWallWindow(null);
+                                                    }}
+                                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleSaveWallWindow}
+                                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                     {/* Action Buttons at the Bottom Right */}
                                     <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 px-4 sm:px-6 pb-4 sm:pb-6">

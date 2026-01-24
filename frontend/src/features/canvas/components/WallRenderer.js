@@ -167,8 +167,6 @@ export class WallRenderer {
     
     // Determine wall normal direction based on model center
     const modelCenter = this.instance.calculateModelCenter();
-    const wallMidX = (finalStartX + finalEndX) / 2;
-    const wallMidY = (finalStartY + finalEndY) / 2;
     
     // Simplified normal calculation without 45-degree joints
     if (isHorizontal) {

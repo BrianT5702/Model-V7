@@ -10,6 +10,7 @@ from .views import (
     FloorPlanViewSet,
     DoorViewSet,
     WindowViewSet,
+    WallWindowViewSet,
     IntersectionViewSet,
     CeilingZoneViewSet,
     StoreyViewSet,
@@ -27,7 +28,8 @@ router.register(r'ceiling-zones', CeilingZoneViewSet, basename='ceiling-zone')  
 router.register(r'floor-panels', FloorPanelViewSet, basename='floor-panel')  # Endpoint for floor panels
 router.register(r'floor-plans', FloorPlanViewSet, basename='floor-plan')  # Endpoint for floor plans
 router.register(r'doors', DoorViewSet, basename='door')  # New endpoint for doors
-router.register(r'windows', WindowViewSet, basename='window')  # New endpoint for windows
+router.register(r'windows', WindowViewSet, basename='window')  # New endpoint for windows on doors
+router.register(r'wall-windows', WallWindowViewSet, basename='wall-window')  # New endpoint for windows on walls
 router.register(r'intersections', IntersectionViewSet, basename='intersection')  # New endpoint for intersections
 router.register(r'storeys', StoreyViewSet, basename='storey')
 

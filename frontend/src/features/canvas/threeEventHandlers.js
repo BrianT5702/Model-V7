@@ -174,7 +174,8 @@ export function toggleDoorHandler(instance) {
           rightDoor.userData.origPosition = { ...origRightPos };
         }
         const doorWidth = doorInfo.width * instance.scalingFactor;
-        const slideDistance = doorWidth * 0.48 * 0.9;
+        const halfWidth = doorWidth / 2; // Each panel is exactly half the door width
+        const slideDistance = halfWidth * 0.9; // Slide distance based on half width
         if (window.gsap) {
           if (newState) {
             window.gsap.to(leftDoor.position, {

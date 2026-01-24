@@ -124,10 +124,6 @@ export class DoorRenderer {
       const { start_x, start_y, end_x, end_y } = wall;
       const scale = this.instance.scalingFactor;
       
-      // Simple repositioning logic - can be enhanced
-      const wallLength = Math.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2);
-      const doorPosition = (door.position || 0.5) * wallLength;
-      
       const midX = (start_x + end_x) / 2 * scale;
       const midZ = (start_y + end_y) / 2 * scale;
       

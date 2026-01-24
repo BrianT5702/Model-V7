@@ -1180,22 +1180,6 @@ function getWallFinishKey(wall) {
     return `${coreThk}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`;
 }
 
-// Build a key for inner face only (for color mapping)
-function getInnerFaceKey(wall) {
-    const intMat = wall.inner_face_material || 'PPGI';
-    const intThk = wall.inner_face_thickness != null ? wall.inner_face_thickness : 0.5;
-    const coreThk = wall.thickness;
-    return `${coreThk}|INT:${intThk} ${intMat}`;
-}
-
-// Build a key for outer face only (for color mapping)
-function getOuterFaceKey(wall) {
-    const extMat = wall.outer_face_material || 'PPGI';
-    const extThk = wall.outer_face_thickness != null ? wall.outer_face_thickness : 0.5;
-    const coreThk = wall.thickness;
-    return `${coreThk}|EXT:${extThk} ${extMat}`;
-}
-
 // Generate distinct colors for combinations of (thickness + inner/outer finishes)
 function generateThicknessColorMap(walls) {
     if (!walls || walls.length === 0) return new Map();

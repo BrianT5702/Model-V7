@@ -736,6 +736,38 @@ class Window(models.Model):
     def __str__(self):
         return f"Window {self.id} on Door {self.door.id} ({self.width}mm × {self.height}mm)"
 
+class WallWindow(models.Model):
+    """Window that can be placed on a wall."""
+    wall = models.ForeignKey(Wall, related_name='windows', on_delete=models.CASCADE, help_text="Wall this window belongs to")
+    position_x = models.FloatField(
+        default=0.5,
+        help_text="Position along wall length (0-1 ratio, 0 = start, 1 = end, 0.5 = center)"
+    )
+    position_y = models.FloatField(
+        default=0.5,
+        help_text="Vertical position relative to wall height (0-1 ratio, 0 = bottom, 1 = top, 0.5 = center)"
+    )
+    width = models.FloatField(help_text="Width of the window in mm")
+    height = models.FloatField(help_text="Height of the window in mm")
+    window_type = models.CharField(
+        max_length=50,
+        default='glass',
+        choices=[
+            ('glass', 'Glass'),
+            ('panel', 'Panel'),
+            ('louver', 'Louver'),
+        ],
+        help_text="Type of window"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['position_y', 'position_x']
+
+    def __str__(self):
+        return f"Window {self.id} on Wall {self.wall.id} ({self.width}mm × {self.height}mm)"
+
 class Intersection(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='intersections')
     wall_1 = models.ForeignKey(Wall, on_delete=models.CASCADE, related_name='intersections_as_wall1')

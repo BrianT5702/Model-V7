@@ -47,7 +47,7 @@ export function createWallMesh(instance, wall) {
   });
 
   // The full logic from instance.createWallMesh(wall), using 'instance' for context
-  const { start_x, start_y, end_x, end_y, height, thickness, id, fill_gap_mode, gap_fill_height, gap_base_position } = wall;
+  const { start_x, start_y, end_x, end_y, height, thickness, id, fill_gap_mode, gap_fill_height, gap_base_position, windows } = wall;
   const scale = instance.scalingFactor;
   const modelCenter = instance.calculateModelCenter();
   // Snap endpoints to a fixed precision to avoid floating point misalignment
@@ -99,6 +99,7 @@ export function createWallMesh(instance, wall) {
   // (Joint flipping logic removed for now)
 
   const wallDoors = instance.doors.filter(d => String(d.wall) === String(id));
+  const wallWindows = windows || [];
   // Determine wall height and base position based on gap-fill mode
   let basePositionY = 0;  // Default: floor level
   let wallHeight;
@@ -207,11 +208,6 @@ export function createWallMesh(instance, wall) {
     finalNormX = nx;
     finalNormZ = nz;
   }
-  // Store coordinates AFTER flip but BEFORE extension (for accurate extension distance calculation)
-  const afterFlipStartX = finalStartX;
-  const afterFlipStartZ = finalStartZ;
-  const afterFlipEndX = finalEndX;
-  const afterFlipEndZ = finalEndZ;
   // STEP 1: Extend perpendicular walls to surfaces BEFORE applying joint cuts
   // Simple logic: only extend if walls are perpendicular and not already touching
   if (instance.joints && instance.joints.length > 0) {
@@ -326,10 +322,6 @@ export function createWallMesh(instance, wall) {
       }
     });
   }
-  // Track face positions for debugging and verification
-  const extensionStartDist = Math.hypot(finalStartX - originalStartX, finalStartZ - originalStartZ);
-  const extensionEndDist = Math.hypot(finalEndX - originalEndX, finalEndZ - originalEndZ);
-  const wasExtended = extensionStartDist > 0.001 || extensionEndDist > 0.001;
   // ============================================================================
   // STEP 1.5: BUTT-IN JOINT SHORTENING
   // ============================================================================
@@ -444,17 +436,6 @@ export function createWallMesh(instance, wall) {
       });
     }
   }
-  // Calculate inner and outer face positions
-  const outerStart = { x: finalStartX, z: finalStartZ };
-  const outerEnd = { x: finalEndX, z: finalEndZ };
-  const innerStart = {
-    x: finalStartX + finalNormX * wallThickness,
-    z: finalStartZ + finalNormZ * wallThickness
-  };
-  const innerEnd = {
-    x: finalEndX + finalNormX * wallThickness,
-    z: finalEndZ + finalNormZ * wallThickness
-  };
   // STEP 2: Now detect 45° cut joints using extended coordinates
   // After extension, walls meet at exact intersection points, so we can detect joints accurately
   let hasStart45 = false;
@@ -647,31 +628,141 @@ export function createWallMesh(instance, wall) {
   const cutouts = wallDoors.map(door => {
     const isSlideDoor = (door.door_type === 'slide');
     const isDockDoor = (door.door_type === 'dock');
+    const isDoubleSidedSlide = isSlideDoor && door.configuration === 'double_sided';
     const doorWidth = door.width * scale;
-    const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05);
+    // For double-sided slide doors, use full door width (both panels need to fit)
+    // For single slide doors, use 95% (slight gap for sliding)
+    // For dock doors, use 100% (exact fit)
+    // For swing doors, use 105% (slight overlap for door swing)
+    const cutoutWidth = doorWidth * (isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05);
     const doorHeight = door.height * scale * 1.02;
+    
+    // Get floor thickness to raise the cutout (matching door mesh positioning)
+    // Floors are positioned at baseElevation and extend upward by floorThickness
+    // Door cutout should start at floorThickness (top of floor) to match door mesh position
+    let floorThickness = 150 * scale; // Default: 150mm
+    if (instance.project && instance.project.rooms) {
+      // Get room for this door
+      const room = instance.project.rooms.find(r => r.id === door.room);
+      if (room && room.floor_thickness !== undefined && room.floor_thickness !== null && !isNaN(room.floor_thickness)) {
+        floorThickness = Number(room.floor_thickness) * scale;
+      } else {
+        // Try to find rooms containing this wall
+        const roomsContainingWall = [];
+        instance.project.rooms.forEach(r => {
+          const roomWalls = Array.isArray(r.walls) ? r.walls : [];
+          const hasWall = roomWalls.some(w => {
+            const wallId = typeof w === 'object' ? w.id : w;
+            return String(wallId) === String(id);
+          });
+          if (hasWall) {
+            roomsContainingWall.push(r);
+          }
+        });
+        
+        if (roomsContainingWall.length > 0) {
+          const floorThicknesses = roomsContainingWall
+            .map(r => r.floor_thickness)
+            .filter(thickness => thickness !== undefined && thickness !== null && !isNaN(thickness))
+            .map(thickness => Number(thickness));
+          
+          if (floorThicknesses.length > 0) {
+            floorThickness = floorThicknesses[0] * scale;
+          }
+        }
+      }
+    }
+    
     // If wall was flipped, flip the door position
     const adjustedPositionX = wasWallFlipped ? (1 - door.position_x) : door.position_x;
     const doorPos = adjustedPositionX * finalWallLength;
-    if (wasWallFlipped) {
-      // Door position adjusted for flipped wall
+    
+    // Calculate cutout bounds
+    const cutoutStart = Math.max(0, doorPos - cutoutWidth / 2);
+    const cutoutEnd = Math.min(finalWallLength, doorPos + cutoutWidth / 2);
+    
+    // Debug logging for door cutout positioning
+    if (isDoubleSidedSlide) {
+      console.log(`[Door Cutout] Door ${door.id} (double-sided slide):`, {
+        doorPositionX: door.position_x,
+        adjustedPositionX: adjustedPositionX,
+        wasWallFlipped: wasWallFlipped,
+        finalWallLength: finalWallLength,
+        doorPos: doorPos,
+        doorWidth: doorWidth,
+        cutoutWidth: cutoutWidth,
+        cutoutStart: cutoutStart,
+        cutoutEnd: cutoutEnd,
+        cutoutCenter: (cutoutStart + cutoutEnd) / 2,
+        floorThickness: floorThickness,
+        doorHeight: doorHeight,
+        cutoutBottomY: floorThickness,
+        cutoutTopY: floorThickness + doorHeight
+      });
     }
+    
     return {
-      start: Math.max(0, doorPos - cutoutWidth / 2),
-      end: Math.min(finalWallLength, doorPos + cutoutWidth / 2),
+      start: cutoutStart,
+      end: cutoutEnd,
       height: doorHeight,
+      floorThickness: floorThickness, // Store floor thickness for cutout positioning
       doorInfo: door
     };
   });
+  
+  // Add window cutouts
+  const windowCutouts = wallWindows.map(window => {
+    const windowWidth = window.width * scale;
+    const windowHeight = window.height * scale;
+    
+    // If wall was flipped, flip the window position
+    const adjustedPositionX = wasWallFlipped ? (1 - window.position_x) : window.position_x;
+    const windowPos = adjustedPositionX * finalWallLength;
+    
+    // Calculate window position vertically (position_y is 0-1, where 0 is bottom, 1 is top)
+    // Window center Y position relative to wall height
+    const windowCenterY = window.position_y * wallHeight;
+    const windowBottomY = windowCenterY - windowHeight / 2;
+    const windowTopY = windowCenterY + windowHeight / 2;
+    
+    // Calculate cutout bounds
+    const cutoutStart = Math.max(0, windowPos - windowWidth / 2);
+    const cutoutEnd = Math.min(finalWallLength, windowPos + windowWidth / 2);
+    
+    return {
+      start: cutoutStart,
+      end: cutoutEnd,
+      bottomY: Math.max(0, windowBottomY),
+      topY: Math.min(wallHeight, windowTopY),
+      windowInfo: window
+    };
+  });
+  
+  // Combine door and window cutouts
+  const allCutouts = [...cutouts, ...windowCutouts];
+  
   // Shape already closed above
-  for (const cutout of cutouts) {
-    const doorHole = new instance.THREE.Path();
-    doorHole.moveTo(cutout.start, 0);
-    doorHole.lineTo(cutout.end, 0);
-    doorHole.lineTo(cutout.end, cutout.height);
-    doorHole.lineTo(cutout.start, cutout.height);
-    doorHole.lineTo(cutout.start, 0);
-    wallShape.holes.push(doorHole);
+  for (const cutout of allCutouts) {
+    const hole = new instance.THREE.Path();
+    // Check if this is a door cutout or window cutout
+    if (cutout.doorInfo) {
+      // Door cutout starts at floorThickness (top of floor) and extends upward by doorHeight
+      const cutoutBottomY = cutout.floorThickness;
+      const cutoutTopY = cutout.floorThickness + cutout.height;
+      hole.moveTo(cutout.start, cutoutBottomY);
+      hole.lineTo(cutout.end, cutoutBottomY);
+      hole.lineTo(cutout.end, cutoutTopY);
+      hole.lineTo(cutout.start, cutoutTopY);
+      hole.lineTo(cutout.start, cutoutBottomY);
+    } else if (cutout.windowInfo) {
+      // Window cutout
+      hole.moveTo(cutout.start, cutout.bottomY);
+      hole.lineTo(cutout.end, cutout.bottomY);
+      hole.lineTo(cutout.end, cutout.topY);
+      hole.lineTo(cutout.start, cutout.topY);
+      hole.lineTo(cutout.start, cutout.bottomY);
+    }
+    wallShape.holes.push(hole);
   }
   const extrudeSettings = {
     depth: wallThickness,
@@ -712,6 +803,51 @@ export function createWallMesh(instance, wall) {
   const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry);
   const edgeLines = new instance.THREE.LineSegments(edges, new instance.THREE.LineBasicMaterial({ color: 0x000000 }));
   wallMesh.add(edgeLines);
+  
+  // Add black outlines for door and window holes (cutouts)
+  // Door holes are in the wall's local coordinate system:
+  // - X: along the wall (0 to finalWallLength)
+  // - Y: vertical (0 to wallHeight, with cutout at floorThickness to floorThickness + height)
+  // - Z: wall thickness (0 to wallThickness, cutout is at z = 0, the outer face)
+  for (const cutout of allCutouts) {
+    let cutoutBottomY, cutoutTopY;
+    if (cutout.doorInfo) {
+      cutoutBottomY = cutout.floorThickness;
+      cutoutTopY = cutout.floorThickness + cutout.height;
+    } else if (cutout.windowInfo) {
+      cutoutBottomY = cutout.bottomY;
+      cutoutTopY = cutout.topY;
+    } else {
+      continue;
+    }
+    
+    // Create outline geometry for hole rectangle
+    // In wall's local space: X along wall, Y vertical, Z depth
+    const outlineGeometry = new instance.THREE.BufferGeometry();
+    const vertices = new Float32Array([
+      // Bottom edge
+      cutout.start, cutoutBottomY, 0,
+      cutout.end, cutoutBottomY, 0,
+      // Right edge
+      cutout.end, cutoutBottomY, 0,
+      cutout.end, cutoutTopY, 0,
+      // Top edge
+      cutout.end, cutoutTopY, 0,
+      cutout.start, cutoutTopY, 0,
+      // Left edge
+      cutout.start, cutoutTopY, 0,
+      cutout.start, cutoutBottomY, 0
+    ]);
+    outlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(vertices, 3));
+    
+    // Create line segments for hole outline
+    const outlineMaterial = new instance.THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+    const outlineLines = new instance.THREE.LineSegments(outlineGeometry, outlineMaterial);
+    
+    // Add to wall mesh (already in correct local coordinate system)
+    wallMesh.add(outlineLines);
+  }
+  
   for (const cutout of cutouts) {
     const mid = (cutout.start + cutout.end) / 2;
     const centerX = finalStartX + (finalDx / finalWallLength) * mid;
@@ -721,6 +857,8 @@ export function createWallMesh(instance, wall) {
     
     // Ensure windows are preserved when setting calculatedPosition
     const doorInfo = cutout.doorInfo;
+    const isDoubleSidedSlide = doorInfo.door_type === 'slide' && doorInfo.configuration === 'double_sided';
+    
     if (!doorInfo.calculatedPosition) {
       doorInfo.calculatedPosition = {};
     }
@@ -734,11 +872,97 @@ export function createWallMesh(instance, wall) {
       wasWallFlipped: wasWallFlipped
     };
     
+    // Debug logging for door position calculation
+    if (isDoubleSidedSlide) {
+      console.log(`[Door Position] Door ${doorInfo.id} (double-sided slide) calculatedPosition:`, {
+        cutoutStart: cutout.start,
+        cutoutEnd: cutout.end,
+        cutoutMid: mid,
+        centerX: centerX,
+        centerZ: centerZ,
+        doorX: doorX,
+        doorZ: doorZ,
+        cutoutWidth: cutout.end - cutout.start,
+        doorWidth: doorInfo.width * instance.scalingFactor
+      });
+    }
+    
     // Debug: Log if door has windows
     if (doorInfo.windows && doorInfo.windows.length > 0) {
       console.log(`[createWallMesh] Door ${doorInfo.id} has ${doorInfo.windows.length} window(s) when setting calculatedPosition`);
     }
   }
+  
+  // Add window glass panels
+  if (wallWindows.length > 0) {
+    const glassMaterial = new instance.THREE.MeshStandardMaterial({
+      color: 0xADD8E6, // Light blue tint
+      roughness: 0.05,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.3,
+      side: instance.THREE.DoubleSide,
+      envMapIntensity: 1.0
+    });
+    
+    const frameMaterial = new instance.THREE.MeshStandardMaterial({
+      color: 0x1a1a1a, // Very dark/black for frame
+      roughness: 0.8,
+      metalness: 0.2
+    });
+    
+    const windowThickness = 3 * scale;
+    const frameThickness = 3 * scale;
+    
+    // Find the corresponding window cutout for each window to get exact positioning
+    for (const window of wallWindows) {
+      const windowWidth_scaled = window.width * scale;
+      const windowHeight_scaled = window.height * scale;
+      
+      // Find the matching cutout for this window
+      const matchingCutout = windowCutouts.find(c => c.windowInfo.id === window.id);
+      if (!matchingCutout) continue;
+      
+      // Calculate window center from cutout bounds
+      const windowCenterX_local = (matchingCutout.start + matchingCutout.end) / 2;
+      const windowCenterY_local = (matchingCutout.bottomY + matchingCutout.topY) / 2;
+      
+      // Create glass panel (centered in wall thickness, z=0 is at the outer face)
+      const glassGeometry = new instance.THREE.BoxGeometry(windowWidth_scaled, windowHeight_scaled, windowThickness);
+      const glassMesh = new instance.THREE.Mesh(glassGeometry, glassMaterial);
+      glassMesh.position.set(windowCenterX_local, windowCenterY_local, 0);
+      wallMesh.add(glassMesh);
+      
+      // Create frame (outer border)
+      const frameWidth = windowWidth_scaled;
+      const frameHeight = windowHeight_scaled;
+      
+      // Top frame
+      const topFrameGeometry = new instance.THREE.BoxGeometry(frameWidth, frameThickness, windowThickness);
+      const topFrame = new instance.THREE.Mesh(topFrameGeometry, frameMaterial);
+      topFrame.position.set(windowCenterX_local, windowCenterY_local + frameHeight / 2 - frameThickness / 2, 0);
+      wallMesh.add(topFrame);
+      
+      // Bottom frame
+      const bottomFrameGeometry = new instance.THREE.BoxGeometry(frameWidth, frameThickness, windowThickness);
+      const bottomFrame = new instance.THREE.Mesh(bottomFrameGeometry, frameMaterial);
+      bottomFrame.position.set(windowCenterX_local, windowCenterY_local - frameHeight / 2 + frameThickness / 2, 0);
+      wallMesh.add(bottomFrame);
+      
+      // Left frame
+      const leftFrameGeometry = new instance.THREE.BoxGeometry(frameThickness, frameHeight - 2 * frameThickness, windowThickness);
+      const leftFrame = new instance.THREE.Mesh(leftFrameGeometry, frameMaterial);
+      leftFrame.position.set(windowCenterX_local - frameWidth / 2 + frameThickness / 2, windowCenterY_local, 0);
+      wallMesh.add(leftFrame);
+      
+      // Right frame
+      const rightFrameGeometry = new instance.THREE.BoxGeometry(frameThickness, frameHeight - 2 * frameThickness, windowThickness);
+      const rightFrame = new instance.THREE.Mesh(rightFrameGeometry, frameMaterial);
+      rightFrame.position.set(windowCenterX_local + frameWidth / 2 - frameThickness / 2, windowCenterY_local, 0);
+      wallMesh.add(rightFrame);
+    }
+  }
+  
   return wallMesh;
 }
 
@@ -849,13 +1073,90 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
 // Helper function to create a door with window holes
 // This creates the door in sections around windows, leaving actual holes
 function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, doorMaterial, windows, scale, offsetX = 0) {
+  // Helper function to add outer frame outline to door
+  const addDoorFrameOutline = (doorMeshOrGroup) => {
+    // Create outline geometry for outer frame on both sides
+    // Door extends from -doorWidth/2 to +doorWidth/2 in X, -doorHeight/2 to +doorHeight/2 in Y
+    // Outline should be on both faces: front (z = +doorThickness/2) and back (z = -doorThickness/2)
+    const halfWidth = doorWidth / 2;
+    const halfHeight = doorHeight / 2;
+    const halfThickness = doorThickness / 2;
+    
+    // Create rectangle outline on the front face (z = +doorThickness/2)
+    const frontOutlineGeometry = new instance.THREE.BufferGeometry();
+    const frontVertices = new Float32Array([
+      // Top edge
+      -halfWidth + offsetX, halfHeight, halfThickness,
+      halfWidth + offsetX, halfHeight, halfThickness,
+      // Right edge
+      halfWidth + offsetX, halfHeight, halfThickness,
+      halfWidth + offsetX, -halfHeight, halfThickness,
+      // Bottom edge
+      halfWidth + offsetX, -halfHeight, halfThickness,
+      -halfWidth + offsetX, -halfHeight, halfThickness,
+      // Left edge
+      -halfWidth + offsetX, -halfHeight, halfThickness,
+      -halfWidth + offsetX, halfHeight, halfThickness
+    ]);
+    frontOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(frontVertices, 3));
+    
+    // Create rectangle outline on the back face (z = -doorThickness/2)
+    const backOutlineGeometry = new instance.THREE.BufferGeometry();
+    const backVertices = new Float32Array([
+      // Top edge
+      -halfWidth + offsetX, halfHeight, -halfThickness,
+      halfWidth + offsetX, halfHeight, -halfThickness,
+      // Right edge
+      halfWidth + offsetX, halfHeight, -halfThickness,
+      halfWidth + offsetX, -halfHeight, -halfThickness,
+      // Bottom edge
+      halfWidth + offsetX, -halfHeight, -halfThickness,
+      -halfWidth + offsetX, -halfHeight, -halfThickness,
+      // Left edge
+      -halfWidth + offsetX, -halfHeight, -halfThickness,
+      -halfWidth + offsetX, halfHeight, -halfThickness
+    ]);
+    backOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(backVertices, 3));
+    
+    // Create outline geometry for thickness edges (connecting front and back faces)
+    const thicknessOutlineGeometry = new instance.THREE.BufferGeometry();
+    const thicknessVertices = new Float32Array([
+      // Top-left edge (front top-left to back top-left)
+      -halfWidth + offsetX, halfHeight, halfThickness,
+      -halfWidth + offsetX, halfHeight, -halfThickness,
+      // Top-right edge (front top-right to back top-right)
+      halfWidth + offsetX, halfHeight, halfThickness,
+      halfWidth + offsetX, halfHeight, -halfThickness,
+      // Bottom-left edge (front bottom-left to back bottom-left)
+      -halfWidth + offsetX, -halfHeight, halfThickness,
+      -halfWidth + offsetX, -halfHeight, -halfThickness,
+      // Bottom-right edge (front bottom-right to back bottom-right)
+      halfWidth + offsetX, -halfHeight, halfThickness,
+      halfWidth + offsetX, -halfHeight, -halfThickness
+    ]);
+    thicknessOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(thicknessVertices, 3));
+    
+    // Create line segments for all door frame outlines
+    const outlineMaterial = new instance.THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+    const frontOutlineLines = new instance.THREE.LineSegments(frontOutlineGeometry, outlineMaterial);
+    const backOutlineLines = new instance.THREE.LineSegments(backOutlineGeometry, outlineMaterial);
+    const thicknessOutlineLines = new instance.THREE.LineSegments(thicknessOutlineGeometry, outlineMaterial);
+    
+    doorMeshOrGroup.add(frontOutlineLines);
+    doorMeshOrGroup.add(backOutlineLines);
+    doorMeshOrGroup.add(thicknessOutlineLines);
+  };
+  
   // If no windows, create a simple box door
   if (!windows || windows.length === 0) {
     const doorGeometry = new instance.THREE.BoxGeometry(doorWidth, doorHeight, doorThickness);
     if (offsetX !== 0) {
       doorGeometry.translate(offsetX, 0, 0);
     }
-    return new instance.THREE.Mesh(doorGeometry, doorMaterial);
+    const doorMesh = new instance.THREE.Mesh(doorGeometry, doorMaterial);
+    // Add outer frame outline
+    addDoorFrameOutline(doorMesh);
+    return doorMesh;
   }
   
   // Create door in sections around windows
@@ -992,6 +1293,9 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
     }
   });
   
+  // Add outer frame outline to door group
+  addDoorFrameOutline(doorGroup);
+  
   return doorGroup;
 }
 
@@ -1023,10 +1327,6 @@ function addWindowGlass(instance, doorMesh, windows, doorWidth, doorHeight, door
     const windowHeight_scaled = window.height * scale;
     const windowThickness = Math.min(3 * scale, doorThickness * 0.8); // Thin glass, but not thicker than door
     const frameThickness = 3 * scale;
-    
-    // Position window glass in the center of the door thickness (visible from both sides)
-    // zPos defaults to 0 (center), but can be set for swing doors (wallDepth/2)
-    // The glass should be centered at zPos, extending from zPos - windowThickness/2 to zPos + windowThickness/2
     
     // Create window glass panel
     const windowGeometry = new instance.THREE.BoxGeometry(windowWidth_scaled, windowHeight_scaled, windowThickness);
@@ -1089,100 +1389,186 @@ export function createDoorMesh(instance, door, wall) {
   // 2. Door opening directions - to maintain correct swing/slide behavior
   // 3. Hinge positions - to maintain correct hinge placement relative to the door opening
   //
-  // FLOOR PLACEMENT NOTE: 
-  // - Swing doors: Positioned at doorHeight/2 (centered vertically) - working perfectly, DO NOT TOUCH
-  // - Slide doors: Positioned at (doorHeight/2) + floorThickness to avoid floor intersection
-  // Since floors now extend upward from Y=0 to Y=+thickness, slide doors are explicitly positioned above
-  // the floor thickness while swing doors maintain their perfect positioning.
+  // DOOR ELEVATION POSITIONING:
+  // - ALL doors (swing/slide/dock) are positioned consistently at: doorBaseElevation + doorHeight/2
+  // - This centers the door vertically on the wall opening, regardless of door type, side, or direction
+  // - doorBaseElevation matches the wall's base position exactly (using same logic as wall mesh)
+  // - The door opening in the wall starts at doorBaseElevation and has height doorHeight
   //
   // BASE ELEVATION NOTE:
-  // - If wall has base_elevation_manual=true, use wall's base_elevation_mm (ignoring room base elevation)
-  // - Otherwise, use room's base_elevation_mm (default behavior)
-  // - Always add storey elevation to the base elevation
+  // - If wall has base_elevation_manual=true, use wall's base_elevation_mm (absolute value, no storey)
+  // - Otherwise, use minimum room base_elevation_mm from all rooms containing the wall (absolute value, no storey)
+  // - This matches exactly how walls are positioned in createWallMesh()
   const { x: doorPosX, z: doorPosZ, angle: wallAngle, width: cutoutWidth, height: doorHeight, depth: wallDepth, wasWallFlipped } = door.calculatedPosition;
   const scale = instance.scalingFactor;
   const { width, thickness, door_type, swing_direction, slide_direction, side, configuration } = door;
   
   // Find the wall data object from the door's wall reference
   // The 'wall' parameter might be null or a Three.js mesh, so we need to look it up from instance.walls
-  const wallId = door.wall || door.wall_id;
-  const wallData = wallId ? instance.walls?.find(w => String(w.id) === String(wallId)) : null;
+  // Doors can reference walls via: door.wall, door.wall_id, or door.linked_wall
+  const wallId = door.wall || door.wall_id || door.linked_wall;
+  const wallData = wallId ? instance.walls?.find(w => 
+    String(w.id) === String(wallId) || 
+    String(w.id) === String(door.wall) || 
+    String(w.id) === String(door.wall_id) || 
+    String(w.id) === String(door.linked_wall)
+  ) : null;
   const hasManualBaseElevation = wallData && wallData.base_elevation_manual;
   
   // Get room data for comparison
   const room = instance.project?.rooms?.find(r => r.id === door.room);
   
   // Helper function to get the correct base elevation for door positioning
+  // CRITICAL: Match wall mesh positioning logic exactly (meshUtils.js lines 102-168)
+  // Walls use absolute base elevations (no storey elevation added)
+  // Doors must use the same logic to align properly with walls
   const getDoorBaseElevation = () => {
+    // Check for gap-fill mode first (matches wall mesh logic)
+    if (wallData && wallData.fill_gap_mode && wallData.gap_base_position !== null && wallData.gap_base_position !== undefined) {
+      // Gap-fill mode: position at gap base (matches wall mesh positioning)
+      const gapBasePosition = wallData.gap_base_position * scale;
+      console.log(`[Door ${door.id}] Using gap-fill base position: ${gapBasePosition}mm`);
+      return gapBasePosition;
+    }
+    
     // If wall has manual base elevation, use it (ignoring room base elevation)
-    if (hasManualBaseElevation) {
-      let wallBaseElevation = wallData.base_elevation_mm ?? 0;
+    if (hasManualBaseElevation && wallData) {
+      // Use wall's base_elevation_mm directly (absolute value, no storey elevation)
+      // This matches exactly how walls are positioned in createWallMesh
+      const wallBaseElevation = wallData.base_elevation_mm ?? 0;
       
-      // Add storey elevation if wall has a storey
-      if (instance.project && instance.project.storeys && (wallData.storey || wallData.storey_id)) {
-        const wallStoreyId = wallData.storey ?? wallData.storey_id;
-        const wallStorey = instance.project.storeys.find(s => 
-          String(s.id) === String(wallStoreyId)
-        );
-        const storeyElevation = wallStorey ? (wallStorey.elevation_mm ?? 0) : 0;
-        wallBaseElevation = storeyElevation + wallBaseElevation;
-      }
-      
-      console.log(`[Door ${door.id}] Using wall base elevation (manual): ${wallBaseElevation * scale}mm`);
+      console.log(`[Door ${door.id}] Using wall base elevation (manual): ${wallBaseElevation * scale}mm (absolute value, no storey)`);
       return wallBaseElevation * scale;
     }
     
-    // Default: use room's base elevation
-    const roomBaseElevation = (room?.base_elevation_mm ?? 0) * scale;
-    console.log(`[Door ${door.id}] Using room base elevation: ${roomBaseElevation}mm`);
-    return roomBaseElevation;
+    // Default: use minimum room base elevation from rooms containing this wall
+    // This matches exactly how walls are positioned when not manually set
+    let roomBaseElevation = 0;
+    let roomsContainingWallCount = 0;
+    
+    // Try to find rooms containing this wall if wallData exists
+    if (instance.project && instance.project.rooms && wallData) {
+      const roomsContainingWall = [];
+      const targetWallId = String(wallData.id);
+      
+      // Get rooms from instance.project.rooms that contain this wall
+      instance.project.rooms.forEach(r => {
+        const roomWalls = Array.isArray(r.walls) ? r.walls : [];
+        const hasWall = roomWalls.some(w => {
+          const wallId = typeof w === 'object' ? w.id : w;
+          return String(wallId) === targetWallId;
+        });
+        
+        if (hasWall) {
+          roomsContainingWall.push(r);
+        }
+      });
+      
+      roomsContainingWallCount = roomsContainingWall.length;
+      
+      // Get minimum base_elevation_mm from rooms containing this wall (absolute value)
+      if (roomsContainingWall.length > 0) {
+        const baseElevations = roomsContainingWall
+          .map(r => r.base_elevation_mm)
+          .filter(elev => elev !== undefined && elev !== null && !isNaN(elev))
+          .map(elev => Number(elev));
+        
+        if (baseElevations.length > 0) {
+          roomBaseElevation = Math.min(...baseElevations);
+        } else {
+          // Fallback to door's room base_elevation_mm if no room base elevations found
+          roomBaseElevation = (room?.base_elevation_mm !== undefined && room?.base_elevation_mm !== null && !isNaN(room.base_elevation_mm)) 
+            ? Number(room.base_elevation_mm) 
+            : 0;
+        }
+      } else {
+        // No rooms found containing this wall, fallback to door's room base_elevation_mm
+        roomBaseElevation = (room?.base_elevation_mm !== undefined && room?.base_elevation_mm !== null && !isNaN(room.base_elevation_mm)) 
+          ? Number(room.base_elevation_mm) 
+          : 0;
+      }
+    } else if (room) {
+      // If wallData not found but room exists, use room's base elevation
+      roomBaseElevation = (room.base_elevation_mm !== undefined && room.base_elevation_mm !== null && !isNaN(room.base_elevation_mm))
+        ? Number(room.base_elevation_mm)
+        : 0;
+    } else {
+      // Final fallback: use 0 (floor level)
+      // This should only happen if wall and room data are both unavailable
+      roomBaseElevation = 0;
+      console.warn(`[Door ${door.id}] WARNING: No wall or room data found, using floor level (0mm)`);
+    }
+    
+    console.log(`[Door ${door.id}] Using room base elevation: ${roomBaseElevation * scale}mm (wallData: ${wallData ? 'found' : 'not found'}, room: ${room ? 'found' : 'not found'}, roomsContainingWall: ${roomsContainingWallCount})`);
+    return roomBaseElevation * scale;
   };
   
   const doorBaseElevation = getDoorBaseElevation();
   
-  // Helper function to check if wall base elevation matches room base elevation (considering storey)
-  const shouldAddFloorThickness = () => {
-    // If no manual base elevation, always add floor thickness (normal behavior)
-    if (!hasManualBaseElevation) {
-      return true;
-    }
+  // Get floor thickness to raise door above the floor
+  // Floors are positioned at baseElevation and extend upward by floorThickness
+  // Doors should sit on top of the floor, so we add floorThickness to the base elevation
+  // Try to get floor thickness from rooms containing the wall (similar to base elevation logic)
+  let floorThickness = 150 * scale; // Default: 150mm
+  if (instance.project && instance.project.rooms && wallData) {
+    const roomsContainingWall = [];
+    const targetWallId = String(wallData.id);
     
-    // If manual base elevation, check if it matches room base elevation
-    if (hasManualBaseElevation && wallData && room) {
-      // Calculate wall's total base elevation (wall base + storey)
-      let wallBaseElevation = wallData.base_elevation_mm ?? 0;
-      if (instance.project && instance.project.storeys && (wallData.storey || wallData.storey_id)) {
-        const wallStoreyId = wallData.storey ?? wallData.storey_id;
-        const wallStorey = instance.project.storeys.find(s => 
-          String(s.id) === String(wallStoreyId)
-        );
-        const storeyElevation = wallStorey ? (wallStorey.elevation_mm ?? 0) : 0;
-        wallBaseElevation = storeyElevation + wallBaseElevation;
-      }
+    // Get rooms from instance.project.rooms that contain this wall
+    instance.project.rooms.forEach(r => {
+      const roomWalls = Array.isArray(r.walls) ? r.walls : [];
+      const hasWall = roomWalls.some(w => {
+        const wallId = typeof w === 'object' ? w.id : w;
+        return String(wallId) === targetWallId;
+      });
       
-      // Calculate room's total base elevation (room base + storey)
-      let roomBaseElevation = room.base_elevation_mm ?? 0;
-      if (instance.project && instance.project.storeys && (room.storey || room.storey_id)) {
-        const roomStoreyId = room.storey ?? room.storey_id;
-        const roomStorey = instance.project.storeys.find(s => 
-          String(s.id) === String(roomStoreyId)
-        );
-        const storeyElevation = roomStorey ? (roomStorey.elevation_mm ?? 0) : 0;
-        roomBaseElevation = storeyElevation + roomBaseElevation;
+      if (hasWall) {
+        roomsContainingWall.push(r);
       }
-      
-      // If wall base elevation equals room base elevation, add floor thickness
-      // Otherwise (wall is at different elevation), don't add floor thickness
-      const isSameElevation = Math.abs(wallBaseElevation - roomBaseElevation) < 0.1; // Small tolerance for floating point
-      console.log(`[Door ${door.id}] Wall base=${wallBaseElevation}mm, Room base=${roomBaseElevation}mm, Same=${isSameElevation}`);
-      return isSameElevation;
-    }
+    });
     
-    // Default: don't add floor thickness if manual elevation is set
-    return false;
-  };
+    // Get floor thickness from rooms containing this wall (use first available)
+    if (roomsContainingWall.length > 0) {
+      const floorThicknesses = roomsContainingWall
+        .map(r => r.floor_thickness)
+        .filter(thickness => thickness !== undefined && thickness !== null && !isNaN(thickness))
+        .map(thickness => Number(thickness));
+      
+      if (floorThicknesses.length > 0) {
+        // Use the first available floor thickness (could also use average or max if needed)
+        floorThickness = floorThicknesses[0] * scale;
+      } else if (room && room.floor_thickness !== undefined && room.floor_thickness !== null && !isNaN(room.floor_thickness)) {
+        // Fallback to door's room floor thickness
+        floorThickness = Number(room.floor_thickness) * scale;
+      }
+    } else if (room && room.floor_thickness !== undefined && room.floor_thickness !== null && !isNaN(room.floor_thickness)) {
+      // No rooms found containing this wall, fallback to door's room floor thickness
+      floorThickness = Number(room.floor_thickness) * scale;
+    }
+  } else if (room && room.floor_thickness !== undefined && room.floor_thickness !== null && !isNaN(room.floor_thickness)) {
+    // If wallData not found but room exists, use room's floor thickness
+    floorThickness = Number(room.floor_thickness) * scale;
+  }
   
-  const addFloorThickness = shouldAddFloorThickness();
+  // CRITICAL: All doors should be positioned consistently at (doorBaseElevation + floorThickness) + doorHeight/2
+  // This positions the door on top of the floor and centers it vertically on the wall opening
+  // Formula: door sits on floor top, so bottom is at (baseElevation + floorThickness), center is at (baseElevation + floorThickness + doorHeight/2)
+  const doorYPosition = doorBaseElevation + floorThickness + (doorHeight / 2);
+  
+  // Debug logging for door positioning
+  console.log(`[Door ${door.id}] Positioning:`, {
+    doorBaseElevation: doorBaseElevation,
+    floorThickness: floorThickness,
+    doorHeight: doorHeight,
+    doorYPosition: doorYPosition,
+    wallId: wallId,
+    wallDataFound: !!wallData,
+    hasManualBaseElevation: hasManualBaseElevation,
+    roomFound: !!room,
+    roomFloorThickness: room?.floor_thickness,
+    doorType: door_type,
+    side: side
+  });
   // IMPORTANT: When wall start/end points are flipped, door properties must be adjusted:
   // 1. Swing doors: flip swing direction to maintain correct visual behavior
   // 2. Slide doors: flip side (interior/exterior) to maintain correct visual behavior
@@ -1192,7 +1578,16 @@ export function createDoorMesh(instance, door, wall) {
   if (wasWallFlipped) {
     // Door properties adjusted for flipped wall
   }
-  const doorWidth = width * scale * 1.05;
+  // Calculate door width to match cutout width calculation in createWallMesh
+  // For double-sided slide doors: use 100% (1.0) to match cutout
+  // For single slide doors: use 95% (0.95) to match cutout
+  // For dock doors: use 100% (1.0) to match cutout
+  // For swing doors: use 105% (1.05) to match cutout
+  const isSlideDoor = (door_type === 'slide');
+  const isDockDoor = (door_type === 'dock');
+  const isDoubleSidedSlide = isSlideDoor && configuration === 'double_sided';
+  const doorWidthMultiplier = isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05;
+  const doorWidth = width * scale * doorWidthMultiplier;
   const doorThickness = thickness * instance.scalingFactor;
   const doorMaterial = new instance.THREE.MeshStandardMaterial({
     color: door_type === 'swing' ? 0xF8F8FF : 0xF8F8FF,
@@ -1204,37 +1599,101 @@ export function createDoorMesh(instance, door, wall) {
   if (door_type === 'slide') {
     if (configuration === 'double_sided') {
       // Create double sliding doors
-      const halfWidth = doorWidth * 0.48; // Slightly less than half to fit with gap
+      // Each panel should be exactly half the door width so they touch edge-to-edge when closed
+      const halfWidth = doorWidth / 2; // Exactly half - no gap, no overlap
       // Create a door container
       const doorContainer = new instance.THREE.Object3D();
-      // For slide doors: position above floor thickness to avoid intersection
-      // If wall has manual base elevation that matches room base elevation, add floor thickness
-      // Otherwise, door starts from wall bottom (no floor thickness)
-      let adjustedY;
-      if (addFloorThickness) {
-        // Add floor thickness above base elevation
-        const floorThickness = room?.floor_thickness || 150;
-        adjustedY = doorBaseElevation + (doorHeight/2) + (floorThickness * instance.scalingFactor);
-      } else {
-        // Door starts from wall bottom, centered vertically (no floor thickness)
-        adjustedY = doorBaseElevation + (doorHeight/2);
-      }
-      doorContainer.position.set(doorPosX, adjustedY, doorPosZ);
+      // Position door centered vertically on wall opening (consistent for all door types)
+      doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       
       // Create both door panels with window holes
-      const leftDoorWindows = (door.windows || []).filter(w => (w.position_x - 0.5) * doorWidth < 0);
-      const rightDoorWindows = (door.windows || []).filter(w => (w.position_x - 0.5) * doorWidth >= 0);
+      // Windows are positioned relative to the full door (position_x: 0 to 1)
+      // Left panel covers position_x: 0 to 0.5, right panel covers position_x: 0.5 to 1.0
+      // Check if windows span across the center - if so, they need cutouts in both panels
+      const fullDoorWidth = doorWidth; // Full door width for window span calculation
+      const leftDoorWindows = [];
+      const rightDoorWindows = [];
       
+      (door.windows || []).forEach(w => {
+        // Calculate window bounds in full door coordinate system
+        // Full door extends from -fullDoorWidth/2 to +fullDoorWidth/2
+        const windowCenterX = (w.position_x - 0.5) * fullDoorWidth;
+        const windowWidth_scaled = w.width * scale;
+        const windowLeft = windowCenterX - windowWidth_scaled / 2;
+        const windowRight = windowCenterX + windowWidth_scaled / 2;
+        
+        // Left panel extends from -fullDoorWidth/2 to 0
+        // Right panel extends from 0 to +fullDoorWidth/2
+        const leftPanelLeft = -fullDoorWidth / 2;
+        const leftPanelRight = 0;
+        const rightPanelLeft = 0;
+        const rightPanelRight = fullDoorWidth / 2;
+        
+        // Check if window overlaps with left panel
+        if (windowRight > leftPanelLeft && windowLeft < leftPanelRight) {
+          // Calculate the portion of window on left panel
+          const leftWindowLeft = Math.max(windowLeft, leftPanelLeft);
+          const leftWindowRight = Math.min(windowRight, leftPanelRight);
+          const leftWindowWidth = leftWindowRight - leftWindowLeft;
+          const leftWindowCenterX = (leftWindowLeft + leftWindowRight) / 2;
+          
+          // Convert to position_x relative to left panel (0 to 1)
+          // Left panel extends from -halfWidth to 0 in full door coordinates
+          // In panel coordinates: -halfWidth maps to 0, 0 maps to 1
+          // position_x = 0.5 means center of panel, 1.0 means right edge (at center of full door)
+          // Formula: position_x = (centerX - leftPanelLeft) / halfWidth
+          // Since leftPanelLeft = -halfWidth, this becomes: (centerX + halfWidth) / halfWidth
+          const leftPanelPositionX = (leftWindowCenterX - leftPanelLeft) / halfWidth;
+          
+          // Create partial window for left panel with adjusted width
+          leftDoorWindows.push({
+            ...w,
+            position_x: leftPanelPositionX,
+            width: leftWindowWidth / scale  // Convert back to unscaled width
+          });
+        }
+        
+        // Check if window overlaps with right panel
+        if (windowRight > rightPanelLeft && windowLeft < rightPanelRight) {
+          // Calculate the portion of window on right panel
+          const rightWindowLeft = Math.max(windowLeft, rightPanelLeft);
+          const rightWindowRight = Math.min(windowRight, rightPanelRight);
+          const rightWindowWidth = rightWindowRight - rightWindowLeft;
+          const rightWindowCenterX = (rightWindowLeft + rightWindowRight) / 2;
+          
+          // Convert to position_x relative to right panel (0 to 1)
+          // Right panel extends from 0 to +halfWidth in full door coordinates
+          // In panel coordinates: 0 maps to 0, +halfWidth maps to 1
+          // position_x = 0.5 means center of panel, 0.0 means left edge (at center of full door)
+          // Formula: position_x = (centerX - rightPanelLeft) / halfWidth
+          // Since rightPanelLeft = 0, this becomes: centerX / halfWidth
+          const rightPanelPositionX = (rightWindowCenterX - rightPanelLeft) / halfWidth;
+          
+          // Create partial window for right panel with adjusted width
+          rightDoorWindows.push({
+            ...w,
+            position_x: rightPanelPositionX,
+            width: rightWindowWidth / scale  // Convert back to unscaled width
+          });
+        }
+      });
+      
+      // Windows are already adjusted for each panel with correct width and position
+      const adjustedLeftWindows = leftDoorWindows;
+      const adjustedRightWindows = rightDoorWindows;
+      
+      // Create doors without offsetX - we'll position them manually
+      // BoxGeometry is centered at origin, so a door of width 'halfWidth' extends from -halfWidth/2 to +halfWidth/2
       const leftDoor = createDoorWithWindows(
         instance,
         halfWidth,
         doorHeight,
         doorThickness,
         doorMaterial,
-        leftDoorWindows,
+        adjustedLeftWindows,
         scale,
-        halfWidth / 2
+        0  // No offset - position manually
       );
       const rightDoor = createDoorWithWindows(
         instance,
@@ -1242,12 +1701,16 @@ export function createDoorMesh(instance, door, wall) {
         doorHeight,
         doorThickness,
         doorMaterial,
-        rightDoorWindows,
+        adjustedRightWindows,
         scale,
-        -halfWidth / 2
+        0  // No offset - position manually
       );
       
-      // Position doors within the container, with proper offset for the wall side
+      // Position doors within the container so they touch edge-to-edge when closed
+      // BoxGeometry is centered at origin, so:
+      // - Left door: center at -halfWidth/2, extends from -halfWidth to 0
+      // - Right door: center at +halfWidth/2, extends from 0 to +halfWidth
+      // They touch perfectly at x=0 (right edge of left door touches left edge of right door)
       // For interior doors: position on inner face (Z = wallThickness, toward model center)
       // For exterior doors: position on outer face (Z = 0, database line face)
       if (adjustedSide === 'interior') {
@@ -1276,11 +1739,12 @@ export function createDoorMesh(instance, door, wall) {
       
       // Add window glass to double slide door panels
       // For slide doors, glass should be at z = 0 (center of door thickness)
-      if (leftDoorWindows.length > 0) {
-        addWindowGlass(instance, leftDoor, leftDoorWindows, halfWidth, doorHeight, doorThickness, scale, halfWidth / 2, 0);
+      // Use adjusted windows (with position_x relative to each panel) for correct positioning
+      if (adjustedLeftWindows.length > 0) {
+        addWindowGlass(instance, leftDoor, adjustedLeftWindows, halfWidth, doorHeight, doorThickness, scale, 0, 0);
       }
-      if (rightDoorWindows.length > 0) {
-        addWindowGlass(instance, rightDoor, rightDoorWindows, halfWidth, doorHeight, doorThickness, scale, -halfWidth / 2, 0);
+      if (adjustedRightWindows.length > 0) {
+        addWindowGlass(instance, rightDoor, adjustedRightWindows, halfWidth, doorHeight, doorThickness, scale, 0, 0);
       }
       
       // Animate doors sliding open
@@ -1302,26 +1766,24 @@ export function createDoorMesh(instance, door, wall) {
       return doorContainer;
     } else {
       // Single sliding door
-      const doorMesh = new instance.THREE.Mesh(
-        new instance.THREE.BoxGeometry(doorWidth, doorHeight, doorThickness),
-        doorMaterial
-      );
       // Create door container to handle rotation and position
       const doorContainer = new instance.THREE.Object3D();
-      // For slide doors: position above floor thickness to avoid intersection
-      // If wall has manual base elevation that matches room base elevation, add floor thickness
-      // Otherwise, door starts from wall bottom (no floor thickness)
-      let adjustedY;
-      if (addFloorThickness) {
-        // Add floor thickness above base elevation
-        const floorThickness = room?.floor_thickness || 150;
-        adjustedY = doorBaseElevation + (doorHeight/2) + (floorThickness * instance.scalingFactor);
-      } else {
-        // Door starts from wall bottom, centered vertically (no floor thickness)
-        adjustedY = doorBaseElevation + (doorHeight/2);
-      }
-      doorContainer.position.set(doorPosX, adjustedY, doorPosZ);
+      // Position door centered vertically on wall opening (consistent for all door types)
+      doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
+      
+      // Create door with window holes (like swing doors)
+      const doorMesh = createDoorWithWindows(
+        instance,
+        doorWidth,
+        doorHeight,
+        doorThickness,
+        doorMaterial,
+        door.windows || [],
+        scale,
+        0
+      );
+      
       // Position door at wall face
       // For interior doors: position on inner face (Z = wallThickness, toward model center)
       // For exterior doors: position on outer face (Z = 0, database line face)
@@ -1345,8 +1807,9 @@ export function createDoorMesh(instance, door, wall) {
       instance.doorStates.set(`door_${door.id}`, true); // Start in open state
       
       // Add window glass to single slide door
+      // For slide doors, glass should be at z = 0 (center of door thickness) in doorMesh local space
       if (door.windows && door.windows.length > 0) {
-        addWindowGlass(instance, doorMesh, door.windows, doorWidth, doorHeight, doorThickness, scale, 0);
+        addWindowGlass(instance, doorMesh, door.windows, doorWidth, doorHeight, doorThickness, scale, 0, 0);
       }
       
       // Sliding direction
@@ -1369,7 +1832,8 @@ export function createDoorMesh(instance, door, wall) {
     if (configuration === 'double_sided') {
       const halfWidth = doorWidth * 0.5;
       const doorContainer = new instance.THREE.Object3D();
-      doorContainer.position.set(doorPosX, doorBaseElevation + doorHeight/2, doorPosZ);
+      // Position door centered vertically on wall opening (consistent for all door types)
+      doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       const leftPivot = new instance.THREE.Object3D();
       leftPivot.position.set(-cutoutWidth/2 + 0.1, 0, 0);
@@ -1466,7 +1930,8 @@ export function createDoorMesh(instance, door, wall) {
       const hingeOnRight = adjustedSwingDirection === 'right';
       const mountedInside = adjustedSide === 'interior';
       const doorContainer = new instance.THREE.Object3D();
-      doorContainer.position.set(doorPosX, doorBaseElevation + doorHeight/2, doorPosZ);
+      // Position door centered vertically on wall opening (consistent for all door types)
+      doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
       // IMPORTANT: When wall is flipped, the hinge position should also be flipped
       // to maintain correct visual behavior. The hinge should stay on the same relative side
@@ -1536,7 +2001,8 @@ export function createDoorMesh(instance, door, wall) {
     // The hole is already created in the wall mesh
     // Dock doors (卷帘门) open upward, so no side or direction settings needed
     const doorContainer = new instance.THREE.Object3D();
-    doorContainer.position.set(doorPosX, doorBaseElevation + doorHeight/2, doorPosZ);
+    // Position door centered vertically on wall opening (consistent for all door types)
+    doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
     doorContainer.rotation.y = -wallAngle;
     // Create a cover panel (flat rectangle) that covers the door opening
     const coverMaterial = new instance.THREE.MeshStandardMaterial({

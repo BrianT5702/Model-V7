@@ -560,9 +560,6 @@ getModelBounds() {
     }
   }  
 
-
-  // Fallback wall mesh creation moved to WallRenderer module
-
   // Animation loop
   animate() {
     requestAnimationFrame(() => this.animate());
@@ -1633,7 +1630,7 @@ getModelBounds() {
   getRoomCeilingColor(roomId) {
     // All ceilings now use the same white color to match walls
     return 0xFFFFFFF;
-  }
+  } 
 
   // Add room label on the ceiling
   addRoomLabelToCeiling(ceiling, room, roomVertices) {
@@ -1815,13 +1812,6 @@ getModelBounds() {
       
       // Check if wall should be flipped due to joint types
       let shouldFlipWall = false;
-      const { start_x, start_y, end_x, end_y, id } = wall;
-      const modelCenter = this.calculateModelCenter();
-      const scale = this.scalingFactor;
-      
-      // Determine if the wall is horizontal, vertical, or diagonal
-      const isHorizontal = Math.abs(start_y - end_y) < 1e-6;
-      const isVertical = Math.abs(start_x - end_x) < 1e-6;
       
       // Removed 45-degree joint logic - using simple butt-in joints only
       
@@ -1868,7 +1858,7 @@ getModelBounds() {
     return wallPanelsMap;
   }
 
-  // Calculate ceiling panels for each room based on ceiling plan data
+  // Calculate ceiling panels for each room based on ceiling plan data (including zone panels)
   calculateCeilingPanels() {
     const ceilingPanelsMap = {};
     
@@ -1876,15 +1866,53 @@ getModelBounds() {
       return ceilingPanelsMap;
     }
 
+    // First, collect all zone panels to avoid duplicates
+    const zonePanelsMap = new Map(); // zone_id -> { zone, panels, outline_points }
+    
     this.project.rooms.forEach(room => {
       debugLog(`🏠 Checking room ${room.id} (${room.room_name}):`, {
         ceiling_plan: room.ceiling_plan,
+        zone_ceiling_plan: room.zone_ceiling_plan,
+        ceiling_zones: room.ceiling_zones,
         ceiling_panels_from_plan: room.ceiling_plan?.ceiling_panels,
         hasCeilingPanels: room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0
       });
       
-      // Check for ceiling panels via ceiling_plan.ceiling_panels (correct path)
-      if (room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0) {
+      // Priority 1: Check if room is in a zone and has zone_ceiling_plan
+      if (room.zone_ceiling_plan?.ceiling_panels && room.zone_ceiling_plan.ceiling_panels.length > 0) {
+        // Room is in a zone - use zone panels
+        const zoneId = room.ceiling_zones?.[0]?.id;
+        if (zoneId && !zonePanelsMap.has(zoneId)) {
+          // Get zone outline points if available (for proper clipping)
+          const zone = room.ceiling_zones[0];
+          const outlinePoints = zone.outline_points || null;
+          
+          debugLog(`🏠 Room ${room.id}: Using zone ceiling panel data (zone ${zoneId}, ${room.zone_ceiling_plan.ceiling_panels.length} panels)`);
+          const panels = room.zone_ceiling_plan.ceiling_panels.map(panel => ({
+            id: panel.panel_id,
+            width: panel.width,
+            length: panel.length,
+            start_x: panel.start_x,
+            start_y: panel.start_y,
+            end_x: panel.end_x,
+            end_y: panel.end_y,
+            is_cut_panel: panel.is_cut_panel,
+            material_type: panel.material_type,
+            thickness: panel.thickness,
+            cut_notes: panel.cut_notes,
+            shape_data: panel.shape_data || null // Preserve L-shape geometry
+          }));
+          
+          zonePanelsMap.set(zoneId, {
+            zone: zone,
+            panels: panels,
+            outline_points: outlinePoints,
+            ceiling_plan: room.zone_ceiling_plan
+          });
+        }
+      }
+      // Priority 2: Check for ceiling panels via ceiling_plan.ceiling_panels (individual room)
+      else if (room.ceiling_plan?.ceiling_panels && room.ceiling_plan.ceiling_panels.length > 0) {
         // Use the actual ceiling panel data from the database
         debugLog(`🏠 Room ${room.id}: Using actual ceiling panel data (${room.ceiling_plan.ceiling_panels.length} panels)`);
         const panels = room.ceiling_plan.ceiling_panels.map(panel => ({
@@ -1898,13 +1926,15 @@ getModelBounds() {
           is_cut_panel: panel.is_cut_panel,
           material_type: panel.material_type,
           thickness: panel.thickness,
-          cut_notes: panel.cut_notes
+          cut_notes: panel.cut_notes,
+          shape_data: panel.shape_data || null // Preserve L-shape geometry
         }));
         
         ceilingPanelsMap[room.id] = {
           room: room,
           panels: panels,
-          ceiling_plan: room.ceiling_plan
+          ceiling_plan: room.ceiling_plan,
+          outline_points: null // Individual rooms use room_points
         };
         
         debugLog(`🏠 Room ${room.id} (${room.room_name}): Found ${panels.length} ceiling panels`);
@@ -1916,10 +1946,33 @@ getModelBounds() {
           ceilingPanelsMap[room.id] = {
             room: room,
             panels: fallbackPanels,
-            ceiling_plan: null
+            ceiling_plan: null,
+            outline_points: null
           };
         }
       }
+    });
+    
+    // Now, map zone panels to each room in the zone
+    zonePanelsMap.forEach((zoneData, zoneId) => {
+      // Find all rooms in this zone
+      this.project.rooms.forEach(room => {
+        const roomZoneIds = room.ceiling_zones?.map(z => z.id) || [];
+        if (roomZoneIds.includes(zoneId)) {
+          // Use zone outline points if available, otherwise use room points
+          const outlinePoints = zoneData.outline_points || room.room_points;
+          
+          ceilingPanelsMap[room.id] = {
+            room: room,
+            panels: zoneData.panels,
+            ceiling_plan: zoneData.ceiling_plan,
+            outline_points: outlinePoints, // Use zone outline for proper clipping
+            zone: zoneData.zone
+          };
+          
+          debugLog(`🏠 Room ${room.id} (${room.room_name}): Mapped ${zoneData.panels.length} zone panels from zone ${zoneId}`);
+        }
+      });
     });
     
     return ceilingPanelsMap;
@@ -2026,7 +2079,6 @@ getModelBounds() {
         // Creating panel lines for wall
         
         // Debug: Log side panel positions
-        const sidePanels = panels.filter(p => p.type === 'side');
         
         const { start_x, start_y, end_x, end_y, height, thickness, id, fill_gap_mode, gap_fill_height, gap_base_position } = wall;
         const scale = this.scalingFactor;
@@ -2042,65 +2094,48 @@ getModelBounds() {
           return;
         }
         
+        // CRITICAL: Match meshUtils.js coordinate system exactly
+        // Scale coordinates first (matching meshUtils.js lines 57-60)
+        let startX = start_x * scale;
+        let startZ = start_y * scale;
+        let endX = end_x * scale;
+        let endZ = end_y * scale;
+        
         // Determine if the wall is horizontal, vertical, or diagonal
         const isHorizontal = Math.abs(start_y - end_y) < 1e-6;
         const isVertical = Math.abs(start_x - end_x) < 1e-6;
         
-        // Removed 45-degree joint logic - using simple butt-in joints only
-        let shouldFlipWall = false;
+        // Apply wall flipping logic EXACTLY matching meshUtils.js (lines 171-188)
+        let finalStartX = startX;
+        let finalStartZ = startZ;
+        let finalEndX = endX;
+        let finalEndZ = endZ;
         
-        // Apply wall flipping if needed
-        let finalStartX, finalStartY, finalEndX, finalEndY;
-        if (shouldFlipWall) {
-          // Flip the wall coordinates - match the logic from meshUtils.js
-          if (isVertical) {
-            // For vertical walls: flip start Y with end Y (which becomes start Z and end Z in 3D)
-            finalStartX = start_x;
-            finalStartY = end_y;
-            finalEndX = end_x;
-            finalEndY = start_y;
-          } else if (isHorizontal) {
-            // For horizontal walls: flip start X with end X
-            finalStartX = end_x;
-            finalStartY = start_y;
-            finalEndX = start_x;
-            finalEndY = end_y;
-          } else {
-            // For diagonal walls: flip both coordinates
-            finalStartX = end_x;
-            finalStartY = end_y;
-            finalEndX = start_x;
-            finalEndY = start_y;
+        // Apply model center logic for wall orientation (matching meshUtils.js)
+        if (isHorizontal) {
+          // For horizontal walls: if model center is at < Z position, flip start X with end X
+          if (modelCenter.z * scale < startZ) {
+            finalStartX = endX;
+            finalEndX = startX;
           }
-        } else {
-          // Keep original coordinates
-          finalStartX = start_x;
-          finalStartY = start_y;
-          finalEndX = end_x;
-          finalEndY = end_y;
+        } else if (isVertical) {
+          // For vertical walls: if model center is at > X position, flip start Z with end Z
+          if (modelCenter.x * scale > startX) {
+            finalStartZ = endZ;
+            finalEndZ = startZ;
+          }
         }
         
-        // Calculate final wall direction and length
+        // Calculate final wall direction and length (in scaled space)
         const finalDx = finalEndX - finalStartX;
-        const finalDy = finalEndY - finalStartY;
-        const finalWallLength = Math.sqrt(finalDx * finalDx + finalDy * finalDy);
-        
-        // Calculate wall length in unscaled coordinates (mm) for panel and door calculations
-        const finalWallLengthUnscaled = finalWallLength / scale;
-        
-        // Debug: Wall length calculation
-        // debugLog(`Wall ${wall.id} - Scaled length: ${finalWallLength}, Unscaled length: ${finalWallLengthUnscaled}mm, Scale: ${scale}`);
-        
-        // Calculate wall normal (perpendicular to final wall direction)
-        const wallDirX = finalDx / finalWallLength;
-        const wallDirY = finalDy / finalWallLength;
-        const normX = -wallDirY;
-        const normZ = wallDirX;
+        const finalDz = finalEndZ - finalStartZ;
+        const finalWallLength = Math.sqrt(finalDx * finalDx + finalDz * finalDz);
         
         // Wall thickness in scaled units
         const wallThickness = thickness * scale;
         
         // Wall height in scaled units - adjust for gap-fill mode
+        // CRITICAL: Match meshUtils.js elevation logic exactly (lines 102-168)
         let wallHeight;
         let wallBaseY = 0; // Default: floor level
         if (fill_gap_mode && gap_fill_height !== null && gap_base_position !== null) {
@@ -2108,72 +2143,78 @@ getModelBounds() {
           wallBaseY = gap_base_position * scale;
           wallHeight = gap_fill_height * scale;
         } else {
-          // Normal mode: floor to ceiling
-          // Find rooms that contain this wall and use the minimum base elevation
-          if (this.project && this.project.rooms) {
-            const roomsWithWall = this.project.rooms.filter(room => 
-              room.walls && room.walls.some(wallId => String(wallId) === String(id))
-            );
-            
-            if (roomsWithWall.length > 0) {
-              const baseElevations = roomsWithWall
-                .map(room => room.base_elevation_mm ?? 0)
-                .filter(elev => !isNaN(elev));
+          // Normal mode: determine base elevation based on whether it was manually set
+          // Use room or wall base elevation directly (absolute values), don't add storey elevation
+          let wallBaseElevation = 0;
+          
+          // If base_elevation_manual is true, use wall's base_elevation_mm (manually set, absolute value)
+          // Otherwise, use the minimum base_elevation_mm from rooms containing this wall (absolute value)
+          if (wall.base_elevation_manual) {
+            // Use manually set wall base elevation (absolute value)
+            wallBaseElevation = wall.base_elevation_mm ?? 0;
+          } else {
+            // Use room base elevation (minimum of all rooms containing this wall, absolute value)
+            if (this.project && this.project.rooms) {
+              const roomsWithWall = this.project.rooms.filter(room => {
+                const roomWalls = Array.isArray(room.walls) ? room.walls : [];
+                return roomWalls.some(w => {
+                  const wallId = typeof w === 'object' ? w.id : w;
+                  return String(wallId) === String(id);
+                });
+              });
               
-              if (baseElevations.length > 0) {
-                wallBaseY = Math.min(...baseElevations) * scale;
+              if (roomsWithWall.length > 0) {
+                const baseElevations = roomsWithWall
+                  .map(room => room.base_elevation_mm)
+                  .filter(elev => elev !== undefined && elev !== null)
+                  .map(elev => Number(elev) || 0);
+                
+                if (baseElevations.length > 0) {
+                  wallBaseElevation = Math.min(...baseElevations);
+                } else {
+                  // Fallback to wall's base_elevation_mm if no room base elevations found
+                  wallBaseElevation = wall.base_elevation_mm ?? 0;
+                }
+              } else {
+                // No rooms found, fallback to wall's base_elevation_mm
+                wallBaseElevation = wall.base_elevation_mm ?? 0;
               }
+            } else {
+              // No project/rooms data, fallback to wall's base_elevation_mm
+              wallBaseElevation = wall.base_elevation_mm ?? 0;
             }
           }
+          
+          // basePositionY is the Y position for the bottom of the wall in 3D space
+          // This matches exactly how walls are positioned in meshUtils.js
+          wallBaseY = wallBaseElevation * scale;
           wallHeight = height * scale;
         }
         
-        // Calculate the wall's midpoint using final coordinates
-        const wallMidX = (finalStartX + finalEndX) / 2;
-        const wallMidY = (finalStartY + finalEndY) / 2;
-        
-        // Calculate the direction to the model center
-        const toCenterX = modelCenter.x / scale - wallMidX;
-        const toCenterY = modelCenter.z / scale - wallMidY;
-        
-        // Determine final normal direction based on flipped wall orientation
-        let finalNormX, finalNormZ;
-        
-        // Check if the final wall is horizontal, vertical, or diagonal
-        const isFinalHorizontal = Math.abs(finalStartY - finalEndY) < 1e-6;
-        const isFinalVertical = Math.abs(finalStartX - finalEndX) < 1e-6;
-        
-        // Simplified wall normal calculation without 45-degree joints
-        if (isFinalHorizontal) {
-          // For horizontal walls: if model center is at < Y position, normal points down
-          if (modelCenter.z / scale < finalStartY) {
-            finalNormX = 0;
-            finalNormZ = -1;
-          } else {
-            finalNormX = 0;
-            finalNormZ = 1;
-          }
-        } else if (isFinalVertical) {
-          // For vertical walls: if model center is at > X position, normal points right
-          if (modelCenter.x / scale > finalStartX) {
-            finalNormX = 1;
-            finalNormZ = 0;
-          } else {
-            finalNormX = -1;
-            finalNormZ = 0;
-          }
-        } else {
-          // Diagonal wall: use original logic
-          const normX = -finalDy / finalWallLength;
-          const normZ = finalDx / finalWallLength;
-          const wallMidX = (finalStartX + finalEndX) / 2;
-          const wallMidY = (finalStartY + finalEndY) / 2;
-          const toCenterX = (modelCenter.x / scale) - wallMidX;
-          const toCenterY = (modelCenter.z / scale) - wallMidY;
-          const dotProduct = normX * toCenterX + normZ * toCenterY;
-          finalNormX = dotProduct < 0 ? -normX : normX;
-          finalNormZ = dotProduct < 0 ? -normZ : normZ;
+        // Calculate wall normal EXACTLY matching meshUtils.js logic (lines 190-209)
+        // This ensures panel lines align perfectly with wall surfaces
+        const len = finalWallLength || 1;
+        const ux = finalDx / len;
+        const uz = finalDz / len;
+        let nx = -uz;
+        let nz = ux;
+        const midX = (finalStartX + finalEndX) / 2;
+        const midZ = (finalStartZ + finalEndZ) / 2;
+        const toCenterX = (modelCenter.x * scale) - midX;
+        const toCenterZ = (modelCenter.z * scale) - midZ;
+        const dot = nx * toCenterX + nz * toCenterZ;
+        if (dot < 0) {
+          nx = -nx;
+          nz = -nz;
         }
+        const finalNormX = nx;
+        const finalNormZ = nz;
+        
+        // Store unscaled coordinates for panel calculations
+        const finalStartXUnscaled = finalStartX / scale;
+        const finalStartYUnscaled = finalStartZ / scale; // Note: Z in scaled = Y in unscaled
+        const finalEndXUnscaled = finalEndX / scale;
+        const finalEndYUnscaled = finalEndZ / scale;
         
         // Get doors for this wall and calculate cutouts
         const wallDoors = this.doors.filter(door => 
@@ -2181,60 +2222,71 @@ getModelBounds() {
         );
         
         // Calculate door cutouts (same logic as in meshUtils.js)
-        const wasWallFlipped = (finalStartX !== start_x) || (finalStartY !== start_y);
+        // Check if wall was flipped by comparing scaled coordinates
+        const wasWallFlipped = (finalStartX !== startX) || (finalStartZ !== startZ);
         wallDoors.sort((a, b) => a.position_x - b.position_x);
+        
+        // Calculate panel positions using unscaled coordinates for panel width calculations
+        const finalWallLengthUnscaled = finalWallLength / scale;
+        
+        // Calculate cutouts in UNSCALED space to match divisionPosition
         const cutouts = wallDoors.map(door => {
           const isSlideDoor = (door.door_type === 'slide');
-          const doorWidth = door.width; // Use UNSCALED width (mm) since finalWallLength is already scaled
-          const cutoutWidth = doorWidth * (isSlideDoor ? 0.95 : 1.05); // cutout width in mm
-          const doorHeight = door.height * scale * 1.02; // Store height in cutout object like meshUtils.js
+          const doorWidth = door.width; // Keep unscaled (mm)
+          // For double-sided slide doors, use full door width (both panels need to fit)
+          // For single slide doors, use 95% (slight gap for sliding)
+          // For swing doors, use 105% (slight overlap for door swing)
+          const isDoubleSidedSlide = isSlideDoor && door.configuration === 'double_sided';
+          const cutoutWidth = doorWidth * (isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : 1.05); // cutout width in mm (unscaled)
+          const doorHeight = door.height * scale * 1.02; // Store height in scaled space
           
           // If wall was flipped, flip the door position
           const adjustedPositionX = wasWallFlipped ? (1 - door.position_x) : door.position_x;
-          const doorPos = adjustedPositionX * finalWallLength;
+          const doorPos = adjustedPositionX * finalWallLengthUnscaled; // Position in unscaled mm
           
           const cutout = {
-            start: Math.max(0, doorPos - cutoutWidth / 2),
-            end: Math.min(finalWallLength, doorPos + cutoutWidth / 2),
-            height: doorHeight, // Store height directly in cutout object
+            start: Math.max(0, doorPos - cutoutWidth / 2), // Unscaled mm
+            end: Math.min(finalWallLengthUnscaled, doorPos + cutoutWidth / 2), // Unscaled mm
+            height: doorHeight, // Scaled space
             doorInfo: door
           };
           
-          
           return cutout;
         });
-        
         
         let accumulated = 0;
         
         // Wall panel division positions
         
         // Create division lines for each panel boundary
-        // Note: The panels array from calculateWallPanels() already has the correct flipped positions
-        // for side panels when shouldFlipWall is true, so we use them as-is
+        // Note: The panels array from calculateWallPanels() uses unscaled coordinates
+        // so we need to convert panel widths to scaled space for positioning
         
         for (let i = 0; i < panels.length - 1; i++) {
-          accumulated += panels[i].width;
-          const t = accumulated / finalWallLength; // Position along wall (0-1)
-          const divisionPosition = accumulated; // Position in wall units (mm)
+          accumulated += panels[i].width; // Accumulate in unscaled mm
+          const t = accumulated / finalWallLengthUnscaled; // Position along wall (0-1) in unscaled space
+          const divisionPosition = accumulated; // Position in wall units (mm, unscaled)
           
-          
-          // Panel division created
-          
-          // Calculate division point along the wall using final coordinates
-          // Use scaled coordinates for 3D positioning
+          // Calculate division point along the wall using SCALED final coordinates
+          // This matches exactly how the wall mesh is positioned
           const divX = finalStartX + (finalEndX - finalStartX) * t;
-          const divY = finalStartY + (finalEndY - finalStartY) * t;
+          const divZ = finalStartZ + (finalEndZ - finalStartZ) * t;
           
-          // Convert to 3D coordinates
-          const divX3D = divX * scale + this.modelOffset.x;
-          const divZ3D = divY * scale + this.modelOffset.z;
+          // Convert to 3D world coordinates (add model offset)
+          const divX3D = divX + this.modelOffset.x;
+          const divZ3D = divZ + this.modelOffset.z;
           
-          // Position lines: one at database coordinate (0 position) and one offset by wall thickness
+          // CRITICAL: Position panel division lines on BOTH wall surfaces
+          // Wall mesh is positioned at database coordinate and extruded by wallThickness
+          // in the normal direction (toward model center). Therefore:
+          // - Surface 1: At database coordinate (one face of the wall)
+          // - Surface 2: At database coordinate + normal * wallThickness (opposite face)
+          // We place one line on each surface for accurate double-line representation
           const dbLinePoint = {
             x: divX3D,
             z: divZ3D
           };
+          // Offset by full wall thickness in normal direction to reach the opposite surface
           const offsetLinePoint = {
             x: divX3D + finalNormX * wallThickness,
             z: divZ3D + finalNormZ * wallThickness
@@ -2256,6 +2308,7 @@ getModelBounds() {
           });
           
           // Create line segments that break at door cutouts
+          // Pass unscaled coordinates for compatibility (though they may not be used)
           this.createLineSegmentsWithCutouts(
             dbLinePoint, 
             offsetLinePoint, 
@@ -2263,11 +2316,11 @@ getModelBounds() {
             wallBaseY,
             cutouts, 
             divisionPosition, 
-            finalWallLength,
-            finalStartX,
-            finalStartY,
-            finalEndX,
-            finalEndY,
+            finalWallLengthUnscaled, // Pass unscaled length for cutout comparison
+            finalStartXUnscaled,
+            finalStartYUnscaled,
+            finalEndXUnscaled,
+            finalEndYUnscaled,
             scale,
             isCutPanel,
             wall.id,
@@ -2301,6 +2354,32 @@ getModelBounds() {
         const wallLength = Math.sqrt(dx * dx + dy * dy);
         
         if (wallLength === 0) return;
+        
+        // Calculate wall normal EXACTLY matching meshUtils.js logic for precise positioning
+        const modelCenter = this.calculateModelCenter();
+        const wallMidX = (start_x + end_x) / 2;
+        const wallMidY = (start_y + end_y) / 2;
+        
+        // Wall direction vector (normalized)
+        const wallDirX = dx / wallLength;
+        const wallDirY = dy / wallLength;
+        
+        // Perpendicular vector (90-degree rotation: -dy, dx)
+        let normX = -wallDirY;
+        let normZ = wallDirX;
+        
+        // Calculate direction to model center (in unscaled mm coordinates)
+        const toCenterX = (modelCenter.x / scale) - wallMidX;
+        const toCenterY = (modelCenter.z / scale) - wallMidY;
+        
+        // Choose the normal direction that points toward model center
+        // This matches exactly how walls are positioned in meshUtils.js
+        const dotProduct = normX * toCenterX + normZ * toCenterY;
+        const finalNormX = dotProduct < 0 ? -normX : normX;
+        const finalNormZ = dotProduct < 0 ? -normZ : normZ;
+        
+        // Wall thickness in scaled units
+        const wallThickness = thickness * scale;
         
         // Create a simple division line at the middle of each wall
         const midX = (start_x + end_x) / 2;
@@ -2337,16 +2416,24 @@ getModelBounds() {
           wallHeight = height * scale;
         }
         
+        // CRITICAL: Position panel division lines on BOTH wall surfaces
+        // Use the same precise normal calculation as main panel lines
+        const dbLinePoint = { x: divX3D, z: divZ3D };
+        const offsetLinePoint = {
+          x: divX3D + finalNormX * wallThickness,
+          z: divZ3D + finalNormZ * wallThickness
+        };
+        
         // Create line from wall base to wall top
         const wallTopY = wallBaseY + wallHeight;
         const lineGeometry = new this.THREE.BufferGeometry();
         const vertices = new Float32Array([
-          // Line at wall position
-          divX3D, wallBaseY, divZ3D,
-          divX3D, wallTopY, divZ3D,
-          // Line offset by wall thickness
-          divX3D + (dy / wallLength) * thickness * scale, wallBaseY, divZ3D - (dx / wallLength) * thickness * scale,
-          divX3D + (dy / wallLength) * thickness * scale, wallTopY, divZ3D - (dx / wallLength) * thickness * scale
+          // Line at database coordinate (surface 1)
+          dbLinePoint.x, wallBaseY, dbLinePoint.z,
+          dbLinePoint.x, wallTopY, dbLinePoint.z,
+          // Line offset by wall thickness (surface 2)
+          offsetLinePoint.x, wallBaseY, offsetLinePoint.z,
+          offsetLinePoint.x, wallTopY, offsetLinePoint.z
         ]);
         
         lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
@@ -2746,21 +2833,90 @@ getModelBounds() {
       
       const ceilingPanelsMap = this.calculateCeilingPanels();
       
-      Object.values(ceilingPanelsMap).forEach(({ room, panels }) => {
+      Object.values(ceilingPanelsMap).forEach((entry) => {
+        const { room, panels, outline_points } = entry;
         if (!panels || panels.length === 0) return;
-        
-        // Determine height
-        const roomCeilingHeight = this.determineRoomCeilingHeight(room, new Map(), new Map());
-        if (!roomCeilingHeight) return;
         
         const scale = this.scalingFactor;
         // Use room base elevation directly (absolute value, no storey elevation)
         const absoluteBaseElevation = room.base_elevation_mm ?? 0;
         const baseElevation = absoluteBaseElevation * scale;
-        const ceilingY = baseElevation + (roomCeilingHeight * scale);
         
-        // 2. Prepare Room Geometry (in 3D coords)
-        const roomVertices = room.room_points.map(point => ({
+        // CRITICAL: Match ceiling mesh positioning exactly
+        // The ceiling mesh is positioned at: baseElevation + (maxWallHeight * scale)
+        // The top surface varies based on wall heights at each point
+        // For panel lines, we need to calculate the ceiling top Y at each point
+        
+        // Get room walls to calculate max wall height (matching ceiling mesh logic)
+        let roomWallIds = [];
+        if (Array.isArray(room.walls)) {
+          roomWallIds = room.walls.map(w => (typeof w === 'object' ? w.id : w));
+        }
+        
+        // Create a map of wall heights for this room (matching createRoomCeilingMesh logic)
+        const wallHeightMap = new Map();
+        this.walls.forEach(wall => {
+          if (roomWallIds.length === 0 || roomWallIds.includes(wall.id)) {
+            wallHeightMap.set(wall.id, wall.height || 0);
+          }
+        });
+        
+        // Map each room point to its wall height (matching createRoomCeilingMesh logic)
+        const pointHeightMap = new Map();
+        room.room_points.forEach((point) => {
+          // Find wall that has an endpoint at this point
+          const wallAtPoint = this.walls.find(wall => {
+            if (roomWallIds.length > 0 && !roomWallIds.includes(wall.id)) {
+              return false;
+            }
+            const distToStart = Math.sqrt(Math.pow(point.x - wall.start_x, 2) + Math.pow(point.y - wall.start_y, 2));
+            const distToEnd = Math.sqrt(Math.pow(point.x - wall.end_x, 2) + Math.pow(point.y - wall.end_y, 2));
+            return distToStart < 1 || distToEnd < 1; // 1mm tolerance
+          });
+          
+          const wallHeight = wallAtPoint ? (wallAtPoint.height || 0) : 0;
+          const pointKey = `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
+          pointHeightMap.set(pointKey, wallHeight);
+        });
+        
+        // Find max wall height for this room (matching createRoomCeilingMesh)
+        const roomCeilingHeight = this.determineRoomCeilingHeight(room, wallHeightMap, new Map());
+        if (!roomCeilingHeight) return;
+        
+        // Function to get wall height at a 2D point (matching createRoomCeilingMesh)
+        const getHeightAtPoint = (pointX, pointY) => {
+          // Find closest room point
+          let closestPoint = null;
+          let minDist = Infinity;
+          room.room_points.forEach(point => {
+            const dist = Math.sqrt(Math.pow(point.x - pointX, 2) + Math.pow(point.y - pointY, 2));
+            if (dist < minDist) {
+              minDist = dist;
+              closestPoint = point;
+            }
+          });
+          
+          if (closestPoint && minDist < 100) { // 100mm tolerance
+            const pointKey = `${closestPoint.x.toFixed(2)},${closestPoint.y.toFixed(2)}`;
+            return pointHeightMap.get(pointKey) || roomCeilingHeight || 0;
+          }
+          
+          return roomCeilingHeight || 0;
+        };
+        
+        // Calculate ceiling top Y at a point
+        // Ceiling mesh position.y = baseElevation + (maxWallHeight * scale)
+        // Top surface local Y = (wallHeight - maxWallHeight) * scale
+        // World Y = position.y + localY = baseElevation + wallHeight * scale
+        const getCeilingTopY = (pointX, pointY) => {
+          const wallHeight = getHeightAtPoint(pointX, pointY);
+          return baseElevation + (wallHeight * scale) + (0.1 * scale); // Tiny offset for visibility
+        };
+        
+        // 2. Prepare Room/Zone Geometry (in 3D coords)
+        // Use zone outline_points if available (for zones), otherwise use room_points
+        const geometryPoints = outline_points || room.room_points;
+        const roomVertices = geometryPoints.map(point => ({
           x: point.x * scale + this.modelOffset.x,
           z: point.y * scale + this.modelOffset.z
         }));
@@ -2773,16 +2929,27 @@ getModelBounds() {
            const pEndX = pStartX + (panel.width * scale);
            const pEndZ = pStartZ + (panel.length * scale);
 
-           // CLIP: Intersect Panel Box with Room Polygon
+           // CLIP: Intersect Panel Box with Room/Zone Polygon
            // This produces the L-shape if the panel hits a corner
+           // For zones, this uses the merged outline_points which properly represents the zone shape
            const clippedShape = this.clipPolygonByRect(roomVertices, pStartX, pStartZ, pEndX, pEndZ);
 
            if (clippedShape.length > 2) {
              // Create Geometry from clipped points
+             // Position lines at ceiling top surface - calculate Y for each point to match sloped ceilings
              const vertices = [];
-             clippedShape.forEach(p => vertices.push(p.x, ceilingY, p.z));
-             // Close loop
-             vertices.push(clippedShape[0].x, ceilingY, clippedShape[0].z);
+             clippedShape.forEach(p => {
+               // Convert 3D coordinates back to 2D for height lookup
+               const pointX = (p.x - this.modelOffset.x) / scale;
+               const pointY = (p.z - this.modelOffset.z) / scale;
+               const ceilingY = getCeilingTopY(pointX, pointY);
+               vertices.push(p.x, ceilingY, p.z);
+             });
+             // Close loop - recalculate for first point
+             const firstPointX = (clippedShape[0].x - this.modelOffset.x) / scale;
+             const firstPointY = (clippedShape[0].z - this.modelOffset.z) / scale;
+             const firstCeilingY = getCeilingTopY(firstPointX, firstPointY);
+             vertices.push(clippedShape[0].x, firstCeilingY, clippedShape[0].z);
 
              const lineGeometry = new this.THREE.BufferGeometry();
              lineGeometry.setAttribute('position', new this.THREE.Float32BufferAttribute(vertices, 3));
@@ -2798,9 +2965,9 @@ getModelBounds() {
 
              const line = new this.THREE.Line(lineGeometry, lineMaterial);
              
-             // FIX 2: Offset UPWARDS (+5mm) to sit ON TOP of the ceiling mesh
-             // Previous -0.05 put it inside/below the top face.
-             line.position.y = 5 * scale; 
+             // Lines are positioned directly in vertex coordinates (lineY)
+             // No additional offset needed - vertices are already at correct height
+             line.position.y = 0; 
              
              line.userData.isCeilingPanelLine = true;
              line.visible = this.showCeilingPanelLines;
