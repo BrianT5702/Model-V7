@@ -2288,16 +2288,12 @@ export default function useProjectDetails(projectId) {
     const roundValue = (value) => Number(Number(value).toFixed(3));
     const projectIdForWall = project?.id ?? targetWall.project ?? projectId;
     const optionalWallFields = [
-      'inner_face_material',
-      'outer_face_material',
       'inner_face_color',
       'outer_face_color',
       'core_material',
       'fire_rating',
       'acoustic_rating',
       'remarks',
-      'fill_gap_mode',
-      'gap_fill_height',
       'installation_side',
       'application_detail',
       'panel_type'
@@ -2313,9 +2309,32 @@ export default function useProjectDetails(projectId) {
         height: targetWall.height,
         thickness: targetWall.thickness,
         application_type: targetWall.application_type,
-        project: projectIdForWall
+        project: projectIdForWall,
+        // Storey - inherit from original wall
+        storey: targetWall.storey ?? targetWall.storey_id ?? null,
+        // Face finishes - inherit from original wall
+        inner_face_material: targetWall.inner_face_material || 'PPGI',
+        inner_face_thickness: targetWall.inner_face_thickness ?? 0.5,
+        outer_face_material: targetWall.outer_face_material || 'PPGI',
+        outer_face_thickness: targetWall.outer_face_thickness ?? 0.5,
+        // Base elevation - inherit from original wall
+        base_elevation_mm: targetWall.base_elevation_mm ?? 0.0,
+        base_elevation_manual: targetWall.base_elevation_manual ?? false,
+        // Concrete base - inherit from original wall
+        has_concrete_base: targetWall.has_concrete_base ?? false,
+        concrete_base_height: targetWall.concrete_base_height ?? null,
+        // Gap fill settings - inherit from original wall
+        fill_gap_mode: targetWall.fill_gap_mode ?? false,
+        gap_fill_height: targetWall.gap_fill_height ?? null,
+        gap_base_position: targetWall.gap_base_position ?? null,
+        // Ceiling joint settings - inherit from original wall
+        ceiling_joint_type: targetWall.ceiling_joint_type ?? null,
+        ceiling_cut_l_horizontal_extension: targetWall.ceiling_cut_l_horizontal_extension ?? null,
+        // Default wall flag - inherit from original wall
+        is_default: targetWall.is_default ?? true
       };
 
+      // Add optional fields that may not exist in all walls
       optionalWallFields.forEach((key) => {
         if (targetWall[key] !== undefined && targetWall[key] !== null) {
           payload[key] = targetWall[key];
@@ -2723,7 +2742,22 @@ export default function useProjectDetails(projectId) {
         outer_face_material: wall.outer_face_material || 'PPGI',
         outer_face_thickness: wall.outer_face_thickness ?? 0.5,
         project: project.id,
-        storey: wallStoreyId  // Use the original wall's storey
+        storey: wallStoreyId,  // Use the original wall's storey
+        // Base elevation - inherit from original wall
+        base_elevation_mm: wall.base_elevation_mm ?? 0.0,
+        base_elevation_manual: wall.base_elevation_manual ?? false,
+        // Concrete base - inherit from original wall
+        has_concrete_base: wall.has_concrete_base ?? false,
+        concrete_base_height: wall.concrete_base_height ?? null,
+        // Gap fill settings - inherit from original wall
+        fill_gap_mode: wall.fill_gap_mode ?? false,
+        gap_fill_height: wall.gap_fill_height ?? null,
+        gap_base_position: wall.gap_base_position ?? null,
+        // Ceiling joint settings - inherit from original wall
+        ceiling_joint_type: wall.ceiling_joint_type ?? null,
+        ceiling_cut_l_horizontal_extension: wall.ceiling_cut_l_horizontal_extension ?? null,
+        // Default wall flag - inherit from original wall
+        is_default: wall.is_default ?? true
       });
       
       // Normalize second segment
@@ -2744,7 +2778,22 @@ export default function useProjectDetails(projectId) {
         outer_face_material: wall.outer_face_material || 'PPGI',
         outer_face_thickness: wall.outer_face_thickness ?? 0.5,
         project: project.id,
-        storey: wallStoreyId  // Use the original wall's storey
+        storey: wallStoreyId,  // Use the original wall's storey
+        // Base elevation - inherit from original wall
+        base_elevation_mm: wall.base_elevation_mm ?? 0.0,
+        base_elevation_manual: wall.base_elevation_manual ?? false,
+        // Concrete base - inherit from original wall
+        has_concrete_base: wall.has_concrete_base ?? false,
+        concrete_base_height: wall.concrete_base_height ?? null,
+        // Gap fill settings - inherit from original wall
+        fill_gap_mode: wall.fill_gap_mode ?? false,
+        gap_fill_height: wall.gap_fill_height ?? null,
+        gap_base_position: wall.gap_base_position ?? null,
+        // Ceiling joint settings - inherit from original wall
+        ceiling_joint_type: wall.ceiling_joint_type ?? null,
+        ceiling_cut_l_horizontal_extension: wall.ceiling_cut_l_horizontal_extension ?? null,
+        // Default wall flag - inherit from original wall
+        is_default: wall.is_default ?? true
       });
     });
 

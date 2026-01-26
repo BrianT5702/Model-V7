@@ -1446,7 +1446,7 @@ const ProjectDetails = () => {
                 )}
                 
                 {/* Left Sidebar - Controls */}
-                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-64 min-w-[240px] max-w-[280px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
+                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-72 min-w-[280px] max-w-[320px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 }`}>
                     <div className="p-4 sm:p-6">
@@ -1573,9 +1573,9 @@ const ProjectDetails = () => {
 
                                 {/* Wall Type Selection */}
                                 {projectDetails.currentMode === 'add-wall' && (
-                                    <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm space-y-4 max-h-[80vh] overflow-y-auto">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="block text-xs font-semibold text-blue-800 uppercase tracking-wide">Add Wall Mode</label>
+                                    <div className="p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm space-y-5 max-h-[85vh] overflow-y-auto">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Add Wall Mode</label>
                                             <button
                                                 onClick={() => projectDetails.setCurrentMode(null)}
                                                 className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center gap-2 shadow-sm active:scale-95"
@@ -1587,22 +1587,22 @@ const ProjectDetails = () => {
                                         </div>
                                         
                                         {/* Basic Wall Properties */}
-                                        <div className="space-y-3">
+                                        <div className="space-y-4">
                                             <div>
                                                 <label className="block text-sm font-semibold text-blue-800 mb-2 uppercase tracking-wide">Wall Type:</label>
                                                 <select 
                                                     value={projectDetails.selectedWallType} 
                                                     onChange={(e) => projectDetails.setSelectedWallType(e.target.value)}
-                                                    className="w-full px-4 py-2 rounded-lg border-2 border-blue-300 
+                                                    className="w-full px-4 py-2.5 rounded-lg border-2 border-blue-300 
                                                         focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                        bg-white text-blue-900 font-medium shadow-sm"
+                                                        bg-white text-blue-900 font-medium shadow-sm text-sm"
                                                 >
                                                     <option value="wall">Wall</option>
                                                     <option value="partition">Partition</option>
                                                 </select>
                                             </div>
                                             
-                                            <div className="grid grid-cols-2 gap-3">
+                                            <div className="grid grid-cols-2 gap-4">
                                                 <div>
                                                     <label className="block text-sm font-semibold text-blue-800 mb-2">Height (mm):</label>
                                                     <input
@@ -1611,9 +1611,9 @@ const ProjectDetails = () => {
                                                         onChange={(e) => projectDetails.setWallHeight(parseFloat(e.target.value) || 2800)}
                                                         min="100"
                                                         step="100"
-                                                        className="w-full px-4 py-2 rounded-lg border-2 border-blue-300 
+                                                        className="w-full px-4 py-2.5 rounded-lg border-2 border-blue-300 
                                                             focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                            bg-white text-blue-900 font-medium shadow-sm"
+                                                            bg-white text-blue-900 font-medium shadow-sm text-sm"
                                                     />
                                                 </div>
                                                 <div>
@@ -1624,26 +1624,26 @@ const ProjectDetails = () => {
                                                         onChange={(e) => projectDetails.setWallThickness(parseFloat(e.target.value) || 200)}
                                                         min="25"
                                                         step="25"
-                                                        className="w-full px-4 py-2 rounded-lg border-2 border-blue-300 
+                                                        className="w-full px-4 py-2.5 rounded-lg border-2 border-blue-300 
                                                             focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                            bg-white text-blue-900 font-medium shadow-sm"
+                                                            bg-white text-blue-900 font-medium shadow-sm text-sm"
                                                     />
                                                 </div>
                                             </div>
                                         </div>
 
                                         {/* Face Finishes */}
-                                        <div className="space-y-3 border-t border-blue-300 pt-3">
+                                        <div className="space-y-4 border-t border-blue-300 pt-4">
                                             <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Face Finishes</label>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-3 bg-white p-3 rounded-lg border border-blue-200">
+                                            <div className="grid grid-cols-1 gap-4">
+                                                <div className="space-y-3 bg-white p-4 rounded-lg border border-blue-200">
                                                     <label className="block text-sm font-semibold text-blue-800">Inner Face</label>
                                                     <div>
-                                                        <label className="block text-xs text-blue-700 mb-1">Material:</label>
+                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Material:</label>
                                                         <select
                                                             value={projectDetails.innerFaceMaterial}
                                                             onChange={(e) => projectDetails.setInnerFaceMaterial(e.target.value)}
-                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
                                                                 focus:ring-2 focus:ring-blue-500 focus:border-blue-500
                                                                 bg-white text-blue-900 text-sm"
                                                         >
@@ -1653,27 +1653,27 @@ const ProjectDetails = () => {
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs text-blue-700 mb-1">Thickness (mm):</label>
+                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Thickness (mm):</label>
                                                         <input
                                                             type="number"
                                                             min="0.1"
                                                             step="0.1"
                                                             value={projectDetails.innerFaceThickness}
                                                             onChange={(e) => projectDetails.setInnerFaceThickness(parseFloat(e.target.value) || 0.5)}
-                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
                                                                 focus:ring-2 focus:ring-blue-500 focus:border-blue-500
                                                                 bg-white text-blue-900 text-sm"
                                                         />
                                                     </div>
                                                 </div>
-                                                <div className="space-y-3 bg-white p-3 rounded-lg border border-blue-200">
+                                                <div className="space-y-3 bg-white p-4 rounded-lg border border-blue-200">
                                                     <label className="block text-sm font-semibold text-blue-800">Outer Face</label>
                                                     <div>
-                                                        <label className="block text-xs text-blue-700 mb-1">Material:</label>
+                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Material:</label>
                                                         <select
                                                             value={projectDetails.outerFaceMaterial}
                                                             onChange={(e) => projectDetails.setOuterFaceMaterial(e.target.value)}
-                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
                                                                 focus:ring-2 focus:ring-blue-500 focus:border-blue-500
                                                                 bg-white text-blue-900 text-sm"
                                                         >
@@ -1683,14 +1683,14 @@ const ProjectDetails = () => {
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs text-blue-700 mb-1">Thickness (mm):</label>
+                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Thickness (mm):</label>
                                                         <input
                                                             type="number"
                                                             min="0.1"
                                                             step="0.1"
                                                             value={projectDetails.outerFaceThickness}
                                                             onChange={(e) => projectDetails.setOuterFaceThickness(parseFloat(e.target.value) || 0.5)}
-                                                            className="w-full px-3 py-2 rounded-lg border border-blue-300 
+                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
                                                                 focus:ring-2 focus:ring-blue-500 focus:border-blue-500
                                                                 bg-white text-blue-900 text-sm"
                                                         />
@@ -1699,7 +1699,7 @@ const ProjectDetails = () => {
                                             </div>
                                         </div>
                                         
-                                        <p className="text-xs text-blue-700 mt-2 pt-2 border-t border-blue-300">
+                                        <p className="text-sm text-blue-700 mt-3 pt-3 border-t border-blue-300 leading-relaxed">
                                             Tap on canvas to start drawing. Tap again to finish. Press Cancel to exit.
                                         </p>
                                     </div>

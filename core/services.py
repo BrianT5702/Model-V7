@@ -265,7 +265,16 @@ class WallService:
 
     @staticmethod
     def split_wall(wall_id, intersection_x, intersection_y):
-        """Split a wall at a specific intersection point."""
+        """Split a wall at a specific intersection point.
+        
+        All wall attributes are inherited by both split segments, including:
+        - Basic properties (height, thickness, application_type)
+        - Face materials and thicknesses (inner/outer face)
+        - Base elevation settings
+        - Concrete base settings
+        - Gap fill settings
+        - Ceiling joint settings
+        """
         with transaction.atomic():
             wall = Wall.objects.get(pk=wall_id)
             
@@ -282,7 +291,27 @@ class WallService:
                 end_y=norm_end_y1,
                 height=wall.height,
                 thickness=wall.thickness,
-                application_type=wall.application_type
+                application_type=wall.application_type,
+                # Face finishes
+                inner_face_material=wall.inner_face_material,
+                inner_face_thickness=wall.inner_face_thickness,
+                outer_face_material=wall.outer_face_material,
+                outer_face_thickness=wall.outer_face_thickness,
+                # Base elevation
+                base_elevation_mm=wall.base_elevation_mm,
+                base_elevation_manual=wall.base_elevation_manual,
+                # Concrete base
+                has_concrete_base=wall.has_concrete_base,
+                concrete_base_height=wall.concrete_base_height,
+                # Gap fill settings
+                fill_gap_mode=wall.fill_gap_mode,
+                gap_fill_height=wall.gap_fill_height,
+                gap_base_position=wall.gap_base_position,
+                # Ceiling joint settings
+                ceiling_joint_type=wall.ceiling_joint_type,
+                ceiling_cut_l_horizontal_extension=wall.ceiling_cut_l_horizontal_extension,
+                # Default wall flag (inherit from original)
+                is_default=wall.is_default
             )
             
             # Normalize second segment
@@ -298,7 +327,27 @@ class WallService:
                 end_y=norm_end_y2,
                 height=wall.height,
                 thickness=wall.thickness,
-                application_type=wall.application_type
+                application_type=wall.application_type,
+                # Face finishes
+                inner_face_material=wall.inner_face_material,
+                inner_face_thickness=wall.inner_face_thickness,
+                outer_face_material=wall.outer_face_material,
+                outer_face_thickness=wall.outer_face_thickness,
+                # Base elevation
+                base_elevation_mm=wall.base_elevation_mm,
+                base_elevation_manual=wall.base_elevation_manual,
+                # Concrete base
+                has_concrete_base=wall.has_concrete_base,
+                concrete_base_height=wall.concrete_base_height,
+                # Gap fill settings
+                fill_gap_mode=wall.fill_gap_mode,
+                gap_fill_height=wall.gap_fill_height,
+                gap_base_position=wall.gap_base_position,
+                # Ceiling joint settings
+                ceiling_joint_type=wall.ceiling_joint_type,
+                ceiling_cut_l_horizontal_extension=wall.ceiling_cut_l_horizontal_extension,
+                # Default wall flag (inherit from original)
+                is_default=wall.is_default
             )
 
             wall.delete()
