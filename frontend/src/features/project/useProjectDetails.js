@@ -17,6 +17,8 @@ export default function useProjectDetails(projectId) {
   const [isEditingMode, setIsEditingMode] = useState(false);
   const [currentMode, setCurrentMode] = useState(null);
   const [selectedWall, setSelectedWall] = useState(null);
+  const [selectedWallsForEdit, setSelectedWallsForEdit] = useState([]);
+  const [isMultiWallEditMode, setIsMultiWallEditMode] = useState(false);
   const [is3DView, setIs3DView] = useState(false);
   const [isInteriorView, setIsInteriorView] = useState(false);
   const threeCanvasInstance = useRef(null);
@@ -2966,6 +2968,10 @@ export default function useProjectDetails(projectId) {
     setCurrentMode,
     selectedWall,
     setSelectedWall,
+    selectedWallsForEdit,
+    setSelectedWallsForEdit,
+    isMultiWallEditMode,
+    setIsMultiWallEditMode,
     is3DView,
     setIs3DView,
     isInteriorView,

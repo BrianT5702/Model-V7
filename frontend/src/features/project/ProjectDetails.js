@@ -629,11 +629,18 @@ const ProjectDetails = () => {
             const wall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWall);
             setEditedWall(wall ? { ...wall } : null);
             setIsLengthLocked(false); // Reset lock when opening modal
+        } else if (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor) {
+            // For multi-wall editing, use the first wall as a template
+            const firstWall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWallsForEdit[0]);
+            if (firstWall) {
+                setEditedWall({ ...firstWall });
+            }
+            setIsLengthLocked(false);
         } else {
             setEditedWall(null);
             setIsLengthLocked(false);
         }
-    }, [projectDetails.selectedWall, projectDetails.filteredWalls]);
+    }, [projectDetails.selectedWall, projectDetails.selectedWallsForEdit, projectDetails.showWallEditor, projectDetails.filteredWalls]);
     
     // Load windows when wall changes
     useEffect(() => {
@@ -1507,10 +1514,10 @@ const ProjectDetails = () => {
 
                             <button
                             onClick={() => {
-                                if (projectDetails.selectedWall !== null) {
-                                projectDetails.setShowWallEditor(true);
-                                }
                                 projectDetails.toggleMode('edit-wall');
+                                // Reset multi-selection when entering edit mode
+                                projectDetails.setSelectedWallsForEdit([]);
+                                projectDetails.setIsMultiWallEditMode(false);
                             }}
                                         className={`tool-button ${
                                             projectDetails.currentMode === 'edit-wall' ? 'active' : ''
@@ -1570,6 +1577,81 @@ const ProjectDetails = () => {
                                         <span className="text-sm font-medium">Edit Door</span>
                                     </button>
                                 </div>
+
+                                {/* Edit Wall Mode Controls */}
+                                {projectDetails.currentMode === 'edit-wall' && (
+                                    <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200 shadow-sm space-y-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-xs font-semibold text-green-800 uppercase tracking-wide">Edit Wall Mode</label>
+                                            <button
+                                                onClick={() => {
+                                                    projectDetails.setCurrentMode(null);
+                                                    projectDetails.setSelectedWall(null);
+                                                    projectDetails.setSelectedWallsForEdit([]);
+                                                    projectDetails.setIsMultiWallEditMode(false);
+                                                }}
+                                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center gap-2 shadow-sm active:scale-95"
+                                                title="Cancel editing"
+                                            >
+                                                <FaTimes className="text-xs" />
+                                                <span>Cancel</span>
+                                            </button>
+                                        </div>
+                                        
+                                        {/* Multi-Wall Selection Checkbox */}
+                                        <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-green-200">
+                                            <input
+                                                type="checkbox"
+                                                id="multi-wall-edit"
+                                                checked={projectDetails.isMultiWallEditMode}
+                                                onChange={(e) => {
+                                                    projectDetails.setIsMultiWallEditMode(e.target.checked);
+                                                    if (!e.target.checked) {
+                                                        projectDetails.setSelectedWallsForEdit([]);
+                                                    } else {
+                                                        projectDetails.setSelectedWall(null);
+                                                    }
+                                                }}
+                                                className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                                            />
+                                            <label htmlFor="multi-wall-edit" className="text-sm font-medium text-green-800 cursor-pointer">
+                                                Select Multiple Walls
+                                            </label>
+                                        </div>
+
+                                        {/* Single Wall Selection Info */}
+                                        {!projectDetails.isMultiWallEditMode && (
+                                            <div className="text-sm text-green-700 p-3 bg-white rounded-lg border border-green-200">
+                                                <p>Click on a wall on the canvas to select and edit it.</p>
+                                            </div>
+                                        )}
+
+                                        {/* Multi-Wall Selection Info and Button */}
+                                        {projectDetails.isMultiWallEditMode && (
+                                            <div className="space-y-3">
+                                                <div className="text-sm text-green-700 p-3 bg-white rounded-lg border border-green-200">
+                                                    <p>Click on walls on the canvas to select multiple walls for editing.</p>
+                                                    {projectDetails.selectedWallsForEdit.length > 0 && (
+                                                        <p className="mt-2 font-medium">
+                                                            {projectDetails.selectedWallsForEdit.length} wall(s) selected
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                
+                                                {projectDetails.selectedWallsForEdit.length > 0 && (
+                                                    <button
+                                                        onClick={() => {
+                                                            projectDetails.setShowWallEditor(true);
+                                                        }}
+                                                        className="w-full px-4 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium shadow-sm"
+                                                    >
+                                                        Show Edit Wall Form ({projectDetails.selectedWallsForEdit.length} wall{projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''})
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Wall Type Selection */}
                                 {projectDetails.currentMode === 'add-wall' && (
@@ -1942,6 +2024,9 @@ const ProjectDetails = () => {
                                             currentMode={projectDetails.currentMode}
                                             setCurrentMode={projectDetails.setCurrentMode}
                                             onWallSelect={projectDetails.handleWallSelect}
+                                            isMultiWallEditMode={projectDetails.isMultiWallEditMode}
+                                            selectedWallsForEdit={projectDetails.selectedWallsForEdit}
+                                            onWallsForEditSelect={projectDetails.setSelectedWallsForEdit}
                                             selectedWallsForRoom={projectDetails.selectedWallsForRoom}
                                             onRoomWallsSelect={projectDetails.setSelectedWallsForRoom}
                                             rooms={projectDetails.filteredRooms}
@@ -2398,14 +2483,22 @@ const ProjectDetails = () => {
             )}
 
                 {/* Wall Editor Modal */}
-                    {projectDetails.selectedWall !== null && projectDetails.currentMode === 'edit-wall' && (
+                    {((projectDetails.selectedWall !== null || (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor)) && projectDetails.currentMode === 'edit-wall') && (
+                <>
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 modal-backdrop p-2 sm:p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
                                 <div className="flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-900">Edit Wall</h3>
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                                {projectDetails.selectedWallsForEdit.length > 0 
+                                    ? `Edit ${projectDetails.selectedWallsForEdit.length} Wall${projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''}`
+                                    : 'Edit Wall'}
+                            </h3>
                                     <button 
                                         onClick={() => {
                                             projectDetails.setSelectedWall(null);
+                                            projectDetails.setSelectedWallsForEdit([]);
+                                            projectDetails.setShowWallEditor(false);
+                                            projectDetails.setIsMultiWallEditMode(false);
                                             projectDetails.setCurrentMode(null);
                                         }}
                                 className="text-gray-400 hover:text-gray-600 focus-ring"
@@ -2417,7 +2510,18 @@ const ProjectDetails = () => {
                                 </div>
                         {/* Wall editor content */}
                                 <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 space-y-4 sm:space-y-6">
-                                    {/* Position & Dimensions Section */}
+                                    {/* Multi-wall info */}
+                                    {projectDetails.selectedWallsForEdit.length > 0 && (
+                                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <p className="text-sm text-blue-800">
+                                                Editing {projectDetails.selectedWallsForEdit.length} wall{projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''}. 
+                                                Changes will be applied to all selected walls.
+                                            </p>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Position & Dimensions Section - Only show for single wall */}
+                                    {projectDetails.selectedWall !== null && (
                                     <div>
                                         <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position & Dimensions</h4>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
@@ -2709,6 +2813,7 @@ const ProjectDetails = () => {
                                             </div>
                                         </div>
                                     </div>
+                                    )}
 
                                     {/* Wall Properties Section */}
                                     <div>
@@ -2831,7 +2936,8 @@ const ProjectDetails = () => {
                                         </div>
                                     </div>
 
-                                    {/* Gap-Fill Toggle Section */}
+                                    {/* Gap-Fill Toggle Section - Only show for single wall */}
+                                    {projectDetails.selectedWall !== null && (
                                     <div>
                                         <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Advanced Options</h4>
                                         <div className="mt-3">
@@ -2882,8 +2988,10 @@ const ProjectDetails = () => {
                                             </div>
                                         </div>
                                     </div>
+                                    )}
                                     
-                                    {/* Windows Section */}
+                                    {/* Windows Section - Only show for single wall */}
+                                    {projectDetails.selectedWall !== null && (
                                     <div>
                                         <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
                                             <h4 className="text-sm font-semibold text-gray-700">Windows on Wall</h4>
@@ -2944,8 +3052,110 @@ const ProjectDetails = () => {
                                             </div>
                                         )}
                                     </div>
-                                </div>
-                                
+                                    )}
+
+                                    {/* Action Buttons at the Bottom Right */}
+                                    <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 px-4 sm:px-6 pb-4 sm:pb-6">
+                                        <button
+                                            onClick={async () => {
+                                                if (projectDetails.selectedWallsForEdit.length > 0) {
+                                                    // Multi-wall editing: apply changes to all selected walls
+                                                    const updates = [];
+                                                    const propertiesToUpdate = {
+                                                        height: editedWall?.height,
+                                                        thickness: editedWall?.thickness,
+                                                        application_type: editedWall?.application_type,
+                                                        inner_face_material: editedWall?.inner_face_material,
+                                                        inner_face_thickness: editedWall?.inner_face_thickness,
+                                                        outer_face_material: editedWall?.outer_face_material,
+                                                        outer_face_thickness: editedWall?.outer_face_thickness,
+                                                        base_elevation_mm: editedWall?.base_elevation_mm,
+                                                        base_elevation_manual: editedWall?.base_elevation_manual
+                                                    };
+                                                    
+                                                    for (const wallId of projectDetails.selectedWallsForEdit) {
+                                                        const wall = projectDetails.walls.find(w => w.id === wallId);
+                                                        if (wall) {
+                                                            const updatedWall = { ...wall, ...propertiesToUpdate };
+                                                            updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
+                                                        }
+                                                    }
+                                                    
+                                                    await Promise.all(updates);
+                                                    projectDetails.setSelectedWallsForEdit([]);
+                                                    projectDetails.setShowWallEditor(false);
+                                                    setEditedWall(null);
+                                                } else {
+                                                    // Single wall editing: original logic
+                                                    // 1. Find which endpoints changed
+                                                    const original = projectDetails.walls.find(w => w.id === projectDetails.selectedWall);
+                                                    const edited = editedWall;
+                                                    const changedEndpoints = [];
+                                                    if (original && edited) {
+                                                        if (original.start_x !== edited.start_x || original.start_y !== edited.start_y) {
+                                                            changedEndpoints.push({
+                                                                which: 'start',
+                                                                old: { x: original.start_x, y: original.start_y },
+                                                                new: { x: edited.start_x, y: edited.start_y }
+                                                            });
+                                                        }
+                                                        if (original.end_x !== edited.end_x || original.end_y !== edited.end_y) {
+                                                            changedEndpoints.push({
+                                                                which: 'end',
+                                                                old: { x: original.end_x, y: original.end_y },
+                                                                new: { x: edited.end_x, y: edited.end_y }
+                                                            });
+                                                        }
+                                                    }
+                                                    // 2. For each changed endpoint, update all other walls sharing that endpoint
+                                                    const updates = [];
+                                                    for (const endpoint of changedEndpoints) {
+                                                        for (const wall of projectDetails.walls) {
+                                                            if (wall.id === edited.id) continue;
+                                                            // Check start
+                                                            if (Math.abs(endpoint.old.x - wall.start_x) < 0.001 && Math.abs(endpoint.old.y - wall.start_y) < 0.001) {
+                                                                const updatedWall = { ...wall, start_x: endpoint.new.x, start_y: endpoint.new.y };
+                                                                updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
+                                                            }
+                                                            // Check end
+                                                            if (Math.abs(endpoint.old.x - wall.end_x) < 0.001 && Math.abs(endpoint.old.y - wall.end_y) < 0.001) {
+                                                                const updatedWall = { ...wall, end_x: endpoint.new.x, end_y: endpoint.new.y };
+                                                                updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
+                                                            }
+                                                        }
+                                                    }
+                                                    // 3. Update the edited wall itself (skip merge)
+                                                    await Promise.all([
+                                                        ...updates,
+                                                        projectDetails.handleWallUpdateNoMerge(edited)
+                                                    ]);
+                                                    projectDetails.setSelectedWall(null);
+                                                    setEditedWall(null);
+                                                }
+                                            }}
+                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-medium"
+                                        >
+                                            Save
+                                        </button>
+                                        
+                                        {/* Remove Wall button - Only show for single wall */}
+                                        {projectDetails.selectedWall !== null && (
+                                        <button
+                                            onClick={() => {
+                                                projectDetails.setWallToDelete(projectDetails.selectedWall);
+                                                projectDetails.setShowWallDeleteConfirm(true);
+                                            }}
+                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 
+                                                transition-colors text-sm font-medium"
+                                        >
+                                            Remove Wall
+                                        </button>
+                                        )}
+                                    </div>
+                    </div>
+                </div>
+                </div>
+                    
                                 {/* Window Form Modal */}
                                 {showWallWindowForm && (
                                     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
@@ -3138,74 +3348,7 @@ const ProjectDetails = () => {
                                         </div>
                                     </div>
                                 )}
-
-                                    {/* Action Buttons at the Bottom Right */}
-                                    <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 px-4 sm:px-6 pb-4 sm:pb-6">
-                                        <button
-                                            onClick={async () => {
-                                                // 1. Find which endpoints changed
-                                                const original = projectDetails.walls.find(w => w.id === projectDetails.selectedWall);
-                                                const edited = editedWall;
-                                                const changedEndpoints = [];
-                                                if (original && edited) {
-                                                    if (original.start_x !== edited.start_x || original.start_y !== edited.start_y) {
-                                                        changedEndpoints.push({
-                                                            which: 'start',
-                                                            old: { x: original.start_x, y: original.start_y },
-                                                            new: { x: edited.start_x, y: edited.start_y }
-                                                        });
-                                                    }
-                                                    if (original.end_x !== edited.end_x || original.end_y !== edited.end_y) {
-                                                        changedEndpoints.push({
-                                                            which: 'end',
-                                                            old: { x: original.end_x, y: original.end_y },
-                                                            new: { x: edited.end_x, y: edited.end_y }
-                                                        });
-                                                    }
-                                                }
-                                                // 2. For each changed endpoint, update all other walls sharing that endpoint
-                                                const updates = [];
-                                                for (const endpoint of changedEndpoints) {
-                                                    for (const wall of projectDetails.walls) {
-                                                        if (wall.id === edited.id) continue;
-                                                        // Check start
-                                                        if (Math.abs(endpoint.old.x - wall.start_x) < 0.001 && Math.abs(endpoint.old.y - wall.start_y) < 0.001) {
-                                                            const updatedWall = { ...wall, start_x: endpoint.new.x, start_y: endpoint.new.y };
-                                                            updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
-                                                        }
-                                                        // Check end
-                                                        if (Math.abs(endpoint.old.x - wall.end_x) < 0.001 && Math.abs(endpoint.old.y - wall.end_y) < 0.001) {
-                                                            const updatedWall = { ...wall, end_x: endpoint.new.x, end_y: endpoint.new.y };
-                                                            updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
-                                                        }
-                                                    }
-                                                }
-                                                // 3. Update the edited wall itself (skip merge)
-                                                await Promise.all([
-                                                    ...updates,
-                                                    projectDetails.handleWallUpdateNoMerge(edited)
-                                                ]);
-                                                projectDetails.setSelectedWall(null);
-                                                setEditedWall(null);
-                                            }}
-                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-medium"
-                                        >
-                                            Save
-                                        </button>
-                                        
-                                        <button
-                                            onClick={() => {
-                                                projectDetails.setWallToDelete(projectDetails.selectedWall);
-                                                projectDetails.setShowWallDeleteConfirm(true);
-                                            }}
-                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 
-                                                transition-colors text-sm font-medium"
-                                        >
-                                            Remove Wall
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
+                    </>
                     )}
 
 

@@ -45,6 +45,9 @@ const Canvas2D = ({
     onWallDelete, 
     selectedWallsForRoom = [], 
     onRoomWallsSelect,
+    isMultiWallEditMode = false,
+    selectedWallsForEdit = [],
+    onWallsForEditSelect = () => {},
     rooms = [],
     onJointsUpdate,
     doors = [],
@@ -1299,8 +1302,29 @@ const Canvas2D = ({
                         }
                     }
                 });
-            setSelectedWall(selectedId);
-            onWallSelect(selectedId);
+            
+            if (isMultiWallEditMode) {
+                // Multi-selection mode: toggle wall in selection
+                if (selectedId !== null) {
+                    const currentSelection = [...selectedWallsForEdit];
+                    const index = currentSelection.findIndex(id => id === selectedId);
+                    if (index >= 0) {
+                        // Deselect if already selected
+                        currentSelection.splice(index, 1);
+                    } else {
+                        // Add to selection
+                        currentSelection.push(selectedId);
+                    }
+                    onWallsForEditSelect(currentSelection);
+                    // Update highlight to show all selected walls
+                    setHighlightWalls(currentSelection.map(id => ({ id, color: '#3B82F6' })));
+                }
+            } else {
+                // Single selection mode: select one wall and open editor
+                setSelectedWall(selectedId);
+                onWallSelect(selectedId);
+                setHighlightWalls(selectedId ? [{ id: selectedId, color: '#3B82F6' }] : []);
+            }
             return;
         }        
 
@@ -1771,6 +1795,20 @@ const Canvas2D = ({
             setSelectedWall(null);
         }
     }, [walls, selectedWall]);
+
+    // Update highlights for multi-wall edit mode
+    useEffect(() => {
+        if (currentMode === 'edit-wall' && isMultiWallEditMode) {
+            setHighlightWalls(selectedWallsForEdit.map(id => ({ id, color: '#3B82F6' })));
+        } else if (currentMode === 'edit-wall' && !isMultiWallEditMode && selectedWall) {
+            setHighlightWalls([{ id: selectedWall, color: '#3B82F6' }]);
+        } else if (currentMode !== 'edit-wall') {
+            // Clear highlights when exiting edit mode
+            if (currentMode !== 'split-wall' && currentMode !== 'merge-wall') {
+                setHighlightWalls([]);
+            }
+        }
+    }, [currentMode, isMultiWallEditMode, selectedWallsForEdit, selectedWall]);
 
     // Helper to get joint types for a wall
     const getWallJointTypes = (wall, intersections) => {
