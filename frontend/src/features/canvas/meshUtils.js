@@ -168,6 +168,15 @@ export function createWallMesh(instance, wall) {
     wallHeight = height * scale;
   }
   const wallThickness = thickness * scale;
+  // ============================================================================
+  // WALL FLIPPING: Based ONLY on model center position
+  // ============================================================================
+  // IMPORTANT: Flipping is determined ONLY by model center position.
+  // Joints do NOT affect flipping decisions. Joints only affect:
+  // - Wall extension (after flipping)
+  // - Wall shortening (butt_in joints, after extension)
+  // - 45° cut detection (after extension)
+  // ============================================================================
   // Flip start/end coordinates based on model center position
   let finalStartX = startX;
   let finalStartZ = startZ;
@@ -617,9 +626,10 @@ export function createWallMesh(instance, wall) {
   wallShape.lineTo(finalWallLength, 0);
   wallShape.lineTo(0, 0);
   // Add door cutouts
-  // IMPORTANT: When wall start/end points are flipped (for joint alignment or model center positioning),
+  // IMPORTANT: When wall start/end points are flipped (based on model center positioning only),
   // door positions must also be flipped to maintain correct visual placement.
   // A door at position 0.3 on the original wall should appear at position 0.7 on the flipped wall.
+  // NOTE: Flipping is ONLY based on model center, NOT on joints.
   const wasWallFlipped = (finalStartX !== startX) || (finalStartZ !== startZ);
   if (wasWallFlipped && wallDoors.length > 0) {
     // Wall was flipped, door positions will be adjusted
@@ -770,7 +780,7 @@ export function createWallMesh(instance, wall) {
   };
   const wallGeometry = new instance.THREE.ExtrudeGeometry(wallShape, extrudeSettings);
   wallGeometry.computeVertexNormals();
-  const wallMaterial = new instance.THREE.MeshStandardMaterial({ color: 0xFFFFFFF, roughness: 0.5, metalness: 0.7 });
+  const wallMaterial = new instance.THREE.MeshStandardMaterial({ color: 0xFFFFFFF, roughness: 0.2, metalness: 0.1 });
   let wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
   // Apply 45° cuts using boolean operations if needed
   if (hasStart45 || hasEnd45) {
@@ -1384,10 +1394,11 @@ export function createDoorMesh(instance, door, wall) {
   }
   
   // IMPORTANT: This function handles door mesh creation with wall flipping adjustments.
-  // When walls are flipped (for joint alignment or model center positioning), three things must be adjusted:
+  // When walls are flipped (based on model center positioning only), three things must be adjusted:
   // 1. Door positions - to maintain correct relative placement along the wall
   // 2. Door opening directions - to maintain correct swing/slide behavior
   // 3. Hinge positions - to maintain correct hinge placement relative to the door opening
+  // NOTE: Flipping is ONLY based on model center, NOT on joints.
   //
   // DOOR ELEVATION POSITIONING:
   // - ALL doors (swing/slide/dock) are positioned consistently at: doorBaseElevation + doorHeight/2

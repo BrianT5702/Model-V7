@@ -44,12 +44,19 @@ export function adjustModelScale(instance) {
 }
 
 export function addLighting(instance) {
-  const ambientLight = new instance.THREE.AmbientLight(0xffffff, 0.5);
+  // High ambient light for bright white appearance
+  const ambientLight = new instance.THREE.AmbientLight(0xffffff, 1.2);
   instance.scene.add(ambientLight);
-  const dirLight = new instance.THREE.DirectionalLight(0xffffff, 0.8);
+  // Additional directional light for even illumination
+  const dirLight = new instance.THREE.DirectionalLight(0xffffff, 1.0);
   dirLight.position.set(100, 200, 100);
   dirLight.castShadow = true;
   instance.scene.add(dirLight);
+  // Add a second directional light from opposite side for even lighting
+  const dirLight2 = new instance.THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight2.position.set(-100, 200, -100);
+  dirLight2.castShadow = false;
+  instance.scene.add(dirLight2);
 }
 
 export function addControls(instance) {
@@ -403,8 +410,8 @@ export function addCeiling(instance) {
   const material = new instance.THREE.MeshStandardMaterial({
     color: 0xFFFFFFF, // Same white color as walls
     side: instance.THREE.DoubleSide,
-    roughness: 0.5,   // Same roughness as walls
-    metalness: 0.7,   // Same metalness as walls
+    roughness: 0.2,   // Lower roughness for brighter appearance
+    metalness: 0.1,   // Lower metalness for brighter appearance
     transparent: false // Not transparent like walls
   });
   // Create mesh

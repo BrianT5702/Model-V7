@@ -28,8 +28,8 @@ export const THREE_CONFIG = {
   MATERIALS: {
     WALL: {
       color: 0xFFFFFF,
-      roughness: 0.5,
-      metalness: 0.7,
+      roughness: 0.2,
+      metalness: 0.1,
       transparent: false
     },
     FLOOR: {
@@ -40,8 +40,8 @@ export const THREE_CONFIG = {
     },
     CEILING: {
       color: 0xFFFFFF,
-      roughness: 0.5,
-      metalness: 0.7,
+      roughness: 0.2,
+      metalness: 0.1,
       transparent: false
     },
     DOOR: {
