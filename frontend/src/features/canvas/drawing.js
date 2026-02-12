@@ -1651,8 +1651,9 @@ export function drawWalls({
                         }
                         
                         // Get Y from target line (horizontal wall, so Y is constant)
-                        // Use the endpoint at the intersection (which has been extended)
-                        // For horizontal walls, both endpoints have the same Y, so use either
+                        // For butt-in joint: wall1 should connect to wall2's inner face
+                        // The targetLine (hLowerLine or hUpperLine) is already the inner face of wall2
+                        // So we just connect to that line directly - no additional shortening needed
                         targetY = targetLine[0].y; // Y coordinate is constant for horizontal wall
                         
                         // Shorten vertical wall (wall1) visually by moving both lines to target line
@@ -1689,7 +1690,7 @@ export function drawWalls({
                         // If vertical is on LEFT of horizontal → horizontal should connect to RIGHT line of vertical
                         // If vertical is on RIGHT of horizontal → horizontal should connect to LEFT line of vertical
                         let targetVLine;
-                        let targetX;
+                        let baseTargetX;
                         
                         if (isVerticalOnLeft) {
                             // Vertical is on LEFT of horizontal, horizontal wall1 should connect to RIGHT line of vertical wall2
@@ -1703,12 +1704,16 @@ export function drawWalls({
                         }
                         
                         // Get X from target vertical line at intersection Y
+                        // For butt-in joint: wall1 should connect to wall2's inner face
+                        // The targetVLine (vLeftmostLine or vRightmostLine) is already the inner face of wall2
+                        // So we just connect to that line directly - no additional shortening needed
                         const targetVStartX = targetVLine[0].x;
                         const targetVStartY = targetVLine[0].y;
                         const targetVEndX = targetVLine[1].x;
                         const targetVEndY = targetVLine[1].y;
                         const targetVDx = targetVEndX - targetVStartX;
                         const targetVDy = targetVEndY - targetVStartY;
+                        let targetX;
                         if (Math.abs(targetVDy) > 0.001) {
                             const t = (inter.y - targetVStartY) / targetVDy;
                             targetX = targetVStartX + t * targetVDx;

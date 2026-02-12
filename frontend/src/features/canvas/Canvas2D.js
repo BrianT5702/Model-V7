@@ -1881,11 +1881,21 @@ const Canvas2D = ({
             const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null) 
                 ? wall.gap_fill_height 
                 : wall.height;
+            
+            // Prepare face information for panel calculation
+            const faceInfo = {
+                innerFaceMaterial: wall.inner_face_material || null,
+                innerFaceThickness: wall.inner_face_thickness || null,
+                outerFaceMaterial: wall.outer_face_material || null,
+                outerFaceThickness: wall.outer_face_thickness || null
+            };
+            
             let panels = calculator.calculatePanels(
                 wallLength,
                 wall.thickness,
                 jointTypes,
-                heightForCalc
+                heightForCalc,
+                faceInfo
             );
             // Reorder: left side panel (if any), then full panels, then right side panel (if any)
             const leftSide = panels.find(p => p.type === 'side' && p.position === 'left');

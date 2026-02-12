@@ -372,11 +372,20 @@ const PanelCalculationControls = ({
                 ? wall.gap_fill_height 
                 : wall.height;
             
+            // Prepare face information for panel calculation
+            const faceInfo = {
+                innerFaceMaterial: wall.inner_face_material || null,
+                innerFaceThickness: wall.inner_face_thickness || null,
+                outerFaceMaterial: wall.outer_face_material || null,
+                outerFaceThickness: wall.outer_face_thickness || null
+            };
+            
             const panels = calculator.calculatePanels(
                 wallLength,
                 wall.thickness,
                 { left: leftJointType, right: rightJointType },
-                heightForCalc
+                heightForCalc,
+                faceInfo
             );
 
             // Validate panels array

@@ -30,13 +30,21 @@ class PanelCalculator {
     }
 
     // Enhanced panel calculation with 45-degree cut handling and 20mm optimization
-    calculatePanels(wallLength, wallThickness, jointType, wallHeight = 3000) {
+    calculatePanels(wallLength, wallThickness, jointType, wallHeight = 3000, faceInfo = null) {
         // console.log(`\n=== Starting calculation for wall length: ${wallLength}mm, thickness: ${wallThickness}mm ===`);
         // console.log(`Joint type:`, jointType);
         // console.log(`Wall height: ${wallHeight}mm`);
         
         // Store wallHeight for leftover tracking
         this.currentWallHeight = wallHeight;
+        
+        // Store face information for leftover tracking
+        this.currentFaceInfo = faceInfo || {
+            innerFaceMaterial: null,
+            innerFaceThickness: null,
+            outerFaceMaterial: null,
+            outerFaceThickness: null
+        };
         
         const panels = [];
         let remainingLength = wallLength;
@@ -363,7 +371,7 @@ class PanelCalculator {
         this.panelAnalysis.totalCutPanels++;
         this.panelAnalysis.totalPanels++;
 
-        const compatibleLeftover = this.findCompatibleLeftover(width, wallThickness, jointType);
+        const compatibleLeftover = this.findCompatibleLeftover(width, wallThickness, jointType, this.currentFaceInfo);
         // console.log(`\nLooking for compatible leftover:`);
         // console.log(`- Compatible leftover found:`, compatibleLeftover ? 'Yes' : 'No');
 
@@ -396,7 +404,12 @@ class PanelCalculator {
                 leftEdgeType: jointType === '45_cut' ? '45_cut' : 'straight',
                 rightEdgeType: 'straight',
                 created: Date.now(),
-                panelLength: this.currentWallHeight || 3000  // Store the wall height for panel length
+                panelLength: this.currentWallHeight || 3000,  // Store the wall height for panel length
+                // Store face information for compatibility checking
+                innerFaceMaterial: this.currentFaceInfo.innerFaceMaterial,
+                innerFaceThickness: this.currentFaceInfo.innerFaceThickness,
+                outerFaceMaterial: this.currentFaceInfo.outerFaceMaterial,
+                outerFaceThickness: this.currentFaceInfo.outerFaceThickness
             };
 
             if (jointType === '45_cut') {
@@ -420,13 +433,20 @@ class PanelCalculator {
         }
     }
     
-    findCompatibleLeftover(neededWidth, wallThickness, jointType) {
+    findCompatibleLeftover(neededWidth, wallThickness, jointType, faceInfo = null) {
         // console.log(`\nSearching for compatible leftover:`);
         // console.log(`- Needed width: ${neededWidth}mm`);
         // console.log(`- Wall thickness: ${wallThickness}mm`);
         // console.log(`- Joint type: ${jointType}`);
         // console.log(`- Wall height: ${this.currentWallHeight}mm`);
         // console.log(`- Current leftovers count: ${this.leftovers.length}`);
+        
+        const currentFaceInfo = faceInfo || this.currentFaceInfo || {
+            innerFaceMaterial: null,
+            innerFaceThickness: null,
+            outerFaceMaterial: null,
+            outerFaceThickness: null
+        };
         
         return this.leftovers.find(leftover => {
             // console.log(`\nChecking leftover ID ${leftover.id}:`);
@@ -438,10 +458,28 @@ class PanelCalculator {
                 return false;
             }
             
-            // Check panelLength matches - CRITICAL for gap-fill mode!
-            if (leftover.panelLength !== this.currentWallHeight) {
-                // console.log(`- Rejected: Panel length mismatch (leftover: ${leftover.panelLength}mm, current: ${this.currentWallHeight}mm)`);
+            // Check panelLength: leftover can be reused if it's >= required length
+            // If leftover is shorter than required, it can't be used
+            if (leftover.panelLength < this.currentWallHeight) {
+                // console.log(`- Rejected: Panel length too short (leftover: ${leftover.panelLength}mm, required: ${this.currentWallHeight}mm)`);
                 return false;
+            }
+            // If leftover is longer or equal, it can be reused (will be cut down if needed)
+            
+            // Check face material and thickness match
+            // Handle backwards compatibility: if leftover doesn't have face info, only match if current also doesn't
+            const leftoverHasFaceInfo = leftover.innerFaceMaterial !== undefined || leftover.outerFaceMaterial !== undefined;
+            const currentHasFaceInfo = currentFaceInfo.innerFaceMaterial !== null || currentFaceInfo.outerFaceMaterial !== null;
+            
+            if (leftoverHasFaceInfo || currentHasFaceInfo) {
+                // Both should have face info and match
+                if (leftover.innerFaceMaterial !== currentFaceInfo.innerFaceMaterial ||
+                    leftover.innerFaceThickness !== currentFaceInfo.innerFaceThickness ||
+                    leftover.outerFaceMaterial !== currentFaceInfo.outerFaceMaterial ||
+                    leftover.outerFaceThickness !== currentFaceInfo.outerFaceThickness) {
+                    // console.log(`- Rejected: Face material/thickness mismatch`);
+                    return false;
+                }
             }
             
             if (jointType === '45_cut') {

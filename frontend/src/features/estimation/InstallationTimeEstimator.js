@@ -1127,10 +1127,20 @@ const InstallationTimeEstimator = ({
                     return;
                 }
                 
+                // Prepare face information for panel calculation
+                const faceInfo = {
+                    innerFaceMaterial: wall.inner_face_material || null,
+                    innerFaceThickness: wall.inner_face_thickness || null,
+                    outerFaceMaterial: wall.outer_face_material || null,
+                    outerFaceThickness: wall.outer_face_thickness || null
+                };
+                
                 const panels = calculator.calculatePanels(
                     wallLength,
                     wall.thickness,
-                    { left: leftJointType, right: rightJointType }
+                    { left: leftJointType, right: rightJointType },
+                    wall.height,
+                    faceInfo
                 );
 
                 // Validate panels array
@@ -1398,8 +1408,16 @@ const InstallationTimeEstimator = ({
                     ? wall.gap_fill_height 
                     : wall.height;
                 
+                // Prepare face information for panel calculation
+                const faceInfo = {
+                    innerFaceMaterial: wall.inner_face_material || null,
+                    innerFaceThickness: wall.inner_face_thickness || null,
+                    outerFaceMaterial: wall.outer_face_material || null,
+                    outerFaceThickness: wall.outer_face_thickness || null
+                };
+                
                 // Calculate panels for this wall (assuming butt_in joints for simplicity)
-                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' }, heightForCalc);
+                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' }, heightForCalc, faceInfo);
                 totalPanels += panels.length;
             }
         });

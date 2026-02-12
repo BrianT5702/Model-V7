@@ -122,9 +122,18 @@ export default class ThreeCanvas3D {
 
   init() {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    
+    // Professional renderer settings
     this.renderer.shadowMap.enabled = true;
-    // Set background color to white
+    this.renderer.shadowMap.type = this.THREE.PCFSoftShadowMap; // Soft shadows
+    this.renderer.toneMapping = this.THREE.ACESFilmicToneMapping; // Professional tone mapping
+    this.renderer.toneMappingExposure = 1.0; // Adjust exposure for brightness
+    this.renderer.outputEncoding = this.THREE.sRGBEncoding; // sRGB for better color accuracy
+    
+    // Set background to pure white for bright ambient appearance
     this.renderer.setClearColor(0xffffff, 1);
+    this.scene.background = new this.THREE.Color(0xffffff);
+    
     this.container.appendChild(this.renderer.domElement);
     
     // Prevent default touch behaviors that might interfere with OrbitControls
@@ -1295,10 +1304,13 @@ getModelBounds() {
         const baseElevation = absoluteBaseElevation * this.scalingFactor;
 
         // Convert room points to 3D coordinates
-        const roomVertices = room.room_points.map(point => ({
+        let roomVertices = room.room_points.map(point => ({
             x: point.x * this.scalingFactor + this.modelOffset.x,
             z: point.y * this.scalingFactor + this.modelOffset.z
         }));
+        
+        // Apply Cut L shrinking for ceiling
+        roomVertices = this.shrinkRoomVerticesForCutL(roomVertices, room);
 
         // Get ceiling thickness from room's ceiling plan or use default
         const roomCeilingThickness = (room.ceiling_plan?.ceiling_thickness || defaultCeilingThickness) * this.scalingFactor;
@@ -1310,7 +1322,8 @@ getModelBounds() {
         
         if (ceilingMesh) {
           // Position ceiling at base elevation + max wall height (absolute ceiling position)
-          ceilingMesh.position.y = baseElevation + (maxWallHeight * this.scalingFactor);
+          // Add a tiny offset to prevent z-fighting with wall tops
+          ceilingMesh.position.y = baseElevation + (maxWallHeight * this.scalingFactor) + 0.001;
           ceilingMesh.name = `ceiling_room_${room.id}`;
           ceilingMesh.userData = {
             isCeiling: true,
@@ -1408,6 +1421,189 @@ getModelBounds() {
       console.error(`❌ Error finding room height by proximity for room ${room.id}:`, error);
       return 3000; // 3 meters default
     }
+  }
+
+  // Helper function to get default Cut L horizontal extension based on wall thickness
+  getCutLDefaultHorizontalExtension(wallThickness) {
+    if (wallThickness >= 200) return 125.0;
+    if (wallThickness >= 150) return 100.0;
+    if (wallThickness >= 125) return 75.0;
+    if (wallThickness >= 100) return 75.0;
+    if (wallThickness >= 75) return 50.0;
+    return 50.0;
+  }
+
+  // Helper function to get Cut L horizontal extension for a wall
+  getCutLHorizontalExtension(wall) {
+    if (wall.ceiling_cut_l_horizontal_extension !== null && wall.ceiling_cut_l_horizontal_extension !== undefined) {
+      return wall.ceiling_cut_l_horizontal_extension;
+    }
+    return this.getCutLDefaultHorizontalExtension(wall.thickness || 150);
+  }
+
+  // Calculate Cut L wall offsets for a room
+  calculateCutLWallOffsets(room) {
+    const offsets = {};
+    if (!room || !this.walls) return offsets;
+    
+    // Get walls for this room - handle both array of IDs and array of objects
+    let roomWallIds = [];
+    if (Array.isArray(room.walls)) {
+      roomWallIds = room.walls.map(w => String(typeof w === 'object' ? w.id : w));
+    }
+    
+    // Also try to find walls by proximity to room_points if room.walls is empty
+    let wallsToCheck = [];
+    if (roomWallIds.length > 0) {
+      // Use walls from room.walls
+      wallsToCheck = this.walls.filter(wall => roomWallIds.includes(String(wall.id)));
+    } else if (room.room_points && Array.isArray(room.room_points) && room.room_points.length >= 3) {
+      // Find walls by proximity to room_points (within 1mm tolerance)
+      const tolerance = 1.0;
+      wallsToCheck = this.walls.filter(wall => {
+        return room.room_points.some(point => {
+          const distToStart = Math.sqrt(Math.pow(point.x - wall.start_x, 2) + Math.pow(point.y - wall.start_y, 2));
+          const distToEnd = Math.sqrt(Math.pow(point.x - wall.end_x, 2) + Math.pow(point.y - wall.end_y, 2));
+          return distToStart < tolerance || distToEnd < tolerance;
+        });
+      });
+    } else {
+      // Fallback: check all walls
+      wallsToCheck = this.walls;
+    }
+    
+    wallsToCheck.forEach(wall => {
+      if (wall.ceiling_joint_type === 'cut_l') {
+        const horizontalExtension = this.getCutLHorizontalExtension(wall);
+        const offset = (wall.thickness || 150) - horizontalExtension;
+        offsets[wall.id] = offset;
+      }
+    });
+    
+    return offsets;
+  }
+
+  // Shrink room vertices based on Cut L offsets
+  shrinkRoomVerticesForCutL(roomVertices, room) {
+    const offsets = this.calculateCutLWallOffsets(room);
+    
+    // If no Cut L joints, return original vertices
+    if (Object.keys(offsets).length === 0) {
+      return roomVertices;
+    }
+    
+    // Calculate bounding box of original vertices (in 2D coordinates)
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    roomVertices.forEach(v => {
+      const x = (v.x - this.modelOffset.x) / this.scalingFactor;
+      const y = (v.z - this.modelOffset.z) / this.scalingFactor;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    });
+    
+    const originalBoundingBox = { min_x: minX, max_x: maxX, min_y: minY, max_y: maxY };
+    
+    // Adjust bounding box for Cut L offsets (similar to backend logic)
+    const adjustedBoundingBox = { ...originalBoundingBox };
+    const tolerance = 1.0;
+    
+    // Get walls that have offsets (only process walls with Cut L joints)
+    const wallsWithOffsets = this.walls.filter(wall => offsets[wall.id]);
+    
+    wallsWithOffsets.forEach(wall => {
+      const offset = offsets[wall.id];
+      const wallStartX = wall.start_x;
+      const wallStartY = wall.start_y;
+      const wallEndX = wall.end_x;
+      const wallEndY = wall.end_y;
+      
+      // Check which boundary this wall touches and adjust (matching backend logic exactly)
+      // LEFT BOUNDARY (min_x) - both endpoints on left boundary
+      if (Math.abs(wallStartX - originalBoundingBox.min_x) < tolerance && 
+          Math.abs(wallEndX - originalBoundingBox.min_x) < tolerance) {
+        adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
+      }
+      // RIGHT BOUNDARY (max_x) - both endpoints on right boundary
+      else if (Math.abs(wallStartX - originalBoundingBox.max_x) < tolerance && 
+               Math.abs(wallEndX - originalBoundingBox.max_x) < tolerance) {
+        adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
+      }
+      // BOTTOM BOUNDARY (min_y) - both endpoints on bottom boundary
+      else if (Math.abs(wallStartY - originalBoundingBox.min_y) < tolerance && 
+               Math.abs(wallEndY - originalBoundingBox.min_y) < tolerance) {
+        adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
+      }
+      // TOP BOUNDARY (max_y) - both endpoints on top boundary
+      else if (Math.abs(wallStartY - originalBoundingBox.max_y) < tolerance && 
+               Math.abs(wallEndY - originalBoundingBox.max_y) < tolerance) {
+        adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
+      }
+      // SPANNING / TOUCHING WALLS - check individual endpoints
+      else {
+        // Check Start Point
+        if (Math.abs(wallStartX - originalBoundingBox.min_x) < tolerance) {
+          adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
+        } else if (Math.abs(wallStartX - originalBoundingBox.max_x) < tolerance) {
+          adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
+        } else if (Math.abs(wallStartY - originalBoundingBox.min_y) < tolerance) {
+          adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
+        } else if (Math.abs(wallStartY - originalBoundingBox.max_y) < tolerance) {
+          adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
+        }
+        
+        // Check End Point
+        if (Math.abs(wallEndX - originalBoundingBox.min_x) < tolerance) {
+          adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
+        } else if (Math.abs(wallEndX - originalBoundingBox.max_x) < tolerance) {
+          adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
+        } else if (Math.abs(wallEndY - originalBoundingBox.min_y) < tolerance) {
+          adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
+        } else if (Math.abs(wallEndY - originalBoundingBox.max_y) < tolerance) {
+          adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
+        }
+      }
+    });
+    
+    // Check if bounding box was actually adjusted
+    if (Math.abs(adjustedBoundingBox.min_x - originalBoundingBox.min_x) < 0.1 &&
+        Math.abs(adjustedBoundingBox.max_x - originalBoundingBox.max_x) < 0.1 &&
+        Math.abs(adjustedBoundingBox.min_y - originalBoundingBox.min_y) < 0.1 &&
+        Math.abs(adjustedBoundingBox.max_y - originalBoundingBox.max_y) < 0.1) {
+      return roomVertices; // No adjustment needed
+    }
+    
+    // Adjust vertices based on which boundary they're on
+    const adjustedVertices = roomVertices.map(v => {
+      const x = (v.x - this.modelOffset.x) / this.scalingFactor;
+      const y = (v.z - this.modelOffset.z) / this.scalingFactor;
+      
+      let adjustedX = x;
+      let adjustedY = y;
+      
+      // Adjust x coordinate if on left or right boundary
+      if (Math.abs(x - originalBoundingBox.min_x) < tolerance) {
+        adjustedX = adjustedBoundingBox.min_x;
+      } else if (Math.abs(x - originalBoundingBox.max_x) < tolerance) {
+        adjustedX = adjustedBoundingBox.max_x;
+      }
+      
+      // Adjust y coordinate if on bottom or top boundary
+      if (Math.abs(y - originalBoundingBox.min_y) < tolerance) {
+        adjustedY = adjustedBoundingBox.min_y;
+      } else if (Math.abs(y - originalBoundingBox.max_y) < tolerance) {
+        adjustedY = adjustedBoundingBox.max_y;
+      }
+      
+      // Convert back to 3D coordinates
+      return {
+        x: adjustedX * this.scalingFactor + this.modelOffset.x,
+        z: adjustedY * this.scalingFactor + this.modelOffset.z
+      };
+    });
+    
+    return adjustedVertices;
   }
 
   // Create individual room ceiling mesh with thickness
@@ -1590,17 +1786,24 @@ getModelBounds() {
       geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
       geometry.computeVertexNormals();
       
-      // Create material to match wall appearance
+      // Create material using professional config
       const material = new this.THREE.MeshStandardMaterial({
-        color: 0xFFFFFFF, // Same white color as walls
+        color: THREE_CONFIG.MATERIALS.CEILING.color,
         side: this.THREE.DoubleSide,
-        roughness: 0.5,   // Same roughness as walls
-        metalness: 0.7,   // Same metalness as walls
-        transparent: false // Not transparent like walls
+        roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
+        metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
+        transparent: false,
+        depthWrite: true,
+        depthTest: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1
       });
       
       // Create mesh
       const ceiling = new this.THREE.Mesh(geometry, material);
+      // Set render order to render after walls (higher number = renders later)
+      ceiling.renderOrder = 1;
       
       // Add edge lines to match wall appearance
       const edges = new this.THREE.EdgesGeometry(geometry);
@@ -1804,10 +2007,20 @@ getModelBounds() {
         Math.pow(wall.end_y - wall.start_y, 2)
       );
       
+      // Prepare face information for panel calculation
+      const faceInfo = {
+        innerFaceMaterial: wall.inner_face_material || null,
+        innerFaceThickness: wall.inner_face_thickness || null,
+        outerFaceMaterial: wall.outer_face_material || null,
+        outerFaceThickness: wall.outer_face_thickness || null
+      };
+      
       let panels = calculator.calculatePanels(
         wallLength,
         wall.thickness,
-        jointTypes
+        jointTypes,
+        wall.height,
+        faceInfo
       );
       
       // Check if wall should be flipped due to joint types
@@ -2062,6 +2275,23 @@ getModelBounds() {
       });
       this.panelLines = [];
       
+      // Helper function for line intersection (matching meshUtils.js)
+      const calculateLineIntersection = (x1, y1, x2, y2, x3, y3, x4, y4, allowExtended = false) => {
+        const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (Math.abs(denominator) < 1e-10) return null;
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denominator;
+        const intersectionX = x1 + t * (x2 - x1);
+        const intersectionZ = y1 + t * (y2 - y1);
+        if (allowExtended) {
+          return { x: intersectionX, z: intersectionZ, t, u };
+        }
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+          return { x: intersectionX, z: intersectionZ, t, u };
+        }
+        return null;
+      };
+      
       const wallPanelsMap = this.calculateWallPanels();
       
       let wallsWithPanels = 0;
@@ -2126,7 +2356,175 @@ getModelBounds() {
           }
         }
         
-        // Calculate final wall direction and length (in scaled space)
+        // CRITICAL: Apply wall extension and shortening to match meshUtils.js exactly
+        // This ensures panel lines align with the actual wall mesh positions
+        
+        // STEP 1: Extend perpendicular walls to surfaces (matching meshUtils.js lines 277-391)
+        const snap = (val, precision = 0.01) => Math.round(val / precision) * precision;
+        if (this.joints && this.joints.length > 0) {
+          this.walls.forEach(otherWall => {
+            if (String(otherWall.id) === String(id)) return;
+            const joint = this.joints.find(j => 
+              (j.wall_1 === id && j.wall_2 === otherWall.id) ||
+              (j.wall_2 === id && j.wall_1 === otherWall.id)
+            );
+            if (!joint) return;
+            
+            const oSX = snap(otherWall.start_x * scale);
+            const oSZ = snap(otherWall.start_y * scale);
+            const oEX = snap(otherWall.end_x * scale);
+            const oEZ = snap(otherWall.end_y * scale);
+            const otherThickness = otherWall.thickness * scale;
+            const otherIsHorizontal = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+            const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+            
+            const otherMidX = (oSX + oEX) / 2;
+            const otherMidZ = (oSZ + oEZ) / 2;
+            const toOtherCenterX = modelCenter.x - otherMidX;
+            const toOtherCenterZ = modelCenter.z - otherMidZ;
+            let otherNormX, otherNormZ;
+            if (otherIsHorizontal) {
+              otherNormX = 0;
+              otherNormZ = toOtherCenterZ < 0 ? -1 : 1;
+            } else if (otherIsVertical) {
+              otherNormX = toOtherCenterX < 0 ? -1 : 1;
+              otherNormZ = 0;
+            } else {
+              return;
+            }
+            
+            const otherOuterX = oSX;
+            const otherOuterZ = oSZ;
+            const otherInnerX = oSX + otherNormX * otherThickness;
+            const otherInnerZ = oSZ + otherNormZ * otherThickness;
+            
+            if (isHorizontal && otherIsVertical) {
+              const thisZ = finalStartZ;
+              const otherX = oSX;
+              const rightmostX = Math.max(otherOuterX, otherInnerX);
+              const leftmostX = Math.min(otherOuterX, otherInnerX);
+              const otherMinZ = Math.min(oSZ, oEZ);
+              const otherMaxZ = Math.max(oSZ, oEZ);
+              if (thisZ < otherMinZ || thisZ > otherMaxZ) return;
+              
+              const rightEndpointX = Math.max(finalStartX, finalEndX);
+              const leftEndpointX = Math.min(finalStartX, finalEndX);
+              const thisCenterX = (finalStartX + finalEndX) / 2;
+              if (otherX > thisCenterX) {
+                if (rightEndpointX < rightmostX) {
+                  if (finalEndX > finalStartX) {
+                    finalEndX = rightmostX;
+                  } else {
+                    finalStartX = rightmostX;
+                  }
+                }
+              } else {
+                if (leftEndpointX > leftmostX) {
+                  if (finalStartX < finalEndX) {
+                    finalStartX = leftmostX;
+                  } else {
+                    finalEndX = leftmostX;
+                  }
+                }
+              }
+            } else if (isVertical && otherIsHorizontal) {
+              const thisX = finalStartX;
+              const otherZ = oSZ;
+              const topmostZ = Math.max(otherOuterZ, otherInnerZ);
+              const bottommostZ = Math.min(otherOuterZ, otherInnerZ);
+              const otherMinX = Math.min(oSX, oEX);
+              const otherMaxX = Math.max(oSX, oEX);
+              if (thisX < otherMinX || thisX > otherMaxX) return;
+              
+              const topEndpointZ = Math.max(finalStartZ, finalEndZ);
+              const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
+              const thisCenterZ = (finalStartZ + finalEndZ) / 2;
+              if (otherZ > thisCenterZ) {
+                if (topEndpointZ < topmostZ) {
+                  if (finalEndZ > finalStartZ) {
+                    finalEndZ = topmostZ;
+                  } else {
+                    finalStartZ = topmostZ;
+                  }
+                }
+              } else {
+                if (bottomEndpointZ > bottommostZ) {
+                  if (finalStartZ < finalEndZ) {
+                    finalStartZ = bottommostZ;
+                  } else {
+                    finalEndZ = bottommostZ;
+                  }
+                }
+              }
+            }
+          });
+        }
+        
+        // STEP 2: Apply butt-in joint shortening (matching meshUtils.js lines 393-504)
+        const wallDx = finalEndX - finalStartX;
+        const wallDz = finalEndZ - finalStartZ;
+        // Recalculate wall length after extension (use different variable to avoid redeclaration)
+        const extendedWallLength = Math.hypot(wallDx, wallDz);
+        const wallDirX = extendedWallLength > 0 ? wallDx / extendedWallLength : 0;
+        const wallDirZ = extendedWallLength > 0 ? wallDz / extendedWallLength : 0;
+        
+        const buttInJoints = this.joints ? this.joints.filter(j => 
+          j.joining_method === 'butt_in' && (j.wall_1 === id || j.wall_2 === id)
+        ) : [];
+        
+        let shouldShortenStart = false;
+        let shouldShortenEnd = false;
+        let startShorteningThickness = 0;
+        let endShorteningThickness = 0;
+        
+        if (buttInJoints.length > 0) {
+          buttInJoints.forEach(j => {
+            const otherWallId = j.wall_1 === id ? j.wall_2 : j.wall_1;
+            const otherWall = this.walls.find(w => String(w.id) === String(otherWallId));
+            if (!otherWall) return;
+            const isWall1 = j.wall_1 === id;
+            if (!isWall1) return;
+            
+            const joiningWallThickness = (otherWall.thickness || thickness) * scale;
+            const oSX = snap(otherWall.start_x * scale);
+            const oSZ = snap(otherWall.start_y * scale);
+            const oEX = snap(otherWall.end_x * scale);
+            const oEZ = snap(otherWall.end_y * scale);
+            
+            // Calculate intersection
+            const intersection = calculateLineIntersection(
+              finalStartX, finalStartZ, finalEndX, finalEndZ,
+              oSX, oSZ, oEX, oEZ,
+              true
+            );
+            if (!intersection) return;
+            
+            const jointX = snap(intersection.x);
+            const jointZ = snap(intersection.z);
+            const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
+            const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
+            const isCloserToStart = startDist < endDist;
+            
+            if (isCloserToStart && startDist < 0.1) {
+              shouldShortenStart = true;
+              startShorteningThickness = Math.max(startShorteningThickness, joiningWallThickness);
+            } else if (!isCloserToStart && endDist < 0.1) {
+              shouldShortenEnd = true;
+              endShorteningThickness = Math.max(endShorteningThickness, joiningWallThickness);
+            }
+          });
+          
+          if (shouldShortenStart) {
+            finalStartX = finalStartX + wallDirX * startShorteningThickness;
+            finalStartZ = finalStartZ + wallDirZ * startShorteningThickness;
+          }
+          if (shouldShortenEnd) {
+            finalEndX = finalEndX - wallDirX * endShorteningThickness;
+            finalEndZ = finalEndZ - wallDirZ * endShorteningThickness;
+          }
+        }
+        
+        // Calculate final wall direction and length AFTER extension and shortening
         const finalDx = finalEndX - finalStartX;
         const finalDz = finalEndZ - finalStartZ;
         const finalWallLength = Math.sqrt(finalDx * finalDx + finalDz * finalDz);
@@ -2191,17 +2589,22 @@ getModelBounds() {
           wallHeight = height * scale;
         }
         
-        // Calculate wall normal EXACTLY matching meshUtils.js logic (lines 190-209)
-        // This ensures panel lines align perfectly with wall surfaces
-        const len = finalWallLength || 1;
-        const ux = finalDx / len;
-        const uz = finalDz / len;
+        // CRITICAL: Calculate wall normal AFTER extension and shortening
+        // This must match meshUtils.js logic exactly (lines 231-276)
+        // The normal is recalculated using FINAL coordinates (after extension/shortening)
+        const dirX = finalEndX - finalStartX;
+        const dirZ = finalEndZ - finalStartZ;
+        const len = Math.hypot(dirX, dirZ) || 1;
+        const ux = dirX / len;
+        const uz = dirZ / len;
         let nx = -uz;
         let nz = ux;
         const midX = (finalStartX + finalEndX) / 2;
         const midZ = (finalStartZ + finalEndZ) / 2;
-        const toCenterX = (modelCenter.x * scale) - midX;
-        const toCenterZ = (modelCenter.z * scale) - midZ;
+        // CRITICAL: Model center is already in scaled coordinates, don't scale again!
+        // This matches meshUtils.js line 243: modelCenter is already scaled
+        const toCenterX = modelCenter.x - midX;
+        const toCenterZ = modelCenter.z - midZ;
         const dot = nx * toCenterX + nz * toCenterZ;
         if (dot < 0) {
           nx = -nx;
@@ -2279,9 +2682,15 @@ getModelBounds() {
           // CRITICAL: Position panel division lines on BOTH wall surfaces
           // Wall mesh is positioned at database coordinate and extruded by wallThickness
           // in the normal direction (toward model center). Therefore:
-          // - Surface 1: At database coordinate (one face of the wall)
-          // - Surface 2: At database coordinate + normal * wallThickness (opposite face)
+          // - Surface 1: At database coordinate (one face of the wall - outer face)
+          // - Surface 2: At database coordinate + normal * wallThickness (opposite face - inner face)
           // We place one line on each surface for accurate double-line representation
+          // 
+          // IMPORTANT: The normal points from outer face (database coordinate) to inner face
+          // In ExtrudeGeometry, the shape is in XY plane, extruded in Z direction
+          // After rotation, local Y (thickness) aligns with normal in XZ plane
+          // So: outer face at Y=0 (local) = database coordinate (world)
+          //     inner face at Y=wallThickness (local) = database coordinate + normal * wallThickness (world)
           const dbLinePoint = {
             x: divX3D,
             z: divZ3D
@@ -2291,6 +2700,23 @@ getModelBounds() {
             x: divX3D + finalNormX * wallThickness,
             z: divZ3D + finalNormZ * wallThickness
           };
+          
+          // Debug: Verify normal direction for problematic walls
+          if (wall.id === 7083 || wall.id === 7180 || wall.id === 7197) {
+            console.log(`[Panel Line Debug] Wall ${wall.id} - Normal and line positions:`, {
+              wallId: wall.id,
+              normal: { x: finalNormX, z: finalNormZ },
+              wallThickness: wallThickness,
+              dbLinePoint: dbLinePoint,
+              offsetLinePoint: offsetLinePoint,
+              distanceBetweenLines: Math.hypot(
+                offsetLinePoint.x - dbLinePoint.x,
+                offsetLinePoint.z - dbLinePoint.z
+              ),
+              expectedDistance: wallThickness,
+              note: "Lines should be on opposite faces, distance should equal wallThickness"
+            });
+          }
           
           debugLog(`  - 3D coordinates: (${divX3D.toFixed(2)}, ${divZ3D.toFixed(2)})`);
           debugLog(`  - Calling createLineSegmentsWithCutouts with position ${divisionPosition}mm`);
@@ -3084,12 +3510,1737 @@ getModelBounds() {
     }
   }
 
+  // Helper function to calculate polygon center (centroid)
+  calculatePolygonCenter(vertices) {
+    if (!vertices || vertices.length === 0) return null;
+    let sumX = 0, sumZ = 0;
+    vertices.forEach(v => {
+      sumX += v.x;
+      sumZ += v.z;
+    });
+    return {
+      x: sumX / vertices.length,
+      z: sumZ / vertices.length
+    };
+  }
+
+  // Helper function to calculate polygon area (for debugging)
+  calculatePolygonArea(vertices) {
+    if (!vertices || vertices.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < vertices.length; i++) {
+      const j = (i + 1) % vertices.length;
+      area += vertices[i].x * vertices[j].z;
+      area -= vertices[j].x * vertices[i].z;
+    }
+    return Math.abs(area) / 2;
+  }
+
+  // Calculate extended wall positions for a room (replicating wall extension logic)
+  calculateExtendedRoomBoundary(room, wallThickness) {
+    if (!room || !room.walls || !this.walls || this.walls.length === 0) {
+      return null;
+    }
+
+    // Get all walls for this room
+    const roomWallIds = Array.isArray(room.walls) 
+      ? room.walls.map(w => typeof w === 'object' ? w.id : w)
+      : [];
+    
+    const roomWalls = this.walls.filter(wall => 
+      roomWallIds.includes(String(wall.id))
+    );
+
+    if (roomWalls.length === 0) {
+      return null;
+    }
+
+    const scale = this.scalingFactor;
+    const modelCenter = this.calculateModelCenter();
+
+    // Helper function to snap values
+    function snap(val, precision = 0.01) {
+      return Math.round(val / precision) * precision;
+    }
+
+    // Calculate extended positions for each wall
+    const extendedWalls = roomWalls.map(wall => {
+      let startX = snap(wall.start_x * scale);
+      let startZ = snap(wall.start_y * scale);
+      let endX = snap(wall.end_x * scale);
+      let endZ = snap(wall.end_y * scale);
+
+      const isHorizontal = Math.abs(wall.start_y - wall.end_y) < 1e-6;
+      const isVertical = Math.abs(wall.start_x - wall.end_x) < 1e-6;
+
+      // Apply wall flipping based on model center (same logic as createWallMesh)
+      let finalStartX = startX;
+      let finalStartZ = startZ;
+      let finalEndX = endX;
+      let finalEndZ = endZ;
+
+      if (isHorizontal) {
+        if (modelCenter.z * scale < startZ) {
+          finalStartX = endX;
+          finalEndX = startX;
+        }
+      } else if (isVertical) {
+        if (modelCenter.x * scale > startX) {
+          finalStartZ = endZ;
+          finalEndZ = startZ;
+        }
+      }
+
+      // Calculate inward normal
+      const dirX = finalEndX - finalStartX;
+      const dirZ = finalEndZ - finalStartZ;
+      const len = Math.hypot(dirX, dirZ) || 1;
+      const ux = dirX / len;
+      const uz = dirZ / len;
+      let nx = -uz;
+      let nz = ux;
+      const midX = (finalStartX + finalEndX) / 2;
+      const midZ = (finalStartZ + finalEndZ) / 2;
+      const toCenterX = (modelCenter.x * scale) - midX;
+      const toCenterZ = (modelCenter.z * scale) - midZ;
+      const dot = nx * toCenterX + nz * toCenterZ;
+      if (dot < 0) {
+        nx = -nx;
+        nz = -nz;
+      }
+      const finalNormX = nx;
+      const finalNormZ = nz;
+
+      // Apply wall extension (STEP 1 logic)
+      if (this.joints && this.joints.length > 0) {
+        this.walls.forEach(otherWall => {
+          if (String(otherWall.id) === String(wall.id)) return;
+          
+          const joint = this.joints.find(j => 
+            (j.wall_1 === wall.id && j.wall_2 === otherWall.id) ||
+            (j.wall_2 === wall.id && j.wall_1 === otherWall.id)
+          );
+          if (!joint) return;
+
+          const oSX = snap(otherWall.start_x * scale);
+          const oSZ = snap(otherWall.start_y * scale);
+          const oEX = snap(otherWall.end_x * scale);
+          const oEZ = snap(otherWall.end_y * scale);
+          const otherThickness = otherWall.thickness * scale;
+
+          const otherIsHorizontal = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+          const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+
+          const otherMidX = (oSX + oEX) / 2;
+          const otherMidZ = (oSZ + oEZ) / 2;
+          // Model center is already in scaled coordinates, don't scale again
+          const toOtherCenterX = modelCenter.x - otherMidX;
+          const toOtherCenterZ = modelCenter.z - otherMidZ;
+          let otherNormX, otherNormZ;
+          if (otherIsHorizontal) {
+            otherNormX = 0;
+            otherNormZ = toOtherCenterZ < 0 ? -1 : 1;
+          } else if (otherIsVertical) {
+            otherNormX = toOtherCenterX < 0 ? -1 : 1;
+            otherNormZ = 0;
+          } else {
+            return; // Not perpendicular
+          }
+
+          const otherOuterX = oSX;
+          const otherOuterZ = oSZ;
+          const otherInnerX = oSX + otherNormX * otherThickness;
+          const otherInnerZ = oSZ + otherNormZ * otherThickness;
+
+          // Case 1: This wall is horizontal, other wall is vertical
+          if (isHorizontal && otherIsVertical) {
+            const thisZ = finalStartZ;
+            const otherX = oSX;
+            const rightmostX = Math.max(otherOuterX, otherInnerX);
+            const leftmostX = Math.min(otherOuterX, otherInnerX);
+            const otherMinZ = Math.min(oSZ, oEZ);
+            const otherMaxZ = Math.max(oSZ, oEZ);
+            if (thisZ < otherMinZ || thisZ > otherMaxZ) return;
+
+            const rightEndpointX = Math.max(finalStartX, finalEndX);
+            const leftEndpointX = Math.min(finalStartX, finalEndX);
+            const thisCenterX = (finalStartX + finalEndX) / 2;
+            if (otherX > thisCenterX) {
+              if (rightEndpointX < rightmostX) {
+                if (finalEndX > finalStartX) {
+                  finalEndX = rightmostX;
+                } else {
+                  finalStartX = rightmostX;
+                }
+              }
+            } else {
+              if (leftEndpointX > leftmostX) {
+                if (finalStartX < finalEndX) {
+                  finalStartX = leftmostX;
+                } else {
+                  finalEndX = leftmostX;
+                }
+              }
+            }
+          }
+          // Case 2: This wall is vertical, other wall is horizontal
+          else if (isVertical && otherIsHorizontal) {
+            const thisX = finalStartX;
+            const otherZ = oSZ;
+            const topmostZ = Math.max(otherOuterZ, otherInnerZ);
+            const bottommostZ = Math.min(otherOuterZ, otherInnerZ);
+            const otherMinX = Math.min(oSX, oEX);
+            const otherMaxX = Math.max(oSX, oEX);
+            if (thisX < otherMinX || thisX > otherMaxX) return;
+
+            const topEndpointZ = Math.max(finalStartZ, finalEndZ);
+            const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
+            const thisCenterZ = (finalStartZ + finalEndZ) / 2;
+            if (otherZ > thisCenterZ) {
+              if (topEndpointZ < topmostZ) {
+                if (finalEndZ > finalStartZ) {
+                  finalEndZ = topmostZ;
+                } else {
+                  finalStartZ = topmostZ;
+                }
+              }
+            } else {
+              if (bottomEndpointZ > bottommostZ) {
+                if (finalStartZ < finalEndZ) {
+                  finalStartZ = bottommostZ;
+                } else {
+                  finalEndZ = bottommostZ;
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // Calculate wall thickness
+      const wallThicknessScaled = wall.thickness * scale;
+
+      // Calculate inner face line
+      // The wall mesh is positioned so the database line (finalStartX, finalStartZ) is the OUTER face,
+      // and thickness extends toward the model center (in the direction of finalNormX, finalNormZ).
+      // The wall geometry is extruded in +Z direction, and after rotation, +Z becomes the thickness direction.
+      // So: Outer face (Z=0) = database line, Inner face (Z=thickness) = database line + (normal * thickness)
+      // Since finalNormX/finalNormZ point INWARD (toward model center), we add them to get inner face
+      const innerStartX = finalStartX + finalNormX * wallThicknessScaled;
+      const innerStartZ = finalStartZ + finalNormZ * wallThicknessScaled;
+      const innerEndX = finalEndX + finalNormX * wallThicknessScaled;
+      const innerEndZ = finalEndZ + finalNormZ * wallThicknessScaled;
+
+      return {
+        wallId: wall.id,
+        innerStart: { x: innerStartX, z: innerStartZ },
+        innerEnd: { x: innerEndX, z: innerEndZ },
+        originalStart: { x: startX, z: startZ },
+        originalEnd: { x: endX, z: endZ },
+        extendedStart: { x: finalStartX, z: finalStartZ },
+        extendedEnd: { x: finalEndX, z: finalEndZ },
+        normal: { x: finalNormX, z: finalNormZ }
+      };
+    });
+
+    // Build polygon from inner face lines
+    // This is a simplified approach - connect inner face endpoints in order
+    // For a proper implementation, we'd need to find intersections and build a proper polygon
+    const boundaryPoints = [];
+    const usedWalls = new Set();
+
+    // Start with the first wall
+    if (extendedWalls.length > 0) {
+      let currentWall = extendedWalls[0];
+      boundaryPoints.push(currentWall.innerStart);
+      usedWalls.add(currentWall.wallId);
+
+      // Find connected walls and build the boundary
+      let attempts = 0;
+      while (boundaryPoints.length < extendedWalls.length && attempts < extendedWalls.length * 2) {
+        attempts++;
+        const lastPoint = boundaryPoints[boundaryPoints.length - 1];
+        let foundNext = false;
+
+        // Find a wall whose start or end point is close to the last point
+        for (const wall of extendedWalls) {
+          if (usedWalls.has(wall.wallId)) continue;
+
+          const distToStart = Math.hypot(
+            lastPoint.x - wall.innerStart.x,
+            lastPoint.z - wall.innerStart.z
+          );
+          const distToEnd = Math.hypot(
+            lastPoint.x - wall.innerEnd.x,
+            lastPoint.z - wall.innerEnd.z
+          );
+
+          const tolerance = 10 * scale; // 10mm tolerance
+
+          if (distToStart < tolerance) {
+            boundaryPoints.push(wall.innerEnd);
+            usedWalls.add(wall.wallId);
+            foundNext = true;
+            break;
+          } else if (distToEnd < tolerance) {
+            boundaryPoints.push(wall.innerStart);
+            usedWalls.add(wall.wallId);
+            foundNext = true;
+            break;
+          }
+        }
+
+        if (!foundNext) {
+          // Try to find closest point
+          let minDist = Infinity;
+          let closestWall = null;
+          let useStart = true;
+
+          for (const wall of extendedWalls) {
+            if (usedWalls.has(wall.wallId)) continue;
+
+            const distToStart = Math.hypot(
+              lastPoint.x - wall.innerStart.x,
+              lastPoint.z - wall.innerStart.z
+            );
+            const distToEnd = Math.hypot(
+              lastPoint.x - wall.innerEnd.x,
+              lastPoint.z - wall.innerEnd.z
+            );
+
+            if (distToStart < minDist) {
+              minDist = distToStart;
+              closestWall = wall;
+              useStart = true;
+            }
+            if (distToEnd < minDist) {
+              minDist = distToEnd;
+              closestWall = wall;
+              useStart = false;
+            }
+          }
+
+          if (closestWall && minDist < 1000 * scale) { // 1m max gap
+            if (useStart) {
+              boundaryPoints.push(closestWall.innerEnd);
+            } else {
+              boundaryPoints.push(closestWall.innerStart);
+            }
+            usedWalls.add(closestWall.wallId);
+            foundNext = true;
+          } else {
+            break; // No more connected walls
+          }
+        }
+      }
+    }
+
+    // Convert to room_points format (x, y instead of x, z)
+    if (boundaryPoints.length >= 3) {
+      return boundaryPoints.map(point => ({
+        x: (point.x - this.modelOffset.x) / scale,
+        y: (point.z - this.modelOffset.z) / scale
+      }));
+    }
+
+    // Fallback to original room_points if we couldn't build boundary
+    return room.room_points;
+  }
+
+  // Build floor boundary directly from extended wall inner faces
+  // This ensures the floor aligns with the actual rendered wall positions
+  buildFloorBoundaryFromExtendedInnerFaces(room, wallThickness) {
+    if (!room || !this.walls || !this.joints) {
+      return null;
+    }
+
+    // Get all walls for this room
+    const roomWallIds = Array.isArray(room.walls) 
+      ? room.walls.map(w => typeof w === 'object' ? w.id : w)
+      : [];
+    
+    const roomWalls = this.walls.filter(wall => 
+      roomWallIds.includes(String(wall.id))
+    );
+
+    if (roomWalls.length === 0) {
+      return null;
+    }
+
+    const scale = this.scalingFactor;
+    const modelCenter = this.calculateModelCenter();
+
+    function snap(val, precision = 0.01) {
+      return Math.round(val / precision) * precision;
+    }
+
+    // Calculate extended inner face endpoints for each room wall
+    const innerFaceEndpoints = [];
+
+    roomWalls.forEach(wall => {
+      let startX = snap(wall.start_x * scale);
+      let startZ = snap(wall.start_y * scale);
+      let endX = snap(wall.end_x * scale);
+      let endZ = snap(wall.end_y * scale);
+
+      const isHorizontal = Math.abs(wall.start_y - wall.end_y) < 1e-6;
+      const isVertical = Math.abs(wall.start_x - wall.end_x) < 1e-6;
+
+      // Apply wall flipping (same as createWallMesh)
+      let finalStartX = startX;
+      let finalStartZ = startZ;
+      let finalEndX = endX;
+      let finalEndZ = endZ;
+
+      if (isHorizontal) {
+        if (modelCenter.z * scale < startZ) {
+          finalStartX = endX;
+          finalEndX = startX;
+        }
+      } else if (isVertical) {
+        if (modelCenter.x * scale > startX) {
+          finalStartZ = endZ;
+          finalEndZ = startZ;
+        }
+      }
+
+      // Calculate inward normal
+      const dirX = finalEndX - finalStartX;
+      const dirZ = finalEndZ - finalStartZ;
+      const len = Math.hypot(dirX, dirZ) || 1;
+      const ux = dirX / len;
+      const uz = dirZ / len;
+      let nx = -uz;
+      let nz = ux;
+      const midX = (finalStartX + finalEndX) / 2;
+      const midZ = (finalStartZ + finalEndZ) / 2;
+      const toCenterX = (modelCenter.x * scale) - midX;
+      const toCenterZ = (modelCenter.z * scale) - midZ;
+      const dot = nx * toCenterX + nz * toCenterZ;
+      if (dot < 0) {
+        nx = -nx;
+        nz = -nz;
+      }
+      const finalNormX = nx;
+      const finalNormZ = nz;
+
+      // Apply wall extension (same logic as createWallMesh STEP 1)
+      if (this.joints && this.joints.length > 0) {
+        this.walls.forEach(otherWall => {
+          if (String(otherWall.id) === String(wall.id)) return;
+          
+          const joint = this.joints.find(j => 
+            (j.wall_1 === wall.id && j.wall_2 === otherWall.id) ||
+            (j.wall_2 === wall.id && j.wall_1 === otherWall.id)
+          );
+          if (!joint) return;
+
+          const oSX = snap(otherWall.start_x * scale);
+          const oSZ = snap(otherWall.start_y * scale);
+          const oEX = snap(otherWall.end_x * scale);
+          const oEZ = snap(otherWall.end_y * scale);
+          const otherThickness = otherWall.thickness * scale;
+
+          const otherIsHorizontal = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+          const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+
+          const otherMidX = (oSX + oEX) / 2;
+          const otherMidZ = (oSZ + oEZ) / 2;
+          // Model center is already in scaled coordinates, don't scale again
+          const toOtherCenterX = modelCenter.x - otherMidX;
+          const toOtherCenterZ = modelCenter.z - otherMidZ;
+          let otherNormX, otherNormZ;
+          if (otherIsHorizontal) {
+            otherNormX = 0;
+            otherNormZ = toOtherCenterZ < 0 ? -1 : 1;
+          } else if (otherIsVertical) {
+            otherNormX = toOtherCenterX < 0 ? -1 : 1;
+            otherNormZ = 0;
+          } else {
+            return;
+          }
+
+          const otherOuterX = oSX;
+          const otherOuterZ = oSZ;
+          const otherInnerX = oSX + otherNormX * otherThickness;
+          const otherInnerZ = oSZ + otherNormZ * otherThickness;
+
+          if (isHorizontal && otherIsVertical) {
+            const thisZ = finalStartZ;
+            const otherX = oSX;
+            const rightmostX = Math.max(otherOuterX, otherInnerX);
+            const leftmostX = Math.min(otherOuterX, otherInnerX);
+            const otherMinZ = Math.min(oSZ, oEZ);
+            const otherMaxZ = Math.max(oSZ, oEZ);
+            if (thisZ < otherMinZ || thisZ > otherMaxZ) return;
+
+            const rightEndpointX = Math.max(finalStartX, finalEndX);
+            const leftEndpointX = Math.min(finalStartX, finalEndX);
+            const thisCenterX = (finalStartX + finalEndX) / 2;
+            if (otherX > thisCenterX) {
+              if (rightEndpointX < rightmostX) {
+                if (finalEndX > finalStartX) {
+                  finalEndX = rightmostX;
+                } else {
+                  finalStartX = rightmostX;
+                }
+              }
+            } else {
+              if (leftEndpointX > leftmostX) {
+                if (finalStartX < finalEndX) {
+                  finalStartX = leftmostX;
+                } else {
+                  finalEndX = leftmostX;
+                }
+              }
+            }
+          } else if (isVertical && otherIsHorizontal) {
+            const thisX = finalStartX;
+            const otherZ = oSZ;
+            const topmostZ = Math.max(otherOuterZ, otherInnerZ);
+            const bottommostZ = Math.min(otherOuterZ, otherInnerZ);
+            const otherMinX = Math.min(oSX, oEX);
+            const otherMaxX = Math.max(oSX, oEX);
+            if (thisX < otherMinX || thisX > otherMaxX) return;
+
+            const topEndpointZ = Math.max(finalStartZ, finalEndZ);
+            const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
+            const thisCenterZ = (finalStartZ + finalEndZ) / 2;
+            if (otherZ > thisCenterZ) {
+              if (topEndpointZ < topmostZ) {
+                if (finalEndZ > finalStartZ) {
+                  finalEndZ = topmostZ;
+                } else {
+                  finalStartZ = topmostZ;
+                }
+              }
+            } else {
+              if (bottomEndpointZ > bottommostZ) {
+                if (finalStartZ < finalEndZ) {
+                  finalStartZ = bottommostZ;
+                } else {
+                  finalEndZ = bottommostZ;
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // Calculate inner face positions (where the floor should align)
+      const wallThicknessScaled = wall.thickness * scale;
+      const innerStartX = finalStartX + finalNormX * wallThicknessScaled;
+      const innerStartZ = finalStartZ + finalNormZ * wallThicknessScaled;
+      const innerEndX = finalEndX + finalNormX * wallThicknessScaled;
+      const innerEndZ = finalEndZ + finalNormZ * wallThicknessScaled;
+
+      // Add both endpoints of the inner face
+      innerFaceEndpoints.push(
+        { x: innerStartX, z: innerStartZ, wallId: wall.id, isStart: true },
+        { x: innerEndX, z: innerEndZ, wallId: wall.id, isStart: false }
+      );
+    });
+
+    // Build a closed polygon from the inner face endpoints
+    if (innerFaceEndpoints.length < 6) {
+      return null; // Need at least 3 walls (6 endpoints)
+    }
+
+    // Use the same polygon building logic as calculateExtendedRoomBoundary
+    // Sort endpoints to form a connected polygon
+    const boundaryPoints = [];
+    const used = new Set();
+    
+    // Start with the first endpoint
+    let current = innerFaceEndpoints[0];
+    boundaryPoints.push({ x: current.x, z: current.z });
+    used.add(0);
+
+    // Build polygon by finding closest unused endpoint
+    while (boundaryPoints.length < innerFaceEndpoints.length && used.size < innerFaceEndpoints.length) {
+      let closestIdx = -1;
+      let closestDist = Infinity;
+      
+      for (let i = 0; i < innerFaceEndpoints.length; i++) {
+        if (used.has(i)) continue;
+        const dist = Math.hypot(
+          innerFaceEndpoints[i].x - current.x,
+          innerFaceEndpoints[i].z - current.z
+        );
+        if (dist < closestDist && dist < 200 * scale) { // 200mm tolerance for connecting endpoints
+          closestDist = dist;
+          closestIdx = i;
+        }
+      }
+
+      if (closestIdx === -1) {
+        // No close endpoint found, try to close the polygon
+        break;
+      }
+
+      current = innerFaceEndpoints[closestIdx];
+      boundaryPoints.push({ x: current.x, z: current.z });
+      used.add(closestIdx);
+    }
+
+    // Ensure polygon is closed
+    if (boundaryPoints.length >= 3) {
+      // Check if first and last are close
+      const first = boundaryPoints[0];
+      const last = boundaryPoints[boundaryPoints.length - 1];
+      const dist = Math.hypot(last.x - first.x, last.z - first.z);
+      if (dist > 10 * scale) {
+        // Not closed, add first point again
+        boundaryPoints.push({ x: first.x, z: first.z });
+      }
+      return boundaryPoints;
+    }
+
+    return null;
+  }
+
+  // Selective shrinking: Only shrink vertices that are OUTSIDE the wall inner faces
+  // This prevents gaps while avoiding overlap
+  shrinkPolygonSelectivelyByInnerFace(vertices, room, wallThickness) {
+    console.log(`[Floor Shrink] shrinkPolygonSelectivelyByInnerFace called for room ${room?.id}`, {
+      verticesCount: vertices?.length,
+      hasRoom: !!room,
+      hasWalls: !!this.walls,
+      hasJoints: !!this.joints,
+      wallsCount: this.walls?.length,
+      jointsCount: this.joints?.length
+    });
+
+    if (!vertices || vertices.length < 3 || !room || !this.walls || !this.joints) {
+      console.log(`[Floor Shrink] Fallback to standard shrink - missing data`);
+      // Fallback to standard shrink if we can't analyze
+      return this.shrinkPolygonByWallThickness(vertices, wallThickness);
+    }
+
+    // Get all walls for this room
+    const roomWallIds = Array.isArray(room.walls) 
+      ? room.walls.map(w => String(typeof w === 'object' ? w.id : w))
+      : [];
+    
+    console.log(`[Floor Shrink] Room ${room.id} wall IDs (as strings):`, roomWallIds);
+    console.log(`[Floor Shrink] Available walls:`, this.walls.map(w => ({ id: w.id, idType: typeof w.id, idString: String(w.id) })));
+    
+    const roomWalls = this.walls.filter(wall => 
+      roomWallIds.includes(String(wall.id))
+    );
+
+    console.log(`[Floor Shrink] Found ${roomWalls.length} walls for room ${room.id}:`, roomWalls.map(w => ({ id: w.id, start: `${w.start_x},${w.start_y}`, end: `${w.end_x},${w.end_y}` })));
+
+    if (roomWalls.length === 0) {
+      console.error(`[Floor Shrink] ERROR: No walls matched!`, {
+        roomWallIds,
+        availableWallIds: this.walls.map(w => String(w.id)),
+        roomWallsData: room.walls,
+        firstWallId: this.walls[0] ? { id: this.walls[0].id, idType: typeof this.walls[0].id } : 'no walls'
+      });
+      console.log(`[Floor Shrink] No walls found, using standard shrink`);
+      // No walls, use standard shrink
+      return this.shrinkPolygonByWallThickness(vertices, wallThickness);
+    }
+
+    const scale = this.scalingFactor;
+    const modelCenter = this.calculateModelCenter();
+    const tolerance = 200 * scale; // 200mm tolerance for point matching (increased to catch all vertices)
+
+    function snap(val, precision = 0.01) {
+      return Math.round(val / precision) * precision;
+    }
+
+    // Helper function to calculate line intersection (same as meshUtils.js)
+    const calculateLineIntersection = (x1, y1, x2, y2, x3, y3, x4, y4, allowExtended = false) => {
+      const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+      if (Math.abs(denominator) < 1e-10) {
+        return null;
+      }
+      const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
+      const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denominator;
+      const intersectionX = x1 + t * (x2 - x1);
+      const intersectionZ = y1 + t * (y2 - y1);
+      if (allowExtended || (t >= 0 && t <= 1 && u >= 0 && u <= 1)) {
+        return { x: intersectionX, z: intersectionZ, t, u };
+      }
+      return null;
+    };
+
+    // Calculate extended inner face for each room wall (same logic as createWallMesh)
+    console.log(`[Floor Shrink] Calculating inner faces for ${roomWalls.length} walls`);
+    const wallInnerFaces = roomWalls.map(wall => {
+      console.log(`[Floor Shrink] Processing wall ${wall.id}`);
+      let startX = snap(wall.start_x * scale);
+      let startZ = snap(wall.start_y * scale);
+      let endX = snap(wall.end_x * scale);
+      let endZ = snap(wall.end_y * scale);
+
+      const isHorizontal = Math.abs(wall.start_y - wall.end_y) < 1e-6;
+      const isVertical = Math.abs(wall.start_x - wall.end_x) < 1e-6;
+
+      // Apply wall flipping (same as createWallMesh)
+      // Model center is already in scaled coordinates, don't scale again
+      let finalStartX = startX;
+      let finalStartZ = startZ;
+      let finalEndX = endX;
+      let finalEndZ = endZ;
+
+      if (isHorizontal) {
+        if (modelCenter.z < startZ) {
+          finalStartX = endX;
+          finalEndX = startX;
+        }
+      } else if (isVertical) {
+        if (modelCenter.x > startX) {
+          finalStartZ = endZ;
+          finalEndZ = startZ;
+        }
+      }
+
+      // Calculate inward normal (same as createWallMesh)
+      // IMPORTANT: Normal is calculated BEFORE extension, but we'll recalculate after extension
+      // to ensure it's correct for the extended wall position
+      // CRITICAL: Apply the same flipped logic as after extension
+      let finalNormX, finalNormZ;
+      {
+        const dirX = finalEndX - finalStartX;
+        const dirZ = finalEndZ - finalStartZ;
+        const len = Math.hypot(dirX, dirZ) || 1;
+        const ux = dirX / len;
+        const uz = dirZ / len;
+        let nx = -uz;
+        let nz = ux;
+        const midX = (finalStartX + finalEndX) / 2;
+        const midZ = (finalStartZ + finalEndZ) / 2;
+        // Model center is already in scaled coordinates, don't scale again
+        const toCenterX = modelCenter.x - midX;
+        const toCenterZ = modelCenter.z - midZ;
+        const dot = nx * toCenterX + nz * toCenterZ;
+        // FLIPPED LOGIC: If dot > 0, flip (because actual rendering has opposite direction)
+        if (dot > 0) {
+          nx = -nx;
+          nz = -nz;
+        }
+        finalNormX = nx;
+        finalNormZ = nz;
+      }
+
+      // Store original coordinates before extension for debugging
+      const originalFinalStartX = finalStartX;
+      const originalFinalStartZ = finalStartZ;
+      const originalFinalEndX = finalEndX;
+      const originalFinalEndZ = finalEndZ;
+
+      // Apply wall extension (same logic as createWallMesh STEP 1)
+      if (this.joints && this.joints.length > 0) {
+        this.walls.forEach(otherWall => {
+          if (String(otherWall.id) === String(wall.id)) return;
+          
+          const joint = this.joints.find(j => 
+            (j.wall_1 === wall.id && j.wall_2 === otherWall.id) ||
+            (j.wall_2 === wall.id && j.wall_1 === otherWall.id)
+          );
+          if (!joint) return;
+
+          const oSX = snap(otherWall.start_x * scale);
+          const oSZ = snap(otherWall.start_y * scale);
+          const oEX = snap(otherWall.end_x * scale);
+          const oEZ = snap(otherWall.end_y * scale);
+          const otherThickness = otherWall.thickness * scale;
+
+          const otherIsHorizontal = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+          const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+
+          const otherMidX = (oSX + oEX) / 2;
+          const otherMidZ = (oSZ + oEZ) / 2;
+          // Model center is already in scaled coordinates, don't scale again
+          const toOtherCenterX = modelCenter.x - otherMidX;
+          const toOtherCenterZ = modelCenter.z - otherMidZ;
+          let otherNormX, otherNormZ;
+          if (otherIsHorizontal) {
+            otherNormX = 0;
+            otherNormZ = toOtherCenterZ < 0 ? -1 : 1;
+          } else if (otherIsVertical) {
+            otherNormX = toOtherCenterX < 0 ? -1 : 1;
+            otherNormZ = 0;
+          } else {
+            return;
+          }
+
+          const otherOuterX = oSX;
+          const otherOuterZ = oSZ;
+          const otherInnerX = oSX + otherNormX * otherThickness;
+          const otherInnerZ = oSZ + otherNormZ * otherThickness;
+
+          if (isHorizontal && otherIsVertical) {
+            const thisZ = finalStartZ;
+            const otherX = oSX;
+            const rightmostX = Math.max(otherOuterX, otherInnerX);
+            const leftmostX = Math.min(otherOuterX, otherInnerX);
+            const otherMinZ = Math.min(oSZ, oEZ);
+            const otherMaxZ = Math.max(oSZ, oEZ);
+            if (thisZ < otherMinZ || thisZ > otherMaxZ) return;
+
+            const rightEndpointX = Math.max(finalStartX, finalEndX);
+            const leftEndpointX = Math.min(finalStartX, finalEndX);
+            const thisCenterX = (finalStartX + finalEndX) / 2;
+            if (otherX > thisCenterX) {
+              if (rightEndpointX < rightmostX) {
+                if (finalEndX > finalStartX) {
+                  finalEndX = rightmostX;
+                } else {
+                  finalStartX = rightmostX;
+                }
+              }
+            } else {
+              if (leftEndpointX > leftmostX) {
+                if (finalStartX < finalEndX) {
+                  finalStartX = leftmostX;
+                } else {
+                  finalEndX = leftmostX;
+                }
+              }
+            }
+          } else if (isVertical && otherIsHorizontal) {
+            const thisX = finalStartX;
+            const otherZ = oSZ;
+            const topmostZ = Math.max(otherOuterZ, otherInnerZ);
+            const bottommostZ = Math.min(otherOuterZ, otherInnerZ);
+            const otherMinX = Math.min(oSX, oEX);
+            const otherMaxX = Math.max(oSX, oEX);
+            if (thisX < otherMinX || thisX > otherMaxX) return;
+
+            const topEndpointZ = Math.max(finalStartZ, finalEndZ);
+            const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
+            const thisCenterZ = (finalStartZ + finalEndZ) / 2;
+            if (otherZ > thisCenterZ) {
+              if (topEndpointZ < topmostZ) {
+                if (finalEndZ > finalStartZ) {
+                  finalEndZ = topmostZ;
+                } else {
+                  finalStartZ = topmostZ;
+                }
+              }
+            } else {
+              if (bottomEndpointZ > bottommostZ) {
+                if (finalStartZ < finalEndZ) {
+                  finalStartZ = bottommostZ;
+                } else {
+                  finalEndZ = bottommostZ;
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // STEP 1.5: Apply butt-in joint shortening (same as createWallMesh)
+      // Shorten wall_1 at joints where joining_method is 'butt_in'
+      if (this.joints && this.joints.length > 0) {
+        const buttInJoints = this.joints.filter(j => 
+          j.joining_method === 'butt_in' && 
+          (j.wall_1 === wall.id || j.wall_2 === wall.id)
+        );
+        
+        if (buttInJoints.length > 0) {
+          let shouldShortenStart = false;
+          let shouldShortenEnd = false;
+          let startShorteningThickness = 0;
+          let endShorteningThickness = 0;
+
+          buttInJoints.forEach(j => {
+            const otherWallId = j.wall_1 === wall.id ? j.wall_2 : j.wall_1;
+            const otherWall = this.walls.find(w => String(w.id) === String(otherWallId));
+            if (!otherWall) return;
+
+            const isWall1 = j.wall_1 === wall.id;
+            if (!isWall1) return; // Only shorten wall_1
+
+            const joiningWallThickness = (otherWall.thickness || wall.thickness) * scale;
+            let oSX = snap(otherWall.start_x * scale);
+            let oSZ = snap(otherWall.start_y * scale);
+            let oEX = snap(otherWall.end_x * scale);
+            let oEZ = snap(otherWall.end_y * scale);
+
+            const intersection = calculateLineIntersection(
+              finalStartX, finalStartZ, finalEndX, finalEndZ,
+              oSX, oSZ, oEX, oEZ,
+              true // allowExtended = true
+            );
+            if (!intersection) return;
+
+            const jointX = snap(intersection.x);
+            const jointZ = snap(intersection.z);
+            const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
+            const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
+            const tolerance = 0.1; // 10cm tolerance
+            const isCloserToStart = startDist < endDist;
+
+            if (isCloserToStart && (startDist < tolerance || startDist < endDist * 0.5)) {
+              shouldShortenStart = true;
+              startShorteningThickness = Math.max(startShorteningThickness, joiningWallThickness);
+            }
+            if (!isCloserToStart && (endDist < tolerance || endDist < startDist * 0.5)) {
+              shouldShortenEnd = true;
+              endShorteningThickness = Math.max(endShorteningThickness, joiningWallThickness);
+            }
+          });
+
+          // Apply shortening
+          if (shouldShortenStart || shouldShortenEnd) {
+            const wallDirX = finalEndX - finalStartX;
+            const wallDirZ = finalEndZ - finalStartZ;
+            const wallLen = Math.hypot(wallDirX, wallDirZ) || 1;
+            const wallDirNormX = wallDirX / wallLen;
+            const wallDirNormZ = wallDirZ / wallLen;
+
+            if (shouldShortenStart) {
+              finalStartX = finalStartX + wallDirNormX * startShorteningThickness;
+              finalStartZ = finalStartZ + wallDirNormZ * startShorteningThickness;
+            }
+            if (shouldShortenEnd) {
+              finalEndX = finalEndX - wallDirNormX * endShorteningThickness;
+              finalEndZ = finalEndZ - wallDirNormZ * endShorteningThickness;
+            }
+          }
+        }
+      }
+
+      // Recalculate normal AFTER extension and shortening to ensure it's correct
+      // (Extension might change the wall's midpoint, affecting normal direction)
+      // IMPORTANT: The normal should point TOWARD the model center (room interior)
+      {
+        const dirX = finalEndX - finalStartX;
+        const dirZ = finalEndZ - finalStartZ;
+        const len = Math.hypot(dirX, dirZ) || 1;
+        const ux = dirX / len;
+        const uz = dirZ / len;
+        // Perpendicular vectors: (-uz, ux) and (uz, -ux)
+        // Choose the one pointing toward model center
+        let nx = -uz;
+        let nz = ux;
+        const midX = (finalStartX + finalEndX) / 2;
+        const midZ = (finalStartZ + finalEndZ) / 2;
+        // Vector from wall midpoint to model center
+        // Model center is already in scaled coordinates, don't scale again
+        const toCenterX = modelCenter.x - midX;
+        const toCenterZ = modelCenter.z - midZ;
+        // Dot product: if negative, normal points away from center, so flip it
+        // CRITICAL FIX: User reports Wall 7255 thickness goes toward -y (up) when it should go toward +y (down)
+        // Wall 7255 is at y=2243, model center is at y=2500 (below wall)
+        // Normal SHOULD point toward +y (down) to point toward center
+        // But user sees thickness going toward -y (up), meaning normal is pointing AWAY from center
+        // This suggests the normal calculation logic is INVERTED
+        const dot = nx * toCenterX + nz * toCenterZ;
+        // FLIP THE LOGIC: If dot > 0 (points toward center in calculation), 
+        // the actual rendered wall has thickness in OPPOSITE direction, so flip it
+        if (dot > 0) {
+          nx = -nx;
+          nz = -nz;
+        }
+        // If dot < 0 (points away in calculation), that matches actual rendering, so keep it
+        finalNormX = nx;
+        finalNormZ = nz;
+        
+        // Debug: Verify normal direction
+        if (wall.id === 7255) {
+          const wallY = finalStartZ;
+          const centerY = modelCenter.z * scale;
+          const normalYComponent = finalNormZ;
+          console.log(`[Normal Debug] Wall ${wall.id} normal calculation:`, {
+            wallDir: { x: ux, z: uz },
+            normalBeforeFlip: { x: -uz, z: ux },
+            toCenter: { x: toCenterX, z: toCenterZ },
+            dot,
+            finalNormal: { x: finalNormX, z: finalNormZ },
+            midPoint: { x: midX, z: midZ },
+            modelCenter: { x: modelCenter.x * scale, z: modelCenter.z * scale },
+            wallY,
+            centerY,
+            normalYComponent,
+            expectedDirection: centerY > wallY ? "toward +y (down)" : "toward -y (up)",
+            actualDirection: normalYComponent > 0 ? "toward +y (down)" : "toward -y (up)",
+            note: "For Wall 7255 at y=2243, center at y=2500, normal should point toward +y (down), but user sees thickness toward -y (up), so we flipped the logic"
+          });
+        }
+      }
+
+      // Calculate inner face positions (where the floor should align)
+      // The normal points TOWARD the model center (room interior)
+      // Inner face = outer face + (normal * thickness) moves the face inward
+      const wallThicknessScaled = wall.thickness * scale;
+      
+      // Determine wall orientation FIRST (before calculating inner face)
+      const isWallHorizontal = Math.abs(finalStartZ - finalEndZ) < 1e-6;
+      const isWallVertical = Math.abs(finalStartX - finalEndX) < 1e-6;
+      
+      // For horizontal walls: ensure inner face has constant Z (use average if start/end differ slightly)
+      // For vertical walls: ensure inner face has constant X (use average if start/end differ slightly)
+      let innerStartX, innerStartZ, innerEndX, innerEndZ;
+      
+      if (isWallHorizontal) {
+        // Horizontal wall: inner face should have constant Z
+        // Use average Z to ensure it's perfectly horizontal
+        const avgZ = (finalStartZ + finalEndZ) / 2;
+        const innerZ = avgZ + finalNormZ * wallThicknessScaled;
+        innerStartX = finalStartX + finalNormX * wallThicknessScaled;
+        innerStartZ = innerZ; // Use same Z for both
+        innerEndX = finalEndX + finalNormX * wallThicknessScaled;
+        innerEndZ = innerZ; // Use same Z for both
+      } else if (isWallVertical) {
+        // Vertical wall: inner face should have constant X
+        // Use average X to ensure it's perfectly vertical
+        const avgX = (finalStartX + finalEndX) / 2;
+        const innerX = avgX + finalNormX * wallThicknessScaled;
+        innerStartX = innerX; // Use same X for both
+        innerStartZ = finalStartZ + finalNormZ * wallThicknessScaled;
+        innerEndX = innerX; // Use same X for both
+        innerEndZ = finalEndZ + finalNormZ * wallThicknessScaled;
+      } else {
+        // Diagonal wall: calculate normally
+        innerStartX = finalStartX + finalNormX * wallThicknessScaled;
+        innerStartZ = finalStartZ + finalNormZ * wallThicknessScaled;
+        innerEndX = finalEndX + finalNormX * wallThicknessScaled;
+        innerEndZ = finalEndZ + finalNormZ * wallThicknessScaled;
+      }
+
+      // Debug logging for Wall 7255
+      if (wall.id === 7255) {
+        console.log(`[Floor Shrink Debug] Wall ${wall.id} (7255) - Inner Face Calculation:`, {
+          originalStart: { x: startX, z: startZ },
+          originalEnd: { x: endX, z: endZ },
+          beforeExtension: { startX: originalFinalStartX, startZ: originalFinalStartZ, endX: originalFinalEndX, endZ: originalFinalEndZ },
+          afterExtension: { startX: finalStartX, startZ: finalStartZ, endX: finalEndX, endZ: finalEndZ },
+          normal: { x: finalNormX, z: finalNormZ },
+          wallThicknessScaled,
+          isHorizontal: isWallHorizontal,
+          isVertical: isWallVertical,
+          innerStart: { x: innerStartX, z: innerStartZ },
+          innerEnd: { x: innerEndX, z: innerEndZ },
+          innerFaceY: innerStartZ, // This is the Y coordinate in screen space (y=0 is top)
+          outerFaceY: finalStartZ,  // Original Y coordinate
+          yDifference: innerStartZ - finalStartZ, // Positive = moved DOWN, Negative = moved UP
+          note: "yDifference > 0 means inner face moved DOWN (away from y=0), yDifference < 0 means moved UP (toward y=0)"
+        });
+      }
+
+      return {
+        wallId: wall.id,
+        innerStart: { x: innerStartX, z: innerStartZ },
+        innerEnd: { x: innerEndX, z: innerEndZ },
+        normal: { x: finalNormX, z: finalNormZ },
+        isHorizontal: isWallHorizontal,
+        isVertical: isWallVertical,
+        // For horizontal walls: constant Z coordinate (ensured above)
+        innerZ: isWallHorizontal ? innerStartZ : null,
+        // For vertical walls: constant X coordinate (ensured above)
+        innerX: isWallVertical ? innerStartX : null
+      };
+    });
+
+    // For each vertex, check if it's outside the inner face
+    // Only shrink vertices that are outside; keep vertices at or inside (prevents gaps)
+    const shrunkVertices = vertices.map((vertex, vertexIndex) => {
+      let closestWallFace = null;
+      let closestDistance = Infinity;
+      let closestPointOnFace = null;
+      let closestNormal = null;
+      let isOnWallEdge = false; // Track if vertex is actually on a wall edge
+
+      // First pass: Check if vertex is ON a wall edge (within 1mm tolerance)
+      // This takes priority over distance-based matching
+      wallInnerFaces.forEach((face, faceIndex) => {
+        const innerStart = face.innerStart;
+        const innerEnd = face.innerEnd;
+        
+        // Get wall thickness for this face
+        const wall = roomWalls[faceIndex];
+        const wallThicknessScaled = (wall?.thickness || wallThickness) * scale;
+        
+        // Check if vertex is on the outer face (database line) of this wall
+        // Convert inner face back to outer face for comparison
+        const outerStartX = innerStart.x - face.normal.x * wallThicknessScaled;
+        const outerStartZ = innerStart.z - face.normal.z * wallThicknessScaled;
+        const outerEndX = innerEnd.x - face.normal.x * wallThicknessScaled;
+        const outerEndZ = innerEnd.z - face.normal.z * wallThicknessScaled;
+        
+        const outerDx = outerEndX - outerStartX;
+        const outerDz = outerEndZ - outerStartZ;
+        const outerLengthSq = outerDx * outerDx + outerDz * outerDz;
+        
+        if (outerLengthSq > 1e-6) {
+          // Project vertex onto outer face line
+          const toOuterStartX = vertex.x - (outerStartX + this.modelOffset.x);
+          const toOuterStartZ = vertex.z - (outerStartZ + this.modelOffset.z);
+          const t = (toOuterStartX * outerDx + toOuterStartZ * outerDz) / outerLengthSq;
+          
+          // Check if projection is within wall segment (with small extension tolerance)
+          if (t >= -0.01 && t <= 1.01) {
+            const projX = outerStartX + this.modelOffset.x + t * outerDx;
+            const projZ = outerStartZ + this.modelOffset.z + t * outerDz;
+            const distToOuter = Math.hypot(vertex.x - projX, vertex.z - projZ);
+            
+            // If vertex is very close to outer face (within 2mm), it's on this wall
+            // Use slightly larger tolerance to account for floating point precision
+            if (distToOuter < 2 * scale) {
+              isOnWallEdge = true;
+              // Calculate inner face position for this vertex
+              let innerOnFace;
+              if (face.isHorizontal && face.innerZ !== null) {
+                innerOnFace = {
+                  x: vertex.x,
+                  z: face.innerZ + this.modelOffset.z
+                };
+              } else if (face.isVertical && face.innerX !== null) {
+                innerOnFace = {
+                  x: face.innerX + this.modelOffset.x,
+                  z: vertex.z
+                };
+              } else {
+                // Diagonal: project to inner face
+                const innerDx = innerEnd.x - innerStart.x;
+                const innerDz = innerEnd.z - innerStart.z;
+                innerOnFace = {
+                  x: innerStart.x + this.modelOffset.x + t * innerDx,
+                  z: innerStart.z + this.modelOffset.z + t * innerDz
+                };
+              }
+              
+              const distToInner = Math.hypot(vertex.x - innerOnFace.x, vertex.z - innerOnFace.z);
+              if (distToInner < closestDistance) {
+                closestDistance = distToInner;
+                closestWallFace = face;
+                closestPointOnFace = innerOnFace;
+                closestNormal = face.normal;
+              }
+            }
+          }
+        }
+      });
+      
+      // Second pass: If not on wall edge, find closest inner face (original logic)
+      if (!isOnWallEdge) {
+        wallInnerFaces.forEach(face => {
+          const innerStart = face.innerStart;
+          const innerEnd = face.innerEnd;
+          
+          // Vector along inner face
+          const faceDx = innerEnd.x - innerStart.x;
+          const faceDz = innerEnd.z - innerStart.z;
+          const faceLengthSq = faceDx * faceDx + faceDz * faceDz;
+          
+          if (faceLengthSq < 1e-6) {
+            // Degenerate wall, use point distance
+            const dist = Math.hypot(vertex.x - (innerStart.x + this.modelOffset.x), vertex.z - (innerStart.z + this.modelOffset.z));
+            if (dist < closestDistance && dist < tolerance) {
+              closestDistance = dist;
+              closestWallFace = face;
+              closestPointOnFace = { x: innerStart.x + this.modelOffset.x, z: innerStart.z + this.modelOffset.z };
+              closestNormal = face.normal;
+            }
+            return;
+          }
+
+          // Project vertex onto inner face line
+          // For horizontal walls: use constant Z, keep X
+          // For vertical walls: use constant X, keep Z
+          // This ensures all vertices on the same wall align to the same line
+          let closestOnFace;
+          if (face.isHorizontal && face.innerZ !== null) {
+            // Horizontal wall: project perpendicularly to inner face Z coordinate
+            const projectedX = vertex.x; // Keep original X
+            const innerFaceZ = face.innerZ + this.modelOffset.z;
+            closestOnFace = {
+              x: projectedX,
+              z: innerFaceZ
+            };
+          } else if (face.isVertical && face.innerX !== null) {
+            // Vertical wall: project perpendicularly to inner face X coordinate
+            const innerFaceX = face.innerX + this.modelOffset.x;
+            const projectedZ = vertex.z; // Keep original Z
+            closestOnFace = {
+              x: innerFaceX,
+              z: projectedZ
+            };
+          } else {
+            // Diagonal wall: use closest point projection
+            const toStartX = vertex.x - (innerStart.x + this.modelOffset.x);
+            const toStartZ = vertex.z - (innerStart.z + this.modelOffset.z);
+            const t = Math.max(0, Math.min(1, (toStartX * faceDx + toStartZ * faceDz) / faceLengthSq));
+            closestOnFace = {
+              x: innerStart.x + this.modelOffset.x + t * faceDx,
+              z: innerStart.z + this.modelOffset.z + t * faceDz
+            };
+          }
+
+          // Distance from vertex to inner face
+          const dist = Math.hypot(vertex.x - closestOnFace.x, vertex.z - closestOnFace.z);
+
+          if (dist < closestDistance && dist < tolerance) {
+            closestDistance = dist;
+            closestWallFace = face;
+            closestPointOnFace = closestOnFace;
+            closestNormal = face.normal;
+          }
+        });
+      }
+
+      // If we found a close wall inner face, shrink the vertex to it
+      if (closestWallFace && closestPointOnFace && closestNormal) {
+        // Vector from inner face to vertex
+        const toVertexX = vertex.x - closestPointOnFace.x;
+        const toVertexZ = vertex.z - closestPointOnFace.z;
+        
+        // Dot product with normal: positive = outside, negative = inside, zero = on face
+        const dotWithNormal = toVertexX * closestNormal.x + toVertexZ * closestNormal.z;
+        
+        // Debug logging for first few vertices
+        if (vertexIndex < 3) {
+          console.log(`[Floor Shrink] Vertex ${vertexIndex}:`, {
+            vertex: { x: vertex.x, z: vertex.z },
+            closestWall: closestWallFace.wallId,
+            closestOnFace: closestPointOnFace,
+            toVertex: { x: toVertexX, z: toVertexZ },
+            normal: closestNormal,
+            dotWithNormal,
+            distance: closestDistance,
+            isOnWallEdge,
+            willShrink: true
+          });
+        }
+        
+        // CRITICAL: Always shrink to inner face if we found a wall face
+        // Only exception: if vertex is VERY far inside (more than 5mm), keep it to prevent gaps
+        // This ensures the floor aligns with wall inner faces
+        const insideTolerance = -5 * scale; // Only keep if very far inside (more than 5mm inside)
+        
+        if (dotWithNormal < insideTolerance) {
+          // Vertex is very far inside inner face - keep original position (prevents large gaps)
+          return vertex;
+        } else {
+          // Shrink to inner face - this covers: outside, on face, or slightly inside
+          // This ensures the floor touches the wall inner face without overlap
+          return closestPointOnFace;
+        }
+      }
+
+      // No close wall found - use standard corner shrinking for safety
+      // IMPORTANT: Ensure shrinking is INWARD (toward polygon center), not outward
+      const prev = vertices[(vertexIndex + vertices.length - 1) % vertices.length];
+      const next = vertices[(vertexIndex + 1) % vertices.length];
+      const roomCenter = this.calculatePolygonCenter(vertices);
+      
+      const edge1X = vertex.x - prev.x;
+      const edge1Z = vertex.z - prev.z;
+      const edge2X = next.x - vertex.x;
+      const edge2Z = next.z - vertex.z;
+      
+      const len1 = Math.hypot(edge1X, edge1Z) || 1;
+      const len2 = Math.hypot(edge2X, edge2Z) || 1;
+      
+      // Calculate edge normals (perpendicular to edges)
+      const n1x = -edge1Z / len1;
+      const n1z = edge1X / len1;
+      const n2x = -edge2Z / len2;
+      const n2z = edge2X / len2;
+      
+      // Check which direction points toward room center
+      const toCenterX = roomCenter ? (roomCenter.x - vertex.x) : 0;
+      const toCenterZ = roomCenter ? (roomCenter.z - vertex.z) : 0;
+      const dot1 = n1x * toCenterX + n1z * toCenterZ;
+      const dot2 = n2x * toCenterX + n2z * toCenterZ;
+      
+      // Use the normal that points toward center (positive dot)
+      let inwardNx = n1x;
+      let inwardNz = n1z;
+      if (Math.abs(dot2) > Math.abs(dot1)) {
+        inwardNx = n2x;
+        inwardNz = n2z;
+      }
+      
+      // If the chosen normal points away from center, flip it
+      const chosenDot = inwardNx * toCenterX + inwardNz * toCenterZ;
+      if (chosenDot < 0) {
+        inwardNx = -inwardNx;
+        inwardNz = -inwardNz;
+      }
+      
+      const bisectorX = n1x + n2x;
+      const bisectorZ = n1z + n2z;
+      const bisectorLen = Math.hypot(bisectorX, bisectorZ);
+      
+      if (bisectorLen > 1e-6) {
+        // Check if bisector points toward center
+        const bisectorDot = (bisectorX / bisectorLen) * toCenterX + (bisectorZ / bisectorLen) * toCenterZ;
+        const angle = Math.acos(Math.max(-1, Math.min(1, n1x * n2x + n1z * n2z)));
+        const scaledWallThickness = wallThickness * scale;
+        
+        if (angle > 1e-6) {
+          const offsetDist = scaledWallThickness / Math.sin(angle / 2);
+          // Use bisector direction, but ensure it points inward
+          const finalBisectorX = bisectorDot > 0 ? bisectorX : -bisectorX;
+          const finalBisectorZ = bisectorDot > 0 ? bisectorZ : -bisectorZ;
+          const finalBisectorLen = Math.hypot(finalBisectorX, finalBisectorZ);
+          return {
+            x: vertex.x + (finalBisectorX / finalBisectorLen) * offsetDist,
+            z: vertex.z + (finalBisectorZ / finalBisectorLen) * offsetDist
+          };
+        } else {
+          // Parallel edges, use inward normal
+          return {
+            x: vertex.x + inwardNx * scaledWallThickness,
+            z: vertex.z + inwardNz * scaledWallThickness
+          };
+        }
+      }
+      
+      return vertex;
+    });
+
+    return shrunkVertices;
+  }
+
+  // Adjust floor boundary to account for wall extensions at joints
+  // This ensures the floor aligns with extended walls, not just original wall positions
+  adjustFloorBoundaryForWallExtensions(shrunkVertices, room, wallThickness) {
+    if (!shrunkVertices || shrunkVertices.length < 3 || !room || !this.walls || !this.joints) {
+      return shrunkVertices;
+    }
+
+    // Get all walls for this room
+    const roomWallIds = Array.isArray(room.walls) 
+      ? room.walls.map(w => typeof w === 'object' ? w.id : w)
+      : [];
+    
+    const roomWalls = this.walls.filter(wall => 
+      roomWallIds.includes(String(wall.id))
+    );
+
+    if (roomWalls.length === 0) {
+      return shrunkVertices;
+    }
+
+    const scale = this.scalingFactor;
+    const modelCenter = this.calculateModelCenter();
+    const tolerance = 50 * scale; // 50mm tolerance for point matching
+
+    function snap(val, precision = 0.01) {
+      return Math.round(val / precision) * precision;
+    }
+
+    // Calculate extended positions for each room wall
+    const extendedWallData = roomWalls.map(wall => {
+      let startX = snap(wall.start_x * scale);
+      let startZ = snap(wall.start_y * scale);
+      let endX = snap(wall.end_x * scale);
+      let endZ = snap(wall.end_y * scale);
+
+      const isHorizontal = Math.abs(wall.start_y - wall.end_y) < 1e-6;
+      const isVertical = Math.abs(wall.start_x - wall.end_x) < 1e-6;
+
+      // Apply wall flipping
+      let finalStartX = startX;
+      let finalStartZ = startZ;
+      let finalEndX = endX;
+      let finalEndZ = endZ;
+
+      if (isHorizontal) {
+        if (modelCenter.z * scale < startZ) {
+          finalStartX = endX;
+          finalEndX = startX;
+        }
+      } else if (isVertical) {
+        if (modelCenter.x * scale > startX) {
+          finalStartZ = endZ;
+          finalEndZ = startZ;
+        }
+      }
+
+      // Calculate inward normal
+      const dirX = finalEndX - finalStartX;
+      const dirZ = finalEndZ - finalStartZ;
+      const len = Math.hypot(dirX, dirZ) || 1;
+      const ux = dirX / len;
+      const uz = dirZ / len;
+      let nx = -uz;
+      let nz = ux;
+      const midX = (finalStartX + finalEndX) / 2;
+      const midZ = (finalStartZ + finalEndZ) / 2;
+      const toCenterX = (modelCenter.x * scale) - midX;
+      const toCenterZ = (modelCenter.z * scale) - midZ;
+      const dot = nx * toCenterX + nz * toCenterZ;
+      if (dot < 0) {
+        nx = -nx;
+        nz = -nz;
+      }
+      const finalNormX = nx;
+      const finalNormZ = nz;
+
+      // Apply wall extension (same logic as createWallMesh STEP 1)
+      if (this.joints && this.joints.length > 0) {
+        this.walls.forEach(otherWall => {
+          if (String(otherWall.id) === String(wall.id)) return;
+          
+          const joint = this.joints.find(j => 
+            (j.wall_1 === wall.id && j.wall_2 === otherWall.id) ||
+            (j.wall_2 === wall.id && j.wall_1 === otherWall.id)
+          );
+          if (!joint) return;
+
+          const oSX = snap(otherWall.start_x * scale);
+          const oSZ = snap(otherWall.start_y * scale);
+          const oEX = snap(otherWall.end_x * scale);
+          const oEZ = snap(otherWall.end_y * scale);
+          const otherThickness = otherWall.thickness * scale;
+
+          const otherIsHorizontal = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+          const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+
+          const otherMidX = (oSX + oEX) / 2;
+          const otherMidZ = (oSZ + oEZ) / 2;
+          // Model center is already in scaled coordinates, don't scale again
+          const toOtherCenterX = modelCenter.x - otherMidX;
+          const toOtherCenterZ = modelCenter.z - otherMidZ;
+          let otherNormX, otherNormZ;
+          if (otherIsHorizontal) {
+            otherNormX = 0;
+            otherNormZ = toOtherCenterZ < 0 ? -1 : 1;
+          } else if (otherIsVertical) {
+            otherNormX = toOtherCenterX < 0 ? -1 : 1;
+            otherNormZ = 0;
+          } else {
+            return;
+          }
+
+          const otherOuterX = oSX;
+          const otherOuterZ = oSZ;
+          const otherInnerX = oSX + otherNormX * otherThickness;
+          const otherInnerZ = oSZ + otherNormZ * otherThickness;
+
+          if (isHorizontal && otherIsVertical) {
+            const thisZ = finalStartZ;
+            const otherX = oSX;
+            const rightmostX = Math.max(otherOuterX, otherInnerX);
+            const leftmostX = Math.min(otherOuterX, otherInnerX);
+            const otherMinZ = Math.min(oSZ, oEZ);
+            const otherMaxZ = Math.max(oSZ, oEZ);
+            if (thisZ < otherMinZ || thisZ > otherMaxZ) return;
+
+            const rightEndpointX = Math.max(finalStartX, finalEndX);
+            const leftEndpointX = Math.min(finalStartX, finalEndX);
+            const thisCenterX = (finalStartX + finalEndX) / 2;
+            if (otherX > thisCenterX) {
+              if (rightEndpointX < rightmostX) {
+                if (finalEndX > finalStartX) {
+                  finalEndX = rightmostX;
+                } else {
+                  finalStartX = rightmostX;
+                }
+              }
+            } else {
+              if (leftEndpointX > leftmostX) {
+                if (finalStartX < finalEndX) {
+                  finalStartX = leftmostX;
+                } else {
+                  finalEndX = leftmostX;
+                }
+              }
+            }
+          } else if (isVertical && otherIsHorizontal) {
+            const thisX = finalStartX;
+            const otherZ = oSZ;
+            const topmostZ = Math.max(otherOuterZ, otherInnerZ);
+            const bottommostZ = Math.min(otherOuterZ, otherInnerZ);
+            const otherMinX = Math.min(oSX, oEX);
+            const otherMaxX = Math.max(oSX, oEX);
+            if (thisX < otherMinX || thisX > otherMaxX) return;
+
+            const topEndpointZ = Math.max(finalStartZ, finalEndZ);
+            const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
+            const thisCenterZ = (finalStartZ + finalEndZ) / 2;
+            if (otherZ > thisCenterZ) {
+              if (topEndpointZ < topmostZ) {
+                if (finalEndZ > finalStartZ) {
+                  finalEndZ = topmostZ;
+                } else {
+                  finalStartZ = topmostZ;
+                }
+              }
+            } else {
+              if (bottomEndpointZ > bottommostZ) {
+                if (finalStartZ < finalEndZ) {
+                  finalStartZ = bottommostZ;
+                } else {
+                  finalEndZ = bottommostZ;
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // Calculate inner face positions (where the floor should align)
+      const wallThicknessScaled = wall.thickness * scale;
+      const innerStartX = finalStartX + finalNormX * wallThicknessScaled;
+      const innerStartZ = finalStartZ + finalNormZ * wallThicknessScaled;
+      const innerEndX = finalEndX + finalNormX * wallThicknessScaled;
+      const innerEndZ = finalEndZ + finalNormZ * wallThicknessScaled;
+
+      return {
+        wallId: wall.id,
+        originalStart: { x: startX, z: startZ },
+        originalEnd: { x: endX, z: endZ },
+        extendedStart: { x: finalStartX, z: finalStartZ },
+        extendedEnd: { x: finalEndX, z: finalEndZ },
+        innerStart: { x: innerStartX, z: innerStartZ },
+        innerEnd: { x: innerEndX, z: innerEndZ },
+        normal: { x: finalNormX, z: finalNormZ }
+      };
+    });
+
+    // Adjust shrunk vertices to align with extended wall inner faces
+    // The goal is to expand the floor slightly where walls extend, ensuring alignment
+    // For each vertex, find if it's near an extended wall inner face and adjust accordingly
+    const adjustedVertices = shrunkVertices.map(vertex => {
+      let closestWallData = null;
+      let closestDistance = Infinity;
+      let closestPointOnFace = null;
+
+      // Find the closest extended wall inner face
+      extendedWallData.forEach(wallData => {
+        const innerStart = wallData.innerStart;
+        const innerEnd = wallData.innerEnd;
+        
+        // Vector along inner face
+        const faceDx = innerEnd.x - innerStart.x;
+        const faceDz = innerEnd.z - innerStart.z;
+        const faceLengthSq = faceDx * faceDx + faceDz * faceDz;
+        
+        if (faceLengthSq < 1e-6) {
+          // Degenerate wall, use point distance
+          const dist = Math.hypot(vertex.x - innerStart.x, vertex.z - innerStart.z);
+          if (dist < closestDistance && dist < tolerance) {
+            closestDistance = dist;
+            closestWallData = wallData;
+            closestPointOnFace = innerStart;
+          }
+          return;
+        }
+
+        // Project vertex onto inner face line
+        const toStartX = vertex.x - innerStart.x;
+        const toStartZ = vertex.z - innerStart.z;
+        const t = Math.max(0, Math.min(1, (toStartX * faceDx + toStartZ * faceDz) / faceLengthSq));
+        
+        // Closest point on inner face line
+        const closestOnFace = {
+          x: innerStart.x + t * faceDx,
+          z: innerStart.z + t * faceDz
+        };
+
+        // Distance from vertex to inner face
+        const dist = Math.hypot(vertex.x - closestOnFace.x, vertex.z - closestOnFace.z);
+
+        if (dist < closestDistance && dist < tolerance) {
+          closestDistance = dist;
+          closestWallData = wallData;
+          closestPointOnFace = closestOnFace;
+        }
+      });
+
+      // If we found a close wall inner face, adjust the vertex
+      if (closestWallData && closestPointOnFace) {
+        const toVertexX = vertex.x - closestPointOnFace.x;
+        const toVertexZ = vertex.z - closestPointOnFace.z;
+        const dotWithNormal = toVertexX * closestWallData.normal.x + toVertexZ * closestWallData.normal.z;
+        
+        // If vertex is too far inside (negative dot, far from inner face), expand it toward inner face
+        // If vertex is outside (positive dot), keep it slightly inside
+        // We want the floor to be slightly inside the inner face to avoid overlap
+        const smallOffset = 0.5 * scale; // 0.5mm offset inside the inner face
+        if (dotWithNormal < -smallOffset) {
+          // Vertex is too far inside, expand it toward inner face
+          return {
+            x: closestPointOnFace.x - closestWallData.normal.x * smallOffset,
+            z: closestPointOnFace.z - closestWallData.normal.z * smallOffset
+          };
+        } else if (dotWithNormal > 0) {
+          // Vertex is outside, move it slightly inside
+          return {
+            x: closestPointOnFace.x - closestWallData.normal.x * smallOffset,
+            z: closestPointOnFace.z - closestWallData.normal.z * smallOffset
+          };
+        }
+        // Otherwise, vertex is already in good position, keep it
+      }
+
+      return vertex;
+    });
+
+    return adjustedVertices;
+  }
+
+  // Helper function to shrink polygon vertices inward by wall thickness
+  shrinkPolygonByWallThickness(vertices, wallThickness) {
+    if (!vertices || vertices.length < 3 || wallThickness <= 0) {
+      return vertices; // Return original if invalid
+    }
+    
+    // Calculate polygon center to determine inward direction
+    const center = this.calculatePolygonCenter(vertices);
+    if (!center) {
+      return vertices;
+    }
+    
+    const scaledWallThickness = wallThickness * this.scalingFactor;
+    const shrunkVertices = [];
+    const len = vertices.length;
+    
+    for (let i = 0; i < len; i++) {
+      const prev = vertices[(i - 1 + len) % len];
+      const curr = vertices[i];
+      const next = vertices[(i + 1) % len];
+      
+      // Calculate vectors for previous and next segments (in XZ plane)
+      const v1 = {
+        x: curr.x - prev.x,
+        z: curr.z - prev.z
+      };
+      const v2 = {
+        x: next.x - curr.x,
+        z: next.z - curr.z
+      };
+      
+      // Normalize vectors
+      const len1 = Math.sqrt(v1.x * v1.x + v1.z * v1.z);
+      const len2 = Math.sqrt(v2.x * v2.x + v2.z * v2.z);
+      
+      if (len1 < 1e-6 || len2 < 1e-6) {
+        // Degenerate edge, keep original point
+        shrunkVertices.push({ x: curr.x, z: curr.z });
+        continue;
+      }
+      
+      // Calculate both possible normals for each edge (left and right perpendicular)
+      const n1_left = {
+        x: -v1.z / len1,  // Left perpendicular to v1
+        z: v1.x / len1
+      };
+      const n1_right = {
+        x: v1.z / len1,   // Right perpendicular to v1
+        z: -v1.x / len1
+      };
+      
+      const n2_left = {
+        x: -v2.z / len2,  // Left perpendicular to v2
+        z: v2.x / len2
+      };
+      const n2_right = {
+        x: v2.z / len2,   // Right perpendicular to v2
+        z: -v2.x / len2
+      };
+      
+      // Determine which normal points inward (toward center)
+      // Calculate direction from current vertex to center
+      const toCenter = {
+        x: center.x - curr.x,
+        z: center.z - curr.z
+      };
+      const toCenterLen = Math.sqrt(toCenter.x * toCenter.x + toCenter.z * toCenter.z);
+      
+      if (toCenterLen < 1e-6) {
+        // Vertex is at center, use left normals as default
+        const n1 = n1_left;
+        const n2 = n2_left;
+        
+        // Calculate average normal vector (bisector)
+        const bisector = {
+          x: (n1.x + n2.x) / 2,
+          z: (n1.z + n2.z) / 2
+        };
+        
+        const bisectorLen = Math.sqrt(bisector.x * bisector.x + bisector.z * bisector.z);
+        if (bisectorLen > 1e-6) {
+          shrunkVertices.push({
+            x: curr.x + (bisector.x / bisectorLen) * scaledWallThickness,
+            z: curr.z + (bisector.z / bisectorLen) * scaledWallThickness
+          });
+        } else {
+          shrunkVertices.push({ x: curr.x, z: curr.z });
+        }
+        continue;
+      }
+      
+      // Normalize toCenter
+      const toCenterNorm = {
+        x: toCenter.x / toCenterLen,
+        z: toCenter.z / toCenterLen
+      };
+      
+      // Choose the normal that points more toward the center
+      // Dot product with toCenter direction tells us which points inward
+      const dot1_left = n1_left.x * toCenterNorm.x + n1_left.z * toCenterNorm.z;
+      const dot1_right = n1_right.x * toCenterNorm.x + n1_right.z * toCenterNorm.z;
+      const dot2_left = n2_left.x * toCenterNorm.x + n2_left.z * toCenterNorm.z;
+      const dot2_right = n2_right.x * toCenterNorm.x + n2_right.z * toCenterNorm.z;
+      
+      // Use the normal with higher dot product (points more toward center)
+      const n1 = dot1_left > dot1_right ? n1_left : n1_right;
+      const n2 = dot2_left > dot2_right ? n2_left : n2_right;
+      
+      // Calculate average normal vector (bisector)
+      const bisector = {
+        x: (n1.x + n2.x) / 2,
+        z: (n1.z + n2.z) / 2
+      };
+      
+      // Calculate angle between segments
+      const dot = n1.x * n2.x + n1.z * n2.z;
+      const angle = Math.acos(Math.min(1, Math.max(-1, dot)));
+      
+      // Handle very small angles (near-collinear segments)
+      if (angle < 1e-6 || Math.abs(angle - Math.PI) < 1e-6) {
+        // Use simple offset along bisector (already points toward center)
+        const bisectorLen = Math.sqrt(bisector.x * bisector.x + bisector.z * bisector.z);
+        if (bisectorLen > 1e-6) {
+          shrunkVertices.push({
+            x: curr.x + (bisector.x / bisectorLen) * scaledWallThickness,
+            z: curr.z + (bisector.z / bisectorLen) * scaledWallThickness
+          });
+        } else {
+          shrunkVertices.push({ x: curr.x, z: curr.z });
+        }
+        continue;
+      }
+      
+      // Calculate fixed inset distance for the corner
+      const offsetDist = scaledWallThickness / Math.sin(angle / 2);
+      
+      // Calculate inset point
+      const bisectorLen = Math.sqrt(bisector.x * bisector.x + bisector.z * bisector.z);
+      if (bisectorLen > 1e-6) {
+        shrunkVertices.push({
+          x: curr.x + (bisector.x / bisectorLen) * offsetDist,
+          z: curr.z + (bisector.z / bisectorLen) * offsetDist
+        });
+      } else {
+        shrunkVertices.push({ x: curr.x, z: curr.z });
+      }
+    }
+    
+    return shrunkVertices;
+  }
+
   // Create room-specific floors at correct heights with thickness
   createRoomSpecificFloors() {
     debugLog('🏠 Creating room-specific floors for', this.project.rooms.length, 'rooms');
     
     // Default floor thickness if not specified
     const defaultFloorThickness = 150; // 150mm default
+    
+    // Get wall thickness from project
+    const wallThickness = this.project?.wall_thickness || 200; // Default 200mm if not specified
     
     this.project.rooms.forEach((room, roomIndex) => {
       try {
@@ -3109,11 +5260,13 @@ getModelBounds() {
         
         debugLog(`🏠 Room ${room.id} (${room.room_name || 'Unnamed'}) - Floor Thickness: ${room.floor_thickness || defaultFloorThickness}mm, Absolute Base Elevation: ${absoluteBaseElevation}mm`);
         
-        // Convert room points to 3D coordinates
-        const roomVertices = room.room_points.map(point => ({
+        // Convert room_points to 3D coordinates
+        let roomVertices = room.room_points.map(point => ({
             x: point.x * this.scalingFactor + this.modelOffset.x,
             z: point.y * this.scalingFactor + this.modelOffset.z
         }));
+        
+        // Floor shrinking removed - using original room_points directly
 
         // Create floor geometry for this room
         const floorMesh = this.createRoomFloorMesh(roomVertices, room, roomFloorThickness);
@@ -3234,12 +5387,12 @@ getModelBounds() {
       geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
       geometry.computeVertexNormals();
       
-      // Create material to match wall appearance but with floor-specific color
+      // Create material using professional config
       const material = new this.THREE.MeshStandardMaterial({
-        color: 0xE5E7EB, // Light gray color for floors (different from walls)
+        color: THREE_CONFIG.MATERIALS.FLOOR.color,
         side: this.THREE.DoubleSide,
-        roughness: 0.8,   // More rough than walls for floor texture
-        metalness: 0.2,   // Less metallic than walls
+        roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
+        metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
         transparent: false
       });
       
@@ -3369,11 +5522,13 @@ getModelBounds() {
       }
 
       // Get the building footprint vertices (will use room points since rooms exist)
-      const vertices = this.getBuildingFootprint();
+      let vertices = this.getBuildingFootprint();
       if (vertices.length < 3) {
         debugLog('Not enough vertices for floor, skipping...');
         return;
       }
+      
+      // Floor shrinking removed - using original footprint directly
       
       // Convert vertices to format required by earcut
       const flatVertices = [];
@@ -3473,12 +5628,12 @@ getModelBounds() {
       geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
       geometry.computeVertexNormals();
       
-      // Create material for floor
+      // Create material using professional config
       const material = new this.THREE.MeshStandardMaterial({
-        color: 0xE5E7EB, // Light gray color for floor
+        color: THREE_CONFIG.MATERIALS.FLOOR.color,
         side: this.THREE.DoubleSide,
-        roughness: 0.8,   // More rough than walls for floor texture
-        metalness: 0.2,   // Less metallic than walls
+        roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
+        metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
         transparent: false
       });
       

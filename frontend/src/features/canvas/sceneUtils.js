@@ -2,6 +2,172 @@
 
 import { OrbitControls } from './threeInstance';
 import earcut from 'earcut';
+import { THREE_CONFIG } from './threeConfig';
+
+// Helper function to calculate polygon center (centroid)
+function calculatePolygonCenter(vertices) {
+  if (!vertices || vertices.length === 0) return null;
+  let sumX = 0, sumZ = 0;
+  vertices.forEach(v => {
+    sumX += v.x;
+    sumZ += v.z;
+  });
+  return {
+    x: sumX / vertices.length,
+    z: sumZ / vertices.length
+  };
+}
+
+// Helper function to shrink polygon vertices inward by wall thickness
+function shrinkPolygonByWallThickness(instance, vertices, wallThickness) {
+  if (!vertices || vertices.length < 3 || wallThickness <= 0) {
+    return vertices; // Return original if invalid
+  }
+  
+  // Calculate polygon center to determine inward direction
+  const center = calculatePolygonCenter(vertices);
+  if (!center) {
+    return vertices;
+  }
+  
+  const scaledWallThickness = wallThickness * instance.scalingFactor;
+  const shrunkVertices = [];
+  const len = vertices.length;
+  
+  for (let i = 0; i < len; i++) {
+    const prev = vertices[(i - 1 + len) % len];
+    const curr = vertices[i];
+    const next = vertices[(i + 1) % len];
+    
+    // Calculate vectors for previous and next segments (in XZ plane)
+    const v1 = {
+      x: curr.x - prev.x,
+      z: curr.z - prev.z
+    };
+    const v2 = {
+      x: next.x - curr.x,
+      z: next.z - curr.z
+    };
+    
+    // Normalize vectors
+    const len1 = Math.sqrt(v1.x * v1.x + v1.z * v1.z);
+    const len2 = Math.sqrt(v2.x * v2.x + v2.z * v2.z);
+    
+    if (len1 < 1e-6 || len2 < 1e-6) {
+      // Degenerate edge, keep original point
+      shrunkVertices.push({ x: curr.x, z: curr.z });
+      continue;
+    }
+    
+    // Calculate both possible normals for each edge (left and right perpendicular)
+    const n1_left = {
+      x: -v1.z / len1,  // Left perpendicular to v1
+      z: v1.x / len1
+    };
+    const n1_right = {
+      x: v1.z / len1,   // Right perpendicular to v1
+      z: -v1.x / len1
+    };
+    
+    const n2_left = {
+      x: -v2.z / len2,  // Left perpendicular to v2
+      z: v2.x / len2
+    };
+    const n2_right = {
+      x: v2.z / len2,   // Right perpendicular to v2
+      z: -v2.x / len2
+    };
+    
+    // Determine which normal points inward (toward center)
+    // Calculate direction from current vertex to center
+    const toCenter = {
+      x: center.x - curr.x,
+      z: center.z - curr.z
+    };
+    const toCenterLen = Math.sqrt(toCenter.x * toCenter.x + toCenter.z * toCenter.z);
+    
+    if (toCenterLen < 1e-6) {
+      // Vertex is at center, use left normals as default
+      const n1 = n1_left;
+      const n2 = n2_left;
+      
+      // Calculate average normal vector (bisector)
+      const bisector = {
+        x: (n1.x + n2.x) / 2,
+        z: (n1.z + n2.z) / 2
+      };
+      
+      const bisectorLen = Math.sqrt(bisector.x * bisector.x + bisector.z * bisector.z);
+      if (bisectorLen > 1e-6) {
+        shrunkVertices.push({
+          x: curr.x + (bisector.x / bisectorLen) * scaledWallThickness,
+          z: curr.z + (bisector.z / bisectorLen) * scaledWallThickness
+        });
+      } else {
+        shrunkVertices.push({ x: curr.x, z: curr.z });
+      }
+      continue;
+    }
+    
+    // Normalize toCenter
+    const toCenterNorm = {
+      x: toCenter.x / toCenterLen,
+      z: toCenter.z / toCenterLen
+    };
+    
+    // Choose the normal that points more toward the center
+    // Dot product with toCenter direction tells us which points inward
+    const dot1_left = n1_left.x * toCenterNorm.x + n1_left.z * toCenterNorm.z;
+    const dot1_right = n1_right.x * toCenterNorm.x + n1_right.z * toCenterNorm.z;
+    const dot2_left = n2_left.x * toCenterNorm.x + n2_left.z * toCenterNorm.z;
+    const dot2_right = n2_right.x * toCenterNorm.x + n2_right.z * toCenterNorm.z;
+    
+    // Use the normal with higher dot product (points more toward center)
+    const n1 = dot1_left > dot1_right ? n1_left : n1_right;
+    const n2 = dot2_left > dot2_right ? n2_left : n2_right;
+    
+    // Calculate average normal vector (bisector)
+    const bisector = {
+      x: (n1.x + n2.x) / 2,
+      z: (n1.z + n2.z) / 2
+    };
+    
+    // Calculate angle between segments
+    const dot = n1.x * n2.x + n1.z * n2.z;
+    const angle = Math.acos(Math.min(1, Math.max(-1, dot)));
+    
+    // Handle very small angles (near-collinear segments)
+    if (angle < 1e-6 || Math.abs(angle - Math.PI) < 1e-6) {
+      // Use simple offset along bisector (already points toward center)
+      const bisectorLen = Math.sqrt(bisector.x * bisector.x + bisector.z * bisector.z);
+      if (bisectorLen > 1e-6) {
+        shrunkVertices.push({
+          x: curr.x + (bisector.x / bisectorLen) * scaledWallThickness,
+          z: curr.z + (bisector.z / bisectorLen) * scaledWallThickness
+        });
+      } else {
+        shrunkVertices.push({ x: curr.x, z: curr.z });
+      }
+      continue;
+    }
+    
+    // Calculate fixed inset distance for the corner
+    const offsetDist = scaledWallThickness / Math.sin(angle / 2);
+    
+    // Calculate inset point
+    const bisectorLen = Math.sqrt(bisector.x * bisector.x + bisector.z * bisector.z);
+    if (bisectorLen > 1e-6) {
+      shrunkVertices.push({
+        x: curr.x + (bisector.x / bisectorLen) * offsetDist,
+        z: curr.z + (bisector.z / bisectorLen) * offsetDist
+      });
+    } else {
+      shrunkVertices.push({ x: curr.x, z: curr.z });
+    }
+  }
+  
+  return shrunkVertices;
+}
 
 export function addGrid(instance) {
   // Calculate dynamic grid size based on model bounds, or use default
@@ -44,19 +210,53 @@ export function adjustModelScale(instance) {
 }
 
 export function addLighting(instance) {
-  // High ambient light for bright white appearance
+  // Bright ambient lighting for white metallic materials
+  
+  // Strong hemisphere light for bright ambient white appearance
+  const hemisphereLight = new instance.THREE.HemisphereLight(
+    0xffffff, // Pure white sky for bright ambient
+    0xffffff, // Pure white ground for maximum brightness
+    1.5 // High intensity for bright ambient white
+  );
+  instance.scene.add(hemisphereLight);
+  
+  // Strong ambient light for overall brightness
   const ambientLight = new instance.THREE.AmbientLight(0xffffff, 1.2);
   instance.scene.add(ambientLight);
-  // Additional directional light for even illumination
-  const dirLight = new instance.THREE.DirectionalLight(0xffffff, 1.0);
-  dirLight.position.set(100, 200, 100);
-  dirLight.castShadow = true;
-  instance.scene.add(dirLight);
-  // Add a second directional light from opposite side for even lighting
-  const dirLight2 = new instance.THREE.DirectionalLight(0xffffff, 0.6);
-  dirLight2.position.set(-100, 200, -100);
-  dirLight2.castShadow = false;
-  instance.scene.add(dirLight2);
+  
+  // Main directional light (sun) - primary light source with high intensity
+  const mainLight = new instance.THREE.DirectionalLight(0xffffff, 2.0);
+  mainLight.position.set(150, 300, 150);
+  mainLight.castShadow = true;
+  
+  // Configure shadow properties for better quality
+  mainLight.shadow.mapSize.width = 2048;
+  mainLight.shadow.mapSize.height = 2048;
+  mainLight.shadow.camera.near = 0.5;
+  mainLight.shadow.camera.far = 2000;
+  mainLight.shadow.camera.left = -500;
+  mainLight.shadow.camera.right = 500;
+  mainLight.shadow.camera.top = 500;
+  mainLight.shadow.camera.bottom = -500;
+  mainLight.shadow.bias = -0.0001;
+  mainLight.shadow.normalBias = 0.02;
+  
+  instance.scene.add(mainLight);
+  
+  // Strong fill light from opposite side for even brightness
+  const fillLight = new instance.THREE.DirectionalLight(0xffffff, 1.0);
+  fillLight.position.set(-150, 200, -150);
+  fillLight.castShadow = false;
+  instance.scene.add(fillLight);
+  
+  // Additional top light for maximum brightness
+  const topLight = new instance.THREE.DirectionalLight(0xffffff, 0.8);
+  topLight.position.set(0, 400, 0);
+  topLight.castShadow = false;
+  instance.scene.add(topLight);
+  
+  // Store main light reference for potential updates
+  instance.mainLight = mainLight;
 }
 
 export function addControls(instance) {
@@ -105,6 +305,206 @@ export function calculateModelOffset(instance) {
   instance.modelOffset = { x: 0, z: 0 };
 }
 
+// Helper function to get default Cut L horizontal extension based on wall thickness
+function getCutLDefaultHorizontalExtension(wallThickness) {
+  if (wallThickness >= 200) return 125.0;
+  if (wallThickness >= 150) return 100.0;
+  if (wallThickness >= 125) return 75.0;
+  if (wallThickness >= 100) return 75.0;
+  if (wallThickness >= 75) return 50.0;
+  return 50.0;
+}
+
+// Helper function to get Cut L horizontal extension for a wall
+function getCutLHorizontalExtension(wall) {
+  if (wall.ceiling_cut_l_horizontal_extension !== null && wall.ceiling_cut_l_horizontal_extension !== undefined) {
+    return wall.ceiling_cut_l_horizontal_extension;
+  }
+  return getCutLDefaultHorizontalExtension(wall.thickness || 150);
+}
+
+// Calculate Cut L wall offsets for a room
+function calculateCutLWallOffsets(room, walls) {
+  const offsets = {};
+  if (!room || !walls) return offsets;
+  
+  // Get walls for this room - handle both array of IDs and array of objects
+  let roomWallIds = [];
+  if (Array.isArray(room.walls)) {
+    roomWallIds = room.walls.map(w => String(typeof w === 'object' ? w.id : w));
+  }
+  
+  // Also try to find walls by proximity to room_points if room.walls is empty
+  let wallsToCheck = [];
+  if (roomWallIds.length > 0) {
+    // Use walls from room.walls
+    wallsToCheck = walls.filter(wall => roomWallIds.includes(String(wall.id)));
+  } else if (room.room_points && Array.isArray(room.room_points) && room.room_points.length >= 3) {
+    // Find walls by proximity to room_points (within 1mm tolerance)
+    const tolerance = 1.0;
+    wallsToCheck = walls.filter(wall => {
+      return room.room_points.some(point => {
+        const distToStart = Math.sqrt(Math.pow(point.x - wall.start_x, 2) + Math.pow(point.y - wall.start_y, 2));
+        const distToEnd = Math.sqrt(Math.pow(point.x - wall.end_x, 2) + Math.pow(point.y - wall.end_y, 2));
+        return distToStart < tolerance || distToEnd < tolerance;
+      });
+    });
+  } else {
+    // Fallback: check all walls
+    wallsToCheck = walls;
+  }
+  
+  wallsToCheck.forEach(wall => {
+    if (wall.ceiling_joint_type === 'cut_l') {
+      const horizontalExtension = getCutLHorizontalExtension(wall);
+      const offset = (wall.thickness || 150) - horizontalExtension;
+      offsets[wall.id] = offset;
+      console.log(`[Cut L] Room ${room.id || 'unknown'}: Wall ${wall.id} - thickness: ${wall.thickness}mm, extension: ${horizontalExtension}mm, offset: ${offset}mm`);
+    }
+  });
+  
+  if (Object.keys(offsets).length === 0) {
+    console.log(`[Cut L] Room ${room.id || 'unknown'}: No Cut L joints found (checked ${wallsToCheck.length} walls)`);
+  }
+  
+  return offsets;
+}
+
+// Shrink room vertices based on Cut L offsets
+function shrinkRoomVerticesForCutL(roomVertices, room, walls, scale, modelOffset) {
+  const offsets = calculateCutLWallOffsets(room, walls);
+  
+  // If no Cut L joints, return original vertices
+  if (Object.keys(offsets).length === 0) {
+    return roomVertices;
+  }
+  
+  // Calculate bounding box of original vertices (in 2D coordinates)
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  roomVertices.forEach(v => {
+    const x = (v.x - modelOffset.x) / scale;
+    const y = (v.z - modelOffset.z) / scale;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  });
+  
+  const originalBoundingBox = { min_x: minX, max_x: maxX, min_y: minY, max_y: maxY };
+  
+  // Adjust bounding box for Cut L offsets (similar to backend logic)
+  const adjustedBoundingBox = { ...originalBoundingBox };
+  const tolerance = 1.0;
+  
+  // Get walls that have offsets (only process walls with Cut L joints)
+  const wallsWithOffsets = walls.filter(wall => offsets[wall.id]);
+  
+  console.log(`[Cut L Shrink] Room ${room.id || 'unknown'}: Processing ${wallsWithOffsets.length} walls with Cut L joints`);
+  
+  wallsWithOffsets.forEach(wall => {
+    const offset = offsets[wall.id];
+      const wallStartX = wall.start_x;
+      const wallStartY = wall.start_y;
+      const wallEndX = wall.end_x;
+      const wallEndY = wall.end_y;
+      
+      // Debug: log wall position relative to bounding box
+      const wallOnLeft = Math.abs(wallStartX - originalBoundingBox.min_x) < tolerance && Math.abs(wallEndX - originalBoundingBox.min_x) < tolerance;
+      const wallOnRight = Math.abs(wallStartX - originalBoundingBox.max_x) < tolerance && Math.abs(wallEndX - originalBoundingBox.max_x) < tolerance;
+      const wallOnBottom = Math.abs(wallStartY - originalBoundingBox.min_y) < tolerance && Math.abs(wallEndY - originalBoundingBox.min_y) < tolerance;
+      const wallOnTop = Math.abs(wallStartY - originalBoundingBox.max_y) < tolerance && Math.abs(wallEndY - originalBoundingBox.max_y) < tolerance;
+      
+      if (!wallOnLeft && !wallOnRight && !wallOnBottom && !wallOnTop) {
+        console.log(`[Cut L Shrink] Wall ${wall.id}: Not on boundary - start: (${wallStartX}, ${wallStartY}), end: (${wallEndX}, ${wallEndY}), bbox: (${originalBoundingBox.min_x}-${originalBoundingBox.max_x}, ${originalBoundingBox.min_y}-${originalBoundingBox.max_y})`);
+      }
+      
+      // Check which boundary this wall touches and adjust (matching backend logic exactly)
+    // LEFT BOUNDARY (min_x) - both endpoints on left boundary
+    if (Math.abs(wallStartX - originalBoundingBox.min_x) < tolerance && 
+        Math.abs(wallEndX - originalBoundingBox.min_x) < tolerance) {
+      adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
+    }
+    // RIGHT BOUNDARY (max_x) - both endpoints on right boundary
+    else if (Math.abs(wallStartX - originalBoundingBox.max_x) < tolerance && 
+             Math.abs(wallEndX - originalBoundingBox.max_x) < tolerance) {
+      adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
+    }
+    // BOTTOM BOUNDARY (min_y) - both endpoints on bottom boundary
+    else if (Math.abs(wallStartY - originalBoundingBox.min_y) < tolerance && 
+             Math.abs(wallEndY - originalBoundingBox.min_y) < tolerance) {
+      adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
+    }
+    // TOP BOUNDARY (max_y) - both endpoints on top boundary
+    else if (Math.abs(wallStartY - originalBoundingBox.max_y) < tolerance && 
+             Math.abs(wallEndY - originalBoundingBox.max_y) < tolerance) {
+      adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
+    }
+    // SPANNING / TOUCHING WALLS - check individual endpoints
+    else {
+      // Check Start Point
+      if (Math.abs(wallStartX - originalBoundingBox.min_x) < tolerance) {
+        adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
+      } else if (Math.abs(wallStartX - originalBoundingBox.max_x) < tolerance) {
+        adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
+      } else if (Math.abs(wallStartY - originalBoundingBox.min_y) < tolerance) {
+        adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
+      } else if (Math.abs(wallStartY - originalBoundingBox.max_y) < tolerance) {
+        adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
+      }
+      
+      // Check End Point
+      if (Math.abs(wallEndX - originalBoundingBox.min_x) < tolerance) {
+        adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
+      } else if (Math.abs(wallEndX - originalBoundingBox.max_x) < tolerance) {
+        adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
+      } else if (Math.abs(wallEndY - originalBoundingBox.min_y) < tolerance) {
+        adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
+      } else if (Math.abs(wallEndY - originalBoundingBox.max_y) < tolerance) {
+        adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
+      }
+    }
+  });
+  
+  // Check if bounding box was actually adjusted
+  if (Math.abs(adjustedBoundingBox.min_x - originalBoundingBox.min_x) < 0.1 &&
+      Math.abs(adjustedBoundingBox.max_x - originalBoundingBox.max_x) < 0.1 &&
+      Math.abs(adjustedBoundingBox.min_y - originalBoundingBox.min_y) < 0.1 &&
+      Math.abs(adjustedBoundingBox.max_y - originalBoundingBox.max_y) < 0.1) {
+    return roomVertices; // No adjustment needed
+  }
+  
+  // Adjust vertices based on which boundary they're on
+  const adjustedVertices = roomVertices.map(v => {
+    const x = (v.x - modelOffset.x) / scale;
+    const y = (v.z - modelOffset.z) / scale;
+    
+    let adjustedX = x;
+    let adjustedY = y;
+    
+    // Adjust x coordinate if on left or right boundary
+    if (Math.abs(x - originalBoundingBox.min_x) < tolerance) {
+      adjustedX = adjustedBoundingBox.min_x;
+    } else if (Math.abs(x - originalBoundingBox.max_x) < tolerance) {
+      adjustedX = adjustedBoundingBox.max_x;
+    }
+    
+    // Adjust y coordinate if on bottom or top boundary
+    if (Math.abs(y - originalBoundingBox.min_y) < tolerance) {
+      adjustedY = adjustedBoundingBox.min_y;
+    } else if (Math.abs(y - originalBoundingBox.max_y) < tolerance) {
+      adjustedY = adjustedBoundingBox.max_y;
+    }
+    
+    // Convert back to 3D coordinates
+    return {
+      x: adjustedX * scale + modelOffset.x,
+      z: adjustedY * scale + modelOffset.z
+    };
+  });
+  
+  return adjustedVertices;
+}
+
 export function addCeiling(instance) {
   // Remove existing ceiling
   const existingCeiling = instance.scene.getObjectByName('ceiling');
@@ -145,9 +545,44 @@ export function addCeiling(instance) {
   console.log(`[Ceiling] Final maxCeilingElevation: ${maxCeilingElevation}mm`);
 
   // Get the building footprint vertices (will use room points since rooms exist)
-  const vertices = getBuildingFootprint(instance);
+  let vertices = getBuildingFootprint(instance);
   if (vertices.length < 3) {
     return;
+  }
+  
+  // Apply Cut L shrinking for fallback ceiling
+  // For fallback ceiling, we shrink each room's vertices and then compute the combined footprint
+  const shrunkRoomVerticesList = [];
+  validRooms.forEach(room => {
+    // Get room vertices in 3D coordinates
+    if (!room.room_points || room.room_points.length < 3) return;
+    
+    const roomVertices = room.room_points.map(point => ({
+      x: point.x * instance.scalingFactor + instance.modelOffset.x,
+      z: point.y * instance.scalingFactor + instance.modelOffset.z
+    }));
+    
+    // Shrink room vertices for Cut L joints
+    const shrunkRoomVertices = shrinkRoomVerticesForCutL(
+      roomVertices, 
+      room, 
+      instance.walls, 
+      instance.scalingFactor, 
+      instance.modelOffset
+    );
+    
+    if (shrunkRoomVertices.length >= 3) {
+      shrunkRoomVerticesList.push(shrunkRoomVertices);
+    }
+  });
+  
+  // If we have shrunk vertices from rooms, compute convex hull of all shrunk rooms
+  // Otherwise use original vertices
+  if (shrunkRoomVerticesList.length > 0) {
+    // Flatten all shrunk room vertices
+    const allShrunkVertices = shrunkRoomVerticesList.flat();
+    // Compute convex hull of all shrunk room vertices
+    vertices = computeConvexHull(allShrunkVertices);
   }
   // Create ceiling geometry with thickness extending downward
   // Use a reasonable default thickness for fallback ceiling
@@ -406,19 +841,27 @@ export function addCeiling(instance) {
   
   geometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
   geometry.computeVertexNormals();
-  // Create material to match wall appearance
+  // Create material using professional config
   const material = new instance.THREE.MeshStandardMaterial({
-    color: 0xFFFFFFF, // Same white color as walls
+    color: THREE_CONFIG.MATERIALS.CEILING.color,
     side: instance.THREE.DoubleSide,
-    roughness: 0.2,   // Lower roughness for brighter appearance
-    metalness: 0.1,   // Lower metalness for brighter appearance
-    transparent: false // Not transparent like walls
+    roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
+    metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1
   });
   // Create mesh
   const ceiling = new instance.THREE.Mesh(geometry, material);
   ceiling.name = 'ceiling';
+  // Set render order to render after walls (higher number = renders later)
+  ceiling.renderOrder = 1;
   // Position the ceiling at the calculated elevation (storey elevation + room base + room height)
-  ceiling.position.y = maxCeilingElevation * instance.scalingFactor;
+  // Add a tiny offset to prevent z-fighting with wall tops
+  ceiling.position.y = maxCeilingElevation * instance.scalingFactor + 0.001;
   
   // Add edge lines to match wall appearance
   const edges = new instance.THREE.EdgesGeometry(geometry);
@@ -485,10 +928,12 @@ export function addFloor(instance) {
   }
 
   // Get the building footprint vertices (will use room points since rooms exist)
-  const vertices = getBuildingFootprint(instance);
+  let vertices = getBuildingFootprint(instance);
   if (vertices.length < 3) {
     return;
   }
+  
+  // Floor shrinking removed - using original footprint directly
   
   // Create floor geometry with thickness extending upward
   // Use a reasonable default thickness for fallback floor

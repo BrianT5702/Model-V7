@@ -106,8 +106,16 @@ const ProjectSummary = ({ projectId }) => {
                     Math.pow(wall.end_y - wall.start_y, 2)
                 );
                 
+                // Prepare face information for panel calculation
+                const faceInfo = {
+                    innerFaceMaterial: wall.inner_face_material || null,
+                    innerFaceThickness: wall.inner_face_thickness || null,
+                    outerFaceMaterial: wall.outer_face_material || null,
+                    outerFaceThickness: wall.outer_face_thickness || null
+                };
+                
                 // Calculate panels for this wall (assuming butt_in joints for simplicity)
-                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' });
+                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' }, wall.height, faceInfo);
                 totalPanels += panels.length;
             }
         });

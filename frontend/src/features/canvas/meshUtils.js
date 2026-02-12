@@ -1,6 +1,8 @@
 // Utility functions for mesh creation in Three.js
 // Note: CSG operations are handled via vertex manipulation instead of three-csg-ts
 
+import { THREE_CONFIG } from './threeConfig';
+
 // Calculate intersection point between two line segments
 // If allowExtended is true, returns intersection even if outside segments (for extension)
 function calculateLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4, allowExtended = false) {
@@ -50,6 +52,21 @@ export function createWallMesh(instance, wall) {
   const { start_x, start_y, end_x, end_y, height, thickness, id, fill_gap_mode, gap_fill_height, gap_base_position, windows } = wall;
   const scale = instance.scalingFactor;
   const modelCenter = instance.calculateModelCenter();
+  
+  // DEBUG for Wall 7255 - check model center calculation
+  if (id === 7255) {
+    console.log(`[Model Center Debug] Wall ${id}:`, {
+      hasProject: !!instance.project,
+      projectWidth: instance.project?.width,
+      projectLength: instance.project?.length,
+      scalingFactor: scale,
+      calculatedModelCenter: modelCenter,
+      expectedCenter: instance.project ? {
+        x: (instance.project.width / 2) * scale,
+        z: (instance.project.length / 2) * scale
+      } : 'N/A (using fallback)'
+    });
+  }
   // Snap endpoints to a fixed precision to avoid floating point misalignment
   function snap(val, precision = 0.01) {
     return Math.round(val / precision) * precision;
@@ -66,9 +83,9 @@ export function createWallMesh(instance, wall) {
   // Calculate the wall's midpoint
   const wallMidX = (startX + endX) / 2;
   const wallMidZ = (startZ + endZ) / 2;
-  // Calculate the direction to the model center
-  const toCenterX = (modelCenter.x * scale) - wallMidX;
-  const toCenterZ = (modelCenter.z * scale) - wallMidZ;
+  // Calculate the direction to the model center (model center is already scaled)
+  const toCenterX = modelCenter.x - wallMidX;
+  const toCenterZ = modelCenter.z - wallMidZ;
 
   // Determine if the wall is horizontal, vertical, or diagonal
   const isHorizontal = Math.abs(start_y - end_y) < 1e-6;
@@ -183,15 +200,30 @@ export function createWallMesh(instance, wall) {
   let finalEndX = endX;
   let finalEndZ = endZ;
   // Apply model center logic for wall orientation
+  // Model center is already in scaled coordinates, don't scale again
   if (isHorizontal) {
     // For horizontal walls: if model center is at < Z position, flip start X with end X
-    if (modelCenter.z * scale < startZ) {
+    if (id === 7255) {
+      console.log(`[Flip Debug] Wall ${id} - Horizontal wall flip check:`, {
+        modelCenterZ: modelCenter.z,
+        startZ,
+        willFlip: modelCenter.z < startZ,
+        originalCoords: { start: { x: startX, z: startZ }, end: { x: endX, z: endZ } }
+      });
+    }
+    if (modelCenter.z < startZ) {
       finalStartX = endX;
       finalEndX = startX;
+      if (id === 7255) {
+        console.log(`[Flip Debug] Wall ${id} - FLIPPED! New coords:`, {
+          start: { x: finalStartX, z: finalStartZ },
+          end: { x: finalEndX, z: finalEndZ }
+        });
+      }
     }
   } else if (isVertical) {
     // For vertical walls: if model center is at > X position, flip start Y with end Y
-    if (modelCenter.x * scale > startX) {
+    if (modelCenter.x > startX) {
       finalStartZ = endZ;
       finalEndZ = startZ;
     }
@@ -207,15 +239,40 @@ export function createWallMesh(instance, wall) {
     let nz = ux;
     const midX = (finalStartX + finalEndX) / 2;
     const midZ = (finalStartZ + finalEndZ) / 2;
-    const toCenterX2 = (modelCenter.x * scale) - midX;
-    const toCenterZ2 = (modelCenter.z * scale) - midZ;
+    // Model center is already in scaled coordinates, don't scale again
+    const toCenterX2 = modelCenter.x - midX;
+    const toCenterZ2 = modelCenter.z - midZ;
     const dot = nx * toCenterX2 + nz * toCenterZ2;
+    
+    // DEBUG for Wall 7255
+    if (id === 7255) {
+      console.log(`[Normal Debug] Wall ${id} - Normal calculation:`, {
+        wallCoords: { start: { x: finalStartX, z: finalStartZ }, end: { x: finalEndX, z: finalEndZ } },
+        wallDir: { x: dirX, z: dirZ, len, ux, uz },
+        normalBeforeFlip: { x: nx, z: nz },
+        midpoint: { x: midX, z: midZ },
+        modelCenter: { x: modelCenter.x, z: modelCenter.z },
+        toCenter: { x: toCenterX2, z: toCenterZ2 },
+        dot,
+        willFlip: dot < 0
+      });
+    }
+    
     if (dot < 0) {
       nx = -nx;
       nz = -nz;
     }
     finalNormX = nx;
     finalNormZ = nz;
+    
+    // DEBUG for Wall 7255 - after flip
+    if (id === 7255) {
+      console.log(`[Normal Debug] Wall ${id} - Final normal:`, {
+        finalNormal: { x: finalNormX, z: finalNormZ },
+        note: "This normal points from outer face (database line) to inner face",
+        expectedDirection: "Should point downward (positive Z) for Wall 7255"
+      });
+    }
   }
   // STEP 1: Extend perpendicular walls to surfaces BEFORE applying joint cuts
   // Simple logic: only extend if walls are perpendicular and not already touching
@@ -238,10 +295,11 @@ export function createWallMesh(instance, wall) {
       const otherIsHorizontal = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
       const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
       // Calculate other wall's normal
+      // Model center is already in scaled coordinates, don't scale again
       const otherMidX = (oSX + oEX) / 2;
       const otherMidZ = (oSZ + oEZ) / 2;
-      const toOtherCenterX = (modelCenter.x * scale) - otherMidX;
-      const toOtherCenterZ = (modelCenter.z * scale) - otherMidZ;
+      const toOtherCenterX = modelCenter.x - otherMidX;
+      const toOtherCenterZ = modelCenter.z - otherMidZ;
       let otherNormX, otherNormZ;
       if (otherIsHorizontal) {
         otherNormX = 0;
@@ -780,7 +838,12 @@ export function createWallMesh(instance, wall) {
   };
   const wallGeometry = new instance.THREE.ExtrudeGeometry(wallShape, extrudeSettings);
   wallGeometry.computeVertexNormals();
-  const wallMaterial = new instance.THREE.MeshStandardMaterial({ color: 0xFFFFFFF, roughness: 0.2, metalness: 0.1 });
+  // Use professional material settings from config
+  const wallMaterial = new instance.THREE.MeshStandardMaterial({ 
+    color: THREE_CONFIG.MATERIALS.WALL.color,
+    roughness: THREE_CONFIG.MATERIALS.WALL.roughness,
+    metalness: THREE_CONFIG.MATERIALS.WALL.metalness
+  });
   let wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
   // Apply 45° cuts using boolean operations if needed
   if (hasStart45 || hasEnd45) {
@@ -810,8 +873,22 @@ export function createWallMesh(instance, wall) {
   // Position the mesh so that the database line is one face, and thickness extends toward the model center
   wallMesh.position.set(finalStartX + instance.modelOffset.x, basePositionY, finalStartZ + instance.modelOffset.z);
   // IMPORTANT: Create edges AFTER cuts are applied, so edges reflect the modified geometry
-  const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry);
+  // Use a threshold angle to filter out nearly-coplanar edges (internal edges we don't want to see)
+  // Default threshold is 1 degree, but we increase it to ~15 degrees to hide internal edges
+  // This prevents unwanted lines from appearing on walls (like vertical lines from geometry artifacts)
+  const edgeThreshold = 15; // degrees - only show edges with dihedral angle > 15 degrees
+  const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
   const edgeLines = new instance.THREE.LineSegments(edges, new instance.THREE.LineBasicMaterial({ color: 0x000000 }));
+  
+  // Debug: Log edge count for wall 7083 to help diagnose the line issue
+  if (id === 7083) {
+    console.log(`[Wall 7083 Edge Debug] Edge count: ${edges.attributes.position.count / 2}`, {
+      edgeThreshold,
+      geometryVertices: wallMesh.geometry.attributes.position.count,
+      geometryFaces: wallMesh.geometry.attributes.position.count / 3
+    });
+  }
+  
   wallMesh.add(edgeLines);
   
   // Add black outlines for door and window holes (cutouts)
@@ -819,15 +896,71 @@ export function createWallMesh(instance, wall) {
   // - X: along the wall (0 to finalWallLength)
   // - Y: vertical (0 to wallHeight, with cutout at floorThickness to floorThickness + height)
   // - Z: wall thickness (0 to wallThickness, cutout is at z = 0, the outer face)
-  for (const cutout of allCutouts) {
+  
+  // Debug: Log cutout info for wall 7083
+  if (id === 7083) {
+    console.log(`[Wall 7083 Cutout Debug] allCutouts count: ${allCutouts.length}`, {
+      cutouts: cutouts.map(c => ({ start: c.start, end: c.end, height: c.height, doorInfo: c.doorInfo?.id })),
+      windowCutouts: windowCutouts.map(c => ({ start: c.start, end: c.end, bottomY: c.bottomY, topY: c.topY })),
+      wallDoors: wallDoors.map(d => ({ id: d.id, wall: d.wall })),
+      wallWindows: wallWindows.length,
+      finalWallLength: finalWallLength
+    });
+  }
+  
+  // Skip outline creation if there are no cutouts
+  if (allCutouts.length === 0) {
+    if (id === 7083) {
+      console.log(`[Wall 7083] No cutouts to draw outlines for`);
+    }
+  } else {
+    for (const cutout of allCutouts) {
+    // Validate cutout data - skip invalid cutouts that could cause unwanted lines
+    if (cutout.start === undefined || cutout.end === undefined || 
+        isNaN(cutout.start) || isNaN(cutout.end) ||
+        cutout.start >= cutout.end || cutout.start < 0 || cutout.end > finalWallLength) {
+      if (id === 7083) {
+        console.warn(`[Wall 7083] Skipping invalid cutout:`, cutout);
+      }
+      continue;
+    }
+    
     let cutoutBottomY, cutoutTopY;
     if (cutout.doorInfo) {
+      if (!cutout.floorThickness || !cutout.height || 
+          isNaN(cutout.floorThickness) || isNaN(cutout.height) ||
+          cutout.height <= 0) {
+        if (id === 7083) {
+          console.warn(`[Wall 7083] Skipping invalid door cutout:`, cutout);
+        }
+        continue;
+      }
       cutoutBottomY = cutout.floorThickness;
       cutoutTopY = cutout.floorThickness + cutout.height;
     } else if (cutout.windowInfo) {
+      if (cutout.bottomY === undefined || cutout.topY === undefined ||
+          isNaN(cutout.bottomY) || isNaN(cutout.topY) ||
+          cutout.bottomY >= cutout.topY || cutout.topY > wallHeight) {
+        if (id === 7083) {
+          console.warn(`[Wall 7083] Skipping invalid window cutout:`, cutout);
+        }
+        continue;
+      }
       cutoutBottomY = cutout.bottomY;
       cutoutTopY = cutout.topY;
     } else {
+      continue;
+    }
+    
+    // Validate Y coordinates
+    if (cutoutBottomY < 0 || cutoutTopY > wallHeight || cutoutBottomY >= cutoutTopY) {
+      if (id === 7083) {
+        console.warn(`[Wall 7083] Skipping cutout with invalid Y coordinates:`, {
+          cutoutBottomY,
+          cutoutTopY,
+          wallHeight
+        });
+      }
       continue;
     }
     
@@ -856,6 +989,17 @@ export function createWallMesh(instance, wall) {
     
     // Add to wall mesh (already in correct local coordinate system)
     wallMesh.add(outlineLines);
+    
+    if (id === 7083) {
+      console.log(`[Wall 7083] Created cutout outline:`, {
+        start: cutout.start,
+        end: cutout.end,
+        bottomY: cutoutBottomY,
+        topY: cutoutTopY,
+        type: cutout.doorInfo ? 'door' : 'window'
+      });
+    }
+    }
   }
   
   for (const cutout of cutouts) {
