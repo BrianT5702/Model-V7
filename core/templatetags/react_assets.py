@@ -35,19 +35,23 @@ def react_asset(asset_type='js'):
                 if 'entrypoints' in manifest and len(manifest['entrypoints']) > 0:
                     for entry in manifest['entrypoints']:
                         if entry.endswith('.js'):
-                            return entry
+                            # Ensure absolute path (starting with /)
+                            return entry if entry.startswith('/') else '/' + entry
                 # Fallback to files.main.js
                 if 'files' in manifest and 'main.js' in manifest['files']:
-                    return manifest['files']['main.js']
+                    path = manifest['files']['main.js']
+                    return path if path.startswith('/') else '/' + path
             elif asset_type == 'css':
                 # Get main.css from entrypoints or files
                 if 'entrypoints' in manifest and len(manifest['entrypoints']) > 0:
                     for entry in manifest['entrypoints']:
                         if entry.endswith('.css'):
-                            return entry
+                            # Ensure absolute path (starting with /)
+                            return entry if entry.startswith('/') else '/' + entry
                 # Fallback to files.main.css
                 if 'files' in manifest and 'main.css' in manifest['files']:
-                    return manifest['files']['main.css']
+                    path = manifest['files']['main.css']
+                    return path if path.startswith('/') else '/' + path
     except Exception as e:
         # Log error but don't break the template
         print(f"Error loading React assets: {e}")

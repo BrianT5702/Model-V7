@@ -3,20 +3,25 @@ Custom views for serving React app in production
 """
 from django.shortcuts import render
 from django.conf import settings
+from django.http import Http404
 import os
 
-def serve_react_app(request, path=''):
+def serve_react_app(request):
     """
     Serve the React app for all non-API routes
+    Excludes static and media files which should be handled by WhiteNoise
     """
-    # Check if the file exists in the frontend build directory
-    build_path = os.path.join(settings.BASE_DIR, 'frontend', 'build')
-    file_path = os.path.join(build_path, path.lstrip('/'))
+    # Get the path from the request
+    path = request.path.lstrip('/')
     
-    # If it's a static file (CSS, JS, images), serve it directly
-    if os.path.isfile(file_path) and not path.startswith('api/'):
-        from django.http import FileResponse
-        return FileResponse(open(file_path, 'rb'))
+    # Don't serve the React app for static/media/api paths
+    # These should be handled by WhiteNoise middleware or API routes
+    if (path.startswith('static/') or 
+        path.startswith('media/') or 
+        path.startswith('api/') or
+        '/static/' in path or
+        '/media/' in path):
+        raise Http404("Not found")
     
     # Otherwise, serve the React app
     return render(request, 'index.html')

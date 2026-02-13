@@ -121,6 +121,12 @@ export default class ThreeCanvas3D {
   }
 
   init() {
+    // CRITICAL: Set pixel ratio for high-resolution displays
+    // This ensures crisp rendering on high-DPI screens and large projects
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2 for performance
+    this.renderer.setPixelRatio(pixelRatio);
+    
+    // Set renderer size accounting for pixel ratio
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     
     // Professional renderer settings
@@ -212,11 +218,15 @@ export default class ThreeCanvas3D {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     
+    // CRITICAL: Update pixel ratio on resize (may change with window scaling)
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2 for performance
+    this.renderer.setPixelRatio(pixelRatio);
+    
     // Update camera aspect ratio
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     
-    // Update renderer size
+    // Update renderer size (will use pixel ratio automatically)
     this.renderer.setSize(width, height);
     
     debugLog(`📱 Resize: ${width}x${height} (aspect: ${this.camera.aspect.toFixed(2)})`);

@@ -5,6 +5,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from core.views import ProjectViewSet, WallViewSet
+from model_builder.views import serve_react_app
 
 # Create a router for the API endpoints
 router = DefaultRouter()
@@ -29,8 +30,9 @@ if not settings.DEBUG:
     
     # Then serve React app for all other routes (excluding api, static, and media)
     # WhiteNoise middleware will handle static files, so we exclude them from the catch-all
+    # Use custom view to properly exclude static/media paths
     urlpatterns += [
-        re_path(r'^(?!api/|static/|media/).*$', TemplateView.as_view(template_name='index.html')),
+        re_path(r'^(?!api/).*$', serve_react_app),
     ]
 else:
     # In development, serve static files
