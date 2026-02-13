@@ -852,6 +852,24 @@ const ProjectDetails = () => {
         };
     }, [projectDetails.is3DView]);
 
+    // Guard: If projectId is missing or invalid, show error and redirect
+    if (!projectId || projectId === 'undefined' || projectId === 'null') {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Invalid Project</h2>
+                    <p className="text-gray-600 mb-6">The project ID is missing or invalid.</p>
+                    <button
+                        onClick={() => navigate('/projects')}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                        Go to Projects
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-gray-50 project-details-container">
             {/* Wrapper to contain header and content for full-width header */}

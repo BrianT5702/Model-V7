@@ -1149,6 +1149,13 @@ export default function useProjectDetails(projectId) {
 
   // Fetch project details
   const fetchProjectDetails = async () => {
+    // Guard: Don't fetch if projectId is missing or invalid
+    if (!projectId || projectId === 'undefined' || projectId === 'null') {
+      console.warn('ProjectDetails: projectId is missing or invalid, skipping fetch');
+      setProjectLoadError('Invalid project ID. Please navigate to a valid project.');
+      return;
+    }
+
     try {
       const projectResponse = await api.get(`/projects/${projectId}/`);
       const projectData = projectResponse.data;
@@ -1184,7 +1191,10 @@ export default function useProjectDetails(projectId) {
   };
 
   useEffect(() => {
-    fetchProjectDetails();
+    // Only fetch if projectId is valid
+    if (projectId && projectId !== 'undefined' && projectId !== 'null') {
+      fetchProjectDetails();
+    }
     // eslint-disable-next-line
   }, [projectId]);
 
@@ -1211,6 +1221,13 @@ export default function useProjectDetails(projectId) {
 
   // Fetch rooms
   useEffect(() => {
+    // Guard: Don't fetch if projectId is missing or invalid
+    if (!projectId || projectId === 'undefined' || projectId === 'null') {
+      console.warn('ProjectDetails: projectId is missing or invalid, skipping rooms fetch');
+      setRooms([]);
+      return;
+    }
+
     const fetchRooms = async () => {
       try {
         const response = await api.get(`/rooms/?project=${projectId}`);
