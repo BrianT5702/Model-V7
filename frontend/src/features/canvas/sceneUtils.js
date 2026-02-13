@@ -867,8 +867,15 @@ export function addCeiling(instance) {
   const edges = new instance.THREE.EdgesGeometry(geometry);
   const edgeLines = new instance.THREE.LineSegments(
     edges, 
-    new instance.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+    new instance.THREE.LineBasicMaterial({ 
+      color: 0x000000, // Black edge lines like walls
+      depthTest: true,
+      depthWrite: false, // Don't write to depth buffer to prevent z-fighting
+      transparent: false
+    })
   );
+  // Set render order to render edge lines after the ceiling mesh to prevent blinking
+  edgeLines.renderOrder = 2; // Higher than ceiling mesh (which is 1)
   ceiling.add(edgeLines);
   
   // Set shadow properties
@@ -1052,8 +1059,15 @@ export function addFloor(instance) {
   const edges = new instance.THREE.EdgesGeometry(geometry);
   const edgeLines = new instance.THREE.LineSegments(
     edges, 
-    new instance.THREE.LineBasicMaterial({ color: 0x000000 }) // Black edge lines like walls
+    new instance.THREE.LineBasicMaterial({ 
+      color: 0x000000, // Black edge lines like walls
+      depthTest: true,
+      depthWrite: false, // Don't write to depth buffer to prevent z-fighting
+      transparent: false
+    })
   );
+  // Set render order to render edge lines after the floor mesh to prevent blinking
+  edgeLines.renderOrder = 2; // Higher than floor mesh (which is 0 by default)
   floor.add(edgeLines);
   
   // Set shadow properties

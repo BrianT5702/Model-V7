@@ -1659,8 +1659,18 @@ getModelBounds() {
       const maxWallHeight = Math.max(...Array.from(pointHeightMap.values()), roomHeight || 0);
       console.log(`[Ceiling] Room ${room.id} max wall height: ${maxWallHeight}mm`);
       
+      // CRITICAL: Check if variable wall heights are allowed
+      // If allow_variable_wall_heights is False, ceiling must be flat at room height
+      const allowVariableHeights = room.allow_variable_wall_heights || false;
+      console.log(`[Ceiling] Room ${room.id} allow_variable_wall_heights: ${allowVariableHeights}`);
+      
       // Create a function to get height at any 3D vertex
       const getHeightAtVertex = (x, z) => {
+        // If variable heights are NOT allowed, use flat ceiling at room height
+        if (!allowVariableHeights) {
+          return roomHeight || 0;
+        }
+        
         // Convert 3D back to 2D room coordinates
         const pointX = (x - this.modelOffset.x) / this.scalingFactor;
         const pointY = (z - this.modelOffset.z) / this.scalingFactor;
@@ -1684,7 +1694,7 @@ getModelBounds() {
         return roomHeight || 0;
       };
       
-      // Create the top surface (sloped ceiling based on wall heights)
+      // Create the top surface (sloped ceiling based on wall heights ONLY if variable heights allowed)
       const topGeometry = new this.THREE.BufferGeometry();
       const topPositions = new Float32Array(triangles.length * 3);
       
@@ -1696,17 +1706,21 @@ getModelBounds() {
         // Get wall height at this vertex
         const wallHeight = getHeightAtVertex(x, z);
         
-        // Calculate relative height (relative to max height, so ceiling slopes)
-        const relativeHeight = (wallHeight - maxWallHeight) * this.scalingFactor;
+        // Calculate relative height
+        // If variable heights NOT allowed, all vertices use same height (flat ceiling)
+        // If variable heights allowed, ceiling slopes based on wall heights
+        const relativeHeight = allowVariableHeights 
+          ? (wallHeight - maxWallHeight) * this.scalingFactor  // Sloped: relative to max
+          : 0;  // Flat: all vertices at same level (0 relative to max)
         
         topPositions[i * 3] = x;
-        topPositions[i * 3 + 1] = relativeHeight; // Top surface with slope based on wall height
+        topPositions[i * 3 + 1] = relativeHeight; // Top surface (flat or sloped based on allow_variable_wall_heights)
         topPositions[i * 3 + 2] = z;
       }
       topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
       topGeometry.computeVertexNormals();
       
-      // Create the bottom surface (thickness bottom, also sloped)
+      // Create the bottom surface (thickness bottom, flat or sloped based on allow_variable_wall_heights)
       const bottomGeometry = new this.THREE.BufferGeometry();
       const bottomPositions = new Float32Array(triangles.length * 3);
       
@@ -1718,11 +1732,13 @@ getModelBounds() {
         // Get wall height at this vertex
         const wallHeight = getHeightAtVertex(x, z);
         
-        // Calculate relative height (relative to max height)
-        const relativeHeight = (wallHeight - maxWallHeight) * this.scalingFactor;
+        // Calculate relative height (same logic as top surface)
+        const relativeHeight = allowVariableHeights 
+          ? (wallHeight - maxWallHeight) * this.scalingFactor  // Sloped: relative to max
+          : 0;  // Flat: all vertices at same level
         
         bottomPositions[i * 3] = x;
-        bottomPositions[i * 3 + 1] = relativeHeight - ceilingThickness; // Bottom surface follows slope, offset by thickness
+        bottomPositions[i * 3 + 1] = relativeHeight - ceilingThickness; // Bottom surface (flat or sloped), offset by thickness
         bottomPositions[i * 3 + 2] = z;
       }
       bottomGeometry.setAttribute('position', new this.THREE.BufferAttribute(bottomPositions, 3));
@@ -1740,8 +1756,13 @@ getModelBounds() {
         // Get heights for current and next vertices
         const currentHeight = getHeightAtVertex(current.x, current.z);
         const nextHeight = getHeightAtVertex(next.x, next.z);
-        const currentTopHeight = (currentHeight - maxWallHeight) * this.scalingFactor;
-        const nextTopHeight = (nextHeight - maxWallHeight) * this.scalingFactor;
+        // Calculate top heights (flat or sloped based on allow_variable_wall_heights)
+        const currentTopHeight = allowVariableHeights 
+          ? (currentHeight - maxWallHeight) * this.scalingFactor  // Sloped
+          : 0;  // Flat
+        const nextTopHeight = allowVariableHeights 
+          ? (nextHeight - maxWallHeight) * this.scalingFactor  // Sloped
+          : 0;  // Flat
         const currentBottomHeight = currentTopHeight - ceilingThickness;
         const nextBottomHeight = nextTopHeight - ceilingThickness;
         

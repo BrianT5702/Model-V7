@@ -878,7 +878,17 @@ export function createWallMesh(instance, wall) {
   // This prevents unwanted lines from appearing on walls (like vertical lines from geometry artifacts)
   const edgeThreshold = 15; // degrees - only show edges with dihedral angle > 15 degrees
   const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
-  const edgeLines = new instance.THREE.LineSegments(edges, new instance.THREE.LineBasicMaterial({ color: 0x000000 }));
+  const edgeLines = new instance.THREE.LineSegments(
+    edges, 
+    new instance.THREE.LineBasicMaterial({ 
+      color: 0x000000,
+      depthTest: true,
+      depthWrite: false, // Don't write to depth buffer to prevent z-fighting
+      transparent: false
+    })
+  );
+  // Set render order to render edge lines after the wall mesh to prevent blinking
+  edgeLines.renderOrder = 2; // Higher than wall mesh (which is 0 by default)
   
   // Debug: Log edge count for wall 7083 to help diagnose the line issue
   if (id === 7083) {
