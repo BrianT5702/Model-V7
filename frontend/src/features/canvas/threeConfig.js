@@ -28,20 +28,26 @@ export const THREE_CONFIG = {
   MATERIALS: {
     WALL: {
       color: 0xFFFFFF, // Pure white for bright ambient appearance
-      roughness: 0.2, // Lower roughness for more reflective/metallic look
-      metalness: 0.4, // Metallic but will reflect bright white environment
+      roughness: 0.15, // Lower roughness for more reflective/metallic look
+      metalness: 0.8, // High metalness for strong metallic appearance
+      emissive: 0xFFFFFF, // Emissive white to make it appear brighter
+      emissiveIntensity: 2.0, // Very high emissive intensity for maximum whiteness
       transparent: false
     },
     FLOOR: {
       color: 0xFFFFFF, // Pure white for bright ambient appearance
-      roughness: 0.3, // Lower roughness for metallic floor
-      metalness: 0.5, // Metallic floor surface
+      roughness: 0.2, // Lower roughness for more metallic floor
+      metalness: 0.85, // High metalness for strong metallic floor surface
+      emissive: 0xFFFFFF, // Emissive white to make it appear brighter
+      emissiveIntensity: 1.0, // Very high emissive intensity for maximum whiteness
       transparent: false
     },
     CEILING: {
       color: 0xFFFFFF, // Pure white for bright ambient appearance
-      roughness: 0.15, // More glossy for metallic ceiling
-      metalness: 0.45, // Metallic ceiling
+      roughness: 0.1, // Very low roughness for highly reflective metallic ceiling
+      metalness: 0.85, // High metalness for strong metallic ceiling
+      emissive: 0xFFFFFF, // Emissive white to make it appear brighter
+      emissiveIntensity: 1.0, // Very high emissive intensity for maximum whiteness
       transparent: false
     },
     DOOR: {

@@ -23,4 +23,7 @@ export default THREE;
 // Also export commonly used Three.js modules
 export { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry';
 export { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+export { Line2 } from 'three/examples/jsm/lines/Line2.js';
+export { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+export { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 

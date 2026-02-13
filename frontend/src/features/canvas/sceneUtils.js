@@ -847,6 +847,8 @@ export function addCeiling(instance) {
     side: instance.THREE.DoubleSide,
     roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
     metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
+    emissive: THREE_CONFIG.MATERIALS.CEILING.emissive,
+    emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity,
     transparent: false,
     depthWrite: true,
     depthTest: true,
@@ -1041,10 +1043,12 @@ export function addFloor(instance) {
   
   // Create material for floor
   const material = new instance.THREE.MeshStandardMaterial({
-    color: 0xE5E7EB, // Light gray color for floor
+    color: THREE_CONFIG.MATERIALS.FLOOR.color,
     side: instance.THREE.DoubleSide,
-    roughness: 0.8,   // More rough than walls for floor texture
-    metalness: 0.2,   // Less metallic than walls
+    roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
+    metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
+    emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive,
+    emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity,
     transparent: false
   });
   

@@ -842,7 +842,9 @@ export function createWallMesh(instance, wall) {
   const wallMaterial = new instance.THREE.MeshStandardMaterial({ 
     color: THREE_CONFIG.MATERIALS.WALL.color,
     roughness: THREE_CONFIG.MATERIALS.WALL.roughness,
-    metalness: THREE_CONFIG.MATERIALS.WALL.metalness
+    metalness: THREE_CONFIG.MATERIALS.WALL.metalness,
+    emissive: THREE_CONFIG.MATERIALS.WALL.emissive,
+    emissiveIntensity: THREE_CONFIG.MATERIALS.WALL.emissiveIntensity
   });
   let wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
   // Apply 45° cuts using boolean operations if needed
@@ -1236,8 +1238,9 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
 
 // Helper function to create a door with window holes
 // This creates the door in sections around windows, leaving actual holes
-function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, doorMaterial, windows, scale, offsetX = 0) {
+function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, doorMaterial, windows, scale, offsetX = 0, edgeLineOffsetX = null) {
   // Helper function to add outer frame outline to door
+  // edgeLineOffsetX: if provided, use this for edge lines instead of offsetX (for double-sided swing doors)
   const addDoorFrameOutline = (doorMeshOrGroup) => {
     // Create outline geometry for outer frame on both sides
     // Door extends from -doorWidth/2 to +doorWidth/2 in X, -doorHeight/2 to +doorHeight/2 in Y
@@ -1245,22 +1248,24 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
     const halfWidth = doorWidth / 2;
     const halfHeight = doorHeight / 2;
     const halfThickness = doorThickness / 2;
+    // Use edgeLineOffsetX if provided, otherwise use offsetX
+    const edgeOffset = edgeLineOffsetX !== null ? edgeLineOffsetX : offsetX;
     
     // Create rectangle outline on the front face (z = +doorThickness/2)
     const frontOutlineGeometry = new instance.THREE.BufferGeometry();
     const frontVertices = new Float32Array([
       // Top edge
-      -halfWidth + offsetX, halfHeight, halfThickness,
-      halfWidth + offsetX, halfHeight, halfThickness,
+      -halfWidth + edgeOffset, halfHeight, halfThickness,
+      halfWidth + edgeOffset, halfHeight, halfThickness,
       // Right edge
-      halfWidth + offsetX, halfHeight, halfThickness,
-      halfWidth + offsetX, -halfHeight, halfThickness,
+      halfWidth + edgeOffset, halfHeight, halfThickness,
+      halfWidth + edgeOffset, -halfHeight, halfThickness,
       // Bottom edge
-      halfWidth + offsetX, -halfHeight, halfThickness,
-      -halfWidth + offsetX, -halfHeight, halfThickness,
+      halfWidth + edgeOffset, -halfHeight, halfThickness,
+      -halfWidth + edgeOffset, -halfHeight, halfThickness,
       // Left edge
-      -halfWidth + offsetX, -halfHeight, halfThickness,
-      -halfWidth + offsetX, halfHeight, halfThickness
+      -halfWidth + edgeOffset, -halfHeight, halfThickness,
+      -halfWidth + edgeOffset, halfHeight, halfThickness
     ]);
     frontOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(frontVertices, 3));
     
@@ -1268,17 +1273,17 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
     const backOutlineGeometry = new instance.THREE.BufferGeometry();
     const backVertices = new Float32Array([
       // Top edge
-      -halfWidth + offsetX, halfHeight, -halfThickness,
-      halfWidth + offsetX, halfHeight, -halfThickness,
+      -halfWidth + edgeOffset, halfHeight, -halfThickness,
+      halfWidth + edgeOffset, halfHeight, -halfThickness,
       // Right edge
-      halfWidth + offsetX, halfHeight, -halfThickness,
-      halfWidth + offsetX, -halfHeight, -halfThickness,
+      halfWidth + edgeOffset, halfHeight, -halfThickness,
+      halfWidth + edgeOffset, -halfHeight, -halfThickness,
       // Bottom edge
-      halfWidth + offsetX, -halfHeight, -halfThickness,
-      -halfWidth + offsetX, -halfHeight, -halfThickness,
+      halfWidth + edgeOffset, -halfHeight, -halfThickness,
+      -halfWidth + edgeOffset, -halfHeight, -halfThickness,
       // Left edge
-      -halfWidth + offsetX, -halfHeight, -halfThickness,
-      -halfWidth + offsetX, halfHeight, -halfThickness
+      -halfWidth + edgeOffset, -halfHeight, -halfThickness,
+      -halfWidth + edgeOffset, halfHeight, -halfThickness
     ]);
     backOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(backVertices, 3));
     
@@ -1286,17 +1291,17 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
     const thicknessOutlineGeometry = new instance.THREE.BufferGeometry();
     const thicknessVertices = new Float32Array([
       // Top-left edge (front top-left to back top-left)
-      -halfWidth + offsetX, halfHeight, halfThickness,
-      -halfWidth + offsetX, halfHeight, -halfThickness,
+      -halfWidth + edgeOffset, halfHeight, halfThickness,
+      -halfWidth + edgeOffset, halfHeight, -halfThickness,
       // Top-right edge (front top-right to back top-right)
-      halfWidth + offsetX, halfHeight, halfThickness,
-      halfWidth + offsetX, halfHeight, -halfThickness,
+      halfWidth + edgeOffset, halfHeight, halfThickness,
+      halfWidth + edgeOffset, halfHeight, -halfThickness,
       // Bottom-left edge (front bottom-left to back bottom-left)
-      -halfWidth + offsetX, -halfHeight, halfThickness,
-      -halfWidth + offsetX, -halfHeight, -halfThickness,
+      -halfWidth + edgeOffset, -halfHeight, halfThickness,
+      -halfWidth + edgeOffset, -halfHeight, -halfThickness,
       // Bottom-right edge (front bottom-right to back bottom-right)
-      halfWidth + offsetX, -halfHeight, halfThickness,
-      halfWidth + offsetX, -halfHeight, -halfThickness
+      halfWidth + edgeOffset, -halfHeight, halfThickness,
+      halfWidth + edgeOffset, -halfHeight, -halfThickness
     ]);
     thicknessOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(thicknessVertices, 3));
     
@@ -2008,6 +2013,9 @@ export function createDoorMesh(instance, door, wall) {
       doorContainer.add(rightPivot);
       // Create door panels with window holes
       // Left panel: windows on left half of door
+      // For double-sided swing doors, edge lines should be created with offsetX=0
+      // because the geometry translation will position them correctly
+      // Panel geometry uses offsetX to position windows correctly, then is translated to final position
       const leftPanelWindows = (door.windows || []).filter(w => (w.position_x - 0.5) * doorWidth < 0);
       const leftPanel = createDoorWithWindows(
         instance,
@@ -2017,17 +2025,42 @@ export function createDoorMesh(instance, door, wall) {
         doorMaterial,
         leftPanelWindows,
         scale,
-        halfWidth / 2 // Offset to align with door center
+        halfWidth / 2, // Offset to align panel geometry with door center (for window positioning)
+        0 // Edge lines offset: 0 (will be positioned by geometry translation)
       );
       // Translate left panel geometry to correct position
+      // Panel geometry: already spans from X=0 to X=halfWidth (due to offsetX)
+      // Edge lines: span from X=-halfWidth/2 to X=+halfWidth/2 (due to edgeLineOffsetX=0)
+      // Final position: both should span from X=0 to X=halfWidth
+      // So: panel needs no X translation, edge lines need +halfWidth/2 X translation
+      // For Z positioning: door front face should be at wallDepth/2 (on wall surface)
+      // Door back face should be at wallDepth/2 - doorThickness
+      // Edge lines: front at +doorThickness/2, back at -doorThickness/2
+      // To position correctly: translate front from +doorThickness/2 to wallDepth/2
+      //                        translate back from -doorThickness/2 to wallDepth/2 - doorThickness
+      // This means: translate by (wallDepth/2 - doorThickness/2) for front
+      //             translate by (wallDepth/2 - doorThickness/2) for back (same translation)
       leftPanel.children.forEach(child => {
-        if (child.geometry) {
-          child.geometry.translate(halfWidth / 2, 0, +(wallDepth / 2));
+        if (child.geometry && !(child instanceof instance.THREE.LineSegments)) {
+          // Panel geometry: translate to position front face at wallDepth/2
+          // Panel is centered, so translate by wallDepth/2 - doorThickness/2
+          child.geometry.translate(0, 0, (wallDepth / 2) - (doorThickness / 2));
+        } else if (child instanceof instance.THREE.LineSegments) {
+          // Edge lines: translate by +halfWidth/2 in X only (no Z translation needed)
+          const positions = child.geometry.attributes.position;
+          const posArray = positions.array;
+          // Translate in X only
+          for (let i = 0; i < posArray.length; i += 3) {
+            posArray[i] += halfWidth / 2; // X translation
+          }
+          positions.needsUpdate = true;
         }
       });
       leftPanel.position.set(0, 0, 0);
       
       // Right panel: windows on right half of door
+      // For double-sided swing doors, edge lines should be created with offsetX=0
+      // because the geometry translation will position them correctly
       const rightPanelWindows = (door.windows || []).filter(w => (w.position_x - 0.5) * doorWidth >= 0);
       const rightPanel = createDoorWithWindows(
         instance,
@@ -2037,12 +2070,30 @@ export function createDoorMesh(instance, door, wall) {
         doorMaterial,
         rightPanelWindows,
         scale,
-        -halfWidth / 2 // Offset to align with door center
+        -halfWidth / 2, // Offset to align panel geometry with door center (for window positioning)
+        0 // Edge lines offset: 0 (will be positioned by geometry translation)
       );
       // Translate right panel geometry to correct position
+      // Panel geometry: already spans from X=-halfWidth to X=0 (due to offsetX)
+      // Edge lines: span from X=-halfWidth/2 to X=+halfWidth/2 (due to edgeLineOffsetX=0)
+      // Final position: both should span from X=-halfWidth to X=0
+      // So: panel needs no X translation, edge lines need -halfWidth/2 X translation
+      // For Z positioning: door front face should be at wallDepth/2 (on wall surface)
+      // Door back face should be at wallDepth/2 - doorThickness
       rightPanel.children.forEach(child => {
-        if (child.geometry) {
-          child.geometry.translate(-halfWidth / 2, 0, +(wallDepth / 2));
+        if (child.geometry && !(child instanceof instance.THREE.LineSegments)) {
+          // Panel geometry: translate to position front face at wallDepth/2
+          // Panel is centered, so translate by wallDepth/2 - doorThickness/2
+          child.geometry.translate(0, 0, (wallDepth / 2) - (doorThickness / 2));
+        } else if (child instanceof instance.THREE.LineSegments) {
+          // Edge lines: translate by -halfWidth/2 in X only (no Z translation needed)
+          const positions = child.geometry.attributes.position;
+          const posArray = positions.array;
+          // Translate in X only
+          for (let i = 0; i < posArray.length; i += 3) {
+            posArray[i] += -halfWidth / 2; // X translation
+          }
+          positions.needsUpdate = true;
         }
       });
       rightPanel.position.set(0, 0, 0);

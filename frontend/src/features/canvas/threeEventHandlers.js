@@ -41,7 +41,21 @@ export function onCanvasClickHandler(instance, event) {
     }
     if (doorObj && doorObj.userData.doorId) {
       instance.activeDoor = doorObj;
-      const isOpen = instance.doorStates.get(doorObj.userData.doorId) || false;
+      const doorInfo = doorObj.userData.doorInfo;
+      let isOpen = false;
+      
+      // For double-sided swing doors, check both panel states
+      if (doorInfo && doorInfo.door_type === 'swing' && doorInfo.configuration === 'double_sided') {
+        const leftDoorId = `door_${doorInfo.id}_left`;
+        const rightDoorId = `door_${doorInfo.id}_right`;
+        const leftIsOpen = instance.doorStates.get(leftDoorId) || false;
+        const rightIsOpen = instance.doorStates.get(rightDoorId) || false;
+        isOpen = leftIsOpen || rightIsOpen;
+      } else {
+        // Single door: use standard doorId
+        isOpen = instance.doorStates.get(doorObj.userData.doorId) || false;
+      }
+      
       instance.doorButton.textContent = isOpen ? 'Close Door' : 'Open Door';
       instance.doorButton.disabled = false;
       instance.doorButton.style.opacity = '1';
@@ -81,10 +95,30 @@ export function toggleDoorHandler(instance) {
     return;
   }
   const doorId = instance.activeDoor.userData.doorId;
-  const isCurrentlyOpen = instance.doorStates.get(doorId) || false;
-  const newState = !isCurrentlyOpen;
-  instance.doorStates.set(doorId, newState);
   const doorInfo = instance.activeDoor.userData.doorInfo;
+  
+  // For double-sided swing doors, check both panel states first
+  let isCurrentlyOpen = false;
+  let newState = false;
+  
+  if (doorInfo.door_type === 'swing' && doorInfo.configuration === 'double_sided') {
+    // Double-sided swing door: check both panel states
+    const leftDoorId = `door_${doorInfo.id}_left`;
+    const rightDoorId = `door_${doorInfo.id}_right`;
+    const leftIsOpen = instance.doorStates.get(leftDoorId) || false;
+    const rightIsOpen = instance.doorStates.get(rightDoorId) || false;
+    // Door is considered open if either panel is open
+    isCurrentlyOpen = leftIsOpen || rightIsOpen;
+    newState = !isCurrentlyOpen;
+    // Update both panel states
+    instance.doorStates.set(leftDoorId, newState);
+    instance.doorStates.set(rightDoorId, newState);
+  } else {
+    // Single door: use standard doorId
+    isCurrentlyOpen = instance.doorStates.get(doorId) || false;
+    newState = !isCurrentlyOpen;
+    instance.doorStates.set(doorId, newState);
+  }
 
   // Handle animation based on door type
   if (doorInfo.door_type === 'swing') {
@@ -99,8 +133,12 @@ export function toggleDoorHandler(instance) {
         const mountedInside = (doorInfo.adjustedSide || doorInfo.side) === 'interior';
         
         // Debug logging for double swing door toggle
+        // Note: leftDoorId, rightDoorId, leftIsOpen, rightIsOpen already calculated above
         console.log('[Double Swing Door Toggle] Using properties:', {
           doorId: doorInfo.id,
+          leftDoorId: `door_${doorInfo.id}_left`,
+          rightDoorId: `door_${doorInfo.id}_right`,
+          isCurrentlyOpen: isCurrentlyOpen,
           originalSide: doorInfo.side,
           adjustedSide: doorInfo.adjustedSide || doorInfo.side,
           mountedInside: mountedInside,
