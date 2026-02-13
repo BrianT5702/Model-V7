@@ -27,9 +27,10 @@ if not settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     
-    # Then serve React app for all other routes
+    # Then serve React app for all other routes (excluding api, static, and media)
+    # WhiteNoise middleware will handle static files, so we exclude them from the catch-all
     urlpatterns += [
-        re_path(r'^(?!api/).*$', TemplateView.as_view(template_name='index.html')),
+        re_path(r'^(?!api/|static/|media/).*$', TemplateView.as_view(template_name='index.html')),
     ]
 else:
     # In development, serve static files

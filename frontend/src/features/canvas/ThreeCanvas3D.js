@@ -1315,15 +1315,15 @@ getModelBounds() {
         // Get ceiling thickness from room's ceiling plan or use default
         const roomCeilingThickness = (room.ceiling_plan?.ceiling_thickness || defaultCeilingThickness) * this.scalingFactor;
         
-        // Create ceiling geometry for this room (returns mesh and max wall height)
+        // Create ceiling geometry for this room (returns mesh)
         const ceilingResult = this.createRoomCeilingMesh(roomVertices, roomCeilingHeight, room, roomCeilingThickness);
         const ceilingMesh = ceilingResult?.mesh || ceilingResult;
-        const maxWallHeight = ceilingResult?.maxWallHeight || roomCeilingHeight;
         
         if (ceilingMesh) {
-          // Position ceiling at base elevation + max wall height (absolute ceiling position)
+          // Position ceiling at base elevation + room height (absolute ceiling position)
+          // Use roomCeilingHeight (which is room.height) instead of wall heights
           // Add a tiny offset to prevent z-fighting with wall tops
-          ceilingMesh.position.y = baseElevation + (maxWallHeight * this.scalingFactor) + 0.001;
+          ceilingMesh.position.y = baseElevation + (roomCeilingHeight * this.scalingFactor) + 0.001;
           ceilingMesh.name = `ceiling_room_${room.id}`;
           ceilingMesh.userData = {
             isCeiling: true,
@@ -1655,12 +1655,14 @@ getModelBounds() {
         return null;
       }
       
-      // Find max wall height for this room to use as reference
-      const maxWallHeight = Math.max(...Array.from(pointHeightMap.values()), roomHeight || 0);
-      console.log(`[Ceiling] Room ${room.id} max wall height: ${maxWallHeight}mm`);
+      // CRITICAL: Use room height as the reference, not wall heights
+      // The ceiling should be generated at room.height, not the tallest wall height
+      const ceilingReferenceHeight = roomHeight || 0;
+      console.log(`[Ceiling] Room ${room.id} using room height: ${ceilingReferenceHeight}mm (not wall heights)`);
       
       // CRITICAL: Check if variable wall heights are allowed
       // If allow_variable_wall_heights is False, ceiling must be flat at room height
+      // If True, ceiling can slope based on wall heights, but still uses room height as base reference
       const allowVariableHeights = room.allow_variable_wall_heights || false;
       console.log(`[Ceiling] Room ${room.id} allow_variable_wall_heights: ${allowVariableHeights}`);
       
@@ -1707,11 +1709,11 @@ getModelBounds() {
         const wallHeight = getHeightAtVertex(x, z);
         
         // Calculate relative height
-        // If variable heights NOT allowed, all vertices use same height (flat ceiling)
-        // If variable heights allowed, ceiling slopes based on wall heights
+        // If variable heights NOT allowed, all vertices use same height (flat ceiling at room height)
+        // If variable heights allowed, ceiling slopes based on wall heights, relative to room height
         const relativeHeight = allowVariableHeights 
-          ? (wallHeight - maxWallHeight) * this.scalingFactor  // Sloped: relative to max
-          : 0;  // Flat: all vertices at same level (0 relative to max)
+          ? (wallHeight - ceilingReferenceHeight) * this.scalingFactor  // Sloped: relative to room height
+          : 0;  // Flat: all vertices at same level (0 relative to room height)
         
         topPositions[i * 3] = x;
         topPositions[i * 3 + 1] = relativeHeight; // Top surface (flat or sloped based on allow_variable_wall_heights)
@@ -1734,7 +1736,7 @@ getModelBounds() {
         
         // Calculate relative height (same logic as top surface)
         const relativeHeight = allowVariableHeights 
-          ? (wallHeight - maxWallHeight) * this.scalingFactor  // Sloped: relative to max
+          ? (wallHeight - ceilingReferenceHeight) * this.scalingFactor  // Sloped: relative to room height
           : 0;  // Flat: all vertices at same level
         
         bottomPositions[i * 3] = x;
@@ -1758,11 +1760,11 @@ getModelBounds() {
         const nextHeight = getHeightAtVertex(next.x, next.z);
         // Calculate top heights (flat or sloped based on allow_variable_wall_heights)
         const currentTopHeight = allowVariableHeights 
-          ? (currentHeight - maxWallHeight) * this.scalingFactor  // Sloped
-          : 0;  // Flat
+          ? (currentHeight - ceilingReferenceHeight) * this.scalingFactor  // Sloped: relative to room height
+          : 0;  // Flat: at room height
         const nextTopHeight = allowVariableHeights 
-          ? (nextHeight - maxWallHeight) * this.scalingFactor  // Sloped
-          : 0;  // Flat
+          ? (nextHeight - ceilingReferenceHeight) * this.scalingFactor  // Sloped: relative to room height
+          : 0;  // Flat: at room height
         const currentBottomHeight = currentTopHeight - ceilingThickness;
         const nextBottomHeight = nextTopHeight - ceilingThickness;
         
@@ -1842,8 +1844,8 @@ getModelBounds() {
       // Add room label on the ceiling
       this.addRoomLabelToCeiling(ceiling, room, roomVertices);
       
-      // Return both mesh and maxWallHeight for positioning
-      return { mesh: ceiling, maxWallHeight };
+      // Return mesh (positioning uses room.height, not wall heights)
+      return { mesh: ceiling };
     } catch (error) {
       console.error(`❌ Error creating room ceiling mesh for room ${room.id}:`, error);
       return null;
