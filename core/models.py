@@ -509,6 +509,12 @@ class FloorPanel(models.Model):
     )
     is_cut_panel = models.BooleanField(default=False, help_text="Whether this panel was cut to fit")
     cut_notes = models.TextField(blank=True, null=True, help_text="Notes about any cuts made to the panel")
+    # Optional exact polygon for non-rectangular (e.g. L-shaped) panels
+    shape_data = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="List of {x,y} points defining the exact polygon shape for non-rectangular floor panels"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

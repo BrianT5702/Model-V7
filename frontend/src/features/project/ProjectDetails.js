@@ -600,11 +600,9 @@ const ProjectDetails = () => {
         }
     }, [projectDetails.currentView, projectDetails.filteredWalls, projectDetails.filteredRooms]);
 
-    // Memoize the room close handler to prevent unnecessary re-renders
+    // Memoize the room close handler – closing the tab/panel with "x" wipes all selection
     const handleRoomClose = useCallback(() => {
-        projectDetails.setShowRoomManagerModal(false);
-        projectDetails.setEditingRoom(null);
-        projectDetails.setCurrentMode(null);
+        projectDetails.resetAllSelections();
     }, [projectDetails]);
 
     // Memoize the room save handler to prevent unnecessary re-renders
@@ -1883,10 +1881,10 @@ const ProjectDetails = () => {
                     </div>
                 </div>
 
-                {/* Main Content Area */}
-                <div className="flex-1 flex flex-col overflow-visible">
-                    {/* Canvas Container */}
-                    <div className="bg-white m-3 sm:m-6 rounded-lg shadow-sm border border-gray-200 canvas-container">
+                {/* Main Content Area - min-h-0 so flex child can shrink; overflow-auto so tab content scrolls inside viewport */}
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom */}
+                    <div className="bg-white m-3 sm:m-6 rounded-lg shadow-sm border border-gray-200 canvas-container flex-1 flex flex-col min-h-0 overflow-auto">
                         {projectDetails.is3DView ? (
                             <div className="flex flex-col">
                                 {/* Tab Navigation - Same structure as 2D */}
@@ -1979,11 +1977,10 @@ const ProjectDetails = () => {
                                                 onClick={() => projectDetails.setCurrentView('floor-plan')}
                                                 disabled={
                                                     !projectDetails.filteredRooms ||
-                                                    projectDetails.filteredRooms.length === 0 ||
-                                                    !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel')
+                                                    projectDetails.filteredRooms.length === 0
                                                 }
                                                 className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
-                                                    (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0 || !projectDetails.filteredRooms.some(room => room.floor_type === 'panel' || room.floor_type === 'Panel'))
+                                                    (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0)
                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                         : projectDetails.currentView === 'floor-plan'
                                                         ? 'bg-green-600 text-white shadow-md'
@@ -2075,7 +2072,10 @@ const ProjectDetails = () => {
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager
                                             projectId={projectId}
-                                            onClose={() => projectDetails.setCurrentView('wall-plan')}
+                                            onClose={() => {
+                                                projectDetails.resetAllSelections();
+                                                projectDetails.setCurrentView('wall-plan');
+                                            }}
                                             onFloorPlanGenerated={(floorPlan) => {
                                                 console.log('Floor plan generated:', floorPlan);
                                             }}
@@ -2095,12 +2095,20 @@ const ProjectDetails = () => {
                                             activeStoreyId={projectDetails.activeStoreyId}
                                             setActiveStoreyId={projectDetails.setActiveStoreyId}
                                             allWalls={projectDetails.walls}
+                                            roomsFromParent={projectDetails.rooms}
+                                            wallsFromParent={projectDetails.walls}
+                                            doorsFromParent={projectDetails.doors}
+                                            storeysFromParent={projectDetails.storeys}
+                                            projectDataFromParent={projectDetails.project}
                                         />
                                     ) : (
                                         <CeilingManager
                                             projectId={projectId}
                                             room={projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 ? projectDetails.filteredRooms[0] : null}
-                                            onClose={() => projectDetails.setCurrentView('wall-plan')}
+                                            onClose={() => {
+                                                projectDetails.resetAllSelections();
+                                                projectDetails.setCurrentView('wall-plan');
+                                            }}
                                             onCeilingPlanGenerated={(ceilingPlan) => {
                                                 console.log('Ceiling plan generated:', ceilingPlan);
                                             }}
@@ -3384,9 +3392,7 @@ const ProjectDetails = () => {
                             await projectDetails.handleDeleteDoor(doorId);
                         }}
                         onClose={() => {
-                            projectDetails.setShowDoorManager(false);
-                            projectDetails.setEditingDoor(null);
-                            projectDetails.setSelectedDoorWall(null);
+                            projectDetails.resetAllSelections();
                         }}
                         activeStoreyId={projectDetails.editingDoor?.storey ?? projectDetails.activeStoreyId}
                         activeStoreyName={

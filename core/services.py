@@ -989,7 +989,7 @@ class FloorService:
             if not rooms.exists():
                 return {'error': 'No rooms found for this project'}
             
-            # Filter to panel floors only
+            # Filter to panel floors only (slab-only projects have no panel strategies; that's OK)
             panel_floor_rooms = [
                 room for room in rooms 
                 if room.room_points and len(room.room_points) >= 3 
@@ -997,7 +997,13 @@ class FloorService:
             ]
             
             if not panel_floor_rooms:
-                return {'error': 'No valid floor strategies found'}
+                # No panel rooms (e.g. slab-only): return success with empty strategies so UI doesn't show an error
+                return {
+                    'strategies': [],
+                    'recommended_strategy': 'horizontal',
+                    'total_project_waste': 0,
+                    'total_project_panels': 0
+                }
             
             # Analyze per-room strategies (horizontal, vertical, best_orientation)
             strategies = []
@@ -1049,7 +1055,8 @@ class FloorService:
                         'bounding_box': bounding_box,
                         'room_points': room.room_points,
                         'wall_thickness': project.wall_thickness,
-                        'floor_thickness': floor_thickness
+                        'floor_thickness': floor_thickness,
+                        'room': room,
                     })
                 
                 if len(rooms_data) >= 2:
@@ -1098,37 +1105,76 @@ class FloorService:
     
     @staticmethod
     def _calculate_room_floor_area(room, wall_thickness):
-        """Calculate floor area excluding walls"""
+        """Calculate floor area excluding walls.
+        
+        To avoid double‑shrinking floor area on shared walls between rooms,
+        we apportion each wall's physical thickness across the panel rooms
+        that share it, instead of simply using perimeter * wall_thickness
+        per room.
+        """
         if not room.room_points or len(room.room_points) < 3:
             return 0.0
-        
+
         points = room.room_points
         n = len(points)
-        
-        # Calculate room area
+
+        # Calculate room area from polygon
         area = 0.0
         for i in range(n):
             j = (i + 1) % n
             area += points[i]['x'] * points[j]['y']
             area -= points[j]['x'] * points[i]['y']
-        
         room_area = abs(area) / 2.0
-        
-        # Calculate perimeter
-        perimeter = 0.0
-        for i in range(n):
-            j = (i + 1) % n
-            dx = points[j]['x'] - points[i]['x']
-            dy = points[j]['y'] - points[i]['y']
-            perimeter += (dx * dx + dy * dy) ** 0.5
-        
-        # Wall area = perimeter * wall_thickness
-        wall_area = perimeter * wall_thickness
-        
-        # Floor area = room area - wall area
+
+        # Default fallback: perimeter * wall_thickness (previous behaviour)
+        try:
+            walls_qs = getattr(room, "walls", None)
+        except Exception:
+            walls_qs = None
+
+        if not walls_qs or not hasattr(walls_qs, "exists") or not walls_qs.exists():
+            perimeter = 0.0
+            for i in range(n):
+                j = (i + 1) % n
+                dx = points[j]['x'] - points[i]['x']
+                dy = points[j]['y'] - points[i]['y']
+                perimeter += (dx * dx + dy * dy) ** 0.5
+            wall_area = perimeter * wall_thickness
+        else:
+            # Shared‑wall aware wall area:
+            # For each physical wall, assign the full physical thickness to
+            # exactly one "owner" panel room (the one with the smallest ID),
+            # so that shared walls are only shrunk on one side, not both.
+            from math import hypot
+
+            total_wall_area = 0.0
+            for wall in walls_qs.all():
+                length = hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y)
+                physical_thickness = wall.thickness or wall_thickness or 0.0
+
+                # Find how many *panel* rooms share this wall
+                attached_rooms = list(wall.rooms.all())
+                panel_rooms = [
+                    r for r in attached_rooms
+                    if getattr(r, "floor_type", None) in ("panel", "Panel")
+                ]
+
+                if not panel_rooms:
+                    # No panel rooms: treat as external to this calculation
+                    continue
+
+                # Choose a single "owner" panel room deterministically
+                owner_room = sorted(panel_rooms, key=lambda r: r.id)[0]
+                if room is not owner_room:
+                    # Non‑owner rooms do not lose floor area for this wall
+                    continue
+
+                total_wall_area += length * physical_thickness
+
+            wall_area = total_wall_area
+
         floor_area = room_area - wall_area
-        
-        return max(0, floor_area)
+        return max(0.0, floor_area)
     
     @staticmethod
     def _analyze_room_floor_orientations(room, panel_width, panel_length):
@@ -1144,7 +1190,8 @@ class FloorService:
         horizontal_tracker = LeftoverTracker(context='ANALYSIS-H')  # Mark as analysis
         floor_thickness = float(room.floor_thickness) if hasattr(room, 'floor_thickness') and room.floor_thickness else 20.0
         horizontal_panels = FloorService._generate_floor_panels(
-            bounding_box, room.room_points, 'horizontal', panel_width, panel_length, room.project.wall_thickness, horizontal_tracker, floor_thickness
+            bounding_box, room.room_points, 'horizontal', panel_width, panel_length,
+            room.project.wall_thickness, horizontal_tracker, floor_thickness, room=room
         )
         horizontal_waste = FloorService._calculate_floor_waste(horizontal_panels, room, room.project.wall_thickness, horizontal_tracker)
         horizontal_stats = horizontal_tracker.get_stats()
@@ -1161,7 +1208,8 @@ class FloorService:
         # Strategy 2: All Vertical (with leftover tracking for analysis)
         vertical_tracker = LeftoverTracker(context='ANALYSIS-V')  # Mark as analysis
         vertical_panels = FloorService._generate_floor_panels(
-            bounding_box, room.room_points, 'vertical', panel_width, panel_length, room.project.wall_thickness, vertical_tracker, floor_thickness
+            bounding_box, room.room_points, 'vertical', panel_width, panel_length,
+            room.project.wall_thickness, vertical_tracker, floor_thickness, room=room
         )
         vertical_waste = FloorService._calculate_floor_waste(vertical_panels, room, room.project.wall_thickness, vertical_tracker)
         vertical_stats = vertical_tracker.get_stats()
@@ -1178,7 +1226,8 @@ class FloorService:
         # Strategy 3: Best of both (renamed from mixed_optimal) with leftover tracking for analysis
         best_tracker = LeftoverTracker(context='ANALYSIS-BEST')  # Mark as analysis
         best_panels = FloorService._generate_best_orientation_floor_panels(
-            bounding_box, room.room_points, panel_width, panel_length, room.project.wall_thickness, best_tracker, floor_thickness
+            bounding_box, room.room_points, panel_width, panel_length,
+            room.project.wall_thickness, best_tracker, floor_thickness, room=room
         )
         best_waste = FloorService._calculate_floor_waste(best_panels, room, room.project.wall_thickness, best_tracker)
         best_stats = best_tracker.get_stats()
@@ -1229,7 +1278,7 @@ class FloorService:
         return bounding_box
     
     @staticmethod
-    def _generate_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+    def _generate_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0, room=None):
         """
         Generate floor panels.
         Redirects to the robust shape-aware generator for all cases to ensure consistent handling of 
@@ -1237,7 +1286,7 @@ class FloorService:
         """
         return FloorService._generate_shape_aware_floor_panels(
             bounding_box, room_points, orientation, panel_width, panel_length, 
-            wall_thickness, leftover_tracker, floor_thickness
+            wall_thickness, leftover_tracker, floor_thickness, room=room
         )
     
     @staticmethod
@@ -1432,7 +1481,95 @@ class FloorService:
         return panels
     
     @staticmethod
-    def _generate_shape_aware_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+    def _build_floor_polygon_for_room(room, original_poly, default_wall_thickness):
+        """Build a floor polygon for a room by subtracting wall thickness only on
+        the room's interior side of each wall, taking shared panel rooms into
+        account.
+        
+        Falls back to a uniform inset by default_wall_thickness if wall data
+        or shapely helpers are not available.
+        """
+        try:
+            from shapely.geometry import Polygon as ShapelyPolygon, Point
+            from shapely.ops import unary_union as shapely_unary_union
+        except Exception:
+            inset = default_wall_thickness or 0.0
+            return original_poly.buffer(-inset, join_style=2) if inset > 0 else original_poly
+
+        walls_qs = getattr(room, "walls", None)
+        if not walls_qs or not walls_qs.exists():
+            inset = default_wall_thickness or 0.0
+            return original_poly.buffer(-inset, join_style=2) if inset > 0 else original_poly
+
+        from math import hypot
+
+        wall_strips = []
+
+        for wall in walls_qs.all():
+            length = hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y)
+            if length == 0:
+                continue
+
+            # Determine which attached rooms treat this as a panel floor wall
+            attached_rooms = list(wall.rooms.all())
+            panel_rooms = [
+                r for r in attached_rooms
+                if getattr(r, "floor_type", None) in ("panel", "Panel")
+            ]
+            if not panel_rooms or room not in panel_rooms:
+                # No panel floors on this wall, or this room is not a panel room for it
+                continue
+
+            physical_thickness = wall.thickness or default_wall_thickness or 0.0
+            if physical_thickness <= 0:
+                continue
+
+            # Assign the full thickness to a single deterministic owner room
+            owner_room = sorted(panel_rooms, key=lambda r: r.id)[0]
+            if room is not owner_room:
+                # Non‑owner rooms see no shrink on this wall
+                continue
+            eff_thickness = physical_thickness
+
+            dx = wall.end_x - wall.start_x
+            dy = wall.end_y - wall.start_y
+            tx = dx / length
+            ty = dy / length
+            nx = -ty
+            ny = tx
+
+            midx = (wall.start_x + wall.end_x) / 2.0
+            midy = (wall.start_y + wall.end_y) / 2.0
+            eps = eff_thickness * 0.5 if eff_thickness > 0 else max(default_wall_thickness or 1.0, 1.0)
+
+            inside_point = Point(midx + nx * eps, midy + ny * eps)
+            outside_point = Point(midx - nx * eps, midy - ny * eps)
+
+            # If our "inside" guess is actually outside, flip the normal
+            if not original_poly.contains(inside_point) and original_poly.contains(outside_point):
+                nx, ny = -nx, -ny
+
+            # Rectangle strip from wall centerline into the room by eff_thickness
+            p1 = (wall.start_x, wall.start_y)
+            p2 = (wall.end_x, wall.end_y)
+            p3 = (wall.end_x + nx * eff_thickness, wall.end_y + ny * eff_thickness)
+            p4 = (wall.start_x + nx * eff_thickness, wall.start_y + ny * eff_thickness)
+
+            strip = ShapelyPolygon([p1, p2, p3, p4])
+            strip = strip.intersection(original_poly)
+            if not strip.is_empty and strip.area > 1.0:
+                wall_strips.append(strip)
+
+        if not wall_strips:
+            inset = default_wall_thickness or 0.0
+            return original_poly.buffer(-inset, join_style=2) if inset > 0 else original_poly
+
+        union = shapely_unary_union(wall_strips)
+        floor_poly = original_poly.difference(union)
+        return floor_poly
+    
+    @staticmethod
+    def _generate_shape_aware_floor_panels(bounding_box, room_points, orientation, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0, room=None):
         try:
             panels = []
             clean_points = []
@@ -1447,7 +1584,16 @@ class FloorService:
                 from shapely.ops import orient
                 original_poly = Polygon([(p['x'], p['y']) for p in clean_points]).buffer(0)
                 original_poly = orient(original_poly, sign=1.0)
-                room_poly = original_poly.buffer(-wall_thickness, join_style=2) if wall_thickness > 0 else original_poly
+                if room is not None:
+                    # Build a floor polygon that only removes wall thickness
+                    # on the room's interior side of each wall, taking into
+                    # account shared walls between multiple panel rooms.
+                    room_poly = FloorService._build_floor_polygon_for_room(
+                        room, original_poly, wall_thickness
+                    )
+                else:
+                    # Fallback: uniform inset by wall thickness
+                    room_poly = original_poly.buffer(-wall_thickness, join_style=2) if wall_thickness > 0 else original_poly
             except Exception as e:
                 room_poly = None
 
@@ -1501,10 +1647,23 @@ class FloorService:
                             rect_area = final_draw_width * final_draw_length
                             is_rectangular = (intersection.area / rect_area) > 0.98
                             is_full_standard = check_dim >= (standard_dim - 2.0)
-                            
+
+                            shape_points = []
                             if not is_rectangular:
                                 is_cut = True
                                 cut_notes = "Shape Fit (L-Cut)"
+                                # Extract exact polygon for L-shaped / irregular cuts
+                                if intersection.geom_type == 'Polygon':
+                                    shape_points = [
+                                        {'x': float(x), 'y': float(y)}
+                                        for x, y in intersection.exterior.coords
+                                    ]
+                                elif intersection.geom_type == 'MultiPolygon':
+                                    largest = max(intersection.geoms, key=lambda a: a.area)
+                                    shape_points = [
+                                        {'x': float(x), 'y': float(y)}
+                                        for x, y in largest.exterior.coords
+                                    ]
                             elif not is_full_standard:
                                 is_cut = True
                                 cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
@@ -1522,7 +1681,6 @@ class FloorService:
                                             scrap_l = w_maxy - w_miny if orientation == 'vertical' else w_maxx - w_minx
                                             
                                             if scrap_w > 50.0:
-                                                # LO2 will now be 750 x 5100
                                                 leftover_tracker.add_leftover(scrap_l, floor_thickness, scrap_w)
                                 
                             panels.append({
@@ -1530,7 +1688,8 @@ class FloorService:
                                 'start_x': i_minx, 'start_y': i_miny,
                                 'width': final_draw_width, 'length': final_draw_length,
                                 'is_cut': is_cut, 'cut_notes': cut_notes, 'from_leftover': from_leftover,
-                                'end_x': i_maxx, 'end_y': i_maxy
+                                'end_x': i_maxx, 'end_y': i_maxy,
+                                'shape_points': shape_points,
                             })
                             panel_counter += 1
                     curr_x += p_width
@@ -1818,7 +1977,7 @@ class FloorService:
         return inside
     
     @staticmethod
-    def _generate_best_orientation_floor_panels(bounding_box, room_points, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0):
+    def _generate_best_orientation_floor_panels(bounding_box, room_points, panel_width, panel_length, wall_thickness, leftover_tracker=None, floor_thickness=20.0, room=None):
         """Generate floor panels using the optimal orientation (best of horizontal or vertical) with proper leftover tracking"""
         # Create ANALYSIS trackers for evaluation (temporary)
         eval_tracker_h = LeftoverTracker(context='ANALYSIS-H-EVAL')
@@ -1826,11 +1985,13 @@ class FloorService:
         
         # Evaluate both orientations
         horizontal_panels = FloorService._generate_floor_panels(
-            bounding_box, room_points, 'horizontal', panel_width, panel_length, wall_thickness, eval_tracker_h, floor_thickness
+            bounding_box, room_points, 'horizontal', panel_width, panel_length,
+            wall_thickness, eval_tracker_h, floor_thickness, room=room
         )
         
         vertical_panels = FloorService._generate_floor_panels(
-            bounding_box, room_points, 'vertical', panel_width, panel_length, wall_thickness, eval_tracker_v, floor_thickness
+            bounding_box, room_points, 'vertical', panel_width, panel_length,
+            wall_thickness, eval_tracker_v, floor_thickness, room=room
         )
         
         # Calculate waste properly with room area info
@@ -1845,7 +2006,8 @@ class FloorService:
         # Regenerate with ACTUAL tracker if provided (preserves leftover continuity)
         if leftover_tracker:
             return FloorService._generate_floor_panels(
-                bounding_box, room_points, best_orientation, panel_width, panel_length, wall_thickness, leftover_tracker, floor_thickness
+                bounding_box, room_points, best_orientation, panel_width, panel_length,
+                wall_thickness, leftover_tracker, floor_thickness, room=room
             )
         
         # No tracker: return evaluation result
@@ -1900,7 +2062,8 @@ class FloorService:
             panel_length,
             room_info['wall_thickness'],
             leftover_tracker,
-            floor_thickness
+            floor_thickness,
+            room=room_info.get('room')
         )
     
     @staticmethod
@@ -2133,7 +2296,21 @@ class FloorService:
             )
             if 'error' in orientation_analysis:
                return {'error': orientation_analysis['error']}
-            
+
+            strategies = orientation_analysis.get('strategies') or []
+            # Slab-only (no panel rooms): return success with no panels; slab counts are shown from room data
+            if not strategies:
+                return {
+                    'floor_panels': [],
+                    'floor_plans': [],
+                    'summary': {
+                        'total_panels': 0,
+                        'average_waste_percentage': 0,
+                        'project_waste_percentage': 0
+                    },
+                    'strategy_used': 'none',
+                    'recommended_strategy': 'horizontal'
+                }
             
             # Determine which strategy to use
             if orientation_strategy == 'auto':
@@ -2143,7 +2320,7 @@ class FloorService:
             
             # Find the selected strategy
             selected_strategy = None
-            for strategy in orientation_analysis['strategies']:
+            for strategy in strategies:
                 if strategy['strategy_name'] == strategy_name:
                     selected_strategy = strategy
                     break
@@ -2153,13 +2330,13 @@ class FloorService:
                 # Fall back to best_orientation or auto
                 logger.warning(f"room_optimal not available (need 2+ panel floor rooms), using auto instead")
                 strategy_name = orientation_analysis['recommended_strategy']
-                for strategy in orientation_analysis['strategies']:
+                for strategy in strategies:
                     if strategy['strategy_name'] == strategy_name:
                         selected_strategy = strategy
                         break
             
             if not selected_strategy:
-                return {'error': f'Strategy {strategy_name} not found. Available strategies: {[s["strategy_name"] for s in orientation_analysis["strategies"]]}'}
+                return {'error': f'Strategy {strategy_name} not found. Available strategies: {[s["strategy_name"] for s in strategies]}'}
             
             # Generate floor panels for all rooms with leftover tracking
             all_floor_panels = []
@@ -2201,7 +2378,8 @@ class FloorService:
                 elif selected_strategy['orientation_type'] == 'best':
                     # Use best_orientation method (old mixed_optimal)
                     room_panels = FloorService._generate_best_orientation_floor_panels(
-                        bounding_box, room.room_points, panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
+                        bounding_box, room.room_points, panel_width, panel_length,
+                        project.wall_thickness, project_leftover_tracker, floor_thickness, room=room
                     )
                     orientation = None  # Already generated
                 else:
@@ -2210,7 +2388,8 @@ class FloorService:
                 # Generate panels if not already generated
                 if orientation:
                     room_panels = FloorService._generate_floor_panels(
-                        bounding_box, room.room_points, orientation, panel_width, panel_length, project.wall_thickness, project_leftover_tracker, floor_thickness
+                        bounding_box, room.room_points, orientation, panel_width, panel_length,
+                        project.wall_thickness, project_leftover_tracker, floor_thickness, room=room
                     )
                     
                 # Add room info to panels
@@ -2263,7 +2442,8 @@ class FloorService:
                             thickness=floor_thickness,  # Use actual floor thickness, not hardcoded!
                             material_type='standard',
                             is_cut_panel=panel_data.get('is_cut', False),
-                            cut_notes=panel_data.get('cut_notes', '')
+                            cut_notes=panel_data.get('cut_notes', ''),
+                            shape_data=panel_data.get('shape_points')
                         )
                         created_panels.append(panel)
                     except Exception as e:

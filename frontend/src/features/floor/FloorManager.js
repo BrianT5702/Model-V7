@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import FloorCanvas from '../canvas/FloorCanvas';
 import api from '../../api/api';
 
@@ -14,6 +14,8 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
     const [floorPlan, setFloorPlan] = useState(null);
     const [floorPanels, setFloorPanels] = useState([]);
     const [projectData, setProjectData] = useState(null);
+    const [storeys, setStoreys] = useState([]);
+    const [selectedStoreyId, setSelectedStoreyId] = useState(null);
     // Cached project-wide waste % from latest POST, to ensure immediate UI update
     const [projectWastePercentage, setProjectWastePercentage] = useState(null);
     
@@ -38,6 +40,31 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
         setDimensionVisibility(prev => ({ ...prev, [key]: !prev[key] }));
     };
 
+    // Filter rooms by selected storey (level)
+    const filteredRooms = useMemo(() => {
+        if (!selectedStoreyId) return allRooms;
+        return allRooms.filter(room => String(room.storey) === String(selectedStoreyId));
+    }, [allRooms, selectedStoreyId]);
+
+    // Filter walls by selected storey
+    const filteredWalls = useMemo(() => {
+        if (!selectedStoreyId) return allWalls;
+        return allWalls.filter(wall => {
+            const wallStoreyId = wall.storey ?? wall.storey_id;
+            return String(wallStoreyId) === String(selectedStoreyId);
+        });
+    }, [allWalls, selectedStoreyId]);
+
+    // Filter floor panels to those in the selected level's rooms
+    const filteredFloorPanels = useMemo(() => {
+        if (!floorPanels || floorPanels.length === 0) return [];
+        const filteredIds = new Set(filteredRooms.map(r => r.id));
+        return floorPanels.filter(panel => {
+            const rid = panel.room_id ?? (typeof panel.room === 'object' ? panel.room?.id : panel.room);
+            return rid != null && filteredIds.has(rid);
+        });
+    }, [floorPanels, filteredRooms]);
+
     useEffect(() => {
         if (projectId) {
             loadProjectData();
@@ -49,20 +76,30 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
             // Load project data first
             const projectResponse = await api.get(`/projects/${parseInt(projectId)}/`);
             setProjectData(projectResponse.data || null);
+
+            // Load storeys for level selection
+            const storeysResponse = await api.get(`/storeys/?project=${parseInt(projectId)}`);
+            const loadedStoreys = storeysResponse.data || [];
+            setStoreys(loadedStoreys);
+            if (loadedStoreys.length > 0) {
+                setSelectedStoreyId((prev) => prev ?? loadedStoreys[0].id);
+            }
             
             // Load rooms
             const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
             const rooms = roomsResponse.data || [];
             setAllRooms(rooms);
-            
-            // Check if any rooms have panel floors
+
+            // Require at least one room with panel or slab floor to use the floor plan tab
             const panelRooms = rooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel');
-            if (panelRooms.length === 0) {
-                setError('No rooms with panel floors found. Floor plans are only generated for rooms with floor_type = "panel". Rooms with slab or other floor types do not need floor plans.');
+            const slabRooms = rooms.filter(room => room.floor_type === 'slab' || room.floor_type === 'Slab');
+            const hasPanelOrSlabRooms = panelRooms.length > 0 || slabRooms.length > 0;
+            if (!hasPanelOrSlabRooms) {
+                setError('No rooms with panel or slab floors found. Floor plan is available for rooms with floor_type = "panel" (panel layout) or "slab" (slab count).');
                 return;
             }
-            
-            console.log(`Found ${panelRooms.length} rooms with panel floors out of ${rooms.length} total rooms`);
+
+            console.log(`Found ${panelRooms.length} panel room(s) and ${slabRooms.length} slab room(s) out of ${rooms.length} total rooms`);
             
             // Load walls
             const wallsResponse = await api.get(`/walls/?project=${parseInt(projectId)}`);
@@ -438,19 +475,39 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
             {/* Header */}
             <div className="bg-white shadow-sm border-b border-gray-200 p-6 ml-8">
                 <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Floor Plan Generator</h1>
-                        <p className="text-gray-600 mt-2">
-                            Generate optimal floor panel layouts with orientation strategies to minimize waste
-                        </p>
+                    <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div>
+                                <h1 className="text-3xl font-bold text-gray-900">Floor Plan Generator</h1>
+                                <p className="text-gray-600 mt-2">
+                                    Generate optimal floor panel layouts with orientation strategies to minimize waste
+                                </p>
+                            </div>
+                            {/* Level (storey) selector - same as ceiling plan */}
+                            {storeys.length > 1 && (
+                                <div className="flex items-center space-x-2">
+                                    <label className="text-sm font-medium text-gray-700">Level:</label>
+                                    <select
+                                        value={selectedStoreyId ?? ''}
+                                        onChange={(e) => setSelectedStoreyId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        {storeys.map(storey => (
+                                            <option key={storey.id} value={storey.id}>
+                                                {storey.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
                         <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                             <div className="flex items-center">
                                 <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                                 <span className="text-blue-800 text-sm">
-                                    <strong>Note:</strong> Floor plans are only generated for rooms with <code className="bg-blue-100 px-1 rounded">floor_type = "panel"</code>. 
-                                    Rooms with <code className="bg-blue-100 px-1 rounded">floor_type = "slab"</code> or other types do not need floor plans.
+                                    <strong>Note:</strong> Floor plan is available for rooms with <code className="bg-blue-100 px-1 rounded">floor_type = "panel"</code> (panel layout) or <code className="bg-blue-100 px-1 rounded">floor_type = "slab"</code> (estimated slabs needed).
                                 </span>
                             </div>
                         </div>
@@ -646,45 +703,36 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                 )}
             </div>
 
-            {/* Main Content */}
+            {/* Main Content: show canvas when we have a generated plan OR when we have panel/slab rooms (so slab counts and Generate are available) */}
             <div className="p-6 pl-8">
-                {floorPlan ? (
+                {(floorPlan || (filteredRooms.length > 0 && filteredRooms.some(r => (r.floor_type === 'panel' || r.floor_type === 'Panel' || r.floor_type === 'slab' || r.floor_type === 'Slab')))) ? (
                     <div className="space-y-6">
                         {/* Canvas */}
                         <FloorCanvas
-                            rooms={allRooms}
-                            walls={allWalls}
+                            rooms={filteredRooms}
+                            walls={filteredWalls}
                             intersections={allIntersections}
-                            floorPlan={floorPlan}
-                            floorPanels={floorPanels}
+                            floorPlan={floorPlan || null}
+                            floorPanels={filteredFloorPanels}
                             projectData={projectData}
                             projectWastePercentage={projectWastePercentage}
                             dimensionVisibility={dimensionVisibility}
 
                             floorPanelsMap={(() => {
-                                // Convert floorPanels array to floorPanelsMap format
+                                // Convert filtered floor panels to floorPanelsMap format (by room for selected level)
                                 const panelsMap = {};
-                                if (floorPanels && Array.isArray(floorPanels)) {
-                                    console.log('Floor panels data:', floorPanels);
-                                    floorPanels.forEach(panel => {
-                                        // Handle both room_id (from serializer) and room (from model)
+                                if (filteredFloorPanels && Array.isArray(filteredFloorPanels)) {
+                                    filteredFloorPanels.forEach(panel => {
                                         let roomId = panel.room_id;
                                         if (!roomId && panel.room) {
                                             roomId = typeof panel.room === 'object' ? panel.room.id : panel.room;
                                         }
-                                        
                                         if (roomId) {
-                                            if (!panelsMap[roomId]) {
-                                                panelsMap[roomId] = [];
-                                            }
+                                            if (!panelsMap[roomId]) panelsMap[roomId] = [];
                                             panelsMap[roomId].push(panel);
-                                        } else {
-                                            console.log('⚠️ Panel has no room ID:', panel);
                                         }
                                     });
                                 }
-                                
-                                console.log('Floor panels map:', panelsMap);
                                 return panelsMap;
                             })()}
                             orientationAnalysis={orientationAnalysis}

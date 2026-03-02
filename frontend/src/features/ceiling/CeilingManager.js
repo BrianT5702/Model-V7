@@ -2251,21 +2251,21 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     }
 
     return (
-        <div className="ceiling-manager">
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-200 ml-8">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-xl font-bold text-gray-900">
+        <div className="ceiling-manager flex flex-col min-h-0 min-w-0 w-full">
+            {/* Header - extra right padding so View/Level controls don't touch boundary */}
+            <div className="px-4 sm:px-6 pr-6 sm:pr-8 py-4 border-b border-gray-200 ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                    <div className="min-w-0">
+                        <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
                             Project Ceiling Plan
                         </h2>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-xs sm:text-sm text-gray-600 truncate">
                             Generate optimal ceiling panel layout for the entire project
                         </p>
                     </div>
                     
                     {/* Storey and Room Selection Controls */}
-                        <div className="flex items-center space-x-4">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                         {/* Storey Selector */}
                         {storeys.length > 1 && (
                             <div className="flex items-center space-x-2">
@@ -2326,10 +2326,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 </div>
             </div>
 
-                        {/* Controls */}
-            <div className="control-panel ml-8">
+                        {/* Controls - right margin so Orientation/Panel/Ceiling cards don't touch boundary */}
+            <div className="control-panel ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0">
                 {/* Main Controls Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 control-grid ml-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-4 sm:mb-6 control-grid ml-0 sm:ml-4 pr-2 sm:pr-0">
                     {/* Strategy Selection */}
                     <div className="control-card">
                         <label className="block text-sm font-semibold text-gray-700 mb-3">
@@ -2448,51 +2448,46 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             Support Configuration
                         </label>
                         <div className="space-y-4">
-                            {/* Support Type Selection - Both can be enabled */}
-                            <div className="space-y-3">
-                                <div className="flex items-center space-x-4">
-                                    <label className="flex items-center space-x-2 cursor-pointer group">
-                                        <input
-                                            type="checkbox"
-                                            checked={enableNylonHangers}
-                                            onChange={(e) => {
-                                                userChangedSupportOptionsRef.current = true;
-                                                setEnableNylonHangers(e.target.checked);
-                                                setTimeout(() => {
-                                                    userChangedSupportOptionsRef.current = false;
-                                                }, 200);
-                                            }}
-                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700 group-hover:text-orange-600 transition-colors">
-                                            🧵 Enable Nylon Hanger Supports (Auto)
-                                        </span>
-                                    </label>
-                                </div>
-                                
-                                <div className="flex items-center space-x-4">
-                                    <label className="flex items-center space-x-2 cursor-pointer group">
-                                        <input
-                                            type="checkbox"
-                                            checked={enableAluSuspension}
-                                            onChange={(e) => {
-                                                userChangedSupportOptionsRef.current = true;
-                                                setEnableAluSuspension(e.target.checked);
-                                                // Auto-enable custom drawing when alu suspension is enabled
-                                                if (e.target.checked && !aluSuspensionCustomDrawing) {
-                                                    setAluSuspensionCustomDrawing(true);
-                                                }
-                                                setTimeout(() => {
-                                                    userChangedSupportOptionsRef.current = false;
-                                                }, 200);
-                                            }}
-                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700 group-hover:text-orange-600 transition-colors">
-                                            🔧 Enable Alu Suspension (Custom Drawing)
-                                        </span>
-                                    </label>
-                                </div>
+                            {/* Support Type Selection - Both can be enabled, one line horizontally */}
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                                <label className="flex items-center space-x-2 cursor-pointer group">
+                                    <input
+                                        type="checkbox"
+                                        checked={enableNylonHangers}
+                                        onChange={(e) => {
+                                            userChangedSupportOptionsRef.current = true;
+                                            setEnableNylonHangers(e.target.checked);
+                                            setTimeout(() => {
+                                                userChangedSupportOptionsRef.current = false;
+                                            }, 200);
+                                        }}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700 group-hover:text-orange-600 transition-colors">
+                                        🧵 Enable Nylon Hanger Supports (Auto)
+                                    </span>
+                                </label>
+                                <label className="flex items-center space-x-2 cursor-pointer group">
+                                    <input
+                                        type="checkbox"
+                                        checked={enableAluSuspension}
+                                        onChange={(e) => {
+                                            userChangedSupportOptionsRef.current = true;
+                                            setEnableAluSuspension(e.target.checked);
+                                            // Auto-enable custom drawing when alu suspension is enabled
+                                            if (e.target.checked && !aluSuspensionCustomDrawing) {
+                                                setAluSuspensionCustomDrawing(true);
+                                            }
+                                            setTimeout(() => {
+                                                userChangedSupportOptionsRef.current = false;
+                                            }, 200);
+                                        }}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700 group-hover:text-orange-600 transition-colors">
+                                        🔧 Enable Alu Suspension (Custom Drawing)
+                                    </span>
+                                </label>
                             </div>
                             
                             {/* Nylon Hanger Options */}
@@ -2582,7 +2577,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 )}
 
                 {/* Action Buttons Row */}
-                <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0 sm:space-x-4 mt-6 ml-4">
+                <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0 sm:space-x-4 mt-6 ml-4 mr-4 sm:mr-6">
                     <div className="flex items-center space-x-3">
                         <button
                             onClick={generateCeilingPlan}
@@ -2800,10 +2795,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 )}
             </div>
 
-            {/* Main Content */}
-            <div className="p-6 pl-8">
+            {/* Main Content - fills space, scrolls if needed; layout is responsive inside CeilingCanvas */}
+            <div className="p-4 sm:p-6 pl-4 sm:pl-8 w-full min-w-0 min-h-0 flex-1 flex flex-col overflow-y-auto">
                 {ceilingPlan ? (
-                    <div className="space-y-6">
+                    <div className="space-y-6 w-full min-w-0">
                         <div className="space-y-4">
                             {hasActiveSelection && (
                                 <div className="flex justify-end">

@@ -200,6 +200,8 @@ class CeilingPanelSerializer(serializers.ModelSerializer):
 
 class FloorPanelSerializer(serializers.ModelSerializer):
     room_id = serializers.IntegerField(source='room.id', read_only=True)
+    # Expose potential L-shape geometry like ceiling panels do
+    shape_points = serializers.JSONField(source='shape_data', required=False, allow_null=True)
     
     class Meta:
         model = FloorPanel

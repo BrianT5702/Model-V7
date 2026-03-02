@@ -967,8 +967,9 @@ export default function useProjectDetails(projectId) {
   const updateSharedPanelData = useCallback((tabName, panelData, analysis = null) => {
     setSharedPanelData(prev => {
       // Determine which field to update based on tab name
-      const fieldName = tabName === 'wall-plan' ? 'wallPanels' : 
-                       tabName === 'ceiling-plan' ? 'ceilingPanels' : 
+      // Support both 'ceiling' and 'ceiling-plan' so CeilingManager data reaches summary
+      const fieldName = tabName === 'wall-plan' ? 'wallPanels' :
+                       (tabName === 'ceiling-plan' || tabName === 'ceiling') ? 'ceilingPanels' :
                        tabName === 'floor-plan' ? 'floorPanels' : 'unknown';
       
       // Check if values actually changed to prevent unnecessary updates
@@ -1004,7 +1005,7 @@ export default function useProjectDetails(projectId) {
       
       const baseUpdate = {
         ...prev,
-        [fieldName]: panelData,
+        ...(fieldName !== 'unknown' ? { [fieldName]: panelData } : {}),
         wallPanelAnalysis: tabName === 'wall-plan' ? analysis : prev.wallPanelAnalysis,
         lastUpdated: new Date().toISOString()
       };
@@ -1052,24 +1053,26 @@ export default function useProjectDetails(projectId) {
     }
   };
   
+  // Sum panel quantities (each item can have .quantity > 1); fallback to array length for legacy data
+  const sumPanelQuantities = (arr) => (arr || []).reduce((sum, p) => sum + (p?.quantity ?? 1), 0);
+
   // Function to get all panel data for the final summary tab
   const getAllPanelData = () => {
+    const wallTotal = sumPanelQuantities(sharedPanelData.wallPanels);
+    const ceilingTotal = sumPanelQuantities(sharedPanelData.ceilingPanels);
+    const floorTotal = sumPanelQuantities(sharedPanelData.floorPanels);
     return {
       wallPanels: sharedPanelData.wallPanels,
       ceilingPanels: sharedPanelData.ceilingPanels,
       floorPanels: sharedPanelData.floorPanels,
       wallPanelAnalysis: sharedPanelData.wallPanelAnalysis,
-      // Support accessories information
       supportType: sharedPanelData.supportType,
       includeAccessories: sharedPanelData.includeAccessories,
       includeCable: sharedPanelData.includeCable,
       aluSuspensionCustomDrawing: sharedPanelData.aluSuspensionCustomDrawing,
       panelsNeedSupport: sharedPanelData.panelsNeedSupport,
-      totalPanels: (sharedPanelData.wallPanels?.length || 0) + 
-                   (sharedPanelData.ceilingPanels?.length || 0) + 
-                   (sharedPanelData.floorPanels?.length || 0),
+      totalPanels: wallTotal + ceilingTotal + floorTotal,
       lastUpdated: sharedPanelData.lastUpdated,
-      // Canvas images for export
       wallPlanImage: sharedPanelData.wallPlanImage,
       wallPlansByStorey: sharedPanelData.wallPlansByStorey || [],
       ceilingPlanImage: sharedPanelData.ceilingPlanImage,
@@ -1124,9 +1127,10 @@ export default function useProjectDetails(projectId) {
     );
   };
 
-  // Add resetAllSelections utility
+  // Add resetAllSelections utility – clears all selection state (e.g. when closing a tab/panel with "x")
   const resetAllSelections = () => {
     setSelectedWall(null);
+    setSelectedWallsForEdit([]);
     setSelectedWallsForRoom([]);
     setEditingRoom(null);
     updateRoomPointsAndDetectWalls([]);

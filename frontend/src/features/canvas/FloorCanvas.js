@@ -409,6 +409,20 @@ const FloorCanvas = ({
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(room.room_name, canvasX, canvasY);
+
+            // If this room uses slab floor, show slabs needed under the room name
+            if (room.floor_type === 'slab' || room.floor_type === 'Slab') {
+                const roomAreaMm2 = calculateRoomArea(room);
+                const slabAreaMm2 = 1210 * 3000; // Same slab size as in summary/estimator
+                if (roomAreaMm2 > 0 && slabAreaMm2 > 0) {
+                    const slabsNeeded = Math.ceil(roomAreaMm2 / slabAreaMm2);
+                    const slabText = `${slabsNeeded} slab${slabsNeeded === 1 ? '' : 's'} needed`;
+                    // Push this clearly below the room name to avoid overlap
+                    const lineOffset = 15;
+                    ctx.font = `${Math.max(12, 160 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
+                    ctx.fillText(slabText, canvasX, canvasY + lineOffset);
+                }
+            }
         }
     };
 
@@ -427,8 +441,9 @@ const FloorCanvas = ({
         
         walls.forEach(wall => {
             try {
-                const wallThickness = wall.thickness || 100;
-                const gapPixels = (wallThickness * scaleFactor.current) / 2;
+                // Use actual wall thickness (mm) and scale it fully to pixels
+                const wallThickness = wall.thickness ?? projectData?.wall_thickness ?? 100;
+                const gapPixels = wallThickness * scaleFactor.current;
 
                 let { line1, line2 } = calculateOffsetPoints(
                     wall.start_x, wall.start_y, wall.end_x, wall.end_y,
@@ -537,6 +552,7 @@ const FloorCanvas = ({
         const wallThickness = projectData?.wall_thickness || 150;
         ctx.save(); 
 
+        /* Floor clipping logic disabled; panels now draw without inner clipping mask.
         // ============================================================
         // 1. DETECT WINDING ORDER (Clockwise vs Counter-Clockwise)
         // This prevents the "expand vs shrink" issue.
@@ -607,24 +623,49 @@ const FloorCanvas = ({
             ctx.lineTo(offsetInner[i].x, offsetInner[i].y);
         }
         ctx.closePath();
-        ctx.clip(); 
+        // ctx.clip(); // Floor plan clipping disabled
+        */
 
         // ============================================================
-        // 3. DRAW PANELS
+        // 3. DRAW PANELS (supporting L-shapes via shape_points)
         // ============================================================
         panels.forEach(panel => {
-            const x = panel.start_x * scaleFactor.current + offsetX.current;
-            const y = panel.start_y * scaleFactor.current + offsetY.current;
-            const width = panel.width * scaleFactor.current;
-            const height = panel.length * scaleFactor.current;
-
             const isCut = panel.is_cut_panel || panel.is_cut;
             ctx.fillStyle = isCut ? 'rgba(34, 197, 94, 0.4)' : 'rgba(59, 130, 246, 0.4)';
             ctx.strokeStyle = isCut ? '#22c55e' : '#3b82f6';
             ctx.lineWidth = 1;
 
-            ctx.fillRect(x, y, width, height);
-            ctx.strokeRect(x, y, width, height);
+            ctx.beginPath();
+
+            const shapePoints = panel.shape_points;
+            if (Array.isArray(shapePoints) && shapePoints.length > 2) {
+                // Exact polygon (e.g. L-shaped floor panel)
+                const p0 = shapePoints[0];
+                ctx.moveTo(
+                    p0.x * scaleFactor.current + offsetX.current,
+                    p0.y * scaleFactor.current + offsetY.current
+                );
+                for (let i = 1; i < shapePoints.length; i++) {
+                    const p = shapePoints[i];
+                    ctx.lineTo(
+                        p.x * scaleFactor.current + offsetX.current,
+                        p.y * scaleFactor.current + offsetY.current
+                    );
+                }
+                ctx.closePath();
+            } else {
+                // Fallback to rectangle
+                const startX = panel.start_x ?? panel.x ?? 0;
+                const startY = panel.start_y ?? panel.y ?? 0;
+                const width = panel.width * scaleFactor.current;
+                const height = panel.length * scaleFactor.current;
+                const x = startX * scaleFactor.current + offsetX.current;
+                const y = startY * scaleFactor.current + offsetY.current;
+                ctx.rect(x, y, width, height);
+            }
+
+            ctx.fill();
+            ctx.stroke();
         });
 
         ctx.restore();
@@ -1395,6 +1436,7 @@ const FloorCanvas = ({
     };
 
     const [showPanelTable, setShowPanelTable] = useState(false);
+    const [isPlanDetailsOpen, setIsPlanDetailsOpen] = useState(true);
 
     const calculatePanelFloorArea = () => {
         let totalArea = 0;
@@ -1410,8 +1452,30 @@ const FloorCanvas = ({
     };
 
     return (
-        <div className="floor-canvas-container">
-            <div className="flex gap-6 min-w-0 w-full max-w-full">
+        <div className="floor-canvas-container bg-white rounded-xl shadow-lg p-4 sm:p-6 w-full max-w-full min-w-0">
+            {/* Header - same line as Wall/Ceiling: title left, Show Plan Details right when collapsed */}
+            <div className="floor-canvas-header mb-4 sm:mb-6 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 min-w-0">
+                    <div className="min-w-0">
+                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2 truncate">
+                            Floor Plan
+                        </h3>
+                        <p className="text-gray-600 text-base sm:text-lg truncate">
+                            Professional Layout
+                        </p>
+                    </div>
+                    {!isPlanDetailsOpen ? (
+                        <button
+                            onClick={() => setIsPlanDetailsOpen(true)}
+                            className="px-3 py-1.5 text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0"
+                        >
+                            Show Plan Details
+                        </button>
+                    ) : null}
+                </div>
+            </div>
+
+            <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 min-w-0 w-full">
                 {/* Main Canvas Area */}
                 <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg flex-1 min-w-0">
                     <div
@@ -1485,15 +1549,25 @@ const FloorCanvas = ({
                     </div>
                 </div>
 
-                {/* Sidebar */}
-                <div className="flex-shrink min-w-0 max-w-64 w-full bg-white border-2 border-gray-200 rounded-xl shadow-lg p-6 h-fit">
-                    <div className="flex items-center mb-4">
-                        <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        <h3 className="text-lg font-semibold text-gray-900">Floor Plan</h3>
-                    </div>
-                    
+                {/* Plan Details Sidebar - collapsible like Wall/Ceiling Plan */}
+                {isPlanDetailsOpen && (
+                <div className="floor-summary-sidebar flex-shrink-0 w-full lg:w-64 lg:max-w-64 min-w-0">
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 w-full max-w-64 shadow-lg overflow-hidden">
+                        <h4 className="text-xl font-bold text-gray-900 mb-6 flex items-center shrink-0">
+                            <svg className="w-6 h-6 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            <span className="truncate">Plan Details</span>
+                        </h4>
+                        <div className="flex justify-end mb-4">
+                            <button
+                                onClick={() => setIsPlanDetailsOpen(false)}
+                                className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                            >
+                                Collapse
+                            </button>
+                        </div>
+
                     <div className="space-y-4">
                         {/* Stats Grid 1 */}
                         <div className="grid grid-cols-2 gap-4">
@@ -1704,7 +1778,10 @@ const FloorCanvas = ({
                             </div>
                         </div>
                     </div>
+                    </div>
                 </div>
+                )}
+
             </div>
 
             {/* Panel List Table */}

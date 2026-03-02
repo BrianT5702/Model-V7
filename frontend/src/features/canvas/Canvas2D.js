@@ -1243,12 +1243,13 @@ const Canvas2D = ({
                         outer_face_thickness: outerFaceThickness
                     };
                     try {
-                        if (typeof onNewWall === 'function' && onNewWall.name === 'handleAddWallWithSplitting') {
-                            await onNewWall(startPoint, endPoint, wallProperties);
-                        } else if (typeof onNewWall === 'function' && onNewWall.length === 3) {
+                        if (typeof onNewWall !== 'function') {
+                            // no handler
+                        } else if (onNewWall.length === 3) {
+                            // Handler expects (startPoint, endPoint, wallProps) e.g. handleAddWallWithSplitting
                             await onNewWall(startPoint, endPoint, wallProperties);
                         } else {
-                            // fallback: just add a single wall
+                            // Handler expects single wall object
                             await onNewWall({
                                 start_x: startPoint.x,
                                 start_y: startPoint.y,
@@ -1283,6 +1284,7 @@ const Canvas2D = ({
                     end_y: snappedStart.y,
                     originalStart_x: originalClickPoint.x, // Store original for snap detection
                     originalStart_y: originalClickPoint.y,
+                    thickness: wallThickness, // So preview line width matches selected thickness
                 });
             }
             return;
@@ -1663,6 +1665,7 @@ const Canvas2D = ({
                 ...tempWall,
                 end_x: snapped.x,
                 end_y: snapped.y,
+                thickness: tempWall.thickness ?? wallThickness,
             });
         }
     };
@@ -1966,11 +1969,16 @@ const Canvas2D = ({
     }, [dimensionComparison.exceeds, actualProjectDimensions, project, projectId]);
     
     // Track available drawing space for responsive canvas sizing (matching CeilingCanvas)
+    // When tab is switched back, container may be measured before visible (width 0) - avoid applying that so layout stays correct
     useEffect(() => {
         const container = canvasContainerRef.current;
         if (!container) return;
 
         const updateCanvasSize = (rawWidth) => {
+            // Don't apply size when container is hidden (e.g. tab not visible): avoid enlarged/cropped view when returning to tab
+            if (rawWidth <= 0 || rawWidth < MIN_CANVAS_WIDTH) {
+                return;
+            }
             const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
             const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
             const calculatedHeight = width * CANVAS_ASPECT_RATIO;
@@ -1989,13 +1997,26 @@ const Canvas2D = ({
             });
         };
 
+        const measureAfterPaint = () => {
+            requestAnimationFrame(() => {
+                if (container.isConnected && container.clientWidth >= MIN_CANVAS_WIDTH) {
+                    updateCanvasSize(container.clientWidth);
+                }
+            });
+        };
+
         let observer = null;
         if (typeof ResizeObserver !== 'undefined') {
             observer = new ResizeObserver((entries) => {
                 entries.forEach((entry) => {
                     if (entry.target === container) {
                         const entryWidth = entry.contentRect?.width ?? container.clientWidth;
-                        updateCanvasSize(entryWidth);
+                        if (entryWidth >= MIN_CANVAS_WIDTH) {
+                            updateCanvasSize(entryWidth);
+                        } else {
+                            // Container may not be visible yet; re-measure after layout
+                            measureAfterPaint();
+                        }
                     }
                 });
             });
@@ -2003,7 +2024,11 @@ const Canvas2D = ({
             observer.observe(container);
         }
 
-        updateCanvasSize(container.clientWidth);
+        if (container.clientWidth >= MIN_CANVAS_WIDTH) {
+            updateCanvasSize(container.clientWidth);
+        } else {
+            measureAfterPaint();
+        }
 
         const handleWindowResize = () => updateCanvasSize(container.clientWidth);
         window.addEventListener('resize', handleWindowResize);
@@ -2299,21 +2324,22 @@ const Canvas2D = ({
         }
 
     }, [
+        canvasSize.width,
+        canvasSize.height,
         walls, rooms, selectedWall, tempWall, doors,
         selectedWallsForRoom, joints, isEditingMode,
         hoveredWall, hoveredDoorId, highlightWalls,
         selectedRoomPoints, project, hoveredPoint,
-        wallPanelsMap, // Add wallPanelsMap to dependencies
-        filteredDimensions, // Add filteredDimensions to dependencies
-        forceRefresh, // Add forceRefresh to dependencies to force re-renders
+        wallPanelsMap,
+        filteredDimensions,
+        forceRefresh,
         dimensionVisibility,
-        showPanelLines, // Add showPanelLines to dependencies
+        showPanelLines,
         currentMode,
         splitPreviewPoint,
         splitTargetWallId,
         ghostWalls,
         ghostAreas
-        // Removed roomLabelPositions from dependencies to prevent infinite loop
     ]);
 
     // Separate useEffect for room label positions to avoid triggering panel calculations
@@ -2378,46 +2404,41 @@ const Canvas2D = ({
             return;
         }
 
-        // Round helper
-        const roundPoint = (pt) => ({ x: Math.round(pt.x), y: Math.round(pt.y) });
-        
-        // Calculate points based on which ones snapped
+        // Snapped point stays exactly as-is; only the other (calculated) point is derived from length.
+        // Round the calculated point to 0.01mm to avoid floating point noise; length then matches entered value.
+        const preciseRound = (v) => Math.round(v * 100) / 100;
+        const precisePoint = (pt) => ({ x: preciseRound(pt.x), y: preciseRound(pt.y) });
+
         const { referencePoint, direction, useEndAsReference, isNearVertical, isNearHorizontal } = pendingWallData;
-        
+
         let roundedStartPoint, roundedEndPoint;
-        
+
         if (useEndAsReference) {
-            // Start didn't snap, end did - use end as reference, calculate start backwards
-            roundedEndPoint = roundPoint(referencePoint);
+            // End snapped: keep end exactly, calculate start from length
+            roundedEndPoint = { x: referencePoint.x, y: referencePoint.y };
             let calculatedStart = {
                 x: referencePoint.x - direction.x * desiredLength,
                 y: referencePoint.y - direction.y * desiredLength
             };
-            
-            // Apply 90-degree snapping if angle was near 90 degrees
             if (isNearVertical) {
-                calculatedStart.x = roundedEndPoint.x; // Snap vertically
+                calculatedStart.x = roundedEndPoint.x;
             } else if (isNearHorizontal) {
-                calculatedStart.y = roundedEndPoint.y; // Snap horizontally
+                calculatedStart.y = roundedEndPoint.y;
             }
-            
-            roundedStartPoint = roundPoint(calculatedStart);
+            roundedStartPoint = precisePoint(calculatedStart);
         } else {
-            // Use start as reference (or both didn't snap), calculate end from length
-            roundedStartPoint = roundPoint(referencePoint);
+            // Start snapped: keep start exactly, calculate end from length (your case)
+            roundedStartPoint = { x: referencePoint.x, y: referencePoint.y };
             let calculatedEnd = {
                 x: referencePoint.x + direction.x * desiredLength,
                 y: referencePoint.y + direction.y * desiredLength
             };
-            
-            // Apply 90-degree snapping if angle was near 90 degrees
             if (isNearVertical) {
-                calculatedEnd.x = roundedStartPoint.x; // Snap vertically
+                calculatedEnd.x = roundedStartPoint.x;
             } else if (isNearHorizontal) {
-                calculatedEnd.y = roundedStartPoint.y; // Snap horizontally
+                calculatedEnd.y = roundedStartPoint.y;
             }
-            
-            roundedEndPoint = roundPoint(calculatedEnd);
+            roundedEndPoint = precisePoint(calculatedEnd);
         }
 
         // Check if start or end point is in a ghosted area
@@ -2448,12 +2469,11 @@ const Canvas2D = ({
         };
 
         try {
-            if (typeof onNewWall === 'function' && onNewWall.name === 'handleAddWallWithSplitting') {
-                await onNewWall(finalStartPoint, finalEndPoint, wallProperties);
-            } else if (typeof onNewWall === 'function' && onNewWall.length === 3) {
+            if (typeof onNewWall !== 'function') {
+                // no handler
+            } else if (onNewWall.length === 3) {
                 await onNewWall(finalStartPoint, finalEndPoint, wallProperties);
             } else {
-                // fallback: just add a single wall
                 await onNewWall({
                     start_x: finalStartPoint.x,
                     start_y: finalStartPoint.y,
@@ -2520,7 +2540,7 @@ const Canvas2D = ({
             <div className="wall-canvas-container bg-white rounded-xl shadow-lg p-6">
                 {/* Header */}
                 <div className="wall-canvas-header mb-6">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-4 gap-4">
                         <div>
                             <h3 className="text-2xl font-bold text-gray-900 mb-2">
                                 Wall Plan
@@ -2529,6 +2549,14 @@ const Canvas2D = ({
                                 Professional Layout
                             </p>
                         </div>
+                        {!isDetailsPanelOpen && (
+                            <button
+                                onClick={() => setIsDetailsPanelOpen(true)}
+                                className="px-3 py-1.5 text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0"
+                            >
+                                Show Plan Details
+                            </button>
+                        )}
                     </div>
                 </div>
 

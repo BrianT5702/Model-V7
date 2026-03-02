@@ -142,7 +142,12 @@ const InstallationTimeEstimator = ({
     setCaptureSuccess = null,
     activeStoreyId = null,
     setActiveStoreyId = null,
-    allWalls = []
+    allWalls = [],
+    roomsFromParent = null,
+    wallsFromParent = null,
+    doorsFromParent = null,
+    storeysFromParent = null,
+    projectDataFromParent = null
 }) => {
     const [projectData, setProjectData] = useState(null);
     const [rooms, setRooms] = useState([]);
@@ -203,6 +208,23 @@ const InstallationTimeEstimator = ({
             console.log('InstallationTimeEstimator received shared panel data:', sharedPanelData);
         }
     }, [sharedPanelData]);
+
+    // Sync project/rooms/walls/doors/storeys from parent when provided so summary matches rest of app
+    useEffect(() => {
+        if (Array.isArray(roomsFromParent)) setRooms(roomsFromParent);
+    }, [roomsFromParent]);
+    useEffect(() => {
+        if (Array.isArray(wallsFromParent)) setWalls(wallsFromParent);
+    }, [wallsFromParent]);
+    useEffect(() => {
+        if (Array.isArray(doorsFromParent)) setDoors(doorsFromParent);
+    }, [doorsFromParent]);
+    useEffect(() => {
+        if (Array.isArray(storeysFromParent)) setStoreys(storeysFromParent);
+    }, [storeysFromParent]);
+    useEffect(() => {
+        if (projectDataFromParent && typeof projectDataFromParent === 'object') setProjectData(projectDataFromParent);
+    }, [projectDataFromParent]);
 
     // Fetch all project data
     useEffect(() => {
@@ -1425,25 +1447,25 @@ const InstallationTimeEstimator = ({
         return totalPanels;
     };
 
-    // Calculate total quantities from all sources
+    // Calculate total quantities: prefer shared panel data (from Wall/Ceiling/Floor plans) when available so counts match what the user sees on those tabs
     const totalQuantities = useMemo(() => {
-        // Count ceiling panels from generated ceiling plans (only if rooms exist)
-        const ceilingPanels = rooms.length > 0 ? ceilingPlans.reduce((total, plan) => {
-            return total + (plan.total_panels || 0);
-        }, 0) : 0;
+        // Ceiling: use shared data sum when available, else ceiling plans API
+        const ceilingPanels = (sharedPanelData?.ceilingPanels?.length > 0)
+            ? sharedPanelData.ceilingPanels.reduce((total, p) => total + (p.quantity ?? 1), 0)
+            : (rooms.length > 0 ? ceilingPlans.reduce((total, plan) => total + (plan.total_panels || 0), 0) : 0);
 
-        // Count floor panels from generated floor plans (only if rooms exist)
-        const floorPanels = rooms.length > 0 ? floorPlans.reduce((total, plan) => {
-            return total + (plan.total_panels || 0);
-        }, 0) : 0;
+        // Floor: use shared data sum when available, else floor plans API
+        const floorPanels = (sharedPanelData?.floorPanels?.length > 0)
+            ? sharedPanelData.floorPanels.reduce((total, p) => total + (p.quantity ?? 1), 0)
+            : (rooms.length > 0 ? floorPlans.reduce((total, plan) => total + (plan.total_panels || 0), 0) : 0);
 
-        // Calculate wall panels using PanelCalculator (independent of rooms)
-        const wallPanelsCount = calculateWallPanels(walls);
+        // Wall: use shared data sum when available (matches Wall Plan "Full Panels" + cut total), else fallback to recalc
+        const wallPanelsCount = (sharedPanelData?.wallPanels?.length > 0)
+            ? sharedPanelData.wallPanels.reduce((total, p) => total + (p.quantity ?? 1), 0)
+            : calculateWallPanels(walls);
 
-        // Count doors from actual project data (independent of rooms)
         const totalDoors = doors.length;
 
-        // Calculate slabs needed based on room area (only for rooms with slab floors)
         const totalSlabs = rooms.length > 0 ? rooms.reduce((total, room) => {
             if (room.room_points && room.room_points.length > 0 && 
                 (room.floor_type === 'slab' || room.floor_type === 'Slab')) {
@@ -1458,9 +1480,12 @@ const InstallationTimeEstimator = ({
         return {
             panels: ceilingPanels + floorPanels + wallPanelsCount,
             doors: totalDoors,
-            slabs: totalSlabs
+            slabs: totalSlabs,
+            ceilingPanels,
+            floorPanels,
+            wallPanelsCount
         };
-    }, [rooms, ceilingPlans, floorPlans, walls, doors]);
+    }, [rooms, ceilingPlans, floorPlans, walls, doors, sharedPanelData]);
 
     // Calculate installation time estimates
     const installationEstimates = useMemo(() => {
@@ -5194,13 +5219,13 @@ const InstallationTimeEstimator = ({
                         <div className="text-center">
                             <div className="text-3xl font-bold text-blue-600">{totalQuantities.panels}</div>
                             <div className="text-sm text-gray-600">Total Panels</div>
-                                                         <div className="text-xs text-gray-500 mt-1">
-                                 {ceilingPlans.length > 0 && `${ceilingPlans.reduce((sum, plan) => sum + (plan.total_panels || 0), 0)} ceiling`}
-                                 {floorPlans.length > 0 && ceilingPlans.length > 0 && ' + '}
-                                 {floorPlans.length > 0 && `${floorPlans.reduce((sum, plan) => sum + (plan.total_panels || 0), 0)} floor`}
-                                 {walls.length > 0 && (ceilingPlans.length > 0 || floorPlans.length > 0) && ' + '}
-                                 {walls.length > 0 && `${calculateWallPanels(walls)} wall`}
-                             </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                {totalQuantities.ceilingPanels > 0 && `${totalQuantities.ceilingPanels} ceiling`}
+                                {totalQuantities.floorPanels > 0 && totalQuantities.ceilingPanels > 0 && ' + '}
+                                {totalQuantities.floorPanels > 0 && `${totalQuantities.floorPanels} floor`}
+                                {totalQuantities.wallPanelsCount > 0 && (totalQuantities.ceilingPanels > 0 || totalQuantities.floorPanels > 0) && ' + '}
+                                {totalQuantities.wallPanelsCount > 0 && `${totalQuantities.wallPanelsCount} wall`}
+                            </div>
                         </div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-gray-200">
@@ -5232,7 +5257,7 @@ const InstallationTimeEstimator = ({
                     <div className="bg-white rounded-lg p-4 border border-gray-200">
                         <div className="text-center">
                             <div className="text-2xl font-bold text-blue-600">
-                                {ceilingPlans.reduce((total, plan) => total + (plan.total_panels || 0), 0)}
+                                {totalQuantities.ceilingPanels}
                             </div>
                             <div className="text-sm text-gray-600">Ceiling Panels</div>
                             <div className="text-xs text-gray-500 mt-1">
@@ -5243,7 +5268,7 @@ const InstallationTimeEstimator = ({
                     <div className="bg-white rounded-lg p-4 border border-gray-200">
                         <div className="text-center">
                             <div className="text-2xl font-bold text-green-600">
-                                {floorPlans.reduce((total, plan) => total + (plan.total_panels || 0), 0)}
+                                {totalQuantities.floorPanels}
                             </div>
                             <div className="text-sm text-gray-600">Floor Panels</div>
                             <div className="text-xs text-gray-500 mt-1">
@@ -5254,7 +5279,7 @@ const InstallationTimeEstimator = ({
                     <div className="bg-white rounded-lg p-4 border border-gray-200">
                         <div className="text-center">
                             <div className="text-2xl font-bold text-purple-600">
-                                {calculateWallPanels(walls)}
+                                {totalQuantities.wallPanelsCount}
                             </div>
                             <div className="text-sm text-gray-600">Wall Panels</div>
                             <div className="text-xs text-gray-500 mt-1">
