@@ -46,9 +46,17 @@ SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', 0))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False').lower() == 'true'
 SECURE_HSTS_PRELOAD = os.environ.get('SECURE_HSTS_PRELOAD', 'False').lower() == 'true'
 
-# CORS settings for production
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,https://localhost:3000').split(',')
+# CORS settings for production – include your Railway (and any custom) domain(s)
+_default_origins = 'https://model-v6.up.railway.app,http://localhost:3000,https://localhost:3000'
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', _default_origins).split(',') if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
+
+# Required so requests from the app’s origin are accepted (no wildcards; add more origins if needed)
+CSRF_TRUSTED_ORIGINS = [
+    'https://model-v6.up.railway.app',
+]
+if os.environ.get('CSRF_TRUSTED_ORIGINS'):
+    CSRF_TRUSTED_ORIGINS.extend([o.strip() for o in os.environ['CSRF_TRUSTED_ORIGINS'].split(',') if o.strip()])
 
 # Logging configuration for production
 LOGGING = {

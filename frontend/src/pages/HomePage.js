@@ -47,7 +47,8 @@ const HomePage = () => {
                 } else {
                     if (error.response) {
                         const { status, data } = error.response;
-                        console.error(`Error ${status}:`, data.error || 'Failed to load projects');
+                        // Log full response to help debug 400/403 etc.
+                        console.error(`Error ${status}:`, data?.error || data?.detail || (typeof data === 'object' ? JSON.stringify(data) : data) || 'Failed to load projects');
                     } else if (error.request) {
                         console.error('Network error: Unable to connect to the server');
                     } else {
