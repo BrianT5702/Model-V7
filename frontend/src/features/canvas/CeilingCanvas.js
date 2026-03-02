@@ -3795,152 +3795,123 @@ const CeilingCanvas = ({
                         </div>
                         
                         {ceilingPlan && (
-                            <div className="space-y-5">
-                                {/* Ceiling Plan Dashboard */}
-                                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm min-w-0">
-                                    <h5 className="font-semibold text-gray-900 mb-3 flex items-center text-sm">
-                                        <svg className="w-4 h-4 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                        </svg>
-                                        <span className="truncate">Ceiling Plan</span>
-                                    </h5>
-                                    <div className="space-y-2.5 text-sm">
-                                        <div className="flex justify-between items-center gap-3 min-w-0">
-                                            <span className="text-gray-600 shrink-0">Total Panels:</span>
-                                            <span className="font-bold text-gray-900 tabular-nums">{getAccuratePanelCounts.total}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center gap-3 min-w-0">
-                                            <span className="text-gray-600 shrink-0">Full Panels:</span>
-                                            <span className="font-bold text-green-600 tabular-nums">
-                                                {getAccuratePanelCounts.full}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center gap-3 min-w-0">
-                                            <span className="text-gray-600 shrink-0">Cut Panels:</span>
-                                            <span className="font-bold text-orange-600 tabular-nums">
-                                                {getAccuratePanelCounts.cut}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center gap-3 min-w-0">
-                                            <span className="text-gray-600 shrink-0">Rooms:</span>
-                                            <span className="font-bold text-blue-600 tabular-nums">{effectiveRooms.length}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center gap-3 min-w-0">
-                                            <span className="text-gray-600 shrink-0">Waste %:</span>
-                                            <span className="font-bold text-red-600 tabular-nums shrink-0">
-                                                {(() => {
-                                                    // 1) Prefer the latest project-wide waste from manager (from POST)
-                                                    if (projectWastePercentage !== undefined && projectWastePercentage !== null) {
-                                                        return Number(projectWastePercentage).toFixed(1);
-                                                    }
-                                                    // 2) Summary from generation response
-                                                    if (ceilingPlan?.summary?.project_waste_percentage !== undefined && ceilingPlan?.summary?.project_waste_percentage !== null) {
-                                                        return Number(ceilingPlan.summary.project_waste_percentage).toFixed(1);
-                                                    }
-                                                    if (ceilingPlan?.summary?.actual_waste_percentage !== undefined && ceilingPlan?.summary?.actual_waste_percentage !== null) {
-                                                        return Number(ceilingPlan.summary.actual_waste_percentage).toFixed(1);
-                                                    }
-                                                    if (ceilingPlan?.summary?.total_waste_percentage !== undefined && ceilingPlan?.summary?.total_waste_percentage !== null) {
-                                                        return Number(ceilingPlan.summary.total_waste_percentage).toFixed(1);
-                                                    }
-                                                    // 3) Plan's own waste (saved when loading existing plan)
-                                                    if (ceilingPlan?.waste_percentage !== undefined && ceilingPlan?.waste_percentage !== null) {
-                                                        return Number(ceilingPlan.waste_percentage).toFixed(1);
-                                                    }
-                                                    // 4) Multi-room: average waste from all ceiling plans (when loading existing)
-                                                    if (ceilingPlans?.length > 0) {
-                                                        const total = ceilingPlans.reduce((s, p) => s + (p.waste_percentage ?? 0), 0);
-                                                        const avg = total / ceilingPlans.length;
-                                                        return avg.toFixed(1);
-                                                    }
-                                                    // 5) When viewing zones only, use average of zone waste
-                                                    const zonePlans = ceilingPlan?.zone_plans || [];
-                                                    if (zonePlans.length > 0) {
-                                                        const total = zonePlans.reduce((s, z) => s + (z.waste_percentage || 0), 0);
-                                                        const avg = total / zonePlans.length;
-                                                        if (avg > 0 || total === 0) return (avg).toFixed(1);
-                                                    }
-                                                    return '0.0';
-                                                })()}%
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center gap-3 min-w-0">
-                                            <span className="text-gray-600 shrink-0">Orientation:</span>
-                                            <span className="font-bold text-green-600 truncate text-right">
-                                                {(() => {
-                                                    // Show actual orientation used (orientation_strategy or strategy_used), not system recommendation
-                                                    const strategy = ceilingPlan?.orientation_strategy ||
-                                                                     ceilingPlan?.strategy_used ||
-                                                                     ceilingPlan?.summary?.recommended_strategy ||
-                                                                     ceilingPlan?.orientation_analysis?.recommended_strategy ||
-                                                                     ceilingPlan?.recommended_strategy ||
-                                                                     'auto';
-                                                    const formatStrategy = (s) => {
-                                                        if (!s) return 'Auto';
-                                                        const map = {
-                                                            'all_horizontal': 'Horizontal',
-                                                            'all_vertical': 'Vertical',
-                                                            'room_optimal': 'Room Optimal',
-                                                            'project_merged': 'Project Merged',
-                                                            'auto': 'Auto'
-                                                        };
-                                                        return map[s] || String(s).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                                                    };
-                                                    return formatStrategy(strategy);
-                                                })()}
-                                            </span>
-                                        </div>
-                                        {calculatePanelsNeedSupport ? (
-                                            <>
-                                                <div className="flex justify-between items-center gap-3 min-w-0">
-                                                    <span className="text-gray-600 shrink-0">Support Status:</span>
-                                                    <span className="font-bold text-amber-600 shrink-0">Needed</span>
-                                                </div>
-                                                <div className="flex justify-between items-center gap-3 min-w-0">
-                                                    <span className="text-gray-600 shrink-0">Support Type:</span>
-                                                    <span className="font-bold text-indigo-600 capitalize truncate text-right">
-                                                        {[enableNylonHangers && 'Nylon', enableAluSuspension && 'Alu'].filter(Boolean).join(' + ') || supportType}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between items-center gap-3 min-w-0">
-                                                    <span className="text-gray-600 shrink-0">Panels Needing Support:</span>
-                                                    <span className="font-bold text-amber-600 tabular-nums shrink-0">
-                                                        {(() => {
-                                                            const isHorizontalOrientation = effectiveRooms.length > 0 && 
-                                                                effectiveRooms[0] ? getRoomOrientation(effectiveRooms[0].id) : false;
-                                                            if (ceilingPlan && ceilingPlan.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels)) {
-                                                                return ceilingPlan.enhanced_panels.filter(p => 
-                                                                    isHorizontalOrientation ? p.width > 6000 : p.length > 6000
-                                                                ).length;
-                                                            }
-                                                            return Object.values(effectiveCeilingPanelsMap).reduce((sum, panels) => 
-                                                                sum + (panels ? panels.filter(p => 
-                                                                    isHorizontalOrientation ? p.width > 6000 : p.length > 6000
-                                                                ).length : 0), 0
-                                                            );
-                                                        })()}
-                                                    </span>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="flex justify-between items-center gap-3 min-w-0">
-                                                <span className="text-gray-600 shrink-0">Support Status:</span>
-                                                <span className="font-bold text-green-600 shrink-0">Not Needed</span>
-                                            </div>
-                                        )}
+                            <div className="space-y-4">
+                                {/* Stats - no inner box, same style as Floor Plan */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-600">Total Panels</div>
+                                        <div className="text-2xl font-bold text-gray-900">{getAccuratePanelCounts.total}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-600">Rooms</div>
+                                        <div className="text-xl font-semibold text-blue-600">{effectiveRooms.length}</div>
                                     </div>
                                 </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-600">Full Panels</div>
+                                        <div className="text-xl font-semibold text-green-600">{getAccuratePanelCounts.full}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-600">Cut Panels</div>
+                                        <div className="text-xl font-semibold text-orange-600">{getAccuratePanelCounts.cut}</div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-600">Waste %</div>
+                                        <div className="text-xl font-semibold text-red-600">
+                                            {(() => {
+                                                if (projectWastePercentage !== undefined && projectWastePercentage !== null) {
+                                                    return `${Number(projectWastePercentage).toFixed(1)}%`;
+                                                }
+                                                if (ceilingPlan?.summary?.project_waste_percentage !== undefined && ceilingPlan?.summary?.project_waste_percentage !== null) {
+                                                    return `${Number(ceilingPlan.summary.project_waste_percentage).toFixed(1)}%`;
+                                                }
+                                                if (ceilingPlan?.summary?.actual_waste_percentage !== undefined && ceilingPlan?.summary?.actual_waste_percentage !== null) {
+                                                    return `${Number(ceilingPlan.summary.actual_waste_percentage).toFixed(1)}%`;
+                                                }
+                                                if (ceilingPlan?.summary?.total_waste_percentage !== undefined && ceilingPlan?.summary?.total_waste_percentage !== null) {
+                                                    return `${Number(ceilingPlan.summary.total_waste_percentage).toFixed(1)}%`;
+                                                }
+                                                if (ceilingPlan?.waste_percentage !== undefined && ceilingPlan?.waste_percentage !== null) {
+                                                    return `${Number(ceilingPlan.waste_percentage).toFixed(1)}%`;
+                                                }
+                                                if (ceilingPlans?.length > 0) {
+                                                    const total = ceilingPlans.reduce((s, p) => s + (p.waste_percentage ?? 0), 0);
+                                                    return `${(total / ceilingPlans.length).toFixed(1)}%`;
+                                                }
+                                                const zonePlans = ceilingPlan?.zone_plans || [];
+                                                if (zonePlans.length > 0) {
+                                                    const total = zonePlans.reduce((s, z) => s + (z.waste_percentage || 0), 0);
+                                                    return `${(total / zonePlans.length).toFixed(1)}%`;
+                                                }
+                                                return '0.0%';
+                                            })()}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-gray-600">Orientation</div>
+                                    <div className="text-lg font-semibold text-green-600">
+                                        {(() => {
+                                            const strategy = ceilingPlan?.orientation_strategy ||
+                                                             ceilingPlan?.strategy_used ||
+                                                             ceilingPlan?.summary?.recommended_strategy ||
+                                                             ceilingPlan?.orientation_analysis?.recommended_strategy ||
+                                                             ceilingPlan?.recommended_strategy ||
+                                                             'auto';
+                                            const formatStrategy = (s) => {
+                                                if (!s) return 'Auto';
+                                                const map = { 'all_horizontal': 'Horizontal', 'all_vertical': 'Vertical', 'room_optimal': 'Room Optimal', 'project_merged': 'Project Merged', 'auto': 'Auto' };
+                                                return map[s] || String(s).split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                                            };
+                                            return formatStrategy(strategy);
+                                        })()}
+                                    </div>
+                                </div>
+                                {calculatePanelsNeedSupport ? (
+                                    <>
+                                        <div>
+                                            <div className="text-sm text-gray-600">Support Status</div>
+                                            <div className="text-lg font-semibold text-amber-600">Needed</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-sm text-gray-600">Support Type</div>
+                                            <div className="text-lg font-semibold text-indigo-600">
+                                                {[enableNylonHangers && 'Nylon', enableAluSuspension && 'Alu'].filter(Boolean).join(' + ') || supportType}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="text-sm text-gray-600">Panels Needing Support</div>
+                                            <div className="text-lg font-semibold text-amber-600">
+                                                {(() => {
+                                                    const isHorizontalOrientation = effectiveRooms.length > 0 && effectiveRooms[0] ? getRoomOrientation(effectiveRooms[0].id) : false;
+                                                    if (ceilingPlan?.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels)) {
+                                                        return ceilingPlan.enhanced_panels.filter(p => isHorizontalOrientation ? p.width > 6000 : p.length > 6000).length;
+                                                    }
+                                                    return Object.values(effectiveCeilingPanelsMap).reduce((sum, panels) =>
+                                                        sum + (panels ? panels.filter(p => isHorizontalOrientation ? p.width > 6000 : p.length > 6000).length : 0), 0);
+                                                })()}
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div>
+                                        <div className="text-sm text-gray-600">Support Status</div>
+                                        <div className="text-lg font-semibold text-green-600">Not Needed</div>
+                                    </div>
+                                )}
 
-                                {/* Dimension Legend & Filter (Updated to match FloorCanvas) */}
-                                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm min-w-0">
-                                    <h5 className="font-semibold text-gray-900 mb-3 flex items-center text-sm">
-                                        <svg className="w-4 h-4 mr-2 text-gray-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                {/* Dimension Legend - no inner box, border-t section like Floor Plan */}
+                                <div className="pt-4 border-t border-gray-200">
+                                    <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                                        <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
-                                        <span className="truncate">Dimension Legend</span>
-                                    </h5>
-                                    
-                                    <div className="space-y-2.5 text-sm">
+                                        Dimension Legend
+                                    </h4>
+                                    <div className="space-y-3 text-sm">
                                         {/* Room Dimensions - Toggleable */}
                                         <div className="flex items-center justify-between gap-3 min-w-0">
                                             <div className="flex items-center min-w-0">
