@@ -236,17 +236,43 @@ const CeilingCanvas = ({
     const CANVAS_HEIGHT = Math.round(canvasSize.height);
 
     // Calculate project bounds for dimension positioning (project boundary)
+    // IMPORTANT: Use both projectData and actual room geometry so that if
+    // the user draws rooms/walls with negative coordinates (e.g. starting
+    // above/left of the origin), the external dimension "frame" follows
+    // the real extents instead of forcing 0..width/length and creating
+    // large empty gaps.
     const projectBounds = useMemo(() => {
-        if (projectData) {
-            return {
-                minX: 0,
-                maxX: projectData.width,
-                minY: 0,
-                maxY: projectData.length
-            };
+        // No project and no rooms → no bounds
+        const hasRooms = effectiveRooms && effectiveRooms.length > 0;
+        if (!projectData && !hasRooms) {
+            return null;
         }
-        return null;
-    }, [projectData]);
+
+        // Start from project-defined dimensions if available
+        let minX = 0;
+        let minY = 0;
+        let maxX = projectData?.width ?? 0;
+        let maxY = projectData?.length ?? 0;
+
+        // Expand bounds to include all room geometry (which may use negative coordinates)
+        if (hasRooms) {
+            effectiveRooms.forEach(room => {
+                if (room.room_points && room.room_points.length > 0) {
+                    const roomMinX = Math.min(...room.room_points.map(p => p.x));
+                    const roomMaxX = Math.max(...room.room_points.map(p => p.x));
+                    const roomMinY = Math.min(...room.room_points.map(p => p.y));
+                    const roomMaxY = Math.max(...room.room_points.map(p => p.y));
+
+                    minX = Math.min(minX, roomMinX);
+                    maxX = Math.max(maxX, roomMaxX);
+                    minY = Math.min(minY, roomMinY);
+                    maxY = Math.max(maxY, roomMaxY);
+                }
+            });
+        }
+
+        return { minX, maxX, minY, maxY };
+    }, [projectData, effectiveRooms]);
 
     // Clear dimension placement when ceiling plan data changes so labels re-evaluate (e.g. prefer left)
     useEffect(() => {
