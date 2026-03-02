@@ -242,20 +242,14 @@ const CeilingCanvas = ({
     // the real extents instead of forcing 0..width/length and creating
     // large empty gaps.
     const projectBounds = useMemo(() => {
-        // No project and no rooms → no bounds
         const hasRooms = effectiveRooms && effectiveRooms.length > 0;
-        if (!projectData && !hasRooms) {
-            return null;
-        }
 
-        // Start from project-defined dimensions if available
-        let minX = 0;
-        let minY = 0;
-        let maxX = projectData?.width ?? 0;
-        let maxY = projectData?.length ?? 0;
-
-        // Expand bounds to include all room geometry (which may use negative coordinates)
+        // If we have rooms, use their actual extents ONLY (including negative coords)
+        // so external dimensions hug the true model envelope and don't stick to
+        // the 0..projectData.width/length frame.
         if (hasRooms) {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
             effectiveRooms.forEach(room => {
                 if (room.room_points && room.room_points.length > 0) {
                     const roomMinX = Math.min(...room.room_points.map(p => p.x));
@@ -269,9 +263,32 @@ const CeilingCanvas = ({
                     maxY = Math.max(maxY, roomMaxY);
                 }
             });
+
+            // If for some reason no valid points were found, fall back to projectData
+            if (minX === Infinity || minY === Infinity || maxX === -Infinity || maxY === -Infinity) {
+                if (!projectData) return null;
+                return {
+                    minX: 0,
+                    maxX: projectData.width,
+                    minY: 0,
+                    maxY: projectData.length
+                };
+            }
+
+            return { minX, maxX, minY, maxY };
         }
 
-        return { minX, maxX, minY, maxY };
+        // If no rooms yet, fall back to project dimensions (0..width/length)
+        if (projectData) {
+            return {
+                minX: 0,
+                maxX: projectData.width,
+                minY: 0,
+                maxY: projectData.length
+            };
+        }
+
+        return null;
     }, [projectData, effectiveRooms]);
 
     // Clear dimension placement when ceiling plan data changes so labels re-evaluate (e.g. prefer left)
