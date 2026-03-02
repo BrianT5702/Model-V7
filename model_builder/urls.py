@@ -29,10 +29,10 @@ if not settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     
     # Then serve React app for all other routes (excluding api, static, and media)
-    # Exclude static/media from regex so we never serve index.html for asset requests
-    # (avoids 400 + wrong MIME type when static files are missing or URL order differs)
+    # WhiteNoise middleware will handle static files, so we exclude them from the catch-all
+    # Use custom view to properly exclude static/media paths
     urlpatterns += [
-        re_path(r'^(?!api/|static/|media/).*$', serve_react_app),
+        re_path(r'^(?!api/).*$', serve_react_app),
     ]
 else:
     # In development, serve static files
