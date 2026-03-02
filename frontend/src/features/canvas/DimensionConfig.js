@@ -24,8 +24,8 @@ export const DIMENSION_CONFIG = {
     DIMENSION_LINE_WIDTH: 1,      // Main dimension line width (px)
     EXTENSION_DASH: [5, 5],       // Dash pattern for extension lines
     BACKGROUND_OPACITY: 1,     // Text background opacity
-    LABEL_PADDING_H: 8,           // Horizontal label padding (px)
-    LABEL_PADDING_V: 8,           // Vertical label padding (px)
+    LABEL_PADDING_H: 4,           // Horizontal label padding (px) - smaller box width
+    LABEL_PADDING_V: 6,           // Vertical label padding (px) - smaller box height
     LABEL_BORDER_WIDTH: 1,        // Label border width (px)
     
     // Appearance - General Drawing

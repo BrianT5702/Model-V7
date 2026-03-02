@@ -2101,22 +2101,8 @@ const Canvas2D = ({
         // Initialize label tracking arrays for collision detection
         const placedLabels = [];
         const allLabels = [];
-        
-        // Draw overall project dimensions first (highest priority)
-        if (walls.length > 0 && dimensionVisibility.project) {
-            drawOverallProjectDimensions(
-                context,
-                walls,
-                scaleFactor.current,
-                offsetX.current,
-                offsetY.current,
-                placedLabels, // Share the arrays for collision detection
-                allLabels,
-                initialScale.current
-            );
-        }
-        
-        // Draw walls and get thickness color map
+
+        // Draw walls first (and wall/panel dimensions); then project dimensions so they place outermost
         const colorMap = drawWalls({
             context,
             walls,
@@ -2153,6 +2139,20 @@ const Canvas2D = ({
         });
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);
+
+        // Draw overall project dimensions last so they appear outermost (outside all wall dimensions)
+        if (walls.length > 0 && dimensionVisibility.project) {
+            drawOverallProjectDimensions(
+                context,
+                walls,
+                scaleFactor.current,
+                offsetX.current,
+                offsetY.current,
+                placedLabels,
+                allLabels,
+                initialScale.current
+            );
+        }
         
         if (Array.isArray(ghostAreas) && ghostAreas.length > 0) {
             ghostAreas.forEach((ghostArea) => {
@@ -2404,10 +2404,10 @@ const Canvas2D = ({
             return;
         }
 
-        // Snapped point stays exactly as-is; only the other (calculated) point is derived from length.
-        // Round the calculated point to 0.01mm to avoid floating point noise; length then matches entered value.
-        const preciseRound = (v) => Math.round(v * 100) / 100;
-        const precisePoint = (pt) => ({ x: preciseRound(pt.x), y: preciseRound(pt.y) });
+        // Use integer length (mm) so "5000" gives exactly 5000mm with no decimal drift
+        const lengthMm = Math.round(desiredLength);
+        const roundToInt = (v) => Math.round(v);
+        const intPoint = (pt) => ({ x: roundToInt(pt.x), y: roundToInt(pt.y) });
 
         const { referencePoint, direction, useEndAsReference, isNearVertical, isNearHorizontal } = pendingWallData;
 
@@ -2415,30 +2415,40 @@ const Canvas2D = ({
 
         if (useEndAsReference) {
             // End snapped: keep end exactly, calculate start from length
-            roundedEndPoint = { x: referencePoint.x, y: referencePoint.y };
-            let calculatedStart = {
-                x: referencePoint.x - direction.x * desiredLength,
-                y: referencePoint.y - direction.y * desiredLength
-            };
+            roundedEndPoint = intPoint(referencePoint);
+            let calculatedStart;
             if (isNearVertical) {
-                calculatedStart.x = roundedEndPoint.x;
+                // Exact length: start.y = end.y ± lengthMm (no floating point)
+                const sign = direction.y >= 0 ? -1 : 1;
+                calculatedStart = { x: roundedEndPoint.x, y: roundedEndPoint.y + sign * lengthMm };
             } else if (isNearHorizontal) {
-                calculatedStart.y = roundedEndPoint.y;
+                const sign = direction.x >= 0 ? -1 : 1;
+                calculatedStart = { x: roundedEndPoint.x + sign * lengthMm, y: roundedEndPoint.y };
+            } else {
+                calculatedStart = {
+                    x: referencePoint.x - direction.x * lengthMm,
+                    y: referencePoint.y - direction.y * lengthMm
+                };
             }
-            roundedStartPoint = precisePoint(calculatedStart);
+            roundedStartPoint = intPoint(calculatedStart);
         } else {
             // Start snapped: keep start exactly, calculate end from length (your case)
-            roundedStartPoint = { x: referencePoint.x, y: referencePoint.y };
-            let calculatedEnd = {
-                x: referencePoint.x + direction.x * desiredLength,
-                y: referencePoint.y + direction.y * desiredLength
-            };
+            roundedStartPoint = intPoint(referencePoint);
+            let calculatedEnd;
             if (isNearVertical) {
-                calculatedEnd.x = roundedStartPoint.x;
+                // Exact length: end.y = start.y ± lengthMm (no floating point)
+                const sign = direction.y >= 0 ? 1 : -1;
+                calculatedEnd = { x: roundedStartPoint.x, y: roundedStartPoint.y + sign * lengthMm };
             } else if (isNearHorizontal) {
-                calculatedEnd.y = roundedStartPoint.y;
+                const sign = direction.x >= 0 ? 1 : -1;
+                calculatedEnd = { x: roundedStartPoint.x + sign * lengthMm, y: roundedStartPoint.y };
+            } else {
+                calculatedEnd = {
+                    x: referencePoint.x + direction.x * lengthMm,
+                    y: referencePoint.y + direction.y * lengthMm
+                };
             }
-            roundedEndPoint = precisePoint(calculatedEnd);
+            roundedEndPoint = intPoint(calculatedEnd);
         }
 
         // Check if start or end point is in a ghosted area

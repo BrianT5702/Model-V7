@@ -1311,10 +1311,12 @@ export function drawWalls({
     // Use shared label arrays for collision detection (don't create new ones)
     // placedLabels and allLabels are passed as parameters
     const allPanelLabels = [];
-    
+    // Collect wall dimension specs so we can sort by length: smaller inner, larger outer when overlapping
+    const wallDimensionSpecs = [];
+
     // First pass: Calculate all wall lines and store them
     const wallLinesMap = new Map(); // Store line1 and line2 for each wall
-    
+
     walls.forEach((wall) => {
         // Calculate gap in pixels based on wall thickness
         // Gap should represent half the wall thickness on each side
@@ -2079,25 +2081,19 @@ export function drawWalls({
             drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
             drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
         }
-        // Collect wall label info for second pass (only if this wall should show dimensions)
+        // Collect wall dimension spec for sort-then-draw (smaller value inner, larger outer)
         if (showWallDimensions && (!filteredDimensions || shouldShowWallDimension(wall, intersections, filteredDimensions.wallDimensions, walls))) {
-            drawDimensions(
-                context,
-                wall.start_x,
-                wall.start_y,
-                wall.end_x,
-                wall.end_y,
-                scaleFactor,
-                offsetX,
-                offsetY,
-                selectedWall === wall.id ? 'red' : '#2196F3',
+            const length = Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y);
+            wallDimensionSpecs.push({
+                startX: wall.start_x,
+                startY: wall.start_y,
+                endX: wall.end_x,
+                endY: wall.end_y,
+                color: selectedWall === wall.id ? 'red' : '#2196F3',
                 modelBounds,
-                placedLabels,
-                allLabels,
-                true, // collectOnly
-                initialScale,
-                wallLinesMap
-            );
+                wallLinesMap,
+                length
+            });
         }
         if (isEditingMode) {
             intersections.forEach((inter) => {
@@ -2134,22 +2130,17 @@ export function drawWalls({
         drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
         drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
         if (showWallDimensions) {
-            drawDimensions(
-                context,
-                tempWall.start_x,
-                tempWall.start_y,
-                tempWall.end_x,
-                tempWall.end_y,
-                scaleFactor,
-                offsetX,
-                offsetY,
-                '#4CAF50',
+            const length = Math.hypot(tempWall.end_x - tempWall.start_x, tempWall.end_y - tempWall.start_y);
+            wallDimensionSpecs.push({
+                startX: tempWall.start_x,
+                startY: tempWall.start_y,
+                endX: tempWall.end_x,
+                endY: tempWall.end_y,
+                color: '#4CAF50',
                 modelBounds,
-                placedLabels,
-                allLabels,
-                true, // collectOnly
-                initialScale
-            );
+                wallLinesMap: null,
+                length
+            });
         }
         const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
         if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
@@ -2170,6 +2161,27 @@ export function drawWalls({
             drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 6);
         }
     }
+    // Draw wall dimensions in order of ascending length (smaller inner, larger outer when overlapping)
+    wallDimensionSpecs.sort((a, b) => a.length - b.length);
+    wallDimensionSpecs.forEach((spec) => {
+        drawDimensions(
+            context,
+            spec.startX,
+            spec.startY,
+            spec.endX,
+            spec.endY,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            spec.color,
+            spec.modelBounds,
+            placedLabels,
+            allLabels,
+            true, // collectOnly
+            initialScale,
+            spec.wallLinesMap
+        );
+    });
     // Second pass: draw all label backgrounds and text (COMBINED for proper layering)
     // Combine wall and panel labels into one array to ensure proper draw order
     const allCombinedLabels = [...allLabels, ...allPanelLabels];
