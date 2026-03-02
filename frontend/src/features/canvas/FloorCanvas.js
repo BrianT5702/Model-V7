@@ -421,6 +421,7 @@ const FloorCanvas = ({
                     const lineOffset = 15;
                     ctx.font = `${Math.max(12, 160 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
                     ctx.fillText(slabText, canvasX, canvasY + lineOffset);
+                    
                 }
             }
         }
