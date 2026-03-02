@@ -8,8 +8,8 @@
 # testing
 /coverage
 
-# production (build is committed for Railway deploy; run 'npm run build' and commit when frontend changes)
-# /build
+# production
+/build
 
 # misc
 .DS_Store
