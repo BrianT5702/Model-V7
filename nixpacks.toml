@@ -1,0 +1,10 @@
+# Use Python only; Node is added below just for the frontend build step
+providers = ["python"]
+
+[phases.setup]
+# Node required to run npm in frontend/ during build
+nixPkgs = ["...", "nodejs"]
+
+# After pip install (from Python provider), build frontend and collect static files
+[phases.build]
+cmds = ["chmod +x build.sh", "./build.sh"]
