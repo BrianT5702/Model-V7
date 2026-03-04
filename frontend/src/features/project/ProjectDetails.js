@@ -1033,6 +1033,8 @@ const ProjectDetails = () => {
                                     </>
                                 )}
                             </button>
+                            {projectDetails.currentView === 'wall-plan' && (
+                                <>
                             <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
                             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full sm:w-auto lg:flex-1 lg:justify-end">
                                 <FaLayerGroup className="text-blue-600 hidden sm:block" />
@@ -1117,12 +1119,14 @@ const ProjectDetails = () => {
                                     )}
                                 </div>
                             </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
             </div>
             
-            {projectDetails.isLevelEditMode && (
+            {projectDetails.currentView === 'wall-plan' && projectDetails.isLevelEditMode && (
                 <div className="max-w-7xl mx-auto px-6 mt-4">
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
