@@ -24,7 +24,12 @@ const FloorCanvas = ({
     orientationAnalysis,
     projectWastePercentage = null,
     // [UPDATED] Default prop includes cutPanel
-    dimensionVisibility = { room: true, panel: true, cutPanel: false }
+    dimensionVisibility = { room: true, panel: true, cutPanel: false },
+    // Slab size (mm) for slab floor estimation - default 1210 x 3000
+    slabWidth = 1210,
+    slabLength = 3000,
+    onSlabWidthChange = null,
+    onSlabLengthChange = null
 }) => {
     const canvasRef = useRef(null);
     const canvasContainerRef = useRef(null);
@@ -437,7 +442,7 @@ const FloorCanvas = ({
             // If this room uses slab floor, show slabs needed under the room name
             if (isSlabRoom) {
                 const roomAreaMm2 = calculateRoomArea(room);
-                const slabAreaMm2 = 1210 * 3000; // Same slab size as in summary/estimator
+                const slabAreaMm2 = slabWidth * slabLength;
                 if (roomAreaMm2 > 0 && slabAreaMm2 > 0) {
                     const slabsNeeded = Math.ceil(roomAreaMm2 / slabAreaMm2);
                     const slabText = `${slabsNeeded} slab${slabsNeeded === 1 ? '' : 's'} needed`;
@@ -1857,6 +1862,37 @@ const FloorCanvas = ({
                             </div>
                         </div>
                         
+                        {/* Slab size (mm) - user can set for slab floor estimation; memorized per project */}
+                        <div className="pt-4 border-t border-gray-200">
+                            <div className="text-sm text-gray-600 mb-2">Slab size (mm)</div>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-xs text-gray-500">Width</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={slabWidth}
+                                        onChange={(e) => onSlabWidthChange?.(e.target.value)}
+                                        className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                        placeholder="1210"
+                                    />
+                                </div>
+                                <span className="text-gray-400">×</span>
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-xs text-gray-500">Length</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={slabLength}
+                                        onChange={(e) => onSlabLengthChange?.(e.target.value)}
+                                        className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                        placeholder="3000"
+                                    />
+                                </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">Default 1210 × 3000. Used for slab count.</div>
+                        </div>
+                        
                         {/* Slab Floor Summary */}
                         <div className="pt-4 border-t border-gray-200">
                             <div className="text-sm text-gray-600">Slab Floor Summary</div>
@@ -1873,7 +1909,7 @@ const FloorCanvas = ({
                                     
                                     slabRooms.forEach(room => {
                                         const roomArea = calculateRoomArea(room);
-                                        const slabArea = 1210 * 3000; 
+                                        const slabArea = slabWidth * slabLength;
                                         const slabsNeeded = Math.ceil(roomArea / slabArea);
                                         totalSlabs += slabsNeeded;
                                         totalArea += roomArea;
@@ -2088,7 +2124,7 @@ const FloorCanvas = ({
                                             
                                             return slabRooms.map((room, index) => {
                                                 const roomArea = calculateRoomArea(room);
-                                                const slabArea = 1210 * 3000; 
+                                                const slabArea = slabWidth * slabLength;
                                                 const slabsNeeded = Math.ceil(roomArea / slabArea);
                                                 
                                                 return (
@@ -2097,10 +2133,10 @@ const FloorCanvas = ({
                                                             {room.room_name || `Room ${room.id}`}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {(roomArea / 1000000).toFixed(2)}
+                                                            {Math.round(roomArea / 1000000)}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            1210 × 3000
+                                                            {slabWidth} × {slabLength}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 font-bold text-green-600">
                                                             {slabsNeeded}

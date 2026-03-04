@@ -40,6 +40,54 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
         setDimensionVisibility(prev => ({ ...prev, [key]: !prev[key] }));
     };
 
+    // Slab size (mm) for slab floor estimation - default 1210 x 3000, memorized per project
+    const SLAB_STORAGE_KEY = (id) => `floor_plan_slab_${id}`;
+    const DEFAULT_SLAB_WIDTH = 1210;
+    const DEFAULT_SLAB_LENGTH = 3000;
+    const [slabWidth, setSlabWidth] = useState(DEFAULT_SLAB_WIDTH);
+    const [slabLength, setSlabLength] = useState(DEFAULT_SLAB_LENGTH);
+
+    // Load memorized slab size when project changes
+    useEffect(() => {
+        if (!projectId) return;
+        try {
+            const raw = localStorage.getItem(SLAB_STORAGE_KEY(projectId));
+            if (raw) {
+                const { width, length } = JSON.parse(raw);
+                if (typeof width === 'number' && width > 0) setSlabWidth(width);
+                if (typeof length === 'number' && length > 0) setSlabLength(length);
+            }
+        } catch (_) { /* ignore */ }
+    }, [projectId]);
+
+    const handleSlabWidthChange = (value) => {
+        const n = parseInt(value, 10);
+        if (!Number.isNaN(n) && n > 0) {
+            setSlabWidth(n);
+            if (projectId) {
+                try {
+                    const raw = localStorage.getItem(SLAB_STORAGE_KEY(projectId));
+                    const prev = raw ? JSON.parse(raw) : { width: DEFAULT_SLAB_WIDTH, length: DEFAULT_SLAB_LENGTH };
+                    localStorage.setItem(SLAB_STORAGE_KEY(projectId), JSON.stringify({ ...prev, width: n }));
+                } catch (_) { /* ignore */ }
+            }
+        }
+    };
+
+    const handleSlabLengthChange = (value) => {
+        const n = parseInt(value, 10);
+        if (!Number.isNaN(n) && n > 0) {
+            setSlabLength(n);
+            if (projectId) {
+                try {
+                    const raw = localStorage.getItem(SLAB_STORAGE_KEY(projectId));
+                    const prev = raw ? JSON.parse(raw) : { width: DEFAULT_SLAB_WIDTH, length: DEFAULT_SLAB_LENGTH };
+                    localStorage.setItem(SLAB_STORAGE_KEY(projectId), JSON.stringify({ ...prev, length: n }));
+                } catch (_) { /* ignore */ }
+            }
+        }
+    };
+
     // Filter rooms by selected storey (level)
     const filteredRooms = useMemo(() => {
         if (!selectedStoreyId) return allRooms;
@@ -717,6 +765,10 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                             projectData={projectData}
                             projectWastePercentage={projectWastePercentage}
                             dimensionVisibility={dimensionVisibility}
+                            slabWidth={slabWidth}
+                            slabLength={slabLength}
+                            onSlabWidthChange={handleSlabWidthChange}
+                            onSlabLengthChange={handleSlabLengthChange}
 
                             floorPanelsMap={(() => {
                                 // Convert filtered floor panels to floorPanelsMap format (by room for selected level)

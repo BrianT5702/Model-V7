@@ -1337,6 +1337,26 @@ export default function useProjectDetails(projectId) {
     }
   }, [is3DView]);
 
+  // Clear merge wall selection when user quits merge mode (e.g. Cancel or switch mode)
+  const prevCurrentModeRef = useRef(currentMode);
+  useEffect(() => {
+    if (prevCurrentModeRef.current === 'merge-wall' && currentMode !== 'merge-wall') {
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
+    }
+    prevCurrentModeRef.current = currentMode;
+  }, [currentMode]);
+
+  // Clear wall selection when user quits edit mode
+  const prevIsEditingModeRef = useRef(isEditingMode);
+  useEffect(() => {
+    if (prevIsEditingModeRef.current && !isEditingMode) {
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
+    }
+    prevIsEditingModeRef.current = isEditingMode;
+  }, [isEditingMode]);
+
   // Ensure proper canvas visibility
   useEffect(() => {
     const threeContainer = document.getElementById('three-canvas-container');
@@ -2136,14 +2156,19 @@ export default function useProjectDetails(projectId) {
           (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
           (Math.abs(w.end_x - pt.x) < 0.001 && Math.abs(w.end_y - pt.y) < 0.001)
         );
-      // Helper to check if two walls can be merged
+      // Helper to check if two walls can be merged (type, height, thickness, face materials/thicknesses)
       const canMerge = (w1, w2) => {
         if (
           w1.application_type !== w2.application_type ||
           w1.height !== w2.height ||
           w1.thickness !== w2.thickness
         ) return false;
-        // Collinear check
+        if (
+          (w1.inner_face_material ?? '') !== (w2.inner_face_material ?? '') ||
+          (w1.outer_face_material ?? '') !== (w2.outer_face_material ?? '') ||
+          Number(w1.inner_face_thickness) !== Number(w2.inner_face_thickness) ||
+          Number(w1.outer_face_thickness) !== Number(w2.outer_face_thickness)
+        ) return false;
         return areCollinearWalls(w1, w2);
       };
       // Recursive merge
@@ -2478,6 +2503,8 @@ export default function useProjectDetails(projectId) {
 
     if (!wall1 || !wall2) {
       setWallMergeError("Invalid wall selection.");
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
       setTimeout(() => setWallMergeError(''), 5000);
       return;
     }
@@ -2488,12 +2515,29 @@ export default function useProjectDetails(projectId) {
       wall1.thickness !== wall2.thickness
     ) {
       setWallMergeError("Walls must have the same type, height, and thickness.");
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
+      setTimeout(() => setWallMergeError(''), 5000);
+      return;
+    }
+
+    if (
+      (wall1.inner_face_material ?? '') !== (wall2.inner_face_material ?? '') ||
+      (wall1.outer_face_material ?? '') !== (wall2.outer_face_material ?? '') ||
+      Number(wall1.inner_face_thickness) !== Number(wall2.inner_face_thickness) ||
+      Number(wall1.outer_face_thickness) !== Number(wall2.outer_face_thickness)
+    ) {
+      setWallMergeError("Walls must have the same inner/outer face material and face thickness to merge.");
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
       setTimeout(() => setWallMergeError(''), 5000);
       return;
     }
 
     if (!areCollinearWalls(wall1, wall2)) {
       setWallMergeError("Walls must be collinear to merge (180° alignment required).");
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
       setTimeout(() => setWallMergeError(''), 5000);
       return;
     }
@@ -2522,6 +2566,8 @@ export default function useProjectDetails(projectId) {
 
     if (!connected) {
       setWallMergeError("Walls must be connected at one endpoint.");
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
       setTimeout(() => setWallMergeError(''), 5000);
       return;
     }
@@ -2631,11 +2677,15 @@ export default function useProjectDetails(projectId) {
           const refreshed = await fetchUpdatedWalls();
           if (!refreshed) {
             setWallMergeError('Unable to merge walls because merged geometry is incomplete.');
+            setSelectedWallsForRoom([]);
+            setSelectedWallsForEdit([]);
             setTimeout(() => setWallMergeError(''), 5000);
           }
         }
       }
     } catch (error) {
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
       if (error.response && error.response.data) {
         const errorData = error.response.data;
         if (errorData.wall_ids) {

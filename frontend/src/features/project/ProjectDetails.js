@@ -1815,6 +1815,8 @@ const ProjectDetails = () => {
                                     projectDetails.handleManualWallMerge(projectDetails.selectedWallsForRoom);
                                     } else {
                                     projectDetails.setWallMergeError("Please select exactly 2 walls to merge.");
+                                    projectDetails.setSelectedWallsForRoom([]);
+                                    projectDetails.setSelectedWallsForEdit([]);
                                     setTimeout(() => projectDetails.setWallMergeError(''), 5000);
                                     }
                                 }}

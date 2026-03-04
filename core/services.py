@@ -362,6 +362,15 @@ class WallService:
             wall_1.thickness != wall_2.thickness
         ):
             raise ValueError('Walls must have the same type, height, and thickness to merge.')
+        if (
+            getattr(wall_1, 'inner_face_material', None) != getattr(wall_2, 'inner_face_material', None) or
+            getattr(wall_1, 'outer_face_material', None) != getattr(wall_2, 'outer_face_material', None) or
+            getattr(wall_1, 'inner_face_thickness', None) != getattr(wall_2, 'inner_face_thickness', None) or
+            getattr(wall_1, 'outer_face_thickness', None) != getattr(wall_2, 'outer_face_thickness', None)
+        ):
+            raise ValueError(
+                'Walls must have the same inner/outer face material and face thickness to merge.'
+            )
 
         # Check if walls share endpoints
         if wall_1.end_x == wall_2.start_x and wall_1.end_y == wall_2.start_y:
@@ -384,7 +393,7 @@ class WallService:
             new_start_x, new_start_y, new_end_x, new_end_y
         )
         
-        # Create the merged wall
+        # Create the merged wall (face materials/thicknesses match by validation above)
         merged_wall = Wall.objects.create(
             project=wall_1.project,
             storey=wall_1.storey,
@@ -394,7 +403,11 @@ class WallService:
             end_y=norm_end_y,
             height=wall_1.height,
             thickness=wall_1.thickness,
-            application_type=wall_1.application_type
+            application_type=wall_1.application_type,
+            inner_face_material=getattr(wall_1, 'inner_face_material', 'PPGI'),
+            inner_face_thickness=getattr(wall_1, 'inner_face_thickness', 0.5),
+            outer_face_material=getattr(wall_1, 'outer_face_material', 'PPGI'),
+            outer_face_thickness=getattr(wall_1, 'outer_face_thickness', 0.5),
         )
 
         wall_1.delete()
