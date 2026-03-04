@@ -161,7 +161,11 @@ const InstallationTimeEstimator = ({
     const [panelsPerDay, setPanelsPerDay] = useState(20);
     const [doorsPerDay, setDoorsPerDay] = useState(2);
     const [slabsPerDay, setSlabsPerDay] = useState(10);
-    
+
+    // Slab dimensions (mm) - synced with Floor Plan tab via localStorage
+    const [slabWidth, setSlabWidth] = useState(1210);
+    const [slabLength, setSlabLength] = useState(3000);
+
     // Loading states
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -201,6 +205,19 @@ const InstallationTimeEstimator = ({
             [tableName]: !prev[tableName]
         }));
     };
+
+    // Load slab dimensions from localStorage (same as Floor Plan tab) on mount and when projectId changes
+    useEffect(() => {
+        if (!projectId) return;
+        try {
+            const raw = localStorage.getItem(`floor_plan_slab_${projectId}`);
+            if (raw) {
+                const { width, length } = JSON.parse(raw);
+                if (typeof width === 'number' && width > 0) setSlabWidth(width);
+                if (typeof length === 'number' && length > 0) setSlabLength(length);
+            }
+        } catch (_) { /* ignore */ }
+    }, [projectId]);
 
     // Log shared panel data when it changes
     useEffect(() => {
@@ -369,6 +386,16 @@ const InstallationTimeEstimator = ({
                 console.log('Doors not available');
                 setDoors([]);
             }
+
+            // Re-read slab dimensions from localStorage (synced with Floor Plan tab)
+            try {
+                const raw = projectId ? localStorage.getItem(`floor_plan_slab_${projectId}`) : null;
+                if (raw) {
+                    const { width, length } = JSON.parse(raw);
+                    if (typeof width === 'number' && width > 0) setSlabWidth(width);
+                    if (typeof length === 'number' && length > 0) setSlabLength(length);
+                }
+            } catch (_) { /* ignore */ }
 
             // Auto-fetch existing panel data if available
             await autoFetchExistingPanelData(projectId, roomsResponse.data);
@@ -945,6 +972,16 @@ const InstallationTimeEstimator = ({
                 setDoors([]);
             }
 
+            // Re-read slab dimensions from localStorage (synced with Floor Plan tab)
+            try {
+                const raw = projectId ? localStorage.getItem(`floor_plan_slab_${projectId}`) : null;
+                if (raw) {
+                    const { width, length } = JSON.parse(raw);
+                    if (typeof width === 'number' && width > 0) setSlabWidth(width);
+                    if (typeof length === 'number' && length > 0) setSlabLength(length);
+                }
+            } catch (_) { /* ignore */ }
+
             // Now trigger auto-fetch with fresh data
             await autoFetchExistingPanelData(projectId, rooms);
             
@@ -1466,12 +1503,12 @@ const InstallationTimeEstimator = ({
 
         const totalDoors = doors.length;
 
+        const slabAreaMm2 = slabWidth * slabLength;
         const totalSlabs = rooms.length > 0 ? rooms.reduce((total, room) => {
             if (room.room_points && room.room_points.length > 0 && 
                 (room.floor_type === 'slab' || room.floor_type === 'Slab')) {
                 const roomArea = calculateRoomArea(room.room_points);
-                const slabArea = 1210 * 3000; // mm²
-                const slabsNeeded = Math.ceil(roomArea / slabArea);
+                const slabsNeeded = slabAreaMm2 > 0 ? Math.ceil(roomArea / slabAreaMm2) : 0;
                 return total + slabsNeeded;
             }
             return total;
@@ -1485,7 +1522,7 @@ const InstallationTimeEstimator = ({
             floorPanels,
             wallPanelsCount
         };
-    }, [rooms, ceilingPlans, floorPlans, walls, doors, sharedPanelData]);
+    }, [rooms, ceilingPlans, floorPlans, walls, doors, sharedPanelData, slabWidth, slabLength]);
 
     // Calculate installation time estimates
     const installationEstimates = useMemo(() => {
@@ -1837,9 +1874,10 @@ const InstallationTimeEstimator = ({
             const totalCeilingPanels = exportData.ceilingPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
             const totalFloorPanels = exportData.floorPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
             const totalPanels = totalWallPanels + totalCeilingPanels + totalFloorPanels;
+            const slabAreaPdf = slabWidth * slabLength;
             const totalSlabs = exportData.slabs.reduce((sum, room) => {
-                if (room.room_points && room.room_points.length > 0) {
-                    return sum + Math.ceil(calculateRoomArea(room.room_points) / (1210 * 3000));
+                if (room.room_points && room.room_points.length > 0 && slabAreaPdf > 0) {
+                    return sum + Math.ceil(calculateRoomArea(room.room_points) / slabAreaPdf);
                 }
                 return sum;
             }, 0);
@@ -1847,7 +1885,7 @@ const InstallationTimeEstimator = ({
             const summaryData = [
                 ['Total Panels', totalPanels.toString(), `${totalWallPanels} wall + ${totalCeilingPanels} ceiling + ${totalFloorPanels} floor`],
                 ['Total Doors', exportData.doors.length.toString(), 'From project data'],
-                ['Total Slabs', totalSlabs.toString(), 'For rooms with slab floors (1210×3000mm)']
+                ['Total Slabs', totalSlabs.toString(), `For rooms with slab floors (${slabWidth}×${slabLength}mm)`]
             ];
             
             autoTable(doc, {
@@ -2001,9 +2039,10 @@ const InstallationTimeEstimator = ({
             if (exportData.slabs && exportData.slabs.length > 0) {
                 // Yellow theme like preview
                 addSectionHeader('Slab Floors', [234, 179, 8], [254, 252, 232]); // yellow-600, bg-yellow-50
+                const slabArea = slabWidth * slabLength;
                 const totalSlabs = exportData.slabs.reduce((sum, room) => {
-                    if (room.room_points && room.room_points.length > 0) {
-                        return sum + Math.ceil(calculateRoomArea(room.room_points) / (1210 * 3000));
+                    if (room.room_points && room.room_points.length > 0 && slabArea > 0) {
+                        return sum + Math.ceil(calculateRoomArea(room.room_points) / slabArea);
                     }
                     return sum;
                 }, 0);
@@ -2015,9 +2054,9 @@ const InstallationTimeEstimator = ({
                     room.room_points && room.room_points.length > 0 
                         ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
                         : 'N/A',
-                    '1210 × 3000mm',
-                    room.room_points && room.room_points.length > 0 
-                        ? Math.ceil(calculateRoomArea(room.room_points) / (1210 * 3000)).toString()
+                    `${slabWidth} × ${slabLength}mm`,
+                    room.room_points && room.room_points.length > 0
+                        ? Math.ceil(calculateRoomArea(room.room_points) / (slabWidth * slabLength)).toString()
                         : 'N/A'
                 ]);
                 
@@ -5239,7 +5278,7 @@ const InstallationTimeEstimator = ({
                         <div className="text-center">
                             <div className="text-3xl font-bold text-purple-600">{totalQuantities.slabs}</div>
                             <div className="text-sm text-gray-600">Total Slabs</div>
-                            <div className="text-xs text-gray-500 mt-1">From rooms with slab floors (1210×3000mm)</div>
+                            <div className="text-xs text-gray-500 mt-1">From rooms with slab floors ({slabWidth}×{slabLength}mm)</div>
                         </div>
                     </div>
                 </div>
@@ -5901,11 +5940,11 @@ const InstallationTimeEstimator = ({
                                                                 : 'N/A'}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            1210 × 3000
+                                                            {slabWidth} × {slabLength}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
                                                             {room.room_points && room.room_points.length > 0 
-                                                                ? Math.ceil(calculateRoomArea(room.room_points) / (1210 * 3000))
+                                                                ? Math.ceil(calculateRoomArea(room.room_points) / (slabWidth * slabLength))
                                                                 : 'N/A'}
                                                         </td>
                                                     </tr>
