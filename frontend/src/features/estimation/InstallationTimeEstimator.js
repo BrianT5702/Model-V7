@@ -2616,30 +2616,60 @@ const InstallationTimeEstimator = ({
                             }
                         });
                         
-                        // Only process vertical-horizontal intersections (2 walls)
-                        if (wallsAtIntersection.length === 2) {
-                            const [wall1Data, wall2Data] = wallsAtIntersection;
-                            const wall1 = wall1Data.wall;
-                            const wall2 = wall2Data.wall;
-                            
-                            // Determine if one is vertical and one is horizontal
-                            const wall1Dx = wall1.end_x - wall1.start_x;
-                            const wall1Dy = wall1.end_y - wall1.start_y;
-                            const wall2Dx = wall2.end_x - wall2.start_x;
-                            const wall2Dy = wall2.end_y - wall2.start_y;
-                            
-                            const wall1IsVertical = Math.abs(wall1Dx) < Math.abs(wall1Dy);
-                            const wall2IsVertical = Math.abs(wall2Dx) < Math.abs(wall2Dy);
-                            
-                            // Only process if one is vertical and one is horizontal
-                            if (wall1IsVertical !== wall2IsVertical) {
-                                const verticalWall = wall1IsVertical ? wall1Data : wall2Data;
-                                const horizontalWall = wall1IsVertical ? wall2Data : wall1Data;
-                                
+                        // Process all vertical-horizontal pairs at this intersection (match canvas vhPairs)
+                        if (wallsAtIntersection.length >= 2) {
+                            const vhPairs = [];
+                            for (let i = 0; i < wallsAtIntersection.length; i++) {
+                                for (let j = i + 1; j < wallsAtIntersection.length; j++) {
+                                    const wall1Data = wallsAtIntersection[i];
+                                    const wall2Data = wallsAtIntersection[j];
+                                    const wall1 = wall1Data.wall;
+                                    const wall2 = wall2Data.wall;
+                                    const wall1Dx = wall1.end_x - wall1.start_x;
+                                    const wall1Dy = wall1.end_y - wall1.start_y;
+                                    const wall2Dx = wall2.end_x - wall2.start_x;
+                                    const wall2Dy = wall2.end_y - wall2.start_y;
+                                    const wall1IsVertical = Math.abs(wall1Dx) < Math.abs(wall1Dy);
+                                    const wall2IsVertical = Math.abs(wall2Dx) < Math.abs(wall2Dy);
+                                    if (wall1IsVertical !== wall2IsVertical) {
+                                        const verticalWall = wall1IsVertical ? wall1Data : wall2Data;
+                                        const horizontalWall = wall1IsVertical ? wall2Data : wall1Data;
+                                        let joiningMethod = null;
+                                        let jointWall1Id = null;
+                                        let jointWall2Id = null;
+                                        if (inter.pairs && Array.isArray(inter.pairs)) {
+                                            inter.pairs.forEach(pair => {
+                                                const pairWall1Id = typeof pair.wall1 === 'object' ? (pair.wall1?.id ?? pair.wall1) : pair.wall1;
+                                                const pairWall2Id = typeof pair.wall2 === 'object' ? (pair.wall2?.id ?? pair.wall2) : pair.wall2;
+                                                const vWallIdStr = String(verticalWall.wall.id);
+                                                const hWallIdStr = String(horizontalWall.wall.id);
+                                                const pairWall1IdStr = String(pairWall1Id);
+                                                const pairWall2IdStr = String(pairWall2Id);
+                                                const matchesVertical = (pairWall1IdStr === vWallIdStr || pairWall2IdStr === vWallIdStr);
+                                                const matchesHorizontal = (pairWall1IdStr === hWallIdStr || pairWall2IdStr === hWallIdStr);
+                                                if (matchesVertical && matchesHorizontal) {
+                                                    joiningMethod = pair.joining_method || 'none';
+                                                    jointWall1Id = pairWall1Id;
+                                                    jointWall2Id = pairWall2Id;
+                                                }
+                                            });
+                                        }
+                                        if (!joiningMethod) joiningMethod = 'none';
+                                        vhPairs.push({ verticalWall, horizontalWall, joiningMethod, jointWall1Id, jointWall2Id });
+                                    }
+                                }
+                            }
+                            vhPairs.forEach(pairData => {
+                                const { verticalWall, horizontalWall, joiningMethod, jointWall1Id, jointWall2Id } = pairData;
                                 const vWall = verticalWall.wall;
                                 const hWall = horizontalWall.wall;
                                 const vLines = verticalWall.wallData;
                                 const hLines = horizontalWall.wallData;
+                                
+                                // Only extend for butt_in joints (wall2 extends, wall1 does not)
+                                const hasButtIn = joiningMethod === 'butt_in';
+                                const isVerticalWall2 = hasButtIn && String(jointWall2Id) === String(vWall.id);
+                                const isHorizontalWall2 = hasButtIn && String(jointWall2Id) === String(hWall.id);
                                 
                                 // Determine which end of vertical wall is at intersection
                                 const vIsAtStart = verticalWall.isAtStart;
@@ -2647,102 +2677,104 @@ const InstallationTimeEstimator = ({
                                 // Determine which end of horizontal wall is at intersection
                                 const hIsAtStart = horizontalWall.isAtStart;
                                 
-                                // For vertical wall: extend to upper/lower line of horizontal
-                                const hLine1Y = (hLines.line1[0].y + hLines.line1[1].y) / 2;
-                                const hLine2Y = (hLines.line2[0].y + hLines.line2[1].y) / 2;
-                                const hUpperLine = hLine1Y < hLine2Y ? hLines.line1 : hLines.line2;
-                                const hLowerLine = hLine1Y < hLine2Y ? hLines.line2 : hLines.line1;
-                                
-                                const vEndpointY = vIsAtStart ? vWall.start_y : vWall.end_y;
-                                const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
-                                const isTopEnd = vEndpointY < vOtherY;
-                                
-                                let targetY;
-                                if (isTopEnd) {
-                                    const hUpperStartX = hUpperLine[0].x;
-                                    const hUpperStartY = hUpperLine[0].y;
-                                    const hUpperEndX = hUpperLine[1].x;
-                                    const hUpperEndY = hUpperLine[1].y;
-                                    const hUpperDx = hUpperEndX - hUpperStartX;
-                                    const hUpperDy = hUpperEndY - hUpperStartY;
-                                    if (Math.abs(hUpperDx) > 0.001) {
-                                        const t = (inter.x - hUpperStartX) / hUpperDx;
-                                        targetY = hUpperStartY + t * hUpperDy;
+                                // For vertical wall: extend to upper/lower line of horizontal (only if butt_in and vertical is wall2)
+                                if (isVerticalWall2) {
+                                    const hLine1Y = (hLines.line1[0].y + hLines.line1[1].y) / 2;
+                                    const hLine2Y = (hLines.line2[0].y + hLines.line2[1].y) / 2;
+                                    const hUpperLine = hLine1Y < hLine2Y ? hLines.line1 : hLines.line2;
+                                    const hLowerLine = hLine1Y < hLine2Y ? hLines.line2 : hLines.line1;
+                                    
+                                    const vEndpointY = vIsAtStart ? vWall.start_y : vWall.end_y;
+                                    const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
+                                    const isTopEnd = vEndpointY < vOtherY;
+                                    
+                                    let targetY;
+                                    if (isTopEnd) {
+                                        const hUpperStartX = hUpperLine[0].x;
+                                        const hUpperStartY = hUpperLine[0].y;
+                                        const hUpperEndX = hUpperLine[1].x;
+                                        const hUpperEndY = hUpperLine[1].y;
+                                        const hUpperDx = hUpperEndX - hUpperStartX;
+                                        const hUpperDy = hUpperEndY - hUpperStartY;
+                                        if (Math.abs(hUpperDx) > 0.001) {
+                                            const t = (inter.x - hUpperStartX) / hUpperDx;
+                                            targetY = hUpperStartY + t * hUpperDy;
+                                        } else {
+                                            targetY = hUpperStartY;
+                                        }
                                     } else {
-                                        targetY = hUpperStartY;
+                                        const hLowerStartX = hLowerLine[0].x;
+                                        const hLowerStartY = hLowerLine[0].y;
+                                        const hLowerEndX = hLowerLine[1].x;
+                                        const hLowerEndY = hLowerLine[1].y;
+                                        const hLowerDx = hLowerEndX - hLowerStartX;
+                                        const hLowerDy = hLowerEndY - hLowerStartY;
+                                        if (Math.abs(hLowerDx) > 0.001) {
+                                            const t = (inter.x - hLowerStartX) / hLowerDx;
+                                            targetY = hLowerStartY + t * hLowerDy;
+                                        } else {
+                                            targetY = hLowerStartY;
+                                        }
                                     }
-                                } else {
-                                    const hLowerStartX = hLowerLine[0].x;
-                                    const hLowerStartY = hLowerLine[0].y;
-                                    const hLowerEndX = hLowerLine[1].x;
-                                    const hLowerEndY = hLowerLine[1].y;
-                                    const hLowerDx = hLowerEndX - hLowerStartX;
-                                    const hLowerDy = hLowerEndY - hLowerStartY;
-                                    if (Math.abs(hLowerDx) > 0.001) {
-                                        const t = (inter.x - hLowerStartX) / hLowerDx;
-                                        targetY = hLowerStartY + t * hLowerDy;
+                                    
+                                    if (vIsAtStart) {
+                                        vLines.line1[0].y = targetY;
+                                        vLines.line2[0].y = targetY;
                                     } else {
-                                        targetY = hLowerStartY;
-                                    }
-                                }
-                                
-                                // Extend vertical wall lines
-                                if (vIsAtStart) {
-                                    vLines.line1[0].y = targetY;
-                                    vLines.line2[0].y = targetY;
-                                } else {
-                                    vLines.line1[1].y = targetY;
-                                    vLines.line2[1].y = targetY;
-                                }
-                                
-                                // For horizontal wall: extend to leftmost/rightmost line of vertical
-                                const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
-                                const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
-                                const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
-                                const vRightmostLine = vLine1X < vLine2X ? vLines.line2 : vLines.line1;
-                                
-                                const hMidX = (hWall.start_x + hWall.end_x) / 2;
-                                const vIntersectionX = inter.x;
-                                const isHorizontalOnLeft = hMidX < vIntersectionX;
-                                
-                                let targetX;
-                                if (isHorizontalOnLeft) {
-                                    const vRightStartX = vRightmostLine[0].x;
-                                    const vRightStartY = vRightmostLine[0].y;
-                                    const vRightEndX = vRightmostLine[1].x;
-                                    const vRightEndY = vRightmostLine[1].y;
-                                    const vRightDx = vRightEndX - vRightStartX;
-                                    const vRightDy = vRightEndY - vRightStartY;
-                                    if (Math.abs(vRightDy) > 0.001) {
-                                        const t = (inter.y - vRightStartY) / vRightDy;
-                                        targetX = vRightStartX + t * vRightDx;
-                                    } else {
-                                        targetX = vRightStartX;
-                                    }
-                                } else {
-                                    const vLeftStartX = vLeftmostLine[0].x;
-                                    const vLeftStartY = vLeftmostLine[0].y;
-                                    const vLeftEndX = vLeftmostLine[1].x;
-                                    const vLeftEndY = vLeftmostLine[1].y;
-                                    const vLeftDx = vLeftEndX - vLeftStartX;
-                                    const vLeftDy = vLeftEndY - vLeftStartY;
-                                    if (Math.abs(vLeftDy) > 0.001) {
-                                        const t = (inter.y - vLeftStartY) / vLeftDy;
-                                        targetX = vLeftStartX + t * vLeftDx;
-                                    } else {
-                                        targetX = vLeftStartX;
+                                        vLines.line1[1].y = targetY;
+                                        vLines.line2[1].y = targetY;
                                     }
                                 }
                                 
-                                // Extend horizontal wall lines
-                                if (hIsAtStart) {
-                                    hLines.line1[0].x = targetX;
-                                    hLines.line2[0].x = targetX;
-                                } else {
-                                    hLines.line1[1].x = targetX;
-                                    hLines.line2[1].x = targetX;
+                                // For horizontal wall: extend to leftmost/rightmost line of vertical (only if butt_in and horizontal is wall2)
+                                if (isHorizontalWall2) {
+                                    const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
+                                    const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
+                                    const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
+                                    const vRightmostLine = vLine1X < vLine2X ? vLines.line2 : vLines.line1;
+                                    
+                                    const hMidX = (hWall.start_x + hWall.end_x) / 2;
+                                    const vIntersectionX = inter.x;
+                                    const isHorizontalOnLeft = hMidX < vIntersectionX;
+                                    
+                                    let targetX;
+                                    if (isHorizontalOnLeft) {
+                                        const vRightStartX = vRightmostLine[0].x;
+                                        const vRightStartY = vRightmostLine[0].y;
+                                        const vRightEndX = vRightmostLine[1].x;
+                                        const vRightEndY = vRightmostLine[1].y;
+                                        const vRightDx = vRightEndX - vRightStartX;
+                                        const vRightDy = vRightEndY - vRightStartY;
+                                        if (Math.abs(vRightDy) > 0.001) {
+                                            const t = (inter.y - vRightStartY) / vRightDy;
+                                            targetX = vRightStartX + t * vRightDx;
+                                        } else {
+                                            targetX = vRightStartX;
+                                        }
+                                    } else {
+                                        const vLeftStartX = vLeftmostLine[0].x;
+                                        const vLeftStartY = vLeftmostLine[0].y;
+                                        const vLeftEndX = vLeftmostLine[1].x;
+                                        const vLeftEndY = vLeftmostLine[1].y;
+                                        const vLeftDx = vLeftEndX - vLeftStartX;
+                                        const vLeftDy = vLeftEndY - vLeftStartY;
+                                        if (Math.abs(vLeftDy) > 0.001) {
+                                            const t = (inter.y - vLeftStartY) / vLeftDy;
+                                            targetX = vLeftStartX + t * vLeftDx;
+                                        } else {
+                                            targetX = vLeftStartX;
+                                        }
+                                    }
+                                    
+                                    if (hIsAtStart) {
+                                        hLines.line1[0].x = targetX;
+                                        hLines.line2[0].x = targetX;
+                                    } else {
+                                        hLines.line1[1].x = targetX;
+                                        hLines.line2[1].x = targetX;
+                                    }
                                 }
-                            }
+                            });
                         }
                     });
                     
@@ -2919,9 +2951,9 @@ const InstallationTimeEstimator = ({
                             }
                         });
                         
-                        // Apply 45° cut shortening at each end independently
+                        // Apply 45° cut shortening at each end independently (match canvas drawing.js)
                         const wallThickness = wall.thickness || 100;
-                        const finalAdjust = wallThickness * 2;
+                        const finalAdjust = wallThickness; // Shorten by wall thickness to match visual gap
                         
                         // Shorten at START end
                         if (startHas45) {

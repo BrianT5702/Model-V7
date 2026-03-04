@@ -17,7 +17,7 @@ export const DIMENSION_CONFIG = {
     
     // Appearance - Dimensions
     FONT_SIZE: 200,               // Dimension text scaling multiplier - matches wall plan
-    FONT_SIZE_MIN: 8,             // Minimum font size when scaled down
+    FONT_SIZE_MIN: 12,             // Minimum font size when scaled down
     FONT_FAMILY: "'Segoe UI', Arial, sans-serif",  // Modern font with fallbacks
     FONT_WEIGHT: 'normal',          // Font weight for dimensions
     LINE_WIDTH: 1,              // Extension line width (px)

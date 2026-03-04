@@ -193,10 +193,9 @@ const Canvas2D = ({
         console.log('🔍 Zoom Out clicked!');
         console.log('Current scaleFactor:', scaleFactor.current);
         console.log('Current currentScaleFactor state:', currentScaleFactor);
-        console.log('Initial scale:', initialScale.current);
         
-        // Use the initial scale as the minimum instead of hardcoded 0.1
-        const newScale = Math.max(initialScale.current, scaleFactor.current * 0.8);
+        // No minimum zoom out - allow scaling down with a small floor to avoid numerical issues
+        const newScale = Math.max(0.05, scaleFactor.current * 0.8);
         console.log('Calculated new scale:', newScale);
         
         zoomAtCurrentView(newScale);
@@ -1974,17 +1973,15 @@ const Canvas2D = ({
         const container = canvasContainerRef.current;
         if (!container) return;
 
-        const updateCanvasSize = (rawWidth) => {
-            // Don't apply size when container is hidden (e.g. tab not visible): avoid enlarged/cropped view when returning to tab
-            if (rawWidth <= 0 || rawWidth < MIN_CANVAS_WIDTH) {
+        const updateCanvasSize = () => {
+            const rawWidth = container.clientWidth;
+            const rawHeight = container.clientHeight;
+            // Don't apply when container is hidden (e.g. tab not visible)
+            if (rawWidth <= 0 || rawWidth < MIN_CANVAS_WIDTH || rawHeight <= 0 || rawHeight < MIN_CANVAS_HEIGHT) {
                 return;
             }
             const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
-            const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
-            const calculatedHeight = width * CANVAS_ASPECT_RATIO;
-            const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
-            const constrainedHeight = Math.min(preferredHeight, maxHeight);
-            const height = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
+            const height = Math.max(rawHeight, MIN_CANVAS_HEIGHT);
 
             setCanvasSize((prev) => {
                 if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
@@ -1999,8 +1996,8 @@ const Canvas2D = ({
 
         const measureAfterPaint = () => {
             requestAnimationFrame(() => {
-                if (container.isConnected && container.clientWidth >= MIN_CANVAS_WIDTH) {
-                    updateCanvasSize(container.clientWidth);
+                if (container.isConnected && container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
+                    updateCanvasSize();
                 }
             });
         };
@@ -2011,10 +2008,10 @@ const Canvas2D = ({
                 entries.forEach((entry) => {
                     if (entry.target === container) {
                         const entryWidth = entry.contentRect?.width ?? container.clientWidth;
-                        if (entryWidth >= MIN_CANVAS_WIDTH) {
-                            updateCanvasSize(entryWidth);
+                        const entryHeight = entry.contentRect?.height ?? container.clientHeight;
+                        if (entryWidth >= MIN_CANVAS_WIDTH && entryHeight >= MIN_CANVAS_HEIGHT) {
+                            updateCanvasSize();
                         } else {
-                            // Container may not be visible yet; re-measure after layout
                             measureAfterPaint();
                         }
                     }
@@ -2024,13 +2021,13 @@ const Canvas2D = ({
             observer.observe(container);
         }
 
-        if (container.clientWidth >= MIN_CANVAS_WIDTH) {
-            updateCanvasSize(container.clientWidth);
+        if (container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
+            updateCanvasSize();
         } else {
             measureAfterPaint();
         }
 
-        const handleWindowResize = () => updateCanvasSize(container.clientWidth);
+        const handleWindowResize = () => updateCanvasSize();
         window.addEventListener('resize', handleWindowResize);
 
         return () => {
@@ -2101,6 +2098,13 @@ const Canvas2D = ({
         // Initialize label tracking arrays for collision detection
         const placedLabels = [];
         const allLabels = [];
+        // Global value-level dedup: each dimension value (mm) appears at most once (match floor/ceiling)
+        const dimensionValuesSeen = new Set();
+        if (walls.length > 0 && dimensionVisibility.project) {
+            const actualDimensions = calculateActualProjectDimensions(walls);
+            dimensionValuesSeen.add(Math.round(actualDimensions.width));
+            dimensionValuesSeen.add(Math.round(actualDimensions.length));
+        }
 
         // Draw walls first (and wall/panel dimensions); then project dimensions so they place outermost
         const colorMap = drawWalls({
@@ -2135,7 +2139,8 @@ const Canvas2D = ({
             allLabels,
             dimensionVisibility,
             showPanelLines, // Panel lines visibility toggle
-            initialScale: initialScale.current
+            initialScale: initialScale.current,
+            dimensionValuesSeen
         });
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);

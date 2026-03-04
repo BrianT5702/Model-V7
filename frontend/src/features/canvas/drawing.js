@@ -600,16 +600,21 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
 }
 
 // Draw wall dimensions
-export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false, initialScale = 1, wallLinesMap = null) {
-    // Debug: Log the scale factor being used
-    // console.log('🔍 drawDimensions called with scaleFactor:', scaleFactor);
-    
-    let midX = 0;
-    let midY = 0;
+export function drawDimensions(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color = 'blue', modelBounds = null, placedLabels = [], allLabels = [], collectOnly = false, initialScale = 1, wallLinesMap = null, dimensionValuesSeen = null) {
     const length = Math.sqrt(
         Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
-    
+
+    // Global value dedup: skip if this value already shown (match floor/ceiling)
+    if (dimensionValuesSeen && typeof length === 'number') {
+        const roundedLength = Math.round(length);
+        if (dimensionValuesSeen.has(roundedLength)) return;
+        dimensionValuesSeen.add(roundedLength);
+    }
+
+    let midX = 0;
+    let midY = 0;
+
     // Calculate wall midpoint
     const wallMidX = (startX + endX) / 2;
     const wallMidY = (startY + endY) / 2;
@@ -1288,7 +1293,8 @@ export function drawWalls({
     allLabels = [], // <-- added for shared collision detection
     dimensionVisibility = {},
     showPanelLines = false, // <-- added for panel lines visibility toggle
-    initialScale = 1 // <-- added for proper zoom scaling from minimum
+    initialScale = 1, // <-- added for proper zoom scaling from minimum
+    dimensionValuesSeen = null // <-- shared Set: skip drawing if value already shown (match floor/ceiling dedup)
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
@@ -2179,7 +2185,8 @@ export function drawWalls({
             allLabels,
             true, // collectOnly
             initialScale,
-            spec.wallLinesMap
+            spec.wallLinesMap,
+            dimensionValuesSeen
         );
     });
     // Second pass: draw all label backgrounds and text (COMBINED for proper layering)
