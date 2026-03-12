@@ -3,7 +3,7 @@ import api from '../../api/api';
 import PanelCalculator from '../panel/PanelCalculator';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { doPolygonsOverlap, findIntersectionPointsBetweenWalls } from '../canvas/utils';
+import { doPolygonsOverlap, findIntersectionPointsBetweenWalls, calculatePolygonVisualCenter, isPointInPolygon } from '../canvas/utils';
 import { calculateOffsetPoints, calculateActualProjectDimensions } from '../canvas/drawing';
 import { DIMENSION_CONFIG } from '../canvas/DimensionConfig';
 import { 
@@ -243,6 +243,20 @@ const InstallationTimeEstimator = ({
         if (projectDataFromParent && typeof projectDataFromParent === 'object') setProjectData(projectDataFromParent);
     }, [projectDataFromParent]);
 
+    // Set plan export defaults from project dimensions: width > length → landscape; else portrait. Always fit to page, one per page.
+    useEffect(() => {
+        const proj = projectData;
+        const w = proj?.width;
+        const l = proj?.length;
+        if (typeof w === 'number' && typeof l === 'number') {
+            setPlanPageOrientation(w > l ? 'landscape' : 'portrait');
+            setFitToPage(true);
+            setSinglePlanPerPage(true);
+        }
+        // Intentionally depend only on width/length so we don't reset when other project fields change
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [projectData?.width, projectData?.length]);
+
     // Fetch all project data
     useEffect(() => {
         const fetchProjectData = async () => {
@@ -425,46 +439,64 @@ const InstallationTimeEstimator = ({
         
         try {
             // Helper function to remove grid lines from canvas image
-            const removeGridFromCanvas = (sourceCanvas) => {
-                console.log('🎨 Removing grid lines from canvas...');
+            // planType: 'wall' | 'ceiling' | 'floor'
+            // - floor uses #fafafa background to match FloorCanvas
+            // - ceiling uses higher tolerance and looser alpha guard (similar to floor) to strip anti-aliased grid
+            const removeGridFromCanvas = (sourceCanvas, planType = 'wall') => {
+                console.log(`🎨 Removing grid lines from canvas (plan: ${planType})...`);
                 
-                // Create temporary canvas with white background
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = sourceCanvas.width;
                 tempCanvas.height = sourceCanvas.height;
                 const tempCtx = tempCanvas.getContext('2d');
                 
-                // Fill with white background first
-                tempCtx.fillStyle = '#FFFFFF';
+                const isFloor = planType === 'floor';
+                const isCeiling = planType === 'ceiling';
+                // FloorCanvas uses #fafafa; others (including ceiling) can safely use white-ish backgrounds
+                const bgR = isFloor ? 250 : 255;
+                const bgG = isFloor ? 250 : 255;
+                const bgB = isFloor ? 250 : 255;
+                tempCtx.fillStyle = isFloor ? '#fafafa' : '#FFFFFF';
                 tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
                 
-                // Copy original canvas on top
                 tempCtx.drawImage(sourceCanvas, 0, 0);
                 
-                // Get image data
                 const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                 const data = imageData.data;
                 
-                // Grid color from drawing.js: #ddd = rgb(221, 221, 221)
+                // Grid: #ddd = rgb(221, 221, 221) - FloorCanvas and Canvas2D/CeilingCanvas use same
                 const gridR = 221, gridG = 221, gridB = 221;
-                // Background could be: bg-gray-50 = #f9fafb = rgb(249, 250, 251)
-                const bgR = 255, bgG = 255, bgB = 255; // Use pure white for clean export
-                const tolerance = 20; // Increased tolerance to catch anti-aliased grid lines
+                const tolerance = isFloor ? 40 : 20; // Floor still uses relaxed match on #ddd; ceiling handled by light-grey rule below
                 
                 let pixelsChanged = 0;
-                
                 for (let i = 0; i < data.length; i += 4) {
                     const r = data[i];
                     const g = data[i + 1];
                     const b = data[i + 2];
                     const a = data[i + 3];
                     
-                    // Check if pixel matches grid color (including anti-aliasing variations)
-                    if (Math.abs(r - gridR) < tolerance && 
-                        Math.abs(g - gridG) < tolerance && 
-                        Math.abs(b - gridB) < tolerance &&
-                        a > 200) { // Only process visible pixels
-                        // Replace with white background
+                    // Base grid match on configured color (used mainly for wall/floor)
+                    let isGridColor =
+                        Math.abs(r - gridR) <= tolerance &&
+                        Math.abs(g - gridG) <= tolerance &&
+                        Math.abs(b - gridB) <= tolerance;
+                    
+                    // For CEILING specifically, treat any very light grey as grid (background is #fafafa).
+                    // This aggressively strips the dashed grid without touching darker elements (walls, panels, text).
+                    if (isCeiling) {
+                        if (r >= 220 && g >= 220 && b >= 220 && (r < 255 || g < 255 || b < 255)) {
+                            isGridColor = true;
+                        }
+                    } else if (!isGridColor && isFloor) {
+                        // Floor fallback: also treat very light greys as grid
+                        if (r >= 220 && g >= 220 && b >= 220 && (r < 255 || g < 255 || b < 255)) {
+                            isGridColor = true;
+                        }
+                    }
+                    
+                    // For floor and ceiling plans, also strip semi-transparent grid pixels (no alpha check);
+                    // for wall plans, keep the original \"visible pixel\" alpha guard.
+                    if (isGridColor && (isFloor || isCeiling || a > 200)) {
                         data[i] = bgR;
                         data[i + 1] = bgG;
                         data[i + 2] = bgB;
@@ -472,11 +504,8 @@ const InstallationTimeEstimator = ({
                     }
                 }
                 
-                console.log(`✅ Removed ${pixelsChanged / 4} grid pixels`);
-                
-                // Put cleaned image data back
+                console.log(`✅ Removed ${pixelsChanged / 4} grid pixels (${planType})`);
                 tempCtx.putImageData(imageData, 0, 0);
-                
                 return tempCanvas;
             };
             
@@ -553,24 +582,33 @@ const InstallationTimeEstimator = ({
                     let labelPos = null;
                     let usingStoredPosition = false;
                     
-                    if (room.label_position && 
-                        room.label_position.x !== undefined && 
-                        room.label_position.y !== undefined &&
-                        !isNaN(Number(room.label_position.x)) &&
-                        !isNaN(Number(room.label_position.y))) {
-                        // Use the exact position the user placed
-                        labelPos = {
-                            x: Number(room.label_position.x),
-                            y: Number(room.label_position.y)
-                        };
+                    if (room.label_position != null &&
+                        typeof room.label_position.x === 'number' && !isNaN(room.label_position.x) &&
+                        typeof room.label_position.y === 'number' && !isNaN(room.label_position.y)) {
+                        labelPos = { x: room.label_position.x, y: room.label_position.y };
                         usingStoredPosition = true;
-                    } else {
-                        // Only calculate center if no stored position exists
-                        labelPos = calculateRoomCenter(room);
-                        if (!labelPos) {
-                            console.log(`⚠️ Room ${room.id} (${room.room_name}) has no label_position and no room_points, skipping`);
-                            return; // Skip if we can't determine position
+                    } else if (Array.isArray(room.label_position) && room.label_position.length >= 2) {
+                        const lx = Number(room.label_position[0]);
+                        const ly = Number(room.label_position[1]);
+                        if (!isNaN(lx) && !isNaN(ly)) {
+                            labelPos = { x: lx, y: ly };
+                            usingStoredPosition = true;
                         }
+                    }
+                    if (!labelPos && room.room_points && room.room_points.length >= 3) {
+                        const normalizedPolygon = room.room_points.map(pt => ({
+                            x: Number(pt.x) || (Array.isArray(pt) ? Number(pt[0]) : 0),
+                            y: Number(pt.y) || (Array.isArray(pt) ? Number(pt[1]) : 0)
+                        }));
+                        const visual = calculatePolygonVisualCenter(normalizedPolygon);
+                        if (visual) labelPos = visual;
+                    }
+                    if (!labelPos) {
+                        labelPos = calculateRoomCenter(room);
+                    }
+                    if (!labelPos) {
+                        console.log(`⚠️ Room ${room.id} (${room.room_name}) has no label_position and no room_points, skipping`);
+                        return;
                     }
                     
                     // Calculate canvas position using the EXACT same formula as InteractiveRoomLabel
@@ -746,15 +784,16 @@ const InstallationTimeEstimator = ({
                 console.log(`📸 Switching to ${viewName} to capture ${planType} plan...`);
                 currentViewSetter(viewName);
                 
-                // Wait for canvas to render
-                await new Promise(resolve => setTimeout(resolve, 800));
+                // Wait for canvas to render (floor-plan view may need extra time to mount and paint)
+                const waitMs = planType === 'floor' ? 1200 : 800;
+                await new Promise(resolve => setTimeout(resolve, waitMs));
                 
                 // Try to capture canvas
                 const canvas = document.querySelector(`canvas[data-plan-type="${planType}"]`);
                 if (canvas) {
                     try {
-                        // Remove grid lines before capturing
-                        let cleanCanvas = removeGridFromCanvas(canvas);
+                        // Remove grid lines before capturing (pass planType so floor gets #fafafa replacement)
+                        let cleanCanvas = removeGridFromCanvas(canvas, planType);
                         
                         // For wall plan, draw room labels on the canvas
                         if (planType === 'wall' && rooms && rooms.length > 0) {
@@ -1265,6 +1304,79 @@ const InstallationTimeEstimator = ({
             console.error('Error calculating actual wall panels:', error);
             return [];
         }
+    };
+
+    // Build wallPanelsMap for dimension filtering (matches Canvas2D + dimensionFilter logic)
+    const buildWallPanelsMapForFilter = (wallsToUse, intersectionsData) => {
+        if (!wallsToUse?.length) return {};
+        const map = {};
+        const calculator = new PanelCalculator();
+        wallsToUse.forEach(wall => {
+            if (!wall || typeof wall.start_x !== 'number' || typeof wall.end_x !== 'number') return;
+            const wallLength = Math.sqrt(
+                Math.pow(wall.end_x - wall.start_x, 2) + Math.pow(wall.end_y - wall.start_y, 2)
+            );
+            const wallIntersections = (intersectionsData || []).filter(inter =>
+                inter.pairs && inter.pairs.some(pair =>
+                    pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)
+                )
+            );
+            let leftJointType = 'butt_in';
+            let rightJointType = 'butt_in';
+            const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
+            const isLeftToRight = wall.end_x > wall.start_x;
+            const isBottomToTop = wall.end_y > wall.start_y;
+            const leftEndIntersections = [];
+            const rightEndIntersections = [];
+            wallIntersections.forEach(inter => {
+                if (!inter.pairs) return;
+                inter.pairs.forEach(pair => {
+                    if (pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)) {
+                        if (isHorizontal) {
+                            if (isLeftToRight) {
+                                if (inter.x === wall.start_x) leftEndIntersections.push(pair.joining_method);
+                                else if (inter.x === wall.end_x) rightEndIntersections.push(pair.joining_method);
+                            } else {
+                                if (inter.x === wall.start_x) rightEndIntersections.push(pair.joining_method);
+                                else if (inter.x === wall.end_x) leftEndIntersections.push(pair.joining_method);
+                            }
+                        }
+                        if (!isHorizontal) {
+                            if (isBottomToTop) {
+                                if (inter.y === wall.start_y) leftEndIntersections.push(pair.joining_method);
+                                else if (inter.y === wall.end_y) rightEndIntersections.push(pair.joining_method);
+                            } else {
+                                if (inter.y === wall.start_y) rightEndIntersections.push(pair.joining_method);
+                                else if (inter.y === wall.end_y) leftEndIntersections.push(pair.joining_method);
+                            }
+                        }
+                    }
+                });
+            });
+            leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
+            rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
+            const faceInfo = {
+                innerFaceMaterial: wall.inner_face_material || null,
+                innerFaceThickness: wall.inner_face_thickness || null,
+                outerFaceMaterial: wall.outer_face_material || null,
+                outerFaceThickness: wall.outer_face_thickness || null
+            };
+            const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height != null) ? wall.gap_fill_height : wall.height;
+            let panels = [];
+            try {
+                panels = calculator.calculatePanels(
+                    wallLength,
+                    wall.thickness,
+                    { left: leftJointType, right: rightJointType },
+                    heightForCalc,
+                    faceInfo
+                ) || [];
+            } catch (_) { /* ignore */ }
+            if (Array.isArray(panels) && panels.length > 0) {
+                map[wall.id] = panels;
+            }
+        });
+        return map;
     };
 
     // Auto-fetch existing floor panel data
@@ -1809,7 +1921,7 @@ const InstallationTimeEstimator = ({
                 yPos += fontSize * 0.6; // Slightly increased spacing
             };
             
-            // Helper function to add section header with background (like preview)
+            // Helper function to add section header with background (compact)
             const addSectionHeader = (text, color = [66, 139, 202], bgColor = [239, 246, 255]) => {
                 // Check for new page first
                 if (yPos > 230) {
@@ -1817,21 +1929,21 @@ const InstallationTimeEstimator = ({
                     yPos = 20;
                 }
                 
-                yPos += 12;
+                yPos += 6;
                 
-                // Add light colored background box (mimicking preview's bg-blue-50, bg-green-50, etc.)
+                // Add light colored background box
                 doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-                doc.roundedRect(margin - 2, yPos - 12, contentWidth + 4, 24, 3, 3, 'F');
+                doc.roundedRect(margin - 2, yPos - 8, contentWidth + 4, 14, 2, 2, 'F');
                 
-                // Add colored header text (not white, but dark color like preview)
+                // Add colored header text (slightly darker than bgColor)
                 doc.setTextColor(color[0] - 100, color[1] - 50, color[2] - 50); // Darker shade
-                doc.setFontSize(16); // Larger font like preview
+                doc.setFontSize(12); // More compact
                 doc.setFont(undefined, 'bold');
                 doc.text(text, margin + 4, yPos);
                 
                 // Reset text color to black
                 doc.setTextColor(0, 0, 0);
-                yPos += 16;
+                yPos += 10;
             };
             
             // Helper function to check if we need a new page
@@ -1893,9 +2005,9 @@ const InstallationTimeEstimator = ({
                 head: [['Category', 'Quantity', 'Details']],
                 body: summaryData,
                 theme: 'striped',
-                styles: { fontSize: 11, cellPadding: 5 }, // Larger font
-                headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 12 }, // gray-500
-                alternateRowStyles: { fillColor: [249, 250, 251] }, // bg-gray-50
+                styles: { fontSize: 9, cellPadding: 2 }, // smaller rows
+                headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 10 },
+                alternateRowStyles: { fillColor: [249, 250, 251] },
                 margin: { left: margin, right: margin }
             });
             
@@ -1924,15 +2036,45 @@ const InstallationTimeEstimator = ({
                  head: [['Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)']],
                  body: roomData,
                  theme: 'striped',
-                 styles: { fontSize: 9, cellPadding: 4 }, // Larger font
-                 headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 10 }, // gray-500
-                 alternateRowStyles: { fillColor: [249, 250, 251] }, // bg-gray-50
+                 styles: { fontSize: 8, cellPadding: 2 }, // smaller
+                 headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 9 },
+                 alternateRowStyles: { fillColor: [249, 250, 251] },
                  margin: { left: margin, right: margin }
              });
                 
                 yPos = doc.lastAutoTable.finalY + 10;
                 checkNewPage();
             }
+
+            // Installation Time Estimates (keep on first page with overview/rooms when possible)
+            // Indigo theme like preview
+            addSectionHeader('Installation Time Estimates', [79, 70, 229], [238, 242, 255]); // indigo-600, bg-indigo-50
+            
+            const installationData = [
+                ['Working Days', 'Working Weeks', 'Working Months'],
+                [
+                    exportData.installationEstimates.days.toString(),
+                    exportData.installationEstimates.weeks.toString(),
+                    exportData.installationEstimates.months.toString()
+                ]
+            ];
+            
+                         autoTable(doc, {
+                startY: yPos,
+                head: [['Working Days', 'Working Weeks', 'Working Months']],
+                body: [installationData[1]],
+                theme: 'grid',
+                styles: { fontSize: 10, fontStyle: 'bold', cellPadding: 3, halign: 'center' },
+                headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 10, halign: 'center' },
+                margin: { left: margin, right: margin }
+            });
+            
+            yPos = doc.lastAutoTable.finalY + 10;
+            checkNewPage();
+
+            // Force a new page for detailed panel/support tables
+            doc.addPage();
+            yPos = 20;
             
             // Wall Panels
             if (exportData.wallPanels && exportData.wallPanels.length > 0) {
@@ -1962,15 +2104,19 @@ const InstallationTimeEstimator = ({
                 });
                 
                                  autoTable(doc, {
-                     startY: yPos,
-                     head: [['No.', 'Width (mm)', 'Length (mm)', 'Quantity', 'Type', 'Application', 'Panel Thickness (mm)', 'Finishing']],
-                     body: wallPanelData,
-                     theme: 'striped',
-                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
-                     headStyles: { fillColor: [59, 130, 246], fontStyle: 'bold', fontSize: 10 }, // blue-600
-                     alternateRowStyles: { fillColor: [239, 246, 255] }, // bg-blue-50
-                     margin: { left: margin, right: margin }
-                 });
+                    startY: yPos,
+                    head: [['No.', 'Width (mm)', 'Length (mm)', 'Qty', 'Type', 'Application', 'Thk (mm)', 'Finishing']],
+                    body: wallPanelData,
+                    theme: 'striped',
+                    styles: { fontSize: 8, cellPadding: 2 },
+                    headStyles: { fillColor: [59, 130, 246], fontStyle: 'bold', fontSize: 9 },
+                    alternateRowStyles: { fillColor: [239, 246, 255] },
+                    margin: { left: margin, right: margin },
+                    columnStyles: {
+                        4: { cellWidth: 16 },   // Type column narrower
+                        0: { cellWidth: 10 }    // No. column tight
+                    }
+                });
                 
                 yPos = doc.lastAutoTable.finalY + 10;
                 checkNewPage();
@@ -1991,15 +2137,18 @@ const InstallationTimeEstimator = ({
                 ]);
                 
                                  autoTable(doc, {
-                     startY: yPos,
-                     head: [['Panel Width', 'Panel Length', 'Thickness', 'Quantity']],
-                     body: ceilingPanelData,
-                     theme: 'striped',
-                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
-                     headStyles: { fillColor: [22, 163, 74], fontStyle: 'bold', fontSize: 10 }, // green-600
-                     alternateRowStyles: { fillColor: [240, 253, 244] }, // bg-green-50
-                     margin: { left: margin, right: margin }
-                 });
+                    startY: yPos,
+                    head: [['Width', 'Length', 'Thk', 'Qty']],
+                    body: ceilingPanelData,
+                    theme: 'striped',
+                    styles: { fontSize: 8, cellPadding: 2 },
+                    headStyles: { fillColor: [22, 163, 74], fontStyle: 'bold', fontSize: 9 },
+                    alternateRowStyles: { fillColor: [240, 253, 244] },
+                    margin: { left: margin, right: margin },
+                    columnStyles: {
+                        3: { cellWidth: 14 } // Quantity tight
+                    }
+                });
                 
                 yPos = doc.lastAutoTable.finalY + 10;
                 checkNewPage();
@@ -2021,15 +2170,19 @@ const InstallationTimeEstimator = ({
                 ]);
                 
                                  autoTable(doc, {
-                     startY: yPos,
-                     head: [['Panel Width', 'Panel Length', 'Thickness', 'Quantity', 'Type']],
-                     body: floorPanelData,
-                     theme: 'striped',
-                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
-                     headStyles: { fillColor: [147, 51, 234], fontStyle: 'bold', fontSize: 10 }, // purple-600
-                     alternateRowStyles: { fillColor: [250, 245, 255] }, // bg-purple-50
-                     margin: { left: margin, right: margin }
-                 });
+                    startY: yPos,
+                    head: [['Width', 'Length', 'Thk', 'Qty', 'Type']],
+                    body: floorPanelData,
+                    theme: 'striped',
+                    styles: { fontSize: 8, cellPadding: 2 },
+                    headStyles: { fillColor: [147, 51, 234], fontStyle: 'bold', fontSize: 9 },
+                    alternateRowStyles: { fillColor: [250, 245, 255] },
+                    margin: { left: margin, right: margin },
+                    columnStyles: {
+                        3: { cellWidth: 14 }, // Qty
+                        4: { cellWidth: 16 }  // Type narrower
+                    }
+                });
                 
                 yPos = doc.lastAutoTable.finalY + 10;
                 checkNewPage();
@@ -2061,15 +2214,15 @@ const InstallationTimeEstimator = ({
                 ]);
                 
                                  autoTable(doc, {
-                     startY: yPos,
-                     head: [['Room Name', 'Room Area (m²)', 'Slab Size (mm)', 'Number of Slabs Needed']],
-                     body: slabData,
-                     theme: 'striped',
-                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
-                     headStyles: { fillColor: [234, 179, 8], fontStyle: 'bold', fontSize: 10 }, // yellow-600
-                     alternateRowStyles: { fillColor: [254, 252, 232] }, // bg-yellow-50
-                     margin: { left: margin, right: margin }
-                 });
+                    startY: yPos,
+                    head: [['Room Name', 'Area (m²)', 'Slab Size', 'Slabs']],
+                    body: slabData,
+                    theme: 'striped',
+                    styles: { fontSize: 8, cellPadding: 2 },
+                    headStyles: { fillColor: [234, 179, 8], fontStyle: 'bold', fontSize: 9 },
+                    alternateRowStyles: { fillColor: [254, 252, 232] },
+                    margin: { left: margin, right: margin }
+                });
                 
                 yPos = doc.lastAutoTable.finalY + 10;
                 checkNewPage();
@@ -2090,15 +2243,18 @@ const InstallationTimeEstimator = ({
                 ]);
                 
                                  autoTable(doc, {
-                     startY: yPos,
-                     head: [['Door Type', 'Width', 'Height', 'Thickness']],
-                     body: doorData,
-                     theme: 'striped',
-                     styles: { fontSize: 9, cellPadding: 4 }, // Larger font
-                     headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 10 }, // indigo-600
-                     alternateRowStyles: { fillColor: [238, 242, 255] }, // bg-indigo-50
-                     margin: { left: margin, right: margin }
-                 });
+                    startY: yPos,
+                    head: [['Type', 'Width', 'Height', 'Thk']],
+                    body: doorData,
+                    theme: 'striped',
+                    styles: { fontSize: 8, cellPadding: 2 },
+                    headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 9 },
+                    alternateRowStyles: { fillColor: [238, 242, 255] },
+                    margin: { left: margin, right: margin },
+                    columnStyles: {
+                        0: { cellWidth: 30 }
+                    }
+                });
                 
                 yPos = doc.lastAutoTable.finalY + 10;
                 checkNewPage();
@@ -2116,15 +2272,15 @@ const InstallationTimeEstimator = ({
                 ];
                 
                                  autoTable(doc, {
-                     startY: yPos,
-                     head: [['Property', 'Value']],
-                     body: supportData,
-                     theme: 'striped',
-                     styles: { fontSize: 11, cellPadding: 5 }, // Larger font
-                     headStyles: { fillColor: [234, 88, 12], fontStyle: 'bold', fontSize: 12 }, // orange-600
-                     alternateRowStyles: { fillColor: [255, 247, 237] }, // bg-orange-50
-                     margin: { left: margin, right: margin }
-                 });
+                    startY: yPos,
+                    head: [['Property', 'Value']],
+                    body: supportData,
+                    theme: 'striped',
+                    styles: { fontSize: 9, cellPadding: 2 },
+                    headStyles: { fillColor: [234, 88, 12], fontStyle: 'bold', fontSize: 10 },
+                    alternateRowStyles: { fillColor: [255, 247, 237] },
+                    margin: { left: margin, right: margin }
+                });
                 
                 yPos = doc.lastAutoTable.finalY + 10;
             } else {
@@ -2133,34 +2289,6 @@ const InstallationTimeEstimator = ({
             }
             
             checkNewPage();
-            
-            // Installation Estimates
-            // Indigo theme like preview
-            addSectionHeader('Installation Time Estimates', [79, 70, 229], [238, 242, 255]); // indigo-600, bg-indigo-50
-            
-            const installationData = [
-                ['Working Days', 'Working Weeks', 'Working Months'],
-                [
-                    exportData.installationEstimates.days.toString(),
-                    exportData.installationEstimates.weeks.toString(),
-                    exportData.installationEstimates.months.toString()
-                ]
-            ];
-            
-                         autoTable(doc, {
-                 startY: yPos,
-                 head: [['Working Days', 'Working Weeks', 'Working Months']],
-                 body: [installationData[1]],
-                 theme: 'grid',
-                 styles: { fontSize: 14, fontStyle: 'bold', cellPadding: 6, halign: 'center' }, // Much larger
-                 headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 13, halign: 'center' }, // indigo-600
-                 margin: { left: margin, right: margin }
-             });
-            
-            yPos = doc.lastAutoTable.finalY + 10;
-            
-            // Add note about installation estimates
-            addText('Note: This estimate assumes parallel work where possible and includes a 20% buffer for coordination and unexpected issues.', 9);
             
             // Add Vector-Based Wall Plan (AutoCAD-style, sharp at any zoom)
             // Use allWalls if available (more complete), otherwise use walls state
@@ -2349,9 +2477,9 @@ const InstallationTimeEstimator = ({
                         return;
                     }
                     
-                    // Calculate scale to fit content area (use 90% to GUARANTEE everything fits on ONE page)
-                    const scaleX = (planContentWidth * 0.90) / modelWidth;
-                    const scaleY = (planContentHeight * 0.90) / modelHeight;
+                    // Calculate scale to fit content area (use 80% for a more generous margin)
+                    const scaleX = (planContentWidth * 0.80) / modelWidth;
+                    const scaleY = (planContentHeight * 0.80) / modelHeight;
                     const scale = Math.min(scaleX, scaleY);
                     
                     // Ensure scale is valid and reasonable
@@ -2398,8 +2526,7 @@ const InstallationTimeEstimator = ({
                             // The outline is sufficient for vector clarity - walls will be drawn on top
                             
                             // Draw room label with arrow ONLY for current storey rooms (not ghost areas here)
-                            // Ghost areas will be drawn separately with their labels
-                            // Calculate label position if not provided (use room centroid as fallback)
+                            // Use same placement logic as wall plan canvas: getRoomLabelPositions + InteractiveRoomLabel
                             const normalizedPolygon = room.room_points.map(pt => ({
                                 x: Number(pt.x) || (Array.isArray(pt) ? Number(pt[0]) : 0),
                                 y: Number(pt.y) || (Array.isArray(pt) ? Number(pt[1]) : 0)
@@ -2407,16 +2534,37 @@ const InstallationTimeEstimator = ({
                             const roomCenterX = normalizedPolygon.reduce((sum, p) => sum + p.x, 0) / normalizedPolygon.length;
                             const roomCenterY = normalizedPolygon.reduce((sum, p) => sum + p.y, 0) / normalizedPolygon.length;
                             
-                            // Use label_position if available, otherwise use room center
-                            const labelX = room.label_position?.x || (Array.isArray(room.label_position) ? room.label_position[0] : null) || roomCenterX;
-                            const labelY = room.label_position?.y || (Array.isArray(room.label_position) ? room.label_position[1] : null) || roomCenterY;
+                            // Resolve label position: stored label_position if valid, else visual center (match getRoomLabelPositions)
+                            let labelX, labelY;
+                            if (room.label_position != null &&
+                                typeof room.label_position.x === 'number' && !isNaN(room.label_position.x) &&
+                                typeof room.label_position.y === 'number' && !isNaN(room.label_position.y)) {
+                                labelX = room.label_position.x;
+                                labelY = room.label_position.y;
+                            } else if (Array.isArray(room.label_position) && room.label_position.length >= 2) {
+                                const lx = Number(room.label_position[0]);
+                                const ly = Number(room.label_position[1]);
+                                if (!isNaN(lx) && !isNaN(ly)) {
+                                    labelX = lx;
+                                    labelY = ly;
+                                } else {
+                                    const visual = calculatePolygonVisualCenter(normalizedPolygon);
+                                    labelX = visual ? visual.x : roomCenterX;
+                                    labelY = visual ? visual.y : roomCenterY;
+                                }
+                            } else {
+                                const visual = calculatePolygonVisualCenter(normalizedPolygon);
+                                labelX = visual ? visual.x : roomCenterX;
+                                labelY = visual ? visual.y : roomCenterY;
+                            }
                             
-                            if (room.room_points && room.room_points.length >= 3) {
-                                // labelX and labelY are already calculated above
-                                if (labelX !== null && labelY !== null) {
-                                    // roomCenterX and roomCenterY are already calculated above
-                                    
-                                    // Calculate direction from label to room center
+                            if (room.room_points && room.room_points.length >= 3 && labelX != null && labelY != null) {
+                                const labelPos = { x: labelX, y: labelY };
+                                const isLabelOutsideRoom = !isPointInPolygon(labelPos, normalizedPolygon);
+                                
+                                // Draw L-shaped arrow only when label is outside room (match InteractiveRoomLabel: shouldShowArrow)
+                                if (isLabelOutsideRoom) {
+                                    // Calculate direction from label to room center (arrow points to centroid)
                                     const dx = roomCenterX - labelX;
                                     const dy = roomCenterY - labelY;
                                     const absDx = Math.abs(dx);
@@ -2489,13 +2637,13 @@ const InstallationTimeEstimator = ({
                                         doc.line(endX, endY, arrowX1, arrowY1);
                                         doc.line(endX, endY, arrowX2, arrowY2);
                                     }
-                                    
-                                    // Draw room label text
-                                    doc.setFontSize(8);
-                                    doc.setTextColor(100, 100, 100);
-                                    doc.text(room.room_name || 'Room', transformX(labelX), transformY(labelY), { align: 'center' });
-                                    doc.setTextColor(0, 0, 0);
                                 }
+                                
+                                // Draw room label text (always when we have a valid position)
+                                doc.setFontSize(8);
+                                doc.setTextColor(100, 100, 100);
+                                doc.text(room.room_name || 'Room', transformX(labelX), transformY(labelY), { align: 'center' });
+                                doc.setTextColor(0, 0, 0);
                             }
                         }
                     });
@@ -3676,8 +3824,16 @@ const InstallationTimeEstimator = ({
                         };
                     }
                     
-                    // Calculate filteredDimensions for dimension filtering (matching canvas line 1926-1928)
-                    const filteredDimensions = filterDimensions(wallsToDraw, intersections, {});
+                    // Calculate filteredDimensions for dimension filtering (matching Canvas2D: wallPanelsMap + filterDimensions)
+                    const wallPanelsMapForFilter = buildWallPanelsMapForFilter(wallsToDraw, intersections);
+                    const filteredDimensions = filterDimensions(wallsToDraw, intersections, wallPanelsMapForFilter);
+                    
+                    // Value-level dedup: each dimension value (mm) at most once (match canvas dimensionValuesSeen)
+                    const dimensionValuesSeen = new Set();
+                    if (actualDimensions && (actualDimensions.width != null || actualDimensions.length != null)) {
+                        if (typeof actualDimensions.width === 'number') dimensionValuesSeen.add(Math.round(actualDimensions.width));
+                        if (typeof actualDimensions.length === 'number') dimensionValuesSeen.add(Math.round(actualDimensions.length));
+                    }
                     
                     // Track placed labels for collision detection - SHARED between project and wall dimensions
                     const placedLabels = [];
@@ -4006,6 +4162,11 @@ const InstallationTimeEstimator = ({
                             );
                             
                             if (wallLength === 0) return;
+                            
+                            // Value-level dedup: skip if this dimension value already shown (match canvas dimensionValuesSeen)
+                            const roundedLength = Math.round(wallLength);
+                            if (dimensionValuesSeen.has(roundedLength)) return;
+                            dimensionValuesSeen.add(roundedLength);
                             
                             const wallMidX = (wall.start_x + wall.end_x) / 2;
                             const wallMidY = (wall.start_y + wall.end_y) / 2;

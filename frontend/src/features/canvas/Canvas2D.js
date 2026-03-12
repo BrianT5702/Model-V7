@@ -2071,10 +2071,12 @@ const Canvas2D = ({
 
         const padding = 50;
         // Use display dimensions (already declared above) for calculations
-        const sf = Math.min(
-            1.2*(displayWidth - 4 * padding) / wallWidth,
-            1.2*(displayHeight - 4 * padding) / wallHeight
-        );
+        // Leave a comfortable margin and clamp the initial zoom to avoid
+        // over‑zooming very small projects.
+        const availableWidth = Math.max(displayWidth - 2 * padding, 1);
+        const availableHeight = Math.max(displayHeight - 2 * padding, 1);
+        const fitScale = Math.min(availableWidth / wallWidth, availableHeight / wallHeight);
+        const sf = Math.min(2.0, fitScale * 0.9); // 90% of fit, max 2x
 
         // Only set the scale if user hasn't manually zoomed
         if (!isZoomed.current) {

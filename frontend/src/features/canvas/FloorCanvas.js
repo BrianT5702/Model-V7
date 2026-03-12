@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { calculateOffsetPoints } from './drawing.js';
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
 import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
+import { calculatePolygonVisualCenter } from './utils.js';
 
 const DEFAULT_CANVAS_WIDTH = 1000;
 const DEFAULT_CANVAS_HEIGHT = 650;
@@ -404,9 +405,35 @@ const FloorCanvas = ({
         ctx.stroke();
 
         if (room.room_name) {
-            // Always place label at the middle of the room (ignore user label_position)
-            const labelX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
-            const labelY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
+            // Place label: use stored label_position if valid, else visual center (match wall plan / getRoomLabelPositions)
+            let labelX, labelY;
+            if (room.label_position != null &&
+                typeof room.label_position.x === 'number' && !isNaN(room.label_position.x) &&
+                typeof room.label_position.y === 'number' && !isNaN(room.label_position.y)) {
+                labelX = room.label_position.x;
+                labelY = room.label_position.y;
+            } else if (Array.isArray(room.label_position) && room.label_position.length >= 2) {
+                const lx = Number(room.label_position[0]);
+                const ly = Number(room.label_position[1]);
+                if (!isNaN(lx) && !isNaN(ly)) {
+                    labelX = lx;
+                    labelY = ly;
+                } else {
+                    const normalized = room.room_points.map(p => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }));
+                    const visual = calculatePolygonVisualCenter(normalized);
+                    const cx = room.room_points.reduce((s, p) => s + (Number(p.x) || 0), 0) / room.room_points.length;
+                    const cy = room.room_points.reduce((s, p) => s + (Number(p.y) || 0), 0) / room.room_points.length;
+                    labelX = visual ? visual.x : cx;
+                    labelY = visual ? visual.y : cy;
+                }
+            } else {
+                const normalized = room.room_points.map(p => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }));
+                const visual = calculatePolygonVisualCenter(normalized);
+                const cx = room.room_points.reduce((s, p) => s + (Number(p.x) || 0), 0) / room.room_points.length;
+                const cy = room.room_points.reduce((s, p) => s + (Number(p.y) || 0), 0) / room.room_points.length;
+                labelX = visual ? visual.x : cx;
+                labelY = visual ? visual.y : cy;
+            }
 
             const canvasX = labelX * scaleFactor.current + offsetX.current;
             const canvasY = labelY * scaleFactor.current + offsetY.current;
