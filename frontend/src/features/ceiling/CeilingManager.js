@@ -57,13 +57,21 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     const [customPanelLength, setCustomPanelLength] = useState(10000);
     const [ceilingThickness, setCeilingThickness] = useState(150);
 
+    // Per-room ceiling configuration (thickness, panel size, finishes, orientation)
+    // roomEditConfig = currently selected room's config
     const [roomEditConfig, setRoomEditConfig] = useState({
         ceilingThickness,
         panelWidth,
         panelLength,
         customPanelLength,
-        orientationStrategy: selectedOrientationStrategy
+        orientationStrategy: selectedOrientationStrategy,
+        innerFaceMaterial: 'PPGI',
+        innerFaceThickness: 0.5,
+        outerFaceMaterial: 'PPGI',
+        outerFaceThickness: 0.5
     });
+    // Cache configs per-room so edits persist when switching rooms, even before regeneration
+    const [roomConfigsByRoomId, setRoomConfigsByRoomId] = useState({});
 
     const [zoneEditConfig, setZoneEditConfig] = useState({
         ceilingThickness,
@@ -85,6 +93,12 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     // Keep supportType for backward compatibility (defaults to nylon if only nylon is enabled)
     const supportType = enableNylonHangers && !enableAluSuspension ? 'nylon' : 
                         enableAluSuspension && !enableNylonHangers ? 'alu' : 'mixed';
+
+    // Ceiling face configuration (inner/outer materials + sheet thickness)
+    const [ceilingInnerFaceMaterial, setCeilingInnerFaceMaterial] = useState('PPGI');
+    const [ceilingInnerFaceThickness, setCeilingInnerFaceThickness] = useState(0.5);
+    const [ceilingOuterFaceMaterial, setCeilingOuterFaceMaterial] = useState('PPGI');
+    const [ceilingOuterFaceThickness, setCeilingOuterFaceThickness] = useState(0.5);
     
     // Track if current plan needs regeneration due to dimension changes
     const [planNeedsRegeneration, setPlanNeedsRegeneration] = useState(false);
@@ -558,7 +572,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         }
     }, [sharedPanelData]); // Only depend on sharedPanelData, not local state values
     
-    // Save support options to shared panel data whenever they change
+    // Save support options and global ceiling face finishes to shared panel data whenever they change
     // Skip if we're currently restoring from shared data to prevent loops
     useEffect(() => {
         if (updateSharedPanelData && !isRestoringFromSharedRef.current) {
@@ -569,7 +583,11 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 includeAccessories: nylonHangerOptions.includeAccessories,
                 includeCable: nylonHangerOptions.includeCable,
                 aluSuspensionCustomDrawing: aluSuspensionCustomDrawing,
-                panelsNeedSupport: panelsNeedSupport
+                panelsNeedSupport: panelsNeedSupport,
+                ceilingInnerFaceMaterial,
+                ceilingInnerFaceThickness,
+                ceilingOuterFaceMaterial,
+                ceilingOuterFaceThickness
             };
             
             // Only update if values actually changed
@@ -580,14 +598,31 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 prev.includeAccessories !== currentOptions.includeAccessories ||
                 prev.includeCable !== currentOptions.includeCable ||
                 prev.aluSuspensionCustomDrawing !== currentOptions.aluSuspensionCustomDrawing ||
-                prev.panelsNeedSupport !== currentOptions.panelsNeedSupport;
+                prev.panelsNeedSupport !== currentOptions.panelsNeedSupport ||
+                prev.ceilingInnerFaceMaterial !== currentOptions.ceilingInnerFaceMaterial ||
+                prev.ceilingInnerFaceThickness !== currentOptions.ceilingInnerFaceThickness ||
+                prev.ceilingOuterFaceMaterial !== currentOptions.ceilingOuterFaceMaterial ||
+                prev.ceilingOuterFaceThickness !== currentOptions.ceilingOuterFaceThickness;
             
             if (hasChanged) {
                 prevSupportOptionsRef.current = currentOptions;
                 updateSharedPanelData('ceiling-support-options', null, currentOptions);
             }
         }
-    }, [updateSharedPanelData, enableNylonHangers, enableAluSuspension, supportType, nylonHangerOptions.includeAccessories, nylonHangerOptions.includeCable, aluSuspensionCustomDrawing, panelsNeedSupport]);
+    }, [
+        updateSharedPanelData,
+        enableNylonHangers,
+        enableAluSuspension,
+        supportType,
+        nylonHangerOptions.includeAccessories,
+        nylonHangerOptions.includeCable,
+        aluSuspensionCustomDrawing,
+        panelsNeedSupport,
+        ceilingInnerFaceMaterial,
+        ceilingInnerFaceThickness,
+        ceilingOuterFaceMaterial,
+        ceilingOuterFaceThickness
+    ]);
     
     // Save custom supports to backend when they change (debounced)
     const saveCustomSupportsTimeoutRef = useRef(null);
@@ -640,62 +675,102 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     // Track previous selectedRoomId to only reset config when room actually changes (not when allRooms updates)
     const previousSelectedRoomIdForConfigRef = useRef(null);
     
-    // Sync room edit config when room is selected - use room's current ceiling plan settings if available
-    // Only reset when selectedRoomId actually changes, not when allRooms updates after generation
+    // Sync room edit config when room is selected:
+    // - Use room's current ceiling plan settings (thickness, width, orientation, etc.)
+    // - Derive face finishes from existing ceiling panels for that room so UI reflects saved state
     useEffect(() => {
         const currentRoomId = selectedRoomId;
         const previousRoomId = previousSelectedRoomIdForConfigRef.current;
+        const currentRoomKey = normalizeRoomKey(currentRoomId);
         
         // Only reset config if the room actually changed (not when allRooms updates)
         if (currentRoomId !== previousRoomId) {
             previousSelectedRoomIdForConfigRef.current = currentRoomId;
-            
+
             if (currentRoomId) {
+                // If we already have a cached config for this room (user edited earlier), restore it
+                const cachedConfig = currentRoomKey ? roomConfigsByRoomId[currentRoomKey] : undefined;
+                if (cachedConfig) {
+                    setRoomEditConfig(cachedConfig);
+                    return;
+                }
+
                 const selectedRoom = allRooms.find(r => r.id === currentRoomId);
-            if (selectedRoom && selectedRoom.ceiling_plan) {
-                // Use the room's current ceiling plan settings
-                    console.log(`🔄 [Room Config] Loading config for room ${currentRoomId} from ceiling plan:`, {
-                        orientation: selectedRoom.ceiling_plan.orientation_strategy
+                const roomIdNum = typeof currentRoomId === 'string' ? parseInt(currentRoomId, 10) : currentRoomId;
+                // Try to find at least one panel for this room to infer face finishes
+                const firstPanelForRoom = ceilingPanels.find(p => {
+                    const pid = p.room_id ?? p.room;
+                    return pid !== undefined && String(pid) === String(roomIdNum);
+                });
+                
+                const intMat = firstPanelForRoom?.inner_face_material ?? ceilingInnerFaceMaterial;
+                const intThk = firstPanelForRoom?.inner_face_thickness ?? ceilingInnerFaceThickness;
+                const extMat = firstPanelForRoom?.outer_face_material ?? ceilingOuterFaceMaterial;
+                const extThk = firstPanelForRoom?.outer_face_thickness ?? ceilingOuterFaceThickness;
+                
+                if (selectedRoom && selectedRoom.ceiling_plan) {
+                    // Use the room's current ceiling plan settings + inferred face finishes
+                    console.log(`🔄 [Room Config] Loading config for room ${currentRoomId} from ceiling plan + panels`, {
+                        orientation: selectedRoom.ceiling_plan.orientation_strategy,
+                        inner_face_material: intMat,
+                        outer_face_material: extMat
                     });
-                setRoomEditConfig({
-                    ceilingThickness: selectedRoom.ceiling_plan.ceiling_thickness || ceilingThickness,
-                    panelWidth: selectedRoom.ceiling_plan.panel_width || panelWidth,
-                    panelLength: selectedRoom.ceiling_plan.panel_length || panelLength,
-                    customPanelLength: selectedRoom.ceiling_plan.custom_panel_length || customPanelLength,
-                    orientationStrategy: selectedRoom.ceiling_plan.orientation_strategy || selectedOrientationStrategy
-                });
-            } else {
-                // Use global settings as fallback
-                    console.log(`🔄 [Room Config] Loading default config for room ${currentRoomId}`);
-                setRoomEditConfig({
-                    ceilingThickness: ceilingThickness,
-                    panelWidth: panelWidth,
-                    panelLength: panelLength,
-                    customPanelLength: customPanelLength,
-                    orientationStrategy: selectedOrientationStrategy
-                });
+                    const initialConfig = {
+                        ceilingThickness: selectedRoom.ceiling_plan.ceiling_thickness || ceilingThickness,
+                        panelWidth: selectedRoom.ceiling_plan.panel_width || panelWidth,
+                        panelLength: selectedRoom.ceiling_plan.panel_length || panelLength,
+                        customPanelLength: selectedRoom.ceiling_plan.custom_panel_length || customPanelLength,
+                        orientationStrategy: selectedRoom.ceiling_plan.orientation_strategy || selectedOrientationStrategy,
+                        innerFaceMaterial: intMat,
+                        innerFaceThickness: intThk,
+                        outerFaceMaterial: extMat,
+                        outerFaceThickness: extThk
+                    };
+                    setRoomEditConfig(initialConfig);
+                    setRoomConfigsByRoomId(prev => ({
+                        ...prev,
+                        [currentRoomKey]: initialConfig
+                    }));
+                } else {
+                    // Use global settings as fallback (including global face finishes)
+                    console.log(`🔄 [Room Config] Loading default config for room ${currentRoomId} (no ceiling_plan)`);                    
+                    const defaultConfig = {
+                        ceilingThickness: ceilingThickness,
+                        panelWidth: panelWidth,
+                        panelLength: panelLength,
+                        customPanelLength: customPanelLength,
+                        orientationStrategy: selectedOrientationStrategy,
+                        innerFaceMaterial: ceilingInnerFaceMaterial,
+                        innerFaceThickness: ceilingInnerFaceThickness,
+                        outerFaceMaterial: ceilingOuterFaceMaterial,
+                        outerFaceThickness: ceilingOuterFaceThickness
+                    };
+                    setRoomEditConfig(defaultConfig);
+                    setRoomConfigsByRoomId(prev => ({
+                        ...prev,
+                        [currentRoomKey]: defaultConfig
+                    }));
                 }
             }
         } else {
-            // Room hasn't changed, but allRooms might have updated (e.g., after generation)
-            // Only update if the ceiling plan's orientation_strategy actually changed
-            if (currentRoomId) {
-                const selectedRoom = allRooms.find(r => r.id === currentRoomId);
-                if (selectedRoom && selectedRoom.ceiling_plan && selectedRoom.ceiling_plan.orientation_strategy) {
-                    const savedOrientation = selectedRoom.ceiling_plan.orientation_strategy;
-                    // Only update if the saved orientation is different from current config
-                    // This prevents overwriting user's manual changes before they click "Apply"
-                    if (roomEditConfig.orientationStrategy !== savedOrientation) {
-                        console.log(`🔄 [Room Config] Ceiling plan updated for room ${currentRoomId}, but keeping user's manual change:`, {
-                            saved: savedOrientation,
-                            current: roomEditConfig.orientationStrategy
-                        });
-                        // Don't auto-update - let user's manual change persist until they click "Apply"
-                    }
-                }
-            }
+            // Room hasn't changed, but allRooms or ceilingPanels might have updated after generation.
+            // We intentionally avoid auto-overwriting roomEditConfig here to preserve in-progress user edits.
         }
-    }, [selectedRoomId, allRooms, ceilingThickness, panelWidth, panelLength, customPanelLength, selectedOrientationStrategy]);
+    }, [
+        selectedRoomId,
+        allRooms,
+        ceilingPanels,
+        ceilingThickness,
+        panelWidth,
+        panelLength,
+        customPanelLength,
+        selectedOrientationStrategy,
+        ceilingInnerFaceMaterial,
+        ceilingInnerFaceThickness,
+        ceilingOuterFaceMaterial,
+        ceilingOuterFaceThickness,
+        roomConfigsByRoomId
+    ]);
     
     // Helper function to get default Cut L horizontal extension based on wall thickness
     const getCutLDefaultExtension = (wallThickness) => {
@@ -1784,7 +1859,12 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     ...nylonHangerOptions,
                     aluSuspensionCustomDrawing,
                     customSupports: customSupports
-                }
+                },
+                // Per-room ceiling face finishes
+                inner_face_material: config.innerFaceMaterial || ceilingInnerFaceMaterial,
+                inner_face_thickness: config.innerFaceThickness || ceilingInnerFaceThickness,
+                outer_face_material: config.outerFaceMaterial || ceilingOuterFaceMaterial,
+                outer_face_thickness: config.outerFaceThickness || ceilingOuterFaceThickness
             };
             
             // Ensure room_id is an integer (not string) for proper backend matching
@@ -1909,16 +1989,24 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 
                 console.log('✅ [Room Generation] State updated successfully');
                 
-                // Update the roomEditConfig to reflect the new values from the database
+                // Persist the config we just applied to the per-room cache so it is not lost when switching rooms.
+                // (Backend response may not include face materials; we keep exactly what the user applied.)
+                const roomKey = normalizeRoomKey(roomId);
+                if (roomKey) {
+                    setRoomConfigsByRoomId(prev => ({ ...prev, [roomKey]: { ...config } }));
+                }
+                
+                // Update the roomEditConfig: merge DB plan fields with the applied config so face materials are preserved
                 const updatedRoom = roomsResponse.data.find(r => r.id === roomId);
                 if (updatedRoom && updatedRoom.ceiling_plan) {
-                    setRoomEditConfig({
-                        ceilingThickness: updatedRoom.ceiling_plan.ceiling_thickness,
-                        panelWidth: updatedRoom.ceiling_plan.panel_width,
-                        panelLength: updatedRoom.ceiling_plan.panel_length,
-                        customPanelLength: updatedRoom.ceiling_plan.custom_panel_length,
-                        orientationStrategy: updatedRoom.ceiling_plan.orientation_strategy
-                    });
+                    setRoomEditConfig(prev => ({
+                        ...config,
+                        ceilingThickness: updatedRoom.ceiling_plan.ceiling_thickness ?? prev.ceilingThickness,
+                        panelWidth: updatedRoom.ceiling_plan.panel_width ?? prev.panelWidth,
+                        panelLength: updatedRoom.ceiling_plan.panel_length ?? prev.panelLength,
+                        customPanelLength: updatedRoom.ceiling_plan.custom_panel_length ?? prev.customPanelLength,
+                        orientationStrategy: updatedRoom.ceiling_plan.orientation_strategy ?? prev.orientationStrategy
+                    }));
                     console.log('✅ Room edit config updated with new values from database');
                 }
                 
@@ -2429,8 +2517,71 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                 />
                                 <span className="text-xs text-gray-500">mm</span>
                             </div>
-                            
-
+                            {/* Ceiling face finishes (global defaults for generated panels) */}
+                            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100 mt-2">
+                                <div>
+                                    <div className="text-xs font-semibold text-gray-600 mb-1">Inner Face</div>
+                                    <div className="space-y-1">
+                                        <div className="flex items-center space-x-2">
+                                            <label className="text-xs text-gray-600 min-w-[60px]">Material:</label>
+                                            <select
+                                                value={ceilingInnerFaceMaterial}
+                                                onChange={(e) => setCeilingInnerFaceMaterial(e.target.value)}
+                                                className="flex-1 text-xs"
+                                            >
+                                                <option value="PPGI">PPGI</option>
+                                                <option value="S/Steel">S/Steel</option>
+                                                <option value="Aluminium">Aluminium</option>
+                                                <option value="PVC">PVC</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <label className="text-xs text-gray-600 min-w-[60px]">Sheet thk:</label>
+                                            <input
+                                                type="number"
+                                                min="0.3"
+                                                max="2"
+                                                step="0.1"
+                                                value={ceilingInnerFaceThickness}
+                                                onChange={(e) => setCeilingInnerFaceThickness(parseFloat(e.target.value) || 0.5)}
+                                                className="flex-1 text-xs"
+                                            />
+                                            <span className="text-[10px] text-gray-500">mm</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-xs font-semibold text-gray-600 mb-1">Outer Face</div>
+                                    <div className="space-y-1">
+                                        <div className="flex items-center space-x-2">
+                                            <label className="text-xs text-gray-600 min-w-[60px]">Material:</label>
+                                            <select
+                                                value={ceilingOuterFaceMaterial}
+                                                onChange={(e) => setCeilingOuterFaceMaterial(e.target.value)}
+                                                className="flex-1 text-xs"
+                                            >
+                                                <option value="PPGI">PPGI</option>
+                                                <option value="S/Steel">S/Steel</option>
+                                                <option value="Aluminium">Aluminium</option>
+                                                <option value="PVC">PVC</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <label className="text-xs text-gray-600 min-w-[60px]">Sheet thk:</label>
+                                            <input
+                                                type="number"
+                                                min="0.3"
+                                                max="2"
+                                                step="0.1"
+                                                value={ceilingOuterFaceThickness}
+                                                onChange={(e) => setCeilingOuterFaceThickness(parseFloat(e.target.value) || 0.5)}
+                                                className="flex-1 text-xs"
+                                            />
+                                            <span className="text-[10px] text-gray-500">mm</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3418,16 +3569,159 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                         </div>
                                     </div>
                                 )}
+                                                {/* Per-room ceiling face finishes */}
+                                                <div className="mt-3 grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <div className="text-xs font-semibold text-gray-600 mb-1">Inner Face</div>
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="text-xs text-gray-600 min-w-[70px]">Material:</label>
+                                                                <select
+                                                                    value={roomEditConfig.innerFaceMaterial}
+                                                                    onChange={(e) => {
+                                                                        const value = e.target.value;
+                                                                        setRoomEditConfig(prev => {
+                                                                            const next = {
+                                                                                ...prev,
+                                                                                innerFaceMaterial: value
+                                                                            };
+                                                                            const key = normalizeRoomKey(selectedRoomId);
+                                                                            if (key) {
+                                                                                setRoomConfigsByRoomId(map => ({
+                                                                                    ...map,
+                                                                                    [key]: next
+                                                                                }));
+                                                                            }
+                                                                            return next;
+                                                                        });
+                                                                    }}
+                                                                    className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
+                                                                >
+                                                                    <option value="PPGI">PPGI</option>
+                                                                    <option value="S/Steel">S/Steel</option>
+                                                                    <option value="Aluminium">Aluminium</option>
+                                                                    <option value="PVC">PVC</option>
+                                                                </select>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="text-xs text-gray-600 min-w-[70px]">Sheet thk:</label>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0.3"
+                                                                    max="2"
+                                                                    step="0.1"
+                                                                    value={roomEditConfig.innerFaceThickness}
+                                                                    onChange={(e) => {
+                                                                        const num = parseFloat(e.target.value) || 0.5;
+                                                                        setRoomEditConfig(prev => {
+                                                                            const next = {
+                                                                                ...prev,
+                                                                                innerFaceThickness: num
+                                                                            };
+                                                                            const key = normalizeRoomKey(selectedRoomId);
+                                                                            if (key) {
+                                                                                setRoomConfigsByRoomId(map => ({
+                                                                                    ...map,
+                                                                                    [key]: next
+                                                                                }));
+                                                                            }
+                                                                            return next;
+                                                                        });
+                                                                    }}
+                                                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
+                                                                />
+                                                                <span className="text-[10px] text-gray-500">mm</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs font-semibold text-gray-600 mb-1">Outer Face</div>
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="text-xs text-gray-600 min-w-[70px]">Material:</label>
+                                                                <select
+                                                                    value={roomEditConfig.outerFaceMaterial}
+                                                                    onChange={(e) => {
+                                                                        const value = e.target.value;
+                                                                        setRoomEditConfig(prev => {
+                                                                            const next = {
+                                                                                ...prev,
+                                                                                outerFaceMaterial: value
+                                                                            };
+                                                                            const key = normalizeRoomKey(selectedRoomId);
+                                                                            if (key) {
+                                                                                setRoomConfigsByRoomId(map => ({
+                                                                                    ...map,
+                                                                                    [key]: next
+                                                                                }));
+                                                                            }
+                                                                            return next;
+                                                                        });
+                                                                    }}
+                                                                    className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
+                                                                >
+                                                                    <option value="PPGI">PPGI</option>
+                                                                    <option value="S/Steel">S/Steel</option>
+                                                                    <option value="Aluminium">Aluminium</option>
+                                                                    <option value="PVC">PVC</option>
+                                                                </select>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="text-xs text-gray-600 min-w-[70px]">Sheet thk:</label>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0.3"
+                                                                    max="2"
+                                                                    step="0.1"
+                                                                    value={roomEditConfig.outerFaceThickness}
+                                                                    onChange={(e) => {
+                                                                        const num = parseFloat(e.target.value) || 0.5;
+                                                                        setRoomEditConfig(prev => {
+                                                                            const next = {
+                                                                                ...prev,
+                                                                                outerFaceThickness: num
+                                                                            };
+                                                                            const key = normalizeRoomKey(selectedRoomId);
+                                                                            if (key) {
+                                                                                setRoomConfigsByRoomId(map => ({
+                                                                                    ...map,
+                                                                                    [key]: next
+                                                                                }));
+                                                                            }
+                                                                            return next;
+                                                                        });
+                                                                    }}
+                                                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
+                                                                />
+                                                                <span className="text-[10px] text-gray-500">mm</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                         </div>
                                                         <div className="mt-4 flex items-center justify-between">
                                             <button
-                                                onClick={() => setRoomEditConfig({
+                                            onClick={() => {
+                                                const resetConfig = {
                                                     ceilingThickness: ceilingThickness,
                                                     panelWidth: panelWidth,
                                                     panelLength: panelLength,
                                                     customPanelLength: customPanelLength,
-                                                    orientationStrategy: selectedOrientationStrategy
-                                                })}
+                                                    orientationStrategy: selectedOrientationStrategy,
+                                                    innerFaceMaterial: ceilingInnerFaceMaterial,
+                                                    innerFaceThickness: ceilingInnerFaceThickness,
+                                                    outerFaceMaterial: ceilingOuterFaceMaterial,
+                                                    outerFaceThickness: ceilingOuterFaceThickness
+                                                };
+                                                setRoomEditConfig(resetConfig);
+                                                const key = normalizeRoomKey(selectedRoomId);
+                                                if (key) {
+                                                    setRoomConfigsByRoomId(map => ({
+                                                        ...map,
+                                                        [key]: resetConfig
+                                                    }));
+                                                }
+                                            }}
                                                 className="px-4 py-2 bg-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-400 transition-colors font-medium"
                                             >
                                                 Reset to Global
@@ -3518,20 +3812,32 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                         <th className="px-3 py-2 border text-left">Length (mm)</th>
                                                                         <th className="px-3 py-2 border text-left">Thickness (mm)</th>
                                                                         <th className="px-3 py-2 border text-left">Type</th>
+                                                                        <th className="px-3 py-2 border text-left">Face Material</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
-                                                                    {selectedRoomPanelStats.panels.map(panel => (
-                                                                        <tr key={panel.id || panel.panel_id} className="hover:bg-gray-50">
-                                                                            <td className="px-3 py-2 border">{panel.panel_id || panel.id || '—'}</td>
-                                                                            <td className="px-3 py-2 border">{panel.width}</td>
-                                                                            <td className="px-3 py-2 border">{panel.length}</td>
-                                                                            <td className="px-3 py-2 border">{panel.thickness || ceilingThickness}</td>
-                                                                            <td className="px-3 py-2 border">
-                                                                                {panel.is_cut_panel || panel.is_cut ? 'Cut' : 'Full'}
-                                                                            </td>
-                                                                        </tr>
-                                                                    ))}
+                                                                    {selectedRoomPanelStats.panels.map(panel => {
+                                                                        const intMat = panel.inner_face_material ?? 'PPGI';
+                                                                        const intThk = panel.inner_face_thickness ?? 0.5;
+                                                                        const extMat = panel.outer_face_material ?? 'PPGI';
+                                                                        const extThk = panel.outer_face_thickness ?? 0.5;
+                                                                        const same = intMat === extMat && intThk === extThk;
+                                                                        const finishing = same
+                                                                            ? `Both Side ${extThk}mm ${extMat}`
+                                                                            : `INT: ${intThk}mm ${intMat} / EXT: ${extThk}mm ${extMat}`;
+                                                                        return (
+                                                                            <tr key={panel.id || panel.panel_id} className="hover:bg-gray-50">
+                                                                                <td className="px-3 py-2 border">{panel.panel_id || panel.id || '—'}</td>
+                                                                                <td className="px-3 py-2 border">{panel.width}</td>
+                                                                                <td className="px-3 py-2 border">{panel.length}</td>
+                                                                                <td className="px-3 py-2 border">{panel.thickness || ceilingThickness}</td>
+                                                                                <td className="px-3 py-2 border">
+                                                                                    {panel.is_cut_panel || panel.is_cut ? 'Cut' : 'Full'}
+                                                                                </td>
+                                                                                <td className="px-3 py-2 border whitespace-nowrap">{finishing}</td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
                                                                 </tbody>
                                                             </table>
                                                         </div>

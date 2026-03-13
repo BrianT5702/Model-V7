@@ -2204,7 +2204,7 @@ class FloorService:
                     best_result = result
                     
                     combo_str = ', '.join([f"{rooms_data[j]['name']}:{o[0].upper()}" for j, o in enumerate(orientation_combo)])
-                    logger.info(f"  ✓ New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
+                    logger.info(f"  [OK] New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
             
             # Log the final best combination
             best_combo_str = ', '.join([f"{rooms_data[j]['name']}:{o[0].upper()}" for j, o in enumerate(best_combo)])
@@ -6215,7 +6215,7 @@ class CeilingService:
                 
                 if room_id_str == custom_room_id_str or int(room.id) == int(custom_room_id):
                     # This is the room being updated - use custom orientation and room-specific parameters
-                    logger.info(f"  ✓ MATCH: Room {room.id} matches target room {custom_room_id}")
+                    logger.info(f"  [MATCH] Room {room.id} matches target room {custom_room_id}")
                     # Normalize orientation: convert 'vertical'/'horizontal' to 'all_vertical'/'all_horizontal'
                     if custom_orientation:
                         orientation_lower = str(custom_orientation).lower()
@@ -6997,6 +6997,43 @@ class CeilingService:
                     room_orientation_strategy = room_config.get('orientation_strategy', orientation_strategy) if room_config else orientation_strategy
                     room_support_type = room_config.get('support_type', support_type) if room_config else support_type
                     room_support_config = room_config.get('support_config', support_config) if room_config else support_config
+
+                    # Ceiling face finishes: use room-specific values if provided, else fall back to project/room defaults
+                    # Defaults mirror model defaults so behavior is stable even without explicit configuration
+                    room_inner_face_material = None
+                    room_inner_face_thickness = None
+                    room_outer_face_material = None
+                    room_outer_face_thickness = None
+
+                    if room_config:
+                        room_inner_face_material = room_config.get('inner_face_material')
+                        room_inner_face_thickness = room_config.get('inner_face_thickness')
+                        room_outer_face_material = room_config.get('outer_face_material')
+                        room_outer_face_thickness = room_config.get('outer_face_thickness')
+
+                    # For non-target rooms (room_config is None), preserve existing face materials from
+                    # current ceiling panels so regenerating one room does not reset another room's finishes.
+                    if room_inner_face_material is None or room_outer_face_material is None:
+                        existing_panel = CeilingPanel.objects.filter(room=room).first()
+                        if existing_panel:
+                            if room_inner_face_material is None:
+                                room_inner_face_material = getattr(existing_panel, 'inner_face_material', None) or 'PPGI'
+                            if room_inner_face_thickness is None:
+                                room_inner_face_thickness = getattr(existing_panel, 'inner_face_thickness', None) or 0.5
+                            if room_outer_face_material is None:
+                                room_outer_face_material = getattr(existing_panel, 'outer_face_material', None) or 'PPGI'
+                            if room_outer_face_thickness is None:
+                                room_outer_face_thickness = getattr(existing_panel, 'outer_face_thickness', None) or 0.5
+
+                    # Fallbacks: use room-level attributes if present, then hard defaults
+                    if room_inner_face_material is None:
+                        room_inner_face_material = getattr(room, 'inner_face_material', 'PPGI')
+                    if room_inner_face_thickness is None:
+                        room_inner_face_thickness = getattr(room, 'inner_face_thickness', 0.5)
+                    if room_outer_face_material is None:
+                        room_outer_face_material = getattr(room, 'outer_face_material', 'PPGI')
+                    if room_outer_face_thickness is None:
+                        room_outer_face_thickness = getattr(room, 'outer_face_thickness', 0.5)
                     
                     # Prepare support configuration
                     if room_support_config is None:
@@ -7063,6 +7100,10 @@ class CeilingService:
                             width=panel_data['width'],
                             length=panel_data['length'],
                             thickness=room_ceiling_thickness,
+                            inner_face_material=room_inner_face_material,
+                            inner_face_thickness=room_inner_face_thickness,
+                            outer_face_material=room_outer_face_material,
+                            outer_face_thickness=room_outer_face_thickness,
                             is_cut_panel=panel_data.get('is_cut', False),
                             shape_data=panel_data.get('shape_points', []) # Ensure this is here!
                         )

@@ -784,12 +784,26 @@ const InstallationTimeEstimator = ({
                 console.log(`📸 Switching to ${viewName} to capture ${planType} plan...`);
                 currentViewSetter(viewName);
                 
-                // Wait for canvas to render (floor-plan view may need extra time to mount and paint)
-                const waitMs = planType === 'floor' ? 1200 : 800;
-                await new Promise(resolve => setTimeout(resolve, waitMs));
+                // Wait for canvas to render; ceiling and floor need extra time to mount and paint
+                const initialWaitMs = (planType === 'floor' || planType === 'ceiling') ? 1200 : 800;
+                const maxAttempts = 3;
+                const retryWaitMs = 800;
                 
-                // Try to capture canvas
-                const canvas = document.querySelector(`canvas[data-plan-type="${planType}"]`);
+                let canvas = null;
+                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                    const waitMs = attempt === 1 ? initialWaitMs : retryWaitMs;
+                    await new Promise(resolve => setTimeout(resolve, waitMs));
+                    canvas = document.querySelector(`canvas[data-plan-type="${planType}"]`);
+                    if (canvas) break;
+                    if (attempt < maxAttempts) {
+                        console.warn(`⚠️ ${planType} plan canvas not found (attempt ${attempt}/${maxAttempts}), retrying in ${retryWaitMs}ms...`);
+                    }
+                }
+                
+                if (!canvas) {
+                    console.warn(`❌ ${planType} plan canvas not found after ${maxAttempts} attempts – ${planType} plan may be missing in PDF. Ensure "${viewName}" view has finished loading.`);
+                }
+                
                 if (canvas) {
                     try {
                         // Remove grid lines before capturing (pass planType so floor gets #fafafa replacement)
@@ -1415,7 +1429,7 @@ const InstallationTimeEstimator = ({
     const processCeilingPanelsForSharing = (panels) => {
         if (!panels || panels.length === 0) return [];
         
-        // Group panels by dimensions (width, length, thickness)
+        // Group panels by dimensions (width, length, thickness) and face finishes
         const panelsByDimension = new Map();
         panels.forEach(panel => {
             // Use panel thickness if available, otherwise use default
@@ -1431,14 +1445,24 @@ const InstallationTimeEstimator = ({
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+
+            // Face information (fallback to defaults if not present)
+            const intMat = panel.inner_face_material ?? 'PPGI';
+            const intThk = panel.inner_face_thickness ?? 0.5;
+            const extMat = panel.outer_face_material ?? 'PPGI';
+            const extThk = panel.outer_face_thickness ?? 0.5;
             
-            const key = `${displayWidth}_${displayLength}_${panelThickness}`;
+            const key = `${displayWidth}_${displayLength}_${panelThickness}_${intMat}_${intThk}_${extMat}_${extThk}`;
             if (!panelsByDimension.has(key)) {
                 panelsByDimension.set(key, {
                     width: displayWidth,
                     length: displayLength,
                     thickness: panelThickness,
-                    quantity: 0
+                    quantity: 0,
+                    inner_face_material: intMat,
+                    inner_face_thickness: intThk,
+                    outer_face_material: extMat,
+                    outer_face_thickness: extThk
                 });
             }
             panelsByDimension.get(key).quantity++;
@@ -2129,16 +2153,27 @@ const InstallationTimeEstimator = ({
                 addText(`Total: ${exportData.ceilingPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
                 yPos += 3;
                 
-                const ceilingPanelData = exportData.ceilingPanels.map(panel => [
-                    `${panel.width || 'N/A'}mm`,
-                    `${panel.length || 'N/A'}mm`,
-                    `${panel.thickness || 'N/A'}mm`,
-                    panel.quantity ? panel.quantity.toString() : '1'
-                ]);
+                const ceilingPanelData = exportData.ceilingPanels.map(panel => {
+                    const intMat = panel.inner_face_material ?? 'PPGI';
+                    const intThk = panel.inner_face_thickness ?? 0.5;
+                    const extMat = panel.outer_face_material ?? 'PPGI';
+                    const extThk = panel.outer_face_thickness ?? 0.5;
+                    const same = intMat === extMat && intThk === extThk;
+                    const finishing = same
+                        ? `Both ${extThk}mm ${extMat}`
+                        : `INT ${intThk}mm ${intMat} / EXT ${extThk}mm ${extMat}`;
+                    return [
+                        `${panel.width || 'N/A'}mm`,
+                        `${panel.length || 'N/A'}mm`,
+                        `${panel.thickness || 'N/A'}mm`,
+                        panel.quantity ? panel.quantity.toString() : '1',
+                        finishing
+                    ];
+                });
                 
                                  autoTable(doc, {
                     startY: yPos,
-                    head: [['Width', 'Length', 'Thk', 'Qty']],
+                    head: [['Width', 'Length', 'Thk', 'Qty', 'Face']],
                     body: ceilingPanelData,
                     theme: 'striped',
                     styles: { fontSize: 8, cellPadding: 2 },
@@ -2146,7 +2181,8 @@ const InstallationTimeEstimator = ({
                     alternateRowStyles: { fillColor: [240, 253, 244] },
                     margin: { left: margin, right: margin },
                     columnStyles: {
-                        3: { cellWidth: 14 } // Quantity tight
+                        3: { cellWidth: 10 }, // Qty tight
+                        4: { cellWidth: 40 }  // Face description
                     }
                 });
                 
@@ -5959,25 +5995,41 @@ const InstallationTimeEstimator = ({
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
                                                         Quantity
                                                     </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Face Material
+                                                    </th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {(expandedTables.ceilingPanels ? exportData.ceilingPanels : exportData.ceilingPanels.slice(0, 5)).map((panel, index) => (
-                                                    <tr key={index} className="hover:bg-gray-50">
-                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {panel.width || 'N/A'}
-                                                        </td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {panel.length || 'N/A'}
-                                                        </td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {panel.thickness || 'N/A'}
-                                                        </td>
-                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 font-medium">
-                                                            {panel.quantity || 1}
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                                {(expandedTables.ceilingPanels ? exportData.ceilingPanels : exportData.ceilingPanels.slice(0, 5)).map((panel, index) => {
+                                                    const intMat = panel.inner_face_material ?? 'PPGI';
+                                                    const intThk = panel.inner_face_thickness ?? 0.5;
+                                                    const extMat = panel.outer_face_material ?? 'PPGI';
+                                                    const extThk = panel.outer_face_thickness ?? 0.5;
+                                                    const same = intMat === extMat && intThk === extThk;
+                                                    const finishing = same
+                                                        ? `Both Side ${extThk}mm ${extMat}`
+                                                        : `INT: ${intThk}mm ${intMat} / EXT: ${extThk}mm ${extMat}`;
+                                                    return (
+                                                        <tr key={index} className="hover:bg-gray-50">
+                                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                                {panel.width || 'N/A'}
+                                                            </td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                                {panel.length || 'N/A'}
+                                                            </td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                                {panel.thickness || 'N/A'}
+                                                            </td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 font-medium">
+                                                                {panel.quantity || 1}
+                                                            </td>
+                                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 whitespace-nowrap">
+                                                                {finishing}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
                                                 {exportData.ceilingPanels.length > 5 && (
                                                     <tr 
                                                         className="hover:bg-blue-50 cursor-pointer transition-colors"

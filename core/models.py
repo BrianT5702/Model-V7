@@ -287,6 +287,7 @@ class CeilingPanel(models.Model):
     width = models.FloatField(help_text="Width of the panel in mm (max 1150mm)")
     length = models.FloatField(help_text="Length of the panel in mm")
     thickness = models.FloatField(default=20.0, help_text="Thickness of the ceiling panel in mm")
+    # Overall material classification (kept for backward compatibility and high-level filtering)
     material_type = models.CharField(
         max_length=50,
         default='standard',
@@ -296,6 +297,27 @@ class CeilingPanel(models.Model):
             ('fire_rated', 'Fire Rated Panel'),
             ('moisture_resistant', 'Moisture Resistant Panel')
         ]
+    )
+    # Face finishes (materials and sheet thickness) – mirror wall configuration
+    inner_face_material = models.CharField(
+        max_length=20,
+        choices=FACE_MATERIALS,
+        default='PPGI',
+        help_text="Inner face material"
+    )
+    inner_face_thickness = models.FloatField(
+        default=DEFAULT_FACE_THICKNESS,
+        help_text="Inner face sheet thickness in mm"
+    )
+    outer_face_material = models.CharField(
+        max_length=20,
+        choices=FACE_MATERIALS,
+        default='PPGI',
+        help_text="Outer face material"
+    )
+    outer_face_thickness = models.FloatField(
+        default=DEFAULT_FACE_THICKNESS,
+        help_text="Outer face sheet thickness in mm"
     )
     is_cut_panel = models.BooleanField(default=False, help_text="Whether this panel was cut to fit")
     cut_notes = models.TextField(blank=True, null=True, help_text="Notes about any cuts made to the panel")

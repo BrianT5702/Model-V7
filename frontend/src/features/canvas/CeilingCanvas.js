@@ -4,6 +4,84 @@ import { calculatePolygonVisualCenter } from './utils.js';
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
 import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
 
+// Build a stable identity key for ceiling panels based on thickness + inner/outer finishes
+function getCeilingPanelFinishKey(panel) {
+    if (!panel) return 'unknown';
+    const coreThk = panel.thickness ?? panel.ceiling_thickness ?? 0;
+    const intMat = panel.inner_face_material || panel.innerFaceMaterial || 'PPGI';
+    const intThk =
+        panel.inner_face_thickness != null
+            ? panel.inner_face_thickness
+            : panel.innerFaceThickness != null
+                ? panel.innerFaceThickness
+                : 0.5;
+    // For ceiling visual identity we group by core thickness + INNER face only,
+    // so rooms that share the same inner material/thickness get the same colour
+    return `${coreThk}|INT:${intThk} ${intMat}`;
+}
+
+// Generate distinct colours for combinations of (thickness + inner/outer finishes)
+function generateCeilingFinishColorMap(panels) {
+    if (!panels || panels.length === 0) return new Map();
+
+    const keys = [...new Set(panels.map(getCeilingPanelFinishKey))];
+
+    // If only one combination, keep a neutral style with depth for cut vs full
+    if (keys.length === 1) {
+        const colorMap = new Map();
+        const onlyKey = keys[0];
+        colorMap.set(onlyKey, {
+            panelFillFull: 'rgba(148, 163, 184, 0.35)', // lighter
+            panelFillCut: 'rgba(148, 163, 184, 0.7)',   // darker
+            panelStrokeFull: '#9ca3af',
+            panelStrokeCut: '#4b5563',
+            label: onlyKey,
+            hasDifferentFaces: false
+        });
+        return colorMap;
+    }
+
+    const colorMap = new Map();
+    keys.forEach((key, index) => {
+        const panel = panels.find(p => getCeilingPanelFinishKey(p) === key);
+        const hasDiffFaces =
+            panel &&
+            (panel.inner_face_material || panel.innerFaceMaterial || 'PPGI') !==
+                (panel.outer_face_material || panel.outerFaceMaterial || 'PPGI');
+
+        const baseHue = (index * 360) / keys.length;
+        const outerHue = baseHue;
+        const innerHue = (baseHue + 180) % 360;
+
+        if (hasDiffFaces) {
+            colorMap.set(key, {
+                // Full vs cut use same hue, different depth
+                panelFillFull: `hsla(${outerHue}, 70%, 65%, 0.45)`,
+                panelFillCut: `hsla(${outerHue}, 70%, 40%, 0.8)`,
+                panelStrokeFull: `hsl(${outerHue}, 70%, 35%)`,
+                panelStrokeCut: `hsl(${outerHue}, 80%, 20%)`,
+                innerPanelFillFull: `hsla(${innerHue}, 70%, 65%, 0.45)`,
+                innerPanelFillCut: `hsla(${innerHue}, 70%, 40%, 0.8)`,
+                innerPanelStrokeFull: `hsl(${innerHue}, 70%, 35%)`,
+                innerPanelStrokeCut: `hsl(${innerHue}, 80%, 20%)`,
+                label: key,
+                hasDifferentFaces: true
+            });
+        } else {
+            colorMap.set(key, {
+                panelFillFull: `hsla(${outerHue}, 70%, 65%, 0.45)`,
+                panelFillCut: `hsla(${outerHue}, 70%, 40%, 0.8)`,
+                panelStrokeFull: `hsl(${outerHue}, 70%, 35%)`,
+                panelStrokeCut: `hsl(${outerHue}, 80%, 20%)`,
+                label: key,
+                hasDifferentFaces: false
+            });
+        }
+    });
+
+    return colorMap;
+}
+
 const DEFAULT_CANVAS_WIDTH = 1000;
 const DEFAULT_CANVAS_HEIGHT = 720;
 const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
@@ -72,6 +150,20 @@ const CeilingCanvas = ({
     const effectiveCeilingPanelsMap = useMemo(() => {
         return isMultiRoomMode ? ceilingPanelsMap : (room ? { [room.id]: ceilingPanels } : {});
     }, [isMultiRoomMode, ceilingPanelsMap, room, ceilingPanels]);
+
+    // Flattened list of all panels for colour mapping (similar to wall thickness colour map)
+    const allCeilingPanels = useMemo(() => {
+        if (!effectiveCeilingPanelsMap) return [];
+        return Object.values(effectiveCeilingPanelsMap)
+            .filter(Array.isArray)
+            .flat()
+            .filter(Boolean);
+    }, [effectiveCeilingPanelsMap]);
+
+    const ceilingFinishColorMap = useMemo(
+        () => generateCeilingFinishColorMap(allCeilingPanels),
+        [allCeilingPanels]
+    );
     
     const effectiveCeilingPlans = useMemo(() => {
         const plans = isMultiRoomMode ? ceilingPlans : (ceilingPlan ? [ceilingPlan] : []);
@@ -1127,6 +1219,7 @@ const CeilingCanvas = ({
 
             // --- STYLING ---
             if (isSelected) {
+                // Preserve strong selection colours so picks remain obvious
                 const fillColors = ['rgba(37, 99, 235, 0.75)', 'rgba(249, 115, 22, 0.65)'];
                 const borderColors = ['#1d4ed8', '#c2410c'];
                 const highlightIndex = selectionIndex !== -1 ? selectionIndex : 0;
@@ -1134,14 +1227,38 @@ const CeilingCanvas = ({
                 ctx.strokeStyle = borderColors[highlightIndex] ?? '#1d4ed8';
                 ctx.lineWidth = 14 * scaleFactor.current;
             } else {
-                if (isCutPanel) {
-                    ctx.fillStyle = shouldDimPanels ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.5)';
-                    ctx.strokeStyle = shouldDimPanels ? '#9ca3af' : '#22c55e';
+                // Derive colours from ceiling panel build-up (thickness + finishes), like wall plan
+                const finishKey = getCeilingPanelFinishKey(panel);
+                const finishColors = ceilingFinishColorMap.get(finishKey);
+
+                // Same hue, different depth for full vs cut panels
+                const baseFill = isCutPanel
+                    ? (finishColors?.panelFillCut ?? 'rgba(34, 197, 94, 0.7)')
+                    : (finishColors?.panelFillFull ?? 'rgba(34, 197, 94, 0.35)');
+                const baseStroke = isCutPanel
+                    ? (finishColors?.panelStrokeCut ?? '#15803d')
+                    : (finishColors?.panelStrokeFull ?? '#22c55e');
+
+                if (shouldDimPanels) {
+                    // Dim alpha but keep hue when room is not active
+                    ctx.fillStyle = baseFill.replace(/rgba?\(([^)]+)\)/, (match, inner) => {
+                        const parts = inner.split(',').map(p => p.trim());
+                        if (parts.length === 4) {
+                            parts[3] = '0.1';
+                            return `rgba(${parts.join(', ')})`;
+                        }
+                        // If no alpha channel, fall back to a light gray
+                        return 'rgba(156, 163, 175, 0.1)';
+                    });
+                    ctx.strokeStyle = '#9ca3af';
                 } else {
-                    ctx.fillStyle = shouldDimPanels ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.5)';
-                    ctx.strokeStyle = shouldDimPanels ? '#9ca3af' : '#3b82f6';
+                    ctx.fillStyle = baseFill;
+                    ctx.strokeStyle = baseStroke;
                 }
-                ctx.lineWidth = shouldDimPanels ? 5 * scaleFactor.current : (isRoomSelected ? 12 * scaleFactor.current : 10 * scaleFactor.current);
+
+                ctx.lineWidth = shouldDimPanels
+                    ? 5 * scaleFactor.current
+                    : (isRoomSelected ? 12 * scaleFactor.current : 10 * scaleFactor.current);
             }
 
             // === DRAWING LOGIC ===
@@ -1952,7 +2069,7 @@ const CeilingCanvas = ({
         
         // console.log('🔧 Total project panels collected:', allProjectPanels.length);
 
-        // Group panels by dimensions (width, length, thickness)
+        // Group panels by dimensions (width, length, thickness) and face finishes
         const panelsByDimension = new Map();
         allProjectPanels.forEach(panel => {
             // Use panel thickness if available, otherwise use the current ceiling thickness setting
@@ -1976,15 +2093,25 @@ const CeilingCanvas = ({
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+
+            // Face finishes for grouping
+            const intMat = panel.inner_face_material ?? 'PPGI';
+            const intThk = panel.inner_face_thickness ?? 0.5;
+            const extMat = panel.outer_face_material ?? 'PPGI';
+            const extThk = panel.outer_face_thickness ?? 0.5;
             
-            const key = `${displayWidth}_${displayLength}_${panelThickness}`;
+            const key = `${displayWidth}_${displayLength}_${panelThickness}_${intMat}_${intThk}_${extMat}_${extThk}`;
             if (!panelsByDimension.has(key)) {
                 panelsByDimension.set(key, {
                     width: displayWidth,
                     length: displayLength,
                     thickness: panelThickness,
                     quantity: 0,
-                    panels: []
+                    panels: [],
+                    inner_face_material: intMat,
+                    inner_face_thickness: intThk,
+                    outer_face_material: extMat,
+                    outer_face_thickness: extThk
                 });
             }
             panelsByDimension.get(key).quantity++;
@@ -4113,7 +4240,7 @@ const CeilingCanvas = ({
                                             <div className="w-4 h-4 border-2 border-gray-600 border-dashed mr-3"></div>
                                             <span className="text-gray-700">Walls (Inner Face)</span>
                                         </div>
-                                        
+
                                         {calculatePanelsNeedSupport && (
                                             <>
                                                 {supportType === 'nylon' && (
@@ -4132,6 +4259,48 @@ const CeilingCanvas = ({
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Ceiling Panel Finish Legend (similar concept to Wall Finish Legend) */}
+                                {ceilingFinishColorMap && ceilingFinishColorMap.size > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-gray-200">
+                                        <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
+                                            <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h10M4 14h16M4 18h10" />
+                                            </svg>
+                                            Ceiling Panel Finish Legend
+                                        </h4>
+                                        <div className="space-y-2 text-xs sm:text-sm">
+                                            {Array.from(ceilingFinishColorMap.entries()).map(([key, colors]) => {
+                                                const parts = key.split('|');
+                                                const core = parts[0] || '';
+                                                const int = parts[1]?.replace('INT:', 'Int ') || '';
+                                                const label = `${core}mm • ${int}`;
+                                                return (
+                                                    <div key={key} className="flex items-center justify-between gap-3">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            {/* Full vs cut swatch: same hue, different depth */}
+                                                            <div className="flex overflow-hidden rounded border border-gray-300">
+                                                                <div
+                                                                    className="w-4 h-4"
+                                                                    style={{ backgroundColor: colors.panelFillFull }}
+                                                                    title="Full panel"
+                                                                ></div>
+                                                                <div
+                                                                    className="w-4 h-4"
+                                                                    style={{ backgroundColor: colors.panelFillCut }}
+                                                                    title="Cut panel"
+                                                                ></div>
+                                                            </div>
+                                                            <span className="text-gray-700 leading-snug break-words max-w-xs sm:max-w-sm">
+                                                                {label}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -4169,25 +4338,41 @@ const CeilingCanvas = ({
                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
                                         Quantity
                                     </th>
+                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                        Face Material
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white">
-                                {generatePanelList().map((panel, index) => (
-                                    <tr key={index} className="hover:bg-gray-50">
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                            {panel.width}
-                                        </td>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                            {panel.length}
-                                        </td>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                            {panel.thickness}
-                                        </td>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 font-medium">
-                                            {panel.quantity}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {generatePanelList().map((panel, index) => {
+                                    const intMat = panel.inner_face_material ?? 'PPGI';
+                                    const intThk = panel.inner_face_thickness ?? 0.5;
+                                    const extMat = panel.outer_face_material ?? 'PPGI';
+                                    const extThk = panel.outer_face_thickness ?? 0.5;
+                                    const same = intMat === extMat && intThk === extThk;
+                                    const finishing = same
+                                        ? `Both ${extThk}mm ${extMat}`
+                                        : `INT ${intThk}mm ${intMat} / EXT ${extThk}mm ${extMat}`;
+                                    return (
+                                        <tr key={index} className="hover:bg-gray-50">
+                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                {panel.width}
+                                            </td>
+                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                {panel.length}
+                                            </td>
+                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                {panel.thickness}
+                                            </td>
+                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 font-medium">
+                                                {panel.quantity}
+                                            </td>
+                                            <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 whitespace-nowrap">
+                                                {finishing}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                         
