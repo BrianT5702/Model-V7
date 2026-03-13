@@ -195,7 +195,7 @@ const Canvas2D = ({
         console.log('Current currentScaleFactor state:', currentScaleFactor);
         
         // No minimum zoom out - allow scaling down with a small floor to avoid numerical issues
-        const newScale = Math.max(0.05, scaleFactor.current * 0.8);
+        const newScale = Math.max(0.005, scaleFactor.current * 0.8);
         console.log('Calculated new scale:', newScale);
         
         zoomAtCurrentView(newScale);
