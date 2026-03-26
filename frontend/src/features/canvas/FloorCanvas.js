@@ -180,17 +180,20 @@ const FloorCanvas = ({
         return { minX, maxX, minY, maxY };
     }, [rooms]);
 
-    // Calculate effective floor panels
-    const effectiveFloorPanelsMap = useMemo(() => {
+    const isPanelFloorRoom = (room) =>
+        room && (room.floor_type === 'panel' || room.floor_type === 'Panel');
+
+    // Raw map from props; slab/non-panel rooms must not retain layout geometry when floor_type changes
+    const rawFloorPanelsMap = useMemo(() => {
         if (!floorPanelsMap || Object.keys(floorPanelsMap).length === 0) {
             if (floorPanels && Array.isArray(floorPanels) && floorPanels.length > 0) {
                 const fallbackMap = {};
-                floorPanels.forEach((panel, index) => {
+                floorPanels.forEach((panel) => {
                     let roomId = panel.room_id;
                     if (!roomId && panel.room) {
                         roomId = typeof panel.room === 'object' ? panel.room.id : panel.room;
                     }
-                    
+
                     if (roomId) {
                         if (!fallbackMap[roomId]) {
                             fallbackMap[roomId] = [];
@@ -204,6 +207,18 @@ const FloorCanvas = ({
         }
         return floorPanelsMap;
     }, [floorPanelsMap, floorPanels]);
+
+    const effectiveFloorPanelsMap = useMemo(() => {
+        if (!rooms?.length) return rawFloorPanelsMap;
+        const filtered = {};
+        Object.entries(rawFloorPanelsMap).forEach(([roomIdStr, roomPanels]) => {
+            const room = rooms.find((r) => String(r.id) === String(roomIdStr));
+            if (isPanelFloorRoom(room)) {
+                filtered[roomIdStr] = roomPanels;
+            }
+        });
+        return filtered;
+    }, [rawFloorPanelsMap, rooms]);
 
     // Clear dimension placement when floor plan data changes so labels re-evaluate (match ceiling)
     useEffect(() => {
@@ -601,6 +616,7 @@ const FloorCanvas = ({
 
     // Draw floor panels with winding-aware clipping mask
     const drawFloorPanels = (ctx, room, panels) => {
+        if (!isPanelFloorRoom(room)) return;
         if (!panels || panels.length === 0 || !room.room_points || room.room_points.length < 3) return;
 
         const wallThickness = projectData?.wall_thickness || 150;

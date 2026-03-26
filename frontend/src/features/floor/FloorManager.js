@@ -103,13 +103,15 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
         });
     }, [allWalls, selectedStoreyId]);
 
-    // Filter floor panels to those in the selected level's rooms
+    // Filter floor panels to panel-floor rooms on the selected level only (exclude slab/other so stale panels vanish after floor_type changes)
     const filteredFloorPanels = useMemo(() => {
         if (!floorPanels || floorPanels.length === 0) return [];
-        const filteredIds = new Set(filteredRooms.map(r => r.id));
         return floorPanels.filter(panel => {
             const rid = panel.room_id ?? (typeof panel.room === 'object' ? panel.room?.id : panel.room);
-            return rid != null && filteredIds.has(rid);
+            if (rid == null) return false;
+            const room = filteredRooms.find(r => String(r.id) === String(rid));
+            if (!room) return false;
+            return room.floor_type === 'panel' || room.floor_type === 'Panel';
         });
     }, [floorPanels, filteredRooms]);
 

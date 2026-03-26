@@ -2303,6 +2303,11 @@ class FloorService:
             if not rooms.exists():
                 return {'error': 'No rooms found for this project'}
             
+            # Drop stored floor panels for rooms that are not panel floors (e.g. user switched slab → no longer generate here, but old rows would still be returned)
+            for room in rooms:
+                if not hasattr(room, 'floor_type') or room.floor_type not in ['panel', 'Panel']:
+                    FloorPanel.objects.filter(room=room).delete()
+            
             # Get orientation analysis
             orientation_analysis = FloorService.analyze_floor_orientation_strategies(
                 project_id, panel_width, panel_length
