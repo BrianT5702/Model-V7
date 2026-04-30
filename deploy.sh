@@ -1,36 +1,53 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "🚀 Starting Model-V6 Deployment..."
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="${ENV_FILE:-/etc/ur-model.env}"
+SERVICE_NAME="${SERVICE_NAME:-gunicorn-ur-model}"
 
-# Check if we're in the right directory
-if [ ! -f "manage.py" ]; then
-    echo "❌ Error: Please run this script from the project root directory"
+echo "==> Deploy start"
+cd "$APP_DIR"
+
+if [[ ! -f "manage.py" ]]; then
+    echo "ERROR: manage.py not found in $APP_DIR"
     exit 1
 fi
 
-# Install Python dependencies
-echo "📦 Installing Python dependencies..."
-pip install -r requirements.txt
+if [[ ! -x "./venv/bin/python" ]]; then
+    echo "ERROR: venv missing at $APP_DIR/venv. Create it first:"
+    echo "  python3.12 -m venv venv"
+    exit 1
+fi
 
-# Install Node.js dependencies and build frontend
-echo "🔨 Building React frontend..."
-cd frontend
-npm install
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    . "$ENV_FILE"
+    set +a
+else
+    echo "WARN: Env file not found at $ENV_FILE. Continuing with current shell env."
+fi
+
+echo "==> Install Python dependencies"
+./venv/bin/pip install -r requirements.txt
+
+echo "==> Build frontend"
+pushd frontend >/dev/null
+npm ci
 npm run build
-cd ..
+popd >/dev/null
 
-# Collect static files
-echo "📁 Collecting static files..."
-python manage.py collectstatic --noinput
+echo "==> Run migrations"
+./venv/bin/python manage.py migrate --settings=model_builder.settings_production
 
-# Run migrations
-echo "🗄️ Running database migrations..."
-python manage.py migrate
+echo "==> Collect static files"
+./venv/bin/python manage.py collectstatic --noinput --settings=model_builder.settings_production
 
-echo "✅ Deployment preparation completed!"
-echo ""
-echo "Next steps:"
-echo "1. Push your code to GitHub"
-echo "2. Deploy to Railway or Render using the DEPLOYMENT.md guide"
-echo "3. Set environment variables in your deployment platform"
-echo "4. Your app will be accessible via a public URL!"
+echo "==> Restart service: $SERVICE_NAME"
+if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl restart "$SERVICE_NAME"
+    sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
+else
+    echo "WARN: systemctl not found. Restart service manually."
+fi
+
+echo "==> Deploy complete"

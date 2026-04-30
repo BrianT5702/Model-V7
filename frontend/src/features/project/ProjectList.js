@@ -13,6 +13,7 @@ const ProjectList = ({ projects, setProjects }) => {
     const [deleteError, setDeleteError] = useState('');
     const [showEditModal, setShowEditModal] = useState(false);
     const [projectToEdit, setProjectToEdit] = useState(null);
+    const safeProjects = Array.isArray(projects) ? projects : [];
 
     // Utility function to detect database connection errors
     const isDatabaseConnectionError = (error) => {
@@ -53,7 +54,7 @@ const ProjectList = ({ projects, setProjects }) => {
 
     const handleEditSuccess = (updatedProject) => {
         // Update the project in the projects array
-        setProjects(projects.map(project => 
+        setProjects(safeProjects.map(project => 
             project.id === updatedProject.id ? updatedProject : project
         ));
     };
@@ -62,7 +63,7 @@ const ProjectList = ({ projects, setProjects }) => {
         if (!projectToDelete) return;
         api.delete(`projects/${projectToDelete}/`)
             .then(() => {
-                setProjects(projects.filter((project) => project.id !== projectToDelete));
+                setProjects(safeProjects.filter((project) => project.id !== projectToDelete));
                 setDeleteSuccess(true);
                 setTimeout(() => setDeleteSuccess(false), 3000);
             })
@@ -144,7 +145,7 @@ const ProjectList = ({ projects, setProjects }) => {
                 </div>
             )}
             
-            {projects.length === 0 ? (
+            {safeProjects.length === 0 ? (
                 <div className="text-center py-12">
                     <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                         <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -162,7 +163,7 @@ const ProjectList = ({ projects, setProjects }) => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {projects.map((project) => (
+                    {safeProjects.map((project) => (
                         <div
                             key={project.id}
                             className="group bg-white rounded-2xl border border-gray-200 p-6 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all duration-300 transform hover:-translate-y-2 cursor-pointer"

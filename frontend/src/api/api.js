@@ -3,10 +3,12 @@ import axios from 'axios';
 // Automatically detect environment and set appropriate base URL
 const getBaseURL = () => {
     const explicit = process.env.REACT_APP_API_BASE_URL;
-    if (explicit) return explicit;
+    if (explicit && explicit.trim()) {
+        return explicit.trim();
+    }
     if (process.env.NODE_ENV === "production") return "/api/";
     return "http://127.0.0.1:8000/api/";
-  };
+};
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
