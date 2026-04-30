@@ -2,14 +2,11 @@ import axios from 'axios';
 
 // Automatically detect environment and set appropriate base URL
 const getBaseURL = () => {
-    if (process.env.NODE_ENV === 'production') {
-        // In production, use the same domain (relative URL)
-        return '/ur-model/api/';
-    } else {
-        // In development, use localhost
-        return 'http://127.0.0.1:8000/api/';
-    }
-};
+    const explicit = process.env.REACT_APP_API_BASE_URL;
+    if (explicit) return explicit;
+    if (process.env.NODE_ENV === "production") return "/api/";
+    return "http://127.0.0.1:8000/api/";
+  };
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
