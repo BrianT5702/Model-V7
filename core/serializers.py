@@ -498,3 +498,25 @@ class ProjectSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Wall thickness must be greater than 0")
         return value
+
+
+class ProjectListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for project list endpoint.
+    Avoids nested walls/rooms/doors/intersections to keep payload small and fast.
+    """
+    calculated_height = serializers.FloatField(source='height', read_only=True)
+
+    class Meta:
+        model = Project
+        fields = [
+            'id',
+            'name',
+            'width',
+            'length',
+            'height',
+            'calculated_height',
+            'wall_thickness',
+            'created_at',
+            'updated_at',
+        ]

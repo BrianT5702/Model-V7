@@ -8,7 +8,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
 from .serializers import (
-    ProjectSerializer, StoreySerializer, WallSerializer, RoomSerializer,
+    ProjectSerializer, ProjectListSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
     DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer
 )
@@ -21,6 +21,30 @@ logger = logging.getLogger(__name__)
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
+
+    def get_queryset(self):
+        # Keep list endpoint lean for fast homepage loads.
+        if self.action == 'list':
+            return (
+                Project.objects
+                .only(
+                    'id',
+                    'name',
+                    'width',
+                    'length',
+                    'height',
+                    'wall_thickness',
+                    'created_at',
+                    'updated_at',
+                )
+                .order_by('-updated_at', '-id')
+            )
+        return super().get_queryset()
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ProjectListSerializer
+        return ProjectSerializer
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
