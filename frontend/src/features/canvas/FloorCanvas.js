@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
-import { calculateOffsetPoints } from './drawing.js';
-import { DIMENSION_CONFIG } from './DimensionConfig.js';
+import { calculateOffsetPoints, drawOrthoPlanDimensionGeometryLikeWall, makeLabelDrawFn, buildWallOffsetOptions, resolve45CutForceShouldFlip } from './drawing.js';
+import { DIMENSION_CONFIG, formatPlanDimensionLabel, planDimensionDedupKey } from './DimensionConfig.js';
 import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 
@@ -356,10 +356,10 @@ const FloorCanvas = ({
             // PASS 1: Draw dimensions (lines only) and collect text box info
             const dimensionTextBoxes = drawFloorDimensions(ctx);
             
-            // PASS 2: Draw all dimension text BOXES on top
             if (dimensionTextBoxes && dimensionTextBoxes.length > 0) {
-                dimensionTextBoxes.forEach(label => {
-                    drawDimensionTextBox(ctx, label);
+                dimensionTextBoxes.forEach((label) => {
+                    const drawFn = label.draw || makeLabelDrawFn(label, scaleFactor.current, initialScale.current);
+                    drawFn(ctx);
                 });
             }
         }
@@ -513,56 +513,46 @@ const FloorCanvas = ({
                 // Use actual wall thickness (mm) and scale it fully to pixels
                 const wallThickness = wall.thickness ?? projectData?.wall_thickness ?? 100;
                 const gapPixels = wallThickness * scaleFactor.current;
-
-                let { line1, line2 } = calculateOffsetPoints(
-                    wall.start_x, wall.start_y, wall.end_x, wall.end_y,
-                    gapPixels, center, scaleFactor.current
-                );
+                const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
 
                 let has45 = false;
-                let joiningWallId = null;
-                
+                let joinVecX = 0;
+                let joinVecY = 0;
+                let joinCount = 0;
                 intersections.forEach(inter => {
                     if ((inter.wall_1 === wall.id || inter.wall_2 === wall.id) && inter.joining_method === '45_cut') {
                         has45 = true;
-                        joiningWallId = inter.wall_1 === wall.id ? inter.wall_2 : inter.wall_1;
-                    }
-                });
-                
-                if (has45 && joiningWallId) {
-                    const joiningWall = walls.find(w => w.id === joiningWallId);
-                    if (joiningWall) {
-                        const dx = wall.end_x - wall.start_x;
-                        const dy = wall.end_y - wall.start_y;
-                        const length = Math.hypot(dx, dy);
-                        const normalX = dy / length;
-                        const normalY = -dx / length;
-                        
-                        const midX = (wall.start_x + wall.end_x) / 2;
-                        const toCenterX = center.x - midX;
-                        const toCenterY = center.y - (wall.start_y + wall.end_y) / 2;
-                        const dotToCenter = normalX * toCenterX + normalY * toCenterY;
-                        
-                        const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
-                        const joinMidY = (joiningWall.start_y + joiningWall.end_y) / 2;
-                        const toJoinX = joinMidX - midX;
-                        const toJoinY = joinMidY - (wall.start_y + wall.end_y) / 2;
-                        const dotToJoin = normalX * toJoinX + normalY * toJoinY;
-                        
-                        const shouldFlip = (dotToCenter > 0 && dotToJoin < 0) || (dotToCenter < 0 && dotToJoin > 0);
-                        
-                        if (shouldFlip) {
-                            const offsetX = (gapPixels * normalX) / scaleFactor.current;
-                            const offsetY = (gapPixels * normalY) / scaleFactor.current;
-                            const finalOffsetX = dotToCenter > 0 ? offsetX : -offsetX;
-                            const finalOffsetY = dotToCenter > 0 ? offsetY : -offsetY;
-                            
-                            line2[0] = { x: wall.start_x - finalOffsetX, y: wall.start_y - finalOffsetY };
-                            line2[1] = { x: wall.end_x - finalOffsetX, y: wall.end_y - finalOffsetY };
+                        const otherWallId = inter.wall_1 === wall.id ? inter.wall_2 : inter.wall_1;
+                        const otherWall = walls.find(w => w.id === otherWallId);
+                        if (otherWall) {
+                            const wallMidX = (wall.start_x + wall.end_x) / 2;
+                            const wallMidY = (wall.start_y + wall.end_y) / 2;
+                            const otherMidX = (otherWall.start_x + otherWall.end_x) / 2;
+                            const otherMidY = (otherWall.start_y + otherWall.end_y) / 2;
+                            joinVecX += otherMidX - wallMidX;
+                            joinVecY += otherMidY - wallMidY;
+                            joinCount += 1;
                         }
                     }
+                });
+                if (has45 && joinCount > 0) {
+                    const dx = wall.end_x - wall.start_x;
+                    const dy = wall.end_y - wall.start_y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const normalX = dy / len;
+                    const normalY = -dx / len;
+                    const joinDot = normalX * (joinVecX / joinCount) + normalY * (joinVecY / joinCount);
+                    offsetOpts.forceShouldFlip = joinDot > 0;
                 }
-                
+
+                let { line1, line2 } = calculateOffsetPoints(
+                    wall.start_x, wall.start_y, wall.end_x, wall.end_y,
+                    gapPixels, center, scaleFactor.current, offsetOpts
+                );
+
+                // Do not recompute line2 from centroid vs joining wall: that overwrote polygon-based inner
+                // side from calculateOffsetPoints (drawing.js), e.g. wall 7611 with 45_cut joints.
+
                 if (has45) {
                     const dx = wall.end_x - wall.start_x;
                     const dy = wall.end_y - wall.start_y;
@@ -576,6 +566,28 @@ const FloorCanvas = ({
                     line2[0].y += uy * finalAdjust;
                     line2[1].x -= ux * finalAdjust;
                     line2[1].y -= uy * finalAdjust;
+                }
+
+                // Ensure inner styling follows forced 45_cut side even if prior transforms leave
+                // line identity mismatched for this wall.
+                const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+                if (typeof forcedFlip === 'boolean') {
+                    const dx = wall.end_x - wall.start_x;
+                    const dy = wall.end_y - wall.start_y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const normalX = dy / len;
+                    const normalY = -dx / len;
+                    const wallMidX = (wall.start_x + wall.end_x) / 2;
+                    const wallMidY = (wall.start_y + wall.end_y) / 2;
+                    const line2MidX = (line2[0].x + line2[1].x) / 2;
+                    const line2MidY = (line2[0].y + line2[1].y) / 2;
+                    const line2Dot = normalX * (line2MidX - wallMidX) + normalY * (line2MidY - wallMidY);
+                    const line2IsPositiveSide = line2Dot > 0;
+                    if (line2IsPositiveSide !== forcedFlip) {
+                        const tmp = line1;
+                        line1 = line2;
+                        line2 = tmp;
+                    }
                 }
 
                 wall._line1 = line1;
@@ -858,7 +870,12 @@ const FloorCanvas = ({
         }
 
         // Sort by dimension value ascending: draw smaller first (inner), larger later (outer when overlap)
-        dimensionsToDraw.sort((a, b) => (a.dimension.dimension ?? 0) - (b.dimension.dimension ?? 0));
+        dimensionsToDraw.sort((a, b) => {
+            const pa = a.dimension.priority ?? 99;
+            const pb = b.dimension.priority ?? 99;
+            if (pa !== pb) return pa - pb;
+            return (a.dimension.dimension ?? 0) - (b.dimension.dimension ?? 0);
+        });
 
         // 3. Draw in order so larger values get pushed outer when overlapping
         dimensionsToDraw.forEach(({ dimension, bounds }) => {
@@ -924,7 +941,7 @@ const FloorCanvas = ({
                 drawnValues.add(valueKey);
                 
                 if (visibilityState.panel !== false) {
-                    drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector);
+                    drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector, room.id);
                 }
 
             } else if (panels.length === 1 && shouldShowIndividual) {
@@ -963,7 +980,8 @@ const FloorCanvas = ({
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
-                        isHorizontal: false 
+                        isHorizontal: false,
+                        dedupId: panel.id != null ? String(panel.id) : ''
                     };
                 } else {
                     const centerY = panel.start_y + (panel.length / 2);
@@ -979,7 +997,8 @@ const FloorCanvas = ({
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
-                        isHorizontal: true 
+                        isHorizontal: true,
+                        dedupId: panel.id != null ? String(panel.id) : ''
                     };
                 }
                 
@@ -1032,7 +1051,8 @@ const FloorCanvas = ({
                         drawnPositions: new Set(),
                         roomId: room.id,
                         isHorizontal: true,
-                        isCut: true
+                        isCut: true,
+                        dedupId: panel.id != null ? String(panel.id) : ''
                     };
                 } else {
                     const centerX = panel.start_x + (panel.width / 2);
@@ -1049,7 +1069,8 @@ const FloorCanvas = ({
                         drawnPositions: new Set(),
                         roomId: room.id,
                         isHorizontal: false,
-                        isCut: true
+                        isCut: true,
+                        dedupId: panel.id != null ? String(panel.id) : ''
                     };
                 }
                 
@@ -1064,61 +1085,6 @@ const FloorCanvas = ({
         }
     };
 
-    // PASS 2: Draw dimension text box
-    const drawDimensionTextBox = (ctx, label) => {
-        if (!label) return;
-        
-        ctx.save();
-        
-        const { x, y, width, height, text, color, labelX, labelY, isHorizontal } = label;
-        
-        // Draw background
-        // Match CeilingCanvas style (0.95 opacity)
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        ctx.fillRect(x, y, width, height);
-        
-        // Draw border
-        ctx.strokeStyle = color;
-        ctx.lineWidth = DIMENSION_CONFIG.LABEL_BORDER_WIDTH;
-        ctx.strokeRect(x, y, width, height);
-        
-        // Draw text
-        ctx.fillStyle = color;
-        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
-        let fontSize;
-        
-        let sqrtScaledFontSize = 0;
-        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
-            const zoomRatio = scaleFactor.current / initialScale.current;
-            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-        }
-        
-        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-        } else {
-            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-        }
-        
-        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-        ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-        
-        if (isHorizontal) {
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, labelX, labelY);
-        } else {
-            ctx.save();
-            ctx.translate(labelX, labelY);
-            ctx.rotate(-Math.PI / 2);
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 0, 0);
-            ctx.restore();
-        }
-        
-        ctx.restore();
-    };
-
     // PASS 1: Draw dimension LINES
     const drawRoomDimensions = (ctx, dimension, bounds, placedLabels, allLabels) => {
         const { startX, endX, startY, endY, dimension: length, color, avoidArea } = dimension;
@@ -1126,14 +1092,11 @@ const FloorCanvas = ({
         
         if (!bounds && !modelBounds) return;
 
-        // Global numeric de-duplication: ensure each dimension value (in mm) appears at most once (match ceiling)
         const globalDimensionValues = dimensionValuesSeen.current;
         if (globalDimensionValues && typeof length === 'number') {
-            const roundedLength = Math.round(length);
-            if (globalDimensionValues.has(roundedLength)) {
-                return;
-            }
-            globalDimensionValues.add(roundedLength);
+            const dedupKey = planDimensionDedupKey(dimension, length);
+            if (globalDimensionValues.has(dedupKey)) return;
+            globalDimensionValues.add(dedupKey);
         }
 
         let isHorizontal;
@@ -1158,17 +1121,25 @@ const FloorCanvas = ({
         let baseOffset = Math.min(DIMENSION_CONFIG.BASE_OFFSET, 10);
         const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
         
-        let text;
-        if (dimension.type === 'cut_panel' || dimension.isCut) {
-            // [CHANGED] Removed the (CUT) text to keep it clean
-            text = `${Math.round(length)}`;
-        } else if (dimension.quantity && dimension.quantity > 1) {
-            text = `${dimension.quantity} × ${Math.round(length)}`;
-        } else {
-            text = `${Math.round(length)}`;
+        const text = formatPlanDimensionLabel(dimension, length);
+
+        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
+        let fontSize;
+        let sqrtScaledFontSize = 0;
+        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
+            const zoomRatio = scaleFactor.current / initialScale.current;
+            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
         }
-        let textWidth = ctx.measureText(text).width;
-        
+        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+        } else {
+            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+        }
+        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+        const previousFont = ctx.font;
+        ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+        const textWidth = ctx.measureText(text).width;
+
         let placement;
         
         if (isHorizontal) {
@@ -1349,73 +1320,113 @@ const FloorCanvas = ({
                 }
             }
         }
-        
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
-        
-        if (isHorizontal) {
-            ctx.beginPath();
-            ctx.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
-            ctx.moveTo(startX * scaleFactor.current + offsetX.current, startY * scaleFactor.current + offsetY.current);
-            ctx.lineTo(startX * scaleFactor.current + offsetX.current, labelY);
-            ctx.moveTo(endX * scaleFactor.current + offsetX.current, endY * scaleFactor.current + offsetY.current);
-            ctx.lineTo(endX * scaleFactor.current + offsetX.current, labelY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            ctx.beginPath();
-            ctx.lineWidth = DIMENSION_CONFIG.DIMENSION_LINE_WIDTH;
-            ctx.moveTo(startX * scaleFactor.current + offsetX.current, labelY);
-            ctx.lineTo(endX * scaleFactor.current + offsetX.current, labelY);
-            ctx.stroke();
-        } else {
-            ctx.beginPath();
-            ctx.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
-            ctx.moveTo(startX * scaleFactor.current + offsetX.current, startY * scaleFactor.current + offsetY.current);
-            ctx.lineTo(labelX, startY * scaleFactor.current + offsetY.current);
-            ctx.moveTo(endX * scaleFactor.current + offsetX.current, endY * scaleFactor.current + offsetY.current);
-            ctx.lineTo(labelX, endY * scaleFactor.current + offsetY.current);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            ctx.beginPath();
-            ctx.lineWidth = DIMENSION_CONFIG.DIMENSION_LINE_WIDTH;
-            ctx.moveTo(labelX, startY * scaleFactor.current + offsetY.current);
-            ctx.lineTo(labelX, endY * scaleFactor.current + offsetY.current);
-            ctx.stroke();
+
+        const dxLine = endX - startX;
+        const dyLine = endY - startY;
+        const angleDeg = Math.atan2(dyLine, dxLine) * (180 / Math.PI);
+        const startXScreen = startX * scaleFactor.current + offsetX.current;
+        const endXScreen = endX * scaleFactor.current + offsetX.current;
+        const centeredLabelX = (startXScreen + endXScreen) / 2;
+
+        const wallStyleBounds = isHorizontal
+            ? calculateHorizontalLabelBounds(centeredLabelX, labelY, textWidth, 2, 8)
+            : calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+
+        const clipBounds = bounds || modelBounds;
+        if (!clipBounds) {
+            ctx.font = previousFont;
+            return;
         }
-        
-        if (isFinite(finalLabelBounds.x) && isFinite(finalLabelBounds.y) &&
-            isFinite(finalLabelBounds.width) && isFinite(finalLabelBounds.height) &&
-            finalLabelBounds.width > 0 && finalLabelBounds.height > 0) {
+
+        const isValidPosition =
+            wallStyleBounds.x >= 0 &&
+            wallStyleBounds.y >= 0 &&
+            wallStyleBounds.x + wallStyleBounds.width <= CANVAS_WIDTH &&
+            wallStyleBounds.y + wallStyleBounds.height <= CANVAS_HEIGHT;
+
+        if (!isValidPosition) {
+            ctx.font = previousFont;
+            return;
+        }
+
+        drawOrthoPlanDimensionGeometryLikeWall(
+            ctx,
+            {
+                startX,
+                startY,
+                endX,
+                endY,
+                isHorizontal,
+                labelX,
+                labelY,
+                textWidth,
+                color
+            },
+            scaleFactor.current,
+            offsetX.current,
+            offsetY.current,
+            clipBounds
+        );
+
+        if (
+            isFinite(wallStyleBounds.x) &&
+            isFinite(wallStyleBounds.y) &&
+            isFinite(wallStyleBounds.width) &&
+            isFinite(wallStyleBounds.height) &&
+            wallStyleBounds.width > 0 &&
+            wallStyleBounds.height > 0
+        ) {
             placedLabels.push({
-                x: finalLabelBounds.x,
-                y: finalLabelBounds.y,
-                width: finalLabelBounds.width,
-                height: finalLabelBounds.height,
-                text: text,
+                x: wallStyleBounds.x,
+                y: wallStyleBounds.y,
+                width: wallStyleBounds.width,
+                height: wallStyleBounds.height,
+                text,
                 type: dimension.type || 'default'
             });
         }
-        
-        allLabels.push({
-            x: finalLabelBounds.x,
-            y: finalLabelBounds.y,
-            width: finalLabelBounds.width,
-            height: finalLabelBounds.height,
-            text: text,
-            color: color,
-            labelX: labelX,
-            labelY: labelY,
-            isHorizontal: isHorizontal
-        });
-        
-        ctx.restore();
+
+        const dimSide = isHorizontal
+            ? placement.side === 'side1'
+                ? 'top'
+                : 'bottom'
+            : placement.side === 'side1'
+                ? 'left'
+                : 'right';
+
+        if (isHorizontal) {
+            allLabels.push({
+                x: centeredLabelX - textWidth / 2 - 2,
+                y: labelY - 8,
+                width: textWidth + 4,
+                height: 16,
+                side: dimSide,
+                text,
+                angle: angleDeg,
+                type: 'wall',
+                textColor: color
+            });
+        } else {
+            allLabels.push({
+                x: labelX - 8,
+                y: labelY - textWidth / 2 - 2,
+                width: 16,
+                height: textWidth + 4,
+                side: dimSide,
+                text,
+                angle: angleDeg,
+                type: 'wall',
+                textColor: color
+            });
+        }
+
+        ctx.font = previousFont;
     };
     
     // Draw Grouped Dimensions (optional dimensionCollector: when set, push to it instead of drawing)
-    const drawGroupedPanelDimensions = (ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector = null) => {
+    const drawGroupedPanelDimensions = (ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector = null, roomId = null) => {
+        const effectiveRoomId =
+            roomId != null ? roomId : (panels[0]?.room_id != null ? panels[0].room_id : 'unknown');
         const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.start_x + p.width))) / 2;
         const centerY = (Math.min(...panels.map(p => p.start_y)) + Math.max(...panels.map(p => p.start_y + p.length))) / 2;
 
@@ -1445,7 +1456,7 @@ const FloorCanvas = ({
                 avoidArea: projectBounds,
                 quantity: panels.length,
                 drawnPositions: new Set(),
-                roomId: 'unknown',
+                roomId: effectiveRoomId,
                 isHorizontal: false
             };
             if (visibilityState.panel !== false) {
@@ -1464,7 +1475,7 @@ const FloorCanvas = ({
                 avoidArea: projectBounds,
                 quantity: panels.length,
                 drawnPositions: new Set(),
-                roomId: 'unknown',
+                roomId: effectiveRoomId,
                 isHorizontal: true
             };
             if (visibilityState.panel !== false) {
@@ -1727,7 +1738,7 @@ const FloorCanvas = ({
                         }}
                     >
                         {/* Zoom Controls */}
-                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-50">
                             <button
                                 onClick={handleZoomIn}
                                 className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
@@ -1773,6 +1784,7 @@ const FloorCanvas = ({
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
                             onClick={handleCanvasClick}
+                            onContextMenu={(e) => e.preventDefault()}
                         />
                     </div>
                     
@@ -1985,18 +1997,18 @@ const FloorCanvas = ({
                             </h4>
                             
                             <div className="space-y-3 text-sm">
-                                {/* Room Dimensions - Toggleable Legend Item */}
+                                {/* Overall outline (plan footprint) — per room when multiple rooms */}
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center">
                                         <div className="w-4 h-4 bg-blue-600 rounded mr-3"></div>
-                                        <span className="text-gray-700">Room Dimensions</span>
+                                        <span className="text-gray-700">Overall outline</span>
                                     </div>
                                     <input 
                                         type="checkbox" 
                                         checked={visibilityState.room !== false}
                                         onChange={(e) => setVisibilityState(prev => ({ ...prev, room: e.target.checked }))}
                                         className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-                                        title="Toggle Room Dimensions"
+                                        title="Each room’s total width and depth on the plan (plan-view size). Not the whole project if you have several rooms."
                                     />
                                 </div>
 

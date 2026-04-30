@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { calculateOffsetPoints } from './drawing.js';
+import { calculateOffsetPoints, drawOrthoPlanDimensionGeometryLikeWall, makeLabelDrawFn, buildWallOffsetOptions } from './drawing.js';
 import { calculatePolygonVisualCenter } from './utils.js';
-import { DIMENSION_CONFIG } from './DimensionConfig.js';
+import { DIMENSION_CONFIG, formatPlanDimensionLabel, planDimensionDedupKey } from './DimensionConfig.js';
 import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
 
 // Build a stable identity key for ceiling panels based on thickness + inner/outer finishes
@@ -90,6 +90,10 @@ const MAX_CANVAS_HEIGHT_RATIO = 0.82; // More vertical space so ceiling plan con
 const MIN_CANVAS_WIDTH = 320;
 const MIN_CANVAS_HEIGHT = 280;
 const PADDING = 50;
+/** Hangers along each drawn alu rail, in mm. */
+const ALU_RAIL_HANGER_SPACING_MM = 500;
+/** Rails sketched along walls often sit just outside panel AABBs; still treat as over the ceiling grid. */
+const ALU_RAIL_PANEL_PROXIMITY_MM = 220;
 
 const CeilingCanvas = ({ 
     // Multi-room props
@@ -160,10 +164,116 @@ const CeilingCanvas = ({
             .filter(Boolean);
     }, [effectiveCeilingPanelsMap]);
 
+    /** Full project panels for alu placement — map is filtered by selected room / view but rails use global coords. */
+    const allCeilingPanelsForAluPlacement = useMemo(() => {
+        if (isMultiRoomMode && Array.isArray(ceilingPanels) && ceilingPanels.length > 0) {
+            return ceilingPanels.filter(Boolean);
+        }
+        return allCeilingPanels;
+    }, [isMultiRoomMode, ceilingPanels, allCeilingPanels]);
+
+    // Some datasets keep geometry in meters, others in millimeters.
+    // We infer a mm->model divisor so spacing/tolerance behave consistently.
+    const modelUnitsPerMm = useMemo(() => {
+        const sampleDims = [];
+        if (projectData?.width) sampleDims.push(Number(projectData.width));
+        if (projectData?.length) sampleDims.push(Number(projectData.length));
+        for (const p of allCeilingPanelsForAluPlacement.slice(0, 30)) {
+            if (p?.width) sampleDims.push(Number(p.width));
+            if (p?.length) sampleDims.push(Number(p.length));
+        }
+        const positive = sampleDims.filter(v => Number.isFinite(v) && v > 0);
+        if (positive.length === 0) return 1;
+        const median = positive.sort((a, b) => a - b)[Math.floor(positive.length / 2)];
+        return median < 50 ? 1000 : 1;
+    }, [allCeilingPanelsForAluPlacement, projectData]);
+
     const ceilingFinishColorMap = useMemo(
         () => generateCeilingFinishColorMap(allCeilingPanels),
         [allCeilingPanels]
     );
+
+    const getPanelAxisBounds = useCallback((panel) => {
+        const startX = panel.start_x ?? panel.x ?? 0;
+        const startY = panel.start_y ?? panel.y ?? 0;
+        const endX = panel.end_x ?? (panel.width !== undefined ? startX + panel.width : panel.x_end ?? startX);
+        const endY = panel.end_y ?? (panel.length !== undefined ? startY + panel.length : panel.y_end ?? startY);
+        return {
+            left: Math.min(startX, endX),
+            right: Math.max(startX, endX),
+            top: Math.min(startY, endY),
+            bottom: Math.max(startY, endY)
+        };
+    }, []);
+
+    const buildAluHangersAlongRail = useCallback((sx, sy, ex, ey, supportLinePayload, supportTypeForRecord, placementKeyFn, placementKeysSet) => {
+        const newSupports = [];
+        const dx = ex - sx;
+        const dy = ey - sy;
+        const L = Math.hypot(dx, dy);
+        if (L < 1) return newSupports;
+
+        const ux = dx / L;
+        const uy = dy / L;
+        const spacing = ALU_RAIL_HANGER_SPACING_MM / modelUnitsPerMm;
+        const proximity = ALU_RAIL_PANEL_PROXIMITY_MM / modelUnitsPerMm;
+
+        const pointEligibleForHanger = (mx, my) => {
+            for (const panel of allCeilingPanelsForAluPlacement) {
+                const b = getPanelAxisBounds(panel);
+                const cx = Math.min(Math.max(mx, b.left), b.right);
+                const cy = Math.min(Math.max(my, b.top), b.bottom);
+                const dist = Math.hypot(mx - cx, my - cy);
+                if (dist <= proximity) return true;
+            }
+            return false;
+        };
+        // Compatibility alias for any stale references during hot reload.
+        const pointInsideAnyPanel = pointEligibleForHanger;
+
+        const addIf = (px, py) => {
+            if (!pointInsideAnyPanel(px, py)) return;
+            const pk = placementKeyFn(px, py);
+            if (placementKeysSet.has(pk)) return;
+            placementKeysSet.add(pk);
+            newSupports.push({
+                id: Date.now() + Math.random(),
+                start_x: px,
+                start_y: py,
+                width: 50,
+                length: 50,
+                type: supportTypeForRecord,
+                x: px,
+                y: py,
+                supportLine: supportLinePayload,
+                isIntersectionPoint: true
+            });
+        };
+
+        const scanStep = Math.max(40 / modelUnitsPerMm, spacing / 10);
+        let lastPlacedT = null;
+        let t = 0;
+        while (t <= L + 0.001) {
+            const tt = Math.min(t, L);
+            const px = sx + ux * tt;
+            const py = sy + uy * tt;
+            const inside = pointInsideAnyPanel(px, py);
+            if (inside && (lastPlacedT === null || tt - lastPlacedT >= spacing)) {
+                addIf(px, py);
+                lastPlacedT = tt;
+            }
+            t += scanStep;
+        }
+
+        // Tail fill: if end point is inside panel and the trailing gap is large enough, add one more.
+        const endX = sx + ux * L;
+        const endY = sy + uy * L;
+        if (pointInsideAnyPanel(endX, endY) && (lastPlacedT === null || L - lastPlacedT >= spacing * 0.45)) {
+            addIf(endX, endY);
+        }
+
+        return newSupports;
+    }, [allCeilingPanelsForAluPlacement, getPanelAxisBounds, modelUnitsPerMm]);
     
     const effectiveCeilingPlans = useMemo(() => {
         const plans = isMultiRoomMode ? ceilingPlans : (ceilingPlan ? [ceilingPlan] : []);
@@ -611,7 +721,12 @@ const CeilingCanvas = ({
 
         // Sort by dimension value ascending and draw: smaller first (inner), larger later (outer when overlap)
         if (dimensionsToDraw.length > 0) {
-            dimensionsToDraw.sort((a, b) => (a.dimension.dimension ?? 0) - (b.dimension.dimension ?? 0));
+            dimensionsToDraw.sort((a, b) => {
+                const pa = a.dimension.priority ?? 99;
+                const pb = b.dimension.priority ?? 99;
+                if (pa !== pb) return pa - pb;
+                return (a.dimension.dimension ?? 0) - (b.dimension.dimension ?? 0);
+            });
             dimensionsToDraw.forEach(({ dimension, bounds }) => {
                 drawCeilingDimension(ctx, dimension, bounds, globalPlacedLabels, globalAllLabels);
             });
@@ -621,8 +736,9 @@ const CeilingCanvas = ({
         drawZones(ctx, globalPlacedLabels, globalAllLabels);
         
         // PASS 2: Draw all dimension text BOXES on top (highest layer)
-        globalAllLabels.forEach(label => {
-            drawDimensionTextBox(ctx, label);
+        globalAllLabels.forEach((label) => {
+            const drawFn = label.draw || makeLabelDrawFn(label, scaleFactor.current, initialScale.current);
+            drawFn(ctx);
         });
 
         // Draw title and info
@@ -926,6 +1042,7 @@ const CeilingCanvas = ({
                 // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
                 const wallThickness = wall.thickness || 100; // Default to 100mm if not set
                 const gapPixels = (wallThickness * scaleFactor.current) / 2;
+                const offsetOpts = buildWallOffsetOptions(wall, effectiveRooms);
 
                 // Calculate offset points for double-line wall
                 let { line1, line2 } = calculateOffsetPoints(
@@ -935,7 +1052,8 @@ const CeilingCanvas = ({
                     wall.end_y,
                     gapPixels,
                     center,
-                    scaleFactor.current
+                    scaleFactor.current,
+                    offsetOpts
                 );
                 
                 // Check for 45° cuts at EACH END separately
@@ -1610,9 +1728,9 @@ const CeilingCanvas = ({
                     // - For horizontal panels (width > length): dimensionValue = panel.length
                     // - For vertical panels (length > width): dimensionValue = panel.width
                     if (!isHorizontalOrientation) {
-                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, false, roomWidth, roomLength, drawnValuesByLevel, dimensionCollector);
+                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, false, roomWidth, roomLength, drawnValuesByLevel, dimensionCollector, room.id);
                     } else {
-                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, true, roomWidth, roomLength, drawnValuesByLevel, dimensionCollector);
+                        drawGroupedPanelDimensions(ctx, panels, dimensionValue, modelBounds, canvasPanelBounds, placedLabels, allLabels, true, roomWidth, roomLength, drawnValuesByLevel, dimensionCollector, room.id);
                     }
                 } else if (panels.length === 1 && shouldShowIndividual) {
                     // Single panel - show individual dimension (only if not too many panels)
@@ -1654,7 +1772,8 @@ const CeilingCanvas = ({
                                 quantity: 0,
                                 panelLabel: `${panelWidth}`,
                                 drawnPositions: drawnPositions,
-                                roomId: room.id
+                                roomId: room.id,
+                                dedupId: panel.id != null ? String(panel.id) : ''
                             };
                             if (dimensionCollector) {
                                 dimensionCollector.push({ dimension: individualDimension, bounds: projectBounds });
@@ -1709,7 +1828,8 @@ const CeilingCanvas = ({
                             drawnPositions: drawnPositions,
                             roomId: room.id,
                             isHorizontal: false, // Vertical Line
-                            isCut: true
+                            isCut: true,
+                            dedupId: panel.id != null ? String(panel.id) : ''
                         };
                     } else {
                         // Vertical Plan -> Draw Horizontal Dimension Line (Measuring Width/X-axis)
@@ -1732,7 +1852,8 @@ const CeilingCanvas = ({
                             drawnPositions: drawnPositions,
                             roomId: room.id,
                             isHorizontal: true, // Horizontal Line
-                            isCut: true
+                            isCut: true,
+                            dedupId: panel.id != null ? String(panel.id) : ''
                         };
                     }
                     
@@ -1850,7 +1971,9 @@ const CeilingCanvas = ({
     };
 
     // Draw grouped panel dimensions (optional dimensionCollector: when set, push instead of draw)
-    const drawGroupedPanelDimensions = (ctx, panels, width, modelBounds, canvasPanelBounds, placedLabels, allLabels, isHorizontal = false, roomWidth = null, roomLength = null, drawnDimensionsByLevel = null, dimensionCollector = null) => {
+    const drawGroupedPanelDimensions = (ctx, panels, width, modelBounds, canvasPanelBounds, placedLabels, allLabels, isHorizontal = false, roomWidth = null, roomLength = null, drawnDimensionsByLevel = null, dimensionCollector = null, roomId = null) => {
+        const effectiveRoomId =
+            roomId != null ? roomId : (panels[0]?.room_id != null ? panels[0].room_id : 'unknown');
         // Tolerance for comparing dimensions (1mm tolerance for floating point precision)
         const DIMENSION_TOLERANCE = 1;
         const LEVEL_TOLERANCE = 10; // 10mm tolerance for level matching
@@ -1937,7 +2060,7 @@ const CeilingCanvas = ({
                         avoidArea: projectBounds,
                         quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
                         drawnPositions: new Set(),
-                        roomId: 'unknown',
+                        roomId: effectiveRoomId,
                         isHorizontal: false // This dimension line is vertical (Y-axis) - measuring length
                     };
                     if (dimensionCollector) {
@@ -1966,7 +2089,7 @@ const CeilingCanvas = ({
                         avoidArea: projectBounds,
                         quantity: panels.length, // Width dimensions show quantity (n × width)
                         drawnPositions: new Set(),
-                        roomId: 'unknown',
+                        roomId: effectiveRoomId,
                         isHorizontal: true // This dimension line is horizontal (X-axis) - measuring width
                     };
                     if (dimensionCollector) {
@@ -2005,7 +2128,7 @@ const CeilingCanvas = ({
                         avoidArea: projectBounds,
                         quantity: panels.length, // Width dimensions show quantity (n × width)
                         drawnPositions: new Set(),
-                        roomId: 'unknown',
+                        roomId: effectiveRoomId,
                         isHorizontal: true // This dimension line is horizontal (X-axis) - GROUPING DIMENSION
                     };
                     console.log(`  → Drawing GROUPING dimension (panel.width=${actualPanelWidth}mm) as HORIZONTAL line (X-axis) with quantity ${panels.length}`);
@@ -2034,7 +2157,7 @@ const CeilingCanvas = ({
                         avoidArea: projectBounds,
                         quantity: panels.length, // Match FloorCanvas: show quantity for grouped dimensions
                         drawnPositions: new Set(),
-                        roomId: 'unknown',
+                        roomId: effectiveRoomId,
                         isHorizontal: false // This dimension line is vertical (Y-axis) - SPAN DIMENSION
                     };
                     console.log(`  → Drawing GROUPING dimension (panel.length=${actualPanelLength}mm) as VERTICAL line (Y-axis) with quantity ${panels.length}`);
@@ -2126,156 +2249,18 @@ const CeilingCanvas = ({
         return panelList;
     };
 
-    // Helper function to get dimension text (matches FloorCanvas formatting)
-    const getDimensionText = (dimension, length, quantity) => {
-        // Match FloorCanvas.js text formatting logic exactly (lines 900-908)
-        if (dimension.type === 'cut_panel' || dimension.isCut) {
-            // [CHANGED] Removed the (CUT) text to keep it clean (matching FloorCanvas)
-            return `${Math.round(length)}`;
-        } else {
-            // Use dimension.quantity if available, otherwise use quantity parameter
-            const qty = dimension.quantity || quantity;
-            if (qty && qty > 1) {
-                return `${qty} × ${Math.round(length)}`;
-            } else {
-                return `${Math.round(length)}`;
-            }
-        }
-    };
-
-    // PASS 2: Draw dimension text box (called after all lines are drawn)
-    const drawDimensionTextBox = (ctx, label) => {
-        ctx.save();
-        
-        const { x, y, width, height, text, color, labelX, labelY, isHorizontal } = label;
-        
-        // Draw background
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        ctx.fillRect(x, y, width, height);
-        
-        // Draw border (matching FloorCanvas)
-        ctx.strokeStyle = color;
-        ctx.lineWidth = DIMENSION_CONFIG.LABEL_BORDER_WIDTH;
-        ctx.strokeRect(x, y, width, height);
-        
-        // Draw text
-        ctx.fillStyle = color;
-        // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
-        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
-        let fontSize;
-        
-        // Calculate square root scaled font size if user has zoomed in
-        let sqrtScaledFontSize = 0;
-        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
-            // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-            // This means 2x zoom only results in ~1.41x text size, not 2x
-            const zoomRatio = scaleFactor.current / initialScale.current;
-            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-        }
-        
-        // Use the maximum of calculated and square root scaled to prevent discontinuity
-        // This ensures smooth transition when crossing the minimum threshold
-        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-            // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
-            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-        } else {
-            // Above minimum threshold - use max of calculated and square root scaled
-            // This prevents sudden drop when crossing the threshold
-            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-        }
-        
-        // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-        // This handles any edge cases or timing issues
-        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-        ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-        
-        if (isHorizontal) {
-            // Horizontal text
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, labelX, labelY);
-        } else {
-            // Vertical text - rotate 90 degrees
-            ctx.save();
-            ctx.translate(labelX, labelY);
-            ctx.rotate(-Math.PI / 2);
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 0, 0);
-            ctx.restore();
-        }
-        
-        ctx.restore();
-    };
-
-    // Helper function to draw dimension lines (extension lines and dimension line)
-    const drawDimensionLines = (ctx, startX, startY, endX, endY, labelX, labelY, isHorizontal, scaleFactor, offsetX, offsetY, color) => {
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
-        
-        if (isHorizontal) {
-            // Extension lines (vertical) - from panel boundary to dimension line
-            ctx.beginPath();
-            ctx.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH); // Dashed lines for extensions
-            
-            // Extension line from start point
-            ctx.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
-            ctx.lineTo(startX * scaleFactor + offsetX, labelY);
-            
-            // Extension line from end point
-            ctx.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
-            ctx.lineTo(endX * scaleFactor + offsetX, labelY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            // Main dimension line (horizontal)
-            ctx.beginPath();
-            ctx.lineWidth = DIMENSION_CONFIG.DIMENSION_LINE_WIDTH;
-            ctx.moveTo(startX * scaleFactor + offsetX, labelY);
-            ctx.lineTo(endX * scaleFactor + offsetX, labelY);
-            ctx.stroke();
-            
-        } else {
-            // Extension lines (horizontal) - from panel boundary to dimension line
-            ctx.beginPath();
-            ctx.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH); // Dashed lines for extensions
-            
-            // Extension line from start point
-            ctx.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
-            ctx.lineTo(labelX, startY * scaleFactor + offsetY);
-            
-            // Extension line from end point
-            ctx.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
-            ctx.lineTo(labelX, endY * scaleFactor + offsetY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            // Main dimension line (vertical)
-            ctx.beginPath();
-            ctx.lineWidth = DIMENSION_CONFIG.DIMENSION_LINE_WIDTH;
-            ctx.moveTo(labelX, startY * scaleFactor + offsetY);
-            ctx.lineTo(labelX, endY * scaleFactor + offsetY);
-            ctx.stroke();
-        }
-        
-        ctx.restore();
-    };
+    const getDimensionText = (dimension, length) => formatPlanDimensionLabel(dimension, length);
 
     // Main ceiling dimension drawing function
     const drawCeilingDimension = (ctx, dimension, bounds, placedLabels, allLabels) => {
-        const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea, quantity } = dimension;
+        const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea } = dimension;
         const { minX, maxX, minY, maxY } = bounds;
         
-        // Global numeric de-duplication: ensure each dimension value (in mm) appears at most once
         const globalDimensionValues = dimensionValuesSeen.current;
         if (globalDimensionValues && typeof length === 'number') {
-            const roundedLength = Math.round(length);
-            if (globalDimensionValues.has(roundedLength)) {
-                // Skip drawing duplicate numeric dimensions to reduce clutter
-                return;
-            }
-            globalDimensionValues.add(roundedLength);
+            const dedupKey = planDimensionDedupKey(dimension, length);
+            if (globalDimensionValues.has(dedupKey)) return;
+            globalDimensionValues.add(dedupKey);
         }
         
         // Determine if dimension is horizontal or vertical (matching FloorCanvas)
@@ -2343,12 +2328,17 @@ const CeilingCanvas = ({
         ctx.font = dimensionFont;
 
         // Get text width first for smart placement
-        const text = getDimensionText(dimension, length, quantity);
+        const text = getDimensionText(dimension, length);
         const textWidth = ctx.measureText(text).width;
         
         // Smart placement: evaluate both sides and choose the best (or use locked side if stored)
         let placement;
-        
+
+        // Match pdfVectorCeilingFloor placePdfDimensionLabel: vertical labels prefer right when the
+        // dimension sits in the right half of the project (avoids cramming everything on the left).
+        const verticalPreferredSide =
+            avoidArea != null && midX > (avoidArea.minX + avoidArea.maxX) / 2 ? 'side2' : 'side1';
+
         if (isHorizontal) {
             // Horizontal dimension: smart placement - try both top and bottom from outer bounds
             placement = smartPlacement({
@@ -2409,7 +2399,7 @@ const CeilingCanvas = ({
                 baseOffset: baseVerticalOffset,
                 offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
                 maxAttempts: maxAttempts,
-                preferredSide: 'side1', // Prefer LEFT so dimensions stay close to model and on canvas
+                preferredSide: verticalPreferredSide,
                 lockedSide: lockedSide // Use stored side if available
             });
         }
@@ -2491,34 +2481,69 @@ const CeilingCanvas = ({
                 overlapsAvoidArea = overlapsProjectArea || overlapsOtherLabels;
                 
                 if (overlapsAvoidArea) {
-                    // Force placement further out if overlapping project area or other labels
-                    // Use smaller increment for bottom dimensions to prevent excessive spacing
+                    // Match PDF export: keep nudging along the side smartPlacement already chose,
+                    // instead of splitting by room half (which fought side1/side2 and cluttered one side).
                     const isBottomPlacement = isHorizontal && placement.side === 'side2';
-                    const increment = isBottomPlacement ? 10 : DIMENSION_CONFIG.OFFSET_INCREMENT; // Smaller increment for bottom (10px vs 20px)
+                    const increment = isBottomPlacement ? 10 : DIMENSION_CONFIG.OFFSET_INCREMENT;
                     validationOffset += increment;
-                    
+
                     if (isHorizontal) {
-                        const projectMidY = (avoidArea.minY + avoidArea.maxY) / 2;
-                        const isTopHalf = midY < projectMidY;
-                        
-                        // Move using fixed increment (consistent with wall plan and floor plan)
-                        if (isTopHalf) {
-                            labelY = avoidArea.minY * scaleFactor.current + offsetY.current - validationOffset;
-                        } else {
-                            labelY = avoidArea.maxY * scaleFactor.current + offsetY.current + validationOffset;
-                        }
+                        labelY =
+                            placement.side === 'side1'
+                                ? avoidArea.minY * scaleFactor.current + offsetY.current - validationOffset
+                                : avoidArea.maxY * scaleFactor.current + offsetY.current + validationOffset;
                     } else {
-                        const projectMidX = (avoidArea.minX + avoidArea.maxX) / 2;
-                        const isLeftHalf = midX < projectMidX;
-                        
-                        // Move using fixed increment (consistent with wall plan and floor plan)
-                        if (isLeftHalf) {
-                            labelX = avoidArea.minX * scaleFactor.current + offsetX.current - validationOffset;
-                        } else {
-                            labelX = avoidArea.maxX * scaleFactor.current + offsetX.current + validationOffset;
-                        }
+                        labelX =
+                            placement.side === 'side1'
+                                ? avoidArea.minX * scaleFactor.current + offsetX.current - validationOffset
+                                : avoidArea.maxX * scaleFactor.current + offsetX.current + validationOffset;
                     }
                     validationAttempts++;
+                }
+            }
+
+            {
+                const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
+                const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
+                const lb = isHorizontal
+                    ? {
+                          x: labelX - textWidth / 2 - pH,
+                          y: labelY - pV,
+                          w: textWidth + pH * 2,
+                          h: pV * 2
+                      }
+                    : {
+                          x: labelX - pV,
+                          y: labelY - textWidth / 2 - pH,
+                          w: pV * 2,
+                          h: textWidth + pH * 2
+                      };
+                const mm = {
+                    minX: (lb.x - offsetX.current) / scaleFactor.current,
+                    maxX: (lb.x + lb.w - offsetX.current) / scaleFactor.current,
+                    minY: (lb.y - offsetY.current) / scaleFactor.current,
+                    maxY: (lb.y + lb.h - offsetY.current) / scaleFactor.current
+                };
+                const sep = minSeparation / scaleFactor.current;
+                const stillInsideProject = !(
+                    mm.maxX < avoidArea.minX - sep ||
+                    mm.minX > avoidArea.maxX + sep ||
+                    mm.maxY < avoidArea.minY - sep ||
+                    mm.minY > avoidArea.maxY + sep
+                );
+                if (stillInsideProject) {
+                    const emergency = baseOffset + (maxAttempts + 2) * DIMENSION_CONFIG.OFFSET_INCREMENT;
+                    if (isHorizontal) {
+                        labelY =
+                            placement.side === 'side1'
+                                ? avoidArea.minY * scaleFactor.current + offsetY.current - emergency
+                                : avoidArea.maxY * scaleFactor.current + offsetY.current + emergency;
+                    } else {
+                        labelX =
+                            placement.side === 'side1'
+                                ? avoidArea.minX * scaleFactor.current + offsetX.current - emergency
+                                : avoidArea.maxX * scaleFactor.current + offsetX.current + emergency;
+                    }
                 }
             }
         }
@@ -2575,52 +2600,100 @@ const CeilingCanvas = ({
             }
         }
         
-        // PASS 1: Draw dimension lines FIRST (bottom layer)
-        drawDimensionLines(ctx, startX, startY, endX, endY, labelX, labelY, isHorizontal, scaleFactor.current, offsetX.current, offsetY.current, color);
-        
-        // Add to placed labels for collision detection
-        // Verify bounds are valid before adding
-        if (isFinite(finalLabelBounds.x) && isFinite(finalLabelBounds.y) && 
-            isFinite(finalLabelBounds.width) && isFinite(finalLabelBounds.height) &&
-            finalLabelBounds.width > 0 && finalLabelBounds.height > 0) {
+        const dxLine = endX - startX;
+        const dyLine = endY - startY;
+        const angleDeg = Math.atan2(dyLine, dxLine) * (180 / Math.PI);
+        const startXScreen = startX * scaleFactor.current + offsetX.current;
+        const endXScreen = endX * scaleFactor.current + offsetX.current;
+        const centeredLabelX = (startXScreen + endXScreen) / 2;
+
+        const wallStyleBounds = isHorizontal
+            ? calculateHorizontalLabelBounds(centeredLabelX, labelY, textWidth, 2, 8)
+            : calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+
+        const isValidPosition =
+            wallStyleBounds.x >= 0 &&
+            wallStyleBounds.y >= 0 &&
+            wallStyleBounds.x + wallStyleBounds.width <= CANVAS_WIDTH &&
+            wallStyleBounds.y + wallStyleBounds.height <= CANVAS_HEIGHT;
+
+        if (!isValidPosition) {
+            ctx.font = previousFont;
+            return;
+        }
+
+        drawOrthoPlanDimensionGeometryLikeWall(
+            ctx,
+            {
+                startX,
+                startY,
+                endX,
+                endY,
+                isHorizontal,
+                labelX,
+                labelY,
+                textWidth,
+                color
+            },
+            scaleFactor.current,
+            offsetX.current,
+            offsetY.current,
+            bounds
+        );
+
+        if (
+            isFinite(wallStyleBounds.x) &&
+            isFinite(wallStyleBounds.y) &&
+            isFinite(wallStyleBounds.width) &&
+            isFinite(wallStyleBounds.height) &&
+            wallStyleBounds.width > 0 &&
+            wallStyleBounds.height > 0
+        ) {
             placedLabels.push({
-                x: finalLabelBounds.x,
-                y: finalLabelBounds.y,
-                width: finalLabelBounds.width,
-                height: finalLabelBounds.height,
-                text: text,
-                type: type
+                x: wallStyleBounds.x,
+                y: wallStyleBounds.y,
+                width: wallStyleBounds.width,
+                height: wallStyleBounds.height,
+                text,
+                type
             });
         }
-        
-        // Add to all labels for global tracking AND deferred text drawing (PASS 2)
-        allLabels.push({
-            x: finalLabelBounds.x,
-            y: finalLabelBounds.y,
-            width: finalLabelBounds.width,
-            height: finalLabelBounds.height,
-            text: text,
-            type: type,
-            color: color,
-            labelX: labelX,
-            labelY: labelY,
-            isHorizontal: isHorizontal
-        });
+
+        const dimSide = isHorizontal
+            ? placement.side === 'side1'
+                ? 'top'
+                : 'bottom'
+            : placement.side === 'side1'
+                ? 'left'
+                : 'right';
+
+        if (isHorizontal) {
+            allLabels.push({
+                x: centeredLabelX - textWidth / 2 - 2,
+                y: labelY - 8,
+                width: textWidth + 4,
+                height: 16,
+                side: dimSide,
+                text,
+                angle: angleDeg,
+                type: 'wall',
+                textColor: color
+            });
+        } else {
+            allLabels.push({
+                x: labelX - 8,
+                y: labelY - textWidth / 2 - 2,
+                width: 16,
+                height: textWidth + 4,
+                side: dimSide,
+                text,
+                angle: angleDeg,
+                type: 'wall',
+                textColor: color
+            });
+        }
 
         ctx.font = previousFont;
-        
-        // Validate final position is within canvas bounds
-        const isValidPosition = finalLabelBounds.x >= 0 && 
-                               finalLabelBounds.y >= 0 && 
-                               finalLabelBounds.x + finalLabelBounds.width <= CANVAS_WIDTH && 
-                               finalLabelBounds.y + finalLabelBounds.height <= CANVAS_HEIGHT;
-        
-        if (!isValidPosition) {
-            // console.log(`⚠️ Dimension ${type} position invalid, skipping:`, finalLabelBounds);
-            return; // Skip drawing this dimension
-        }
-        
-        ctx.restore();
     };
 
     // Draw title and information
@@ -2827,6 +2900,12 @@ const CeilingCanvas = ({
         // Convert to model coordinates
         let modelX = (currentX - offsetX.current) / scaleFactor.current;
         let modelY = (currentY - offsetY.current) / scaleFactor.current;
+
+        const wallSnap = snapPointToNearestWall(modelX, modelY);
+        if (wallSnap) {
+            modelX = wallSnap.x;
+            modelY = wallSnap.y;
+        }
         
         // Apply 90-degree snapping
         const snappedCoords = snapTo90Degrees(supportStartPoint.x, supportStartPoint.y, modelX, modelY);
@@ -2904,7 +2983,7 @@ const CeilingCanvas = ({
         
         // Apply boundary snapping to keep mouse within project bounds
         if (projectData) {
-            const snapThreshold = 100; // 100mm threshold for snapping
+            const snapThreshold = 100 / modelUnitsPerMm; // 100mm threshold for snapping
             
             // Snap to left edge
             if (modelX < snapThreshold) {
@@ -2922,6 +3001,12 @@ const CeilingCanvas = ({
             if (modelY > projectData.length - snapThreshold) {
                 modelY = projectData.length;
             }
+        }
+
+        const wallSnapForDims = snapPointToNearestWall(modelX, modelY);
+        if (wallSnapForDims) {
+            modelX = wallSnapForDims.x;
+            modelY = wallSnapForDims.y;
         }
         
         // Calculate distances to project edges
@@ -2954,6 +3039,59 @@ const CeilingCanvas = ({
         
         return distances;
     };
+
+    // Snap alu support points to wall centerline or either wall face.
+    const snapPointToNearestWall = useCallback((x, y) => {
+        if (!Array.isArray(walls) || walls.length === 0) return null;
+
+        const snapThreshold = 350 / modelUnitsPerMm; // 350mm (more sensitive)
+        let best = null;
+
+        const projectPointToSegment = (px, py, ax, ay, bx, by) => {
+            const vx = bx - ax;
+            const vy = by - ay;
+            const segLenSq = vx * vx + vy * vy;
+            if (segLenSq < 1e-9) return null;
+            const tRaw = ((px - ax) * vx + (py - ay) * vy) / segLenSq;
+            const t = Math.max(0, Math.min(1, tRaw));
+            return { x: ax + vx * t, y: ay + vy * t };
+        };
+
+        walls.forEach(wall => {
+            const x1 = wall.start_x ?? wall.x1 ?? wall.x_start;
+            const y1 = wall.start_y ?? wall.y1 ?? wall.y_start;
+            const x2 = wall.end_x ?? wall.x2 ?? wall.x_end;
+            const y2 = wall.end_y ?? wall.y2 ?? wall.y_end;
+            if (![x1, y1, x2, y2].every(Number.isFinite)) return;
+
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const len = Math.hypot(dx, dy);
+            if (len < 1e-6) return;
+
+            const nx = -dy / len;
+            const ny = dx / len;
+            const halfThickness = ((wall.thickness ?? 100) / modelUnitsPerMm) / 2;
+            // Snap only to wall faces (not centerline).
+            const offsets = [halfThickness, -halfThickness];
+
+            offsets.forEach(offset => {
+                const ax = x1 + nx * offset;
+                const ay = y1 + ny * offset;
+                const bx = x2 + nx * offset;
+                const by = y2 + ny * offset;
+                const p = projectPointToSegment(x, y, ax, ay, bx, by);
+                if (!p) return;
+
+                const dist = Math.hypot(p.x - x, p.y - y);
+                if (dist <= snapThreshold && (!best || dist < best.dist)) {
+                    best = { x: p.x, y: p.y, dist };
+                }
+            });
+        });
+
+        return best ? { x: best.x, y: best.y } : null;
+    }, [walls, modelUnitsPerMm]);
 
     // Calculate if panels need support based on current panel data
     const calculatePanelsNeedSupport = useMemo(() => {
@@ -3308,7 +3446,7 @@ const CeilingCanvas = ({
             let snappedModelX = modelX;
             let snappedModelY = modelY;
             if (projectData) {
-                const snapThreshold = 100; // 100mm threshold for snapping
+                const snapThreshold = 100 / modelUnitsPerMm; // 100mm threshold for snapping
                 
                 // Snap to left edge
                 if (snappedModelX < snapThreshold) {
@@ -3327,6 +3465,12 @@ const CeilingCanvas = ({
                     snappedModelY = projectData.length;
                 }
             }
+
+            const wallSnap = snapPointToNearestWall(snappedModelX, snappedModelY);
+            if (wallSnap) {
+                snappedModelX = wallSnap.x;
+                snappedModelY = wallSnap.y;
+            }
             
             if (!supportStartPoint) {
                 // First click - set start point
@@ -3338,36 +3482,28 @@ const CeilingCanvas = ({
                 const snappedCoords = snapTo90Degrees(supportStartPoint.x, supportStartPoint.y, snappedModelX, snappedModelY);
                 const finalEndX = snappedCoords.x;
                 const finalEndY = snappedCoords.y;
-                
-                const intersectingPanels = findIntersectingPanels(
-                    supportStartPoint.x, supportStartPoint.y, finalEndX, finalEndY
+
+                const placementKeys = new Set();
+                const quantizeStep = 5 / modelUnitsPerMm; // 5mm dedupe
+                const placementKey = (x, y) => `${Math.round(x / quantizeStep) * quantizeStep},${Math.round(y / quantizeStep) * quantizeStep}`;
+                const supportLinePayload = {
+                    startX: supportStartPoint.x,
+                    startY: supportStartPoint.y,
+                    endX: finalEndX,
+                    endY: finalEndY,
+                    isSnapped: snappedCoords.isSnapped
+                };
+
+                const newSupports = buildAluHangersAlongRail(
+                    supportStartPoint.x,
+                    supportStartPoint.y,
+                    finalEndX,
+                    finalEndY,
+                    supportLinePayload,
+                    supportType,
+                    placementKey,
+                    placementKeys
                 );
-                
-                // Create supports at each intersection point along the line
-                const newSupports = [];
-                
-                intersectingPanels.forEach(panel => {
-                    panel.intersections.forEach(intersection => {
-                        newSupports.push({
-                            id: Date.now() + Math.random(), // Unique ID
-                            start_x: intersection.x,
-                            start_y: intersection.y,
-                            width: 50, // Small support size
-                            length: 50,
-                            type: supportType,
-                            x: intersection.x,
-                            y: intersection.y,
-                            supportLine: {
-                                startX: supportStartPoint.x,
-                                startY: supportStartPoint.y,
-                                endX: finalEndX,
-                                endY: finalEndY,
-                                isSnapped: snappedCoords.isSnapped
-                            },
-                            isIntersectionPoint: true
-                        });
-                    });
-                });
                 
                 updateCustomSupports([...effectiveCustomSupports, ...newSupports]);
                 
@@ -3432,45 +3568,54 @@ const CeilingCanvas = ({
         }
     };
 
-    const drawAluSuspension = (ctx, panel, scaleFactor, offsetX, offsetY) => {
-        // Calculate panel center using the same transformation as drawCeilingPanels
-        const x = panel.start_x * scaleFactor + offsetX;
-        const y = panel.start_y * scaleFactor + offsetY;
-        const width = panel.width * scaleFactor;
-        const height = panel.length * scaleFactor;
-        
-        // Calculate center of the transformed panel
-        const canvasX = x + width / 2;
-        const canvasY = y + height / 2;
-        
-        // Draw support line - made bigger
-        const lineLength = 50 * scaleFactor; // Increased from 30 to 50
-        ctx.beginPath();
-        ctx.moveTo(canvasX - lineLength / 2, canvasY);
-        ctx.lineTo(canvasX + lineLength / 2, canvasY);
-        ctx.strokeStyle = '#8b5cf6'; // Purple
-        ctx.lineWidth = 5 * scaleFactor; // Increased from 3 to 5
-        ctx.stroke();
-        
-        // Draw * symbol at panel center - made bigger
-        ctx.fillStyle = '#8b5cf6';
-        ctx.font = `bold ${Math.max(16, 30 * scaleFactor)}px Arial`; // Increased from 14 to 20
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('*', canvasX, canvasY);
-        
-        // Draw squares at start and end - made bigger
-        const squareSize = 25 * scaleFactor; // Increased from 6 to 10
-        ctx.fillStyle = '#8b5cf6';
-        
-        // Start square
-        ctx.fillRect(canvasX - lineLength / 2 - squareSize / 2, canvasY - squareSize / 2, squareSize, squareSize);
-        
-        // End square
-        ctx.fillRect(canvasX + lineLength / 2 - squareSize / 2, canvasY - squareSize / 2, squareSize, squareSize);
+    const aluSupportLineKey = (sx, sy, ex, ey) => {
+        const q = (v) => Math.round(v / 2) * 2;
+        const s1 = `${q(sx)},${q(sy)}|${q(ex)},${q(ey)}`;
+        const s2 = `${q(ex)},${q(ey)}|${q(sx)},${q(sy)}`;
+        return s1 < s2 ? s1 : s2;
     };
 
+    /** Alu hanger marker only (rail is drawn separately). */
+    const drawAluHangerAtCenter = (ctx, cxModel, cyModel, angleRad, scaleFactor, offsetX, offsetY) => {
+        const canvasX = cxModel * scaleFactor + offsetX;
+        const canvasY = cyModel * scaleFactor + offsetY;
+        const clipHalf = Math.max(4, 7 * scaleFactor);
+        const sin = Math.sin(angleRad);
+        const px = -sin;
+        const py = Math.cos(angleRad);
 
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.strokeStyle = '#6d28d9';
+        ctx.lineWidth = Math.max(1.1, 1.5 * scaleFactor);
+        ctx.beginPath();
+        ctx.moveTo(canvasX - px * clipHalf, canvasY - py * clipHalf);
+        ctx.lineTo(canvasX + px * clipHalf, canvasY + py * clipHalf);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#5b21b6';
+        ctx.lineWidth = Math.max(0.8, 1.1 * scaleFactor);
+        const cr = Math.max(1.8, 2.6 * scaleFactor);
+        ctx.beginPath();
+        ctx.arc(canvasX, canvasY, cr, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    };
+
+    const drawAluSuspension = (ctx, panel, scaleFactor, offsetX, offsetY) => {
+        const sx = panel.start_x ?? panel.x ?? 0;
+        const sy = panel.start_y ?? panel.y ?? 0;
+        const w = panel.width ?? 0;
+        const len = panel.length ?? 0;
+        const cx = sx + w / 2;
+        const cy = sy + len / 2;
+        const angle = w >= len ? 0 : Math.PI / 2;
+        drawAluHangerAtCenter(ctx, cx, cy, angle, scaleFactor, offsetX, offsetY);
+    };
 
     const drawPanelSupports = (ctx, roomPanels, scaleFactor, offsetX, offsetY, roomId) => {
         // Robust Support Logic:
@@ -3543,242 +3688,118 @@ const CeilingCanvas = ({
         });
     };
 
-    // Draw custom supports placed by user
     const drawCustomSupports = (ctx, supports, scaleFactor, offsetX, offsetY) => {
+        ctx.save();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        const drawnRails = new Set();
+        supports.forEach(support => {
+            const sl = support.supportLine;
+            if (!sl) return;
+            const key = aluSupportLineKey(sl.startX, sl.startY, sl.endX, sl.endY);
+            if (drawnRails.has(key)) return;
+            drawnRails.add(key);
+            const x1 = sl.startX * scaleFactor + offsetX;
+            const y1 = sl.startY * scaleFactor + offsetY;
+            const x2 = sl.endX * scaleFactor + offsetX;
+            const y2 = sl.endY * scaleFactor + offsetY;
+            ctx.strokeStyle = 'rgba(91, 33, 182, 0.2)';
+            ctx.lineWidth = Math.max(1.8, 3 * scaleFactor);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.strokeStyle = '#5b21b6';
+            ctx.lineWidth = Math.max(1, 1.4 * scaleFactor);
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        });
+
         supports.forEach(support => {
             if (support.isIntersectionPoint) {
-                // Draw * symbol at intersection points - clear and visible
-                const x = support.x * scaleFactor + offsetX;
-                const y = support.y * scaleFactor + offsetY;
-                
-                // Draw * symbol - bigger and bolder for better visibility
-                ctx.fillStyle = '#7c3aed'; // Darker purple for better visibility
-                ctx.font = `bold ${Math.max(18, 24 * scaleFactor)}px Arial`; // Increased size from 12-16 to 18-24
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('*', x, y);
-            } else {
-                // Draw regular supports
-                if (support.type === 'alu') {
-                    drawAluSuspension(ctx, support, scaleFactor, offsetX, offsetY);
-                } else if (support.type === 'nylon') {
-                    drawNylonHanger(ctx, support, scaleFactor, offsetX, offsetY);
+                if (support.x == null || support.y == null) return;
+                let angle = 0;
+                if (support.supportLine) {
+                    const sl = support.supportLine;
+                    angle = Math.atan2(sl.endY - sl.startY, sl.endX - sl.startX);
                 }
+                drawAluHangerAtCenter(ctx, support.x, support.y, angle, scaleFactor, offsetX, offsetY);
+            } else if (support.type === 'alu') {
+                drawAluSuspension(ctx, support, scaleFactor, offsetX, offsetY);
+            } else if (support.type === 'nylon') {
+                drawNylonHanger(ctx, support, scaleFactor, offsetX, offsetY);
             }
         });
+        ctx.restore();
     };
 
-    // Find panels that intersect with a line segment and get intersection points
-    const findIntersectingPanels = (startX, startY, endX, endY) => {
-        const intersectingPanels = [];
-        
-        Object.values(effectiveCeilingPanelsMap).forEach(roomPanels => {
-            roomPanels.forEach(panel => {
-                // Check if panel intersects with the support line
-                if (lineIntersectsRectangle(startX, startY, endX, endY, 
-                    panel.start_x, panel.start_y, 
-                    panel.end_x, panel.end_y)) {
-                    
-                    // Get intersection points with panel edges
-                    const intersections = getLinePanelIntersections(startX, startY, endX, endY, panel);
-                    
-                    intersectingPanels.push({
-                        ...panel,
-                        intersections: intersections
-                    });
-                }
-            });
-        });
-        
-        return intersectingPanels;
-    };
-
-    // Get intersection points of a line with panel edges
-    const getLinePanelIntersections = (lineStartX, lineStartY, lineEndX, lineEndY, panel) => {
-        const intersections = [];
-        
-        // Panel boundaries
-        const panelLeft = panel.start_x;
-        const panelRight = panel.end_x;
-        const panelTop = panel.start_y;
-        const panelBottom = panel.end_y;
-        
-        // Panel edges as line segments
-        const edges = [
-            { x1: panelLeft, y1: panelTop, x2: panelRight, y2: panelTop },     // Top edge
-            { x1: panelRight, y1: panelTop, x2: panelRight, y2: panelBottom }, // Right edge
-            { x1: panelRight, y1: panelBottom, x2: panelLeft, y2: panelBottom }, // Bottom edge
-            { x1: panelLeft, y1: panelBottom, x2: panelLeft, y2: panelTop }    // Left edge
-        ];
-        
-        edges.forEach(edge => {
-            const intersection = getLineIntersection(
-                lineStartX, lineStartY, lineEndX, lineEndY,
-                edge.x1, edge.y1, edge.x2, edge.y2
-            );
-            
-            if (intersection) {
-                intersections.push({
-                    x: intersection.x,
-                    y: intersection.y,
-                    edge: edge
-                });
-            }
-        });
-        
-        return intersections;
-    };
-
-    // Get intersection point of two line segments
-    const getLineIntersection = (x1, y1, x2, y2, x3, y3, x4, y4) => {
-        const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
-        if (Math.abs(denom) < 0.001) return null; // Lines are parallel or very close
-        
-        const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
-        const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
-        
-        if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
-            return {
-                x: x1 + ua * (x2 - x1),
-                y: y1 + ua * (y2 - y1)
-            };
-        }
-        
-        return null;
-    };
-
-    // Check if a line intersects with a rectangle
-    const lineIntersectsRectangle = (x1, y1, x2, y2, rectX1, rectY1, rectX2, rectY2) => {
-        // Ensure rectX1 < rectX2 and rectY1 < rectY2
-        const minX = Math.min(rectX1, rectX2);
-        const maxX = Math.max(rectX1, rectX2);
-        const minY = Math.min(rectY1, rectY2);
-        const maxY = Math.max(rectY1, rectY2);
-        
-        // Check if line segment intersects with rectangle
-        // Using line-rectangle intersection algorithm
-        const left = minX;
-        const right = maxX;
-        const top = minY;
-        const bottom = maxY;
-        
-        // Check if any of the line endpoints are inside the rectangle
-        if (x1 >= left && x1 <= right && y1 >= top && y1 <= bottom) return true;
-        if (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom) return true;
-        
-        // Check if line intersects with any of the rectangle edges
-        const edges = [
-            { x1: left, y1: top, x2: right, y2: top },     // Top edge
-            { x1: right, y1: top, x2: right, y2: bottom }, // Right edge
-            { x1: right, y1: bottom, x2: left, y2: bottom }, // Bottom edge
-            { x1: left, y1: bottom, x2: left, y2: top }    // Left edge
-        ];
-        
-        for (const edge of edges) {
-            if (linesIntersect(x1, y1, x2, y2, edge.x1, edge.y1, edge.x2, edge.y2)) {
-                return true;
-            }
-        }
-        
-        return false;
-    };
-
-    // Check if two line segments intersect
-    const linesIntersect = (x1, y1, x2, y2, x3, y3, x4, y4) => {
-        const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
-        if (denom === 0) return false; // Lines are parallel
-        
-        const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
-        const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
-        
-        return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
-    };
-
-    // Draw support preview line
     const drawSupportPreview = (ctx, preview, scaleFactor, offsetX, offsetY) => {
-        const startX = preview.startX * scaleFactor + offsetX;
-        const startY = preview.startY * scaleFactor + offsetY;
-        const endX = preview.endX * scaleFactor + offsetX;
-        const endY = preview.endY * scaleFactor + offsetY;
-        
-        // Draw preview line
-        ctx.strokeStyle = '#f59e0b'; // Orange color for preview
-        ctx.lineWidth = 3;
-        ctx.setLineDash([10, 5]); // Dashed line for preview
-        
+        const sf = scaleFactor;
+        const cStartX = preview.startX * sf + offsetX;
+        const cStartY = preview.startY * sf + offsetY;
+        const cEndX = preview.endX * sf + offsetX;
+        const cEndY = preview.endY * sf + offsetY;
+
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(91, 33, 182, 0.55)';
+        ctx.lineWidth = Math.max(1, 1.3 * sf);
+        ctx.setLineDash([Math.max(8, 12 * sf), Math.max(4, 7 * sf)]);
         ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
+        ctx.moveTo(cStartX, cStartY);
+        ctx.lineTo(cEndX, cEndY);
         ctx.stroke();
-        
-        // Reset line dash
         ctx.setLineDash([]);
-        
-        // Draw start point marker
-        ctx.fillStyle = '#f59e0b';
+
+        ctx.fillStyle = '#5b21b6';
         ctx.beginPath();
-        ctx.arc(startX, startY, 6, 0, 2 * Math.PI);
+        ctx.arc(cStartX, cStartY, Math.max(5, 7 * sf), 0, 2 * Math.PI);
         ctx.fill();
-        
-        // Draw end point marker
-        ctx.fillStyle = '#f59e0b';
+        ctx.fillStyle = '#a78bfa';
         ctx.beginPath();
-        ctx.arc(endX, endY, 6, 0, 2 * Math.PI);
+        ctx.arc(cEndX, cEndY, Math.max(4, 6 * sf), 0, 2 * Math.PI);
         ctx.fill();
-        
-        // Show snapping indicator if line is snapped
-        if (preview.isSnapped) {
-            ctx.fillStyle = '#10b981'; // Green for snapped lines
-            ctx.font = `bold ${Math.max(12, 14 * scaleFactor)}px 'Segoe UI', Arial, sans-serif`;
+
+        if (preview.isSnapped === 'horizontal' || preview.isSnapped === 'vertical') {
+            ctx.font = `bold ${Math.max(12, 14 * sf)}px 'Segoe UI', Arial, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            
-            const midX = (startX + endX) / 2;
-            const midY = (startY + endY) / 2;
-            
-            // Add background for better readability
+            const midX = (cStartX + cEndX) / 2;
+            const midY = (cStartY + cEndY) / 2;
             const text = preview.isSnapped === 'horizontal' ? 'H' : 'V';
             const textWidth = ctx.measureText(text).width;
             const padding = 4;
-            
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-            ctx.fillRect(midX - textWidth/2 - padding, midY - 8 - padding, textWidth + padding*2, 16 + padding*2);
-            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.fillRect(midX - textWidth / 2 - padding, midY - 8 - padding, textWidth + padding * 2, 16 + padding * 2);
             ctx.fillStyle = '#10b981';
             ctx.fillText(text, midX, midY);
         }
-        
-        // Draw dimensions to project edges if available
-        if (preview.distances) {
-            const mouseX = endX;
-            const mouseY = endY;
-            
-            // Draw distance to left edge
+
+        if (preview.distances && projectData) {
+            const mx = preview.endX;
+            const my = preview.endY;
             if (preview.distances.left > 0) {
-                drawDistanceDimension(ctx, 0, mouseY, mouseX, mouseY, 
+                drawDistanceDimension(ctx, 0, my, mx, my,
                     Math.round(preview.distances.left), 'left', scaleFactor, offsetX, offsetY);
             }
-            
-            // Draw distance to right edge
             if (preview.distances.right > 0) {
-                const rightEdgeX = projectData.width * scaleFactor + offsetX;
-                drawDistanceDimension(ctx, mouseX, mouseY, rightEdgeX, mouseY, 
+                drawDistanceDimension(ctx, mx, my, projectData.width, my,
                     Math.round(preview.distances.right), 'right', scaleFactor, offsetX, offsetY);
             }
-            
-            // Draw distance to top edge
             if (preview.distances.top > 0) {
-                drawDistanceDimension(ctx, mouseX, 0, mouseX, mouseY, 
+                drawDistanceDimension(ctx, mx, 0, mx, my,
                     Math.round(preview.distances.top), 'top', scaleFactor, offsetX, offsetY);
             }
-            
-            // Draw distance to bottom edge
             if (preview.distances.bottom > 0) {
-                const bottomEdgeY = projectData.length * scaleFactor + offsetY;
-                drawDistanceDimension(ctx, mouseX, mouseY, mouseX, bottomEdgeY, 
+                drawDistanceDimension(ctx, mx, my, mx, projectData.length,
                     Math.round(preview.distances.bottom), 'bottom', scaleFactor, offsetX, offsetY);
             }
         }
+        ctx.restore();
     };
 
     // Draw distance dimension line
@@ -3930,7 +3951,7 @@ const CeilingCanvas = ({
                         }}
                     >
                         {/* Zoom Controls Overlay */}
-                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-50">
                             <button
                                 onClick={handleZoomIn}
                                 className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
@@ -3982,7 +4003,21 @@ const CeilingCanvas = ({
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
                             onClick={handleCanvasClick}
+                            onContextMenu={(e) => e.preventDefault()}
                         />
+                        {enableAluSuspension && effectiveCustomSupports.length > 0 && (
+                            <div className="absolute bottom-3 left-3 z-10 pointer-events-none rounded-lg bg-white/95 border border-purple-200 px-2.5 py-2 shadow-sm text-[11px] text-gray-700 space-y-1.5 max-w-[200px]">
+                                <div className="font-semibold text-purple-900">Alu suspension</div>
+                                <div className="flex items-center gap-2">
+                                    <span className="inline-block w-9 h-1 rounded-full bg-purple-800 shrink-0" />
+                                    <span>Rail</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="inline-flex w-4 h-4 rounded-full border-2 border-purple-700 bg-white shrink-0" />
+                                    <span>Hanger on panel</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                     
                     {/* Canvas Controls - wrap on small screens */}
@@ -4028,17 +4063,29 @@ const CeilingCanvas = ({
                             </button>
                             {isPlacingSupport && (
                                 <span className="text-sm text-blue-600 font-medium">
-                                    {!supportStartPoint 
-                                        ? `Click to start {supportType} support line` 
-                                        : `Click to finish {supportType} support line`
-                                    }
+                                    {!supportStartPoint
+                                        ? 'Step 1: click the start of the suspension rail'
+                                        : 'Step 2: click the end (snaps horizontal / vertical when nearly aligned)'}
                                 </span>
                             )}
-                            {effectiveCustomSupports.length > 0 && (
-                                <span className="text-sm text-gray-600">
-                                    {effectiveCustomSupports.length} custom support{effectiveCustomSupports.length !== 1 ? 's' : ''} placed
-                                </span>
-                            )}
+                            {effectiveCustomSupports.length > 0 && (() => {
+                                const railCount = new Set(
+                                    effectiveCustomSupports
+                                        .filter(s => s.supportLine)
+                                        .map(s => aluSupportLineKey(
+                                            s.supportLine.startX,
+                                            s.supportLine.startY,
+                                            s.supportLine.endX,
+                                            s.supportLine.endY
+                                        ))
+                                ).size;
+                                const hangerCount = effectiveCustomSupports.filter(s => s.isIntersectionPoint).length;
+                                return (
+                                    <span className="text-sm text-gray-600">
+                                        {railCount} rail{railCount !== 1 ? 's' : ''}, {hangerCount} hanger{hangerCount !== 1 ? 's' : ''}
+                                    </span>
+                                );
+                            })()}
                         </div>
                     )}
                     </div>
@@ -4183,18 +4230,18 @@ const CeilingCanvas = ({
                                         Dimension Legend
                                     </h4>
                                     <div className="space-y-3 text-sm">
-                                        {/* Room Dimensions - Toggleable */}
+                                        {/* Overall outline (plan footprint) — not wall-by-wall; per room when multiple rooms */}
                                         <div className="flex items-center justify-between gap-3 min-w-0">
                                             <div className="flex items-center min-w-0">
                                                 <div className="w-4 h-4 bg-blue-600 rounded mr-3 shrink-0"></div>
-                                                <span className="text-gray-700 truncate">Room Dimensions</span>
+                                                <span className="text-gray-700 truncate">Overall outline</span>
                                             </div>
                                             <input 
                                                 type="checkbox" 
                                                 checked={visibilityState.room !== false}
                                                 onChange={(e) => setVisibilityState(prev => ({ ...prev, room: e.target.checked }))}
                                                 className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-                                                title="Toggle Room Dimensions"
+                                                title="Each room’s total width and depth on the plan (plan-view size). Not the whole project if you have several rooms."
                                             />
                                         </div>
 

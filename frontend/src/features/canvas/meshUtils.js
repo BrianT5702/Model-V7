@@ -75,11 +75,6 @@ export function createWallMesh(instance, wall) {
   let startZ = snap(start_y * scale);
   let endX = snap(end_x * scale);
   let endZ = snap(end_y * scale);
-  // Store original coordinates BEFORE any modifications for tracking extension distances
-  const originalStartX = startX;
-  const originalStartZ = startZ;
-  const originalEndX = endX;
-  const originalEndZ = endZ;
   // Calculate the wall's midpoint
   const wallMidX = (startX + endX) / 2;
   const wallMidZ = (startZ + endZ) / 2;

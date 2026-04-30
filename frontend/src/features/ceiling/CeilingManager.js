@@ -2687,10 +2687,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             {/* Alu Suspension Options - Info only, drawing is controlled by button in canvas */}
                             {enableAluSuspension && (
                                 <div className="pl-6 border-l-2 border-purple-200 space-y-2">
-                                    <p className="text-xs font-semibold text-gray-600 mb-2">Alu Suspension:</p>
-                                    <p className="text-xs text-gray-600">
-                                        Use the "Draw Support Line" button in the canvas to place support lines. 
-                                        Supports will remain visible after drawing.
+                                    <p className="text-xs font-semibold text-gray-600 mb-2">Alu suspension</p>
+                                    <p className="text-xs text-gray-600 leading-relaxed">
+                                        On the canvas, use <strong>Draw Support Line</strong>: first click sets the rail start, second click sets the end.
+                                        Hangers are placed <strong>along the full rail</strong> at about 1200&nbsp;mm spacing wherever the rail runs over panels; the purple rail stays visible. Use <strong>Clear Supports</strong> to remove all.
                                     </p>
                                 </div>
                             )}
@@ -2698,8 +2698,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             {/* Info message when both are enabled */}
                             {enableNylonHangers && enableAluSuspension && (
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                    <p className="text-xs text-blue-700">
-                                        <strong>Note:</strong> Both support types are enabled. Nylon hangers will be automatically placed on panels {'>'} 6000mm, and you can manually draw Alu suspension supports.
+                                    <p className="text-xs text-blue-700 leading-relaxed">
+                                        <strong>Note:</strong> Nylon hangers (red) are automatic on long panels. Alu suspension (purple rail + hangers) is drawn manually on the canvas and is stored with the plan.
                                     </p>
                                 </div>
                             )}

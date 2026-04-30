@@ -47,8 +47,12 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get('SECURE_HSTS_INCLUDE_SUBDOMAINS'
 SECURE_HSTS_PRELOAD = os.environ.get('SECURE_HSTS_PRELOAD', 'False').lower() == 'true'
 
 # CORS settings for production
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,https://localhost:3000').split(',')
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,https://localhost:3000').split(',') if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
+
+# CSRF must list the exact origin(s) users use (scheme + host + port). If unset, matches CORS.
+_csrf = os.environ.get('CSRF_TRUSTED_ORIGINS', '').strip()
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf.split(',') if o.strip()] if _csrf else CORS_ALLOWED_ORIGINS
 
 # Logging configuration for production
 LOGGING = {

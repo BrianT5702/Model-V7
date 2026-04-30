@@ -6,10 +6,131 @@ import { shouldShowWallDimension, shouldShowPanelDimension } from './dimensionFi
 import { DIMENSION_CONFIG } from './DimensionConfig.js';
 // Import collision detection utilities
 import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
+import { isPointInPolygon } from './utils.js';
 
 // Store placement decisions for dimensions to prevent position changes on zoom
 // Module-level Map that persists across renders
 const dimensionPlacementMemory = new Map();
+
+/** Same geometry as pdfVectorWallPlan: extension segments outside strict interior of model AABB (screen px) */
+function extensionSegmentsOutsideModelRect(x1, y1, x2, y2, rect) {
+    if (!rect) return [{ x1, y1, x2, y2 }];
+    const { left, right, top, bottom } = rect;
+    if (!(left < right && top < bottom)) return [{ x1, y1, x2, y2 }];
+    const insideStrict = (x, y) => x > left && x < right && y > top && y < bottom;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const ts = [0, 1];
+    const addT = (t) => {
+        if (t > 1e-8 && t < 1 - 1e-8) ts.push(t);
+    };
+    if (Math.abs(dx) > 1e-12) {
+        addT((left - x1) / dx);
+        addT((right - x1) / dx);
+    }
+    if (Math.abs(dy) > 1e-12) {
+        addT((top - y1) / dy);
+        addT((bottom - y1) / dy);
+    }
+    ts.sort((a, b) => a - b);
+    const uniq = [];
+    for (let i = 0; i < ts.length; i++) {
+        if (i === 0 || ts[i] - ts[i - 1] > 1e-7) uniq.push(ts[i]);
+    }
+    const out = [];
+    for (let i = 0; i < uniq.length - 1; i++) {
+        const ta = uniq[i];
+        const tb = uniq[i + 1];
+        const xa = x1 + ta * dx;
+        const ya = y1 + ta * dy;
+        const xb = x1 + tb * dx;
+        const yb = y1 + tb * dy;
+        const mx = (xa + xb) / 2;
+        const my = (ya + yb) / 2;
+        if (!insideStrict(mx, my)) {
+            const len = Math.hypot(xb - xa, yb - ya);
+            if (len > 1e-4) out.push({ x1: xa, y1: ya, x2: xb, y2: yb });
+        }
+    }
+    return out.length > 0 ? out : [];
+}
+
+function modelBoundsToScreenRect(modelBounds, scaleFactor, offsetX, offsetY) {
+    if (!modelBounds) return null;
+    return {
+        left: modelBounds.minX * scaleFactor + offsetX,
+        right: modelBounds.maxX * scaleFactor + offsetX,
+        top: modelBounds.minY * scaleFactor + offsetY,
+        bottom: modelBounds.maxY * scaleFactor + offsetY
+    };
+}
+
+/**
+ * Dash pattern aligned with pdfVectorWallPlan: pdfExtDash = [1.2 * PX_TO_MM, 2 * PX_TO_MM] (jsPDF mm).
+ * Canvas uses CSS px; scale lightly with zoom so dashes stay readable.
+ */
+function getCanvasExtensionDashPattern(scaleFactor) {
+    const ref = Math.max(0.01, scaleFactor);
+    const zoom = Math.max(0.5, Math.min(ref * 0.04, 4));
+    return [Math.max(2, 1.2 * zoom), Math.max(2, 2 * zoom)];
+}
+
+/** Matches pdfVectorWallPlan: pdfExtLineW ≈ LINE_WIDTH * PX_TO_MM * 0.9 — lighter than solid dimension line */
+function getCanvasExtensionLineWidth() {
+    return Math.max(0.5, DIMENSION_CONFIG.LINE_WIDTH * 0.9);
+}
+
+function formatDimMmCanvas(lengthMm) {
+    return `${Math.round(Number(lengthMm))} mm`;
+}
+
+/** Perpendicular tick marks at outer ends of dimension line (| style — match PDF) */
+function canvasHorizontalDimArrows(context, x0, x1, y, color, tickPx) {
+    context.save();
+    context.setLineDash([]);
+    context.strokeStyle = color;
+    context.lineWidth = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+    context.beginPath();
+    context.moveTo(x0, y - tickPx);
+    context.lineTo(x0, y + tickPx);
+    context.moveTo(x1, y - tickPx);
+    context.lineTo(x1, y + tickPx);
+    context.stroke();
+    context.restore();
+}
+
+function canvasVerticalDimArrows(context, x, y0, y1, color, tickPx) {
+    context.save();
+    context.setLineDash([]);
+    context.strokeStyle = color;
+    context.lineWidth = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+    context.beginPath();
+    context.moveTo(x - tickPx, y0);
+    context.lineTo(x + tickPx, y0);
+    context.moveTo(x - tickPx, y1);
+    context.lineTo(x + tickPx, y1);
+    context.stroke();
+    context.restore();
+}
+
+function canvasObliqueDimArrows(context, x0, y0, x1, y1, ux, uy, color, tickPx) {
+    canvasObliqueTicks(context, x0, y0, ux, uy, color, tickPx);
+    canvasObliqueTicks(context, x1, y1, ux, uy, color, tickPx);
+}
+
+function canvasObliqueTicks(context, px, py, ux, uy, color, tickPx) {
+    const vx = -uy;
+    const vy = ux;
+    context.save();
+    context.setLineDash([]);
+    context.strokeStyle = color;
+    context.lineWidth = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+    context.beginPath();
+    context.moveTo(px - vx * tickPx, py - vy * tickPx);
+    context.lineTo(px + vx * tickPx, py + vy * tickPx);
+    context.stroke();
+    context.restore();
+}
 
 // Check if a label bounds rectangle overlaps with a wall line segment
 // Returns true if the label would overlap with the wall line
@@ -359,6 +480,9 @@ export function drawOverallProjectDimensions(context, walls, scaleFactor, offset
     // Use dedicated project base offset for outermost placement
     const PROJECT_BASE_OFFSET = DIMENSION_CONFIG.PROJECT_BASE_OFFSET;
     
+    // Clip extension lines to wall extents (same as PDF)
+    const clipBoundsModel = { minX, maxX, minY, maxY };
+    
     // Draw overall width dimension (top) with enhanced collision detection
     drawProjectDimension(
         context,
@@ -367,7 +491,8 @@ export function drawOverallProjectDimensions(context, walls, scaleFactor, offset
         scaleFactor, offsetX, offsetY,
         DIMENSION_CONFIG.COLORS.PROJECT,
         modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'horizontal',
-        initialScale, wallLinesMap
+        initialScale, wallLinesMap,
+        clipBoundsModel
     );
     
     // Draw overall length dimension (right side) with enhanced collision detection
@@ -378,107 +503,110 @@ export function drawOverallProjectDimensions(context, walls, scaleFactor, offset
         scaleFactor, offsetX, offsetY,
         DIMENSION_CONFIG.COLORS.PROJECT,
         modelBounds, placedLabels, allLabels, PROJECT_BASE_OFFSET, 'vertical',
-        initialScale, wallLinesMap
+        initialScale, wallLinesMap,
+        clipBoundsModel
     );
 }
 
-// Enhanced function to draw project dimensions with better collision detection
-function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, offsetX, offsetY, color, modelBounds, placedLabels, allLabels, baseOffset, orientation, initialScale = 1, wallLinesMap = null) {
-    const length = Math.sqrt(
-        Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
-    );
-    
+// Enhanced function to draw project dimensions (aligned with pdfVectorWallPlan: clip extensions, dashed/solid, mm label)
+function drawProjectDimension(
+    context,
+    startX,
+    startY,
+    endX,
+    endY,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    color,
+    modelBounds,
+    placedLabels,
+    allLabels,
+    baseOffset,
+    orientation,
+    initialScale = 1,
+    wallLinesMap = null,
+    clipBoundsModel = null
+) {
+    const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+
     if (length === 0) return;
-    
-    // Calculate wall midpoint
+
     const wallMidX = (startX + endX) / 2;
     const wallMidY = (startY + endY) / 2;
-    
+
     context.save();
     context.fillStyle = color;
-    // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
     const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
     let fontSize;
-    
-    // Calculate square root scaled font size if user has zoomed in
     let sqrtScaledFontSize = 0;
     if (initialScale > 0 && scaleFactor > initialScale) {
-        // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-        // This means 2x zoom only results in ~1.41x text size, not 2x
         const zoomRatio = scaleFactor / initialScale;
         sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
     }
-    
-    // Use the maximum of calculated and square root scaled to prevent discontinuity
-    // This ensures smooth transition when crossing the minimum threshold
     if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-        // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
         fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
     } else {
-        // Above minimum threshold - use max of calculated and square root scaled
-        // This prevents sudden drop when crossing the threshold
         fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
     }
-    
-    // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
     context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-    const text = `${Math.round(length)}`;
+    const text = formatDimMmCanvas(length);
     const textWidth = context.measureText(text).width;
     const dx = endX - startX;
     const dy = endY - startY;
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-    
+
     const { minX, maxX, minY, maxY } = modelBounds;
-    
+    const rectScreen = clipBoundsModel ? modelBoundsToScreenRect(clipBoundsModel, scaleFactor, offsetX, offsetY) : null;
+    const extDash = getCanvasExtensionDashPattern(scaleFactor);
+    const dimLineW = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+    const extLineW = getCanvasExtensionLineWidth();
+    const tickPx = 4;
+
     if (orientation === 'horizontal') {
-        // Horizontal dimension - place on top with maximum offset
-        const isTopHalf = wallMidY < (minY + maxY) / 2;
-        const side = isTopHalf ? 'top' : 'bottom';
-        
-        // Find available position with enhanced collision detection
-        let labelY, labelX;
+        const side = 'top';
+        let labelY;
+        let labelX;
         let offset = baseOffset;
         let attempts = 0;
         const maxAttempts = DIMENSION_CONFIG.PROJECT_MAX_ATTEMPTS;
-        
+
         do {
-            labelY = isTopHalf ? 
-                (minY * scaleFactor + offsetY - offset) : 
-                (maxY * scaleFactor + offsetY + offset);
+            labelY = minY * scaleFactor + offsetY - offset;
             labelX = wallMidX * scaleFactor + offsetX;
-            
-            // Check for overlaps with existing labels
+
             const labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 4, 10);
             const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
-            
-            // Check for overlaps with wall lines
-            const hasWallOverlap = wallLinesMap ? doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) : false;
-            
+            const hasWallOverlap = wallLinesMap
+                ? doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)
+                : false;
+
             if (!hasOverlap && !hasWallOverlap) break;
-            
-            // Use smaller increment if only wall overlap (to keep text closer), otherwise use normal increment
-            // Scale-aware increment: 3mm in model units for wall avoidance, converted to screen pixels
-            const wallAvoidanceIncrementPx = hasWallOverlap && !hasOverlap ? 3 * scaleFactor : DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+
+            const wallAvoidanceIncrementPx =
+                hasWallOverlap && !hasOverlap ? 3 * scaleFactor : DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
             offset += wallAvoidanceIncrementPx;
             attempts++;
         } while (attempts < maxAttempts);
-        
-        // Draw dimension lines with gap for text
+
         const textPadding = 4;
         const textLeft = labelX - textWidth / 2 - textPadding;
         const textRight = labelX + textWidth / 2 + textPadding;
-        context.beginPath();
-        context.setLineDash([5, 5]);
-        // Extension line from start of wall (perpendicular to wall)
-        context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
-        context.lineTo(startX * scaleFactor + offsetX, labelY);
-        // Extension line from end of wall (perpendicular to wall)
-        context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
-        context.lineTo(endX * scaleFactor + offsetX, labelY);
-        // Dimension line connecting the two extension lines (with gap for text)
         const startXScreen = startX * scaleFactor + offsetX;
         const endXScreen = endX * scaleFactor + offsetX;
+        const yWallStart = startY * scaleFactor + offsetY;
+        const yWallEnd = endY * scaleFactor + offsetY;
+
+        context.strokeStyle = color;
+        context.lineWidth = extLineW;
+        context.setLineDash(extDash);
+        canvasDrawExtensionDashed(context, startXScreen, yWallStart, startXScreen, labelY, rectScreen);
+        canvasDrawExtensionDashed(context, endXScreen, yWallEnd, endXScreen, labelY, rectScreen);
+
+        context.setLineDash([]);
+        context.lineWidth = dimLineW;
+        context.beginPath();
         if (startXScreen < textLeft) {
             context.moveTo(startXScreen, labelY);
             context.lineTo(textLeft, labelY);
@@ -487,19 +615,19 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
             context.moveTo(textRight, labelY);
             context.lineTo(endXScreen, labelY);
         }
-        context.strokeStyle = color;
-        context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
         context.stroke();
-        context.setLineDash([]);
-        
-        // Draw text without background
+
+        if (startXScreen < textLeft || endXScreen > textRight) {
+            canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
+        }
+
+        context.fillStyle = '#ffffff';
+        context.fillRect(labelX - textWidth / 2 - 3, labelY - fontSize * 0.35 - 2, textWidth + 6, fontSize * 0.75 + 4);
         context.fillStyle = color;
-        context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(text, labelX, labelY);
-        
-        // Add to placed labels for future collision detection
+
         placedLabels.push({
             x: labelX - textWidth / 2 - 4,
             y: labelY - 10,
@@ -510,55 +638,51 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
             angle: angle,
             type: 'project'
         });
-        
     } else {
-        // Vertical dimension - place on right with maximum offset
-        const isLeftHalf = wallMidX < (minX + maxX) / 2;
-        const side = isLeftHalf ? 'left' : 'right';
-        
-        // Find available position with enhanced collision detection
-        let labelX, labelY;
+        const side = 'right';
+        let labelX;
+        let labelY;
         let offset = Math.max(baseOffset, DIMENSION_CONFIG.PROJECT_MIN_VERTICAL_OFFSET);
         let attempts = 0;
         const maxAttempts = DIMENSION_CONFIG.PROJECT_MAX_ATTEMPTS;
-        
+
         do {
-            labelX = isLeftHalf ? 
-                (minX * scaleFactor + offsetX - offset) : 
-                (maxX * scaleFactor + offsetX + offset);
+            labelX = maxX * scaleFactor + offsetX + offset;
             labelY = wallMidY * scaleFactor + offsetY;
-            
-            // Check for overlaps with existing labels (rotated bounding box for vertical text)
+
             const labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 4, 10);
             const hasOverlap = hasLabelOverlap(labelBounds, placedLabels);
-            
-            // Check for overlaps with wall lines
-            const hasWallOverlap = wallLinesMap ? doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) : false;
-            
+            const hasWallOverlap = wallLinesMap
+                ? doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)
+                : false;
+
             if (!hasOverlap && !hasWallOverlap) break;
-            
-            // Use smaller increment if only wall overlap (to keep text closer), otherwise use normal increment
-            // Scale-aware increment: 3mm in model units for wall avoidance, converted to screen pixels
-            const wallAvoidanceIncrementPx = hasWallOverlap && !hasOverlap ? 3 * scaleFactor : DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
+
+            const wallAvoidanceIncrementPx =
+                hasWallOverlap && !hasOverlap ? 3 * scaleFactor : DIMENSION_CONFIG.PROJECT_OFFSET_INCREMENT;
             offset += wallAvoidanceIncrementPx;
             attempts++;
         } while (attempts < maxAttempts);
-        
-        // Draw dimension lines with gap for text
+
         const textPadding = 4;
         const textTop = labelY - textWidth / 2 - textPadding;
         const textBottom = labelY + textWidth / 2 + textPadding;
+        const xWallStart = startX * scaleFactor + offsetX;
+        const xWallEnd = endX * scaleFactor + offsetX;
+        const yStart = startY * scaleFactor + offsetY;
+        const yEnd = endY * scaleFactor + offsetY;
+
+        context.strokeStyle = color;
+        context.lineWidth = extLineW;
+        context.setLineDash(extDash);
+        canvasDrawExtensionDashed(context, xWallStart, yStart, labelX, yStart, rectScreen);
+        canvasDrawExtensionDashed(context, xWallEnd, yEnd, labelX, yEnd, rectScreen);
+
+        context.setLineDash([]);
+        context.lineWidth = dimLineW;
         context.beginPath();
-        context.setLineDash([5, 5]);
-        // Extension line from start of wall (perpendicular to wall)
-        context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
-        context.lineTo(labelX, startY * scaleFactor + offsetY);
-        // Extension line from end of wall (perpendicular to wall)
-        context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
-        context.lineTo(labelX, endY * scaleFactor + offsetY);
-        // Dimension line connecting the two extension lines (with gap for text)
-        const startYScreen = startY * scaleFactor + offsetY;
-        const endYScreen = endY * scaleFactor + offsetY;
+        const startYScreen = yStart;
+        const endYScreen = yEnd;
         if (startYScreen < textTop) {
             context.moveTo(labelX, startYScreen);
             context.lineTo(labelX, textTop);
@@ -567,35 +691,132 @@ function drawProjectDimension(context, startX, startY, endX, endY, scaleFactor, 
             context.moveTo(labelX, textBottom);
             context.lineTo(labelX, endYScreen);
         }
-        context.strokeStyle = color;
-        context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
         context.stroke();
-        context.setLineDash([]);
-        
-        // Draw vertical dimension text with rotation
+
+        if (startYScreen < textTop || endYScreen > textBottom) {
+            canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
+        }
+
         context.save();
-        context.translate(labelX, labelY);
-        context.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
+        context.translate(labelX - 4, labelY);
+        context.rotate(-Math.PI / 2);
+        const tw = textWidth;
+        const th = fontSize * 0.75;
+        context.fillStyle = '#ffffff';
+        context.fillRect(-tw / 2 - 3, -th / 2 - 2, tw + 6, th + 4);
         context.fillStyle = color;
         context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(text, 0, 0);
         context.restore();
-        
-        // Add to placed labels for future collision detection (rotated bounding box for vertical text)
+
         placedLabels.push({
-            x: labelX - 10, // Center the rotated text
+            x: labelX - 10,
             y: labelY - textWidth / 2 - 4,
-            width: 20, // Swapped with height for rotated text
-            height: textWidth + 8, // Swapped with width for rotated text
+            width: 20,
+            height: textWidth + 8,
             side: side,
             text: text,
             angle: angle,
             type: 'project'
         });
     }
-    
+
+    context.restore();
+}
+
+/**
+ * Draw dashed extensions (clip outside model interior). One stroke per segment so dash phase
+ * matches pdfVectorWallPlan (each doc.line() is independent).
+ */
+function canvasDrawExtensionDashed(context, x1, y1, x2, y2, rectScreen) {
+    const segs = extensionSegmentsOutsideModelRect(x1, y1, x2, y2, rectScreen);
+    for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        context.lineDashOffset = 0;
+        context.beginPath();
+        context.moveTo(s.x1, s.y1);
+        context.lineTo(s.x2, s.y2);
+        context.stroke();
+    }
+}
+
+/**
+ * Orthogonal plan dimensions (ceiling/floor canvas): same geometry as wall plan —
+ * clipped dashed extensions, solid dimension line with text gap, tick marks at ends.
+ * `labelX` / `labelY` are canvas pixels; `clipModelBounds` is model-space AABB (same as drawDimensions).
+ */
+export function drawOrthoPlanDimensionGeometryLikeWall(
+    context,
+    { startX, startY, endX, endY, isHorizontal, labelX, labelY, textWidth, color },
+    scaleFactor,
+    offsetX,
+    offsetY,
+    clipModelBounds
+) {
+    const rectScreen = modelBoundsToScreenRect(clipModelBounds, scaleFactor, offsetX, offsetY);
+    const extDash = getCanvasExtensionDashPattern(scaleFactor);
+    const extLineW = getCanvasExtensionLineWidth();
+    const dimLineW = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+    const tickPx = 4;
+    const textPadding = 2;
+
+    context.save();
+    context.strokeStyle = color;
+
+    if (isHorizontal) {
+        const startXScreen = startX * scaleFactor + offsetX;
+        const endXScreen = endX * scaleFactor + offsetX;
+        const centeredLabelX = (startXScreen + endXScreen) / 2;
+        const centeredTextLeft = centeredLabelX - textWidth / 2 - textPadding;
+        const centeredTextRight = centeredLabelX + textWidth / 2 + textPadding;
+
+        context.lineWidth = extLineW;
+        context.setLineDash(extDash);
+        canvasDrawExtensionDashed(context, startXScreen, startY * scaleFactor + offsetY, startXScreen, labelY, rectScreen);
+        canvasDrawExtensionDashed(context, endXScreen, endY * scaleFactor + offsetY, endXScreen, labelY, rectScreen);
+
+        context.setLineDash([]);
+        context.lineWidth = dimLineW;
+        context.beginPath();
+        if (startXScreen < centeredTextLeft) {
+            context.moveTo(startXScreen, labelY);
+            context.lineTo(centeredTextLeft, labelY);
+        }
+        if (endXScreen > centeredTextRight) {
+            context.moveTo(centeredTextRight, labelY);
+            context.lineTo(endXScreen, labelY);
+        }
+        context.stroke();
+        canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
+    } else {
+        const textTop = labelY - textWidth / 2 - textPadding;
+        const textBottom = labelY + textWidth / 2 + textPadding;
+        const xStart = startX * scaleFactor + offsetX;
+        const xEnd = endX * scaleFactor + offsetX;
+        const startYScreen = startY * scaleFactor + offsetY;
+        const endYScreen = endY * scaleFactor + offsetY;
+
+        context.lineWidth = extLineW;
+        context.setLineDash(extDash);
+        canvasDrawExtensionDashed(context, xStart, startYScreen, labelX, startYScreen, rectScreen);
+        canvasDrawExtensionDashed(context, xEnd, endYScreen, labelX, endYScreen, rectScreen);
+
+        context.setLineDash([]);
+        context.lineWidth = dimLineW;
+        context.beginPath();
+        if (startYScreen < textTop) {
+            context.moveTo(labelX, startYScreen);
+            context.lineTo(labelX, textTop);
+        }
+        if (endYScreen > textBottom) {
+            context.moveTo(labelX, textBottom);
+            context.lineTo(labelX, endYScreen);
+        }
+        context.stroke();
+        canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
+    }
     context.restore();
 }
 
@@ -645,19 +866,26 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
         fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
     }
     
-    // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-    // console.log('🔍 drawDimensions font size:', fontSize, 'scaleFactor:', scaleFactor);
+    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
     context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-    const text = `${Math.round(length)}`;
+    const text = formatDimMmCanvas(length);
     const textWidth = context.measureText(text).width;
     const dx = endX - startX;
     const dy = endY - startY;
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-    
+
     // If modelBounds is provided, use external dimensioning
     if (modelBounds) {
         const { minX, maxX, minY, maxY } = modelBounds;
+        const rectScreen = modelBoundsToScreenRect(modelBounds, scaleFactor, offsetX, offsetY);
+        const extDash = getCanvasExtensionDashPattern(scaleFactor);
+        const dimLineW = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+        const extLineW = getCanvasExtensionLineWidth();
+        const tickPx = 4;
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        const useObliqueWallDim =
+            adx > 1e-9 && ady > 1e-9 && Math.min(adx, ady) / Math.max(adx, ady) >= 0.3;
         
         // Create unique key for this dimension to remember placement decision
         const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_wall`;
@@ -675,8 +903,134 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
         
         // Use smaller offset for small dimensions (place near wall), larger offset for big dimensions (outside project)
         const baseOffset = isSmallDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : DIMENSION_CONFIG.BASE_OFFSET;
-        
-        if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
+
+        const Ps = { x: startX * scaleFactor + offsetX, y: startY * scaleFactor + offsetY };
+        const Pe = { x: endX * scaleFactor + offsetX, y: endY * scaleFactor + offsetY };
+        const wvx = Pe.x - Ps.x;
+        const wvy = Pe.y - Ps.y;
+        const pdfLenOblique = Math.hypot(wvx, wvy);
+
+        if (useObliqueWallDim && pdfLenOblique >= 1e-6) {
+            const ux = wvx / pdfLenOblique;
+            const uy = wvy / pdfLenOblique;
+            const nx = -uy;
+            const ny = ux;
+
+            const obliqueBounds = (lx, ly, tw) => {
+                const rad = Math.atan2(uy, ux);
+                const c = Math.abs(Math.cos(rad));
+                const s = Math.abs(Math.sin(rad));
+                const fh = fontSize * 0.45;
+                const bw = tw * c + fh * s + 4;
+                const bh = tw * s + fh * c + 4;
+                return { x: lx - bw / 2, y: ly - bh / 2, width: bw, height: bh };
+            };
+
+            const placement = smartPlacement({
+                calculatePositionSide1: (off) => {
+                    const mx = (Ps.x + Pe.x) / 2;
+                    const my = (Ps.y + Pe.y) / 2;
+                    return { labelX: mx + nx * off, labelY: my + ny * off };
+                },
+                calculatePositionSide2: (off) => {
+                    const mx = (Ps.x + Pe.x) / 2;
+                    const my = (Ps.y + Pe.y) / 2;
+                    return { labelX: mx - nx * off, labelY: my - ny * off };
+                },
+                calculateBounds: (lx, ly, tw) => obliqueBounds(lx, ly, tw),
+                textWidth: textWidth,
+                placedLabels: placedLabels,
+                baseOffset: baseOffset,
+                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                maxAttempts: DIMENSION_CONFIG.MAX_ATTEMPTS,
+                preferredSide: 'side1',
+                lockedSide: null
+            });
+
+            let labelX = placement.labelX;
+            let labelY = placement.labelY;
+
+            if (wallLinesMap) {
+                let labelBounds = obliqueBounds(labelX, labelY, textWidth);
+                let hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
+                let wallCheckAttempts = 0;
+                const maxWallCheckAttempts = 10;
+                const wallAvoidanceIncrement = 2 * scaleFactor;
+                const sign = placement.side === 'side1' ? 1 : -1;
+                while (hasWallOverlap && wallCheckAttempts < maxWallCheckAttempts) {
+                    labelX += sign * nx * wallAvoidanceIncrement;
+                    labelY += sign * ny * wallAvoidanceIncrement;
+                    labelBounds = obliqueBounds(labelX, labelY, textWidth);
+                    hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
+                    wallCheckAttempts++;
+                }
+            }
+
+            const pmx = (Ps.x + Pe.x) / 2;
+            const pmy = (Ps.y + Pe.y) / 2;
+            const dOff = (labelX - pmx) * nx + (labelY - pmy) * ny;
+            const Ps_ = { x: Ps.x + nx * dOff, y: Ps.y + ny * dOff };
+            const Pe_ = { x: Pe.x + nx * dOff, y: Pe.y + ny * dOff };
+
+            context.strokeStyle = color;
+            context.lineWidth = extLineW;
+            context.setLineDash(extDash);
+            canvasDrawExtensionDashed(context, Ps.x, Ps.y, Ps_.x, Ps_.y, rectScreen);
+            canvasDrawExtensionDashed(context, Pe.x, Pe.y, Pe_.x, Pe_.y, rectScreen);
+
+            const textPadding = 2;
+            const halfText = textWidth / 2 + textPadding;
+            const midS = pdfLenOblique / 2;
+            const leftS = midS - halfText;
+            const rightS = midS + halfText;
+
+            context.setLineDash([]);
+            context.lineWidth = dimLineW;
+            context.strokeStyle = color;
+            context.beginPath();
+            if (rightS <= leftS) {
+                context.moveTo(Ps_.x, Ps_.y);
+                context.lineTo(Pe_.x, Pe_.y);
+            } else {
+                const drawSeg = (s0, s1) => {
+                    if (s1 <= s0 + 1e-4) return;
+                    context.moveTo(Ps_.x + ux * s0, Ps_.y + uy * s0);
+                    context.lineTo(Ps_.x + ux * s1, Ps_.y + uy * s1);
+                };
+                drawSeg(0, Math.max(0, leftS));
+                drawSeg(Math.min(pdfLenOblique, rightS), pdfLenOblique);
+            }
+            context.stroke();
+
+            canvasObliqueDimArrows(context, Ps_.x, Ps_.y, Pe_.x, Pe_.y, ux, uy, color, tickPx);
+            if (rightS > leftS && leftS > 0) {
+                canvasObliqueTicks(context, Ps_.x + ux * leftS, Ps_.y + uy * leftS, ux, uy, color, tickPx);
+            }
+            if (rightS > leftS && rightS < pdfLenOblique) {
+                canvasObliqueTicks(context, Ps_.x + ux * rightS, Ps_.y + uy * rightS, ux, uy, color, tickPx);
+            }
+
+            const textAngleDeg = (Math.atan2(uy, ux) * 180) / Math.PI;
+            if (!storedPlacement) {
+                dimensionPlacementMemory.set(dimensionKey, { side: placement.side });
+            }
+            const lb = obliqueBounds(labelX, labelY, textWidth);
+            const obliqueLabel = {
+                x: lb.x,
+                y: lb.y,
+                width: lb.width,
+                height: lb.height,
+                side: placement.side === 'side1' ? 'oblique1' : 'oblique2',
+                text: text,
+                angle: angle,
+                type: 'wall',
+                obliqueAngle: textAngleDeg
+            };
+            placedLabels.push(obliqueLabel);
+            if (collectOnly) {
+                allLabels.push({ ...obliqueLabel });
+            }
+        } else if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
             // Horizontal wall - smart placement: try both top and bottom, choose best
             // Smart placement: evaluate both top and bottom sides
             const placement = smartPlacement({
@@ -751,59 +1105,54 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 }
             }
             
-            // Draw standard architectural dimensioning lines with gap for text
             const textPadding = 2;
-            const textLeft = labelX - textWidth / 2 - textPadding;
-            const textRight = labelX + textWidth / 2 + textPadding;
-            context.beginPath();
-            context.setLineDash([5, 5]);
-            // Extension line from start of wall (perpendicular to wall)
-            context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
-            context.lineTo(startX * scaleFactor + offsetX, labelY);
-            // Extension line from end of wall (perpendicular to wall)
-            context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
-            context.lineTo(endX * scaleFactor + offsetX, labelY);
-            // Dimension line connecting the two extension lines (with gap for text)
             const startXScreen = startX * scaleFactor + offsetX;
             const endXScreen = endX * scaleFactor + offsetX;
-            if (startXScreen < textLeft) {
+            const dimensionLineMidpoint = (startXScreen + endXScreen) / 2;
+            const centeredLabelX = dimensionLineMidpoint;
+            const centeredTextLeft = centeredLabelX - textWidth / 2 - textPadding;
+            const centeredTextRight = centeredLabelX + textWidth / 2 + textPadding;
+
+            context.strokeStyle = color;
+            context.lineWidth = extLineW;
+            context.setLineDash(extDash);
+            canvasDrawExtensionDashed(context, startXScreen, startY * scaleFactor + offsetY, startXScreen, labelY, rectScreen);
+            canvasDrawExtensionDashed(context, endXScreen, endY * scaleFactor + offsetY, endXScreen, labelY, rectScreen);
+
+            context.setLineDash([]);
+            context.lineWidth = dimLineW;
+            context.beginPath();
+            if (startXScreen < centeredTextLeft) {
                 context.moveTo(startXScreen, labelY);
-                context.lineTo(textLeft, labelY);
+                context.lineTo(centeredTextLeft, labelY);
             }
-            if (endXScreen > textRight) {
-                context.moveTo(textRight, labelY);
+            if (endXScreen > centeredTextRight) {
+                context.moveTo(centeredTextRight, labelY);
                 context.lineTo(endXScreen, labelY);
             }
-            context.strokeStyle = color;
-            context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
             context.stroke();
-            context.setLineDash([]);
-            
-                         // Add to placed labels for future collision detection
-             placedLabels.push({
-                 x: labelX - textWidth / 2 - 2,
-                 y: labelY - 8,
-                 width: textWidth + 4,
-                 height: 16,
-                 side: side,
-                 text: text,
-                 angle: angle,
-                 type: 'wall'
-             });
-             
-             // Collect for second pass if needed
-             if (collectOnly) {
-                 allLabels.push({
-                     x: labelX - textWidth / 2 - 2,
-                     y: labelY - 8,
-                     width: textWidth + 4,
-                     height: 16,
-                     side: side,
-                     text: text,
-                     angle: angle,
-                     type: 'wall'
-                 });
-             }
+
+            const wallHTickXs = [];
+            if (startXScreen < centeredTextLeft) wallHTickXs.push(startXScreen, centeredTextLeft);
+            if (endXScreen > centeredTextRight) wallHTickXs.push(centeredTextRight, endXScreen);
+            if (wallHTickXs.length > 0) {
+                canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
+            }
+
+            const hLabel = {
+                x: centeredLabelX - textWidth / 2 - 2,
+                y: labelY - 8,
+                width: textWidth + 4,
+                height: 16,
+                side: side,
+                text: text,
+                angle: angle,
+                type: 'wall'
+            };
+            placedLabels.push(hLabel);
+            if (collectOnly) {
+                allLabels.push({ ...hLabel });
+            }
         } else {
             // Vertical wall - smart placement: try both left and right, choose best
             const minVerticalOffset = isSmallDimension ? DIMENSION_CONFIG.MIN_VERTICAL_OFFSET_SMALL : DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
@@ -882,21 +1231,23 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 }
             }
             
-            // Draw standard architectural dimensioning lines with gap for text
             const textPadding = 2;
             const textTop = labelY - textWidth / 2 - textPadding;
             const textBottom = labelY + textWidth / 2 + textPadding;
-            context.beginPath();
-            context.setLineDash([5, 5]);
-            // Extension line from start of wall (perpendicular to wall)
-            context.moveTo(startX * scaleFactor + offsetX, startY * scaleFactor + offsetY);
-            context.lineTo(labelX, startY * scaleFactor + offsetY);
-            // Extension line from end of wall (perpendicular to wall)
-            context.moveTo(endX * scaleFactor + offsetX, endY * scaleFactor + offsetY);
-            context.lineTo(labelX, endY * scaleFactor + offsetY);
-            // Dimension line connecting the two extension lines (with gap for text)
+            const xStart = startX * scaleFactor + offsetX;
+            const xEnd = endX * scaleFactor + offsetX;
             const startYScreen = startY * scaleFactor + offsetY;
             const endYScreen = endY * scaleFactor + offsetY;
+
+            context.strokeStyle = color;
+            context.lineWidth = extLineW;
+            context.setLineDash(extDash);
+            canvasDrawExtensionDashed(context, xStart, startYScreen, labelX, startYScreen, rectScreen);
+            canvasDrawExtensionDashed(context, xEnd, endYScreen, labelX, endYScreen, rectScreen);
+
+            context.setLineDash([]);
+            context.lineWidth = dimLineW;
+            context.beginPath();
             if (startYScreen < textTop) {
                 context.moveTo(labelX, startYScreen);
                 context.lineTo(labelX, textTop);
@@ -905,72 +1256,28 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
                 context.moveTo(labelX, textBottom);
                 context.lineTo(labelX, endYScreen);
             }
-            context.strokeStyle = color;
-            context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
             context.stroke();
-            context.setLineDash([]);
-            
-            // Draw vertical dimension text with rotation (original simple style)
-            context.save();
-            context.translate(labelX, labelY);
-            context.rotate(-Math.PI / 2); // Rotate 90 degrees counterclockwise
-            context.fillStyle = color;
-            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
-            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
-            let fontSize;
-            
-            // Calculate square root scaled font size if user has zoomed in
-            let sqrtScaledFontSize = 0;
-            if (initialScale > 0 && scaleFactor > initialScale) {
-                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-                // This means 2x zoom only results in ~1.41x text size, not 2x
-                const zoomRatio = scaleFactor / initialScale;
-                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+
+            const wallVTickYs = [];
+            if (startYScreen < textTop) wallVTickYs.push(startYScreen, textTop);
+            if (endYScreen > textBottom) wallVTickYs.push(textBottom, endYScreen);
+            if (wallVTickYs.length > 0) {
+                canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
             }
-            
-            // Use the maximum of calculated and square root scaled to prevent discontinuity
-            // This ensures smooth transition when crossing the minimum threshold
-            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
-                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-            } else {
-                // Above minimum threshold - use max of calculated and square root scaled
-                // This prevents sudden drop when crossing the threshold
-                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-            }
-            
-            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
-            context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.fillText(text, 0, 0);
-            context.restore();
-            
-            // Add to placed labels for future collision detection (rotated bounding box for vertical text)
-            placedLabels.push({
-                x: labelX - 8, // Center the rotated text
+
+            const vLabel = {
+                x: labelX - 8,
                 y: labelY - textWidth / 2 - 2,
-                width: 16, // Swapped with height for rotated text
-                height: textWidth + 4, // Swapped with width for rotated text
+                width: 16,
+                height: textWidth + 4,
                 side: side,
                 text: text,
                 angle: angle,
                 type: 'wall'
-            });
-            
-            // Collect for second pass if needed
+            };
+            placedLabels.push(vLabel);
             if (collectOnly) {
-                allLabels.push({
-                    x: labelX - 8, // Center the rotated text
-                    y: labelY - textWidth / 2 - 2,
-                    width: 16, // Swapped with height for rotated text
-                    height: textWidth + 4, // Swapped with width for rotated text
-                    side: side,
-                    text: text,
-                    angle: angle,
-                    type: 'wall'
-                });
+                allLabels.push({ ...vLabel });
             }
         }
     } else {
@@ -995,8 +1302,338 @@ export function drawDimensions(context, startX, startY, endX, endY, scaleFactor,
     context.restore();
 }
 
-// Calculate offset points for double-line walls
-export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFactor) {
+function normalizeRoomPointModel(p) {
+    if (p == null) return null;
+    if (Array.isArray(p)) {
+        const x = Number(p[0]);
+        const y = Number(p[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return { x, y };
+    }
+    const x = Number(p.x);
+    const y = Number(p.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+}
+
+/** Shoelace centroid and absolute area (model mm²). Used to weight “inner” side toward real rooms. */
+export function getRoomPolygonCentroidAndArea(roomPoints) {
+    const pts = (roomPoints || []).map(normalizeRoomPointModel).filter(Boolean);
+    const n = pts.length;
+    if (n < 3) return { centroid: null, area: 0 };
+    let twiceArea = 0;
+    let cx = 0;
+    let cy = 0;
+    for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const cross = pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+        twiceArea += cross;
+        cx += (pts[i].x + pts[j].x) * cross;
+        cy += (pts[i].y + pts[j].y) * cross;
+    }
+    const absArea = Math.abs(twiceArea) / 2;
+    if (absArea < 1e-6) return { centroid: null, area: 0 };
+    cx /= 3 * twiceArea;
+    cy /= 3 * twiceArea;
+    return { centroid: { x: cx, y: cy }, area: absArea };
+}
+
+function pointToSegmentDistSq(px, py, ax, ay, bx, by) {
+    const abx = bx - ax;
+    const aby = by - ay;
+    const apx = px - ax;
+    const apy = py - ay;
+    const abLenSq = abx * abx + aby * aby;
+    if (abLenSq < 1e-12) return apx * apx + apy * apy;
+    let t = (apx * abx + apy * aby) / abLenSq;
+    t = Math.max(0, Math.min(1, t));
+    const qx = ax + t * abx;
+    const qy = ay + t * aby;
+    const dx = px - qx;
+    const dy = py - qy;
+    return dx * dx + dy * dy;
+}
+
+function roomPolygonTouchesWallMm(room, wall, tolMm) {
+    const ax = wall.start_x;
+    const ay = wall.start_y;
+    const bx = wall.end_x;
+    const by = wall.end_y;
+    if (ax == null || ay == null || bx == null || by == null) return false;
+    const tolSq = tolMm * tolMm;
+    const pts = (room.room_points || []).map(normalizeRoomPointModel).filter(Boolean);
+    for (let i = 0; i < pts.length; i++) {
+        if (pointToSegmentDistSq(pts[i].x, pts[i].y, ax, ay, bx, by) <= tolSq) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** When vertices are offset from the wall polyline, room centroid may still lie near the segment. */
+function roomCentroidNearWallSegmentMm(room, wall, maxPerpMm) {
+    const ax = wall.start_x;
+    const ay = wall.start_y;
+    const bx = wall.end_x;
+    const by = wall.end_y;
+    if (ax == null || ay == null || bx == null || by == null) return false;
+    let { centroid: c } = getRoomPolygonCentroidAndArea(room.room_points);
+    if (!c) {
+        const raw = (room.room_points || []).map(normalizeRoomPointModel).filter(Boolean);
+        if (raw.length === 0) return false;
+        c = {
+            x: raw.reduce((s, p) => s + p.x, 0) / raw.length,
+            y: raw.reduce((s, p) => s + p.y, 0) / raw.length,
+        };
+    }
+    const maxSq = maxPerpMm * maxPerpMm;
+    return pointToSegmentDistSq(c.x, c.y, ax, ay, bx, by) <= maxSq;
+}
+
+function normalizeRoomPolygonPoints(roomPoints) {
+    return (roomPoints || []).map(normalizeRoomPointModel).filter(Boolean);
+}
+
+/**
+ * Rooms associated with this wall (M2M, vertex proximity, or centroid strip), in model space.
+ * @param {{ adjacencyToleranceMm?: number }} [options]
+ */
+export function getRoomsLinkedToWall(wall, rooms, options) {
+    const adjacencyToleranceMm =
+        options && Number.isFinite(options.adjacencyToleranceMm)
+            ? options.adjacencyToleranceMm
+            : 40;
+
+    if (!wall || !Array.isArray(rooms) || rooms.length === 0) return [];
+
+    const wallId = String(wall.id);
+    const linkedIds = new Set();
+
+    if (Array.isArray(wall.rooms)) {
+        wall.rooms.forEach((r) => {
+            if (r == null) return;
+            linkedIds.add(String(typeof r === 'object' ? r.id : r));
+        });
+    }
+
+    for (const room of rooms) {
+        if (!room || room.id == null) continue;
+        const rw = room.walls;
+        if (!Array.isArray(rw)) continue;
+        if (rw.some((w) => String(typeof w === 'object' && w !== null ? w.id : w) === wallId)) {
+            linkedIds.add(String(room.id));
+        }
+    }
+
+    if (linkedIds.size === 0) {
+        for (const room of rooms) {
+            if (!room || room.id == null) continue;
+            if (roomPolygonTouchesWallMm(room, wall, adjacencyToleranceMm)) {
+                linkedIds.add(String(room.id));
+            }
+        }
+    }
+    if (linkedIds.size === 0) {
+        const stripMm = Math.min(450, Math.max(180, (wall.thickness || 200) * 2.2));
+        for (const room of rooms) {
+            if (!room || room.id == null) continue;
+            if (roomCentroidNearWallSegmentMm(room, wall, stripMm)) {
+                linkedIds.add(String(room.id));
+            }
+        }
+    }
+
+    return rooms.filter((room) => room && room.id != null && linkedIds.has(String(room.id)));
+}
+
+/**
+ * Pick inner offset using point-in-polygon on **linked** room outlines (fixes L-shaped rooms where
+ * the global centroid lies on the wrong side of one edge, e.g. wall 7611).
+ * @returns {boolean|null} `shouldFlip` for calculateOffsetPoints, or null if ambiguous / no data.
+ */
+function resolveInteriorShouldFlipFromPolygonProbes(wall, rooms, midX, midY, normalX, normalY) {
+    const linked = getRoomsLinkedToWall(wall, rooms);
+    const polys = linked
+        .map((r) => normalizeRoomPolygonPoints(r.room_points))
+        .filter((p) => p.length >= 3);
+    if (!polys.length) return null;
+
+    const probeDist = Math.min(80, Math.max(35, ((wall.thickness || 100) + 10) / 2));
+    const pointInsideAny = (x, y) => polys.some((poly) => isPointInPolygon({ x, y }, poly));
+
+    const insideMinusN = pointInsideAny(
+        midX - probeDist * normalX,
+        midY - probeDist * normalY
+    );
+    const insidePlusN = pointInsideAny(
+        midX + probeDist * normalX,
+        midY + probeDist * normalY
+    );
+
+    if (insideMinusN && !insidePlusN) return false;
+    if (!insideMinusN && insidePlusN) return true;
+    return null;
+}
+
+/**
+ * Samples { x, y, w } for walls tied to rooms.
+ * - Always unions `wall.rooms` with `room.walls` (previously an incomplete `wall.rooms` skipped `room.walls`).
+ * - If still none, treats rooms whose boundary lies within `adjacencyToleranceMm` of the wall segment as adjacent (PDF/canvas often lack M2M).
+ * - Weights by area × proximity to wall mid so a small pocket beats a large far room on the other side.
+ *
+ * @param {{ adjacencyToleranceMm?: number }} [options]
+ */
+export function getWallOffsetScoringSamples(wall, rooms, options) {
+    if (!wall || !Array.isArray(rooms) || rooms.length === 0) return [];
+
+    const linked = getRoomsLinkedToWall(wall, rooms, options);
+
+    const wmidX = ((wall.start_x || 0) + (wall.end_x || 0)) / 2;
+    const wmidY = ((wall.start_y || 0) + (wall.end_y || 0)) / 2;
+
+    const samples = [];
+    for (const room of linked) {
+        let { centroid, area } = getRoomPolygonCentroidAndArea(room.room_points);
+        if (!centroid) {
+            const raw = (room.room_points || []).map(normalizeRoomPointModel).filter(Boolean);
+            if (raw.length > 0) {
+                centroid = {
+                    x: raw.reduce((s, p) => s + p.x, 0) / raw.length,
+                    y: raw.reduce((s, p) => s + p.y, 0) / raw.length,
+                };
+                area = 1;
+            }
+        }
+        if (centroid) {
+            const baseA = area > 1e-6 ? area : 1;
+            const dist = Math.hypot(centroid.x - wmidX, centroid.y - wmidY);
+            const proximity = 1 / ((dist + 150) * (dist + 150));
+            samples.push({ x: centroid.x, y: centroid.y, w: baseA * proximity });
+        }
+    }
+    return samples;
+}
+
+/** Nearest room centroid to the wall segment (local “interior” hint when M2M data is missing). */
+function getNearestRoomCentroidToWallSegment(wall, rooms) {
+    if (!wall || !Array.isArray(rooms) || rooms.length === 0) return null;
+    const ax = wall.start_x ?? 0;
+    const ay = wall.start_y ?? 0;
+    const bx = wall.end_x ?? 0;
+    const by = wall.end_y ?? 0;
+    let best = null;
+    let bestD = Infinity;
+    for (const room of rooms) {
+        if (!room) continue;
+        let { centroid: c } = getRoomPolygonCentroidAndArea(room.room_points);
+        if (!c) {
+            const raw = (room.room_points || []).map(normalizeRoomPointModel).filter(Boolean);
+            if (raw.length === 0) continue;
+            c = {
+                x: raw.reduce((s, p) => s + p.x, 0) / raw.length,
+                y: raw.reduce((s, p) => s + p.y, 0) / raw.length,
+            };
+        }
+        const dSq = pointToSegmentDistSq(c.x, c.y, ax, ay, bx, by);
+        if (dSq < bestD) {
+            bestD = dSq;
+            best = c;
+        }
+    }
+    return best;
+}
+
+/**
+ * Options for `calculateOffsetPoints`: prefer room-weighted scoring, else nearest-room reference,
+ * else undefined (caller uses plain `center` in calculateOffsetPoints).
+ */
+export function buildWallOffsetOptions(wall, rooms) {
+    if (!wall) return undefined;
+    const roomsList = Array.isArray(rooms) ? rooms : [];
+    const base = { wall, rooms: roomsList };
+    const scoringSamples = getWallOffsetScoringSamples(wall, roomsList);
+    if (scoringSamples.length > 0) {
+        base.scoringSamples = scoringSamples;
+        return base;
+    }
+    const nearest = getNearestRoomCentroidToWallSegment(wall, roomsList);
+    if (nearest) {
+        base.innerReferencePoint = nearest;
+    }
+    return base;
+}
+
+/**
+ * For shared walls, prefer the side indicated by connected 45_cut joints.
+ * Returns `true|false` for shouldFlip, or null if no usable 45_cut context.
+ */
+export function resolve45CutForceShouldFlip(wall, intersections, allWalls) {
+    if (!wall || !Array.isArray(intersections) || intersections.length === 0 || !Array.isArray(allWalls)) {
+        return null;
+    }
+    let joinVecX = 0;
+    let joinVecY = 0;
+    let joinCount = 0;
+    for (const inter of intersections) {
+        const pairs = Array.isArray(inter.pairs)
+            ? inter.pairs
+            : [{ wall1: { id: inter.wall_1 }, wall2: { id: inter.wall_2 }, joining_method: inter.joining_method }];
+        for (const pair of pairs) {
+            if (!pair || pair.joining_method !== '45_cut') continue;
+            const wall1Id = pair.wall1 && pair.wall1.id != null ? pair.wall1.id : inter.wall_1;
+            const wall2Id = pair.wall2 && pair.wall2.id != null ? pair.wall2.id : inter.wall_2;
+            if (wall1Id !== wall.id && wall2Id !== wall.id) continue;
+            const otherWallId = wall1Id === wall.id ? wall2Id : wall1Id;
+            const otherWall = allWalls.find((w) => w.id === otherWallId);
+            if (!otherWall) continue;
+            const wallMidX = (wall.start_x + wall.end_x) / 2;
+            const wallMidY = (wall.start_y + wall.end_y) / 2;
+            const otherMidX = (otherWall.start_x + otherWall.end_x) / 2;
+            const otherMidY = (otherWall.start_y + otherWall.end_y) / 2;
+            joinVecX += otherMidX - wallMidX;
+            joinVecY += otherMidY - wallMidY;
+            joinCount += 1;
+        }
+    }
+    if (joinCount === 0) return null;
+    const dx = wall.end_x - wall.start_x;
+    const dy = wall.end_y - wall.start_y;
+    const len = Math.hypot(dx, dy) || 1;
+    const normalX = dy / len;
+    const normalY = -dx / len;
+    const joinDot = normalX * (joinVecX / joinCount) + normalY * (joinVecY / joinCount);
+    return joinDot > 0;
+}
+
+/** Area-weighted centroid of rooms touching the wall; falls back to `center` if unknown. */
+export function getWallOffsetFallbackReference(wall, rooms, center) {
+    const samples = getWallOffsetScoringSamples(wall, rooms);
+    if (!samples.length) {
+        const n = getNearestRoomCentroidToWallSegment(wall, rooms);
+        return n || center;
+    }
+    let sw = 0;
+    let sx = 0;
+    let sy = 0;
+    for (const s of samples) {
+        const w = s.w > 0 ? s.w : 1;
+        sw += w;
+        sx += s.x * w;
+        sy += s.y * w;
+    }
+    if (sw <= 0) return center;
+    return { x: sx / sw, y: sy / sw };
+}
+
+/**
+ * @param {object} [offsetOptions]
+ * @param {object} [offsetOptions.wall] — with `offsetOptions.rooms` enables polygon interior probe (overrides centroid heuristics when unambiguous)
+ * @param {object[]} [offsetOptions.rooms]
+ * @param {{ x: number, y: number, w?: number }[]} [offsetOptions.scoringSamples] — prefer flip that puts more weighted room mass on the inner half-plane
+ * @param {{ x: number, y: number }} [offsetOptions.innerReferencePoint] — tie-break / fallback instead of `center`
+ * @param {boolean} [offsetOptions.forceShouldFlip] — hard override for side selection (used by FloorCanvas 45_cut priority)
+ */
+export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFactor, offsetOptions) {
     const dx = x2 - x1;
     const dy = y2 - y1;
     const length = Math.sqrt(dx * dx + dy * dy);
@@ -1010,12 +1647,90 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
     const normalY = -dx / length;
     const midX = (x1 + x2) / 2;
     const midY = (y1 + y2) / 2;
-    const dirToCenterX = center.x - midX;
-    const dirToCenterY = center.y - midY;
-    const dotProduct = normalX * dirToCenterX + normalY * dirToCenterY;
-    const shouldFlip = dotProduct > 0;
     const offsetX = (gapPixels * normalX) / scaleFactor;
     const offsetY = (gapPixels * normalY) / scaleFactor;
+
+    const scoringSamples =
+        offsetOptions && Array.isArray(offsetOptions.scoringSamples) && offsetOptions.scoringSamples.length > 0
+            ? offsetOptions.scoringSamples
+            : null;
+
+    const scoreFlip = (shouldFlip) => {
+        const finalOffsetX = shouldFlip ? -offsetX : offsetX;
+        const finalOffsetY = shouldFlip ? -offsetY : offsetY;
+        const ix = -finalOffsetX;
+        const iy = -finalOffsetY;
+        const ilen = Math.hypot(ix, iy) || 1;
+        const inx = ix / ilen;
+        const iny = iy / ilen;
+        let weightSum = 0;
+        let count = 0;
+        for (const sample of scoringSamples) {
+            const wx = sample.x - midX;
+            const wy = sample.y - midY;
+            const weight = sample.w != null && sample.w > 0 ? sample.w : 1;
+            if (wx * inx + wy * iny > 0) {
+                weightSum += weight;
+                count += 1;
+            }
+        }
+        return { weightSum, count };
+    };
+
+    let shouldFlip;
+    const forcedFlip =
+        offsetOptions && typeof offsetOptions.forceShouldFlip === 'boolean'
+            ? offsetOptions.forceShouldFlip
+            : null;
+    const polygonResolved =
+        offsetOptions &&
+        offsetOptions.wall &&
+        Array.isArray(offsetOptions.rooms) &&
+        offsetOptions.rooms.length > 0
+            ? resolveInteriorShouldFlipFromPolygonProbes(
+                  offsetOptions.wall,
+                  offsetOptions.rooms,
+                  midX,
+                  midY,
+                  normalX,
+                  normalY
+              )
+            : null;
+
+    if (forcedFlip !== null) {
+        shouldFlip = forcedFlip;
+    } else if (polygonResolved !== null) {
+        shouldFlip = polygonResolved;
+    } else if (scoringSamples) {
+        const aFalse = scoreFlip(false);
+        const aTrue = scoreFlip(true);
+        if (aTrue.weightSum > aFalse.weightSum) shouldFlip = true;
+        else if (aFalse.weightSum > aTrue.weightSum) shouldFlip = false;
+        else if (aTrue.count !== aFalse.count) shouldFlip = aTrue.count > aFalse.count;
+        else {
+            let ref = offsetOptions && offsetOptions.innerReferencePoint;
+            if (!ref) {
+                let sw = 0;
+                let sx = 0;
+                let sy = 0;
+                for (const sample of scoringSamples) {
+                    const wt = sample.w != null && sample.w > 0 ? sample.w : 1;
+                    sw += wt;
+                    sx += sample.x * wt;
+                    sy += sample.y * wt;
+                }
+                if (sw > 0) ref = { x: sx / sw, y: sy / sw };
+            }
+            ref = ref || center;
+            const dotProduct = normalX * (ref.x - midX) + normalY * (ref.y - midY);
+            shouldFlip = dotProduct > 0;
+        }
+    } else {
+        const ref = (offsetOptions && offsetOptions.innerReferencePoint) || center;
+        const dotProduct = normalX * (ref.x - midX) + normalY * (ref.y - midY);
+        shouldFlip = dotProduct > 0;
+    }
+
     const finalOffsetX = shouldFlip ? -offsetX : offsetX;
     const finalOffsetY = shouldFlip ? -offsetY : offsetY;
     return {
@@ -1294,7 +2009,8 @@ export function drawWalls({
     dimensionVisibility = {},
     showPanelLines = false, // <-- added for panel lines visibility toggle
     initialScale = 1, // <-- added for proper zoom scaling from minimum
-    dimensionValuesSeen = null // <-- shared Set: skip drawing if value already shown (match floor/ceiling dedup)
+    dimensionValuesSeen = null, // <-- shared Set: skip drawing if value already shown (match floor/ceiling dedup)
+    rooms = [] // room list for inner-face offset (wall.rooms / room.walls)
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
@@ -1329,7 +2045,12 @@ export function drawWalls({
         // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
         const wallThickness = wall.thickness; // Default to 100mm if not set
         const gapPixels = (wallThickness * scaleFactor);
-        
+        const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
+        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+        if (typeof forcedFlip === 'boolean') {
+            offsetOpts.forceShouldFlip = forcedFlip;
+        }
+
         let { line1, line2 } = calculateOffsetPoints(
             wall.start_x,
             wall.start_y,
@@ -1337,7 +2058,8 @@ export function drawWalls({
             wall.end_y,
             gapPixels,
             center,
-            scaleFactor
+            scaleFactor,
+            offsetOpts
         );
         wallLinesMap.set(wall.id, { line1, line2, wall });
     });
@@ -1474,8 +2196,10 @@ export function drawWalls({
                     }
                 }
             }
-            
-            // Process all pairs: first extend all wall2s, then shorten all wall1s
+
+            // Two passes over all V–H pairs: extends first, then shortens (butt-in). Avoids dropping
+            // valid pairs at 3-wall T-junctions while keeping extend-before-shorten order globally.
+            const runVhPairPhase = (phase) => {
             vhPairs.forEach(pairData => {
                 const { verticalWall, horizontalWall, joiningMethod, jointWall1Id, jointWall2Id } = pairData;
                 
@@ -1517,14 +2241,6 @@ export function drawWalls({
                 const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
                 const isTopEnd = vEndpointY < vOtherY;
                 
-                // Determine position of horizontal wall relative to vertical
-                // Check if horizontal wall is above or below by examining which direction
-                // the vertical wall extends from the intersection point
-                // vEndpointY and vOtherY are already defined above
-                // If vertical extends downward from intersection (otherY > endpointY), horizontal is on top
-                // If vertical extends upward from intersection (otherY < endpointY), horizontal is at bottom
-                const isHorizontalOnTop = vOtherY > vEndpointY; // Vertical extends down -> horizontal on top
-                
                 if (hasButtIn) {
                     // BUTT-IN JOINT: First extend wall2, then shorten wall1
                     // wall1 is the one that should be shortened visually (first wall in the joint pair)
@@ -1533,19 +2249,19 @@ export function drawWalls({
                     // Use string comparison to handle number/string ID mismatches
                     const isVerticalWall1 = String(jointWall1Id) === String(vWall.id);
                     const isHorizontalWall1 = String(jointWall1Id) === String(hWall.id);
-                    
+
+                    if (phase === 'extend') {
                     // First, extend wall2 (the one that should remain extended)
                     // Case A: Vertical is wall2, Horizontal is wall1
                     // Only extend wall2 if the intersection is at an actual endpoint of wall2
                     // If wall2 is intersected in the middle (isOnBody), skip extension (it should remain full length)
                     if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody) {
                         // Extend vertical wall (wall2) to horizontal wall's line
-                        const vEndpointY = vIsAtStart ? vWall.start_y : vWall.end_y;
-                        const vOtherY = vIsAtStart ? vWall.end_y : vWall.start_y;
-                        const isTopEnd = vEndpointY < vOtherY;
-                        
+                        const vEndpointYCaseA = vIsAtStart ? vWall.start_y : vWall.end_y;
+                        const vOtherYCaseA = vIsAtStart ? vWall.end_y : vWall.start_y;
+                        const isTopEndCaseA = vEndpointYCaseA < vOtherYCaseA;
                         let targetY;
-                        if (isTopEnd) {
+                        if (isTopEndCaseA) {
                             // Top end -> extend to upper line
                             const hUpperStartX = hUpperLine[0].x;
                             const hUpperStartY = hUpperLine[0].y;
@@ -1638,19 +2354,30 @@ export function drawWalls({
                             hLines.line2[1].x = targetX;
                         }
                     }
-                    
+                    }
+
+                    if (phase === 'shorten') {
                     // Now shorten wall1 to connect to wall2
                     // Only shorten wall1 if the intersection is at an actual endpoint of wall1
                     // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
                     // Case 1: Vertical is wall1, Horizontal is wall2
                     if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody) {
+                        // Use geometry at the intersection (nearest endpoint) so stem direction — and thus
+                        // which horizontal edge is the inner face — is not flipped when wall1/2 flags disagree.
+                        const distJointToStart = Math.hypot(inter.x - vWall.start_x, inter.y - vWall.start_y);
+                        const distJointToEnd = Math.hypot(inter.x - vWall.end_x, inter.y - vWall.end_y);
+                        const jointAtVerticalStart = distJointToStart < distJointToEnd;
+                        const jointY = jointAtVerticalStart ? vWall.start_y : vWall.end_y;
+                        const otherVerticalY = jointAtVerticalStart ? vWall.end_y : vWall.start_y;
+                        const horizontalOnTopAtButtIn = otherVerticalY > jointY;
+
                         // Determine target line based on horizontal wall (wall2) position relative to intersection
                         // If horizontal (wall2) is on top → vertical (wall1) should connect to bottom line of wall2
                         // If horizontal (wall2) is at bottom → vertical (wall1) should connect to upper line of wall2
                         let targetLine;
                         let targetY;
                         
-                        if (isHorizontalOnTop) {
+                        if (horizontalOnTopAtButtIn) {
                             // Horizontal wall2 is on top, vertical wall1 should connect to bottom line of wall2
                             targetLine = hLowerLine;
                         } else {
@@ -1668,8 +2395,8 @@ export function drawWalls({
                         // This creates the visual effect of the wall being shortened to connect to wall2
                         // For vertical walls, we only modify Y coordinate, keeping X coordinates to maintain vertical orientation
                         // Ensure both lines are modified by directly accessing the arrays
-                        const vLine1Endpoint = vIsAtStart ? vLines.line1[0] : vLines.line1[1];
-                        const vLine2Endpoint = vIsAtStart ? vLines.line2[0] : vLines.line2[1];
+                        const vLine1Endpoint = jointAtVerticalStart ? vLines.line1[0] : vLines.line1[1];
+                        const vLine2Endpoint = jointAtVerticalStart ? vLines.line2[0] : vLines.line2[1];
                         
                         vLine1Endpoint.y = targetY;
                         vLine2Endpoint.y = targetY;
@@ -1741,7 +2468,9 @@ export function drawWalls({
                         
                         // Keep Y coordinates unchanged to maintain wall thickness
                     }
+                    }
                 } else {
+                    if (phase === 'extend') {
                     // NOT butt-in: Extend walls normally (existing logic)
                     // Calculate intersection point on horizontal line
                     // Project intersection point onto horizontal line to get exact Y coordinate
@@ -1850,8 +2579,12 @@ export function drawWalls({
                             hLines.line2[1].x = targetX;
                         }
                     }
+                    }
                 }
-            }); // End of vhPairs.forEach
+            });
+            };
+            runVhPairPhase('extend');
+            runVhPairPhase('shorten');
         }
     });
     
@@ -2048,6 +2781,25 @@ export function drawWalls({
                 }
             }
         }
+
+        // Final role enforcement: ensure line2 (inner) is on forced 45_cut side.
+        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+        if (typeof forcedFlip === 'boolean') {
+            const len = Math.hypot(wallDx, wallDy) || 1;
+            const normalX = wallDy / len;
+            const normalY = -wallDx / len;
+            const wallMidX = (wall.start_x + wall.end_x) / 2;
+            const wallMidY = (wall.start_y + wall.end_y) / 2;
+            const line2MidXNow = (line2[0].x + line2[1].x) / 2;
+            const line2MidYNow = (line2[0].y + line2[1].y) / 2;
+            const line2Dot = normalX * (line2MidXNow - wallMidX) + normalY * (line2MidYNow - wallMidY);
+            const line2IsPositiveSide = line2Dot > 0;
+            if (line2IsPositiveSide !== forcedFlip) {
+                const tmp = line1;
+                line1 = line2;
+                line2 = tmp;
+            }
+        }
         wall._line1 = line1;
         wall._line2 = line2;
         drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor, [], innerColor);
@@ -2122,7 +2874,8 @@ export function drawWalls({
         // Calculate gap in pixels based on wall thickness for temp wall
         const tempWallThickness = tempWall.thickness || 100; // Default to 100mm if not set
         const tempGapPixels = (tempWallThickness * scaleFactor) / 2;
-        
+        const tempOffsetOpts = buildWallOffsetOptions(tempWall, rooms);
+
         const { line1, line2 } = calculateOffsetPoints(
             tempWall.start_x,
             tempWall.start_y,
@@ -2130,7 +2883,8 @@ export function drawWalls({
             tempWall.end_y,
             tempGapPixels,
             center,
-            scaleFactor
+            scaleFactor,
+            tempOffsetOpts
         );
         drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, '#4CAF50', [5, 5]);
         drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
@@ -2493,21 +3247,25 @@ export function drawPanelDivisions(
                 // Calculate final label bounds (use same function for consistency)
                 const finalLabelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
                 
-                // Draw standard architectural dimensioning lines for panel with gap for text
                 const textPadding = 2;
                 const textLeft = labelX - textWidth / 2 - textPadding;
                 const textRight = labelX + textWidth / 2 + textPadding;
-                context.beginPath();
-                context.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
-                // Extension line from start of panel (perpendicular to panel)
-                context.moveTo(mxStart * scaleFactor + offsetX, myStart * scaleFactor + offsetY);
-                context.lineTo(mxStart * scaleFactor + offsetX, labelY);
-                // Extension line from end of panel (perpendicular to panel)
-                context.moveTo(mxEnd * scaleFactor + offsetX, myEnd * scaleFactor + offsetY);
-                context.lineTo(mxEnd * scaleFactor + offsetX, labelY);
-                // Dimension line connecting the two extension lines (with gap for text)
+                const rectScreenPanel = modelBoundsToScreenRect(bounds, scaleFactor, offsetX, offsetY);
+                const extDashPanel = getCanvasExtensionDashPattern(scaleFactor);
+                const extLineWPanel = getCanvasExtensionLineWidth();
+                const dimLineWPanel = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
                 const startXScreen = mxStart * scaleFactor + offsetX;
                 const endXScreen = mxEnd * scaleFactor + offsetX;
+                const yStartP = myStart * scaleFactor + offsetY;
+                const yEndP = myEnd * scaleFactor + offsetY;
+                context.strokeStyle = specialColor;
+                context.lineWidth = extLineWPanel;
+                context.setLineDash(extDashPanel);
+                canvasDrawExtensionDashed(context, startXScreen, yStartP, startXScreen, labelY, rectScreenPanel);
+                canvasDrawExtensionDashed(context, endXScreen, yEndP, endXScreen, labelY, rectScreenPanel);
+                context.setLineDash([]);
+                context.lineWidth = dimLineWPanel;
+                context.beginPath();
                 if (startXScreen < textLeft) {
                     context.moveTo(startXScreen, labelY);
                     context.lineTo(textLeft, labelY);
@@ -2516,10 +3274,7 @@ export function drawPanelDivisions(
                     context.moveTo(textRight, labelY);
                     context.lineTo(endXScreen, labelY);
                 }
-                context.strokeStyle = specialColor; // Use special color for 1130mm panels
-                context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
                 context.stroke();
-                context.setLineDash([]);
                 
                 // Add to placed labels for future collision detection (use calculated bounds)
                 placedLabels.push({
@@ -2577,21 +3332,25 @@ export function drawPanelDivisions(
                 // Calculate final label bounds (use same function for consistency)
                 const finalLabelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
                 
-                // Draw standard architectural dimensioning lines for panel with gap for text
                 const textPadding = 2;
                 const textTop = labelY - textWidth / 2 - textPadding;
                 const textBottom = labelY + textWidth / 2 + textPadding;
-                context.beginPath();
-                context.setLineDash(DIMENSION_CONFIG.EXTENSION_DASH);
-                // Extension line from start of panel (perpendicular to panel)
-                context.moveTo(mxStart * scaleFactor + offsetX, myStart * scaleFactor + offsetY);
-                context.lineTo(labelX, myStart * scaleFactor + offsetY);
-                // Extension line from end of panel (perpendicular to panel)
-                context.moveTo(mxEnd * scaleFactor + offsetX, myEnd * scaleFactor + offsetY);
-                context.lineTo(labelX, myEnd * scaleFactor + offsetY);
-                // Dimension line connecting the two extension lines (with gap for text)
+                const rectScreenPanelV = modelBoundsToScreenRect(bounds, scaleFactor, offsetX, offsetY);
+                const extDashPanelV = getCanvasExtensionDashPattern(scaleFactor);
+                const extLineWPanelV = getCanvasExtensionLineWidth();
+                const dimLineWPanelV = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+                const xStartP = mxStart * scaleFactor + offsetX;
+                const xEndP = mxEnd * scaleFactor + offsetX;
                 const startYScreen = myStart * scaleFactor + offsetY;
                 const endYScreen = myEnd * scaleFactor + offsetY;
+                context.strokeStyle = specialColor;
+                context.lineWidth = extLineWPanelV;
+                context.setLineDash(extDashPanelV);
+                canvasDrawExtensionDashed(context, xStartP, startYScreen, labelX, startYScreen, rectScreenPanelV);
+                canvasDrawExtensionDashed(context, xEndP, endYScreen, labelX, endYScreen, rectScreenPanelV);
+                context.setLineDash([]);
+                context.lineWidth = dimLineWPanelV;
+                context.beginPath();
                 if (startYScreen < textTop) {
                     context.moveTo(labelX, startYScreen);
                     context.lineTo(labelX, textTop);
@@ -2600,10 +3359,7 @@ export function drawPanelDivisions(
                     context.moveTo(labelX, textBottom);
                     context.lineTo(labelX, endYScreen);
                 }
-                context.strokeStyle = specialColor; // Use special color for 1130mm panels
-                context.lineWidth = DIMENSION_CONFIG.LINE_WIDTH;
                 context.stroke();
-                context.setLineDash([]);
                 
                 // Add to placed labels for future collision detection (use calculated bounds)
                 placedLabels.push({
@@ -2641,8 +3397,38 @@ export function drawPanelDivisions(
 export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
     return function(context) {
         context.save();
+        if (label.type === 'wall' && label.obliqueAngle != null && !Number.isNaN(label.obliqueAngle)) {
+            const centerX = label.x + label.width / 2;
+            const centerY = label.y + label.height / 2;
+            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+            let fontSize;
+            let sqrtScaledFontSize = 0;
+            if (initialScale > 0 && scaleFactor > initialScale) {
+                const zoomRatio = scaleFactor / initialScale;
+                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+            }
+            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+            } else {
+                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+            }
+            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+            context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+            context.translate(centerX, centerY);
+            context.rotate((label.obliqueAngle * Math.PI) / 180);
+            const tw = context.measureText(label.text).width;
+            const th = fontSize * 0.75;
+            context.fillStyle = '#ffffff';
+            context.fillRect(-tw / 2 - 2, -th / 2 - 1, tw + 4, th + 2);
+            context.fillStyle = '#2196F3';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(label.text, 0, 0);
+            context.restore();
+            return;
+        }
         if (label.angle && Math.abs(label.angle) > 45 && Math.abs(label.angle) < 135) {
-            // Vertical (rotated)
+            // Vertical (rotated) — axis-aligned vertical walls only (oblique handled above)
             const centerX = label.x + label.width / 2;
             const centerY = label.y + label.height / 2;
             context.translate(centerX, centerY);
@@ -2672,15 +3458,19 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
                 fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
             }
             
-            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+            const twV = context.measureText(label.text).width;
+            const thV = fontSize * 0.75;
+            context.fillStyle = '#ffffff';
+            context.fillRect(-twV / 2 - 2, -thV / 2 - 1, twV + 4, thV + 2);
+            context.fillStyle = label.textColor != null ? label.textColor : (label.type === 'panel' ? '#FF6B35' : '#2196F3');
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(label.text, 0, 0);
         } else {
             // Horizontal
-            context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
+            context.fillStyle = label.textColor != null ? label.textColor : (label.type === 'panel' ? '#FF6B35' : '#2196F3');
             // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
             const calculatedFontSize2 = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
             let fontSize2;
@@ -2705,9 +3495,15 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
                 fontSize2 = Math.max(calculatedFontSize2, sqrtScaledFontSize2 || DIMENSION_CONFIG.FONT_SIZE_MIN);
             }
             
-            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-            fontSize2 = Math.max(fontSize2, DIMENSION_CONFIG.FONT_SIZE_MIN);
+            fontSize2 = Math.max(fontSize2, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize2}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+            const twH = context.measureText(label.text).width;
+            const thH = fontSize2 * 0.75;
+            if (label.type === 'wall' || label.textColor != null) {
+                context.fillStyle = '#ffffff';
+                context.fillRect(label.x, label.y, twH + 4, thH + 2);
+            }
+            context.fillStyle = label.textColor != null ? label.textColor : (label.type === 'panel' ? '#FF6B35' : '#2196F3');
             context.textAlign = 'left';
             context.textBaseline = 'top';
             context.fillText(label.text, label.x + 2, label.y + 2);

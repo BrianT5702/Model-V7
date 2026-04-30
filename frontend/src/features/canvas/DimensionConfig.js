@@ -22,7 +22,8 @@ export const DIMENSION_CONFIG = {
     FONT_WEIGHT: 'normal',          // Font weight for dimensions
     LINE_WIDTH: 1,              // Extension line width (px)
     DIMENSION_LINE_WIDTH: 1,      // Main dimension line width (px)
-    EXTENSION_DASH: [5, 5],       // Dash pattern for extension lines
+    // Legacy fallback; wall plan canvas uses getCanvasExtensionDashPattern(scaleFactor) to match pdfVectorWallPlan
+    EXTENSION_DASH: [5, 5],
     BACKGROUND_OPACITY: 1,     // Text background opacity
     LABEL_PADDING_H: 4,           // Horizontal label padding (px) - smaller box width
     LABEL_PADDING_V: 6,           // Vertical label padding (px) - smaller box height
@@ -67,4 +68,53 @@ export const DIMENSION_CONFIG = {
         CUT_PANEL: 5              // Lowest - Cut panel dimensions
     }
 };
+
+/** Thin spaces around × (U+00D7) so grouped counts read clearly on canvas/PDF-style labels */
+const GROUPED_DIM_SEP = '\u2009×\u2009';
+
+/**
+ * @param {number} quantity
+ * @param {number} lengthMm
+ * @returns {string} e.g. "12 × 1200" with thin spaces around ×
+ */
+export function formatGroupedDimensionLabel(quantity, lengthMm) {
+    const q = Math.round(Number(quantity));
+    const n = Math.round(Number(lengthMm));
+    if (!Number.isFinite(n)) return '';
+    if (!Number.isFinite(q) || q <= 1) return `${n}`;
+    return `${q}${GROUPED_DIM_SEP}${n}`;
+}
+
+/**
+ * Room / panel / cut dimension caption for ceiling & floor canvas (matches grouped semantics).
+ * @param {{ type?: string, isCut?: boolean, quantity?: number }} dimension
+ * @param {number} lengthMm
+ */
+export function formatPlanDimensionLabel(dimension, lengthMm) {
+    const len = Math.round(Number(lengthMm));
+    if (!Number.isFinite(len)) return '';
+    if (dimension?.type === 'cut_panel' || dimension?.isCut) return `${len}`;
+    const qty = dimension?.quantity != null ? Number(dimension.quantity) : NaN;
+    if (Number.isFinite(qty) && qty > 1) return formatGroupedDimensionLabel(qty, len);
+    return `${len}`;
+}
+
+/**
+ * De-duplication key so room vs grouped vs individual dims with the same mm value can all appear when appropriate.
+ * Pass optional `dedupId` (e.g. panel id) on individual/cut dimensions.
+ */
+export function planDimensionDedupKey(dimension, lengthMm) {
+    const len = Math.round(Number(lengthMm));
+    const type = dimension?.type || 'dim';
+    const room =
+        dimension?.roomId != null && String(dimension.roomId) !== 'unknown'
+            ? String(dimension.roomId)
+            : 'proj';
+    const qty =
+        dimension?.quantity != null && Number(dimension.quantity) > 1
+            ? Math.round(Number(dimension.quantity))
+            : 0;
+    const extra = dimension?.dedupId != null ? String(dimension.dedupId) : '';
+    return `${type}|${room}|${len}|${qty}|${extra}`;
+}
 

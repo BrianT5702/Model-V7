@@ -2142,7 +2142,8 @@ const Canvas2D = ({
             dimensionVisibility,
             showPanelLines, // Panel lines visibility toggle
             initialScale: initialScale.current,
-            dimensionValuesSeen
+            dimensionValuesSeen,
+            rooms
         });
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);
@@ -2592,7 +2593,7 @@ const Canvas2D = ({
                                     }}
                                 >
                                     {/* Zoom Controls Overlay */}
-                                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-50">
                                         <button
                                             onClick={handleZoomIn}
                                             className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"

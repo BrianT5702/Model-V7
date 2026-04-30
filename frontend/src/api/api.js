@@ -4,7 +4,7 @@ import axios from 'axios';
 const getBaseURL = () => {
     if (process.env.NODE_ENV === 'production') {
         // In production, use the same domain (relative URL)
-        return '/api/';
+        return '/ur-model/api/';
     } else {
         // In development, use localhost
         return 'http://127.0.0.1:8000/api/';
