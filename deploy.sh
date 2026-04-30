@@ -42,12 +42,4 @@ echo "==> Run migrations"
 echo "==> Collect static files"
 ./venv/bin/python manage.py collectstatic --noinput --settings=model_builder.settings_production
 
-echo "==> Restart service: $SERVICE_NAME"
-if command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl restart "$SERVICE_NAME"
-    sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
-else
-    echo "WARN: systemctl not found. Restart service manually."
-fi
-
-echo "==> Deploy complete"
+echo "==> Deploy build complete (restart service separately as sudo user)"
