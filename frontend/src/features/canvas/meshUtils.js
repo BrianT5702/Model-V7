@@ -2,6 +2,10 @@
 // Note: CSG operations are handled via vertex manipulation instead of three-csg-ts
 
 import { THREE_CONFIG } from './threeConfig';
+import {
+  createFatLineSegmentsFromEdgesGeometry,
+  createFatLineSegmentsFromPositions,
+} from './wideLineUtils';
 
 // Calculate intersection point between two line segments
 // If allowExtended is true, returns intersection even if outside segments (for extension)
@@ -875,17 +879,13 @@ export function createWallMesh(instance, wall) {
   // This prevents unwanted lines from appearing on walls (like vertical lines from geometry artifacts)
   const edgeThreshold = 15; // degrees - only show edges with dihedral angle > 15 degrees
   const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
-  const edgeLines = new instance.THREE.LineSegments(
-    edges, 
-    new instance.THREE.LineBasicMaterial({ 
-      color: 0x000000,
-      depthTest: true,
-      depthWrite: false, // Don't write to depth buffer to prevent z-fighting
-      transparent: false
-    })
-  );
-  // Set render order to render edge lines after the wall mesh to prevent blinking
-  edgeLines.renderOrder = 2; // Higher than wall mesh (which is 0 by default)
+  const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+    color: 0x000000,
+    linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+    depthTest: true,
+    depthWrite: false,
+    renderOrder: 2,
+  });
   
   // Debug: Log edge count for wall 7083 to help diagnose the line issue
   if (id === 7083) {
@@ -971,9 +971,7 @@ export function createWallMesh(instance, wall) {
       continue;
     }
     
-    // Create outline geometry for hole rectangle
-    // In wall's local space: X along wall, Y vertical, Z depth
-    const outlineGeometry = new instance.THREE.BufferGeometry();
+    // Hole rectangle outline in wall local space: X along wall, Y vertical, Z depth
     const vertices = new Float32Array([
       // Bottom edge
       cutout.start, cutoutBottomY, 0,
@@ -988,13 +986,13 @@ export function createWallMesh(instance, wall) {
       cutout.start, cutoutTopY, 0,
       cutout.start, cutoutBottomY, 0
     ]);
-    outlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(vertices, 3));
-    
-    // Create line segments for hole outline
-    const outlineMaterial = new instance.THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
-    const outlineLines = new instance.THREE.LineSegments(outlineGeometry, outlineMaterial);
-    
-    // Add to wall mesh (already in correct local coordinate system)
+    const outlineLines = createFatLineSegmentsFromPositions(vertices, {
+      color: 0x000000,
+      linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+      depthTest: true,
+      depthWrite: false,
+      renderOrder: 2,
+    });
     wallMesh.add(outlineLines);
     
     if (id === 7083) {
@@ -1246,69 +1244,46 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
     // Use edgeLineOffsetX if provided, otherwise use offsetX
     const edgeOffset = edgeLineOffsetX !== null ? edgeLineOffsetX : offsetX;
     
-    // Create rectangle outline on the front face (z = +doorThickness/2)
-    const frontOutlineGeometry = new instance.THREE.BufferGeometry();
+    const lineOpts = {
+      color: 0x000000,
+      linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+      depthTest: true,
+      depthWrite: false,
+      renderOrder: 2,
+    };
     const frontVertices = new Float32Array([
-      // Top edge
       -halfWidth + edgeOffset, halfHeight, halfThickness,
       halfWidth + edgeOffset, halfHeight, halfThickness,
-      // Right edge
       halfWidth + edgeOffset, halfHeight, halfThickness,
       halfWidth + edgeOffset, -halfHeight, halfThickness,
-      // Bottom edge
       halfWidth + edgeOffset, -halfHeight, halfThickness,
       -halfWidth + edgeOffset, -halfHeight, halfThickness,
-      // Left edge
       -halfWidth + edgeOffset, -halfHeight, halfThickness,
       -halfWidth + edgeOffset, halfHeight, halfThickness
     ]);
-    frontOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(frontVertices, 3));
-    
-    // Create rectangle outline on the back face (z = -doorThickness/2)
-    const backOutlineGeometry = new instance.THREE.BufferGeometry();
     const backVertices = new Float32Array([
-      // Top edge
       -halfWidth + edgeOffset, halfHeight, -halfThickness,
       halfWidth + edgeOffset, halfHeight, -halfThickness,
-      // Right edge
       halfWidth + edgeOffset, halfHeight, -halfThickness,
       halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      // Bottom edge
       halfWidth + edgeOffset, -halfHeight, -halfThickness,
       -halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      // Left edge
       -halfWidth + edgeOffset, -halfHeight, -halfThickness,
       -halfWidth + edgeOffset, halfHeight, -halfThickness
     ]);
-    backOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(backVertices, 3));
-    
-    // Create outline geometry for thickness edges (connecting front and back faces)
-    const thicknessOutlineGeometry = new instance.THREE.BufferGeometry();
     const thicknessVertices = new Float32Array([
-      // Top-left edge (front top-left to back top-left)
       -halfWidth + edgeOffset, halfHeight, halfThickness,
       -halfWidth + edgeOffset, halfHeight, -halfThickness,
-      // Top-right edge (front top-right to back top-right)
       halfWidth + edgeOffset, halfHeight, halfThickness,
       halfWidth + edgeOffset, halfHeight, -halfThickness,
-      // Bottom-left edge (front bottom-left to back bottom-left)
       -halfWidth + edgeOffset, -halfHeight, halfThickness,
       -halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      // Bottom-right edge (front bottom-right to back bottom-right)
       halfWidth + edgeOffset, -halfHeight, halfThickness,
       halfWidth + edgeOffset, -halfHeight, -halfThickness
     ]);
-    thicknessOutlineGeometry.setAttribute('position', new instance.THREE.BufferAttribute(thicknessVertices, 3));
-    
-    // Create line segments for all door frame outlines
-    const outlineMaterial = new instance.THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
-    const frontOutlineLines = new instance.THREE.LineSegments(frontOutlineGeometry, outlineMaterial);
-    const backOutlineLines = new instance.THREE.LineSegments(backOutlineGeometry, outlineMaterial);
-    const thicknessOutlineLines = new instance.THREE.LineSegments(thicknessOutlineGeometry, outlineMaterial);
-    
-    doorMeshOrGroup.add(frontOutlineLines);
-    doorMeshOrGroup.add(backOutlineLines);
-    doorMeshOrGroup.add(thicknessOutlineLines);
+    doorMeshOrGroup.add(createFatLineSegmentsFromPositions(frontVertices, lineOpts));
+    doorMeshOrGroup.add(createFatLineSegmentsFromPositions(backVertices, lineOpts));
+    doorMeshOrGroup.add(createFatLineSegmentsFromPositions(thicknessVertices, lineOpts));
   };
   
   // If no windows, create a simple box door
@@ -2036,19 +2011,10 @@ export function createDoorMesh(instance, door, wall) {
       // This means: translate by (wallDepth/2 - doorThickness/2) for front
       //             translate by (wallDepth/2 - doorThickness/2) for back (same translation)
       leftPanel.children.forEach(child => {
-        if (child.geometry && !(child instanceof instance.THREE.LineSegments)) {
-          // Panel geometry: translate to position front face at wallDepth/2
-          // Panel is centered, so translate by wallDepth/2 - doorThickness/2
+        if (child.geometry && !child.isLineSegments2) {
           child.geometry.translate(0, 0, (wallDepth / 2) - (doorThickness / 2));
-        } else if (child instanceof instance.THREE.LineSegments) {
-          // Edge lines: translate by +halfWidth/2 in X only (no Z translation needed)
-          const positions = child.geometry.attributes.position;
-          const posArray = positions.array;
-          // Translate in X only
-          for (let i = 0; i < posArray.length; i += 3) {
-            posArray[i] += halfWidth / 2; // X translation
-          }
-          positions.needsUpdate = true;
+        } else if (child.isLineSegments2) {
+          child.geometry.applyMatrix4(new instance.THREE.Matrix4().makeTranslation(halfWidth / 2, 0, 0));
         }
       });
       leftPanel.position.set(0, 0, 0);
@@ -2076,19 +2042,10 @@ export function createDoorMesh(instance, door, wall) {
       // For Z positioning: door front face should be at wallDepth/2 (on wall surface)
       // Door back face should be at wallDepth/2 - doorThickness
       rightPanel.children.forEach(child => {
-        if (child.geometry && !(child instanceof instance.THREE.LineSegments)) {
-          // Panel geometry: translate to position front face at wallDepth/2
-          // Panel is centered, so translate by wallDepth/2 - doorThickness/2
+        if (child.geometry && !child.isLineSegments2) {
           child.geometry.translate(0, 0, (wallDepth / 2) - (doorThickness / 2));
-        } else if (child instanceof instance.THREE.LineSegments) {
-          // Edge lines: translate by -halfWidth/2 in X only (no Z translation needed)
-          const positions = child.geometry.attributes.position;
-          const posArray = positions.array;
-          // Translate in X only
-          for (let i = 0; i < posArray.length; i += 3) {
-            posArray[i] += -halfWidth / 2; // X translation
-          }
-          positions.needsUpdate = true;
+        } else if (child.isLineSegments2) {
+          child.geometry.applyMatrix4(new instance.THREE.Matrix4().makeTranslation(-halfWidth / 2, 0, 0));
         }
       });
       rightPanel.position.set(0, 0, 0);

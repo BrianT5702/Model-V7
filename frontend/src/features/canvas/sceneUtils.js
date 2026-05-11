@@ -3,8 +3,12 @@
 import { OrbitControls } from './threeInstance';
 import earcut from 'earcut';
 import { THREE_CONFIG } from './threeConfig';
+import { createFatLineSegmentsFromEdgesGeometry } from './wideLineUtils';
 
 export function addGrid(instance) {
+  if (!THREE_CONFIG.GRID.SHOW_IN_3D) {
+    return;
+  }
   // Calculate dynamic grid size based on model bounds, or use default
   let size = instance.gridSize || 10000;
   
@@ -37,6 +41,43 @@ export function addGrid(instance) {
   instance.gridHelper = gridHelper; // Store reference for potential updates
 }
 
+/**
+ * Studio-style backdrop: soft background color + optional infinite ground plane
+ * so the 3D view reads as intentional product/architecture viz, not a blank canvas.
+ */
+export function addStudioEnvironment(instance) {
+  const cfg = THREE_CONFIG.SCENE;
+  const bg = cfg.BACKGROUND_COLOR;
+  instance.scene.background = new instance.THREE.Color(bg);
+  instance.renderer.setClearColor(bg, 1);
+
+  if (!cfg.STUDIO_GROUND) {
+    instance.studioGround = null;
+    return;
+  }
+
+  const size = cfg.STUDIO_GROUND_SIZE;
+  const geom = new instance.THREE.PlaneGeometry(size, size, 1, 1);
+  const mat = new instance.THREE.MeshStandardMaterial({
+    color: cfg.STUDIO_GROUND_COLOR,
+    roughness: 1,
+    metalness: 0,
+    // FrontSide only: plane faces +Y after rotation. From below, back faces are culled so the
+    // infinite ground does not cover the model when orbiting under the floor.
+    side: instance.THREE.FrontSide,
+    depthWrite: true,
+  });
+  const ground = new instance.THREE.Mesh(geom, mat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = cfg.STUDIO_GROUND_Y;
+  ground.receiveShadow = true;
+  ground.castShadow = false;
+  ground.name = 'studio_ground';
+  ground.userData.isStudioGround = true;
+  instance.scene.add(ground);
+  instance.studioGround = ground;
+}
+
 export function adjustModelScale(instance) {
   // Example logic, adjust as needed for your app
   // This could be more complex depending on your model
@@ -45,18 +86,15 @@ export function adjustModelScale(instance) {
 }
 
 export function addLighting(instance) {
-  // Bright ambient lighting for white metallic materials
-  
-  // Strong hemisphere light for bright ambient white appearance
+  // Bright lighting with gentle sky/ground variation so white walls keep shape (less flat void)
   const hemisphereLight = new instance.THREE.HemisphereLight(
-    0xffffff, // Pure white sky for bright ambient
-    0xffffff, // Pure white ground for maximum brightness
-    1.5 // High intensity for bright ambient white
+    0xf7f9fc,
+    0xe1e6ee,
+    1.15
   );
   instance.scene.add(hemisphereLight);
   
-  // Strong ambient light for overall brightness
-  const ambientLight = new instance.THREE.AmbientLight(0xffffff, 1.2);
+  const ambientLight = new instance.THREE.AmbientLight(0xffffff, 0.95);
   instance.scene.add(ambientLight);
   
   // Main directional light (sun) - primary light source with high intensity
@@ -700,19 +738,14 @@ export function addCeiling(instance) {
   // Add a tiny offset to prevent z-fighting with wall tops
   ceiling.position.y = maxCeilingElevation * instance.scalingFactor + 0.001;
   
-  // Add edge lines to match wall appearance
   const edges = new instance.THREE.EdgesGeometry(geometry);
-  const edgeLines = new instance.THREE.LineSegments(
-    edges, 
-    new instance.THREE.LineBasicMaterial({ 
-      color: 0x000000, // Black edge lines like walls
-      depthTest: true,
-      depthWrite: false, // Don't write to depth buffer to prevent z-fighting
-      transparent: false
-    })
-  );
-  // Set render order to render edge lines after the ceiling mesh to prevent blinking
-  edgeLines.renderOrder = 2; // Higher than ceiling mesh (which is 1)
+  const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+    color: 0x000000,
+    linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+    depthTest: true,
+    depthWrite: false,
+    renderOrder: 2,
+  });
   ceiling.add(edgeLines);
   
   // Set shadow properties
@@ -894,19 +927,14 @@ export function addFloor(instance) {
   // Position the floor at the calculated elevation (storey elevation + room base elevation)
   floor.position.y = minFloorElevation * instance.scalingFactor;
   
-  // Add edge lines to match wall appearance
   const edges = new instance.THREE.EdgesGeometry(geometry);
-  const edgeLines = new instance.THREE.LineSegments(
-    edges, 
-    new instance.THREE.LineBasicMaterial({ 
-      color: 0x000000, // Black edge lines like walls
-      depthTest: true,
-      depthWrite: false, // Don't write to depth buffer to prevent z-fighting
-      transparent: false
-    })
-  );
-  // Set render order to render edge lines after the floor mesh to prevent blinking
-  edgeLines.renderOrder = 2; // Higher than floor mesh (which is 0 by default)
+  const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+    color: 0x000000,
+    linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+    depthTest: true,
+    depthWrite: false,
+    renderOrder: 2,
+  });
   floor.add(edgeLines);
   
   // Set shadow properties
@@ -1110,7 +1138,7 @@ function crossProduct(o, a, b) {
 export function buildModel(instance) {
   // Remove existing walls, doors, ceilings, floors, and panel lines from the scene
   instance.scene.children = instance.scene.children.filter(child => {
-    return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.name?.startsWith('floor') && !child.userData?.isPanelLines;
+    return !child.userData?.isWall && !child.userData?.isDoor && !child.name?.startsWith('ceiling') && !child.name?.startsWith('floor') && !child.userData?.isPanelLine && !child.userData?.isPanelLines && !child.userData?.isCeilingPanelLine;
   });
 
   // Clear door objects array

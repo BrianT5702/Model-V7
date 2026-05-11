@@ -850,6 +850,12 @@ const ProjectDetails = () => {
         };
     }, [projectDetails.is3DView]);
 
+    useEffect(() => {
+        if (projectDetails.is3DView) {
+            setSidebarOpen(false);
+        }
+    }, [projectDetails.is3DView]);
+
     // Guard: If projectId is missing or invalid, show error and redirect
     if (!projectId || projectId === 'undefined' || projectId === 'null') {
         return (
@@ -942,6 +948,7 @@ const ProjectDetails = () => {
                 <div className="w-full px-4 sm:px-6 py-3" style={{ width: '100%' }}>
                     <div className="flex items-center justify-between w-full">
                         <div className="flex items-center space-x-2 sm:space-x-4">
+                            {!projectDetails.is3DView && (
                             <button
                                 onClick={() => setSidebarOpen(!sidebarOpen)}
                                 className="lg:hidden flex items-center px-2 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -950,6 +957,7 @@ const ProjectDetails = () => {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                                 </svg>
                             </button>
+                            )}
                             <button
                                 onClick={() => navigate('/')}
                                 className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1464,15 +1472,16 @@ const ProjectDetails = () => {
             )}
 
             <div className="flex min-h-[calc(100vh-120px)] relative" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
-                {/* Mobile Sidebar Overlay */}
-                {sidebarOpen && (
+                {/* Mobile Sidebar Overlay (hidden in 3D: sidebar not used) */}
+                {sidebarOpen && !projectDetails.is3DView && (
                     <div 
                         className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
                         onClick={() => setSidebarOpen(false)}
                     ></div>
                 )}
                 
-                {/* Left Sidebar - Controls */}
+                {/* Left Sidebar - Controls (hidden in 3D so canvas uses full width; edit is disabled in 3D anyway) */}
+                {!projectDetails.is3DView && (
                 <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-72 min-w-[280px] max-w-[320px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 }`}>
@@ -1489,31 +1498,23 @@ const ProjectDetails = () => {
                                 </svg>
                             </button>
                         </div>
-                        {/* Edit Mode Toggle */}
+                        {/* Edit Mode Toggle (sidebar hidden in 3D) */}
                         <div className="mb-6">
                     <button
                         onClick={() => {
-                                    if (!projectDetails.is3DView) {
                                 projectDetails.setIsEditingMode(!projectDetails.isEditingMode);
                                 projectDetails.setCurrentMode(null);
                                 projectDetails.resetAllSelections();
-                            }
                         }}
-                                disabled={projectDetails.is3DView}
                                 className={`w-full flex items-center justify-center px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
                                     projectDetails.isEditingMode 
                                         ? 'btn-danger' 
                                         : 'btn-secondary'
-                                } ${projectDetails.is3DView ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                }`}
                             >
                                 <FaCog className="mr-2" />
                         {projectDetails.isEditingMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
                     </button>
-                            {projectDetails.is3DView && (
-                                <p className="text-xs text-gray-500 mt-2 text-center">
-                                    Edit mode is disabled in 3D view
-                                </p>
-                            )}
                 </div>
 
                 {/* Editing Mode Controls */}
@@ -1870,27 +1871,16 @@ const ProjectDetails = () => {
                             </div>
                         )}
 
-                        {/* 3D View Notice */}
-                        {projectDetails.is3DView && (
-                            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                <div className="flex items-center">
-                                    <svg className="w-5 h-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                    </svg>
-                                    <span className="text-sm text-yellow-800 font-medium">
-                                        Edit mode is disabled in 3D view. Switch to 2D view to edit your project.
-                                    </span>
-                                </div>
-                            </div>
-                        )}
-
                     </div>
                 </div>
+                )}
 
                 {/* Main Content Area - min-h-0 so flex child can shrink; overflow-auto so tab content scrolls inside viewport */}
                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                    {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom */}
-                    <div className="bg-white m-3 sm:m-6 rounded-lg shadow-sm border border-gray-200 canvas-container flex-1 flex flex-col min-h-0 overflow-auto">
+                    {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom; tighter margins in 3D for more canvas width */}
+                    <div className={`bg-white rounded-lg shadow-sm border border-gray-200 canvas-container flex-1 flex flex-col min-h-0 overflow-auto ${
+                        projectDetails.is3DView ? 'm-2 sm:m-3' : 'm-3 sm:m-6'
+                    }`}>
                         {projectDetails.is3DView ? (
                             <div className="flex flex-col">
                                 {/* Tab Navigation - Same structure as 2D */}

@@ -2,10 +2,15 @@ import THREE, { TextGeometry } from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
-import { addGrid, adjustModelScale, addLighting, addControls, calculateModelOffset } from './sceneUtils';
+import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset } from './sceneUtils';
 import { createWallMesh, createDoorMesh } from './meshUtils';
 import PanelCalculator from '../panel/PanelCalculator';
 import { THREE_CONFIG } from './threeConfig';
+import {
+  createFatLineSegmentsFromEdgesGeometry,
+  createFatLineSegmentsFromPositions,
+  createFatLine2FromPositions,
+} from './wideLineUtils';
 import WallRenderer from './components/WallRenderer';
 import DoorRenderer from './components/DoorRenderer';
 import AnimationManager from './managers/AnimationManager';
@@ -22,6 +27,9 @@ const debugWarn = (...args) => {
   }
 };
 
+/** Shared styling for wall + ceiling panel division overlays */
+const PL = THREE_CONFIG.PANEL_LINES;
+
 window.gsap = gsap;
 
 export default class ThreeCanvas3D {
@@ -36,8 +44,9 @@ export default class ThreeCanvas3D {
       THREE_CONFIG.CAMERA.FAR
     );
     // Renderer with balanced quality settings
-    this.renderer = new THREE.WebGLRenderer({ 
-      antialias: true // Enable antialiasing for smoother edges
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      logarithmicDepthBuffer: THREE_CONFIG.RENDERER.LOG_DEPTH_BUFFER,
     });
     this.walls = walls;
     this.joints = joints;
@@ -123,12 +132,17 @@ export default class ThreeCanvas3D {
     this.init();
   }
 
+  /** Internal canvas scale: higher = sharper lines when zoomed out (see THREE_CONFIG.RENDERER). */
+  getEffectivePixelRatio() {
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    const max = THREE_CONFIG.RENDERER.MAX_PIXEL_RATIO;
+    const bias = THREE_CONFIG.RENDERER.QUALITY_BIAS;
+    return Math.max(1, Math.min(dpr * bias, max));
+  }
+
   init() {
-    // CRITICAL: Set pixel ratio for high-resolution displays
-    // This ensures crisp rendering on high-DPI screens and large projects
-    // Cap at 2 for balanced performance and quality
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-    this.renderer.setPixelRatio(pixelRatio);
+    // Match backing-store resolution to display (DPR cap in THREE_CONFIG.RENDERER)
+    this.renderer.setPixelRatio(this.getEffectivePixelRatio());
     
     // Set renderer size accounting for pixel ratio
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
@@ -139,10 +153,6 @@ export default class ThreeCanvas3D {
     this.renderer.toneMapping = this.THREE.ACESFilmicToneMapping; // Professional tone mapping
     this.renderer.toneMappingExposure = 1.0; // Adjust exposure for brightness
     this.renderer.outputEncoding = this.THREE.sRGBEncoding; // sRGB for better color accuracy
-    
-    // Set background to pure white for bright ambient appearance
-    this.renderer.setClearColor(0xffffff, 1);
-    this.scene.background = new this.THREE.Color(0xffffff);
     
     this.container.appendChild(this.renderer.domElement);
     
@@ -190,6 +200,7 @@ export default class ThreeCanvas3D {
     );
     this.camera.lookAt(0, 0, 0);
   
+    addStudioEnvironment(this);
     addGrid(this);
     addLighting(this);
     adjustModelScale(this);
@@ -222,10 +233,7 @@ export default class ThreeCanvas3D {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     
-    // CRITICAL: Update pixel ratio on resize (may change with window scaling)
-    // Cap at 2 for balanced performance and quality
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-    this.renderer.setPixelRatio(pixelRatio);
+    this.renderer.setPixelRatio(this.getEffectivePixelRatio());
     
     // Update camera aspect ratio
     this.camera.aspect = width / height;
@@ -315,6 +323,13 @@ export default class ThreeCanvas3D {
     // Dispose of controls if they exist
     if (this.controls) {
       this.controls.dispose();
+    }
+
+    if (this.studioGround) {
+      if (this.studioGround.geometry) this.studioGround.geometry.dispose();
+      if (this.studioGround.material) this.studioGround.material.dispose();
+      this.scene.remove(this.studioGround);
+      this.studioGround = null;
     }
 
     // Dispose of renderer
@@ -587,8 +602,8 @@ getModelBounds() {
   // Animation loop
   animate() {
     requestAnimationFrame(() => this.animate());
-    this.renderer.render(this.scene, this.camera);
     this.controls.update();
+    this.renderer.render(this.scene, this.camera);
   }
 
   // Method to update data and rebuild model
@@ -680,6 +695,16 @@ getModelBounds() {
   // Update grid size dynamically based on model bounds
   updateGridSize() {
     try {
+      const oldGrid = this.scene.getObjectByName('grid');
+      if (!THREE_CONFIG.GRID.SHOW_IN_3D) {
+        if (oldGrid) {
+          oldGrid.geometry.dispose();
+          this.scene.remove(oldGrid);
+          this.gridHelper = null;
+        }
+        return;
+      }
+
       const bounds = this.getModelBounds();
       const modelWidth = Math.abs(bounds.maxX - bounds.minX);
       const modelDepth = Math.abs(bounds.maxZ - bounds.minZ);
@@ -693,8 +718,6 @@ getModelBounds() {
       // Calculate appropriate divisions based on size
       const divisions = Math.max(20, Math.min(100, Math.ceil(roundedSize / 100)));
       
-      // Remove old grid if it exists
-      const oldGrid = this.scene.getObjectByName('grid');
       if (oldGrid) {
         oldGrid.geometry.dispose();
         this.scene.remove(oldGrid);
@@ -1039,19 +1062,14 @@ getModelBounds() {
       // Position the ceiling at the calculated elevation (storey elevation + room base + room height)
       ceiling.position.y = maxCeilingElevation * this.scalingFactor;
       
-      // Add edge lines to match wall appearance
       const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = new this.THREE.LineSegments(
-        edges, 
-        new this.THREE.LineBasicMaterial({ 
-          color: 0x000000, // Black edge lines like walls
-          depthTest: true,
-          depthWrite: false, // Don't write to depth buffer to prevent z-fighting
-          transparent: false
-        })
-      );
-      // Set render order to render edge lines after the ceiling mesh to prevent blinking
-      edgeLines.renderOrder = 2; // Higher than ceiling mesh
+      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+        color: 0x000000,
+        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+        depthTest: true,
+        depthWrite: false,
+        renderOrder: 2,
+      });
       ceiling.add(edgeLines);
       
       // Set shadow properties
@@ -1852,19 +1870,14 @@ getModelBounds() {
       // Set render order to render after walls (higher number = renders later)
       ceiling.renderOrder = 1;
       
-      // Add edge lines to match wall appearance
       const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = new this.THREE.LineSegments(
-        edges, 
-        new this.THREE.LineBasicMaterial({ 
-          color: 0x000000, // Black edge lines like walls
-          depthTest: true,
-          depthWrite: false, // Don't write to depth buffer to prevent z-fighting
-          transparent: false
-        })
-      );
-      // Set render order to render edge lines after the ceiling mesh to prevent blinking
-      edgeLines.renderOrder = 2; // Higher than ceiling mesh
+      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+        color: 0x000000,
+        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+        depthTest: true,
+        depthWrite: false,
+        renderOrder: 2,
+      });
       ceiling.add(edgeLines);
       
       // Set shadow properties
@@ -2903,30 +2916,29 @@ getModelBounds() {
           x: divX3D + finalNormX * wallThickness,
           z: divZ3D + finalNormZ * wallThickness
         };
+
+        // Same outward bias as createContinuousLines: perp to thickness in XZ
+        const off = PL.SURFACE_OFFSET;
+        const offsetX = -finalNormZ * off;
+        const offsetZ = finalNormX * off;
         
         // Create line from wall base to wall top
         const wallTopY = wallBaseY + wallHeight;
-        const lineGeometry = new this.THREE.BufferGeometry();
         const vertices = new Float32Array([
-          // Line at database coordinate (surface 1)
-          dbLinePoint.x, wallBaseY, dbLinePoint.z,
-          dbLinePoint.x, wallTopY, dbLinePoint.z,
-          // Line offset by wall thickness (surface 2)
-          offsetLinePoint.x, wallBaseY, offsetLinePoint.z,
-          offsetLinePoint.x, wallTopY, offsetLinePoint.z
+          dbLinePoint.x + offsetX, wallBaseY, dbLinePoint.z + offsetZ,
+          dbLinePoint.x + offsetX, wallTopY, dbLinePoint.z + offsetZ,
+          offsetLinePoint.x + offsetX, wallBaseY, offsetLinePoint.z + offsetZ,
+          offsetLinePoint.x + offsetX, wallTopY, offsetLinePoint.z + offsetZ
         ]);
-        
-        lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
-        
-        const lineMaterial = new this.THREE.LineBasicMaterial({ 
-          color: 0x00ff00, 
-          linewidth: 2,
-          transparent: true,
-          opacity: 0.8
+        const line = createFatLineSegmentsFromPositions(vertices, {
+          color: PL.COLOR_FALLBACK,
+          linewidth: PL.LINE_WIDTH_PX,
+          transparent: false,
+          opacity: 1,
+          depthTest: true,
+          renderOrder: PL.RENDER_ORDER,
         });
-        
-        const line = new this.THREE.LineSegments(lineGeometry, lineMaterial);
-        line.userData = { isPanelLines: true, wallId: id };
+        line.userData = { isPanelLine: true, wallId: id };
         line.visible = this.showPanelLines;
         
         this.scene.add(line);
@@ -3132,41 +3144,26 @@ getModelBounds() {
     const normalX = -wallDirZ / wallDirLen; // Perpendicular to wall direction
     const normalZ = wallDirX / wallDirLen;
     
-    // Small offset to push lines outward from wall surface (prevent z-fighting)
-    const offsetAmount = 0.002; // Small offset in world units
+    const offsetAmount = PL.SURFACE_OFFSET;
     const offsetX = normalX * offsetAmount;
     const offsetZ = normalZ * offsetAmount;
     
     if (doorHeight < wallHeight) {
-      const lineGeometry = new this.THREE.BufferGeometry();
       const vertices = new Float32Array([
-        // Line at database coordinate position (0 position) - from door top to wall top
-        // Add small offset to prevent z-fighting with wall surface
         dbLinePoint.x + offsetX, doorTopY, dbLinePoint.z + offsetZ,
         dbLinePoint.x + offsetX, wallTopY, dbLinePoint.z + offsetZ,
-        // Line offset by wall thickness - from door top to wall top
-        // Add small offset to prevent z-fighting with wall surface
         offsetLinePoint.x + offsetX, doorTopY, offsetLinePoint.z + offsetZ,
         offsetLinePoint.x + offsetX, wallTopY, offsetLinePoint.z + offsetZ
       ]);
-      
-      lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
-      
-      // Use different colors for cut panels vs full panels
-      const lineColor = isCutPanel ? 0x40E0D0 : 0x000000; // Light blue/Tortoise for cut panels, Black for full panels
-      
-      const lineMaterial = new this.THREE.LineBasicMaterial({
+      const lineColor = isCutPanel ? PL.COLOR_CUT : PL.COLOR_FULL;
+      const line = createFatLineSegmentsFromPositions(vertices, {
         color: lineColor,
-        linewidth: 3, // Request thicker lines
+        linewidth: PL.LINE_WIDTH_PX,
         transparent: false,
         opacity: 1.0,
         depthTest: true,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1
+        renderOrder: PL.RENDER_ORDER,
       });
-      
-      const line = new this.THREE.Line(lineGeometry, lineMaterial);
       line.userData.isPanelLine = true;
       line.visible = this.showPanelLines;
       
@@ -3178,26 +3175,22 @@ getModelBounds() {
       // In this case, the door covers the entire wall height, so no line should be visible
       
       // Create a very short line at the very top to maintain visual consistency
-      const lineGeometry = new this.THREE.BufferGeometry();
+      const ghostLift = Math.max(1e-4, PL.SURFACE_OFFSET * 0.5);
       const vertices = new Float32Array([
-        // Line at database coordinate position (0 position) - very short at top
-        dbLinePoint.x, wallTopY - 1, dbLinePoint.z,
-        dbLinePoint.x, wallTopY, dbLinePoint.z,
-        // Line offset by wall thickness - very short at top
-        offsetLinePoint.x, wallTopY - 1, offsetLinePoint.z,
-        offsetLinePoint.x, wallTopY, offsetLinePoint.z
+        dbLinePoint.x + offsetX, wallTopY - ghostLift, dbLinePoint.z + offsetZ,
+        dbLinePoint.x + offsetX, wallTopY, dbLinePoint.z + offsetZ,
+        offsetLinePoint.x + offsetX, wallTopY - ghostLift, offsetLinePoint.z + offsetZ,
+        offsetLinePoint.x + offsetX, wallTopY, offsetLinePoint.z + offsetZ
       ]);
-      
-      lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
-      
-      const lineMaterial = new this.THREE.LineBasicMaterial({
-        color: 0xFFFFFF,
-        linewidth: 3,
+      const line = createFatLineSegmentsFromPositions(vertices, {
+        color: PL.COLOR_DOOR_GAP,
+        linewidth: PL.LINE_WIDTH_PX,
         transparent: true,
-        opacity: 0.6
+        opacity: 0.55,
+        alphaToCoverage: false,
+        depthTest: true,
+        renderOrder: PL.RENDER_ORDER,
       });
-      
-      const line = new this.THREE.Line(lineGeometry, lineMaterial);
       line.userData.isPanelLine = true;
       line.visible = this.showPanelLines;
       
@@ -3217,43 +3210,25 @@ getModelBounds() {
     const normalX = -wallDirZ / wallDirLen; // Perpendicular to wall direction
     const normalZ = wallDirX / wallDirLen;
     
-    // Small offset to push lines outward from wall surface (prevent z-fighting)
-    const offsetAmount = 0.002; // Small offset in world units
+    const offsetAmount = PL.SURFACE_OFFSET;
     const offsetX = normalX * offsetAmount;
     const offsetZ = normalZ * offsetAmount;
     
-    // Create the division line geometry - two lines: one at DB position, one offset
-    const lineGeometry = new this.THREE.BufferGeometry();
     const vertices = new Float32Array([
-      // Line at database coordinate position (0 position)
-      // Add small offset to prevent z-fighting with wall surface
       dbLinePoint.x + offsetX, wallBaseY, dbLinePoint.z + offsetZ,
       dbLinePoint.x + offsetX, wallBaseY + wallHeight, dbLinePoint.z + offsetZ,
-      // Line offset by wall thickness
-      // Add small offset to prevent z-fighting with wall surface
       offsetLinePoint.x + offsetX, wallBaseY, offsetLinePoint.z + offsetZ,
       offsetLinePoint.x + offsetX, wallBaseY + wallHeight, offsetLinePoint.z + offsetZ
     ]);
-    
-    lineGeometry.setAttribute('position', new this.THREE.BufferAttribute(vertices, 3));
-    
-    // Use different colors for cut panels vs full panels
-    const lineColor = isCutPanel ? 0x40E0D0 : 0x000000; // Light blue/Tortoise for cut panels, Black for full panels
-    
-    // Create line material
-    const lineMaterial = new this.THREE.LineBasicMaterial({
+    const lineColor = isCutPanel ? PL.COLOR_CUT : PL.COLOR_FULL;
+    const divisionLine = createFatLineSegmentsFromPositions(vertices, {
       color: lineColor,
-      linewidth: 3, // Request thicker lines
+      linewidth: PL.LINE_WIDTH_PX,
       transparent: false,
       opacity: 1.0,
       depthTest: true,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1
+      renderOrder: PL.RENDER_ORDER,
     });
-    
-    // Create the line mesh
-    const divisionLine = new this.THREE.Line(lineGeometry, lineMaterial);
     divisionLine.userData.isPanelLine = true;
     divisionLine.visible = this.showPanelLines;
     
@@ -3424,9 +3399,10 @@ getModelBounds() {
         // Ceiling mesh position.y = baseElevation + (maxWallHeight * scale)
         // Top surface local Y = (wallHeight - maxWallHeight) * scale
         // World Y = position.y + localY = baseElevation + wallHeight * scale
+        const ceilingLift = PL.CEILING_LIFT_MM * scale;
         const getCeilingTopY = (pointX, pointY) => {
           const wallHeight = getHeightAtPoint(pointX, pointY);
-          return baseElevation + (wallHeight * scale) + (0.1 * scale); // Tiny offset for visibility
+          return baseElevation + (wallHeight * scale) + ceilingLift;
         };
         
         // 2. Prepare Room/Zone Geometry (in 3D coords)
@@ -3467,19 +3443,14 @@ getModelBounds() {
              const firstCeilingY = getCeilingTopY(firstPointX, firstPointY);
              vertices.push(clippedShape[0].x, firstCeilingY, clippedShape[0].z);
 
-             const lineGeometry = new this.THREE.BufferGeometry();
-             lineGeometry.setAttribute('position', new this.THREE.Float32BufferAttribute(vertices, 3));
-
-             // Create Material (Thicker and Solid)
-             const lineMaterial = new this.THREE.LineBasicMaterial({
-               color: panel.is_cut_panel ? 0x40E0D0 : 0x000000, // Light blue/Tortoise for cut, Black for full
-               linewidth: 3, // Request thicker lines
+             const line = createFatLine2FromPositions(vertices, {
+               color: panel.is_cut_panel ? PL.COLOR_CUT : PL.COLOR_FULL,
+               linewidth: PL.LINE_WIDTH_PX,
                transparent: false,
                opacity: 1.0,
-               depthTest: true
+               depthTest: true,
+               renderOrder: PL.RENDER_ORDER,
              });
-
-             const line = new this.THREE.Line(lineGeometry, lineMaterial);
              
              // Lines are positioned directly in vertex coordinates (lineY)
              // No additional offset needed - vertices are already at correct height
@@ -5491,19 +5462,14 @@ getModelBounds() {
       // Create mesh
       const floor = new this.THREE.Mesh(geometry, material);
       
-      // Add edge lines to match wall appearance
       const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = new this.THREE.LineSegments(
-        edges, 
-        new this.THREE.LineBasicMaterial({ 
-          color: 0x000000, // Black edge lines like walls
-          depthTest: true,
-          depthWrite: false, // Don't write to depth buffer to prevent z-fighting
-          transparent: false
-        })
-      );
-      // Set render order to render edge lines after the floor mesh to prevent blinking
-      edgeLines.renderOrder = 2; // Higher than floor mesh
+      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+        color: 0x000000,
+        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+        depthTest: true,
+        depthWrite: false,
+        renderOrder: 2,
+      });
       floor.add(edgeLines);
       
       // Set shadow properties to match walls
@@ -5745,19 +5711,14 @@ getModelBounds() {
       // Position the floor at the calculated elevation (storey elevation + room base elevation)
       floor.position.y = minFloorElevation * this.scalingFactor;
       
-      // Add edge lines to match wall appearance
       const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = new this.THREE.LineSegments(
-        edges, 
-        new this.THREE.LineBasicMaterial({ 
-          color: 0x000000, // Black edge lines like walls
-          depthTest: true,
-          depthWrite: false, // Don't write to depth buffer to prevent z-fighting
-          transparent: false
-        })
-      );
-      // Set render order to render edge lines after the floor mesh to prevent blinking
-      edgeLines.renderOrder = 2; // Higher than floor mesh
+      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+        color: 0x000000,
+        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+        depthTest: true,
+        depthWrite: false,
+        renderOrder: 2,
+      });
       floor.add(edgeLines);
       
       // Set shadow properties
