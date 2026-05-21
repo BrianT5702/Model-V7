@@ -1687,7 +1687,7 @@ const FloorCanvas = ({
     };
 
     const [showPanelTable, setShowPanelTable] = useState(false);
-    const [isPlanDetailsOpen, setIsPlanDetailsOpen] = useState(true);
+    const [isPlanDetailsOpen, setIsPlanDetailsOpen] = useState(false);
 
     const calculatePanelFloorArea = () => {
         let totalArea = 0;

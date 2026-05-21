@@ -34,6 +34,24 @@ const ProjectDetails = () => {
     const navigate = useNavigate();
     const projectDetails = useProjectDetails(projectId);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const CONTROLS_SIDEBAR_STORAGE_KEY = 'project.controlsSidebarCollapsed.v2';
+    const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(() => {
+        try {
+            const stored = localStorage.getItem(CONTROLS_SIDEBAR_STORAGE_KEY);
+            if (stored === null) return true;
+            return stored === 'true';
+        } catch {
+            return true;
+        }
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(CONTROLS_SIDEBAR_STORAGE_KEY, String(controlsSidebarCollapsed));
+        } catch {
+            // ignore storage errors
+        }
+    }, [controlsSidebarCollapsed]);
     const wizardStep = projectDetails.storeyWizardStep;
     const sourceStoreyId = projectDetails.storeyWizardSourceStoreyId ?? projectDetails.activeStoreyId;
     const selectedRoomsSet = new Set(projectDetails.storeyWizardRoomSelections || []);
@@ -949,14 +967,25 @@ const ProjectDetails = () => {
                     <div className="flex items-center justify-between w-full">
                         <div className="flex items-center space-x-2 sm:space-x-4">
                             {!projectDetails.is3DView && (
+                            <>
                             <button
                                 onClick={() => setSidebarOpen(!sidebarOpen)}
                                 className="lg:hidden flex items-center px-2 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                aria-label="Toggle controls menu"
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                                 </svg>
                             </button>
+                            {controlsSidebarCollapsed && (
+                                <button
+                                    onClick={() => setControlsSidebarCollapsed(false)}
+                                    className="hidden lg:flex items-center px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                                >
+                                    Show Controls
+                                </button>
+                            )}
+                            </>
                             )}
                             <button
                                 onClick={() => navigate('/')}
@@ -1482,9 +1511,9 @@ const ProjectDetails = () => {
                 
                 {/* Left Sidebar - Controls (hidden in 3D so canvas uses full width; edit is disabled in 3D anyway) */}
                 {!projectDetails.is3DView && (
-                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-72 min-w-[280px] max-w-[320px] bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transform transition-transform duration-300 ease-in-out ${
+                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transition-all duration-300 ease-in-out w-72 min-w-[280px] max-w-[320px] ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-                }`}>
+                } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''}`}>
                     <div className="p-4 sm:p-6">
                         {/* Mobile Close Button */}
                         <div className="flex items-center justify-between mb-4 lg:hidden">
@@ -1492,10 +1521,21 @@ const ProjectDetails = () => {
                             <button
                                 onClick={() => setSidebarOpen(false)}
                                 className="text-gray-500 hover:text-gray-700"
+                                aria-label="Close controls"
                             >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
+                            </button>
+                        </div>
+                        {/* Desktop header with collapse */}
+                        <div className="hidden lg:flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-gray-900">Controls</h2>
+                            <button
+                                onClick={() => setControlsSidebarCollapsed(true)}
+                                className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
+                            >
+                                Collapse
                             </button>
                         </div>
                         {/* Edit Mode Toggle (sidebar hidden in 3D) */}

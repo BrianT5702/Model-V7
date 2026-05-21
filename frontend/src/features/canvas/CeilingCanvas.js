@@ -332,7 +332,7 @@ const CeilingCanvas = ({
 
     // [NEW] Local state for checkboxes (copying logic from FloorCanvas)
     const [visibilityState, setVisibilityState] = useState(dimensionVisibility);
-    const [isPlanDetailsOpen, setIsPlanDetailsOpen] = useState(true);
+    const [isPlanDetailsOpen, setIsPlanDetailsOpen] = useState(false);
 
     // [NEW] Sync state if parent props change
     useEffect(() => {

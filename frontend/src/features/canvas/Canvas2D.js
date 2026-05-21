@@ -88,7 +88,7 @@ const Canvas2D = ({
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
     const [showMaterialDetails, setShowMaterialDetails] = useState(false);
-    const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(true);
+    const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(false);
     const [showMaterialNeeded, setShowMaterialNeeded] = useState(false);
 
     // Auto-show material details when the section is opened
