@@ -40,8 +40,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     // Dimension visibility filters (checkboxes)
     const [dimensionVisibility, setDimensionVisibility] = useState({
         room: true,
-        panel: true,
-        cutPanel: false  // Cut panel dimensions unchecked by default
+        panel: false, // Grouped panel dimensions — shown when a room is selected (see ceiling canvas)
+        cutPanel: false
     });
     const toggleDimensionVisibility = (key) => {
         setDimensionVisibility(prev => ({ ...prev, [key]: !prev[key] }));
@@ -106,6 +106,14 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     // Room selection state
     const [selectedRoomId, setSelectedRoomId] = useState(null);
     const [showAllRooms, setShowAllRooms] = useState(true);
+
+    // Grouped panel dimensions: hidden until a room is selected on the plan
+    useEffect(() => {
+        setDimensionVisibility((prev) => ({
+            ...prev,
+            panel: selectedRoomId != null && selectedRoomId !== ''
+        }));
+    }, [selectedRoomId]);
     const [showRoomDetails, setShowRoomDetails] = useState(false);
     const [detailsPanelTab, setDetailsPanelTab] = useState('details'); // 'details', 'joints', 'panels'
     
@@ -250,7 +258,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
     // Filter rooms and zones by selected storey
     const filteredRooms = useMemo(() => {
-        // Remove the null check: if (!selectedStoreyId) return allRooms;
+        if (!selectedStoreyId) return allRooms;
         return allRooms.filter(room => String(room.storey) === String(selectedStoreyId));
     }, [allRooms, selectedStoreyId]);
 

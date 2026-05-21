@@ -2109,7 +2109,7 @@ const Canvas2D = ({
         }
 
         // Draw walls first (and wall/panel dimensions); then project dimensions so they place outermost
-        const colorMap = drawWalls({
+        const wallDrawResult = drawWalls({
             context,
             walls,
             highlightWalls,
@@ -2145,6 +2145,8 @@ const Canvas2D = ({
             dimensionValuesSeen,
             rooms
         });
+        const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
+        const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;
         // Store thickness color map for the legend
         setThicknessColorMap(colorMap);
 
@@ -2158,7 +2160,9 @@ const Canvas2D = ({
                 offsetY.current,
                 placedLabels,
                 allLabels,
-                initialScale.current
+                initialScale.current,
+                null,
+                dimensionEdgeExtents
             );
         }
         
@@ -2321,7 +2325,7 @@ const Canvas2D = ({
                     context.textAlign = 'left';
                     context.textBaseline = 'bottom';
                     context.fillText(
-                        `${Math.round(splitHoverDistance)} mm`,
+                        `${Math.round(splitHoverDistance)}`,
                         markerX + 10,
                         markerY - 8
                     );
@@ -2718,12 +2722,12 @@ const Canvas2D = ({
                                                                 </div>
                                                                 <div className="flex justify-between">
                                                                     <span className="font-medium">Length:</span>
-                                                                    <span>{Math.round(splitTargetWallLength || 0)} mm</span>
+                                                                    <span>{Math.round(splitTargetWallLength || 0)}</span>
                                                                 </div>
                                                                 {splitHoverDistance !== null && (
                                                                     <div className="flex justify-between text-emerald-700">
                                                                         <span className="font-medium">Preview distance:</span>
-                                                                        <span>{Math.round(splitHoverDistance)} mm</span>
+                                                                        <span>{Math.round(splitHoverDistance)}</span>
                                                                     </div>
                                                                 )}
                                                             </div>

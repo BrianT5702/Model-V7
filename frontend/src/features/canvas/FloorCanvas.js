@@ -1,18 +1,42 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { calculateOffsetPoints, drawOrthoPlanDimensionGeometryLikeWall, makeLabelDrawFn, buildWallOffsetOptions, resolve45CutForceShouldFlip } from './drawing.js';
-import { DIMENSION_CONFIG, formatPlanDimensionLabel, planDimensionDedupKey } from './DimensionConfig.js';
-import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds, smartPlacement } from './collisionDetection.js';
+import {
+    DIMENSION_CONFIG,
+    formatPlanDimensionLabel,
+    planDimensionDedupKey,
+    createDimensionLaneCounters,
+    consumeDimensionLane,
+    getPlanDimensionLaneConfig,
+    getPlanExteriorSide,
+    isLabelOutsidePlanArea,
+    computeExteriorPlanLabelCoords
+} from './DimensionConfig.js';
+import {
+    hasLabelOverlap,
+    calculateHorizontalLabelBounds,
+    calculateVerticalLabelBounds,
+    isLabelPlacementClean
+} from './collisionDetection.js';
 import { calculatePolygonVisualCenter } from './utils.js';
+import {
+    PLAN_CANVAS_DEFAULT_WIDTH,
+    PLAN_CANVAS_DEFAULT_HEIGHT,
+    PLAN_CANVAS_ASPECT_RATIO,
+    PLAN_CANVAS_MIN_WIDTH,
+    PLAN_CANVAS_MIN_HEIGHT,
+    PLAN_CANVAS_PADDING,
+    getPlanCanvasMaxHeightRatio,
+    computePlanBoundsFromGeometry,
+    computePlanFitTransform
+} from './planCanvasUtils.js';
 
-const DEFAULT_CANVAS_WIDTH = 1000;
-const DEFAULT_CANVAS_HEIGHT = 650;
-const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
-// Increase canvas height ratio on mobile for better visibility
-const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
-// Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
-const MIN_CANVAS_WIDTH = 320; 
-const MIN_CANVAS_HEIGHT = 240; 
-const PADDING = 50;
+const DEFAULT_CANVAS_WIDTH = PLAN_CANVAS_DEFAULT_WIDTH;
+const DEFAULT_CANVAS_HEIGHT = PLAN_CANVAS_DEFAULT_HEIGHT;
+const CANVAS_ASPECT_RATIO = PLAN_CANVAS_ASPECT_RATIO;
+const MAX_CANVAS_HEIGHT_RATIO = getPlanCanvasMaxHeightRatio();
+const MIN_CANVAS_WIDTH = PLAN_CANVAS_MIN_WIDTH;
+const MIN_CANVAS_HEIGHT = PLAN_CANVAS_MIN_HEIGHT;
+const PADDING = PLAN_CANVAS_PADDING;
 
 const FloorCanvas = ({ 
     rooms, 
@@ -68,6 +92,7 @@ const FloorCanvas = ({
     // Canvas dragging state (separate from other dragging)
     const isDraggingCanvas = useRef(false);
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
+    const hasUserPositionedView = useRef(false);
     
     // Store placement decisions for dimensions to prevent position changes on zoom
     const dimensionPlacementMemory = useRef(new Map());
@@ -144,39 +169,27 @@ const FloorCanvas = ({
     const CANVAS_WIDTH = Math.round(canvasSize.width);
     const CANVAS_HEIGHT = Math.round(canvasSize.height);
 
-    // Calculate project bounds for dimension positioning
-    const projectBounds = useMemo(() => {
-        if (projectData) {
-            return {
-                minX: 0,
-                maxX: projectData.width,
-                minY: 0,
-                maxY: projectData.length
-            };
-        }
-        return null;
-    }, [projectData]);
+    // Same bounds logic as CeilingCanvas (room outlines, supports negative coords)
+    const projectBounds = useMemo(
+        () => computePlanBoundsFromGeometry(rooms, projectData),
+        [rooms, projectData]
+    );
 
-    // Calculate model bounds for dimension positioning
     const modelBounds = useMemo(() => {
         if (!rooms || rooms.length === 0) return null;
-        
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        
-        rooms.forEach(room => {
+        rooms.forEach((room) => {
             if (room.room_points && room.room_points.length > 0) {
-                const roomMinX = Math.min(...room.room_points.map(p => p.x));
-                const roomMaxX = Math.max(...room.room_points.map(p => p.x));
-                const roomMinY = Math.min(...room.room_points.map(p => p.y));
-                const roomMaxY = Math.max(...room.room_points.map(p => p.y));
-                
+                const roomMinX = Math.min(...room.room_points.map((p) => p.x));
+                const roomMaxX = Math.max(...room.room_points.map((p) => p.x));
+                const roomMinY = Math.min(...room.room_points.map((p) => p.y));
+                const roomMaxY = Math.max(...room.room_points.map((p) => p.y));
                 minX = Math.min(minX, roomMinX);
                 maxX = Math.max(maxX, roomMaxX);
                 minY = Math.min(minY, roomMinY);
                 maxY = Math.max(maxY, roomMaxY);
             }
         });
-        
         return { minX, maxX, minY, maxY };
     }, [rooms]);
 
@@ -272,13 +285,14 @@ const FloorCanvas = ({
         canvas.style.width = displayWidth + 'px';
         canvas.style.height = displayHeight + 'px';
 
-        calculateCanvasTransform();
+        if (!hasUserPositionedView.current) {
+            calculateCanvasTransform();
+        }
         drawCanvas(ctx);
 
     // [UPDATED] Added visibilityState to dependencies so it redraws when you click checkboxes
     }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState]);
 
-    // Calculate optimal canvas transformation
     const calculateCanvasTransform = () => {
         if (!rooms || rooms.length === 0) {
             scaleFactor.current = 1;
@@ -288,44 +302,18 @@ const FloorCanvas = ({
             return;
         }
 
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        
-        rooms.forEach(room => {
-            if (room.room_points && room.room_points.length > 0) {
-                const xCoords = room.room_points.map(p => p.x);
-                const yCoords = room.room_points.map(p => p.y);
-                
-                const roomMinX = Math.min(...xCoords);
-                const roomMaxX = Math.max(...xCoords);
-                const roomMinY = Math.min(...yCoords);
-                const roomMaxY = Math.max(...yCoords);
-                
-                minX = Math.min(minX, roomMinX);
-                maxX = Math.max(maxX, roomMaxX);
-                minY = Math.min(minY, roomMinY);
-                maxY = Math.max(maxY, roomMaxY);
-            }
-        });
-
-        const totalWidth = maxX - minX || 1;
-        const totalHeight = maxY - minY || 1;
-
-        const scaleX = (CANVAS_WIDTH - 4 * PADDING) / totalWidth;
-        const scaleY = (CANVAS_HEIGHT - 4 * PADDING) / totalHeight;
-        const optimalScale = Math.min(scaleX, scaleY, 2.0);
+        const bounds = computePlanBoundsFromGeometry(rooms, projectData);
+        const fit = computePlanFitTransform(CANVAS_WIDTH, CANVAS_HEIGHT, bounds, { padding: PADDING });
 
         if (!isZoomed.current) {
-            scaleFactor.current = optimalScale;
-            setCurrentScale(optimalScale);
+            scaleFactor.current = fit.scale;
+            setCurrentScale(fit.scale);
         }
-        initialScale.current = optimalScale;
+        initialScale.current = fit.scale;
 
         if (!isDraggingCanvas.current) {
-            const scaledWidth = totalWidth * optimalScale;
-            const scaledHeight = totalHeight * optimalScale;
-            
-            offsetX.current = (CANVAS_WIDTH - scaledWidth) / 2 - minX * optimalScale;
-            offsetY.current = (CANVAS_HEIGHT - scaledHeight) / 2 - minY * optimalScale;
+            offsetX.current = fit.offsetX;
+            offsetY.current = fit.offsetY;
         }
     };
 
@@ -462,34 +450,55 @@ const FloorCanvas = ({
             const roomCanvasHeight = roomCanvasMaxY - roomCanvasMinY;
 
             const isSlabRoom = room.floor_type === 'slab' || room.floor_type === 'Slab';
-
-            // Only hide labels when the room is truly tiny in the current view.
-            // These thresholds are fixed pixel sizes so zooming in will eventually reveal the text.
-            const MIN_LABEL_WIDTH = 60;
-            const MIN_LABEL_HEIGHT = isSlabRoom ? 40 : 24;
-            if (roomCanvasWidth < MIN_LABEL_WIDTH || roomCanvasHeight < MIN_LABEL_HEIGHT) {
+            const MIN_NAME_WIDTH = 48;
+            const MIN_NAME_HEIGHT = 22;
+            if (roomCanvasWidth < MIN_NAME_WIDTH || roomCanvasHeight < MIN_NAME_HEIGHT) {
                 return;
             }
 
-            const roomNameFontSize = Math.max(14, 200 * scaleFactor.current);
-            const slabFontSize = Math.max(12, 160 * scaleFactor.current);
-            const lineOffset = 15;
+            const sf = scaleFactor.current;
+            const roomNameFontSize = Math.min(Math.max(12, 14 * sf), 22);
+            const slabFontSize = Math.min(Math.max(10, 11 * sf), 15);
+            const lineGap = Math.max(14, 12 * sf);
 
-            ctx.fillStyle = '#6b7280';
-            ctx.font = `bold ${roomNameFontSize}px 'Segoe UI', Arial, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
+
+            ctx.fillStyle = '#374151';
+            ctx.font = `600 ${roomNameFontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             ctx.fillText(room.room_name, canvasX, canvasY);
 
-            // If this room uses slab floor, show slabs needed under the room name
-            if (isSlabRoom) {
+            if (isSlabRoom && roomCanvasHeight >= 36) {
                 const roomAreaMm2 = calculateRoomArea(room);
                 const slabAreaMm2 = slabWidth * slabLength;
                 if (roomAreaMm2 > 0 && slabAreaMm2 > 0) {
                     const slabsNeeded = Math.ceil(roomAreaMm2 / slabAreaMm2);
-                    const slabText = `${slabsNeeded} slab${slabsNeeded === 1 ? '' : 's'} needed`;
-                    ctx.font = `${Math.max(12, slabFontSize)}px 'Segoe UI', Arial, sans-serif`;
-                    ctx.fillText(slabText, canvasX, canvasY + lineOffset);
+                    const slabText = `${slabsNeeded} slab${slabsNeeded === 1 ? '' : 's'} · ${Math.round(slabWidth)}×${Math.round(slabLength)}`;
+                    const slabY = canvasY + lineGap;
+
+                    ctx.font = `500 ${slabFontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+                    const textW = ctx.measureText(slabText).width;
+                    const padH = 6;
+                    const padV = 3;
+                    const boxW = textW + padH * 2;
+                    const boxH = slabFontSize + padV * 2;
+
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+                    ctx.strokeStyle = 'rgba(156, 163, 175, 0.55)';
+                    ctx.lineWidth = 1;
+                    const bx = canvasX - boxW / 2;
+                    const by = slabY - boxH / 2;
+                    ctx.beginPath();
+                    if (typeof ctx.roundRect === 'function') {
+                        ctx.roundRect(bx, by, boxW, boxH, 4);
+                    } else {
+                        ctx.rect(bx, by, boxW, boxH);
+                    }
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#4b5563';
+                    ctx.fillText(slabText, canvasX, slabY);
                 }
             }
         }
@@ -510,9 +519,8 @@ const FloorCanvas = ({
         
         walls.forEach(wall => {
             try {
-                // Use actual wall thickness (mm) and scale it fully to pixels
-                const wallThickness = wall.thickness ?? projectData?.wall_thickness ?? 100;
-                const gapPixels = wallThickness * scaleFactor.current;
+                const wallThickness = wall.thickness || 100;
+                const gapPixels = (wallThickness * scaleFactor.current) / 2;
                 const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
 
                 let has45 = false;
@@ -792,6 +800,7 @@ const FloorCanvas = ({
 
         const placedLabels = [];
         const allLabels = [];
+        const dimensionLanes = createDimensionLaneCounters();
         const drawnDimensions = new Set();
         const globalDimensionTracker = new Map();
 
@@ -813,15 +822,16 @@ const FloorCanvas = ({
                 const roomWidth = roomMaxX - roomMinX;
                 const roomHeight = roomMaxY - roomMinY;
 
+                const pb = projectBounds || { minX: roomMinX, maxX: roomMaxX, minY: roomMinY, maxY: roomMaxY };
                 const widthDimension = {
                     startX: roomMinX,
                     endX: roomMaxX,
-                    startY: roomMaxY + 20,
-                    endY: roomMaxY + 20,
+                    startY: pb.maxY,
+                    endY: pb.maxY,
                     dimension: roomWidth,
                     type: 'room_width',
-                    color: '#1e40af',
-                    priority: 1,
+                    color: DIMENSION_CONFIG.COLORS.ROOM,
+                    priority: DIMENSION_CONFIG.PRIORITY.ROOM,
                     avoidArea: projectBounds,
                     drawnPositions: new Set(),
                     roomId: room.id,
@@ -829,14 +839,14 @@ const FloorCanvas = ({
                 };
 
                 const heightDimension = {
-                    startX: roomMinX - 20,
-                    endX: roomMinX - 20,
+                    startX: pb.minX,
+                    endX: pb.minX,
                     startY: roomMinY,
                     endY: roomMaxY,
                     dimension: roomHeight,
                     type: 'room_height',
-                    color: '#1e40af',
-                    priority: 1,
+                    color: DIMENSION_CONFIG.COLORS.ROOM,
+                    priority: DIMENSION_CONFIG.PRIORITY.ROOM,
                     avoidArea: projectBounds,
                     drawnPositions: new Set(),
                     roomId: room.id,
@@ -865,21 +875,21 @@ const FloorCanvas = ({
                 const isPanelFloor = room.floor_type === 'panel' || room.floor_type === 'Panel';
                 if (!isPanelFloor) return;
                 const strategy = roomStrategies[room.id] || 'auto';
-                drawPanelDimensions(ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy, dimensionsToDraw);
+                drawPanelDimensions(ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy, dimensionsToDraw, dimensionLanes);
             });
         }
 
-        // Sort by dimension value ascending: draw smaller first (inner), larger later (outer when overlap)
+        // Draw inner panel dims first; room dims last so they sit on the outermost row
         dimensionsToDraw.sort((a, b) => {
             const pa = a.dimension.priority ?? 99;
             const pb = b.dimension.priority ?? 99;
-            if (pa !== pb) return pa - pb;
+            if (pa !== pb) return pb - pa;
             return (a.dimension.dimension ?? 0) - (b.dimension.dimension ?? 0);
         });
 
         // 3. Draw in order so larger values get pushed outer when overlapping
         dimensionsToDraw.forEach(({ dimension, bounds }) => {
-            drawRoomDimensions(ctx, dimension, bounds, placedLabels, allLabels);
+            drawRoomDimensions(ctx, dimension, bounds, placedLabels, allLabels, dimensionLanes);
         });
 
         return allLabels;
@@ -887,7 +897,7 @@ const FloorCanvas = ({
 
     // [UPDATED] Draw Panel Dimensions with specific Cut Panel filter
     // When dimensionCollector is provided, dimensions are pushed to it instead of drawn (caller sorts and draws so larger value is outer)
-    const drawPanelDimensions = (ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy, dimensionCollector = null) => {
+    const drawPanelDimensions = (ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy, dimensionCollector = null, dimensionLanes = null) => {
         if (roomPanels.length === 0) return;
 
         // Room dimensions for "don't show if matches room" filter (match ceiling)
@@ -926,7 +936,7 @@ const FloorCanvas = ({
             panelsByDimension.get(dimensionValue).push(panel);
         });
 
-        const shouldShowIndividual = roomPanels.length <= 20;
+        const shouldShowIndividual = roomPanels.length <= 6;
         const drawnValues = new Set();
 
         panelsByDimension.forEach((panels, dimensionValue) => {
@@ -941,7 +951,7 @@ const FloorCanvas = ({
                 drawnValues.add(valueKey);
                 
                 if (visibilityState.panel !== false) {
-                    drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector, room.id);
+                    drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector, room.id, dimensionLanes);
                 }
 
             } else if (panels.length === 1 && shouldShowIndividual) {
@@ -976,7 +986,7 @@ const FloorCanvas = ({
                         dimension: dimVal,
                         type: 'individual_panel',
                         color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
-                        priority: 3,
+                        priority: DIMENSION_CONFIG.PRIORITY.PANEL,
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
@@ -993,7 +1003,7 @@ const FloorCanvas = ({
                         dimension: dimVal,
                         type: 'individual_panel',
                         color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
-                        priority: 3,
+                        priority: DIMENSION_CONFIG.PRIORITY.PANEL,
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
@@ -1006,7 +1016,7 @@ const FloorCanvas = ({
                     if (dimensionCollector) {
                         dimensionCollector.push({ dimension: individualDimension, bounds: projectBounds });
                     } else {
-                        drawRoomDimensions(ctx, individualDimension, projectBounds, placedLabels, allLabels);
+                        drawRoomDimensions(ctx, individualDimension, projectBounds, placedLabels, allLabels, dimensionLanes);
                     }
                 }
             }
@@ -1045,8 +1055,8 @@ const FloorCanvas = ({
                         endY: centerY,
                         dimension: dimensionValue,
                         type: 'cut_panel',
-                        color: '#dc2626',
-                        priority: 4,
+                        color: DIMENSION_CONFIG.COLORS.CUT_PANEL,
+                        priority: DIMENSION_CONFIG.PRIORITY.CUT_PANEL,
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
@@ -1063,8 +1073,8 @@ const FloorCanvas = ({
                         endY: panel.start_y + panel.length,
                         dimension: dimensionValue,
                         type: 'cut_panel',
-                        color: '#dc2626',
-                        priority: 4,
+                        color: DIMENSION_CONFIG.COLORS.CUT_PANEL,
+                        priority: DIMENSION_CONFIG.PRIORITY.CUT_PANEL,
                         avoidArea: projectBounds,
                         drawnPositions: new Set(),
                         roomId: room.id,
@@ -1078,7 +1088,7 @@ const FloorCanvas = ({
                     if (dimensionCollector) {
                         dimensionCollector.push({ dimension: cutPanelDimension, bounds: projectBounds });
                     } else {
-                        drawRoomDimensions(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels);
+                        drawRoomDimensions(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels, dimensionLanes);
                     }
                 }
             });
@@ -1086,10 +1096,8 @@ const FloorCanvas = ({
     };
 
     // PASS 1: Draw dimension LINES
-    const drawRoomDimensions = (ctx, dimension, bounds, placedLabels, allLabels) => {
+    const drawRoomDimensions = (ctx, dimension, bounds, placedLabels, allLabels, dimensionLanes = null) => {
         const { startX, endX, startY, endY, dimension: length, color, avoidArea } = dimension;
-        const { minX, maxX, minY, maxY } = bounds || modelBounds || {};
-        
         if (!bounds && !modelBounds) return;
 
         const globalDimensionValues = dimensionValuesSeen.current;
@@ -1116,11 +1124,6 @@ const FloorCanvas = ({
         const storedPlacement = dimensionPlacementMemory.current.get(dimensionKey);
         const lockedSide = storedPlacement ? storedPlacement.side : null;
         
-        let labelX, labelY;
-        // Match ceiling: smaller base offset so labels stay close to model
-        let baseOffset = Math.min(DIMENSION_CONFIG.BASE_OFFSET, 10);
-        const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
-        
         const text = formatPlanDimensionLabel(dimension, length);
 
         const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
@@ -1140,139 +1143,78 @@ const FloorCanvas = ({
         ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         const textWidth = ctx.measureText(text).width;
 
-        let placement;
-        
-        if (isHorizontal) {
-            placement = smartPlacement({
-                calculatePositionSide1: (offset) => {
-                    return {
-                        labelX: midX * scaleFactor.current + offsetX.current,
-                        labelY: (avoidArea ? avoidArea.minY : minY) * scaleFactor.current + offsetY.current - offset
-                    };
-                },
-                calculatePositionSide2: (offset) => {
-                    return {
-                        labelX: midX * scaleFactor.current + offsetX.current,
-                        labelY: (avoidArea ? avoidArea.maxY : maxY) * scaleFactor.current + offsetY.current + offset
-                    };
-                },
-                calculateBounds: (labelX, labelY, textWidth) => calculateHorizontalLabelBounds(labelX, labelY, textWidth, DIMENSION_CONFIG.LABEL_PADDING_H, DIMENSION_CONFIG.LABEL_PADDING_V),
-                textWidth: textWidth,
-                placedLabels: placedLabels,
-                baseOffset: baseOffset,
-                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
-                maxAttempts: maxAttempts,
-                preferredSide: 'side1',
-                lockedSide: lockedSide
-            });
-            // Match ceiling: adjust bottom placement to be closer (smaller offset)
-            if (placement.side === 'side2') {
-                const bottomOffset = DIMENSION_CONFIG.BASE_OFFSET_SMALL;
-                placement.labelY = (avoidArea ? avoidArea.maxY : maxY) * scaleFactor.current + offsetY.current + bottomOffset;
-                placement.offset = bottomOffset;
+        const planBounds = avoidArea || bounds || modelBounds;
+        const gb = dimension.groupBounds;
+        const spanMidX = gb ? (gb.minX + gb.maxX) / 2 : midX;
+        const spanMidY = gb ? (gb.minY + gb.maxY) / 2 : midY;
+        const anchorX = gb ? spanMidX : midX;
+        const anchorY = gb ? spanMidY : midY;
+
+        const laneCfg = getPlanDimensionLaneConfig(dimension.priority);
+        const preferredSide =
+            !isHorizontal && planBounds && anchorX > (planBounds.minX + planBounds.maxX) / 2
+                ? 'side2'
+                : null;
+        const side =
+            lockedSide ||
+            preferredSide ||
+            (planBounds ? getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) : 'side1');
+
+        let offsetPx = laneCfg.baseOffset;
+        offsetPx = consumeDimensionLane(dimensionLanes, isHorizontal, side, offsetPx, laneCfg.laneSpacing);
+        offsetPx = Math.min(offsetPx, laneCfg.maxOffset);
+
+        const sf = scaleFactor.current;
+        const ox = offsetX.current;
+        const oy = offsetY.current;
+        let labelX;
+        let labelY;
+        let placement = { side };
+
+        const maxNudgeAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
+        for (let attempt = 0; attempt < maxNudgeAttempts; attempt++) {
+            if (planBounds) {
+                ({ labelX, labelY } = computeExteriorPlanLabelCoords(
+                    isHorizontal,
+                    side,
+                    offsetPx,
+                    planBounds,
+                    spanMidX,
+                    spanMidY,
+                    sf,
+                    ox,
+                    oy
+                ));
+            } else {
+                labelX = spanMidX * sf + ox;
+                labelY = spanMidY * sf + oy;
             }
-        } else {
-            // Match ceiling: prefer left (side1), same base offset (no MIN_VERTICAL_OFFSET)
-            const baseVerticalOffset = baseOffset;
-            placement = smartPlacement({
-                calculatePositionSide1: (offset) => {
-                    return {
-                        labelX: (avoidArea ? avoidArea.minX : minX) * scaleFactor.current + offsetX.current - offset,
-                        labelY: midY * scaleFactor.current + offsetY.current
-                    };
-                },
-                calculatePositionSide2: (offset) => {
-                    return {
-                        labelX: (avoidArea ? avoidArea.maxX : maxX) * scaleFactor.current + offsetX.current + offset,
-                        labelY: midY * scaleFactor.current + offsetY.current
-                    };
-                },
-                calculateBounds: (labelX, labelY, textWidth) => calculateVerticalLabelBounds(labelX, labelY, textWidth, DIMENSION_CONFIG.LABEL_PADDING_H, DIMENSION_CONFIG.LABEL_PADDING_V),
-                textWidth: textWidth,
-                placedLabels: placedLabels,
-                baseOffset: baseVerticalOffset,
-                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
-                maxAttempts: maxAttempts,
-                preferredSide: 'side1',
-                lockedSide: lockedSide
-            });
+
+            const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
+            const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
+            const labelBounds = isHorizontal
+                ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, pH, pV)
+                : calculateVerticalLabelBounds(labelX, labelY, textWidth, pH, pV);
+
+            const outsidePlan =
+                !planBounds ||
+                isLabelOutsidePlanArea(labelBounds, planBounds, sf, ox, oy);
+            const noOverlap = !hasLabelOverlap(labelBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION);
+
+            if (outsidePlan && noOverlap) {
+                placement.offset = offsetPx;
+                break;
+            }
+
+            offsetPx += laneCfg.laneSpacing;
+            if (offsetPx > laneCfg.maxOffset) {
+                ctx.font = previousFont;
+                return;
+            }
         }
-        
+
         if (!storedPlacement) {
-            dimensionPlacementMemory.current.set(dimensionKey, { side: placement.side });
-        }
-        
-        labelX = placement.labelX;
-        labelY = placement.labelY;
-        
-        // Match ceiling: ensure label bounds are outside project area and don't overlap other labels
-        if (avoidArea) {
-            let labelBounds;
-            let overlapsAvoidArea = true;
-            let validationAttempts = 0;
-            const maxValidationAttempts = 10;
-            const minSeparation = 5;
-            const isBottomDimension = isHorizontal && placement.side === 'side2';
-            let validationOffset = isBottomDimension ? DIMENSION_CONFIG.BASE_OFFSET_SMALL : (placement.offset || baseOffset);
-            
-            while (overlapsAvoidArea && validationAttempts < maxValidationAttempts) {
-                const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
-                const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
-                if (isHorizontal) {
-                    labelBounds = {
-                        x: labelX - textWidth / 2 - pH,
-                        y: labelY - pV,
-                        width: textWidth + pH * 2,
-                        height: pV * 2
-                    };
-                } else {
-                    labelBounds = {
-                        x: labelX - pV,
-                        y: labelY - textWidth / 2 - pH,
-                        width: pV * 2,
-                        height: textWidth + pH * 2
-                    };
-                }
-                const labelModelBounds = {
-                    minX: (labelBounds.x - offsetX.current) / scaleFactor.current,
-                    maxX: (labelBounds.x + labelBounds.width - offsetX.current) / scaleFactor.current,
-                    minY: (labelBounds.y - offsetY.current) / scaleFactor.current,
-                    maxY: (labelBounds.y + labelBounds.height - offsetY.current) / scaleFactor.current
-                };
-                const separation = minSeparation / scaleFactor.current;
-                const overlapsProjectArea = !(
-                    labelModelBounds.maxX < avoidArea.minX - separation ||
-                    labelModelBounds.minX > avoidArea.maxX + separation ||
-                    labelModelBounds.maxY < avoidArea.minY - separation ||
-                    labelModelBounds.minY > avoidArea.maxY + separation
-                );
-                const overlapsOtherLabels = hasLabelOverlap(labelBounds, placedLabels, 5);
-                overlapsAvoidArea = overlapsProjectArea || overlapsOtherLabels;
-                
-                if (overlapsAvoidArea) {
-                    const isBottomPlacement = isHorizontal && placement.side === 'side2';
-                    const increment = isBottomPlacement ? 10 : DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    validationOffset += increment;
-                    if (isHorizontal) {
-                        const projectMidY = (avoidArea.minY + avoidArea.maxY) / 2;
-                        const isTopHalf = midY < projectMidY;
-                        if (isTopHalf) {
-                            labelY = avoidArea.minY * scaleFactor.current + offsetY.current - validationOffset;
-                        } else {
-                            labelY = avoidArea.maxY * scaleFactor.current + offsetY.current + validationOffset;
-                        }
-                    } else {
-                        const projectMidX = (avoidArea.minX + avoidArea.maxX) / 2;
-                        const isLeftHalf = midX < projectMidX;
-                        if (isLeftHalf) {
-                            labelX = avoidArea.minX * scaleFactor.current + offsetX.current - validationOffset;
-                        } else {
-                            labelX = avoidArea.maxX * scaleFactor.current + offsetX.current + validationOffset;
-                        }
-                    }
-                    validationAttempts++;
-                }
-            }
+            dimensionPlacementMemory.current.set(dimensionKey, { side });
         }
         
         // Final label bounds (match ceiling padding)
@@ -1295,30 +1237,35 @@ const FloorCanvas = ({
             };
         }
         
-        // Match ceiling: final collision check with adjustment
-        if (hasLabelOverlap(finalLabelBounds, placedLabels, 5)) {
-            const adjustment = 15;
+        const labelSep = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
+        if (hasLabelOverlap(finalLabelBounds, placedLabels, labelSep)) {
+            const adjustment = DIMENSION_CONFIG.LANE_SPACING;
             if (isHorizontal) {
                 const testBounds1 = { ...finalLabelBounds, y: finalLabelBounds.y - adjustment };
                 const testBounds2 = { ...finalLabelBounds, y: finalLabelBounds.y + adjustment };
-                if (!hasLabelOverlap(testBounds1, placedLabels, 5)) {
+                if (!hasLabelOverlap(testBounds1, placedLabels, labelSep)) {
                     finalLabelBounds = testBounds1;
                     labelY -= adjustment;
-                } else if (!hasLabelOverlap(testBounds2, placedLabels, 5)) {
+                } else if (!hasLabelOverlap(testBounds2, placedLabels, labelSep)) {
                     finalLabelBounds = testBounds2;
                     labelY += adjustment;
                 }
             } else {
                 const testBounds1 = { ...finalLabelBounds, x: finalLabelBounds.x - adjustment };
                 const testBounds2 = { ...finalLabelBounds, x: finalLabelBounds.x + adjustment };
-                if (!hasLabelOverlap(testBounds1, placedLabels, 5)) {
+                if (!hasLabelOverlap(testBounds1, placedLabels, labelSep)) {
                     finalLabelBounds = testBounds1;
                     labelX -= adjustment;
-                } else if (!hasLabelOverlap(testBounds2, placedLabels, 5)) {
+                } else if (!hasLabelOverlap(testBounds2, placedLabels, labelSep)) {
                     finalLabelBounds = testBounds2;
                     labelX += adjustment;
                 }
             }
+        }
+
+        if (!isLabelPlacementClean(finalLabelBounds, placedLabels, labelSep)) {
+            ctx.font = previousFont;
+            return;
         }
 
         const dxLine = endX - startX;
@@ -1387,10 +1334,10 @@ const FloorCanvas = ({
         }
 
         const dimSide = isHorizontal
-            ? placement.side === 'side1'
+            ? side === 'side1'
                 ? 'top'
                 : 'bottom'
-            : placement.side === 'side1'
+            : side === 'side1'
                 ? 'left'
                 : 'right';
 
@@ -1424,7 +1371,7 @@ const FloorCanvas = ({
     };
     
     // Draw Grouped Dimensions (optional dimensionCollector: when set, push to it instead of drawing)
-    const drawGroupedPanelDimensions = (ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector = null, roomId = null) => {
+    const drawGroupedPanelDimensions = (ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector = null, roomId = null, dimensionLanes = null) => {
         const effectiveRoomId =
             roomId != null ? roomId : (panels[0]?.room_id != null ? panels[0].room_id : 'unknown');
         const centerX = (Math.min(...panels.map(p => p.start_x)) + Math.max(...panels.map(p => p.start_x + p.width))) / 2;
@@ -1439,7 +1386,7 @@ const FloorCanvas = ({
             if (dimensionCollector) {
                 dimensionCollector.push({ dimension: dim, bounds: projectBounds });
             } else {
-                drawRoomDimensions(ctx, dim, projectBounds, placedLabels, allLabels);
+                drawRoomDimensions(ctx, dim, projectBounds, placedLabels, allLabels, dimensionLanes);
             }
         };
 
@@ -1452,12 +1399,13 @@ const FloorCanvas = ({
                 dimension: dimensionValue,
                 type: 'grouped_length_horizontal',
                 color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
-                priority: 2,
+                priority: DIMENSION_CONFIG.PRIORITY.PANEL_GROUP,
                 avoidArea: projectBounds,
                 quantity: panels.length,
                 drawnPositions: new Set(),
                 roomId: effectiveRoomId,
-                isHorizontal: false
+                isHorizontal: false,
+                groupBounds: { minX, maxX, minY, maxY }
             };
             if (visibilityState.panel !== false) {
                 pushOrDraw(lengthDimension);
@@ -1471,12 +1419,13 @@ const FloorCanvas = ({
                 dimension: dimensionValue,
                 type: 'grouped_width_vertical',
                 color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
-                priority: 2,
+                priority: DIMENSION_CONFIG.PRIORITY.PANEL_GROUP,
                 avoidArea: projectBounds,
                 quantity: panels.length,
                 drawnPositions: new Set(),
                 roomId: effectiveRoomId,
-                isHorizontal: true
+                isHorizontal: true,
+                groupBounds: { minX, maxX, minY, maxY }
             };
             if (visibilityState.panel !== false) {
                 pushOrDraw(widthDimension);
@@ -1495,6 +1444,7 @@ const FloorCanvas = ({
         
         scaleFactor.current = newScale;
         isZoomed.current = true;
+        hasUserPositionedView.current = true;
         setCurrentScale(newScale);
         
         const ctx = canvasRef.current.getContext('2d');
@@ -1515,7 +1465,8 @@ const FloorCanvas = ({
     };
 
     const handleResetZoom = () => {
-        isZoomed.current = false; 
+        isZoomed.current = false;
+        hasUserPositionedView.current = false;
         calculateCanvasTransform();
         const ctx = canvasRef.current.getContext('2d');
         if (ctx) {
@@ -1529,6 +1480,7 @@ const FloorCanvas = ({
 
     const handleMouseDown = (e) => {
         isDraggingCanvas.current = true;
+        hasUserPositionedView.current = true;
         lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };
         e.preventDefault();
     };

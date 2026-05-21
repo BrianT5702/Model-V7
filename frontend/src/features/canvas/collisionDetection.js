@@ -1,6 +1,8 @@
 // Collision detection utilities for dimension labels
 // Shared across wall plan, floor plan, and ceiling plan
 
+import { DIMENSION_CONFIG } from './DimensionConfig.js';
+
 /**
  * Check if two bounding boxes overlap using Axis-Aligned Bounding Box (AABB) algorithm
  * Enhanced with minimum separation distance for better spacing
@@ -37,6 +39,12 @@ export function checkBoxOverlap(box1, box2, minSeparation = 0) {
  * @param {number} minSeparation - Minimum separation distance in pixels (default: 3)
  * @returns {boolean} - True if overlap detected, false otherwise
  */
+/** True when a label can be drawn without overlapping existing labels. */
+export function isLabelPlacementClean(labelBounds, placedLabels, minSeparation = DIMENSION_CONFIG.LABEL_MIN_SEPARATION) {
+    if (!labelBounds || !placedLabels?.length) return true;
+    return !hasLabelOverlap(labelBounds, placedLabels, minSeparation);
+}
+
 export function hasLabelOverlap(labelBounds, placedLabels, minSeparation = 3) {
     // Quick spatial optimization: only check labels that are potentially close
     // Calculate approximate distance to filter out obviously far labels
@@ -304,6 +312,7 @@ export function smartPlacement({
     preferredSide = 'side1',
     lockedSide = null
 }) {
+    const labelGap = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
     // If side is locked, use it directly without evaluating both sides
     if (lockedSide === 'side1' || lockedSide === 'side2') {
         const calculatePosition = lockedSide === 'side1' ? calculatePositionSide1 : calculatePositionSide2;
@@ -313,7 +322,7 @@ export function smartPlacement({
         while (attempts < maxAttempts) {
             const position = calculatePosition(offset);
             const bounds = calculateBounds(position.labelX, position.labelY, textWidth);
-            const overlaps = countOverlaps(bounds, placedLabels, 3);
+            const overlaps = countOverlaps(bounds, placedLabels, labelGap);
             
             if (overlaps === 0) {
                 // Perfect position found
@@ -342,7 +351,7 @@ export function smartPlacement({
             offset: offset - offsetIncrement,
             attempts: attempts,
             side: lockedSide,
-            overlaps: countOverlaps(finalBounds, placedLabels, 3)
+            overlaps: countOverlaps(finalBounds, placedLabels, labelGap)
         };
     }
     
@@ -356,7 +365,7 @@ export function smartPlacement({
     while (attempts1 < maxAttempts) {
         const position1 = calculatePositionSide1(offset1);
         const bounds1 = calculateBounds(position1.labelX, position1.labelY, textWidth);
-        const overlaps1 = countOverlaps(bounds1, placedLabels, 3);
+        const overlaps1 = countOverlaps(bounds1, placedLabels, labelGap);
         
         if (overlaps1 === 0) {
             // Perfect position found - use it immediately
@@ -382,7 +391,7 @@ export function smartPlacement({
     while (attempts2 < maxAttempts) {
         const position2 = calculatePositionSide2(offset2);
         const bounds2 = calculateBounds(position2.labelX, position2.labelY, textWidth);
-        const overlaps2 = countOverlaps(bounds2, placedLabels, 3);
+        const overlaps2 = countOverlaps(bounds2, placedLabels, labelGap);
         
         if (overlaps2 === 0) {
             // Perfect position found - use it immediately

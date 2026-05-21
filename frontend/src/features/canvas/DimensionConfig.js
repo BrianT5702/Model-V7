@@ -3,15 +3,28 @@
 
 export const DIMENSION_CONFIG = {
     // Spacing and positioning
-    BASE_OFFSET: 15,              // Base distance from model boundary (px) - for large dimensions
-    BASE_OFFSET_SMALL: 5,         // Base distance for small dimensions (px) - place near wall
-    PROJECT_BASE_OFFSET: 35,      // Base distance for project dimensions (px) - outermost layer
-    OFFSET_INCREMENT: 20,         // Increment when overlap detected (px)
-    PROJECT_OFFSET_INCREMENT: 30, // Increment for project dimensions (px) - more aggressive
-    MIN_VERTICAL_OFFSET: 30,      // Minimum offset for vertical dimensions (px)
-    MIN_VERTICAL_OFFSET_SMALL: 10, // Minimum offset for small vertical dimensions (px)
-    PROJECT_MIN_VERTICAL_OFFSET: 50, // Minimum offset for project vertical dimensions (px)
-    MAX_ATTEMPTS: 10,             // Maximum collision resolution attempts
+    BASE_OFFSET: 5,               // Base distance from model boundary (px) - for large dimensions
+    BASE_OFFSET_SMALL: 3,         // Legacy small-dimension fallback (px)
+    BASE_OFFSET_NEAR_WALL: 20,    // Minimum screen offset for labels beside a wall (px)
+    NEAR_WALL_CLEARANCE_MM: 90,   // Extra model clearance past half wall thickness (mm)
+    NEAR_WALL_NUDGE_MM: 30,        // Step when pushing label further outside wall (mm)
+    PROJECT_BASE_OFFSET: 14,      // Minimum distance for project dimensions when no wall dims on edge (px)
+    PROJECT_OUTER_GAP_AFTER_WALLS: 8, // Project row sits outside outermost wall row by at least this (px)
+    OFFSET_INCREMENT: 6,          // Increment when overlap detected (px)
+    PROJECT_OFFSET_INCREMENT: 10, // Increment for project dimensions (px) - more aggressive
+    MIN_VERTICAL_OFFSET: 8,       // Minimum offset for vertical dimensions (px)
+    MIN_VERTICAL_OFFSET_SMALL: 5, // Minimum offset for small vertical dimensions (px)
+    PROJECT_MIN_VERTICAL_OFFSET: 18, // Minimum offset for project vertical dimensions (px)
+    MAX_ATTEMPTS: 8,              // Maximum collision resolution attempts
+    LANE_SPACING: 4,              // Extra row step for near-wall / panel lane stacking (px)
+    WALL_EXTERNAL_LANE_SPACING: 12, // Separate rows for full wall dims on the same edge (px)
+    PLAN_GROUPED_LANE_SPACING: 8,   // Ceiling/floor grouped panel dimension rows (px)
+    PLAN_INNER_LANE_SPACING: 6,     // Individual / cut panel dimension rows (px)
+    PLAN_EXTERIOR_SEP_MM: 10,       // Label must clear project envelope by this (mm)
+    PLAN_ROOM_MAX_OFFSET: 40,       // Max px from project edge — room tier
+    PLAN_GROUPED_MAX_OFFSET: 28,    // Max px from project edge — grouped tier
+    PLAN_INNER_MAX_OFFSET: 20,      // Max px from project edge — individual/cut tier
+    LABEL_MIN_SEPARATION: 2,      // Minimum gap between dimension text boxes (px)
     PROJECT_MAX_ATTEMPTS: 15,     // Maximum attempts for project dimensions
     SMALL_DIMENSION_THRESHOLD: 0.15, // Dimension is "small" if < 5% of project size
     
@@ -69,6 +82,12 @@ export const DIMENSION_CONFIG = {
     }
 };
 
+/** Rounded dimension value for canvas/PDF labels (unit implied by drawing standard). */
+export function formatDimensionValue(lengthMm) {
+    const n = Math.round(Number(lengthMm));
+    return Number.isFinite(n) ? `${n}` : '';
+}
+
 /** Thin spaces around × (U+00D7) so grouped counts read clearly on canvas/PDF-style labels */
 const GROUPED_DIM_SEP = '\u2009×\u2009';
 
@@ -103,6 +122,164 @@ export function formatPlanDimensionLabel(dimension, lengthMm) {
  * De-duplication key so room vs grouped vs individual dims with the same mm value can all appear when appropriate.
  * Pass optional `dedupId` (e.g. panel id) on individual/cut dimensions.
  */
+/** Fresh lane counters — reset at the start of each canvas redraw. */
+export function createDimensionLaneCounters() {
+    return { top: 0, bottom: 0, left: 0, right: 0 };
+}
+
+/** Tracks max screen offset used per edge while drawing wall dimensions. */
+export function createDimensionEdgeExtents() {
+    return { top: 0, bottom: 0, left: 0, right: 0 };
+}
+
+export function recordDimensionEdgeExtent(edgeExtents, edge, offsetPx) {
+    if (!edgeExtents || !edge) return;
+    edgeExtents[edge] = Math.max(edgeExtents[edge] ?? 0, offsetPx);
+}
+
+/** Place project-wide dimensions outside the outermost wall dimension row on that edge. */
+export function getProjectDimensionOffsetForEdge(edgeExtents, edge, baseOffset) {
+    const wallMax = edgeExtents?.[edge] ?? 0;
+    const gap = DIMENSION_CONFIG.PROJECT_OUTER_GAP_AFTER_WALLS;
+    return Math.max(baseOffset, wallMax + gap);
+}
+
+/** Measure how far labels (wall/panel) already sit outside the building bbox (screen px). */
+export function syncEdgeExtentsFromPlacedLabels(
+    edgeExtents,
+    placedLabels,
+    clipBoundsModel,
+    scaleFactor,
+    offsetX,
+    offsetY
+) {
+    if (!edgeExtents || !clipBoundsModel || !placedLabels?.length) return;
+    const { minX, maxX, minY, maxY } = clipBoundsModel;
+    const topEdge = minY * scaleFactor + offsetY;
+    const bottomEdge = maxY * scaleFactor + offsetY;
+    const leftEdge = minX * scaleFactor + offsetX;
+    const rightEdge = maxX * scaleFactor + offsetX;
+
+    for (const lb of placedLabels) {
+        if (lb.type !== 'wall' && lb.type !== 'panel') continue;
+        const l = lb.x;
+        const r = lb.x + lb.width;
+        const t = lb.y;
+        const b = lb.y + lb.height;
+        const topOut = topEdge - b;
+        if (topOut > 0) edgeExtents.top = Math.max(edgeExtents.top, topOut);
+        const bottomOut = t - bottomEdge;
+        if (bottomOut > 0) edgeExtents.bottom = Math.max(edgeExtents.bottom, bottomOut);
+        const leftOut = leftEdge - r;
+        if (leftOut > 0) edgeExtents.left = Math.max(edgeExtents.left, leftOut);
+        const rightOut = l - rightEdge;
+        if (rightOut > 0) edgeExtents.right = Math.max(edgeExtents.right, rightOut);
+    }
+}
+
+export function getDimensionEdge(isHorizontal, side) {
+    if (isHorizontal) {
+        return side === 'side2' ? 'bottom' : 'top';
+    }
+    return side === 'side2' ? 'right' : 'left';
+}
+
+/**
+ * Stack dimensions on the same project edge into separate rows (top/bottom/left/right lanes).
+ * @param {number} [laneSpacing] - px between rows; use WALL_EXTERNAL_LANE_SPACING for full wall dims
+ */
+export function consumeDimensionLane(lanes, isHorizontal, side, baseOffset, laneSpacing) {
+    if (!lanes) return baseOffset;
+    const edge = getDimensionEdge(isHorizontal, side);
+    const spacing = laneSpacing ?? DIMENSION_CONFIG.LANE_SPACING;
+    const stackedOffset = baseOffset + lanes[edge] * spacing;
+    lanes[edge]++;
+    return stackedOffset;
+}
+
+/** Lane/base offset for ceiling & floor plan dimensions by priority tier. */
+export function getPlanDimensionLaneConfig(priority) {
+    const p = priority ?? DIMENSION_CONFIG.PRIORITY.PANEL;
+    if (p <= DIMENSION_CONFIG.PRIORITY.ROOM) {
+        return {
+            baseOffset: 10,
+            laneSpacing: DIMENSION_CONFIG.PLAN_GROUPED_LANE_SPACING + 2,
+            maxOffset: DIMENSION_CONFIG.PLAN_ROOM_MAX_OFFSET
+        };
+    }
+    if (p <= DIMENSION_CONFIG.PRIORITY.PANEL_GROUP) {
+        return {
+            baseOffset: 8,
+            laneSpacing: DIMENSION_CONFIG.PLAN_GROUPED_LANE_SPACING,
+            maxOffset: DIMENSION_CONFIG.PLAN_GROUPED_MAX_OFFSET
+        };
+    }
+    return {
+        baseOffset: DIMENSION_CONFIG.BASE_OFFSET_SMALL,
+        laneSpacing: DIMENSION_CONFIG.PLAN_INNER_LANE_SPACING,
+        maxOffset: DIMENSION_CONFIG.PLAN_INNER_MAX_OFFSET
+    };
+}
+
+/** side1 = top/left, side2 = bottom/right — nearest project edge to the measured feature. */
+export function getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) {
+    const { minX, maxX, minY, maxY } = planBounds;
+    if (isHorizontal) {
+        return anchorY - minY <= maxY - anchorY ? 'side1' : 'side2';
+    }
+    return anchorX - minX <= maxX - anchorX ? 'side1' : 'side2';
+}
+
+export function isLabelOutsidePlanArea(
+    labelBounds,
+    planBounds,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    minSeparationMm = DIMENSION_CONFIG.PLAN_EXTERIOR_SEP_MM
+) {
+    if (!planBounds || !labelBounds) return true;
+    const mm = {
+        minX: (labelBounds.x - offsetX) / scaleFactor,
+        maxX: (labelBounds.x + labelBounds.width - offsetX) / scaleFactor,
+        minY: (labelBounds.y - offsetY) / scaleFactor,
+        maxY: (labelBounds.y + labelBounds.height - offsetY) / scaleFactor
+    };
+    const sep = minSeparationMm;
+    return (
+        mm.maxX < planBounds.minX - sep ||
+        mm.minX > planBounds.maxX + sep ||
+        mm.maxY < planBounds.minY - sep ||
+        mm.minY > planBounds.maxY + sep
+    );
+}
+
+/** Label on a project-edge row; span center follows the panel group or dimension line. */
+export function computeExteriorPlanLabelCoords(
+    isHorizontal,
+    side,
+    offsetPx,
+    planBounds,
+    spanMidX,
+    spanMidY,
+    scaleFactor,
+    offsetX,
+    offsetY
+) {
+    const { minX, maxX, minY, maxY } = planBounds;
+    const sf = scaleFactor;
+    if (isHorizontal) {
+        return {
+            labelX: spanMidX * sf + offsetX,
+            labelY: side === 'side1' ? minY * sf + offsetY - offsetPx : maxY * sf + offsetY + offsetPx
+        };
+    }
+    return {
+        labelX: side === 'side1' ? minX * sf + offsetX - offsetPx : maxX * sf + offsetX + offsetPx,
+        labelY: spanMidY * sf + offsetY
+    };
+}
+
 export function planDimensionDedupKey(dimension, lengthMm) {
     const len = Math.round(Number(lengthMm));
     const type = dimension?.type || 'dim';
@@ -116,5 +293,16 @@ export function planDimensionDedupKey(dimension, lengthMm) {
             : 0;
     const extra = dimension?.dedupId != null ? String(dimension.dedupId) : '';
     return `${type}|${room}|${len}|${qty}|${extra}`;
+}
+
+/**
+ * Ceiling canvas: at most one dimension label per rounded mm value per axis
+ * (horizontal vs vertical) for the entire plan — room, grouped, individual, and cut
+ * share the same bucket so "1150" is not drawn twice.
+ */
+export function planCeilingValueDedupKey(lengthMm, isHorizontal) {
+    const len = Math.round(Number(lengthMm));
+    if (!Number.isFinite(len)) return null;
+    return `${isHorizontal ? 'H' : 'V'}:${len}`;
 }
 
