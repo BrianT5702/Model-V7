@@ -20,7 +20,12 @@ def react_asset(asset_type='js'):
     """
     try:
         # Try to find asset-manifest.json in the build directory
-        build_path = os.path.join(settings.BASE_DIR, 'frontend', 'build', 'asset-manifest.json')
+        frontend_build = getattr(
+            settings,
+            'FRONTEND_BUILD_PATH',
+            os.path.join(settings.BASE_DIR, 'frontend', 'build'),
+        )
+        build_path = os.path.join(frontend_build, 'asset-manifest.json')
         
         if not os.path.exists(build_path):
             # Fallback to staticfiles if build directory doesn't exist

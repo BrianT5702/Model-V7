@@ -21,16 +21,20 @@ fi
 
 if [[ -f "$ENV_FILE" ]]; then
     set -a
+    # shellcheck disable=SC1090
     . "$ENV_FILE"
     set +a
 else
     echo "WARN: Env file not found at $ENV_FILE. Continuing with current shell env."
 fi
 
+# Use dist/ for production builds so a root-owned frontend/build/ cannot block deploy
+export FRONTEND_BUILD_DIR="${FRONTEND_BUILD_DIR:-dist}"
+
 echo "==> Install Python dependencies"
 ./venv/bin/pip install -r requirements.txt
 
-echo "==> Build frontend"
+echo "==> Build frontend (output: frontend/$FRONTEND_BUILD_DIR)"
 pushd frontend >/dev/null
 if [[ -d node_modules ]] && [[ ! -w node_modules ]]; then
     echo "ERROR: frontend/node_modules is not writable by $(whoami)."
@@ -38,19 +42,8 @@ if [[ -d node_modules ]] && [[ ! -w node_modules ]]; then
     exit 1
 fi
 npm ci
-if [[ -d build ]]; then
-    echo "==> Remove previous frontend build"
-    rm -rf build || true
-fi
-if [[ -e build ]]; then
-    echo "ERROR: cannot remove frontend/build (likely root-owned). Run once:"
-    echo "  sudo rm -rf $APP_DIR/frontend/build"
-    echo "  sudo chown -R $(whoami):$(whoami) $APP_DIR/frontend"
-    echo "Then re-run: ./deploy.sh"
-    echo "Do not use: sudo ./deploy.sh or sudo npm run build"
-    exit 1
-fi
-npm run build
+rm -rf "$FRONTEND_BUILD_DIR"
+BUILD_PATH="$FRONTEND_BUILD_DIR" npm run build
 popd >/dev/null
 
 echo "==> Run migrations"
@@ -60,3 +53,8 @@ echo "==> Collect static files"
 ./venv/bin/python manage.py collectstatic --noinput --settings=model_builder.settings_production
 
 echo "==> Deploy build complete (restart service separately as sudo user)"
+echo "    Frontend build: $APP_DIR/frontend/$FRONTEND_BUILD_DIR"
+if [[ -d "$APP_DIR/frontend/build" ]]; then
+    echo "WARN: Old frontend/build still exists (may be root-owned). Safe to remove when convenient:"
+    echo "  sudo rm -rf $APP_DIR/frontend/build"
+fi

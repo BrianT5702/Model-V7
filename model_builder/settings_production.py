@@ -96,9 +96,13 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
+# React output dir (deploy uses FRONTEND_BUILD_DIR=dist to avoid stale root-owned frontend/build)
+FRONTEND_BUILD_SUBDIR = os.environ.get('FRONTEND_BUILD_DIR', 'dist')
+FRONTEND_BUILD_PATH = os.path.join(BASE_DIR, 'frontend', FRONTEND_BUILD_SUBDIR)
+
 # Ensure static files are served correctly
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'frontend', 'build'),
+    FRONTEND_BUILD_PATH,
 ]
 
 # Configure whitenoise to serve files from STATICFILES_DIRS
@@ -106,7 +110,7 @@ WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
 
 # Additional whitenoise settings for better static file serving
-WHITENOISE_ROOT = os.path.join(BASE_DIR, 'frontend', 'build')
+WHITENOISE_ROOT = FRONTEND_BUILD_PATH
 WHITENOISE_INDEX_FILE = True
 
 # Ensure static files are collected to the right place
