@@ -32,15 +32,18 @@ echo "==> Install Python dependencies"
 
 echo "==> Build frontend"
 pushd frontend >/dev/null
-if [[ -d node_modules ]] && [[ ! -w node_modules ]]; then
-    echo "ERROR: frontend/node_modules is not writable by $(whoami)."
-    echo "Fix on the server (pick one), then re-run deploy:"
-    echo "  sudo chown -R $(whoami):$(whoami) $APP_DIR/frontend/node_modules"
-    echo "  sudo rm -rf $APP_DIR/frontend/node_modules"
-    echo "Avoid: sudo npm install / sudo npm ci (creates root-owned files)."
-    exit 1
-fi
+for dir in node_modules build; do
+    if [[ -d "$dir" ]] && [[ ! -w "$dir" ]]; then
+        echo "ERROR: frontend/$dir is not writable by $(whoami)."
+        echo "Fix on the server (pick one), then re-run deploy:"
+        echo "  sudo chown -R $(whoami):$(whoami) $APP_DIR/frontend/$dir"
+        echo "  sudo rm -rf $APP_DIR/frontend/$dir"
+        echo "Avoid: sudo npm / sudo deploy / collectstatic as root (creates root-owned files)."
+        exit 1
+    fi
+done
 npm ci
+rm -rf build
 npm run build
 popd >/dev/null
 
