@@ -50,7 +50,20 @@ echo "==> Run migrations"
 ./venv/bin/python manage.py migrate --settings=model_builder.settings_production
 
 echo "==> Collect static files"
-./venv/bin/python manage.py collectstatic --noinput --settings=model_builder.settings_production
+./venv/bin/python manage.py collectstatic --noinput --clear --settings=model_builder.settings_production
+
+echo "==> Verify frontend build matches asset manifest"
+MANIFEST="$APP_DIR/frontend/$FRONTEND_BUILD_DIR/asset-manifest.json"
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "ERROR: Missing $MANIFEST — frontend build did not complete."
+    exit 1
+fi
+MAIN_JS=$(grep -oE 'static/js/main\.[a-f0-9]+\.js' "$MANIFEST" | head -1)
+if [[ -n "$MAIN_JS" && ! -f "$APP_DIR/frontend/$FRONTEND_BUILD_DIR/$MAIN_JS" ]]; then
+    echo "ERROR: Manifest references $MAIN_JS but file is missing."
+    exit 1
+fi
+echo "    OK: $MAIN_JS"
 
 echo "==> Deploy build complete (restart service separately as sudo user)"
 echo "    Frontend build: $APP_DIR/frontend/$FRONTEND_BUILD_DIR"
