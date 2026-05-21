@@ -18,13 +18,16 @@ export const DIMENSION_CONFIG = {
     MAX_ATTEMPTS: 8,              // Maximum collision resolution attempts
     LANE_SPACING: 4,              // Extra row step for near-wall / panel lane stacking (px)
     WALL_EXTERNAL_LANE_SPACING: 12, // Separate rows for full wall dims on the same edge (px)
-    PLAN_GROUPED_LANE_SPACING: 8,   // Ceiling/floor grouped panel dimension rows (px)
-    PLAN_INNER_LANE_SPACING: 6,     // Individual / cut panel dimension rows (px)
+    PLAN_GROUPED_LANE_SPACING: 10,  // Ceiling/floor grouped panel dimension rows (px)
+    PLAN_INNER_LANE_SPACING: 8,     // Individual / cut panel dimension rows (px)
     PLAN_EXTERIOR_SEP_MM: 10,       // Label must clear project envelope by this (mm)
-    PLAN_ROOM_MAX_OFFSET: 40,       // Max px from project edge — room tier
-    PLAN_GROUPED_MAX_OFFSET: 28,    // Max px from project edge — grouped tier
-    PLAN_INNER_MAX_OFFSET: 20,      // Max px from project edge — individual/cut tier
-    LABEL_MIN_SEPARATION: 2,      // Minimum gap between dimension text boxes (px)
+    PLAN_ROOM_MAX_OFFSET: 48,       // Max px from project edge — room tier
+    PLAN_GROUPED_MAX_OFFSET: 36,    // Max px from project edge — grouped tier
+    PLAN_INNER_MAX_OFFSET: 28,      // Max px from project edge — individual/cut tier
+    PDF_PLAN_BASE_OFFSET: 14,       // Minimum exterior offset for plan PDF labels (px)
+    PDF_PLAN_OFFSET_INCREMENT: 9,   // PDF collision nudge step (px)
+    PDF_PLAN_LABEL_SEPARATION: 6,   // Min gap between PDF plan label boxes (px)
+    LABEL_MIN_SEPARATION: 4,      // Minimum gap between dimension text boxes (px)
     PROJECT_MAX_ATTEMPTS: 15,     // Maximum attempts for project dimensions
     SMALL_DIMENSION_THRESHOLD: 0.15, // Dimension is "small" if < 5% of project size
     

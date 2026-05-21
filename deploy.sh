@@ -8,6 +8,20 @@ SERVICE_NAME="${SERVICE_NAME:-gunicorn-ur-model}"
 echo "==> Deploy start"
 cd "$APP_DIR"
 
+if [[ -d .git ]]; then
+    echo "==> Pull latest code"
+    # Discard generated local changes that often block git pull on the server
+    git checkout -- \
+        core/__pycache__ \
+        core/templatetags/__pycache__ \
+        frontend/build \
+        frontend/dist \
+        deploy.sh 2>/dev/null || true
+    git pull --ff-only
+else
+    echo "WARN: Not a git repository — skipping git pull"
+fi
+
 if [[ ! -f "manage.py" ]]; then
     echo "ERROR: manage.py not found in $APP_DIR"
     exit 1
