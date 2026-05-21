@@ -3,7 +3,7 @@ import { calculateOffsetPoints, drawOrthoPlanDimensionGeometryLikeWall, makeLabe
 import {
     DIMENSION_CONFIG,
     formatPlanDimensionLabel,
-    planDimensionDedupKey,
+    planCeilingValueDedupKey,
     createDimensionLaneCounters,
     consumeDimensionLane,
     getPlanDimensionLaneConfig,
@@ -98,6 +98,7 @@ const FloorCanvas = ({
     const dimensionPlacementMemory = useRef(new Map());
     // Track which dimension VALUES (in mm) have already been drawn in this floor plan (match ceiling behavior)
     const dimensionValuesSeen = useRef(new Set());
+    const dimensionKeysScheduled = useRef(new Set());
 
     // Create a Lookup Map for Room Strategies to "know" orientation
     const roomStrategies = useMemo(() => {
@@ -793,19 +794,39 @@ const FloorCanvas = ({
     const drawFloorDimensions = (ctx) => {
         if (!modelBounds) return;
 
-        // Clear global dimension-value tracker each redraw (match ceiling: one label per unique size)
+        // Clear global dimension-value tracker each redraw (match ceiling: one label per unique size per axis)
         if (dimensionValuesSeen.current) {
             dimensionValuesSeen.current.clear();
         }
+        dimensionKeysScheduled.current.clear();
 
         const placedLabels = [];
         const allLabels = [];
         const dimensionLanes = createDimensionLaneCounters();
         const drawnDimensions = new Set();
-        const globalDimensionTracker = new Map();
 
         // Collect all dimensions so we can sort by value: smaller inner, larger outer when overlapping
         const dimensionsToDraw = [];
+
+        const getFloorDimensionOrientation = (dimension) => {
+            if (dimension.isHorizontal !== undefined) return dimension.isHorizontal;
+            const dx = dimension.endX - dimension.startX;
+            const dy = dimension.endY - dimension.startY;
+            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            return Math.abs(angle) < 45 || Math.abs(angle) > 135;
+        };
+
+        const scheduleFloorDimension = (dimension, bounds) => {
+            if (typeof dimension.dimension !== 'number') return false;
+            const key = planCeilingValueDedupKey(
+                dimension.dimension,
+                getFloorDimensionOrientation(dimension)
+            );
+            if (key && dimensionKeysScheduled.current.has(key)) return false;
+            if (key) dimensionKeysScheduled.current.add(key);
+            dimensionsToDraw.push({ dimension, bounds });
+            return true;
+        };
 
         // 1. Collect Room Dimensions (Width/Height)
         if (rooms && rooms.length > 0) {
@@ -853,16 +874,9 @@ const FloorCanvas = ({
                     isHorizontal: false
                 };
 
-                const widthGlobalKey = `room_width_${Math.round(roomWidth)}`;
-                const heightGlobalKey = `room_height_${Math.round(roomHeight)}`;
-
-                if (!globalDimensionTracker.has(widthGlobalKey) && (visibilityState.room !== false)) {
-                    dimensionsToDraw.push({ dimension: widthDimension, bounds: projectBounds });
-                    globalDimensionTracker.set(widthGlobalKey, true);
-                }
-                if (!globalDimensionTracker.has(heightGlobalKey) && (visibilityState.room !== false)) {
-                    dimensionsToDraw.push({ dimension: heightDimension, bounds: projectBounds });
-                    globalDimensionTracker.set(heightGlobalKey, true);
+                if (visibilityState.room !== false) {
+                    scheduleFloorDimension(widthDimension, projectBounds);
+                    scheduleFloorDimension(heightDimension, projectBounds);
                 }
             });
         }
@@ -875,7 +889,7 @@ const FloorCanvas = ({
                 const isPanelFloor = room.floor_type === 'panel' || room.floor_type === 'Panel';
                 if (!isPanelFloor) return;
                 const strategy = roomStrategies[room.id] || 'auto';
-                drawPanelDimensions(ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy, dimensionsToDraw, dimensionLanes);
+                drawPanelDimensions(ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, strategy, dimensionsToDraw, dimensionLanes, scheduleFloorDimension);
             });
         }
 
@@ -897,7 +911,7 @@ const FloorCanvas = ({
 
     // [UPDATED] Draw Panel Dimensions with specific Cut Panel filter
     // When dimensionCollector is provided, dimensions are pushed to it instead of drawn (caller sorts and draws so larger value is outer)
-    const drawPanelDimensions = (ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, globalDimensionTracker, strategy, dimensionCollector = null, dimensionLanes = null) => {
+    const drawPanelDimensions = (ctx, room, roomPanels, placedLabels, allLabels, drawnDimensions, strategy, dimensionCollector = null, dimensionLanes = null, scheduleFloorDimension = null) => {
         if (roomPanels.length === 0) return;
 
         // Room dimensions for "don't show if matches room" filter (match ceiling)
@@ -951,7 +965,7 @@ const FloorCanvas = ({
                 drawnValues.add(valueKey);
                 
                 if (visibilityState.panel !== false) {
-                    drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, globalDimensionTracker, dimensionCollector, room.id, dimensionLanes);
+                    drawGroupedPanelDimensions(ctx, panels, dimensionValue, placedLabels, allLabels, isHorizontalStrategy, dimensionCollector, room.id, dimensionLanes, scheduleFloorDimension);
                 }
 
             } else if (panels.length === 1 && shouldShowIndividual) {
@@ -1013,9 +1027,9 @@ const FloorCanvas = ({
                 }
                 
                 if (visibilityState.panel !== false) {
-                    if (dimensionCollector) {
-                        dimensionCollector.push({ dimension: individualDimension, bounds: projectBounds });
-                    } else {
+                    if (dimensionCollector && scheduleFloorDimension) {
+                        scheduleFloorDimension(individualDimension, projectBounds);
+                    } else if (!dimensionCollector) {
                         drawRoomDimensions(ctx, individualDimension, projectBounds, placedLabels, allLabels, dimensionLanes);
                     }
                 }
@@ -1085,9 +1099,9 @@ const FloorCanvas = ({
                 }
                 
                 if (visibilityState.cutPanel !== false) {
-                    if (dimensionCollector) {
-                        dimensionCollector.push({ dimension: cutPanelDimension, bounds: projectBounds });
-                    } else {
+                    if (dimensionCollector && scheduleFloorDimension) {
+                        scheduleFloorDimension(cutPanelDimension, projectBounds);
+                    } else if (!dimensionCollector) {
                         drawRoomDimensions(ctx, cutPanelDimension, projectBounds, placedLabels, allLabels, dimensionLanes);
                     }
                 }
@@ -1102,9 +1116,9 @@ const FloorCanvas = ({
 
         const globalDimensionValues = dimensionValuesSeen.current;
         if (globalDimensionValues && typeof length === 'number') {
-            const dedupKey = planDimensionDedupKey(dimension, length);
-            if (globalDimensionValues.has(dedupKey)) return;
-            globalDimensionValues.add(dedupKey);
+            const dedupKey = planCeilingValueDedupKey(length, isHorizontal);
+            if (dedupKey && globalDimensionValues.has(dedupKey)) return;
+            if (dedupKey) globalDimensionValues.add(dedupKey);
         }
 
         let isHorizontal;
