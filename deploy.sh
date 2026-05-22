@@ -78,6 +78,10 @@ echo "==> Run migrations"
 ./venv/bin/python manage.py migrate --settings=model_builder.settings_production
 
 echo "==> Collect static files"
+# staticfiles/ may be owned by urmodel from a prior deploy; brian must be able to clear it
+if [[ -d "$APP_DIR/staticfiles" ]]; then
+    sudo chown -R "$(whoami):$(whoami)" "$APP_DIR/staticfiles" 2>/dev/null || true
+fi
 ./venv/bin/python manage.py collectstatic --noinput --clear --settings=model_builder.settings_production
 
 echo "==> Verify frontend build matches asset manifest"
