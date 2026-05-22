@@ -1,7 +1,7 @@
-# One-command deploy: build on PC -> pull on server -> upload dist -> deploy
+# One-command deploy: build on PC -> sync server -> upload dist -> deploy
 # Usage (from repo root):
-#   .\publish.ps1           # after Commit & Push in Cursor
-#   .\publish.ps1 -Push     # git push, then deploy
+#   .\publish.ps1
+#   .\publish.ps1 -Push
 
 param(
     [switch]$Push,
@@ -36,36 +36,33 @@ $mainJsMatch = Select-String -Path "$Root\frontend\dist\asset-manifest.json" -Pa
 $mainJsPath = if ($mainJsMatch) { $mainJsMatch.Matches.Value } else { $null }
 if ($mainJsPath) { Write-Host "    Built: $mainJsPath" }
 
-Write-Host "==> Server: git pull"
-# Single-line bash (avoids Windows CRLF breaking ssh remote commands)
-$pullCmd = "cd $RemoteApp && git ls-files '*.pyc' 2>/dev/null | xargs -r git checkout -- 2>/dev/null; git ls-files 'frontend/dist' 2>/dev/null | xargs -r git checkout -- 2>/dev/null; git checkout -- core/__pycache__ core/templatetags/__pycache__ frontend/build 2>/dev/null; git pull --ff-only"
-& ssh @SshBase $SshHost $pullCmd
+Write-Host "==> Server: sync code from GitHub (sudo password may be asked)"
+$syncCmd = 'sudo rm -rf {0}/frontend/dist {0}/staticfiles; cd {0} && git fetch origin && git reset --hard origin/main && mkdir -p frontend/dist && chown -R brian:brian frontend/dist' -f $RemoteApp
+& ssh -t @SshBase $SshHost $syncCmd
 if ($LASTEXITCODE -ne 0) {
-    throw "git pull on server failed (exit $LASTEXITCODE). SSH in: cd $RemoteApp && git checkout -- frontend/dist/ && git pull --ff-only"
-}
-
-Write-Host "==> Prepare server dist for upload (sudo password if asked - urmodel-owned dist blocks scp)"
-& ssh -t @SshBase $SshHost "sudo rm -rf $RemoteApp/frontend/dist && mkdir -p $RemoteApp/frontend/dist && sudo chown -R brian:brian $RemoteApp/frontend/dist"
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not prepare frontend/dist on server (exit $LASTEXITCODE). SSH in and run: sudo rm -rf $RemoteApp/frontend/dist && sudo mkdir -p $RemoteApp/frontend/dist && sudo chown -R brian:brian $RemoteApp/frontend/dist"
+    Write-Warning "Server sync failed (exit $LASTEXITCODE). In SSH run:"
+    Write-Warning "  cd ~/ur-model/app; sudo rm -rf frontend/dist staticfiles; git fetch origin; git reset --hard origin/main"
+    throw "Server sync failed - fix SSH manually then re-run publish.ps1"
 }
 
 Write-Host "==> Upload frontend/dist"
 & scp @SshBase -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
 if ($LASTEXITCODE -ne 0) {
-    throw "scp upload failed (exit $LASTEXITCODE). Fix dist permissions on server then re-run publish.ps1"
+    throw "scp upload failed (exit $LASTEXITCODE)"
 }
 
 Write-Host "==> Set dist permissions for Gunicorn (user urmodel)"
-& ssh -t @SshBase $SshHost "sudo chown -R urmodel:urmodel $RemoteApp/frontend/dist && sudo chmod -R 755 $RemoteApp/frontend/dist"
+$chownCmd = 'sudo chown -R urmodel:urmodel {0}/frontend/dist; sudo chmod -R 755 {0}/frontend/dist' -f $RemoteApp
+& ssh -t @SshBase $SshHost $chownCmd
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning "Could not chown dist to urmodel - on server run: sudo chown -R urmodel:urmodel $RemoteApp/frontend/dist && sudo chmod -R 755 $RemoteApp/frontend/dist"
+    Write-Warning "Could not chown dist - on server run: sudo chown -R urmodel:urmodel ~/ur-model/app/frontend/dist"
 }
 
-Write-Host "==> Server: deploy.sh (no sudo - enter SSH key passphrase if asked)"
-& ssh @SshBase $SshHost "cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
+Write-Host "==> Server: deploy.sh"
+$deployCmd = 'cd {0} && SKIP_FRONTEND_BUILD=1 bash deploy.sh' -f $RemoteApp
+& ssh @SshBase $SshHost $deployCmd
 if ($LASTEXITCODE -ne 0) {
-    throw "deploy.sh failed (exit $LASTEXITCODE). SSH in and run: cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
+    throw "deploy.sh failed (exit $LASTEXITCODE)"
 }
 
 Write-Host "==> Check staticfiles/js on server"
@@ -73,18 +70,16 @@ $jsLine = & ssh @SshBase $SshHost "ls -1 $RemoteApp/staticfiles/js/main.*.js 2>/
 if ($jsLine) {
     Write-Host "    OK: $jsLine"
 } else {
-    Write-Warning "No staticfiles/js/main.*.js - on server run: bash scripts/fix-static-on-server.sh"
+    Write-Warning "No staticfiles/js/main.*.js found"
 }
 
-Write-Host "==> Restart gunicorn (separate SSH - enter sudo password)"
+Write-Host "==> Restart gunicorn (enter sudo password)"
 & ssh -t @SshBase $SshHost "sudo systemctl restart gunicorn-ur-model"
 $restartOk = ($LASTEXITCODE -eq 0)
 if ($restartOk) {
     Write-Host "    Restarted OK"
 } else {
-    Write-Warning "Restart step failed or SSH dropped (exit $LASTEXITCODE)."
-    Write-Warning "Open a normal SSH window to the server and run:"
-    Write-Warning "  sudo systemctl restart gunicorn-ur-model"
+    Write-Warning "Restart failed - SSH in and run: sudo systemctl restart gunicorn-ur-model"
 }
 
 if ($mainJsPath -and $restartOk) {
@@ -95,7 +90,7 @@ if ($mainJsPath -and $restartOk) {
         $ct = $resp.Headers['Content-Type']
         Write-Host "    HTTP $($resp.StatusCode) Content-Type: $ct"
         if ($ct -like '*html*') {
-            Write-Warning "Still returning HTML. On server: bash scripts/fix-static-on-server.sh"
+            Write-Warning "Still returning HTML for JS URL"
         }
     } catch {
         Write-Warning "Could not verify URL: $_"
@@ -105,5 +100,5 @@ if ($mainJsPath -and $restartOk) {
 if ($restartOk) {
     Write-Host "==> Publish complete - hard refresh $SiteUrl (Ctrl+Shift+R)"
 } else {
-    Write-Host "==> Deploy files updated but RESTART REQUIRED - then hard refresh $SiteUrl"
+    Write-Host "==> Deploy done but RESTART REQUIRED - then hard refresh $SiteUrl"
 }

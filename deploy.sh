@@ -112,15 +112,16 @@ if [[ -n "$MAIN_JS" ]]; then
     echo "    OK: $MAIN_JS -> staticfiles/$COLLECTED_JS"
 fi
 
-# Gunicorn runs as urmodel; dist must be readable by urmodel AND deploy user (brian)
+# Gunicorn runs as urmodel; dist/staticfiles must be owned by urmodel (use sudo for chmod too)
 if [[ -d "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" ]]; then
     echo "==> Fix permissions on frontend/$FRONTEND_BUILD_DIR for $GUNICORN_USER"
-    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" 2>/dev/null || true
-    sudo chmod -R 755 "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" 2>/dev/null || chmod -R 755 "$APP_DIR/frontend/$FRONTEND_BUILD_DIR"
+    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/frontend/$FRONTEND_BUILD_DIR"
+    sudo chmod -R 755 "$APP_DIR/frontend/$FRONTEND_BUILD_DIR"
 fi
 if [[ -d "$APP_DIR/staticfiles" ]]; then
-    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/staticfiles" 2>/dev/null || true
-    sudo chmod -R 755 "$APP_DIR/staticfiles" 2>/dev/null || chmod -R 755 "$APP_DIR/staticfiles"
+    echo "==> Fix permissions on staticfiles for $GUNICORN_USER"
+    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/staticfiles"
+    sudo chmod -R 755 "$APP_DIR/staticfiles"
 fi
 
 echo "==> Deploy build complete"
