@@ -39,10 +39,23 @@ if ($mainJsPath) { Write-Host "    Built: $mainJsPath" }
 Write-Host "==> Server: git pull"
 & ssh @SshBase $SshHost "cd $RemoteApp && git checkout -- core/__pycache__ core/templatetags/__pycache__ 2>/dev/null || true && git pull --ff-only"
 
+Write-Host "==> Prepare server dist for upload (sudo password if asked - urmodel-owned dist blocks scp)"
+& ssh -t @SshBase $SshHost "sudo rm -rf $RemoteApp/frontend/dist && mkdir -p $RemoteApp/frontend/dist && sudo chown -R brian:brian $RemoteApp/frontend/dist"
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not prepare frontend/dist on server (exit $LASTEXITCODE). SSH in and run: sudo rm -rf $RemoteApp/frontend/dist && sudo mkdir -p $RemoteApp/frontend/dist && sudo chown -R brian:brian $RemoteApp/frontend/dist"
+}
+
 Write-Host "==> Upload frontend/dist"
-& scp -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
-# Gunicorn runs as urmodel; 755 so urmodel + deploy user (brian) can both read dist
-& ssh @SshBase $SshHost "sudo chown -R urmodel:urmodel $RemoteApp/frontend/dist 2>/dev/null; sudo chmod -R 755 $RemoteApp/frontend/dist 2>/dev/null || chmod -R 755 $RemoteApp/frontend/dist"
+& scp @SshBase -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
+if ($LASTEXITCODE -ne 0) {
+    throw "scp upload failed (exit $LASTEXITCODE). Fix dist permissions on server then re-run publish.ps1"
+}
+
+Write-Host "==> Set dist permissions for Gunicorn (user urmodel)"
+& ssh -t @SshBase $SshHost "sudo chown -R urmodel:urmodel $RemoteApp/frontend/dist && sudo chmod -R 755 $RemoteApp/frontend/dist"
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Could not chown dist to urmodel - on server run: sudo chown -R urmodel:urmodel $RemoteApp/frontend/dist && sudo chmod -R 755 $RemoteApp/frontend/dist"
+}
 
 Write-Host "==> Server: deploy.sh (no sudo - enter SSH key passphrase if asked)"
 & ssh @SshBase $SshHost "cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
