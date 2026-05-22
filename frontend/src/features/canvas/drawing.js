@@ -8,6 +8,7 @@ import {
     createDimensionLaneCounters,
     createDimensionEdgeExtents,
     consumeDimensionLane,
+    consumeDimensionLaneByEdge,
     recordDimensionEdgeExtent,
     getProjectDimensionOffsetForEdge,
     syncEdgeExtentsFromPlacedLabels,
@@ -294,10 +295,191 @@ function getExteriorNormalUnit(wall, rooms, modelBounds) {
 function computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize) {
     const thicknessMm = wall?.thickness || 100;
     const fromWallMm = thicknessMm / 2 + DIMENSION_CONFIG.NEAR_WALL_CLEARANCE_MM;
+    const wallFacePx = fromWallMm * scaleFactor;
     return Math.max(
         DIMENSION_CONFIG.BASE_OFFSET_NEAR_WALL,
-        fromWallMm * scaleFactor + fontSize * 0.85 + 8
+        wallFacePx + Math.min(fontSize * 0.25, 6) + 2
     );
+}
+
+function findWallLineDataForWall(wallLinesMap, wall) {
+    if (!wallLinesMap || !wall) return null;
+    for (const [, data] of wallLinesMap) {
+        if (data?.wall?.id === wall.id) return data;
+    }
+    return findWallDataForSegment(
+        wallLinesMap,
+        wall.start_x,
+        wall.start_y,
+        wall.end_x,
+        wall.end_y,
+        5
+    );
+}
+
+function isPointInsideWallCorridor(px, py, wallData, scaleFactor, offsetX, offsetY, extraPadPx = 0) {
+    if (!wallData?.line1 || !wallData?.line2) return false;
+    const c = getWallCorridorScreenBounds(
+        wallData.line1,
+        wallData.line2,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        extraPadPx
+    );
+    return (
+        px >= c.x &&
+        px <= c.x + c.width &&
+        py >= c.y &&
+        py <= c.y + c.height
+    );
+}
+
+/**
+ * Near-wall labels: stay close to the wall. Hide only when the label center sits on the
+ * host wall slab or overlaps another label — do not scan every wall (that required extreme zoom).
+ */
+function oppositePlanEdge(edge) {
+    if (edge === 'top') return 'bottom';
+    if (edge === 'bottom') return 'top';
+    if (edge === 'left') return 'right';
+    if (edge === 'right') return 'left';
+    return 'top';
+}
+
+/** Candidate sides for near-wall labels — sorted by least-used lane when placing. */
+function buildNearWallPlacementCandidates(wall, rooms, modelBounds) {
+    const ext = getExteriorNormalUnit(wall, rooms, modelBounds);
+    const dx = wall.end_x - wall.start_x;
+    const dy = wall.end_y - wall.start_y;
+    const isHoriz = Math.abs(dx) >= Math.abs(dy);
+    const list = [];
+    const push = (nx, ny, edge) => {
+        if (!list.some((c) => c.edge === edge)) {
+            list.push({ nx, ny, edge });
+        }
+    };
+    push(ext.nx, ext.ny, exteriorSideName(ext.nx, ext.ny));
+    push(-ext.nx, -ext.ny, oppositePlanEdge(exteriorSideName(ext.nx, ext.ny)));
+    if (isHoriz) {
+        push(-1, 0, 'left');
+        push(1, 0, 'right');
+    } else {
+        push(0, -1, 'top');
+        push(0, 1, 'bottom');
+    }
+    return list;
+}
+
+function isLabelAcceptableForNearWallPlacement(
+    labelX,
+    labelY,
+    labelBounds,
+    placedLabels,
+    hostWallData,
+    scaleFactor,
+    offsetX,
+    offsetY
+) {
+    if (!isLabelPlacementClean(labelBounds, placedLabels, 2)) {
+        return false;
+    }
+    if (!hostWallData) {
+        return true;
+    }
+    const corridor = getWallCorridorScreenBounds(
+        hostWallData.line1,
+        hostWallData.line2,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        0
+    );
+    const wallPx = Math.max(corridor.width, corridor.height);
+    if (wallPx < 6) {
+        return true;
+    }
+    if (isPointInsideWallCorridor(labelX, labelY, hostWallData, scaleFactor, offsetX, offsetY, 1)) {
+        return false;
+    }
+    if (doesLabelOverlapWallCorridor(labelBounds, hostWallData, scaleFactor, offsetX, offsetY, 0)) {
+        const cx = labelX;
+        const cy = labelY;
+        if (!isPointInsideWallCorridor(cx, cy, hostWallData, scaleFactor, offsetX, offsetY, 0)) {
+            return true;
+        }
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Near-wall label: smaller text, stay close to wall, try top/bottom/left/right by lane load.
+ * Returns null if no side is clear (do not push far outward).
+ */
+function tryPlaceNearWallLabel({
+    wall,
+    anchorXModel,
+    anchorYModel,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    fontSize,
+    calculateBounds,
+    textWidth,
+    placedLabels,
+    wallLinesMap,
+    modelBounds,
+    rooms,
+    dimensionLanes = null
+}) {
+    if (!wall) return null;
+    const hostWallData = findWallLineDataForWall(wallLinesMap, wall);
+    const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize);
+    const laneSpacing = DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
+    const candidates = buildNearWallPlacementCandidates(wall, rooms, modelBounds);
+    const sorted = [...candidates].sort((a, b) => {
+        const la = dimensionLanes?.[a.edge] ?? 0;
+        const lb = dimensionLanes?.[b.edge] ?? 0;
+        return la - lb;
+    });
+
+    for (const cand of sorted) {
+        const off = consumeDimensionLaneByEdge(
+            dimensionLanes,
+            cand.edge,
+            baseOff,
+            laneSpacing
+        );
+        const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off;
+        const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off;
+        const bounds = calculateBounds(labelX, labelY, textWidth);
+        if (
+            isLabelAcceptableForNearWallPlacement(
+                labelX,
+                labelY,
+                bounds,
+                placedLabels,
+                hostWallData,
+                scaleFactor,
+                offsetX,
+                offsetY
+            )
+        ) {
+            return {
+                labelX,
+                labelY,
+                bounds,
+                ext: { nx: cand.nx, ny: cand.ny },
+                side: cand.edge,
+                off
+            };
+        }
+        if (dimensionLanes && cand.edge) {
+            dimensionLanes[cand.edge] = Math.max(0, (dimensionLanes[cand.edge] ?? 1) - 1);
+        }
+    }
+    return null;
 }
 
 function labelBoundsToModelBounds(labelBounds, scaleFactor, offsetX, offsetY) {
@@ -1127,6 +1309,15 @@ export function drawDimensions(
     }
     
     fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+    if (modelBounds) {
+        const projectSize = Math.max(
+            (modelBounds.maxX - modelBounds.minX) || 1,
+            (modelBounds.maxY - modelBounds.minY) || 1
+        );
+        if (length < projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD) {
+            fontSize = Math.max(8, fontSize * DIMENSION_CONFIG.NEAR_WALL_FONT_SCALE);
+        }
+    }
     context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
     const text = formatDimMmCanvas(length);
     const textWidth = context.measureText(text).width;
@@ -1195,69 +1386,91 @@ export function drawDimensions(
                 return { x: lx - bw / 2, y: ly - bh / 2, width: bw, height: bh };
             };
 
-            const obliqueBase = consumeDimensionLane(
-                dimensionLanes,
-                false,
-                lockedSide || 'side1',
-                baseOffset,
-                wallLaneSpacing
-            );
-            const placement = smartPlacement({
-                calculatePositionSide1: (off) => {
-                    const mx = (Ps.x + Pe.x) / 2;
-                    const my = (Ps.y + Pe.y) / 2;
-                    return { labelX: mx + nx * off, labelY: my + ny * off };
-                },
-                calculatePositionSide2: (off) => {
-                    const mx = (Ps.x + Pe.x) / 2;
-                    const my = (Ps.y + Pe.y) / 2;
-                    return { labelX: mx - nx * off, labelY: my - ny * off };
-                },
-                calculateBounds: (lx, ly, tw) => obliqueBounds(lx, ly, tw),
-                textWidth: textWidth,
-                placedLabels: placedLabels,
-                baseOffset: obliqueBase,
-                offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
-                maxAttempts: DIMENSION_CONFIG.MAX_ATTEMPTS,
-                preferredSide: 'side1',
-                lockedSide: null
-            });
-
-            let labelX = placement.labelX;
-            let labelY = placement.labelY;
+            let labelX;
+            let labelY;
+            let placement;
+            let obliqueBase = 0;
 
             if (isNearWallDimension && segmentWall) {
-                const ext = getExteriorNormalUnit(segmentWall, rooms, modelBounds);
-                const off = computeNearWallLabelOffsetPx(segmentWall, scaleFactor, fontSize);
-                labelX = wallMidX * scaleFactor + offsetX + ext.nx * off;
-                labelY = wallMidY * scaleFactor + offsetY + ext.ny * off;
-                const nudged = nudgeLabelOutsideWalls(
-                    labelX,
-                    labelY,
-                    (lx, ly, tw) => obliqueBounds(lx, ly, tw),
-                    textWidth,
-                    ext.nx,
-                    ext.ny,
+                const near = tryPlaceNearWallLabel({
+                    wall: segmentWall,
+                    anchorXModel: wallMidX,
+                    anchorYModel: wallMidY,
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    wallLinesMap
+                    fontSize,
+                    calculateBounds: (lx, ly, tw) => obliqueBounds(lx, ly, tw),
+                    textWidth,
+                    placedLabels,
+                    wallLinesMap,
+                    modelBounds,
+                    rooms,
+                    dimensionLanes
+                });
+                if (!near) {
+                    context.restore();
+                    return;
+                }
+                labelX = near.labelX;
+                labelY = near.labelY;
+                placement = { side: 'side1' };
+            } else {
+                obliqueBase = consumeDimensionLane(
+                    dimensionLanes,
+                    false,
+                    lockedSide || 'side1',
+                    baseOffset,
+                    wallLaneSpacing
                 );
-                labelX = nudged.labelX;
-                labelY = nudged.labelY;
-            } else if (wallLinesMap) {
-                let labelBounds = obliqueBounds(labelX, labelY, textWidth);
-                let hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
-                let wallCheckAttempts = 0;
-                const maxWallCheckAttempts = 10;
-                const wallAvoidanceIncrement = 2 * scaleFactor;
-                const sign = placement.side === 'side1' ? 1 : -1;
-                while (hasWallOverlap && wallCheckAttempts < maxWallCheckAttempts) {
-                    labelX += sign * nx * wallAvoidanceIncrement;
-                    labelY += sign * ny * wallAvoidanceIncrement;
-                    labelBounds = obliqueBounds(labelX, labelY, textWidth);
-                    hasWallOverlap = doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY);
-                    wallCheckAttempts++;
+                placement = smartPlacement({
+                    calculatePositionSide1: (off) => {
+                        const mx = (Ps.x + Pe.x) / 2;
+                        const my = (Ps.y + Pe.y) / 2;
+                        return { labelX: mx + nx * off, labelY: my + ny * off };
+                    },
+                    calculatePositionSide2: (off) => {
+                        const mx = (Ps.x + Pe.x) / 2;
+                        const my = (Ps.y + Pe.y) / 2;
+                        return { labelX: mx - nx * off, labelY: my - ny * off };
+                    },
+                    calculateBounds: (lx, ly, tw) => obliqueBounds(lx, ly, tw),
+                    textWidth: textWidth,
+                    placedLabels: placedLabels,
+                    baseOffset: obliqueBase,
+                    offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
+                    maxAttempts: DIMENSION_CONFIG.MAX_ATTEMPTS,
+                    preferredSide: 'side1',
+                    lockedSide: null
+                });
+                labelX = placement.labelX;
+                labelY = placement.labelY;
+                if (wallLinesMap) {
+                    let labelBounds = obliqueBounds(labelX, labelY, textWidth);
+                    let hasWallOverlap = doesLabelOverlapAnyWallLine(
+                        labelBounds,
+                        wallLinesMap,
+                        scaleFactor,
+                        offsetX,
+                        offsetY
+                    );
+                    let wallCheckAttempts = 0;
+                    const maxWallCheckAttempts = 10;
+                    const wallAvoidanceIncrement = 2 * scaleFactor;
+                    const sign = placement.side === 'side1' ? 1 : -1;
+                    while (hasWallOverlap && wallCheckAttempts < maxWallCheckAttempts) {
+                        labelX += sign * nx * wallAvoidanceIncrement;
+                        labelY += sign * ny * wallAvoidanceIncrement;
+                        labelBounds = obliqueBounds(labelX, labelY, textWidth);
+                        hasWallOverlap = doesLabelOverlapAnyWallLine(
+                            labelBounds,
+                            wallLinesMap,
+                            scaleFactor,
+                            offsetX,
+                            offsetY
+                        );
+                        wallCheckAttempts++;
+                    }
                 }
             }
 
@@ -1353,27 +1566,34 @@ export function drawDimensions(
             let side;
 
             if (isNearWallDimension && segmentWall) {
-                const ext = getExteriorNormalUnit(segmentWall, rooms, modelBounds);
-                const off = computeNearWallLabelOffsetPx(segmentWall, scaleFactor, fontSize);
-                labelX = wallMidX * scaleFactor + offsetX + ext.nx * off;
-                labelY = wallMidY * scaleFactor + offsetY + ext.ny * off;
-                const nudged = nudgeLabelOutsideWalls(
-                    labelX,
-                    labelY,
-                    (lx, ly, tw) => calculateHorizontalLabelBounds(lx, ly, tw, 2, 8),
-                    textWidth,
-                    ext.nx,
-                    ext.ny,
+                const near = tryPlaceNearWallLabel({
+                    wall: segmentWall,
+                    anchorXModel: wallMidX,
+                    anchorYModel: wallMidY,
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    wallLinesMap
-                );
-                labelX = nudged.labelX;
-                labelY = nudged.labelY;
-                side = exteriorSideName(ext.nx, ext.ny);
+                    fontSize,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateHorizontalLabelBounds(lx, ly, tw, 2, 8),
+                    textWidth,
+                    placedLabels,
+                    wallLinesMap,
+                    modelBounds,
+                    rooms,
+                    dimensionLanes
+                });
+                if (!near) {
+                    context.restore();
+                    return;
+                }
+                labelX = near.labelX;
+                labelY = near.labelY;
+                side = near.side;
                 if (!storedPlacement) {
-                    dimensionPlacementMemory.set(dimensionKey, { side: ext.ny < 0 ? 'side1' : 'side2' });
+                    dimensionPlacementMemory.set(dimensionKey, {
+                        side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
+                    });
                 }
             } else {
                 const horizontalBase = consumeDimensionLane(
@@ -1513,27 +1733,34 @@ export function drawDimensions(
             let side;
 
             if (isNearWallDimension && segmentWall) {
-                const ext = getExteriorNormalUnit(segmentWall, rooms, modelBounds);
-                const off = computeNearWallLabelOffsetPx(segmentWall, scaleFactor, fontSize);
-                labelX = wallMidX * scaleFactor + offsetX + ext.nx * off;
-                labelY = wallMidY * scaleFactor + offsetY + ext.ny * off;
-                const nudged = nudgeLabelOutsideWalls(
-                    labelX,
-                    labelY,
-                    (lx, ly, tw) => calculateVerticalLabelBounds(lx, ly, tw, 2, 8),
-                    textWidth,
-                    ext.nx,
-                    ext.ny,
+                const near = tryPlaceNearWallLabel({
+                    wall: segmentWall,
+                    anchorXModel: wallMidX,
+                    anchorYModel: wallMidY,
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    wallLinesMap
-                );
-                labelX = nudged.labelX;
-                labelY = nudged.labelY;
-                side = exteriorSideName(ext.nx, ext.ny);
+                    fontSize,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateVerticalLabelBounds(lx, ly, tw, 2, 8),
+                    textWidth,
+                    placedLabels,
+                    wallLinesMap,
+                    modelBounds,
+                    rooms,
+                    dimensionLanes
+                });
+                if (!near) {
+                    context.restore();
+                    return;
+                }
+                labelX = near.labelX;
+                labelY = near.labelY;
+                side = near.side;
                 if (!storedPlacement) {
-                    dimensionPlacementMemory.set(dimensionKey, { side: ext.nx < 0 ? 'side1' : 'side2' });
+                    dimensionPlacementMemory.set(dimensionKey, {
+                        side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
+                    });
                 }
             } else {
                 const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
@@ -2426,6 +2653,8 @@ export function drawWalls({
     const allPanelLabels = [];
     // Collect wall dimension specs so we can sort by length: smaller inner, larger outer when overlapping
     const wallDimensionSpecs = [];
+    const dimensionLanes = createDimensionLaneCounters();
+    const dimensionEdgeExtents = createDimensionEdgeExtents();
 
     // First pass: Calculate all wall lines and store them
     const wallLinesMap = new Map(); // Store line1 and line2 for each wall
@@ -3223,7 +3452,8 @@ export function drawWalls({
                     showPanelDimensions,
                     initialScale,
                     rooms,
-                    wallLinesMap
+                    wallLinesMap,
+                    dimensionLanes
                 );
             }
         }
@@ -3317,8 +3547,6 @@ export function drawWalls({
         }
     }
     // Draw wall dimensions in order of ascending length (smaller inner, larger outer when overlapping)
-    const dimensionLanes = createDimensionLaneCounters();
-    const dimensionEdgeExtents = createDimensionEdgeExtents();
     wallDimensionSpecs.sort((a, b) => a.length - b.length);
     wallDimensionSpecs.forEach((spec) => {
         drawDimensions(
@@ -3400,7 +3628,8 @@ export function drawPanelDivisions(
     showPanelDimensions = true,
     initialScale = 1,
     rooms = [],
-    wallLinesMap = null
+    wallLinesMap = null,
+    dimensionLanes = null
 ) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
     const line1 = wall._line1;
@@ -3611,48 +3840,39 @@ export function drawPanelDivisions(
                 fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
             }
             
-            // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+            fontSize = Math.max(
+                8,
+                fontSize * DIMENSION_CONFIG.NEAR_WALL_FONT_SCALE
+            );
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const textWidth = context.measureText(text).width;
 
             if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-                const ext = getExteriorNormalUnit(wall, rooms, bounds);
-                const off = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize);
-                let labelX = panelMidX * scaleFactor + offsetX + ext.nx * off;
-                let labelY = panelMidY * scaleFactor + offsetY + ext.ny * off;
-                const nudged = nudgeLabelOutsideWalls(
-                    labelX,
-                    labelY,
-                    (lx, ly, tw) => calculateHorizontalLabelBounds(lx, ly, tw, 2, 8),
-                    textWidth,
-                    ext.nx,
-                    ext.ny,
+                const near = tryPlaceNearWallLabel({
+                    wall,
+                    anchorXModel: panelMidX,
+                    anchorYModel: panelMidY,
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    wallLinesMap
-                );
-                labelX = nudged.labelX;
-                labelY = nudged.labelY;
-                const side = exteriorSideName(ext.nx, ext.ny);
-
-                let offset = off;
-                let attempts = 0;
-                const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
-                while (attempts < maxAttempts) {
-                    const labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                    if (isLabelClearOfWalls(labelBounds, placedLabels, wallLinesMap, scaleFactor, offsetX, offsetY)) {
-                        break;
-                    }
-                    labelX += ext.nx * DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    labelY += ext.ny * DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    offset += DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    attempts++;
+                    fontSize,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateHorizontalLabelBounds(lx, ly, tw, 2, 8),
+                    textWidth,
+                    placedLabels,
+                    wallLinesMap,
+                    modelBounds: bounds,
+                    rooms,
+                    dimensionLanes
+                });
+                if (!near) {
+                    accumulated += panelWidth;
+                    continue;
                 }
-                
-                // Calculate final label bounds (use same function for consistency)
-                const finalLabelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
+                const labelX = near.labelX;
+                const labelY = near.labelY;
+                const side = near.side;
+                const finalLabelBounds = near.bounds;
                 
                 const textPadding = 2;
                 const textLeft = labelX - textWidth / 2 - textPadding;
@@ -3709,43 +3929,32 @@ export function drawPanelDivisions(
                      });
                  }
             } else {
-                const ext = getExteriorNormalUnit(wall, rooms, bounds);
-                const off = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize);
-                let labelX = panelMidX * scaleFactor + offsetX + ext.nx * off;
-                let labelY = panelMidY * scaleFactor + offsetY + ext.ny * off;
-                const nudged = nudgeLabelOutsideWalls(
-                    labelX,
-                    labelY,
-                    (lx, ly, tw) => calculateVerticalLabelBounds(lx, ly, tw, 2, 8),
-                    textWidth,
-                    ext.nx,
-                    ext.ny,
+                const near = tryPlaceNearWallLabel({
+                    wall,
+                    anchorXModel: panelMidX,
+                    anchorYModel: panelMidY,
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    wallLinesMap
-                );
-                labelX = nudged.labelX;
-                labelY = nudged.labelY;
-                const side = exteriorSideName(ext.nx, ext.ny);
-
-                let offset = off;
-                let attempts = 0;
-                const maxAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
-                while (attempts < maxAttempts) {
-                    const labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                    if (isLabelClearOfWalls(labelBounds, placedLabels, wallLinesMap, scaleFactor, offsetX, offsetY)) {
-                        break;
-                    }
-                    labelX += ext.nx * DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    labelY += ext.ny * DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    offset += DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    attempts++;
+                    fontSize,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateVerticalLabelBounds(lx, ly, tw, 2, 8),
+                    textWidth,
+                    placedLabels,
+                    wallLinesMap,
+                    modelBounds: bounds,
+                    rooms,
+                    dimensionLanes
+                });
+                if (!near) {
+                    accumulated += panelWidth;
+                    continue;
                 }
-                
-                // Calculate final label bounds (use same function for consistency)
-                const finalLabelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                
+                const labelX = near.labelX;
+                const labelY = near.labelY;
+                const side = near.side;
+                const finalLabelBounds = near.bounds;
+
                 const textPadding = 2;
                 const textTop = labelY - textWidth / 2 - textPadding;
                 const textBottom = labelY + textWidth / 2 + textPadding;

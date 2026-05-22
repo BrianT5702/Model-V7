@@ -5,9 +5,11 @@ export const DIMENSION_CONFIG = {
     // Spacing and positioning
     BASE_OFFSET: 5,               // Base distance from model boundary (px) - for large dimensions
     BASE_OFFSET_SMALL: 3,         // Legacy small-dimension fallback (px)
-    BASE_OFFSET_NEAR_WALL: 20,    // Minimum screen offset for labels beside a wall (px)
-    NEAR_WALL_CLEARANCE_MM: 90,   // Extra model clearance past half wall thickness (mm)
-    NEAR_WALL_NUDGE_MM: 30,        // Step when pushing label further outside wall (mm)
+    BASE_OFFSET_NEAR_WALL: 12,    // Minimum screen offset for labels beside a wall (px)
+    NEAR_WALL_CLEARANCE_MM: 12,   // Gap past wall face in model mm (keep label close to wall)
+    NEAR_WALL_FONT_SCALE: 0.68,    // Smaller text for near-wall / panel dimensions
+    NEAR_WALL_LANE_SPACING: 7,     // Row spacing when spreading across top/bottom/left/right
+    NEAR_WALL_NUDGE_MM: 30,        // Used only for non-near-wall fallback nudging (mm)
     PROJECT_BASE_OFFSET: 14,      // Minimum distance for project dimensions when no wall dims on edge (px)
     PROJECT_OUTER_GAP_AFTER_WALLS: 8, // Project row sits outside outermost wall row by at least this (px)
     OFFSET_INCREMENT: 6,          // Increment when overlap detected (px)
@@ -197,6 +199,15 @@ export function consumeDimensionLane(lanes, isHorizontal, side, baseOffset, lane
     const spacing = laneSpacing ?? DIMENSION_CONFIG.LANE_SPACING;
     const stackedOffset = baseOffset + lanes[edge] * spacing;
     lanes[edge]++;
+    return stackedOffset;
+}
+
+/** Stack near-wall labels on a specific plan edge (top | bottom | left | right). */
+export function consumeDimensionLaneByEdge(lanes, edge, baseOffset, laneSpacing) {
+    if (!lanes || !edge) return baseOffset;
+    const spacing = laneSpacing ?? DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
+    const stackedOffset = baseOffset + (lanes[edge] ?? 0) * spacing;
+    lanes[edge] = (lanes[edge] ?? 0) + 1;
     return stackedOffset;
 }
 
