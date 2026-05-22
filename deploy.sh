@@ -10,16 +10,23 @@ echo "==> Deploy start"
 cd "$APP_DIR"
 
 if [[ -d .git ]]; then
-    echo "==> Pull latest code"
-    # Discard server-generated .pyc changes (all apps, not only core/)
-    # Never checkout frontend/dist — publish.ps1 uploads dist after pull
-    if git ls-files '*.pyc' >/dev/null 2>&1; then
-        git ls-files '*.pyc' | while read -r f; do
-            git checkout -- "$f" 2>/dev/null || true
-        done
+    if [[ "${SKIP_FRONTEND_BUILD:-0}" == "1" ]]; then
+        echo "==> Skip git pull (publish.ps1 already pulled; dist uploaded separately)"
+    else
+        echo "==> Pull latest code"
+        if git ls-files '*.pyc' >/dev/null 2>&1; then
+            git ls-files '*.pyc' | while read -r f; do
+                git checkout -- "$f" 2>/dev/null || true
+            done
+        fi
+        if git ls-files 'frontend/dist' >/dev/null 2>&1; then
+            git ls-files 'frontend/dist' | while read -r f; do
+                git checkout -- "$f" 2>/dev/null || true
+            done
+        fi
+        git checkout -- frontend/build deploy.sh 2>/dev/null || true
+        git pull --ff-only
     fi
-    git checkout -- frontend/build deploy.sh 2>/dev/null || true
-    git pull --ff-only
 else
     echo "WARN: Not a git repository — skipping git pull"
 fi
