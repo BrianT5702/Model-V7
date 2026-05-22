@@ -23,7 +23,8 @@ export const DIMENSION_CONFIG = {
     PLAN_GROUPED_LANE_SPACING: 10,  // Ceiling/floor grouped panel dimension rows (px)
     PLAN_INNER_LANE_SPACING: 8,     // Individual / cut panel dimension rows (px)
     PLAN_EXTERIOR_SEP_MM: 10,       // Label must clear project envelope by this (mm)
-    SPAN_LANE_GAP_MM: 80,           // Min gap along edge before spans need separate rows
+    SPAN_LANE_GAP_MM: 80,           // Min gap between separated spans before a new row (touching ends share a row)
+    SPAN_ENDPOINT_TOUCH_TOL_MM: 2, // End-to-end chain tolerance (model mm)
     PLAN_ROOM_MAX_OFFSET: 48,       // Max px from project edge — room tier
     PLAN_GROUPED_MAX_OFFSET: 36,    // Max px from project edge — grouped tier
     PLAN_INNER_MAX_OFFSET: 28,      // Max px from project edge — individual/cut tier
@@ -139,10 +140,67 @@ export function createDimensionLaneCounters() {
     };
 }
 
+/** Model-mm span along a horizontal or vertical exterior edge. */
+export function getDimensionSpanAlongEdge(dimension, isHorizontal) {
+    const gb = dimension?.groupBounds;
+    if (isHorizontal) {
+        if (gb) return { lo: gb.minX, hi: gb.maxX };
+        return {
+            lo: Math.min(dimension.startX, dimension.endX),
+            hi: Math.max(dimension.startX, dimension.endX)
+        };
+    }
+    if (gb) return { lo: gb.minY, hi: gb.maxY };
+    return {
+        lo: Math.min(dimension.startY, dimension.endY),
+        hi: Math.max(dimension.startY, dimension.endY)
+    };
+}
+
+/**
+ * True when two spans cannot share a row: interior overlap, not chain touch or identical ends.
+ */
+function spansConflictForLane(lo, hi, min, max, gapMm) {
+    const aLo = Math.min(lo, hi);
+    const aHi = Math.max(lo, hi);
+    const bMin = Math.min(min, max);
+    const bMax = Math.max(min, max);
+    const tol = DIMENSION_CONFIG.SPAN_ENDPOINT_TOUCH_TOL_MM;
+
+    // Chain: one end meets the other's start (e.g. 10900 + 14900 + 26900)
+    if (Math.abs(aLo - bMax) <= tol || Math.abs(aHi - bMin) <= tol) {
+        return false;
+    }
+    // Same start and end
+    if (Math.abs(aLo - bMin) <= tol && Math.abs(aHi - bMax) <= tol) {
+        return false;
+    }
+    // Clearly separated along the edge
+    if (aHi <= bMin - gapMm || aLo >= bMax + gapMm) {
+        return false;
+    }
+    // Overlapping extension lines
+    return aLo < bMax - tol && aHi > bMin + tol;
+}
+
 function spanIntervalsOverlap(lo, hi, intervals, gapMm) {
-    return intervals.some(
-        ({ min, max }) => lo < max + gapMm && hi > min - gapMm
-    );
+    return intervals.some(({ min, max }) => spansConflictForLane(lo, hi, min, max, gapMm));
+}
+
+/** Sort plan dims: outer priority tiers first, then left-to-right / bottom-to-top along edge. */
+export function comparePlanDimensionsDrawOrder(entryA, entryB, getIsHorizontal) {
+    const pa = entryA.dimension.priority ?? 99;
+    const pb = entryB.dimension.priority ?? 99;
+    if (pa !== pb) return pb - pa;
+    const horizA = getIsHorizontal(entryA.dimension);
+    const horizB = getIsHorizontal(entryB.dimension);
+    if (horizA === horizB) {
+        const spanA = getDimensionSpanAlongEdge(entryA.dimension, horizA);
+        const spanB = getDimensionSpanAlongEdge(entryB.dimension, horizB);
+        if (spanA.lo !== spanB.lo) return spanA.lo - spanB.lo;
+        if (spanA.hi !== spanB.hi) return spanA.hi - spanB.hi;
+    }
+    return (entryA.dimension.dimension ?? 0) - (entryB.dimension.dimension ?? 0);
 }
 
 /** Tracks max screen offset used per edge while drawing wall dimensions. */
@@ -204,7 +262,7 @@ export function getDimensionEdge(isHorizontal, side) {
 
 /**
  * Assign a dimension row on a project edge. When spanMin/spanMax are given (model mm along the
- * edge), non-overlapping spans share the same row; only overlapping extension lines get a new row.
+ * edge), non-overlapping spans and chain segments (shared start/end) share the same row.
  * @param {number} [spanMin] - span start along edge (model X for horizontal, Y for vertical)
  * @param {number} [spanMax] - span end along edge
  * @param {number} [laneSpacing] - px between rows; use WALL_EXTERNAL_LANE_SPACING for full wall dims

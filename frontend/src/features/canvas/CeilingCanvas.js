@@ -7,6 +7,7 @@ import {
     planCeilingValueDedupKey,
     createDimensionLaneCounters,
     consumeDimensionLane,
+    comparePlanDimensionsDrawOrder,
     getPlanDimensionLaneConfig,
     getPlanExteriorSide,
     isLabelOutsidePlanArea,
@@ -735,12 +736,15 @@ const CeilingCanvas = ({
 
         // Inner panel dims first; room dims last (outermost row), like wall plan project dims
         if (dimensionsToDraw.length > 0) {
-            dimensionsToDraw.sort((a, b) => {
-                const pa = a.dimension.priority ?? 99;
-                const pb = b.dimension.priority ?? 99;
-                if (pa !== pb) return pb - pa;
-                return (a.dimension.dimension ?? 0) - (b.dimension.dimension ?? 0);
-            });
+            dimensionsToDraw.sort((a, b) =>
+                comparePlanDimensionsDrawOrder(a, b, (dim) => {
+                    if (dim.isHorizontal !== undefined) return dim.isHorizontal;
+                    const dx = dim.endX - dim.startX;
+                    const dy = dim.endY - dim.startY;
+                    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                    return Math.abs(angle) < 45 || Math.abs(angle) > 135;
+                })
+            );
             dimensionsToDraw.forEach(({ dimension, bounds }) => {
                 drawCeilingDimension(ctx, dimension, bounds, globalPlacedLabels, globalAllLabels, dimensionLanes);
             });

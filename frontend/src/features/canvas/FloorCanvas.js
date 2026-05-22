@@ -6,6 +6,7 @@ import {
     planCeilingValueDedupKey,
     createDimensionLaneCounters,
     consumeDimensionLane,
+    comparePlanDimensionsDrawOrder,
     getPlanDimensionLaneConfig,
     getPlanExteriorSide,
     isLabelOutsidePlanArea,
@@ -894,12 +895,9 @@ const FloorCanvas = ({
         }
 
         // Draw inner panel dims first; room dims last so they sit on the outermost row
-        dimensionsToDraw.sort((a, b) => {
-            const pa = a.dimension.priority ?? 99;
-            const pb = b.dimension.priority ?? 99;
-            if (pa !== pb) return pb - pa;
-            return (a.dimension.dimension ?? 0) - (b.dimension.dimension ?? 0);
-        });
+        dimensionsToDraw.sort((a, b) =>
+            comparePlanDimensionsDrawOrder(a, b, getFloorDimensionOrientation)
+        );
 
         // 3. Draw in order so larger values get pushed outer when overlapping
         dimensionsToDraw.forEach(({ dimension, bounds }) => {
