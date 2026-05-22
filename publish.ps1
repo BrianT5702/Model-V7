@@ -37,14 +37,9 @@ $mainJsPath = if ($mainJsMatch) { $mainJsMatch.Matches.Value } else { $null }
 if ($mainJsPath) { Write-Host "    Built: $mainJsPath" }
 
 Write-Host "==> Server: git pull"
-$pullScript = @"
-cd $RemoteApp
-git ls-files '*.pyc' 2>/dev/null | while read -r f; do git checkout -- "`$f" 2>/dev/null || true; done
-git ls-files 'frontend/dist' 2>/dev/null | while read -r f; do git checkout -- "`$f" 2>/dev/null || true; done
-git checkout -- core/__pycache__ core/templatetags/__pycache__ frontend/build 2>/dev/null || true
-git pull --ff-only
-"@
-& ssh @SshBase $SshHost $pullScript
+# Single-line bash (avoids Windows CRLF breaking ssh remote commands)
+$pullCmd = "cd $RemoteApp && git ls-files '*.pyc' 2>/dev/null | xargs -r git checkout -- 2>/dev/null; git ls-files 'frontend/dist' 2>/dev/null | xargs -r git checkout -- 2>/dev/null; git checkout -- core/__pycache__ core/templatetags/__pycache__ frontend/build 2>/dev/null; git pull --ff-only"
+& ssh @SshBase $SshHost $pullCmd
 if ($LASTEXITCODE -ne 0) {
     throw "git pull on server failed (exit $LASTEXITCODE). SSH in: cd $RemoteApp && git checkout -- frontend/dist/ && git pull --ff-only"
 }
