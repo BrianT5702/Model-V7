@@ -32,7 +32,10 @@ if not settings.DEBUG:
     # WhiteNoise middleware will handle static files, so we exclude them from the catch-all
     # Use custom view to properly exclude static/media paths
     urlpatterns += [
-        re_path(r'^(?!api/|static/|media/).*$', serve_react_app),
+        re_path(
+            r'^(?!api/|static/|media/|manifest\.json|favicon\.ico|robots\.txt|logo[0-9]+\.png).*$',
+            serve_react_app,
+        ),
     ]
 else:
     # In development, serve static files
