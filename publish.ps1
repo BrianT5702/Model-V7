@@ -37,7 +37,17 @@ $mainJsPath = if ($mainJsMatch) { $mainJsMatch.Matches.Value } else { $null }
 if ($mainJsPath) { Write-Host "    Built: $mainJsPath" }
 
 Write-Host "==> Server: git pull"
-& ssh @SshBase $SshHost "cd $RemoteApp && git checkout -- core/__pycache__ core/templatetags/__pycache__ 2>/dev/null || true && git pull --ff-only"
+$pullScript = @"
+cd $RemoteApp
+git ls-files '*.pyc' 2>/dev/null | while read -r f; do git checkout -- "`$f" 2>/dev/null || true; done
+git ls-files 'frontend/dist' 2>/dev/null | while read -r f; do git checkout -- "`$f" 2>/dev/null || true; done
+git checkout -- core/__pycache__ core/templatetags/__pycache__ frontend/build 2>/dev/null || true
+git pull --ff-only
+"@
+& ssh @SshBase $SshHost $pullScript
+if ($LASTEXITCODE -ne 0) {
+    throw "git pull on server failed (exit $LASTEXITCODE). SSH in: cd $RemoteApp && git checkout -- frontend/dist/ && git pull --ff-only"
+}
 
 Write-Host "==> Prepare server dist for upload (sudo password if asked - urmodel-owned dist blocks scp)"
 & ssh -t @SshBase $SshHost "sudo rm -rf $RemoteApp/frontend/dist && mkdir -p $RemoteApp/frontend/dist && sudo chown -R brian:brian $RemoteApp/frontend/dist"
