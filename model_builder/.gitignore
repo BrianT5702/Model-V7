@@ -1,2 +1,7 @@
-
+.codegpt
+__pycache__/
+*.pyc
+frontend/build/
+frontend/dist/
+debug.log
 .codegpt
