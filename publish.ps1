@@ -58,11 +58,18 @@ if ($LASTEXITCODE -ne 0) {
     Write-Warning "Could not chown dist - on server run: sudo chown -R urmodel:urmodel ~/ur-model/app/frontend/dist"
 }
 
-Write-Host "==> Server: deploy.sh"
+Write-Host "==> Server: deploy.sh (sudo password may be asked)"
 $deployCmd = 'cd {0} && SKIP_FRONTEND_BUILD=1 bash deploy.sh' -f $RemoteApp
-& ssh @SshBase $SshHost $deployCmd
-if ($LASTEXITCODE -ne 0) {
-    throw "deploy.sh failed (exit $LASTEXITCODE)"
+& ssh -t @SshBase $SshHost $deployCmd
+$deployOk = ($LASTEXITCODE -eq 0)
+if (-not $deployOk) {
+    Write-Warning "deploy.sh failed (exit $LASTEXITCODE) - trying finish (staticfiles perms + restart)..."
+    $finishCmd = 'sudo chown -R urmodel:urmodel {0}/staticfiles {0}/frontend/dist; sudo chmod -R 755 {0}/staticfiles {0}/frontend/dist; sudo systemctl restart gunicorn-ur-model' -f $RemoteApp
+    & ssh -t @SshBase $SshHost $finishCmd
+    if ($LASTEXITCODE -ne 0) {
+        throw "deploy.sh failed and finish step failed (exit $LASTEXITCODE)"
+    }
+    Write-Host "    Finish step OK (staticfiles + gunicorn)"
 }
 
 Write-Host "==> Check staticfiles/js on server"
@@ -73,9 +80,14 @@ if ($jsLine) {
     Write-Warning "No staticfiles/js/main.*.js found"
 }
 
-Write-Host "==> Restart gunicorn (enter sudo password)"
-& ssh -t @SshBase $SshHost "sudo systemctl restart gunicorn-ur-model"
-$restartOk = ($LASTEXITCODE -eq 0)
+$restartOk = $false
+if ($deployOk) {
+    Write-Host "==> Restart gunicorn (enter sudo password)"
+    & ssh -t @SshBase $SshHost "sudo systemctl restart gunicorn-ur-model"
+    $restartOk = ($LASTEXITCODE -eq 0)
+} else {
+    $restartOk = $true
+}
 if ($restartOk) {
     Write-Host "    Restarted OK"
 } else {

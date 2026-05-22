@@ -112,17 +112,27 @@ if [[ -n "$MAIN_JS" ]]; then
     echo "    OK: $MAIN_JS -> staticfiles/$COLLECTED_JS"
 fi
 
-# Gunicorn runs as urmodel; dist/staticfiles must be owned by urmodel (use sudo for chmod too)
-if [[ -d "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" ]]; then
-    echo "==> Fix permissions on frontend/$FRONTEND_BUILD_DIR for $GUNICORN_USER"
-    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/frontend/$FRONTEND_BUILD_DIR"
-    sudo chmod -R 755 "$APP_DIR/frontend/$FRONTEND_BUILD_DIR"
-fi
-if [[ -d "$APP_DIR/staticfiles" ]]; then
-    echo "==> Fix permissions on staticfiles for $GUNICORN_USER"
-    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/staticfiles"
-    sudo chmod -R 755 "$APP_DIR/staticfiles"
-fi
+# Gunicorn runs as urmodel. publish.ps1 already chowns dist before deploy when SKIP_FRONTEND_BUILD=1.
+fix_gunicorn_perms() {
+    local path="$1"
+    local label="$2"
+    [[ -d "$path" ]] || return 0
+    if [[ "${SKIP_FRONTEND_BUILD:-0}" == "1" && "$label" == "frontend/$FRONTEND_BUILD_DIR" ]]; then
+        local owner
+        owner="$(stat -c '%U' "$path" 2>/dev/null || echo '')"
+        if [[ "$owner" == "$GUNICORN_USER" ]]; then
+            echo "    $label already owned by $GUNICORN_USER (skip chown)"
+            sudo chmod -R 755 "$path"
+            return 0
+        fi
+    fi
+    echo "==> Fix permissions on $label for $GUNICORN_USER"
+    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$path"
+    sudo chmod -R 755 "$path"
+}
+
+fix_gunicorn_perms "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" "frontend/$FRONTEND_BUILD_DIR"
+fix_gunicorn_perms "$APP_DIR/staticfiles" "staticfiles"
 
 echo "==> Deploy build complete"
 echo "    Restart app: sudo systemctl restart $SERVICE_NAME"
