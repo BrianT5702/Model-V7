@@ -790,6 +790,95 @@ function fallbackExteriorWallDimensionPosition({
     return { labelX, labelY, labelBounds, offset: rowOffsetPx, side };
 }
 
+/**
+ * Exterior wall dim: span lanes group chain segments on one row, but wide text can still
+ * overlap neighbors. Bump rowOffset until label boxes clear placedLabels (exterior always draws).
+ */
+function placeExteriorWallDimensionAvoidingLabels({
+    isHorizontal,
+    side,
+    rowOffsetPx,
+    spanLo,
+    spanHi,
+    anchorX,
+    anchorY,
+    bounds,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    textWidth,
+    placedLabels,
+    paddingH = 2,
+    paddingV = 8
+}) {
+    const sep = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
+    const rowStep = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
+    const maxBumps = DIMENSION_CONFIG.MAX_ATTEMPTS;
+    let rowOffset = rowOffsetPx;
+
+    for (let bump = 0; bump <= maxBumps; bump++) {
+        let placed = tryPlaceExteriorDimensionLabel({
+            isHorizontal,
+            side,
+            rowOffsetPx: rowOffset,
+            spanLo,
+            spanHi,
+            anchorX,
+            anchorY,
+            bounds,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            textWidth,
+            paddingH,
+            paddingV,
+            placedLabels
+        });
+        if (!placed) {
+            placed = fallbackExteriorWallDimensionPosition({
+                isHorizontal,
+                side,
+                rowOffsetPx: rowOffset,
+                anchorX,
+                anchorY,
+                bounds,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                textWidth,
+                paddingH,
+                paddingV
+            });
+        }
+        const labelBounds = isHorizontal
+            ? calculateHorizontalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV)
+            : calculateVerticalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV);
+        if (isLabelPlacementClean(labelBounds, placedLabels, sep)) {
+            return { ...placed, rowOffset, labelBounds };
+        }
+        rowOffset += rowStep;
+    }
+
+    const placed = fallbackExteriorWallDimensionPosition({
+        isHorizontal,
+        side,
+        rowOffsetPx: rowOffset,
+        anchorX,
+        anchorY,
+        bounds,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        textWidth,
+        paddingH,
+        paddingV
+    });
+    const labelBounds = isHorizontal
+        ? calculateHorizontalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV)
+        : calculateVerticalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV);
+    return { ...placed, rowOffset, labelBounds };
+}
+
 function isLabelClearOfWalls(labelBounds, placedLabels, wallLinesMap, scaleFactor, offsetX, offsetY) {
     return isLabelAcceptableForWallDimension(
         labelBounds,
@@ -1966,7 +2055,7 @@ export function drawDimensions(
                     spanLo,
                     spanHi
                 );
-                let placed = tryPlaceExteriorDimensionLabel({
+                const placed = placeExteriorWallDimensionAvoidingLabels({
                     isHorizontal: true,
                     side: placementSide,
                     rowOffsetPx: rowOffset,
@@ -1979,39 +2068,11 @@ export function drawDimensions(
                     offsetX,
                     offsetY,
                     textWidth,
-                    paddingH: 2,
-                    paddingV: 8,
                     placedLabels
                 });
-                if (!placed) {
-                    placed = fallbackExteriorWallDimensionPosition({
-                        isHorizontal: true,
-                        side: placementSide,
-                        rowOffsetPx: rowOffset,
-                        anchorX: wallMidX,
-                        anchorY: wallMidY,
-                        bounds: modelBounds,
-                        scaleFactor,
-                        offsetX,
-                        offsetY,
-                        textWidth,
-                        paddingH: 2,
-                        paddingV: 8
-                    });
-                }
                 labelX = placed.labelX;
                 labelY = placed.labelY;
                 const hEdge = getDimensionEdge(true, placementSide);
-                if (dimensionLanes) {
-                    if (!dimensionLanes._wallExteriorLabelY) {
-                        dimensionLanes._wallExteriorLabelY = {};
-                    }
-                    if (dimensionLanes._wallExteriorLabelY[hEdge] != null) {
-                        labelY = dimensionLanes._wallExteriorLabelY[hEdge];
-                    } else {
-                        dimensionLanes._wallExteriorLabelY[hEdge] = labelY;
-                    }
-                }
                 if (!storedPlacement) {
                     dimensionPlacementMemory.set(dimensionKey, { side: placementSide });
                 }
@@ -2030,7 +2091,7 @@ export function drawDimensions(
                     recordDimensionEdgeExtent(
                         dimensionEdgeExtents,
                         hEdge,
-                        Math.max(rowOffset, hOutPx)
+                        Math.max(placed.rowOffset, hOutPx)
                     );
                 }
             }
@@ -2196,7 +2257,7 @@ export function drawDimensions(
                     spanLo,
                     spanHi
                 );
-                let placed = tryPlaceExteriorDimensionLabel({
+                const placed = placeExteriorWallDimensionAvoidingLabels({
                     isHorizontal: false,
                     side: placementSide,
                     rowOffsetPx: rowOffset,
@@ -2209,26 +2270,8 @@ export function drawDimensions(
                     offsetX,
                     offsetY,
                     textWidth,
-                    paddingH: 2,
-                    paddingV: 8,
                     placedLabels
                 });
-                if (!placed) {
-                    placed = fallbackExteriorWallDimensionPosition({
-                        isHorizontal: false,
-                        side: placementSide,
-                        rowOffsetPx: rowOffset,
-                        anchorX: wallMidX,
-                        anchorY: wallMidY,
-                        bounds: modelBounds,
-                        scaleFactor,
-                        offsetX,
-                        offsetY,
-                        textWidth,
-                        paddingH: 2,
-                        paddingV: 8
-                    });
-                }
                 labelX = placed.labelX;
                 labelY = placed.labelY;
                 const vEdge = getDimensionEdge(false, placementSide);
@@ -2260,7 +2303,7 @@ export function drawDimensions(
                     recordDimensionEdgeExtent(
                         dimensionEdgeExtents,
                         vEdge,
-                        Math.max(rowOffset, vOutPx)
+                        Math.max(placed.rowOffset, vOutPx)
                     );
                 }
             }
