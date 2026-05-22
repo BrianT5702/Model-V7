@@ -500,6 +500,55 @@ class ProjectSerializer(serializers.ModelSerializer):
         return value
 
 
+class ProjectRetrieveSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for project detail (GET retrieve).
+    Nested walls/rooms/doors/intersections are loaded via separate endpoints.
+    """
+    storeys = StoreySerializer(many=True, read_only=True)
+    calculated_height = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Project
+        fields = [
+            'id',
+            'name',
+            'width',
+            'length',
+            'height',
+            'calculated_height',
+            'wall_thickness',
+            'storeys',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_calculated_height(self, obj):
+        max_height = 0.0
+        for room in obj.rooms.all():
+            storey = room.storey
+            base_elevation = (
+                room.base_elevation_mm if room.base_elevation_mm is not None
+                else (storey.elevation_mm if storey else 0.0)
+            )
+            room_height = (
+                room.height if room.height is not None
+                else (storey.default_room_height_mm if storey else 0.0)
+            )
+            top = base_elevation + room_height
+            if top > max_height:
+                max_height = top
+        for storey in obj.storeys.all():
+            base_elevation = storey.elevation_mm or 0.0
+            default_height = storey.default_room_height_mm or 0.0
+            top = base_elevation + default_height
+            if top > max_height:
+                max_height = top
+        if max_height == 0.0:
+            max_height = obj.height or 0.0
+        return max_height
+
+
 class ProjectListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for project list endpoint.

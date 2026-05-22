@@ -8,7 +8,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
 from .serializers import (
-    ProjectSerializer, ProjectListSerializer, StoreySerializer, WallSerializer, RoomSerializer,
+    ProjectSerializer, ProjectListSerializer, ProjectRetrieveSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
     DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer
 )
@@ -39,11 +39,18 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 )
                 .order_by('-updated_at', '-id')
             )
+        if self.action == 'retrieve':
+            return (
+                Project.objects
+                .prefetch_related('storeys', 'rooms', 'rooms__storey')
+            )
         return super().get_queryset()
 
     def get_serializer_class(self):
         if self.action == 'list':
             return ProjectListSerializer
+        if self.action == 'retrieve':
+            return ProjectRetrieveSerializer
         return ProjectSerializer
 
     def create(self, request, *args, **kwargs):
@@ -70,8 +77,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def walls(self, request, pk=None):
         """Retrieve walls associated with a specific project"""
         try:
-            project = Project.objects.get(pk=pk)
-            walls = Wall.objects.filter(project=project)
+            if not Project.objects.filter(pk=pk).exists():
+                return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+            walls = (
+                Wall.objects
+                .filter(project_id=pk)
+                .prefetch_related('windows', 'rooms')
+            )
             serializer = WallSerializer(walls, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Project.DoesNotExist:
@@ -135,7 +147,7 @@ class WallViewSet(viewsets.ModelViewSet):
         """Optionally filter walls by project ID"""
         project_id = self.request.query_params.get('project')
         if project_id:
-            return Wall.objects.filter(project_id=project_id)
+            return Wall.objects.filter(project_id=project_id).prefetch_related('windows', 'rooms')
         return super().get_queryset()
 
     def create(self, request, *args, **kwargs):
@@ -450,11 +462,8 @@ class FloorPanelViewSet(viewsets.ModelViewSet):
         if room_id:
             return FloorPanel.objects.filter(room_id=room_id)
         elif project_id:
-            # Filter by project by getting rooms that belong to the project
-            from .models import Room
-            project_rooms = Room.objects.filter(project_id=project_id)
-            return FloorPanel.objects.filter(room__in=project_rooms)
-        
+            return FloorPanel.objects.filter(room__project_id=project_id)
+
         return super().get_queryset()
 
 class FloorPlanViewSet(viewsets.ModelViewSet):
@@ -469,11 +478,8 @@ class FloorPlanViewSet(viewsets.ModelViewSet):
         if room_id:
             return FloorPlan.objects.filter(room_id=room_id)
         elif project_id:
-            # Filter by project by getting rooms that belong to the project
-            from .models import Room
-            project_rooms = Room.objects.filter(project_id=project_id)
-            return FloorPlan.objects.filter(room__in=project_rooms)
-        
+            return FloorPlan.objects.filter(room__project_id=project_id)
+
         return super().get_queryset()
 
     @action(detail=False, methods=['post'])
@@ -950,7 +956,7 @@ class IntersectionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Optionally filter intersections by project ID"""
-        project_id = self.request.query_params.get('project')
+        project_id = self.request.query_params.get('project') or self.request.query_params.get('projectid')
         if project_id:
             return Intersection.objects.filter(project_id=project_id)
         return super().get_queryset()

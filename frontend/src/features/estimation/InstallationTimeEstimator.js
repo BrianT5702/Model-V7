@@ -260,62 +260,54 @@ const InstallationTimeEstimator = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectData?.width, projectData?.length]);
 
-    // Fetch all project data
+    const hasParentCoreData = Boolean(projectDataFromParent?.id);
+
+    // Fetch project data (reuse parent state when opened from ProjectDetails)
     useEffect(() => {
         const fetchProjectData = async () => {
             try {
                 setIsLoading(true);
                 setError(null);
 
-                // Fetch project details
-                const projectResponse = await api.get(`/projects/${projectId}/`);
-                setProjectData(projectResponse.data);
+                let roomsList = [];
 
-                // Fetch storeys
-                const storeysResponse = await api.get(`/storeys/?project=${projectId}`);
-                setStoreys(storeysResponse.data);
-
-                // Fetch rooms
-                const roomsResponse = await api.get(`/rooms/?project=${projectId}`);
-                setRooms(roomsResponse.data);
-
-                // Fetch ceiling plans for all rooms
-                const ceilingPlansPromises = roomsResponse.data.map(room => 
-                    api.get(`/ceiling-plans/?room=${room.id}`)
-                );
-                const ceilingResponses = await Promise.all(ceilingPlansPromises);
-                const allCeilingPlans = ceilingResponses.flatMap(response => response.data);
-                setCeilingPlans(allCeilingPlans);
-
-                // Fetch floor plans for all rooms
-                const floorPlansPromises = roomsResponse.data.map(room => 
-                    api.get(`/floor-plans/?room=${room.id}`)
-                );
-                const floorResponses = await Promise.all(floorPlansPromises);
-                const allFloorPlans = floorResponses.flatMap(response => response.data);
-                setFloorPlans(allFloorPlans);
-
-                // Fetch walls for panel calculation
-                try {
-                    const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+                if (hasParentCoreData) {
+                    setProjectData(projectDataFromParent);
+                    setStoreys(storeysFromParent || projectDataFromParent.storeys || []);
+                    setRooms(roomsFromParent || []);
+                    setWalls(wallsFromParent || []);
+                    setDoors(doorsFromParent || []);
+                    roomsList = roomsFromParent || [];
+                } else {
+                    const [
+                        projectResponse,
+                        storeysResponse,
+                        roomsResponse,
+                        wallsResponse,
+                        doorsResponse,
+                    ] = await Promise.all([
+                        api.get(`/projects/${projectId}/`),
+                        api.get(`/storeys/?project=${projectId}`),
+                        api.get(`/rooms/?project=${projectId}`),
+                        api.get(`/projects/${projectId}/walls/`),
+                        api.get(`/doors/?project=${projectId}`),
+                    ]);
+                    setProjectData(projectResponse.data);
+                    setStoreys(storeysResponse.data);
+                    setRooms(roomsResponse.data);
                     setWalls(wallsResponse.data);
-                } catch (wallErr) {
-                    console.log('Walls not available');
-                    setWalls([]);
-                }
-
-                // Fetch doors from project data
-                try {
-                    const doorsResponse = await api.get(`/doors/?project=${projectId}`);
                     setDoors(doorsResponse.data);
-                } catch (doorErr) {
-                    console.log('Doors not available');
-                    setDoors([]);
+                    roomsList = roomsResponse.data;
                 }
 
-                // Auto-fetch existing panel data if available
-                await autoFetchExistingPanelData(projectId, roomsResponse.data);
+                const [ceilingPlansResponse, floorPlansResponse] = await Promise.all([
+                    api.get(`/ceiling-plans/?project=${projectId}`),
+                    api.get(`/floor-plans/?project=${projectId}`),
+                ]);
+                setCeilingPlans(ceilingPlansResponse.data);
+                setFloorPlans(floorPlansResponse.data);
 
+                await autoFetchExistingPanelData(projectId, roomsList);
             } catch (err) {
                 console.error('Error fetching project data:', err);
                 setError('Failed to load project data. Please try again.');
@@ -327,9 +319,8 @@ const InstallationTimeEstimator = ({
         if (projectId) {
             fetchProjectData();
         }
-    // Intentionally [projectId] only: auto-fetch runs once per project; listing `autoFetchExistingPanelData` would retrigger every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [projectId]);
+    }, [projectId, hasParentCoreData]);
 
     // Auto-fetch existing panel data from all tabs
     const autoFetchExistingPanelData = async (projectId, rooms) => {
@@ -358,53 +349,32 @@ const InstallationTimeEstimator = ({
             setError(null);
             console.log('🔄 Manual refresh triggered...');
 
-            // Fetch project details
-            const projectResponse = await api.get(`/projects/${projectId}/`);
+            const [
+                projectResponse,
+                storeysResponse,
+                roomsResponse,
+                ceilingPlansResponse,
+                floorPlansResponse,
+                wallsResponse,
+                doorsResponse,
+            ] = await Promise.all([
+                api.get(`/projects/${projectId}/`),
+                api.get(`/storeys/?project=${projectId}`),
+                api.get(`/rooms/?project=${projectId}`),
+                api.get(`/ceiling-plans/?project=${projectId}`),
+                api.get(`/floor-plans/?project=${projectId}`),
+                api.get(`/projects/${projectId}/walls/`),
+                api.get(`/doors/?project=${projectId}`),
+            ]);
             setProjectData(projectResponse.data);
-
-            // Fetch storeys
-            const storeysResponse = await api.get(`/storeys/?project=${projectId}`);
             setStoreys(storeysResponse.data);
-
-            // Fetch rooms
-            const roomsResponse = await api.get(`/rooms/?project=${projectId}`);
             setRooms(roomsResponse.data);
-
-            // Fetch ceiling plans for all rooms
-            const ceilingPlansPromises = roomsResponse.data.map(room => 
-                api.get(`/ceiling-plans/?room=${room.id}`)
-            );
-            const ceilingResponses = await Promise.all(ceilingPlansPromises);
-            const allCeilingPlans = ceilingResponses.flatMap(response => response.data);
-            setCeilingPlans(allCeilingPlans);
-
-            // Fetch floor plans for all rooms
-            const floorPlansPromises = roomsResponse.data.map(room => 
-                api.get(`/floor-plans/?room=${room.id}`)
-            );
-            const floorResponses = await Promise.all(floorPlansPromises);
-            const allFloorPlans = floorResponses.flatMap(response => response.data);
-            setFloorPlans(allFloorPlans);
-
-            // Fetch walls for panel calculation
-            try {
-                const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
-                setWalls(wallsResponse.data);
-                console.log(`✅ Refreshed walls: ${wallsResponse.data.length} walls loaded`);
-            } catch (wallErr) {
-                console.log('Walls not available');
-                setWalls([]);
-            }
-
-            // Fetch doors from project data
-            try {
-                const doorsResponse = await api.get(`/doors/?project=${projectId}`);
-                setDoors(doorsResponse.data);
-                console.log(`✅ Refreshed doors: ${doorsResponse.data.length} doors loaded`);
-            } catch (doorErr) {
-                console.log('Doors not available');
-                setDoors([]);
-            }
+            setCeilingPlans(ceilingPlansResponse.data);
+            setFloorPlans(floorPlansResponse.data);
+            setWalls(wallsResponse.data);
+            setDoors(doorsResponse.data);
+            console.log(`✅ Refreshed walls: ${wallsResponse.data.length} walls loaded`);
+            console.log(`✅ Refreshed doors: ${doorsResponse.data.length} doors loaded`);
 
             // Re-read slab dimensions from localStorage (synced with Floor Plan tab)
             try {
@@ -988,47 +958,28 @@ const InstallationTimeEstimator = ({
             setIsLoading(true);
             console.log('🔄 Manual auto-fetch triggered...');
             
-            // Fetch fresh project data and trigger auto-fetch
-            const projectResponse = await api.get(`/projects/${projectId}/`);
+            const [
+                projectResponse,
+                roomsResponse,
+                ceilingPlansResponse,
+                floorPlansResponse,
+                wallsResponse,
+                doorsResponse,
+            ] = await Promise.all([
+                api.get(`/projects/${projectId}/`),
+                api.get(`/rooms/?project=${projectId}`),
+                api.get(`/ceiling-plans/?project=${projectId}`),
+                api.get(`/floor-plans/?project=${projectId}`),
+                api.get(`/projects/${projectId}/walls/`),
+                api.get(`/doors/?project=${projectId}`),
+            ]);
             setProjectData(projectResponse.data);
-
-            const roomsResponse = await api.get(`/rooms/?project=${projectId}`);
             const rooms = roomsResponse.data;
             setRooms(rooms);
-
-            // Fetch ceiling plans for all rooms
-            const ceilingPlansPromises = rooms.map(room => 
-                api.get(`/ceiling-plans/?room=${room.id}`)
-            );
-            const ceilingResponses = await Promise.all(ceilingPlansPromises);
-            const allCeilingPlans = ceilingResponses.flatMap(response => response.data);
-            setCeilingPlans(allCeilingPlans);
-
-            // Fetch floor plans for all rooms
-            const floorPlansPromises = rooms.map(room => 
-                api.get(`/floor-plans/?room=${room.id}`)
-            );
-            const floorResponses = await Promise.all(floorPlansPromises);
-            const allFloorPlans = floorResponses.flatMap(response => response.data);
-            setFloorPlans(allFloorPlans);
-
-            // Fetch walls for panel calculation
-            try {
-                const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
-                setWalls(wallsResponse.data);
-            } catch (wallErr) {
-                console.log('Walls not available');
-                setWalls([]);
-            }
-
-            // Fetch doors from project data
-            try {
-                const doorsResponse = await api.get(`/doors/?project=${projectId}`);
-                setDoors(doorsResponse.data);
-            } catch (doorErr) {
-                console.log('Doors not available');
-                setDoors([]);
-            }
+            setCeilingPlans(ceilingPlansResponse.data);
+            setFloorPlans(floorPlansResponse.data);
+            setWalls(wallsResponse.data);
+            setDoors(doorsResponse.data);
 
             // Re-read slab dimensions from localStorage (synced with Floor Plan tab)
             try {
@@ -1082,7 +1033,7 @@ const InstallationTimeEstimator = ({
                 // Fetch intersections data needed for proper panel calculation
                 let intersections = [];
                 try {
-                    const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
+                    const intersectionsResponse = await api.get(`/intersections/?project=${projectId}`);
                     intersections = intersectionsResponse.data || [];
                 } catch (intersectionErr) {
                     console.log('Intersections not available, using default joint types');
@@ -1121,13 +1072,8 @@ const InstallationTimeEstimator = ({
             if (ceilingPlans.length > 0) {
                 console.log('🔝 Auto-fetching ceiling panel data from existing plans...');
                 
-                // Get ceiling panels for all rooms
-                const ceilingPanelsPromises = rooms.map(room => 
-                    api.get(`/ceiling-panels/?room=${room.id}`)
-                );
-                
-                const ceilingPanelsResponses = await Promise.all(ceilingPanelsPromises);
-                const allCeilingPanels = ceilingPanelsResponses.flatMap(response => response.data);
+                const ceilingPanelsResponse = await api.get(`/ceiling-panels/?project=${projectId}`);
+                const allCeilingPanels = ceilingPanelsResponse.data;
                 
                 if (allCeilingPanels.length > 0) {
                     // Process ceiling panels similar to CeilingManager
@@ -1332,13 +1278,8 @@ const InstallationTimeEstimator = ({
             if (floorPlans.length > 0) {
                 console.log('🏠 Auto-fetching floor panel data from existing plans...');
                 
-                // Get floor panels for all rooms
-                const floorPanelsPromises = rooms.map(room => 
-                    api.get(`/floor-panels/?room=${room.id}`)
-                );
-                
-                const floorPanelsResponses = await Promise.all(floorPanelsPromises);
-                const allFloorPanels = floorPanelsResponses.flatMap(response => response.data);
+                const floorPanelsResponse = await api.get(`/floor-panels/?project=${projectId}`);
+                const allFloorPanels = floorPanelsResponse.data;
                 
                 if (allFloorPanels.length > 0) {
                     // Process floor panels similar to FloorManager

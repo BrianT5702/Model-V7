@@ -3114,7 +3114,7 @@ const Canvas2D = ({
                                 );
                             }
                           // Refresh joints
-                          const response = await api.get(`/intersections/?projectid=${projectId}`);
+                          const response = await api.get(`/intersections/?project=${projectId}`);
                           onJointsUpdate(response.data);
                           alert("Joint types updated!");
                           

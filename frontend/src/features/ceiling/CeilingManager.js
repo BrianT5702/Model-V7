@@ -1033,32 +1033,33 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
     const loadProjectData = async () => {
         try {
-            // Load project data first
-            const projectResponse = await api.get(`/projects/${parseInt(projectId)}/`);
+            const pid = parseInt(projectId, 10);
+            const [
+                projectResponse,
+                storeysResponse,
+                roomsResponse,
+                wallsResponse,
+                intersectionsResponse,
+            ] = await Promise.all([
+                api.get(`/projects/${pid}/`),
+                api.get(`/storeys/?project=${pid}`),
+                api.get(`/rooms/?project=${pid}`),
+                api.get(`/walls/?project=${pid}`),
+                api.get(`/intersections/?project=${pid}`),
+            ]);
+
             setProjectData(projectResponse.data || null);
-            
-            // Load storeys
-            const storeysResponse = await api.get(`/storeys/?project=${parseInt(projectId)}`);
+
             const loadedStoreys = storeysResponse.data || [];
             setStoreys(loadedStoreys);
-            // Set default storey to first one if available, or null to show all
             if (loadedStoreys.length > 0 && !selectedStoreyId) {
                 setSelectedStoreyId(loadedStoreys[0].id);
             }
-            
-            // Load rooms
-            const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
+
             const loadedRooms = roomsResponse.data || [];
             setAllRooms(loadedRooms);
-            
-            // Load walls
-            const wallsResponse = await api.get(`/walls/?project=${parseInt(projectId)}`);
-            console.log('Walls loaded:', wallsResponse.data);
+
             setAllWalls(wallsResponse.data || []);
-            
-            // Load intersections for the project
-            const intersectionsResponse = await api.get(`/intersections/?project=${parseInt(projectId)}`);
-            console.log('Intersections loaded:', intersectionsResponse.data);
             setAllIntersections(intersectionsResponse.data || []);
             
             // Load existing ceiling plan if any

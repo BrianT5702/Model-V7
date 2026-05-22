@@ -1151,9 +1151,8 @@ export default function useProjectDetails(projectId) {
     setSelectionContext('room');
   };
 
-  // Fetch project details
+  // Fetch project details (parallel requests for faster load)
   const fetchProjectDetails = async () => {
-    // Guard: Don't fetch if projectId is missing or invalid
     if (!projectId || projectId === 'undefined' || projectId === 'null') {
       console.warn('ProjectDetails: projectId is missing or invalid, skipping fetch');
       setProjectLoadError('Invalid project ID. Please navigate to a valid project.');
@@ -1161,28 +1160,28 @@ export default function useProjectDetails(projectId) {
     }
 
     try {
-      const projectResponse = await api.get(`/projects/${projectId}/`);
+      const [
+        projectResponse,
+        wallsResponse,
+        doorsResponse,
+        intersectionsResponse,
+        roomsResponse,
+      ] = await Promise.all([
+        api.get(`/projects/${projectId}/`),
+        api.get(`/projects/${projectId}/walls/`),
+        api.get(`/doors/?project=${projectId}`),
+        api.get(`/intersections/?project=${projectId}`),
+        api.get(`/rooms/?project=${projectId}`),
+      ]);
+
       const projectData = projectResponse.data;
       setProject(projectData);
+      setWalls(wallsResponse.data);
+      setDoors(doorsResponse.data);
+      setJoints(intersectionsResponse.data);
+      setRooms(Array.isArray(roomsResponse.data) ? roomsResponse.data : []);
       await ensureStoreys(projectData);
       setStoreyError('');
-      const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
-      setWalls(wallsResponse.data);
-      console.log('📐 Current Walls:', wallsResponse.data);
-      console.log('📐 Total number of walls:', wallsResponse.data.length);
-      const doorsResponse = await api.get(`/doors/?project=${projectId}`);
-      const doorsData = doorsResponse.data;
-      
-      // Debug: Check if doors have windows
-      doorsData.forEach(door => {
-        if (door.windows && door.windows.length > 0) {
-          console.log(`[useProjectDetails] Door ${door.id} has ${door.windows.length} window(s)`, door.windows);
-        }
-      });
-      
-      setDoors(doorsData);
-      const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
-      setJoints(intersectionsResponse.data);
       setProjectLoadError('');
     } catch (error) {
       console.error('Error fetching project details:', error);
@@ -1195,53 +1194,10 @@ export default function useProjectDetails(projectId) {
   };
 
   useEffect(() => {
-    // Only fetch if projectId is valid
     if (projectId && projectId !== 'undefined' && projectId !== 'null') {
       fetchProjectDetails();
     }
     // eslint-disable-next-line
-  }, [projectId]);
-
-  // Log walls whenever they change
-  useEffect(() => {
-    if (walls && walls.length > 0) {
-      console.log('📐 Current Walls (updated):', walls);
-      console.log('📐 Wall Details:');
-      walls.forEach((wall, index) => {
-        console.log(`  Wall ${index + 1} (ID: ${wall.id}):`, {
-          start: `(${wall.start_x}, ${wall.start_y})`,
-          end: `(${wall.end_x}, ${wall.end_y})`,
-          height: `${wall.height}mm`,
-          thickness: `${wall.thickness}mm`,
-          storey: wall.storey || wall.storey_id,
-          application_type: wall.application_type,
-          is_default: wall.is_default
-        });
-      });
-    } else if (walls && walls.length === 0) {
-      console.log('📐 No walls found in project');
-    }
-  }, [walls]);
-
-  // Fetch rooms
-  useEffect(() => {
-    // Guard: Don't fetch if projectId is missing or invalid
-    if (!projectId || projectId === 'undefined' || projectId === 'null') {
-      console.warn('ProjectDetails: projectId is missing or invalid, skipping rooms fetch');
-      setRooms([]);
-      return;
-    }
-
-    const fetchRooms = async () => {
-      try {
-        const response = await api.get(`/rooms/?project=${projectId}`);
-        setRooms(Array.isArray(response.data) ? response.data : []);
-      } catch (error) {
-        console.error('Error fetching rooms:', error);
-        setRooms([]);
-      }
-    };
-    fetchRooms();
   }, [projectId]);
 
   // 3D view effect

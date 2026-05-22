@@ -3106,7 +3106,7 @@ export function drawVectorWallPlan(
 export async function fetchMergedWallIntersections(api, projectId, wallsForVector) {
     let intersections = [];
     try {
-        const intersectionsResponse = await api.get(`/intersections/?projectid=${projectId}`);
+        const intersectionsResponse = await api.get(`/intersections/?project=${projectId}`);
         const apiIntersections = intersectionsResponse.data || [];
         const calculatedIntersections = findIntersectionPointsBetweenWalls(wallsForVector);
         const mergedIntersections = calculatedIntersections.map((inter) => {

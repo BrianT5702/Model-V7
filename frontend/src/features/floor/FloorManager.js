@@ -123,24 +123,32 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
 
     const loadProjectData = async () => {
         try {
-            // Load project data first
-            const projectResponse = await api.get(`/projects/${parseInt(projectId)}/`);
+            const pid = parseInt(projectId, 10);
+            const [
+                projectResponse,
+                storeysResponse,
+                roomsResponse,
+                wallsResponse,
+                intersectionsResponse,
+            ] = await Promise.all([
+                api.get(`/projects/${pid}/`),
+                api.get(`/storeys/?project=${pid}`),
+                api.get(`/rooms/?project=${pid}`),
+                api.get(`/walls/?project=${pid}`),
+                api.get(`/intersections/?project=${pid}`),
+            ]);
+
             setProjectData(projectResponse.data || null);
 
-            // Load storeys for level selection
-            const storeysResponse = await api.get(`/storeys/?project=${parseInt(projectId)}`);
             const loadedStoreys = storeysResponse.data || [];
             setStoreys(loadedStoreys);
             if (loadedStoreys.length > 0) {
                 setSelectedStoreyId((prev) => prev ?? loadedStoreys[0].id);
             }
-            
-            // Load rooms
-            const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
+
             const rooms = roomsResponse.data || [];
             setAllRooms(rooms);
 
-            // Require at least one room with panel or slab floor to use the floor plan tab
             const panelRooms = rooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel');
             const slabRooms = rooms.filter(room => room.floor_type === 'slab' || room.floor_type === 'Slab');
             const hasPanelOrSlabRooms = panelRooms.length > 0 || slabRooms.length > 0;
@@ -149,16 +157,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                 return;
             }
 
-            console.log(`Found ${panelRooms.length} panel room(s) and ${slabRooms.length} slab room(s) out of ${rooms.length} total rooms`);
-            
-            // Load walls
-            const wallsResponse = await api.get(`/walls/?project=${parseInt(projectId)}`);
-            console.log('Walls loaded:', wallsResponse.data);
             setAllWalls(wallsResponse.data || []);
-            
-            // Load intersections for the project
-            const intersectionsResponse = await api.get(`/intersections/?project=${parseInt(projectId)}`);
-            console.log('Intersections loaded:', intersectionsResponse.data);
             setAllIntersections(intersectionsResponse.data || []);
             
             // Load existing floor plan if any

@@ -22,47 +22,29 @@ const ProjectSummary = ({ projectId }) => {
                 setIsLoading(true);
                 setError(null);
 
-                // Fetch project details
-                const projectResponse = await api.get(`/projects/${projectId}/`);
+                const [
+                    projectResponse,
+                    roomsResponse,
+                    ceilingPlansResponse,
+                    floorPlansResponse,
+                    wallsResponse,
+                    doorsResponse,
+                ] = await Promise.all([
+                    api.get(`/projects/${projectId}/`),
+                    api.get(`/rooms/?project=${projectId}`),
+                    api.get(`/ceiling-plans/?project=${projectId}`),
+                    api.get(`/floor-plans/?project=${projectId}`),
+                    api.get(`/projects/${projectId}/walls/`),
+                    api.get(`/doors/?project=${projectId}`),
+                ]);
+
                 setProjectData(projectResponse.data);
-
-                // Fetch rooms
-                const roomsResponse = await api.get(`/rooms/?project=${projectId}`);
                 setRooms(roomsResponse.data);
-
-                // Fetch ceiling plans for all rooms
-                const ceilingPlansPromises = roomsResponse.data.map(room => 
-                    api.get(`/ceiling-plans/?room=${room.id}`)
-                );
-                const ceilingResponses = await Promise.all(ceilingPlansPromises);
-                const allCeilingPlans = ceilingResponses.flatMap(response => response.data);
-                setCeilingPlans(allCeilingPlans);
-
-                // Fetch floor plans for all rooms
-                const floorPlansPromises = roomsResponse.data.map(room => 
-                    api.get(`/floor-plans/?room=${room.id}`)
-                );
-                const floorResponses = await Promise.all(floorPlansPromises);
-                const allFloorPlans = floorResponses.flatMap(response => response.data);
-                setFloorPlans(allFloorPlans);
-
-                // Fetch walls for panel calculation
-                const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+                setCeilingPlans(ceilingPlansResponse.data);
+                setFloorPlans(floorPlansResponse.data);
                 setWalls(wallsResponse.data);
-
-                // Fetch wall panel list (actual quantities from panel table)
-                try {
-                    const wallPanelResponse = await api.get(`/projects/${projectId}/wall-panel-list/`);
-                    setWallPanelList(wallPanelResponse.data);
-                } catch (wallErr) {
-                    console.log('Wall panel list not available');
-                    setWallPanelList([]);
-                }
-
-                // Fetch doors
-                const doorsResponse = await api.get(`/doors/?project=${projectId}`);
                 setDoors(doorsResponse.data);
-
+                setWallPanelList([]);
             } catch (err) {
                 console.error('Error fetching project data:', err);
                 setError('Failed to load project data. Please try again.');
