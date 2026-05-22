@@ -11,11 +11,11 @@ cd "$APP_DIR"
 if [[ -d .git ]]; then
     echo "==> Pull latest code"
     # Discard generated local changes that often block git pull on the server
+    # Never checkout frontend/dist here — publish.ps1 uploads dist after pull; resetting it causes 404 on JS/CSS
     git checkout -- \
         core/__pycache__ \
         core/templatetags/__pycache__ \
         frontend/build \
-        frontend/dist \
         deploy.sh 2>/dev/null || true
     git pull --ff-only
 else
@@ -91,7 +91,8 @@ if [[ -n "$MAIN_JS" && ! -f "$APP_DIR/frontend/$FRONTEND_BUILD_DIR/$MAIN_JS" ]];
 fi
 echo "    OK: $MAIN_JS"
 
-echo "==> Deploy build complete (restart service separately as sudo user)"
+echo "==> Deploy build complete"
+echo "    Restart app: sudo systemctl restart $SERVICE_NAME"
 echo "    Frontend build: $APP_DIR/frontend/$FRONTEND_BUILD_DIR"
 if [[ -d "$APP_DIR/frontend/build" ]]; then
     echo "WARN: Old frontend/build still exists (may be root-owned). Safe to remove when convenient:"

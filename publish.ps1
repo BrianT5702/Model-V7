@@ -1,9 +1,9 @@
-# One-command deploy: build on PC -> upload dist -> pull + deploy on server
+# One-command deploy: build on PC -> pull on server -> upload dist -> deploy
 # Usage (from repo root):
-#   .\publish.ps1           # deploy (code must already be pushed)
+#   .\publish.ps1           # after Commit & Push in Cursor
 #   .\publish.ps1 -Push     # git push, then deploy
 #
-# Optional env (or edit defaults below):
+# Optional env:
 #   $env:DEPLOY_SSH = "brian@146.190.82.105"
 #   $env:DEPLOY_APP  = "~/ur-model/app"
 
@@ -34,20 +34,19 @@ if (-not (Test-Path "$Root\frontend\dist\asset-manifest.json")) {
     throw "Build failed: frontend\dist\asset-manifest.json missing"
 }
 
-Write-Host "==> Upload frontend/dist to $SshHost"
+$mainJs = Select-String -Path "$Root\frontend\dist\asset-manifest.json" -Pattern 'static/js/main\.[a-f0-9]+\.js' | Select-Object -First 1
+if ($mainJs) { Write-Host "    Built: $($mainJs.Matches.Value)" }
+
+Write-Host "==> Server: git pull"
+ssh $SshHost "cd $RemoteApp && git checkout -- core/__pycache__ core/templatetags/__pycache__ 2>/dev/null || true && git pull --ff-only"
+
+Write-Host "==> Upload frontend/dist"
 scp -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
 
-Write-Host "==> Server: pull + deploy + restart"
-$remote = @"
-set -e
-cd $RemoteApp
-git checkout -- core/__pycache__ core/templatetags/__pycache__ 2>/dev/null || true
-git pull --ff-only
-SKIP_FRONTEND_BUILD=1 bash deploy.sh
-sudo systemctl restart gunicorn-ur-model
-echo '==> Done: https://ur.146-190-82-105.nip.io/'
-"@ -replace "`r`n", "`n"
+Write-Host "==> Server: deploy (collectstatic, etc.)"
+ssh $SshHost "cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
 
-ssh $SshHost $remote
+Write-Host "==> Server: restart gunicorn (interactive sudo — enter password if asked)"
+ssh -t $SshHost "sudo systemctl restart gunicorn-ur-model && echo '==> Restarted OK'"
 
-Write-Host "==> Publish complete"
+Write-Host "==> Publish complete — hard refresh https://ur.146-190-82-105.nip.io/ (Ctrl+Shift+R)"
