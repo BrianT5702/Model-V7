@@ -10,13 +10,14 @@ cd "$APP_DIR"
 
 if [[ -d .git ]]; then
     echo "==> Pull latest code"
-    # Discard generated local changes that often block git pull on the server
-    # Never checkout frontend/dist here — publish.ps1 uploads dist after pull; resetting it causes 404 on JS/CSS
-    git checkout -- \
-        core/__pycache__ \
-        core/templatetags/__pycache__ \
-        frontend/build \
-        deploy.sh 2>/dev/null || true
+    # Discard server-generated .pyc changes (all apps, not only core/)
+    # Never checkout frontend/dist — publish.ps1 uploads dist after pull
+    if git ls-files '*.pyc' >/dev/null 2>&1; then
+        git ls-files '*.pyc' | while read -r f; do
+            git checkout -- "$f" 2>/dev/null || true
+        done
+    fi
+    git checkout -- frontend/build deploy.sh 2>/dev/null || true
     git pull --ff-only
 else
     echo "WARN: Not a git repository — skipping git pull"
