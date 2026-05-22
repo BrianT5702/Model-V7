@@ -12,6 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
+$SshBase = @("-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3")
 
 Set-Location $Root
 
@@ -36,19 +37,39 @@ $mainJsPath = if ($mainJsMatch) { $mainJsMatch.Matches.Value } else { $null }
 if ($mainJsPath) { Write-Host "    Built: $mainJsPath" }
 
 Write-Host "==> Server: git pull"
-ssh $SshHost "cd $RemoteApp && git checkout -- core/__pycache__ core/templatetags/__pycache__ 2>/dev/null || true && git pull --ff-only"
+& ssh @SshBase $SshHost "cd $RemoteApp && git checkout -- core/__pycache__ core/templatetags/__pycache__ 2>/dev/null || true && git pull --ff-only"
 
 Write-Host "==> Upload frontend/dist"
-scp -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
+& scp -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
+# Gunicorn runs as urmodel; 755 so urmodel + deploy user (brian) can both read dist
+& ssh @SshBase $SshHost "sudo chown -R urmodel:urmodel $RemoteApp/frontend/dist 2>/dev/null; sudo chmod -R 755 $RemoteApp/frontend/dist 2>/dev/null || chmod -R 755 $RemoteApp/frontend/dist"
 
-Write-Host "==> Server: deploy + restart (one SSH session - enter passphrase/password when asked)"
-$remote = "cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh && sudo systemctl restart gunicorn-ur-model && ls -1 staticfiles/js/main.*.js | head -1"
-ssh -t $SshHost $remote
+Write-Host "==> Server: deploy.sh (no sudo - enter SSH key passphrase if asked)"
+& ssh @SshBase $SshHost "cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
 if ($LASTEXITCODE -ne 0) {
-    throw "Remote deploy/restart failed (exit $LASTEXITCODE). SSH to server and run: cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh && sudo systemctl restart gunicorn-ur-model"
+    throw "deploy.sh failed (exit $LASTEXITCODE). SSH in and run: cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
 }
 
-if ($mainJsPath) {
+Write-Host "==> Check staticfiles/js on server"
+$jsLine = & ssh @SshBase $SshHost "ls -1 $RemoteApp/staticfiles/js/main.*.js 2>/dev/null | head -1"
+if ($jsLine) {
+    Write-Host "    OK: $jsLine"
+} else {
+    Write-Warning "No staticfiles/js/main.*.js - on server run: bash scripts/fix-static-on-server.sh"
+}
+
+Write-Host "==> Restart gunicorn (separate SSH - enter sudo password)"
+& ssh -t @SshBase $SshHost "sudo systemctl restart gunicorn-ur-model"
+$restartOk = ($LASTEXITCODE -eq 0)
+if ($restartOk) {
+    Write-Host "    Restarted OK"
+} else {
+    Write-Warning "Restart step failed or SSH dropped (exit $LASTEXITCODE)."
+    Write-Warning "Open a normal SSH window to the server and run:"
+    Write-Warning "  sudo systemctl restart gunicorn-ur-model"
+}
+
+if ($mainJsPath -and $restartOk) {
     $checkUrl = "$SiteUrl/$mainJsPath"
     Write-Host "==> Verify: $checkUrl"
     try {
@@ -56,12 +77,15 @@ if ($mainJsPath) {
         $ct = $resp.Headers['Content-Type']
         Write-Host "    HTTP $($resp.StatusCode) Content-Type: $ct"
         if ($ct -like '*html*') {
-            throw "Site still returns HTML for JS (static files not fixed). See server fix below."
+            Write-Warning "Still returning HTML. On server: bash scripts/fix-static-on-server.sh"
         }
     } catch {
-        Write-Warning "Could not verify URL ($checkUrl): $_"
-        Write-Warning "On server run: ls ~/ur-model/app/staticfiles/js/main.*.js"
+        Write-Warning "Could not verify URL: $_"
     }
 }
 
-Write-Host "==> Publish complete - hard refresh $SiteUrl (Ctrl+Shift+R)"
+if ($restartOk) {
+    Write-Host "==> Publish complete - hard refresh $SiteUrl (Ctrl+Shift+R)"
+} else {
+    Write-Host "==> Deploy files updated but RESTART REQUIRED - then hard refresh $SiteUrl"
+}
