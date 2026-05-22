@@ -85,11 +85,19 @@ if [[ ! -f "$MANIFEST" ]]; then
     exit 1
 fi
 MAIN_JS=$(grep -oE 'static/js/main\.[a-f0-9]+\.js' "$MANIFEST" | head -1)
-if [[ -n "$MAIN_JS" && ! -f "$APP_DIR/frontend/$FRONTEND_BUILD_DIR/$MAIN_JS" ]]; then
-    echo "ERROR: Manifest references $MAIN_JS but file is missing."
-    exit 1
+if [[ -n "$MAIN_JS" ]]; then
+    if [[ ! -f "$APP_DIR/frontend/$FRONTEND_BUILD_DIR/$MAIN_JS" ]]; then
+        echo "ERROR: Manifest references $MAIN_JS but file is missing in frontend/$FRONTEND_BUILD_DIR."
+        exit 1
+    fi
+    # After collectstatic, file must be at staticfiles/js/... (not staticfiles/static/js/)
+    COLLECTED_JS="${MAIN_JS#static/}"
+    if [[ ! -f "$APP_DIR/staticfiles/$COLLECTED_JS" ]]; then
+        echo "ERROR: collectstatic did not place $COLLECTED_JS at staticfiles/$COLLECTED_JS"
+        exit 1
+    fi
+    echo "    OK: $MAIN_JS -> staticfiles/$COLLECTED_JS"
 fi
-echo "    OK: $MAIN_JS"
 
 echo "==> Deploy build complete"
 echo "    Restart app: sudo systemctl restart $SERVICE_NAME"

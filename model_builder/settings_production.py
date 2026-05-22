@@ -100,16 +100,17 @@ USE_X_FORWARDED_PORT = True
 FRONTEND_BUILD_SUBDIR = os.environ.get('FRONTEND_BUILD_DIR', 'dist')
 FRONTEND_BUILD_PATH = os.path.join(BASE_DIR, 'frontend', FRONTEND_BUILD_SUBDIR)
 
-# Ensure static files are served correctly
+# CRA puts assets in dist/static/js/... but URLs are /static/js/...
+# Collect from dist/static/ so files land at staticfiles/js/ (not staticfiles/static/js/)
 STATICFILES_DIRS = [
-    FRONTEND_BUILD_PATH,
+    os.path.join(FRONTEND_BUILD_PATH, 'static'),
 ]
 
-# Configure whitenoise to serve files from STATICFILES_DIRS
-WHITENOISE_USE_FINDERS = True
-WHITENOISE_AUTOREFRESH = True
+# Production: serve collected files from STATIC_ROOT (not finders)
+WHITENOISE_USE_FINDERS = False
+WHITENOISE_AUTOREFRESH = False
 
-# Additional whitenoise settings for better static file serving
+# Serve index.html, manifest.json, favicon, etc. from dist root
 WHITENOISE_ROOT = FRONTEND_BUILD_PATH
 WHITENOISE_INDEX_FILE = True
 

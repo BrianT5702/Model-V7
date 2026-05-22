@@ -45,6 +45,7 @@ scp -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
 
 Write-Host "==> Server: deploy (collectstatic, etc.)"
 ssh $SshHost "cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
+ssh $SshHost "cd $RemoteApp && ls -1 staticfiles/js/main.*.js 2>/dev/null | head -1 || echo 'WARN: staticfiles/js/main.*.js missing'"
 
 Write-Host '==> Server: restart gunicorn (enter sudo password if asked)'
 ssh -t $SshHost 'sudo systemctl restart gunicorn-ur-model; echo Restarted OK'
