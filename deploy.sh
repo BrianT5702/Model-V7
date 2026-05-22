@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${ENV_FILE:-/etc/ur-model.env}"
 SERVICE_NAME="${SERVICE_NAME:-gunicorn-ur-model}"
+GUNICORN_USER="${GUNICORN_USER:-urmodel}"
 
 echo "==> Deploy start"
 cd "$APP_DIR"
@@ -98,6 +99,17 @@ if [[ -n "$MAIN_JS" ]]; then
         exit 1
     fi
     echo "    OK: $MAIN_JS -> staticfiles/$COLLECTED_JS"
+fi
+
+# Gunicorn runs as urmodel; dist must be readable by urmodel AND deploy user (brian)
+if [[ -d "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" ]]; then
+    echo "==> Fix permissions on frontend/$FRONTEND_BUILD_DIR for $GUNICORN_USER"
+    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" 2>/dev/null || true
+    sudo chmod -R 755 "$APP_DIR/frontend/$FRONTEND_BUILD_DIR" 2>/dev/null || chmod -R 755 "$APP_DIR/frontend/$FRONTEND_BUILD_DIR"
+fi
+if [[ -d "$APP_DIR/staticfiles" ]]; then
+    sudo chown -R "$GUNICORN_USER:$GUNICORN_USER" "$APP_DIR/staticfiles" 2>/dev/null || true
+    sudo chmod -R 755 "$APP_DIR/staticfiles" 2>/dev/null || chmod -R 755 "$APP_DIR/staticfiles"
 fi
 
 echo "==> Deploy build complete"
