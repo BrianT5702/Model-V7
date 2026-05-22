@@ -48,16 +48,28 @@ export FRONTEND_BUILD_DIR="${FRONTEND_BUILD_DIR:-dist}"
 echo "==> Install Python dependencies"
 ./venv/bin/pip install -r requirements.txt
 
-echo "==> Build frontend (output: frontend/$FRONTEND_BUILD_DIR)"
+echo "==> Frontend (output: frontend/$FRONTEND_BUILD_DIR)"
 pushd frontend >/dev/null
 if [[ -d node_modules ]] && [[ ! -w node_modules ]]; then
     echo "ERROR: frontend/node_modules is not writable by $(whoami)."
     echo "  sudo rm -rf $APP_DIR/frontend/node_modules"
     exit 1
 fi
-npm ci
-rm -rf "$FRONTEND_BUILD_DIR"
-BUILD_PATH="$FRONTEND_BUILD_DIR" npm run build
+# SKIP_FRONTEND_BUILD=1: dist uploaded from PC (see publish.ps1). Avoids OOM on small VPS.
+if [[ "${SKIP_FRONTEND_BUILD:-0}" == "1" ]]; then
+    if [[ ! -f "$FRONTEND_BUILD_DIR/asset-manifest.json" ]]; then
+        echo "ERROR: SKIP_FRONTEND_BUILD=1 but frontend/$FRONTEND_BUILD_DIR is missing."
+        echo "  On your PC run: .\\publish.ps1"
+        exit 1
+    fi
+    echo "    Using uploaded frontend/$FRONTEND_BUILD_DIR (no npm build)"
+else
+    npm ci
+    rm -rf "$FRONTEND_BUILD_DIR"
+    export GENERATE_SOURCEMAP=false
+    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}"
+    BUILD_PATH="$FRONTEND_BUILD_DIR" npm run build
+fi
 popd >/dev/null
 
 echo "==> Run migrations"
