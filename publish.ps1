@@ -46,7 +46,7 @@ scp -r "$Root\frontend\dist" "${SshHost}:${RemoteApp}/frontend/"
 Write-Host "==> Server: deploy (collectstatic, etc.)"
 ssh $SshHost "cd $RemoteApp && SKIP_FRONTEND_BUILD=1 bash deploy.sh"
 
-Write-Host "==> Server: restart gunicorn (interactive sudo — enter password if asked)"
-ssh -t $SshHost "sudo systemctl restart gunicorn-ur-model && echo '==> Restarted OK'"
+Write-Host '==> Server: restart gunicorn (enter sudo password if asked)'
+ssh -t $SshHost 'sudo systemctl restart gunicorn-ur-model; echo Restarted OK'
 
-Write-Host "==> Publish complete — hard refresh https://ur.146-190-82-105.nip.io/ (Ctrl+Shift+R)"
+Write-Host '==> Publish complete - hard refresh https://ur.146-190-82-105.nip.io/ (Ctrl+Shift+R)'
