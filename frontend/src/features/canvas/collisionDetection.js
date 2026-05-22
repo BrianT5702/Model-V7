@@ -119,6 +119,25 @@ export function calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fon
     };
 }
 
+/** Exterior vertical dim text extent (rotated label is tall along Y). */
+export function exteriorVerticalLabelBounds(
+    labelX,
+    labelY,
+    textWidth,
+    fontSize = null,
+    paddingH = 2,
+    paddingV = 8
+) {
+    const axis = calculateVerticalLabelBounds(labelX, labelY, textWidth, paddingH, paddingV);
+    if (!Number.isFinite(fontSize)) return axis;
+    const rot = calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize, paddingH);
+    const x = Math.min(axis.x, rot.x);
+    const y = Math.min(axis.y, rot.y);
+    const r = Math.max(axis.x + axis.width, rot.x + rot.width);
+    const b = Math.max(axis.y + axis.height, rot.y + rot.height);
+    return { x, y, width: r - x, height: b - y };
+}
+
 /** Screen AABB for horizontal dimension text centered at (labelX, labelY). */
 export function calculateNearWallHorizontalDimBounds(labelX, labelY, textWidth, fontSize, padH = 2, padV = 4) {
     const th = Math.max(fontSize * 0.75, 8) + padV * 2;
@@ -504,7 +523,10 @@ export function tryPlaceExteriorDimensionLabel({
     paddingH = 4,
     paddingV = 6,
     placedLabels,
-    minSeparation = DIMENSION_CONFIG.LABEL_MIN_SEPARATION
+    minSeparation = DIMENSION_CONFIG.LABEL_MIN_SEPARATION,
+    fixedLabelX = null,
+    fontSize = null,
+    yBiasPx = 0
 }) {
     if (!bounds || !Number.isFinite(spanLo) || !Number.isFinite(spanHi)) return null;
     const sf = scaleFactor;
@@ -538,22 +560,26 @@ export function tryPlaceExteriorDimensionLabel({
             return clamped.map((labelX) => ({ labelX, labelY: y }));
         }
         const x =
-            side === 'side1'
-                ? minX * sf + ox - rowOffsetPx
-                : maxX * sf + ox + rowOffsetPx;
-        const yCenter = anchorY * sf + oy;
+            fixedLabelX != null && Number.isFinite(fixedLabelX)
+                ? fixedLabelX
+                : side === 'side1'
+                    ? minX * sf + ox - rowOffsetPx
+                    : maxX * sf + ox + rowOffsetPx;
+        const yCenter = anchorY * sf + oy + yBiasPx;
         const yLo = spanLo * sf + oy;
         const yHi = spanHi * sf + oy;
         const halfH = textWidth / 2 + paddingV;
         const usable = Math.max(0, yHi - yLo - 2 * halfH);
-        const step = Math.max(6, Math.min(halfH, usable / 6 || halfH));
-        const ys = [yCenter];
+        const step = Math.max(4, Math.min(halfH / 2, usable / 12 || halfH / 2));
+        const yEndLo = yLo + halfH;
+        const yEndHi = yHi - halfH;
+        const ys = [yEndLo, yEndHi, yCenter];
         for (let d = step; d <= usable / 2 + step; d += step) {
             ys.push(yCenter + d, yCenter - d);
         }
         const clamped = [];
         for (const y of ys) {
-            const cy = Math.max(yLo + halfH, Math.min(yHi - halfH, y));
+            const cy = Math.max(yEndLo, Math.min(yEndHi, y));
             if (!clamped.some((p) => Math.abs(p - cy) < 2)) clamped.push(cy);
         }
         return clamped.map((labelY) => ({ labelX: x, labelY }));
@@ -563,7 +589,7 @@ export function tryPlaceExteriorDimensionLabel({
     for (const { labelX, labelY } of candidates) {
         const labelBounds = isHorizontal
             ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, paddingH, paddingV)
-            : calculateVerticalLabelBounds(labelX, labelY, textWidth, paddingH, paddingV);
+            : exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, paddingH, paddingV);
         if (!hasLabelOverlap(labelBounds, placedLabels, sep)) {
             return { labelX, labelY, labelBounds, offset: rowOffsetPx, side };
         }

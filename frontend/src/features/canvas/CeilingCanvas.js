@@ -1,6 +1,15 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { calculateOffsetPoints, drawOrthoPlanDimensionGeometryLikeWall, makeLabelDrawFn, buildWallOffsetOptions } from './drawing.js';
+import {
+    calculateOffsetPoints,
+    drawOrthoPlanDimensionGeometryLikeWall,
+    makeLabelDrawFn,
+    buildWallOffsetOptions,
+    computeWallPlanDimensionFontSize,
+    placeExteriorWallDimensionAvoidingLabels,
+    resolveWallExteriorPlacementSide
+} from './drawing.js';
 import { calculatePolygonVisualCenter } from './utils.js';
+import { computePlanFitTransform } from './planCanvasUtils.js';
 import {
     DIMENSION_CONFIG,
     formatPlanDimensionLabel,
@@ -11,6 +20,7 @@ import {
     comparePlanDimensionsDrawOrder,
     getPlanDimensionLaneConfig,
     getPlanExteriorSide,
+    getDimensionEdge,
     isLabelOutsidePlanArea,
     computeExteriorPlanLabelCoords
 } from './DimensionConfig.js';
@@ -18,8 +28,7 @@ import {
     hasLabelOverlap,
     calculateHorizontalLabelBounds,
     calculateVerticalLabelBounds,
-    tryPlaceExteriorDimensionLabel,
-    pickExteriorDimensionSide
+    exteriorVerticalLabelBounds
 } from './collisionDetection.js';
 
 // Build a stable identity key for ceiling panels based on thickness + inner/outer finishes
@@ -671,29 +680,22 @@ const CeilingCanvas = ({
             }
         });
 
-        const totalWidth = maxX - minX || 1;
-        const totalHeight = maxY - minY || 1;
+        const fit = computePlanFitTransform(
+            CANVAS_WIDTH,
+            CANVAS_HEIGHT,
+            { minX, maxX, minY, maxY },
+            { padding: PADDING }
+        );
 
-        // Calculate optimal scale - use exact same approach as wall plan
-        const scaleX = (CANVAS_WIDTH - 4 * PADDING) / totalWidth;
-        const scaleY = (CANVAS_HEIGHT - 4 * PADDING) / totalHeight;
-        const optimalScale = Math.min(scaleX, scaleY, 2.0); // Cap at 2x zoom
-
-        // Only set the scale if user hasn't manually zoomed
         if (!isZoomed.current) {
-        scaleFactor.current = optimalScale;
-        setCurrentScale(optimalScale);
+            scaleFactor.current = fit.scale;
+            setCurrentScale(fit.scale);
         }
-        initialScale.current = optimalScale; // Always store the initial scale
+        initialScale.current = fit.scale;
 
-        // Only reset offset if user hasn't manually dragged the canvas
         if (!isDraggingCanvas.current) {
-            // Center all rooms
-            const scaledWidth = totalWidth * optimalScale;
-            const scaledHeight = totalHeight * optimalScale;
-            
-            offsetX.current = (CANVAS_WIDTH - scaledWidth) / 2 - minX * optimalScale;
-            offsetY.current = (CANVAS_HEIGHT - scaledHeight) / 2 - minY * optimalScale;
+            offsetX.current = fit.offsetX;
+            offsetY.current = fit.offsetY;
         }
     };
 
@@ -2325,33 +2327,10 @@ const CeilingCanvas = ({
         let labelX;
         let labelY;
 
-        // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
-        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
-        let fontSize;
-        
-        // Calculate square root scaled font size if user has zoomed in
-        let sqrtScaledFontSize = 0;
-        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
-            // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-            // This means 2x zoom only results in ~1.41x text size, not 2x
-            const zoomRatio = scaleFactor.current / initialScale.current;
-            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-        }
-        
-        // Use the maximum of calculated and square root scaled to prevent discontinuity
-        // This ensures smooth transition when crossing the minimum threshold
-        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-            // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
-            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-        } else {
-            // Above minimum threshold - use max of calculated and square root scaled
-            // This prevents sudden drop when crossing the threshold
-            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-        }
-        
-        // CRITICAL: Final safety check - ensure fontSize is NEVER below minimum (8px)
-        // This handles any edge cases or timing issues
-        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+        const fontSize = computeWallPlanDimensionFontSize(
+            scaleFactor.current,
+            initialScale.current
+        );
         const dimensionFont = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         const previousFont = ctx.font;
         ctx.font = dimensionFont;
@@ -2382,10 +2361,10 @@ const CeilingCanvas = ({
         const sf = scaleFactor.current;
         const ox = offsetX.current;
         const oy = offsetY.current;
-        const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
-        const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
+        const padH = 2;
+        const padV = 8;
 
-        let side = preferredExteriorSide;
+        let side = lockedSide || preferredExteriorSide;
         if (planBounds) {
             const trialOffset = laneCfg.baseOffset;
             const side1Coords = computeExteriorPlanLabelCoords(
@@ -2411,19 +2390,22 @@ const CeilingCanvas = ({
                 oy
             );
             const side1Bounds = isHorizontal
-                ? calculateHorizontalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, pH, pV)
-                : calculateVerticalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, pH, pV);
+                ? calculateHorizontalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV)
+                : calculateVerticalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV);
             const side2Bounds = isHorizontal
-                ? calculateHorizontalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, pH, pV)
-                : calculateVerticalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, pH, pV);
+                ? calculateHorizontalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV)
+                : calculateVerticalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV);
             side =
                 lockedSide ||
-                pickExteriorDimensionSide({
+                resolveWallExteriorPlacementSide({
+                    isHorizontal,
+                    wallMidX: spanMidX,
+                    wallMidY: spanMidY,
+                    modelBounds: planBounds,
+                    dimensionLanes,
                     side1Bounds,
                     side2Bounds,
-                    placedLabels,
-                    preferredSide: preferredExteriorSide,
-                    lockedSide: null
+                    placedLabels
                 });
         }
 
@@ -2432,16 +2414,19 @@ const CeilingCanvas = ({
             isHorizontal,
             side,
             laneCfg.baseOffset,
-            Math.max(laneCfg.laneSpacing, wallLikeSpacing),
+            wallLikeSpacing,
             spanLo,
             spanHi
         );
         offsetPx = Math.min(offsetPx, laneCfg.maxOffset);
 
-        let placement = { side, offset: offsetPx };
-
         if (planBounds) {
-            const placed = tryPlaceExteriorDimensionLabel({
+            const vEdge = !isHorizontal ? getDimensionEdge(false, side) : null;
+            const fixedColumnX =
+                !isHorizontal && dimensionLanes?._wallExteriorLabelX?.[vEdge] != null
+                    ? dimensionLanes._wallExteriorLabelX[vEdge]
+                    : null;
+            const placed = placeExteriorWallDimensionAvoidingLabels({
                 isHorizontal,
                 side,
                 rowOffsetPx: offsetPx,
@@ -2454,27 +2439,24 @@ const CeilingCanvas = ({
                 offsetX: ox,
                 offsetY: oy,
                 textWidth,
-                paddingH: pH,
-                paddingV: pV,
-                placedLabels
+                placedLabels,
+                paddingH: padH,
+                paddingV: padV,
+                fixedLabelX: fixedColumnX,
+                fontSize
             });
-            if (placed) {
-                labelX = placed.labelX;
-                labelY = placed.labelY;
-            } else {
-                ({ labelX, labelY } = computeExteriorPlanLabelCoords(
-                    isHorizontal,
-                    side,
-                    offsetPx,
-                    planBounds,
-                    spanMidX,
-                    spanMidY,
-                    sf,
-                    ox,
-                    oy
-                ));
+            labelX = placed.labelX;
+            labelY = placed.labelY;
+            offsetPx = placed.rowOffset;
+
+            if (!isHorizontal && dimensionLanes) {
+                if (!dimensionLanes._wallExteriorLabelX) {
+                    dimensionLanes._wallExteriorLabelX = {};
+                }
+                if (fixedColumnX == null) {
+                    dimensionLanes._wallExteriorLabelX[vEdge] = labelX;
+                }
             }
-            placement = { side, offset: offsetPx };
         } else {
             labelX = spanMidX * sf + ox;
             labelY = spanMidY * sf + oy;
@@ -2483,64 +2465,14 @@ const CeilingCanvas = ({
         if (!storedPlacement) {
             dimensionPlacementMemory.current.set(dimensionKey, { side });
         }
-        
-        // Final label bounds
-        let finalLabelBounds;
-        if (isHorizontal) {
-            finalLabelBounds = {
-                x: labelX - textWidth / 2 - pH,
-                y: labelY - pV,
-                width: textWidth + pH * 2,
-                height: pV * 2
-            };
-        } else {
-            finalLabelBounds = {
-                x: labelX - pV,
-                y: labelY - textWidth / 2 - pH,
-                width: pV * 2,
-                height: textWidth + pH * 2
-            };
-        }
-        
-        // Final collision check: ensure dimension doesn't overlap with any existing text (room names, other dimensions)
-        // This is a safety check in case smartPlacement didn't catch everything
-        if (hasLabelOverlap(finalLabelBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
-            const adjustment = Math.max(laneCfg.laneSpacing, wallLikeSpacing);
-            if (isHorizontal) {
-                // Try moving up or down
-                const testBounds1 = { ...finalLabelBounds, y: finalLabelBounds.y - adjustment };
-                const testBounds2 = { ...finalLabelBounds, y: finalLabelBounds.y + adjustment };
-                if (!hasLabelOverlap(testBounds1, placedLabels, 5)) {
-                    finalLabelBounds = testBounds1;
-                    labelY -= adjustment;
-                } else if (!hasLabelOverlap(testBounds2, placedLabels, 5)) {
-                    finalLabelBounds = testBounds2;
-                    labelY += adjustment;
-                }
-            } else {
-                // Try moving left or right
-                const testBounds1 = { ...finalLabelBounds, x: finalLabelBounds.x - adjustment };
-                const testBounds2 = { ...finalLabelBounds, x: finalLabelBounds.x + adjustment };
-                if (!hasLabelOverlap(testBounds1, placedLabels, 5)) {
-                    finalLabelBounds = testBounds1;
-                    labelX -= adjustment;
-                } else if (!hasLabelOverlap(testBounds2, placedLabels, 5)) {
-                    finalLabelBounds = testBounds2;
-                    labelX += adjustment;
-                }
-            }
-        }
-        
+
         const dxLine = endX - startX;
         const dyLine = endY - startY;
         const angleDeg = Math.atan2(dyLine, dxLine) * (180 / Math.PI);
-        const startXScreen = startX * scaleFactor.current + offsetX.current;
-        const endXScreen = endX * scaleFactor.current + offsetX.current;
-        const centeredLabelX = (startXScreen + endXScreen) / 2;
 
         const wallStyleBounds = isHorizontal
-            ? calculateHorizontalLabelBounds(centeredLabelX, labelY, textWidth, 2, 8)
-            : calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+            ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, padH, padV)
+            : exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, padH, padV);
 
         const isValidPosition =
             wallStyleBounds.x >= 0 &&
@@ -2600,10 +2532,10 @@ const CeilingCanvas = ({
 
         if (isHorizontal) {
             allLabels.push({
-                x: centeredLabelX - textWidth / 2 - 2,
-                y: labelY - 8,
-                width: textWidth + 4,
-                height: 16,
+                x: wallStyleBounds.x,
+                y: wallStyleBounds.y,
+                width: wallStyleBounds.width,
+                height: wallStyleBounds.height,
                 side: dimSide,
                 text,
                 angle: angleDeg,
@@ -2612,10 +2544,10 @@ const CeilingCanvas = ({
             });
         } else {
             allLabels.push({
-                x: labelX - 8,
-                y: labelY - textWidth / 2 - 2,
-                width: 16,
-                height: textWidth + 4,
+                x: wallStyleBounds.x,
+                y: wallStyleBounds.y,
+                width: wallStyleBounds.width,
+                height: wallStyleBounds.height,
                 side: dimSide,
                 text,
                 angle: angleDeg,

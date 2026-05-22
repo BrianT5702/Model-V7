@@ -7,6 +7,8 @@ export const PLAN_CANVAS_MIN_WIDTH = 320;
 export const PLAN_CANVAS_MIN_HEIGHT = 280;
 export const PLAN_CANVAS_PADDING = 50;
 export const PLAN_CANVAS_MAX_SCALE = 2.0;
+/** Same 90% tight-fit factor as Canvas2D wall plan initial zoom. */
+export const PLAN_INITIAL_FIT_FACTOR = 0.9;
 
 /** Matches CeilingCanvas MAX_CANVAS_HEIGHT_RATIO (0.82). */
 export function getPlanCanvasMaxHeightRatio() {
@@ -111,9 +113,11 @@ export function computePlanFitTransform(
     const { minX, maxX, minY, maxY } = bounds;
     const totalWidth = maxX - minX || 1;
     const totalHeight = maxY - minY || 1;
-    const scaleX = (canvasWidth - 4 * padding) / totalWidth;
-    const scaleY = (canvasHeight - 4 * padding) / totalHeight;
-    const scale = Math.min(scaleX, scaleY, maxScale);
+    // Match wall plan (Canvas2D): 2× padding per axis, 90% of fit, capped at maxScale
+    const availableWidth = Math.max(canvasWidth - 2 * padding, 1);
+    const availableHeight = Math.max(canvasHeight - 2 * padding, 1);
+    const fitScale = Math.min(availableWidth / totalWidth, availableHeight / totalHeight);
+    const scale = Math.min(maxScale, fitScale * PLAN_INITIAL_FIT_FACTOR);
     const scaledWidth = totalWidth * scale;
     const scaledHeight = totalHeight * scale;
     const offsetX = (canvasWidth - scaledWidth) / 2 - minX * scale;

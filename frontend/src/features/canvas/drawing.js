@@ -30,7 +30,8 @@ import {
     isLabelPlacementClean,
     checkBoxOverlap,
     tryPlaceExteriorDimensionLabel,
-    pickExteriorDimensionSide
+    pickExteriorDimensionSide,
+    exteriorVerticalLabelBounds
 } from './collisionDetection.js';
 import { isPointInPolygon } from './utils.js';
 
@@ -383,8 +384,25 @@ function oppositePlanEdge(edge) {
     return 'top';
 }
 
+/** Wall/ceiling/floor plan dimension font size (sqrt zoom scaling, min 10px). */
+export function computeWallPlanDimensionFontSize(scaleFactor, initialScale = 1) {
+    const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
+    let fontSize;
+    let sqrtScaledFontSize = 0;
+    if (initialScale > 0 && scaleFactor > initialScale) {
+        const zoomRatio = scaleFactor / initialScale;
+        sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
+    }
+    if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
+        fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
+    } else {
+        fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
+    }
+    return Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+}
+
 /** One placement side per plan edge so chained wall dims (10250 + 7940) share the same column. */
-function resolveWallExteriorPlacementSide({
+export function resolveWallExteriorPlacementSide({
     isHorizontal,
     wallMidX,
     wallMidY,
@@ -791,10 +809,10 @@ function fallbackExteriorWallDimensionPosition({
 }
 
 /**
- * Exterior wall dim: span lanes group chain segments on one row, but wide text can still
+ * Exterior plan dim: span lanes group chain segments on one row, but wide text can still
  * overlap neighbors. Bump rowOffset until label boxes clear placedLabels (exterior always draws).
  */
-function placeExteriorWallDimensionAvoidingLabels({
+export function placeExteriorWallDimensionAvoidingLabels({
     isHorizontal,
     side,
     rowOffsetPx,
@@ -809,18 +827,26 @@ function placeExteriorWallDimensionAvoidingLabels({
     textWidth,
     placedLabels,
     paddingH = 2,
-    paddingV = 8
+    paddingV = 8,
+    fixedLabelX = null,
+    fontSize = null
 }) {
     const sep = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
     const rowStep = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
     const maxBumps = DIMENSION_CONFIG.MAX_ATTEMPTS;
     let rowOffset = rowOffsetPx;
+    const columnLocked = !isHorizontal && fixedLabelX != null && Number.isFinite(fixedLabelX);
 
-    for (let bump = 0; bump <= maxBumps; bump++) {
+    const boundsFor = (lx, ly) =>
+        isHorizontal
+            ? calculateHorizontalLabelBounds(lx, ly, textWidth, paddingH, paddingV)
+            : exteriorVerticalLabelBounds(lx, ly, textWidth, fontSize, paddingH, paddingV);
+
+    const tryOnce = (rowOff, yBiasPx = 0) => {
         let placed = tryPlaceExteriorDimensionLabel({
             isHorizontal,
             side,
-            rowOffsetPx: rowOffset,
+            rowOffsetPx: rowOff,
             spanLo,
             spanHi,
             anchorX,
@@ -832,13 +858,16 @@ function placeExteriorWallDimensionAvoidingLabels({
             textWidth,
             paddingH,
             paddingV,
-            placedLabels
+            placedLabels,
+            fixedLabelX: columnLocked ? fixedLabelX : null,
+            fontSize,
+            yBiasPx
         });
         if (!placed) {
             placed = fallbackExteriorWallDimensionPosition({
                 isHorizontal,
                 side,
-                rowOffsetPx: rowOffset,
+                rowOffsetPx: rowOff,
                 anchorX,
                 anchorY,
                 bounds,
@@ -849,33 +878,36 @@ function placeExteriorWallDimensionAvoidingLabels({
                 paddingH,
                 paddingV
             });
+            if (columnLocked) {
+                placed = { ...placed, labelX: fixedLabelX };
+            }
         }
-        const labelBounds = isHorizontal
-            ? calculateHorizontalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV)
-            : calculateVerticalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV);
-        if (isLabelPlacementClean(labelBounds, placedLabels, sep)) {
-            return { ...placed, rowOffset, labelBounds };
+        const labelBounds = boundsFor(placed.labelX, placed.labelY);
+        return { placed, labelBounds };
+    };
+
+    for (let bump = 0; bump <= maxBumps; bump++) {
+        if (columnLocked) {
+            const yTry = [0];
+            for (let s = rowStep; s <= rowStep * maxBumps; s += rowStep) {
+                yTry.push(s, -s);
+            }
+            for (const yBiasPx of yTry) {
+                const { placed, labelBounds } = tryOnce(rowOffset, yBiasPx);
+                if (isLabelPlacementClean(labelBounds, placedLabels, sep)) {
+                    return { ...placed, rowOffset, labelBounds };
+                }
+            }
+        } else {
+            const { placed, labelBounds } = tryOnce(rowOffset, 0);
+            if (isLabelPlacementClean(labelBounds, placedLabels, sep)) {
+                return { ...placed, rowOffset, labelBounds };
+            }
         }
         rowOffset += rowStep;
     }
 
-    const placed = fallbackExteriorWallDimensionPosition({
-        isHorizontal,
-        side,
-        rowOffsetPx: rowOffset,
-        anchorX,
-        anchorY,
-        bounds,
-        scaleFactor,
-        offsetX,
-        offsetY,
-        textWidth,
-        paddingH,
-        paddingV
-    });
-    const labelBounds = isHorizontal
-        ? calculateHorizontalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV)
-        : calculateVerticalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV);
+    const { placed, labelBounds } = tryOnce(rowOffset, 0);
     return { ...placed, rowOffset, labelBounds };
 }
 
@@ -2257,6 +2289,8 @@ export function drawDimensions(
                     spanLo,
                     spanHi
                 );
+                const vEdge = getDimensionEdge(false, placementSide);
+                const fixedColumnX = dimensionLanes?._wallExteriorLabelX?.[vEdge] ?? null;
                 const placed = placeExteriorWallDimensionAvoidingLabels({
                     isHorizontal: false,
                     side: placementSide,
@@ -2270,18 +2304,17 @@ export function drawDimensions(
                     offsetX,
                     offsetY,
                     textWidth,
-                    placedLabels
+                    placedLabels,
+                    fixedLabelX: fixedColumnX,
+                    fontSize
                 });
                 labelX = placed.labelX;
                 labelY = placed.labelY;
-                const vEdge = getDimensionEdge(false, placementSide);
                 if (dimensionLanes) {
                     if (!dimensionLanes._wallExteriorLabelX) {
                         dimensionLanes._wallExteriorLabelX = {};
                     }
-                    if (dimensionLanes._wallExteriorLabelX[vEdge] != null) {
-                        labelX = dimensionLanes._wallExteriorLabelX[vEdge];
-                    } else {
+                    if (fixedColumnX == null) {
                         dimensionLanes._wallExteriorLabelX[vEdge] = labelX;
                     }
                 }
@@ -2294,7 +2327,7 @@ export function drawDimensions(
                         vEdge,
                         labelX,
                         labelY,
-                        calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8),
+                        exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, 2, 8),
                         modelBounds,
                         scaleFactor,
                         offsetX,
@@ -2310,7 +2343,7 @@ export function drawDimensions(
 
             const vPreviewBounds = isNearWallDimension
                 ? calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize)
-                : calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+                : exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, 2, 8);
             if (
                 isNearWallDimension &&
                 !isLabelAcceptableForWallDimension(
@@ -2351,7 +2384,7 @@ export function drawDimensions(
 
             const vBounds = isNearWallDimension
                 ? calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize)
-                : calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+                : exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, 2, 8);
             const vLabel = {
                 x: vBounds.x,
                 y: vBounds.y,
