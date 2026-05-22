@@ -23,6 +23,7 @@ export const DIMENSION_CONFIG = {
     PLAN_GROUPED_LANE_SPACING: 10,  // Ceiling/floor grouped panel dimension rows (px)
     PLAN_INNER_LANE_SPACING: 8,     // Individual / cut panel dimension rows (px)
     PLAN_EXTERIOR_SEP_MM: 10,       // Label must clear project envelope by this (mm)
+    SPAN_LANE_GAP_MM: 80,           // Min gap along edge before spans need separate rows
     PLAN_ROOM_MAX_OFFSET: 48,       // Max px from project edge — room tier
     PLAN_GROUPED_MAX_OFFSET: 36,    // Max px from project edge — grouped tier
     PLAN_INNER_MAX_OFFSET: 28,      // Max px from project edge — individual/cut tier
@@ -129,7 +130,19 @@ export function formatPlanDimensionLabel(dimension, lengthMm) {
  */
 /** Fresh lane counters — reset at the start of each canvas redraw. */
 export function createDimensionLaneCounters() {
-    return { top: 0, bottom: 0, left: 0, right: 0 };
+    return {
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        _spanLanes: { top: [], bottom: [], left: [], right: [] }
+    };
+}
+
+function spanIntervalsOverlap(lo, hi, intervals, gapMm) {
+    return intervals.some(
+        ({ min, max }) => lo < max + gapMm && hi > min - gapMm
+    );
 }
 
 /** Tracks max screen offset used per edge while drawing wall dimensions. */
@@ -190,15 +203,55 @@ export function getDimensionEdge(isHorizontal, side) {
 }
 
 /**
- * Stack dimensions on the same project edge into separate rows (top/bottom/left/right lanes).
+ * Assign a dimension row on a project edge. When spanMin/spanMax are given (model mm along the
+ * edge), non-overlapping spans share the same row; only overlapping extension lines get a new row.
+ * @param {number} [spanMin] - span start along edge (model X for horizontal, Y for vertical)
+ * @param {number} [spanMax] - span end along edge
  * @param {number} [laneSpacing] - px between rows; use WALL_EXTERNAL_LANE_SPACING for full wall dims
  */
-export function consumeDimensionLane(lanes, isHorizontal, side, baseOffset, laneSpacing) {
+export function consumeDimensionLane(
+    lanes,
+    isHorizontal,
+    side,
+    baseOffset,
+    laneSpacing,
+    spanMin = null,
+    spanMax = null
+) {
     if (!lanes) return baseOffset;
     const edge = getDimensionEdge(isHorizontal, side);
     const spacing = laneSpacing ?? DIMENSION_CONFIG.LANE_SPACING;
-    const stackedOffset = baseOffset + lanes[edge] * spacing;
-    lanes[edge]++;
+
+    const hasSpan =
+        spanMin != null &&
+        spanMax != null &&
+        Number.isFinite(spanMin) &&
+        Number.isFinite(spanMax);
+
+    if (hasSpan) {
+        if (!lanes._spanLanes) {
+            lanes._spanLanes = { top: [], bottom: [], left: [], right: [] };
+        }
+        const lo = Math.min(spanMin, spanMax);
+        const hi = Math.max(spanMin, spanMax);
+        const gap = DIMENSION_CONFIG.SPAN_LANE_GAP_MM;
+        const edgeLanes = lanes._spanLanes[edge];
+        let laneIndex = 0;
+        for (; laneIndex < edgeLanes.length; laneIndex++) {
+            if (!spanIntervalsOverlap(lo, hi, edgeLanes[laneIndex], gap)) {
+                break;
+            }
+        }
+        if (laneIndex >= edgeLanes.length) {
+            edgeLanes.push([]);
+        }
+        edgeLanes[laneIndex].push({ min: lo, max: hi });
+        lanes[edge] = Math.max(lanes[edge] ?? 0, laneIndex + 1);
+        return baseOffset + laneIndex * spacing;
+    }
+
+    const stackedOffset = baseOffset + (lanes[edge] ?? 0) * spacing;
+    lanes[edge] = (lanes[edge] ?? 0) + 1;
     return stackedOffset;
 }
 

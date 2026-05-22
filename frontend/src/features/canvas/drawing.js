@@ -1601,7 +1601,9 @@ export function drawDimensions(
                     true,
                     lockedSide || 'side1',
                     baseOffset,
-                    wallLaneSpacing
+                    wallLaneSpacing,
+                    Math.min(startX, endX),
+                    Math.max(startX, endX)
                 );
                 const placement = smartPlacement({
                     calculatePositionSide1: (offset) => ({
@@ -1770,7 +1772,9 @@ export function drawDimensions(
                     false,
                     lockedSide || 'side2',
                     baseVerticalOffset,
-                    wallLaneSpacing
+                    wallLaneSpacing,
+                    Math.min(startY, endY),
+                    Math.max(startY, endY)
                 );
 
                 const placement = smartPlacement({

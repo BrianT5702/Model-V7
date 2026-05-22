@@ -2366,13 +2366,22 @@ const CeilingCanvas = ({
             preferredSide ||
             (planBounds ? getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) : 'side1');
 
+        const spanLo = isHorizontal
+            ? (gb ? gb.minX : Math.min(startX, endX))
+            : (gb ? gb.minY : Math.min(startY, endY));
+        const spanHi = isHorizontal
+            ? (gb ? gb.maxX : Math.max(startX, endX))
+            : (gb ? gb.maxY : Math.max(startY, endY));
+
         let offsetPx = laneCfg.baseOffset;
         offsetPx = consumeDimensionLane(
             dimensionLanes,
             isHorizontal,
             side,
             offsetPx,
-            Math.max(laneCfg.laneSpacing, wallLikeSpacing)
+            Math.max(laneCfg.laneSpacing, wallLikeSpacing),
+            spanLo,
+            spanHi
         );
 
         const sf = scaleFactor.current;

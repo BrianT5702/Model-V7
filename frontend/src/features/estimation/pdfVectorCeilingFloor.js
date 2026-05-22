@@ -937,9 +937,17 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         return true;
     };
 
-    const laneOffsetFor = (isHorizontal, side, priority) => {
+    const laneOffsetFor = (isHorizontal, side, priority, spanMin, spanMax) => {
         const laneCfg = getPlanDimensionLaneConfig(priority);
-        const px = consumeDimensionLane(edgeLanes, isHorizontal, side, laneCfg.baseOffset, laneCfg.laneSpacing);
+        const px = consumeDimensionLane(
+            edgeLanes,
+            isHorizontal,
+            side,
+            laneCfg.baseOffset,
+            laneCfg.laneSpacing,
+            spanMin,
+            spanMax
+        );
         return Math.min(px, laneCfg.maxOffset) * PX_TO_MM;
     };
 
@@ -1121,7 +1129,7 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                 : xc > avoidMidX
                   ? 'side2'
                   : 'side1');
-        const laneOffsetMm = laneOffsetFor(false, side, priority);
+        const laneOffsetMm = laneOffsetFor(false, side, priority, minXModel, maxXModel);
         const textWidth = doc.getTextWidth(text);
         const textPadding = 2 * PX_TO_MM;
         const placement = placePdfDimensionLabel({
@@ -1208,7 +1216,7 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             (modelPlanBounds
                 ? getPlanExteriorSide(true, midXModel, midYModel, modelPlanBounds)
                 : 'side1');
-        const laneOffsetMm = laneOffsetFor(true, side, priority);
+        const laneOffsetMm = laneOffsetFor(true, side, priority, minXModel, maxXModel);
         const textWidth = doc.getTextWidth(text);
         const textPadding = 2 * PX_TO_MM;
         const placement = placePdfDimensionLabel({
