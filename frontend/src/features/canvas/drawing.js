@@ -12,16 +12,25 @@ import {
     recordDimensionEdgeExtent,
     getProjectDimensionOffsetForEdge,
     syncEdgeExtentsFromPlacedLabels,
-    formatDimensionValue
+    formatDimensionValue,
+    planCeilingValueDedupKey,
+    applyNearWallFontSize,
+    nearWallLabelSeparationPx,
+    getPlanExteriorSide,
+    getDimensionEdge
 } from './DimensionConfig.js';
 // Import collision detection utilities
 import {
     hasLabelOverlap,
     calculateHorizontalLabelBounds,
     calculateVerticalLabelBounds,
+    calculateRotatedVerticalDimBounds,
+    calculateNearWallHorizontalDimBounds,
     smartPlacement,
     isLabelPlacementClean,
-    checkBoxOverlap
+    checkBoxOverlap,
+    tryPlaceExteriorDimensionLabel,
+    pickExteriorDimensionSide
 } from './collisionDetection.js';
 import { isPointInPolygon } from './utils.js';
 
@@ -238,8 +247,22 @@ function doesLabelOverlapWallLine(labelBounds, line, scaleFactor, offsetX, offse
     return false;
 }
 
-function findWallDataForSegment(wallLinesMap, startX, startY, endX, endY, tolerance = 2) {
+function pointToSegmentDistanceMm(px, py, ax, ay, bx, by) {
+    const abx = bx - ax;
+    const aby = by - ay;
+    const apx = px - ax;
+    const apy = py - ay;
+    const abLenSq = abx * abx + aby * aby;
+    if (abLenSq < 1e-12) return Math.hypot(apx, apy);
+    let t = (apx * abx + apy * aby) / abLenSq;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
+}
+
+function findWallDataForSegment(wallLinesMap, startX, startY, endX, endY, tolerance = 15) {
     if (!wallLinesMap) return null;
+    const midX = (startX + endX) / 2;
+    const midY = (startY + endY) / 2;
     for (const [, data] of wallLinesMap) {
         const w = data?.wall;
         if (!w) continue;
@@ -249,6 +272,16 @@ function findWallDataForSegment(wallLinesMap, startX, startY, endX, endY, tolera
         const d0r = Math.hypot(w.end_x - startX, w.end_y - startY);
         const d1r = Math.hypot(w.start_x - endX, w.start_y - endY);
         if (d0r <= tolerance && d1r <= tolerance) return data;
+        const onWall =
+            pointToSegmentDistanceMm(startX, startY, w.start_x, w.start_y, w.end_x, w.end_y) <= tolerance &&
+            pointToSegmentDistanceMm(endX, endY, w.start_x, w.start_y, w.end_x, w.end_y) <= tolerance;
+        const onSeg =
+            pointToSegmentDistanceMm(w.start_x, w.start_y, startX, startY, endX, endY) <= tolerance &&
+            pointToSegmentDistanceMm(w.end_x, w.end_y, startX, startY, endX, endY) <= tolerance;
+        if (onWall || onSeg) return data;
+        if (pointToSegmentDistanceMm(midX, midY, w.start_x, w.start_y, w.end_x, w.end_y) <= tolerance * 2) {
+            return data;
+        }
     }
     return null;
 }
@@ -292,13 +325,16 @@ function getExteriorNormalUnit(wall, rooms, modelBounds) {
     return { nx: sign * nx, ny: sign * ny };
 }
 
-function computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize) {
+function computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth = 40, rotatedVerticalText = false) {
     const thicknessMm = wall?.thickness || 100;
     const fromWallMm = thicknessMm / 2 + DIMENSION_CONFIG.NEAR_WALL_CLEARANCE_MM;
     const wallFacePx = fromWallMm * scaleFactor;
+    const perpHalf = rotatedVerticalText
+        ? textWidth * 0.5 + 4
+        : Math.max(fontSize * 0.45, 8) + 4;
     return Math.max(
         DIMENSION_CONFIG.BASE_OFFSET_NEAR_WALL,
-        wallFacePx + Math.min(fontSize * 0.25, 6) + 2
+        wallFacePx + perpHalf + 2
     );
 }
 
@@ -347,28 +383,167 @@ function oppositePlanEdge(edge) {
     return 'top';
 }
 
-/** Candidate sides for near-wall labels — sorted by least-used lane when placing. */
+/** One placement side per plan edge so chained wall dims (10250 + 7940) share the same column. */
+function resolveWallExteriorPlacementSide({
+    isHorizontal,
+    wallMidX,
+    wallMidY,
+    modelBounds,
+    dimensionLanes,
+    side1Bounds,
+    side2Bounds,
+    placedLabels
+}) {
+    const planSide = getPlanExteriorSide(isHorizontal, wallMidX, wallMidY, modelBounds);
+    const edge = getDimensionEdge(isHorizontal, planSide);
+    if (dimensionLanes) {
+        if (!dimensionLanes._edgePlacementSide) {
+            dimensionLanes._edgePlacementSide = {};
+        }
+        if (dimensionLanes._edgePlacementSide[edge]) {
+            return dimensionLanes._edgePlacementSide[edge];
+        }
+        const chosen = pickExteriorDimensionSide({
+            side1Bounds,
+            side2Bounds,
+            placedLabels,
+            preferredSide: planSide,
+            lockedSide: null
+        });
+        dimensionLanes._edgePlacementSide[edge] = chosen;
+        return chosen;
+    }
+    return pickExteriorDimensionSide({
+        side1Bounds,
+        side2Bounds,
+        placedLabels,
+        preferredSide: planSide,
+        lockedSide: null
+    });
+}
+
+/** Perpendicular to wall only (exterior + interior) — never offset along the wall axis. */
 function buildNearWallPlacementCandidates(wall, rooms, modelBounds) {
     const ext = getExteriorNormalUnit(wall, rooms, modelBounds);
-    const dx = wall.end_x - wall.start_x;
-    const dy = wall.end_y - wall.start_y;
-    const isHoriz = Math.abs(dx) >= Math.abs(dy);
-    const list = [];
-    const push = (nx, ny, edge) => {
-        if (!list.some((c) => c.edge === edge)) {
-            list.push({ nx, ny, edge });
+    const edge = exteriorSideName(ext.nx, ext.ny);
+    return [
+        { nx: ext.nx, ny: ext.ny, edge },
+        { nx: -ext.nx, ny: -ext.ny, edge: oppositePlanEdge(edge) }
+    ];
+}
+
+/** Chained dims on the same side share perpendicular offset (off), not absolute screen X/Y. */
+function applyNearWallSharedOffset(
+    dimensionLanes,
+    near,
+    anchorXModel,
+    anchorYModel,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    calculateBounds,
+    textWidth
+) {
+    if (!near) return null;
+    const nx = near.ext?.nx ?? 0;
+    const ny = near.ext?.ny ?? 0;
+    const edgeKey = near.side || 'top';
+    let off = near.off;
+    if (dimensionLanes) {
+        if (!dimensionLanes._nearWallShared) dimensionLanes._nearWallShared = {};
+        const shared = dimensionLanes._nearWallShared[edgeKey];
+        if (shared) {
+            off = shared.off;
+        } else {
+            dimensionLanes._nearWallShared[edgeKey] = { nx, ny, off };
         }
-    };
-    push(ext.nx, ext.ny, exteriorSideName(ext.nx, ext.ny));
-    push(-ext.nx, -ext.ny, oppositePlanEdge(exteriorSideName(ext.nx, ext.ny)));
-    if (isHoriz) {
-        push(-1, 0, 'left');
-        push(1, 0, 'right');
-    } else {
-        push(0, -1, 'top');
-        push(0, 1, 'bottom');
     }
-    return list;
+    const labelX = anchorXModel * scaleFactor + offsetX + nx * off;
+    const labelY = anchorYModel * scaleFactor + offsetY + ny * off;
+    return {
+        ...near,
+        labelX,
+        labelY,
+        off,
+        bounds: calculateBounds(labelX, labelY, textWidth)
+    };
+}
+
+function placeNearWallWallDimension({
+    wallForNear,
+    wallMidX,
+    wallMidY,
+    isHorizontal,
+    modelBounds,
+    dimensionLanes,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    fontSize,
+    textWidth,
+    placedLabels,
+    wallLinesMap,
+    rooms,
+    initialScale,
+    rotatedVerticalText,
+    calculateBounds,
+    side1Bounds,
+    side2Bounds,
+    baseOffset,
+    wallLaneSpacing,
+    spanLo,
+    spanHi
+}) {
+    const near = tryPlaceNearWallLabel({
+        wall: wallForNear,
+        anchorXModel: wallMidX,
+        anchorYModel: wallMidY,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        fontSize,
+        calculateBounds,
+        textWidth,
+        placedLabels,
+        wallLinesMap,
+        modelBounds,
+        rooms,
+        dimensionLanes,
+        initialScale,
+        rotatedVerticalText
+    });
+    if (!near) return null;
+    const positioned = applyNearWallSharedOffset(
+        dimensionLanes,
+        near,
+        wallMidX,
+        wallMidY,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        calculateBounds,
+        textWidth
+    );
+    if (!positioned) return null;
+    const hostWallData = findWallLineDataForWall(wallLinesMap, wallForNear);
+    if (
+        !isLabelAcceptableForNearWallPlacement(
+            positioned.labelX,
+            positioned.labelY,
+            positioned.bounds,
+            placedLabels,
+            hostWallData,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            textWidth,
+            initialScale,
+            wallLinesMap
+        )
+    ) {
+        return null;
+    }
+    return positioned;
 }
 
 function isLabelAcceptableForNearWallPlacement(
@@ -379,38 +554,38 @@ function isLabelAcceptableForNearWallPlacement(
     hostWallData,
     scaleFactor,
     offsetX,
-    offsetY
+    offsetY,
+    textWidth = 40,
+    initialScale = 1,
+    wallLinesMap = null
 ) {
-    if (!isLabelPlacementClean(labelBounds, placedLabels, 2)) {
+    const sep = nearWallLabelSeparationPx(scaleFactor, initialScale);
+    if (hasLabelOverlap(labelBounds, placedLabels, sep)) {
+        return false;
+    }
+    if (wallLinesMap && doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
         return false;
     }
     if (!hostWallData) {
         return true;
     }
-    const corridor = getWallCorridorScreenBounds(
-        hostWallData.line1,
-        hostWallData.line2,
-        scaleFactor,
-        offsetX,
-        offsetY,
-        0
-    );
-    const wallPx = Math.max(corridor.width, corridor.height);
-    if (wallPx < 6) {
-        return true;
-    }
-    if (isPointInsideWallCorridor(labelX, labelY, hostWallData, scaleFactor, offsetX, offsetY, 1)) {
+    if (isPointInsideWallCorridor(labelX, labelY, hostWallData, scaleFactor, offsetX, offsetY, 0)) {
         return false;
     }
     if (doesLabelOverlapWallCorridor(labelBounds, hostWallData, scaleFactor, offsetX, offsetY, 0)) {
-        const cx = labelX;
-        const cy = labelY;
-        if (!isPointInsideWallCorridor(cx, cy, hostWallData, scaleFactor, offsetX, offsetY, 0)) {
-            return true;
-        }
         return false;
     }
     return true;
+}
+
+function doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) {
+    if (!wallLinesMap || wallLinesMap.size === 0) return false;
+    for (const [, wallData] of wallLinesMap) {
+        if (doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offsetX, offsetY, 2)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -431,55 +606,96 @@ function tryPlaceNearWallLabel({
     wallLinesMap,
     modelBounds,
     rooms,
-    dimensionLanes = null
+    dimensionLanes = null,
+    initialScale = 1,
+    rotatedVerticalText = false
 }) {
     if (!wall) return null;
     const hostWallData = findWallLineDataForWall(wallLinesMap, wall);
-    const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize);
+    const baseOff = computeNearWallLabelOffsetPx(
+        wall,
+        scaleFactor,
+        fontSize,
+        textWidth,
+        rotatedVerticalText
+    );
     const laneSpacing = DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
     const candidates = buildNearWallPlacementCandidates(wall, rooms, modelBounds);
+    const ext = getExteriorNormalUnit(wall, rooms, modelBounds);
+    const extEdge = exteriorSideName(ext.nx, ext.ny);
     const sorted = [...candidates].sort((a, b) => {
+        if (a.edge === extEdge && b.edge !== extEdge) return -1;
+        if (b.edge === extEdge && a.edge !== extEdge) return 1;
         const la = dimensionLanes?.[a.edge] ?? 0;
         const lb = dimensionLanes?.[b.edge] ?? 0;
         return la - lb;
     });
 
-    for (const cand of sorted) {
-        const off = consumeDimensionLaneByEdge(
-            dimensionLanes,
-            cand.edge,
-            baseOff,
-            laneSpacing
-        );
-        const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off;
-        const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off;
-        const bounds = calculateBounds(labelX, labelY, textWidth);
-        if (
-            isLabelAcceptableForNearWallPlacement(
-                labelX,
-                labelY,
-                bounds,
-                placedLabels,
-                hostWallData,
-                scaleFactor,
-                offsetX,
-                offsetY
-            )
-        ) {
-            return {
-                labelX,
-                labelY,
-                bounds,
-                ext: { nx: cand.nx, ny: cand.ny },
-                side: cand.edge,
-                off
-            };
-        }
-        if (dimensionLanes && cand.edge) {
-            dimensionLanes[cand.edge] = Math.max(0, (dimensionLanes[cand.edge] ?? 1) - 1);
+    const maxSteps = DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS;
+    for (let step = 0; step < maxSteps; step++) {
+        const off = baseOff + step * laneSpacing;
+        for (const cand of sorted) {
+            const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off;
+            const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off;
+            const bounds = calculateBounds(labelX, labelY, textWidth);
+            if (
+                isLabelAcceptableForNearWallPlacement(
+                    labelX,
+                    labelY,
+                    bounds,
+                    placedLabels,
+                    hostWallData,
+                    scaleFactor,
+                    offsetX,
+                    offsetY,
+                    textWidth,
+                    initialScale,
+                    wallLinesMap
+                )
+            ) {
+                if (dimensionLanes && cand.edge) {
+                    dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
+                }
+                return {
+                    labelX,
+                    labelY,
+                    bounds,
+                    ext: { nx: cand.nx, ny: cand.ny },
+                    side: cand.edge,
+                    off
+                };
+            }
         }
     }
     return null;
+}
+
+/** Screen px from building envelope to outer edge of an exterior wall/panel label. */
+function measureExteriorLabelOutsetPx(
+    edge,
+    labelX,
+    labelY,
+    labelBounds,
+    modelBounds,
+    scaleFactor,
+    offsetX,
+    offsetY
+) {
+    if (!modelBounds) return 0;
+    const { minX, maxX, minY, maxY } = modelBounds;
+    const topEdge = minY * scaleFactor + offsetY;
+    const bottomEdge = maxY * scaleFactor + offsetY;
+    const leftEdge = minX * scaleFactor + offsetX;
+    const rightEdge = maxX * scaleFactor + offsetX;
+    const t = labelBounds?.y ?? labelY;
+    const b = (labelBounds?.y ?? labelY) + (labelBounds?.height ?? 0);
+    const l = labelBounds?.x ?? labelX;
+    const r = (labelBounds?.x ?? labelX) + (labelBounds?.width ?? 0);
+    if (edge === 'top') return Math.max(0, topEdge - t);
+    if (edge === 'bottom') return Math.max(0, b - bottomEdge);
+    if (edge === 'left') return Math.max(0, leftEdge - l);
+    if (edge === 'right') return Math.max(0, r - rightEdge);
+    return 0;
 }
 
 function labelBoundsToModelBounds(labelBounds, scaleFactor, offsetX, offsetY) {
@@ -515,18 +731,63 @@ function isLabelAcceptableForWallDimension(
     scaleFactor,
     offsetX,
     offsetY,
-    isNearWall
+    isNearWall,
+    initialScale = 1,
+    labelCenterX = null,
+    labelCenterY = null,
+    textWidth = 40
 ) {
-    if (!isLabelPlacementClean(labelBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
+    if (isNearWall) {
+        const sep = nearWallLabelSeparationPx(scaleFactor, initialScale);
+        if (hasLabelOverlap(labelBounds, placedLabels, sep)) {
+            return false;
+        }
+        if (wallLinesMap && doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
+            return false;
+        }
+    } else if (!isLabelPlacementClean(labelBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
         return false;
     }
     if (!isNearWall && !isLabelOutsideModelBounds(labelBounds, modelBounds, scaleFactor, offsetX, offsetY)) {
         return false;
     }
-    if (wallLinesMap && doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
+    if (!isNearWall && wallLinesMap && doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
         return false;
     }
     return true;
+}
+
+/** Default exterior row position when sliding finds no gap — still draw the dimension. */
+function fallbackExteriorWallDimensionPosition({
+    isHorizontal,
+    side,
+    rowOffsetPx,
+    anchorX,
+    anchorY,
+    bounds,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    textWidth,
+    paddingH = 2,
+    paddingV = 8
+}) {
+    const sf = scaleFactor;
+    const ox = offsetX;
+    const oy = offsetY;
+    const { minX, maxX, minY, maxY } = bounds;
+    if (isHorizontal) {
+        const labelY =
+            side === 'side1' ? minY * sf + oy - rowOffsetPx : maxY * sf + oy + rowOffsetPx;
+        const labelX = anchorX * sf + ox;
+        const labelBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, paddingH, paddingV);
+        return { labelX, labelY, labelBounds, offset: rowOffsetPx, side };
+    }
+    const labelX =
+        side === 'side1' ? minX * sf + ox - rowOffsetPx : maxX * sf + ox + rowOffsetPx;
+    const labelY = anchorY * sf + oy;
+    const labelBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, paddingH, paddingV);
+    return { labelX, labelY, labelBounds, offset: rowOffsetPx, side };
 }
 
 function isLabelClearOfWalls(labelBounds, placedLabels, wallLinesMap, scaleFactor, offsetX, offsetY) {
@@ -969,7 +1230,13 @@ function drawProjectDimension(
         const side = 'top';
         let labelY;
         let labelX;
-        let offset = getProjectDimensionOffsetForEdge(dimensionEdgeExtents, 'top', baseOffset);
+        let offset = getProjectDimensionOffsetForEdge(
+            dimensionEdgeExtents,
+            'top',
+            baseOffset,
+            scaleFactor,
+            initialScale
+        );
         let attempts = 0;
         const maxAttempts = DIMENSION_CONFIG.PROJECT_MAX_ATTEMPTS;
 
@@ -994,7 +1261,9 @@ function drawProjectDimension(
         const minProjectOffset = getProjectDimensionOffsetForEdge(
             dimensionEdgeExtents,
             'top',
-            baseOffset
+            baseOffset,
+            scaleFactor,
+            initialScale
         );
         offset = Math.max(offset, minProjectOffset);
         labelY = minY * scaleFactor + offsetY - offset;
@@ -1016,20 +1285,8 @@ function drawProjectDimension(
 
         context.setLineDash([]);
         context.lineWidth = dimLineW;
-        context.beginPath();
-        if (startXScreen < textLeft) {
-            context.moveTo(startXScreen, labelY);
-            context.lineTo(textLeft, labelY);
-        }
-        if (endXScreen > textRight) {
-            context.moveTo(textRight, labelY);
-            context.lineTo(endXScreen, labelY);
-        }
-        context.stroke();
-
-        if (startXScreen < textLeft || endXScreen > textRight) {
-            canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
-        }
+        strokeHorizontalDimLineAtY(context, labelY, startXScreen, endXScreen, labelX, textWidth, textPadding);
+        canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
 
         context.fillStyle = '#ffffff';
         context.fillRect(labelX - textWidth / 2 - 3, labelY - fontSize * 0.35 - 2, textWidth + 6, fontSize * 0.75 + 4);
@@ -1053,7 +1310,13 @@ function drawProjectDimension(
         let labelX;
         let labelY;
         let offset = Math.max(
-            getProjectDimensionOffsetForEdge(dimensionEdgeExtents, 'right', baseOffset),
+            getProjectDimensionOffsetForEdge(
+                dimensionEdgeExtents,
+                'right',
+                baseOffset,
+                scaleFactor,
+                initialScale
+            ),
             DIMENSION_CONFIG.PROJECT_MIN_VERTICAL_OFFSET
         );
         let attempts = 0;
@@ -1080,7 +1343,9 @@ function drawProjectDimension(
         const minProjectOffset = getProjectDimensionOffsetForEdge(
             dimensionEdgeExtents,
             'right',
-            baseOffset
+            baseOffset,
+            scaleFactor,
+            initialScale
         );
         offset = Math.max(offset, minProjectOffset, DIMENSION_CONFIG.PROJECT_MIN_VERTICAL_OFFSET);
         labelX = maxX * scaleFactor + offsetX + offset;
@@ -1102,22 +1367,8 @@ function drawProjectDimension(
 
         context.setLineDash([]);
         context.lineWidth = dimLineW;
-        context.beginPath();
-        const startYScreen = yStart;
-        const endYScreen = yEnd;
-        if (startYScreen < textTop) {
-            context.moveTo(labelX, startYScreen);
-            context.lineTo(labelX, textTop);
-        }
-        if (endYScreen > textBottom) {
-            context.moveTo(labelX, textBottom);
-            context.lineTo(labelX, endYScreen);
-        }
-        context.stroke();
-
-        if (startYScreen < textTop || endYScreen > textBottom) {
-            canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
-        }
+        strokeVerticalDimLineAtX(context, labelX, yStart, yEnd, labelY, textWidth, textPadding);
+        canvasVerticalDimArrows(context, labelX, yStart, yEnd, color, tickPx);
 
         context.save();
         context.translate(labelX - 4, labelY);
@@ -1164,6 +1415,58 @@ function canvasDrawExtensionDashed(context, x1, y1, x2, y2, rectScreen) {
     }
 }
 
+function strokeHorizontalDimLineAtY(context, y, wallStartX, wallEndX, labelCenterX, textWidth, textPadding) {
+    const lo = Math.min(wallStartX, wallEndX);
+    const hi = Math.max(wallStartX, wallEndX);
+    const textLeft = labelCenterX - textWidth / 2 - textPadding;
+    const textRight = labelCenterX + textWidth / 2 + textPadding;
+    const gapLo = Math.max(lo, textLeft);
+    const gapHi = Math.min(hi, textRight);
+    let drew = false;
+    context.beginPath();
+    if (gapLo > lo + 0.5) {
+        context.moveTo(lo, y);
+        context.lineTo(gapLo, y);
+        drew = true;
+    }
+    if (hi > gapHi + 0.5) {
+        context.moveTo(gapHi, y);
+        context.lineTo(hi, y);
+        drew = true;
+    }
+    if (!drew) {
+        context.moveTo(lo, y);
+        context.lineTo(hi, y);
+    }
+    context.stroke();
+}
+
+function strokeVerticalDimLineAtX(context, x, wallStartY, wallEndY, labelCenterY, textWidth, textPadding) {
+    const lo = Math.min(wallStartY, wallEndY);
+    const hi = Math.max(wallStartY, wallEndY);
+    const textTop = labelCenterY - textWidth / 2 - textPadding;
+    const textBottom = labelCenterY + textWidth / 2 + textPadding;
+    const gapLo = Math.max(lo, textTop);
+    const gapHi = Math.min(hi, textBottom);
+    let drew = false;
+    context.beginPath();
+    if (gapLo > lo + 0.5) {
+        context.moveTo(x, lo);
+        context.lineTo(x, gapLo);
+        drew = true;
+    }
+    if (hi > gapHi + 0.5) {
+        context.moveTo(x, gapHi);
+        context.lineTo(x, hi);
+        drew = true;
+    }
+    if (!drew) {
+        context.moveTo(x, lo);
+        context.lineTo(x, hi);
+    }
+    context.stroke();
+}
+
 /**
  * Orthogonal plan dimensions (ceiling/floor canvas): same geometry as wall plan —
  * clipped dashed extensions, solid dimension line with text gap, tick marks at ends.
@@ -1190,9 +1493,6 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
     if (isHorizontal) {
         const startXScreen = startX * scaleFactor + offsetX;
         const endXScreen = endX * scaleFactor + offsetX;
-        const centeredLabelX = (startXScreen + endXScreen) / 2;
-        const centeredTextLeft = centeredLabelX - textWidth / 2 - textPadding;
-        const centeredTextRight = centeredLabelX + textWidth / 2 + textPadding;
 
         context.lineWidth = extLineW;
         context.setLineDash(extDash);
@@ -1201,20 +1501,9 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
 
         context.setLineDash([]);
         context.lineWidth = dimLineW;
-        context.beginPath();
-        if (startXScreen < centeredTextLeft) {
-            context.moveTo(startXScreen, labelY);
-            context.lineTo(centeredTextLeft, labelY);
-        }
-        if (endXScreen > centeredTextRight) {
-            context.moveTo(centeredTextRight, labelY);
-            context.lineTo(endXScreen, labelY);
-        }
-        context.stroke();
+        strokeHorizontalDimLineAtY(context, labelY, startXScreen, endXScreen, labelX, textWidth, textPadding);
         canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
     } else {
-        const textTop = labelY - textWidth / 2 - textPadding;
-        const textBottom = labelY + textWidth / 2 + textPadding;
         const xStart = startX * scaleFactor + offsetX;
         const xEnd = endX * scaleFactor + offsetX;
         const startYScreen = startY * scaleFactor + offsetY;
@@ -1227,16 +1516,7 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
 
         context.setLineDash([]);
         context.lineWidth = dimLineW;
-        context.beginPath();
-        if (startYScreen < textTop) {
-            context.moveTo(labelX, startYScreen);
-            context.lineTo(labelX, textTop);
-        }
-        if (endYScreen > textBottom) {
-            context.moveTo(labelX, textBottom);
-            context.lineTo(labelX, endYScreen);
-        }
-        context.stroke();
+        strokeVerticalDimLineAtX(context, labelX, startYScreen, endYScreen, labelY, textWidth, textPadding);
         canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
     }
     context.restore();
@@ -1268,11 +1548,16 @@ export function drawDimensions(
         Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
 
-    // Global value dedup: skip if this value already shown (match floor/ceiling)
+    const dxLen = endX - startX;
+    const dyLen = endY - startY;
+    const angleLen = Math.atan2(dyLen, dxLen) * (180 / Math.PI);
+    const isHorizLen = Math.abs(angleLen) < 45 || Math.abs(angleLen) > 135;
+
+    // Per-axis value dedup (H and V may share the same mm)
     if (dimensionValuesSeen && typeof length === 'number') {
-        const roundedLength = Math.round(length);
-        if (dimensionValuesSeen.has(roundedLength)) return;
-        dimensionValuesSeen.add(roundedLength);
+        const dedupKey = planCeilingValueDedupKey(length, isHorizLen);
+        if (dedupKey && dimensionValuesSeen.has(dedupKey)) return;
+        if (dedupKey) dimensionValuesSeen.add(dedupKey);
     }
 
     let midX = 0;
@@ -1309,13 +1594,14 @@ export function drawDimensions(
     }
     
     fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+    const standardWallFontSize = fontSize;
     if (modelBounds) {
         const projectSize = Math.max(
             (modelBounds.maxX - modelBounds.minX) || 1,
             (modelBounds.maxY - modelBounds.minY) || 1
         );
         if (length < projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD) {
-            fontSize = Math.max(8, fontSize * DIMENSION_CONFIG.NEAR_WALL_FONT_SCALE);
+            fontSize = applyNearWallFontSize(standardWallFontSize);
         }
     }
     context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
@@ -1358,9 +1644,18 @@ export function drawDimensions(
         const wallLaneSpacing = isNearWallDimension
             ? DIMENSION_CONFIG.LANE_SPACING
             : DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
+        const wallDimRotatedVertical =
+            !useObliqueWallDim &&
+            !(Math.abs(angle) < 45 || Math.abs(angle) > 135);
         let baseOffset = isNearWallDimension
             ? (segmentWall
-                ? computeNearWallLabelOffsetPx(segmentWall, scaleFactor, fontSize)
+                ? computeNearWallLabelOffsetPx(
+                      segmentWall,
+                      scaleFactor,
+                      fontSize,
+                      textWidth,
+                      wallDimRotatedVertical
+                  )
                 : DIMENSION_CONFIG.BASE_OFFSET_NEAR_WALL)
             : DIMENSION_CONFIG.BASE_OFFSET;
 
@@ -1391,9 +1686,14 @@ export function drawDimensions(
             let placement;
             let obliqueBase = 0;
 
-            if (isNearWallDimension && segmentWall) {
+            if (isNearWallDimension) {
+                const wallForNear = segmentWall || wallData?.wall;
+                if (!wallForNear) {
+                    context.restore();
+                    return;
+                }
                 const near = tryPlaceNearWallLabel({
-                    wall: segmentWall,
+                    wall: wallForNear,
                     anchorXModel: wallMidX,
                     anchorYModel: wallMidY,
                     scaleFactor,
@@ -1406,12 +1706,10 @@ export function drawDimensions(
                     wallLinesMap,
                     modelBounds,
                     rooms,
-                    dimensionLanes
+                    dimensionLanes,
+                    initialScale,
+                    rotatedVerticalText: false
                 });
-                if (!near) {
-                    context.restore();
-                    return;
-                }
                 labelX = near.labelX;
                 labelY = near.labelY;
                 placement = { side: 'side1' };
@@ -1482,6 +1780,7 @@ export function drawDimensions(
 
             const obliquePreviewBounds = obliqueBounds(labelX, labelY, textWidth);
             if (
+                isNearWallDimension &&
                 !isLabelAcceptableForWallDimension(
                     obliquePreviewBounds,
                     placedLabels,
@@ -1490,7 +1789,11 @@ export function drawDimensions(
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    isNearWallDimension
+                    true,
+                    initialScale,
+                    labelX,
+                    labelY,
+                    textWidth
                 )
             ) {
                 context.restore();
@@ -1565,23 +1868,54 @@ export function drawDimensions(
             let labelY;
             let side;
 
-            if (isNearWallDimension && segmentWall) {
-                const near = tryPlaceNearWallLabel({
-                    wall: segmentWall,
-                    anchorXModel: wallMidX,
-                    anchorYModel: wallMidY,
+            if (isNearWallDimension) {
+                const wallForNear = segmentWall || wallData?.wall;
+                if (!wallForNear) {
+                    context.restore();
+                    return;
+                }
+                const spanLo = Math.min(startX, endX);
+                const spanHi = Math.max(startX, endX);
+                const trialOffset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
+                const side1Bounds = calculateHorizontalLabelBounds(
+                    wallMidX * scaleFactor + offsetX,
+                    minY * scaleFactor + offsetY - trialOffset,
+                    textWidth,
+                    2,
+                    8
+                );
+                const side2Bounds = calculateHorizontalLabelBounds(
+                    wallMidX * scaleFactor + offsetX,
+                    maxY * scaleFactor + offsetY + trialOffset,
+                    textWidth,
+                    2,
+                    8
+                );
+                const near = placeNearWallWallDimension({
+                    wallForNear,
+                    wallMidX,
+                    wallMidY,
+                    isHorizontal: true,
+                    modelBounds,
+                    dimensionLanes,
                     scaleFactor,
                     offsetX,
                     offsetY,
                     fontSize,
-                    calculateBounds: (lx, ly, tw) =>
-                        calculateHorizontalLabelBounds(lx, ly, tw, 2, 8),
                     textWidth,
                     placedLabels,
                     wallLinesMap,
-                    modelBounds,
                     rooms,
-                    dimensionLanes
+                    initialScale,
+                    rotatedVerticalText: false,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateNearWallHorizontalDimBounds(lx, ly, tw, fontSize),
+                    side1Bounds,
+                    side2Bounds,
+                    baseOffset,
+                    wallLaneSpacing,
+                    spanLo,
+                    spanHi
                 });
                 if (!near) {
                     context.restore();
@@ -1596,76 +1930,116 @@ export function drawDimensions(
                     });
                 }
             } else {
-                const horizontalBase = consumeDimensionLane(
+                const spanLo = Math.min(startX, endX);
+                const spanHi = Math.max(startX, endX);
+                const trialOffset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
+                const side1Bounds = calculateHorizontalLabelBounds(
+                    wallMidX * scaleFactor + offsetX,
+                    minY * scaleFactor + offsetY - trialOffset,
+                    textWidth,
+                    2,
+                    8
+                );
+                const side2Bounds = calculateHorizontalLabelBounds(
+                    wallMidX * scaleFactor + offsetX,
+                    maxY * scaleFactor + offsetY + trialOffset,
+                    textWidth,
+                    2,
+                    8
+                );
+                const placementSide = resolveWallExteriorPlacementSide({
+                    isHorizontal: true,
+                    wallMidX,
+                    wallMidY,
+                    modelBounds,
+                    dimensionLanes,
+                    side1Bounds,
+                    side2Bounds,
+                    placedLabels
+                });
+                const rowOffset = consumeDimensionLane(
                     dimensionLanes,
                     true,
-                    lockedSide || 'side1',
+                    placementSide,
                     baseOffset,
                     wallLaneSpacing,
-                    Math.min(startX, endX),
-                    Math.max(startX, endX)
+                    spanLo,
+                    spanHi
                 );
-                const placement = smartPlacement({
-                    calculatePositionSide1: (offset) => ({
-                        labelX: wallMidX * scaleFactor + offsetX,
-                        labelY: minY * scaleFactor + offsetY - offset
-                    }),
-                    calculatePositionSide2: (offset) => ({
-                        labelX: wallMidX * scaleFactor + offsetX,
-                        labelY: maxY * scaleFactor + offsetY + offset
-                    }),
-                    calculateBounds: (labelX, labelY, textWidth) =>
-                        calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8),
-                    textWidth: textWidth,
-                    placedLabels: placedLabels,
-                    baseOffset: horizontalBase,
-                    offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
-                    maxAttempts: DIMENSION_CONFIG.MAX_ATTEMPTS,
-                    preferredSide: 'side1',
-                    lockedSide: lockedSide
+                let placed = tryPlaceExteriorDimensionLabel({
+                    isHorizontal: true,
+                    side: placementSide,
+                    rowOffsetPx: rowOffset,
+                    spanLo,
+                    spanHi,
+                    anchorX: wallMidX,
+                    anchorY: wallMidY,
+                    bounds: modelBounds,
+                    scaleFactor,
+                    offsetX,
+                    offsetY,
+                    textWidth,
+                    paddingH: 2,
+                    paddingV: 8,
+                    placedLabels
                 });
-
-                if (!storedPlacement) {
-                    dimensionPlacementMemory.set(dimensionKey, { side: placement.side });
-                }
-
-                side = placement.side === 'side1' ? 'top' : 'bottom';
-
-                let extOffset = placement.offset ?? horizontalBase;
-                labelX = wallMidX * scaleFactor + offsetX;
-                labelY =
-                    placement.side === 'side1'
-                        ? minY * scaleFactor + offsetY - extOffset
-                        : maxY * scaleFactor + offsetY + extOffset;
-                let hBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                let pushAttempts = 0;
-                while (
-                    pushAttempts < DIMENSION_CONFIG.MAX_ATTEMPTS &&
-                    !isLabelAcceptableForWallDimension(
-                        hBounds,
-                        placedLabels,
-                        wallLinesMap,
-                        modelBounds,
+                if (!placed) {
+                    placed = fallbackExteriorWallDimensionPosition({
+                        isHorizontal: true,
+                        side: placementSide,
+                        rowOffsetPx: rowOffset,
+                        anchorX: wallMidX,
+                        anchorY: wallMidY,
+                        bounds: modelBounds,
                         scaleFactor,
                         offsetX,
                         offsetY,
-                        false
-                    )
-                ) {
-                    extOffset += DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    labelY =
-                        placement.side === 'side1'
-                            ? minY * scaleFactor + offsetY - extOffset
-                            : maxY * scaleFactor + offsetY + extOffset;
-                    hBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                    pushAttempts++;
+                        textWidth,
+                        paddingH: 2,
+                        paddingV: 8
+                    });
                 }
-                const hEdge = placement.side === 'side1' ? 'top' : 'bottom';
-                recordDimensionEdgeExtent(dimensionEdgeExtents, hEdge, extOffset);
+                labelX = placed.labelX;
+                labelY = placed.labelY;
+                const hEdge = getDimensionEdge(true, placementSide);
+                if (dimensionLanes) {
+                    if (!dimensionLanes._wallExteriorLabelY) {
+                        dimensionLanes._wallExteriorLabelY = {};
+                    }
+                    if (dimensionLanes._wallExteriorLabelY[hEdge] != null) {
+                        labelY = dimensionLanes._wallExteriorLabelY[hEdge];
+                    } else {
+                        dimensionLanes._wallExteriorLabelY[hEdge] = labelY;
+                    }
+                }
+                if (!storedPlacement) {
+                    dimensionPlacementMemory.set(dimensionKey, { side: placementSide });
+                }
+                side = placementSide === 'side1' ? 'top' : 'bottom';
+                if (dimensionEdgeExtents) {
+                    const hOutPx = measureExteriorLabelOutsetPx(
+                        hEdge,
+                        labelX,
+                        labelY,
+                        calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8),
+                        modelBounds,
+                        scaleFactor,
+                        offsetX,
+                        offsetY
+                    );
+                    recordDimensionEdgeExtent(
+                        dimensionEdgeExtents,
+                        hEdge,
+                        Math.max(rowOffset, hOutPx)
+                    );
+                }
             }
 
-            const hPreviewBounds = calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
+            const hPreviewBounds = isNearWallDimension
+                ? calculateNearWallHorizontalDimBounds(labelX, labelY, textWidth, fontSize)
+                : calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
             if (
+                isNearWallDimension &&
                 !isLabelAcceptableForWallDimension(
                     hPreviewBounds,
                     placedLabels,
@@ -1674,20 +2048,20 @@ export function drawDimensions(
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    isNearWallDimension
+                    true,
+                    initialScale,
+                    labelX,
+                    labelY,
+                    textWidth
                 )
             ) {
                 context.restore();
                 return;
             }
-            
+
             const textPadding = 2;
             const startXScreen = startX * scaleFactor + offsetX;
             const endXScreen = endX * scaleFactor + offsetX;
-            const dimensionLineMidpoint = (startXScreen + endXScreen) / 2;
-            const centeredLabelX = dimensionLineMidpoint;
-            const centeredTextLeft = centeredLabelX - textWidth / 2 - textPadding;
-            const centeredTextRight = centeredLabelX + textWidth / 2 + textPadding;
 
             context.strokeStyle = color;
             context.lineWidth = extLineW;
@@ -1697,29 +2071,17 @@ export function drawDimensions(
 
             context.setLineDash([]);
             context.lineWidth = dimLineW;
-            context.beginPath();
-            if (startXScreen < centeredTextLeft) {
-                context.moveTo(startXScreen, labelY);
-                context.lineTo(centeredTextLeft, labelY);
-            }
-            if (endXScreen > centeredTextRight) {
-                context.moveTo(centeredTextRight, labelY);
-                context.lineTo(endXScreen, labelY);
-            }
-            context.stroke();
+            strokeHorizontalDimLineAtY(context, labelY, startXScreen, endXScreen, labelX, textWidth, textPadding);
+            canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
 
-            const wallHTickXs = [];
-            if (startXScreen < centeredTextLeft) wallHTickXs.push(startXScreen, centeredTextLeft);
-            if (endXScreen > centeredTextRight) wallHTickXs.push(centeredTextRight, endXScreen);
-            if (wallHTickXs.length > 0) {
-                canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
-            }
-
+            const hBounds = isNearWallDimension
+                ? calculateNearWallHorizontalDimBounds(labelX, labelY, textWidth, fontSize)
+                : calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
             const hLabel = {
-                x: centeredLabelX - textWidth / 2 - 2,
-                y: labelY - 8,
-                width: textWidth + 4,
-                height: 16,
+                x: hBounds.x,
+                y: hBounds.y,
+                width: hBounds.width,
+                height: hBounds.height,
                 side: side,
                 text: text,
                 angle: angle,
@@ -1734,23 +2096,55 @@ export function drawDimensions(
             let labelY;
             let side;
 
-            if (isNearWallDimension && segmentWall) {
-                const near = tryPlaceNearWallLabel({
-                    wall: segmentWall,
-                    anchorXModel: wallMidX,
-                    anchorYModel: wallMidY,
+            if (isNearWallDimension) {
+                const wallForNear = segmentWall || wallData?.wall;
+                if (!wallForNear) {
+                    context.restore();
+                    return;
+                }
+                const spanLo = Math.min(startY, endY);
+                const spanHi = Math.max(startY, endY);
+                const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
+                const trialOffset = Math.max(baseOffset, minVerticalOffset);
+                const side1Bounds = calculateVerticalLabelBounds(
+                    minX * scaleFactor + offsetX - trialOffset,
+                    wallMidY * scaleFactor + offsetY,
+                    textWidth,
+                    2,
+                    8
+                );
+                const side2Bounds = calculateVerticalLabelBounds(
+                    maxX * scaleFactor + offsetX + trialOffset,
+                    wallMidY * scaleFactor + offsetY,
+                    textWidth,
+                    2,
+                    8
+                );
+                const near = placeNearWallWallDimension({
+                    wallForNear,
+                    wallMidX,
+                    wallMidY,
+                    isHorizontal: false,
+                    modelBounds,
+                    dimensionLanes,
                     scaleFactor,
                     offsetX,
                     offsetY,
                     fontSize,
-                    calculateBounds: (lx, ly, tw) =>
-                        calculateVerticalLabelBounds(lx, ly, tw, 2, 8),
                     textWidth,
                     placedLabels,
                     wallLinesMap,
-                    modelBounds,
                     rooms,
-                    dimensionLanes
+                    initialScale,
+                    rotatedVerticalText: true,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateRotatedVerticalDimBounds(lx, ly, tw, fontSize),
+                    side1Bounds,
+                    side2Bounds,
+                    baseOffset,
+                    wallLaneSpacing,
+                    spanLo,
+                    spanHi
                 });
                 if (!near) {
                     context.restore();
@@ -1765,79 +2159,117 @@ export function drawDimensions(
                     });
                 }
             } else {
+                const spanLo = Math.min(startY, endY);
+                const spanHi = Math.max(startY, endY);
                 const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
-                let baseVerticalOffset = Math.max(baseOffset, minVerticalOffset);
-                baseVerticalOffset = consumeDimensionLane(
+                const trialOffset = Math.max(baseOffset, minVerticalOffset);
+                const side1Bounds = calculateVerticalLabelBounds(
+                    minX * scaleFactor + offsetX - trialOffset,
+                    wallMidY * scaleFactor + offsetY,
+                    textWidth,
+                    2,
+                    8
+                );
+                const side2Bounds = calculateVerticalLabelBounds(
+                    maxX * scaleFactor + offsetX + trialOffset,
+                    wallMidY * scaleFactor + offsetY,
+                    textWidth,
+                    2,
+                    8
+                );
+                const placementSide = resolveWallExteriorPlacementSide({
+                    isHorizontal: false,
+                    wallMidX,
+                    wallMidY,
+                    modelBounds,
+                    dimensionLanes,
+                    side1Bounds,
+                    side2Bounds,
+                    placedLabels
+                });
+                const rowOffset = consumeDimensionLane(
                     dimensionLanes,
                     false,
-                    lockedSide || 'side2',
-                    baseVerticalOffset,
+                    placementSide,
+                    baseOffset,
                     wallLaneSpacing,
-                    Math.min(startY, endY),
-                    Math.max(startY, endY)
+                    spanLo,
+                    spanHi
                 );
-
-                const placement = smartPlacement({
-                    calculatePositionSide1: (offset) => ({
-                        labelX: minX * scaleFactor + offsetX - offset,
-                        labelY: wallMidY * scaleFactor + offsetY
-                    }),
-                    calculatePositionSide2: (offset) => ({
-                        labelX: maxX * scaleFactor + offsetX + offset,
-                        labelY: wallMidY * scaleFactor + offsetY
-                    }),
-                    calculateBounds: (labelX, labelY, textWidth) =>
-                        calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8),
-                    textWidth: textWidth,
-                    placedLabels: placedLabels,
-                    baseOffset: baseVerticalOffset,
-                    offsetIncrement: DIMENSION_CONFIG.OFFSET_INCREMENT,
-                    maxAttempts: DIMENSION_CONFIG.MAX_ATTEMPTS,
-                    preferredSide: 'side2',
-                    lockedSide: lockedSide
+                let placed = tryPlaceExteriorDimensionLabel({
+                    isHorizontal: false,
+                    side: placementSide,
+                    rowOffsetPx: rowOffset,
+                    spanLo,
+                    spanHi,
+                    anchorX: wallMidX,
+                    anchorY: wallMidY,
+                    bounds: modelBounds,
+                    scaleFactor,
+                    offsetX,
+                    offsetY,
+                    textWidth,
+                    paddingH: 2,
+                    paddingV: 8,
+                    placedLabels
                 });
-
-                if (!storedPlacement) {
-                    dimensionPlacementMemory.set(dimensionKey, { side: placement.side });
-                }
-
-                side = placement.side === 'side1' ? 'left' : 'right';
-
-                let extOffset = placement.offset ?? baseVerticalOffset;
-                labelY = wallMidY * scaleFactor + offsetY;
-                labelX =
-                    placement.side === 'side1'
-                        ? minX * scaleFactor + offsetX - extOffset
-                        : maxX * scaleFactor + offsetX + extOffset;
-                let vBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                let pushAttempts = 0;
-                while (
-                    pushAttempts < DIMENSION_CONFIG.MAX_ATTEMPTS &&
-                    !isLabelAcceptableForWallDimension(
-                        vBounds,
-                        placedLabels,
-                        wallLinesMap,
-                        modelBounds,
+                if (!placed) {
+                    placed = fallbackExteriorWallDimensionPosition({
+                        isHorizontal: false,
+                        side: placementSide,
+                        rowOffsetPx: rowOffset,
+                        anchorX: wallMidX,
+                        anchorY: wallMidY,
+                        bounds: modelBounds,
                         scaleFactor,
                         offsetX,
                         offsetY,
-                        false
-                    )
-                ) {
-                    extOffset += DIMENSION_CONFIG.OFFSET_INCREMENT;
-                    labelX =
-                        placement.side === 'side1'
-                            ? minX * scaleFactor + offsetX - extOffset
-                            : maxX * scaleFactor + offsetX + extOffset;
-                    vBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
-                    pushAttempts++;
+                        textWidth,
+                        paddingH: 2,
+                        paddingV: 8
+                    });
                 }
-                const vEdge = placement.side === 'side1' ? 'left' : 'right';
-                recordDimensionEdgeExtent(dimensionEdgeExtents, vEdge, extOffset);
+                labelX = placed.labelX;
+                labelY = placed.labelY;
+                const vEdge = getDimensionEdge(false, placementSide);
+                if (dimensionLanes) {
+                    if (!dimensionLanes._wallExteriorLabelX) {
+                        dimensionLanes._wallExteriorLabelX = {};
+                    }
+                    if (dimensionLanes._wallExteriorLabelX[vEdge] != null) {
+                        labelX = dimensionLanes._wallExteriorLabelX[vEdge];
+                    } else {
+                        dimensionLanes._wallExteriorLabelX[vEdge] = labelX;
+                    }
+                }
+                if (!storedPlacement) {
+                    dimensionPlacementMemory.set(dimensionKey, { side: placementSide });
+                }
+                side = placementSide === 'side1' ? 'left' : 'right';
+                if (dimensionEdgeExtents) {
+                    const vOutPx = measureExteriorLabelOutsetPx(
+                        vEdge,
+                        labelX,
+                        labelY,
+                        calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8),
+                        modelBounds,
+                        scaleFactor,
+                        offsetX,
+                        offsetY
+                    );
+                    recordDimensionEdgeExtent(
+                        dimensionEdgeExtents,
+                        vEdge,
+                        Math.max(rowOffset, vOutPx)
+                    );
+                }
             }
 
-            const vPreviewBounds = calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
+            const vPreviewBounds = isNearWallDimension
+                ? calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize)
+                : calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
             if (
+                isNearWallDimension &&
                 !isLabelAcceptableForWallDimension(
                     vPreviewBounds,
                     placedLabels,
@@ -1846,16 +2278,18 @@ export function drawDimensions(
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    isNearWallDimension
+                    true,
+                    initialScale,
+                    labelX,
+                    labelY,
+                    textWidth
                 )
             ) {
                 context.restore();
                 return;
             }
-            
+
             const textPadding = 2;
-            const textTop = labelY - textWidth / 2 - textPadding;
-            const textBottom = labelY + textWidth / 2 + textPadding;
             const xStart = startX * scaleFactor + offsetX;
             const xEnd = endX * scaleFactor + offsetX;
             const startYScreen = startY * scaleFactor + offsetY;
@@ -1869,29 +2303,17 @@ export function drawDimensions(
 
             context.setLineDash([]);
             context.lineWidth = dimLineW;
-            context.beginPath();
-            if (startYScreen < textTop) {
-                context.moveTo(labelX, startYScreen);
-                context.lineTo(labelX, textTop);
-            }
-            if (endYScreen > textBottom) {
-                context.moveTo(labelX, textBottom);
-                context.lineTo(labelX, endYScreen);
-            }
-            context.stroke();
+            strokeVerticalDimLineAtX(context, labelX, startYScreen, endYScreen, labelY, textWidth, textPadding);
+            canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
 
-            const wallVTickYs = [];
-            if (startYScreen < textTop) wallVTickYs.push(startYScreen, textTop);
-            if (endYScreen > textBottom) wallVTickYs.push(textBottom, endYScreen);
-            if (wallVTickYs.length > 0) {
-                canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
-            }
-
+            const vBounds = isNearWallDimension
+                ? calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize)
+                : calculateVerticalLabelBounds(labelX, labelY, textWidth, 2, 8);
             const vLabel = {
-                x: labelX - 8,
-                y: labelY - textWidth / 2 - 2,
-                width: 16,
-                height: textWidth + 4,
+                x: vBounds.x,
+                y: vBounds.y,
+                width: vBounds.width,
+                height: vBounds.height,
                 side: side,
                 text: text,
                 angle: angle,
@@ -3550,8 +3972,24 @@ export function drawWalls({
             drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 6);
         }
     }
-    // Draw wall dimensions in order of ascending length (smaller inner, larger outer when overlapping)
-    wallDimensionSpecs.sort((a, b) => a.length - b.length);
+    // Draw along-edge order so chain segments (shared endpoints) claim the same span lane
+    wallDimensionSpecs.sort((a, b) => {
+        const aHoriz = Math.abs(a.endX - a.startX) >= Math.abs(a.endY - a.startY);
+        const bHoriz = Math.abs(b.endX - b.startX) >= Math.abs(b.endY - b.startY);
+        if (aHoriz && bHoriz) {
+            const aLo = Math.min(a.startX, a.endX);
+            const bLo = Math.min(b.startX, b.endX);
+            if (aLo !== bLo) return aLo - bLo;
+            return a.length - b.length;
+        }
+        if (!aHoriz && !bHoriz) {
+            const aLo = Math.min(a.startY, a.endY);
+            const bLo = Math.min(b.startY, b.endY);
+            if (aLo !== bLo) return aLo - bLo;
+            return a.length - b.length;
+        }
+        return a.length - b.length;
+    });
     wallDimensionSpecs.forEach((spec) => {
         drawDimensions(
             context,
@@ -3844,30 +4282,55 @@ export function drawPanelDivisions(
                 fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
             }
             
-            fontSize = Math.max(
-                8,
-                fontSize * DIMENSION_CONFIG.NEAR_WALL_FONT_SCALE
-            );
+            const standardPanelFontSize = fontSize;
+            fontSize = applyNearWallFontSize(standardPanelFontSize);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const textWidth = context.measureText(text).width;
 
             if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-                const near = tryPlaceNearWallLabel({
-                    wall,
-                    anchorXModel: panelMidX,
-                    anchorYModel: panelMidY,
+                const spanLo = Math.min(mxStart, mxEnd);
+                const spanHi = Math.max(mxStart, mxEnd);
+                const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, false);
+                const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
+                const side1Bounds = calculateHorizontalLabelBounds(
+                    panelMidX * scaleFactor + offsetX,
+                    myStart * scaleFactor + offsetY - trialOffset,
+                    textWidth,
+                    2,
+                    8
+                );
+                const side2Bounds = calculateHorizontalLabelBounds(
+                    panelMidX * scaleFactor + offsetX,
+                    myStart * scaleFactor + offsetY + trialOffset,
+                    textWidth,
+                    2,
+                    8
+                );
+                const near = placeNearWallWallDimension({
+                    wallForNear: wall,
+                    wallMidX: panelMidX,
+                    wallMidY: panelMidY,
+                    isHorizontal: true,
+                    modelBounds: bounds,
+                    dimensionLanes,
                     scaleFactor,
                     offsetX,
                     offsetY,
                     fontSize,
-                    calculateBounds: (lx, ly, tw) =>
-                        calculateHorizontalLabelBounds(lx, ly, tw, 2, 8),
                     textWidth,
                     placedLabels,
                     wallLinesMap,
-                    modelBounds: bounds,
                     rooms,
-                    dimensionLanes
+                    initialScale,
+                    rotatedVerticalText: false,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateNearWallHorizontalDimBounds(lx, ly, tw, fontSize),
+                    side1Bounds,
+                    side2Bounds,
+                    baseOffset: baseOff,
+                    wallLaneSpacing: DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING,
+                    spanLo,
+                    spanHi
                 });
                 if (!near) {
                     accumulated += panelWidth;
@@ -3933,22 +4396,49 @@ export function drawPanelDivisions(
                      });
                  }
             } else {
-                const near = tryPlaceNearWallLabel({
-                    wall,
-                    anchorXModel: panelMidX,
-                    anchorYModel: panelMidY,
+                const spanLo = Math.min(myStart, myEnd);
+                const spanHi = Math.max(myStart, myEnd);
+                const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, true);
+                const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
+                const side1Bounds = calculateVerticalLabelBounds(
+                    mxStart * scaleFactor + offsetX - trialOffset,
+                    panelMidY * scaleFactor + offsetY,
+                    textWidth,
+                    2,
+                    8
+                );
+                const side2Bounds = calculateVerticalLabelBounds(
+                    mxStart * scaleFactor + offsetX + trialOffset,
+                    panelMidY * scaleFactor + offsetY,
+                    textWidth,
+                    2,
+                    8
+                );
+                const near = placeNearWallWallDimension({
+                    wallForNear: wall,
+                    wallMidX: panelMidX,
+                    wallMidY: panelMidY,
+                    isHorizontal: false,
+                    modelBounds: bounds,
+                    dimensionLanes,
                     scaleFactor,
                     offsetX,
                     offsetY,
                     fontSize,
-                    calculateBounds: (lx, ly, tw) =>
-                        calculateVerticalLabelBounds(lx, ly, tw, 2, 8),
                     textWidth,
                     placedLabels,
                     wallLinesMap,
-                    modelBounds: bounds,
                     rooms,
-                    dimensionLanes
+                    initialScale,
+                    rotatedVerticalText: true,
+                    calculateBounds: (lx, ly, tw) =>
+                        calculateRotatedVerticalDimBounds(lx, ly, tw, fontSize),
+                    side1Bounds,
+                    side2Bounds,
+                    baseOffset: baseOff,
+                    wallLaneSpacing: DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING,
+                    spanLo,
+                    spanHi
                 });
                 if (!near) {
                     accumulated += panelWidth;

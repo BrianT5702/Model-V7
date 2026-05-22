@@ -7,13 +7,20 @@ import {
     planCeilingValueDedupKey,
     createDimensionLaneCounters,
     consumeDimensionLane,
+    getDimensionSpanForLane,
     comparePlanDimensionsDrawOrder,
     getPlanDimensionLaneConfig,
     getPlanExteriorSide,
     isLabelOutsidePlanArea,
     computeExteriorPlanLabelCoords
 } from './DimensionConfig.js';
-import { hasLabelOverlap, calculateHorizontalLabelBounds, calculateVerticalLabelBounds } from './collisionDetection.js';
+import {
+    hasLabelOverlap,
+    calculateHorizontalLabelBounds,
+    calculateVerticalLabelBounds,
+    tryPlaceExteriorDimensionLabel,
+    pickExteriorDimensionSide
+} from './collisionDetection.js';
 
 // Build a stable identity key for ceiling panels based on thickness + inner/outer finishes
 function getCeilingPanelFinishKey(panel) {
@@ -2365,37 +2372,96 @@ const CeilingCanvas = ({
             !isHorizontal && planBounds && anchorX > (planBounds.minX + planBounds.maxX) / 2
                 ? 'side2'
                 : null;
-        const side =
+        const preferredExteriorSide =
             lockedSide ||
             preferredSide ||
             (planBounds ? getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) : 'side1');
 
-        const spanLo = isHorizontal
-            ? (gb ? gb.minX : Math.min(startX, endX))
-            : (gb ? gb.minY : Math.min(startY, endY));
-        const spanHi = isHorizontal
-            ? (gb ? gb.maxX : Math.max(startX, endX))
-            : (gb ? gb.maxY : Math.max(startY, endY));
-
-        let offsetPx = laneCfg.baseOffset;
-        offsetPx = consumeDimensionLane(
-            dimensionLanes,
-            isHorizontal,
-            side,
-            offsetPx,
-            Math.max(laneCfg.laneSpacing, wallLikeSpacing),
-            spanLo,
-            spanHi
-        );
+        const { lo: spanLo, hi: spanHi } = getDimensionSpanForLane(dimension, isHorizontal);
 
         const sf = scaleFactor.current;
         const ox = offsetX.current;
         const oy = offsetY.current;
-        let placement = { side };
+        const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
+        const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
 
-        const maxNudgeAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
-        for (let attempt = 0; attempt < maxNudgeAttempts; attempt++) {
-            if (planBounds) {
+        let side = preferredExteriorSide;
+        if (planBounds) {
+            const trialOffset = laneCfg.baseOffset;
+            const side1Coords = computeExteriorPlanLabelCoords(
+                isHorizontal,
+                'side1',
+                trialOffset,
+                planBounds,
+                spanMidX,
+                spanMidY,
+                sf,
+                ox,
+                oy
+            );
+            const side2Coords = computeExteriorPlanLabelCoords(
+                isHorizontal,
+                'side2',
+                trialOffset,
+                planBounds,
+                spanMidX,
+                spanMidY,
+                sf,
+                ox,
+                oy
+            );
+            const side1Bounds = isHorizontal
+                ? calculateHorizontalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, pH, pV)
+                : calculateVerticalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, pH, pV);
+            const side2Bounds = isHorizontal
+                ? calculateHorizontalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, pH, pV)
+                : calculateVerticalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, pH, pV);
+            side =
+                lockedSide ||
+                pickExteriorDimensionSide({
+                    side1Bounds,
+                    side2Bounds,
+                    placedLabels,
+                    preferredSide: preferredExteriorSide,
+                    lockedSide: null
+                });
+        }
+
+        let offsetPx = consumeDimensionLane(
+            dimensionLanes,
+            isHorizontal,
+            side,
+            laneCfg.baseOffset,
+            Math.max(laneCfg.laneSpacing, wallLikeSpacing),
+            spanLo,
+            spanHi
+        );
+        offsetPx = Math.min(offsetPx, laneCfg.maxOffset);
+
+        let placement = { side, offset: offsetPx };
+
+        if (planBounds) {
+            const placed = tryPlaceExteriorDimensionLabel({
+                isHorizontal,
+                side,
+                rowOffsetPx: offsetPx,
+                spanLo,
+                spanHi,
+                anchorX: spanMidX,
+                anchorY: spanMidY,
+                bounds: planBounds,
+                scaleFactor: sf,
+                offsetX: ox,
+                offsetY: oy,
+                textWidth,
+                paddingH: pH,
+                paddingV: pV,
+                placedLabels
+            });
+            if (placed) {
+                labelX = placed.labelX;
+                labelY = placed.labelY;
+            } else {
                 ({ labelX, labelY } = computeExteriorPlanLabelCoords(
                     isHorizontal,
                     side,
@@ -2407,32 +2473,11 @@ const CeilingCanvas = ({
                     ox,
                     oy
                 ));
-            } else {
-                labelX = spanMidX * sf + ox;
-                labelY = spanMidY * sf + oy;
             }
-
-            const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
-            const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
-            const labelBounds = isHorizontal
-                ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, pH, pV)
-                : calculateVerticalLabelBounds(labelX, labelY, textWidth, pH, pV);
-
-            const outsidePlan =
-                !planBounds || isLabelOutsidePlanArea(labelBounds, planBounds, sf, ox, oy);
-            const noOverlap = !hasLabelOverlap(labelBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION);
-
-            if (outsidePlan && noOverlap) {
-                placement.offset = offsetPx;
-                break;
-            }
-
-            offsetPx += Math.max(laneCfg.laneSpacing, wallLikeSpacing);
-            const maxOffsetPx = Math.max(laneCfg.maxOffset, wallLikeSpacing * 10);
-            if (offsetPx > maxOffsetPx) {
-                ctx.font = previousFont;
-                return;
-            }
+            placement = { side, offset: offsetPx };
+        } else {
+            labelX = spanMidX * sf + ox;
+            labelY = spanMidY * sf + oy;
         }
 
         if (!storedPlacement) {
@@ -2440,10 +2485,7 @@ const CeilingCanvas = ({
         }
         
         // Final label bounds
-        // Increased padding to ensure text fits within bounds
         let finalLabelBounds;
-        const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
-        const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
         if (isHorizontal) {
             finalLabelBounds = {
                 x: labelX - textWidth / 2 - pH,

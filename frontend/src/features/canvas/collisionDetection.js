@@ -105,6 +105,32 @@ export function calculateVerticalLabelBounds(labelX, labelY, textWidth, paddingH
 }
 
 /**
+ * Screen AABB for dimension text drawn with rotate(-90°) at (labelX, labelY).
+ * calculateVerticalLabelBounds is pre-rotation layout and misses wall overlap.
+ */
+export function calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize, pad = 2) {
+    const tw = textWidth + pad * 2;
+    const th = Math.max(fontSize * 0.75, 8) + pad * 2;
+    return {
+        x: labelX - tw / 2,
+        y: labelY - th / 2,
+        width: tw,
+        height: th
+    };
+}
+
+/** Screen AABB for horizontal dimension text centered at (labelX, labelY). */
+export function calculateNearWallHorizontalDimBounds(labelX, labelY, textWidth, fontSize, padH = 2, padV = 4) {
+    const th = Math.max(fontSize * 0.75, 8) + padV * 2;
+    return {
+        x: labelX - textWidth / 2 - padH,
+        y: labelY - th / 2,
+        width: textWidth + padH * 2,
+        height: th
+    };
+}
+
+/**
  * Find an available position for a label by incrementing offset until no collision
  * @param {Object} params - Configuration object
  * @param {Function} params.calculatePosition - Function(offset) that returns {labelX, labelY}
@@ -440,6 +466,109 @@ export function smartPlacement({
         side: chosen.side,
         overlaps: chosen.overlaps
     };
+}
+
+/** Pick top/left vs bottom/right without bumping row offset. */
+export function pickExteriorDimensionSide({
+    side1Bounds,
+    side2Bounds,
+    placedLabels,
+    preferredSide = 'side1',
+    lockedSide = null
+}) {
+    if (lockedSide === 'side1' || lockedSide === 'side2') return lockedSide;
+    const gap = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
+    const c1 = countOverlaps(side1Bounds, placedLabels, gap);
+    const c2 = countOverlaps(side2Bounds, placedLabels, gap);
+    if (c1 < c2) return 'side1';
+    if (c2 < c1) return 'side2';
+    return preferredSide;
+}
+
+/**
+ * Place label on a fixed exterior row; slide along the measured span before adding a new row.
+ */
+export function tryPlaceExteriorDimensionLabel({
+    isHorizontal,
+    side,
+    rowOffsetPx,
+    spanLo,
+    spanHi,
+    anchorX,
+    anchorY,
+    bounds,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    textWidth,
+    paddingH = 4,
+    paddingV = 6,
+    placedLabels,
+    minSeparation = DIMENSION_CONFIG.LABEL_MIN_SEPARATION
+}) {
+    if (!bounds || !Number.isFinite(spanLo) || !Number.isFinite(spanHi)) return null;
+    const sf = scaleFactor;
+    const ox = offsetX;
+    const oy = offsetY;
+    const { minX, maxX, minY, maxY } = bounds;
+    const sep = minSeparation;
+
+    const buildCandidates = () => {
+        const out = [];
+        if (isHorizontal) {
+            const y =
+                side === 'side1'
+                    ? minY * sf + oy - rowOffsetPx
+                    : maxY * sf + oy + rowOffsetPx;
+            const xCenter = anchorX * sf + ox;
+            const xLo = spanLo * sf + ox;
+            const xHi = spanHi * sf + ox;
+            const halfW = textWidth / 2 + paddingH;
+            const usable = Math.max(0, xHi - xLo - 2 * halfW);
+            const step = Math.max(6, Math.min(halfW, usable / 6 || halfW));
+            out.push(xCenter);
+            for (let d = step; d <= usable / 2 + step; d += step) {
+                out.push(xCenter + d, xCenter - d);
+            }
+            const clamped = [];
+            for (const x of out) {
+                const cx = Math.max(xLo + halfW, Math.min(xHi - halfW, x));
+                if (!clamped.some((p) => Math.abs(p - cx) < 2)) clamped.push(cx);
+            }
+            return clamped.map((labelX) => ({ labelX, labelY: y }));
+        }
+        const x =
+            side === 'side1'
+                ? minX * sf + ox - rowOffsetPx
+                : maxX * sf + ox + rowOffsetPx;
+        const yCenter = anchorY * sf + oy;
+        const yLo = spanLo * sf + oy;
+        const yHi = spanHi * sf + oy;
+        const halfH = textWidth / 2 + paddingV;
+        const usable = Math.max(0, yHi - yLo - 2 * halfH);
+        const step = Math.max(6, Math.min(halfH, usable / 6 || halfH));
+        const ys = [yCenter];
+        for (let d = step; d <= usable / 2 + step; d += step) {
+            ys.push(yCenter + d, yCenter - d);
+        }
+        const clamped = [];
+        for (const y of ys) {
+            const cy = Math.max(yLo + halfH, Math.min(yHi - halfH, y));
+            if (!clamped.some((p) => Math.abs(p - cy) < 2)) clamped.push(cy);
+        }
+        return clamped.map((labelY) => ({ labelX: x, labelY }));
+    };
+
+    const candidates = buildCandidates();
+    for (const { labelX, labelY } of candidates) {
+        const labelBounds = isHorizontal
+            ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, paddingH, paddingV)
+            : calculateVerticalLabelBounds(labelX, labelY, textWidth, paddingH, paddingV);
+        if (!hasLabelOverlap(labelBounds, placedLabels, sep)) {
+            return { labelX, labelY, labelBounds, offset: rowOffsetPx, side };
+        }
+    }
+    return null;
 }
 
 

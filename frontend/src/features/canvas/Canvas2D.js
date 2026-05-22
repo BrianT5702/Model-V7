@@ -23,6 +23,7 @@ import InteractiveRoomLabel from './InteractiveRoomLabel';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
 import { filterDimensions } from './dimensionFilter.js';
+import { planCeilingValueDedupKey } from './DimensionConfig.js';
 
 const Canvas2D = ({ 
     walls = [], 
@@ -2104,8 +2105,10 @@ const Canvas2D = ({
         const dimensionValuesSeen = new Set();
         if (walls.length > 0 && dimensionVisibility.project) {
             const actualDimensions = calculateActualProjectDimensions(walls);
-            dimensionValuesSeen.add(Math.round(actualDimensions.width));
-            dimensionValuesSeen.add(Math.round(actualDimensions.length));
+            const wKey = planCeilingValueDedupKey(actualDimensions.width, true);
+            const hKey = planCeilingValueDedupKey(actualDimensions.length, false);
+            if (wKey) dimensionValuesSeen.add(wKey);
+            if (hKey) dimensionValuesSeen.add(hKey);
         }
 
         // Draw walls first (and wall/panel dimensions); then project dimensions so they place outermost

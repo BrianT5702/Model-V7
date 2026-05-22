@@ -5,10 +5,13 @@ export const DIMENSION_CONFIG = {
     // Spacing and positioning
     BASE_OFFSET: 5,               // Base distance from model boundary (px) - for large dimensions
     BASE_OFFSET_SMALL: 3,         // Legacy small-dimension fallback (px)
-    BASE_OFFSET_NEAR_WALL: 12,    // Minimum screen offset for labels beside a wall (px)
-    NEAR_WALL_CLEARANCE_MM: 12,   // Gap past wall face in model mm (keep label close to wall)
-    NEAR_WALL_FONT_SCALE: 0.68,    // Smaller text for near-wall / panel dimensions
-    NEAR_WALL_LANE_SPACING: 7,     // Row spacing when spreading across top/bottom/left/right
+    BASE_OFFSET_NEAR_WALL: 6,     // Fallback minimum screen offset beside a wall (px)
+    NEAR_WALL_CLEARANCE_MM: 6,    // Gap past wall face in model mm (keep label close to wall)
+    NEAR_WALL_FONT_DELTA_PX: 1,    // Near-wall labels: 1px smaller than standard wall dim text
+    NEAR_WALL_FONT_SCALE: 0.68,    // Legacy panel path fallback
+    NEAR_WALL_LANE_SPACING: 4,     // Extra step only when exterior/interior side is blocked (px)
+    NEAR_WALL_LOCAL_LABEL_RADIUS_PX: 90, // Legacy — near-wall overlap uses full placedLabels now
+    NEAR_WALL_MAX_PLACEMENT_STEPS: 4,
     NEAR_WALL_NUDGE_MM: 30,        // Used only for non-near-wall fallback nudging (mm)
     PROJECT_BASE_OFFSET: 14,      // Minimum distance for project dimensions when no wall dims on edge (px)
     PROJECT_OUTER_GAP_AFTER_WALLS: 8, // Project row sits outside outermost wall row by at least this (px)
@@ -25,6 +28,8 @@ export const DIMENSION_CONFIG = {
     PLAN_EXTERIOR_SEP_MM: 10,       // Label must clear project envelope by this (mm)
     SPAN_LANE_GAP_MM: 80,           // Min gap between separated spans before a new row (touching ends share a row)
     SPAN_ENDPOINT_TOUCH_TOL_MM: 2, // End-to-end chain tolerance (model mm)
+    PLAN_EXTERIOR_ROW_BASE: 10,    // Unified exterior row offset (px) — same for all tiers on one lane
+    PLAN_EXTERIOR_ROW_SPACING: 10, // Row step between span lanes (px)
     PLAN_ROOM_MAX_OFFSET: 48,       // Max px from project edge — room tier
     PLAN_GROUPED_MAX_OFFSET: 36,    // Max px from project edge — grouped tier
     PLAN_INNER_MAX_OFFSET: 28,      // Max px from project edge — individual/cut tier
@@ -129,6 +134,43 @@ export function formatPlanDimensionLabel(dimension, lengthMm) {
  * De-duplication key so room vs grouped vs individual dims with the same mm value can all appear when appropriate.
  * Pass optional `dedupId` (e.g. panel id) on individual/cut dimensions.
  */
+/** Near-wall dimension text: one pixel smaller than the standard dimension font at this zoom. */
+export function applyNearWallFontSize(standardFontSize) {
+    const n = Number(standardFontSize);
+    if (!Number.isFinite(n)) return DIMENSION_CONFIG.FONT_SIZE_MIN;
+    return Math.max(
+        DIMENSION_CONFIG.FONT_SIZE_MIN,
+        n - DIMENSION_CONFIG.NEAR_WALL_FONT_DELTA_PX
+    );
+}
+
+/**
+ * Looser label gap when zoomed out (smaller on screen); full separation when zoomed in.
+ */
+export function nearWallLabelSeparationPx(scaleFactor, initialScale) {
+    const sf = Number(scaleFactor);
+    const is0 = Number(initialScale);
+    if (!Number.isFinite(sf) || !Number.isFinite(is0) || is0 <= 0) {
+        return DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
+    }
+    const zoomRatio = Math.min(1.25, Math.max(0.15, sf / is0));
+    // Slightly looser when zoomed out, but always enforce a visible gap so overlaps hide
+    return Math.max(2, DIMENSION_CONFIG.LABEL_MIN_SEPARATION * zoomRatio * 0.75);
+}
+
+/** Screen radius for near-wall overlap checks — scales with zoom. */
+export function nearWallLocalLabelRadiusPx(scaleFactor, initialScale, textWidth = 40) {
+    const sf = Number(scaleFactor);
+    const is0 = Number(initialScale);
+    const tw = Number(textWidth) || 40;
+    const base = DIMENSION_CONFIG.NEAR_WALL_LOCAL_LABEL_RADIUS_PX;
+    if (!Number.isFinite(sf) || !Number.isFinite(is0) || is0 <= 0) {
+        return Math.max(base, tw * 2.5);
+    }
+    const zoomRatio = Math.min(1.25, Math.max(0.15, sf / is0));
+    return Math.max(40, Math.min(200, base * zoomRatio * 0.75 + tw * 1.2));
+}
+
 /** Fresh lane counters — reset at the start of each canvas redraw. */
 export function createDimensionLaneCounters() {
     return {
@@ -138,6 +180,21 @@ export function createDimensionLaneCounters() {
         right: 0,
         _spanLanes: { top: [], bottom: [], left: [], right: [] }
     };
+}
+
+/** Span along edge for lane assignment (line extent first, not full groupBounds). */
+export function getDimensionSpanForLane(dimension, isHorizontal) {
+    const tol = DIMENSION_CONFIG.SPAN_ENDPOINT_TOUCH_TOL_MM;
+    if (isHorizontal) {
+        const lo = Math.min(dimension.startX, dimension.endX);
+        const hi = Math.max(dimension.startX, dimension.endX);
+        if (hi - lo > tol) return { lo, hi };
+    } else {
+        const lo = Math.min(dimension.startY, dimension.endY);
+        const hi = Math.max(dimension.startY, dimension.endY);
+        if (hi - lo > tol) return { lo, hi };
+    }
+    return getDimensionSpanAlongEdge(dimension, isHorizontal);
 }
 
 /** Model-mm span along a horizontal or vertical exterior edge. */
@@ -214,9 +271,24 @@ export function recordDimensionEdgeExtent(edgeExtents, edge, offsetPx) {
 }
 
 /** Place project-wide dimensions outside the outermost wall dimension row on that edge. */
-export function getProjectDimensionOffsetForEdge(edgeExtents, edge, baseOffset) {
+export function getProjectDimensionOffsetForEdge(
+    edgeExtents,
+    edge,
+    baseOffset,
+    scaleFactor = 1,
+    initialScale = 1
+) {
     const wallMax = edgeExtents?.[edge] ?? 0;
-    const gap = DIMENSION_CONFIG.PROJECT_OUTER_GAP_AFTER_WALLS;
+    let gap = DIMENSION_CONFIG.PROJECT_OUTER_GAP_AFTER_WALLS;
+    if (
+        Number.isFinite(scaleFactor) &&
+        Number.isFinite(initialScale) &&
+        initialScale > 0 &&
+        scaleFactor > initialScale
+    ) {
+        const z = Math.min(2.5, scaleFactor / initialScale);
+        gap = Math.max(gap, Math.round(gap * (0.65 + 0.35 * z)));
+    }
     return Math.max(baseOffset, wallMax + gap);
 }
 
@@ -242,13 +314,14 @@ export function syncEdgeExtentsFromPlacedLabels(
         const r = lb.x + lb.width;
         const t = lb.y;
         const b = lb.y + lb.height;
-        const topOut = topEdge - b;
+        // Use full label box extent (not inner edge) so project row clears taller text when zoomed in
+        const topOut = topEdge - t;
         if (topOut > 0) edgeExtents.top = Math.max(edgeExtents.top, topOut);
-        const bottomOut = t - bottomEdge;
+        const bottomOut = b - bottomEdge;
         if (bottomOut > 0) edgeExtents.bottom = Math.max(edgeExtents.bottom, bottomOut);
-        const leftOut = leftEdge - r;
+        const leftOut = leftEdge - l;
         if (leftOut > 0) edgeExtents.left = Math.max(edgeExtents.left, leftOut);
-        const rightOut = l - rightEdge;
+        const rightOut = r - rightEdge;
         if (rightOut > 0) edgeExtents.right = Math.max(edgeExtents.right, rightOut);
     }
 }
@@ -305,7 +378,12 @@ export function consumeDimensionLane(
         }
         edgeLanes[laneIndex].push({ min: lo, max: hi });
         lanes[edge] = Math.max(lanes[edge] ?? 0, laneIndex + 1);
-        return baseOffset + laneIndex * spacing;
+        lanes._lastLaneIndex = laneIndex;
+        lanes._lastEdge = edge;
+        // Same lane index => same row for all types (panel, grouped, wall); priority must not shift row
+        const rowBase = DIMENSION_CONFIG.PLAN_EXTERIOR_ROW_BASE;
+        const rowSpacing = DIMENSION_CONFIG.PLAN_EXTERIOR_ROW_SPACING;
+        return rowBase + laneIndex * rowSpacing;
     }
 
     const stackedOffset = baseOffset + (lanes[edge] ?? 0) * spacing;

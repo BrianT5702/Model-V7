@@ -6,6 +6,7 @@ import {
     planCeilingValueDedupKey,
     createDimensionLaneCounters,
     consumeDimensionLane,
+    getDimensionSpanForLane,
     comparePlanDimensionsDrawOrder,
     getPlanDimensionLaneConfig,
     getPlanExteriorSide,
@@ -16,7 +17,9 @@ import {
     hasLabelOverlap,
     calculateHorizontalLabelBounds,
     calculateVerticalLabelBounds,
-    isLabelPlacementClean
+    isLabelPlacementClean,
+    tryPlaceExteriorDimensionLabel,
+    pickExteriorDimensionSide
 } from './collisionDetection.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 import {
@@ -1112,13 +1115,6 @@ const FloorCanvas = ({
         const { startX, endX, startY, endY, dimension: length, color, avoidArea } = dimension;
         if (!bounds && !modelBounds) return;
 
-        const globalDimensionValues = dimensionValuesSeen.current;
-        if (globalDimensionValues && typeof length === 'number') {
-            const dedupKey = planCeilingValueDedupKey(length, isHorizontal);
-            if (dedupKey && globalDimensionValues.has(dedupKey)) return;
-            if (dedupKey) globalDimensionValues.add(dedupKey);
-        }
-
         let isHorizontal;
         if (dimension.isHorizontal !== undefined) {
             isHorizontal = dimension.isHorizontal;
@@ -1127,6 +1123,13 @@ const FloorCanvas = ({
             const dy = endY - startY;
             const angle = Math.atan2(dy, dx) * (180 / Math.PI);
             isHorizontal = Math.abs(angle) < 45 || Math.abs(angle) > 135;
+        }
+
+        const globalDimensionValues = dimensionValuesSeen.current;
+        if (globalDimensionValues && typeof length === 'number') {
+            const dedupKey = planCeilingValueDedupKey(length, isHorizontal);
+            if (dedupKey && globalDimensionValues.has(dedupKey)) return;
+            if (dedupKey) globalDimensionValues.add(dedupKey);
         }
         
         const midX = (startX + endX) / 2;
@@ -1167,40 +1170,98 @@ const FloorCanvas = ({
             !isHorizontal && planBounds && anchorX > (planBounds.minX + planBounds.maxX) / 2
                 ? 'side2'
                 : null;
-        const side =
+        const preferredExteriorSide =
             lockedSide ||
             preferredSide ||
             (planBounds ? getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) : 'side1');
 
-        const spanLo = isHorizontal
-            ? (gb ? gb.minX : Math.min(startX, endX))
-            : (gb ? gb.minY : Math.min(startY, endY));
-        const spanHi = isHorizontal
-            ? (gb ? gb.maxX : Math.max(startX, endX))
-            : (gb ? gb.maxY : Math.max(startY, endY));
+        const { lo: spanLo, hi: spanHi } = getDimensionSpanForLane(dimension, isHorizontal);
 
-        let offsetPx = laneCfg.baseOffset;
-        offsetPx = consumeDimensionLane(
+        const sf = scaleFactor.current;
+        const ox = offsetX.current;
+        const oy = offsetY.current;
+        const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
+        const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
+
+        let side = preferredExteriorSide;
+        if (planBounds) {
+            const trialOffset = laneCfg.baseOffset;
+            const side1Coords = computeExteriorPlanLabelCoords(
+                isHorizontal,
+                'side1',
+                trialOffset,
+                planBounds,
+                spanMidX,
+                spanMidY,
+                sf,
+                ox,
+                oy
+            );
+            const side2Coords = computeExteriorPlanLabelCoords(
+                isHorizontal,
+                'side2',
+                trialOffset,
+                planBounds,
+                spanMidX,
+                spanMidY,
+                sf,
+                ox,
+                oy
+            );
+            const side1Bounds = isHorizontal
+                ? calculateHorizontalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, pH, pV)
+                : calculateVerticalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, pH, pV);
+            const side2Bounds = isHorizontal
+                ? calculateHorizontalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, pH, pV)
+                : calculateVerticalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, pH, pV);
+            side =
+                lockedSide ||
+                pickExteriorDimensionSide({
+                    side1Bounds,
+                    side2Bounds,
+                    placedLabels,
+                    preferredSide: preferredExteriorSide,
+                    lockedSide: null
+                });
+        }
+
+        let offsetPx = consumeDimensionLane(
             dimensionLanes,
             isHorizontal,
             side,
-            offsetPx,
+            laneCfg.baseOffset,
             laneCfg.laneSpacing,
             spanLo,
             spanHi
         );
         offsetPx = Math.min(offsetPx, laneCfg.maxOffset);
 
-        const sf = scaleFactor.current;
-        const ox = offsetX.current;
-        const oy = offsetY.current;
         let labelX;
         let labelY;
-        let placement = { side };
+        let placement = { side, offset: offsetPx };
 
-        const maxNudgeAttempts = DIMENSION_CONFIG.MAX_ATTEMPTS;
-        for (let attempt = 0; attempt < maxNudgeAttempts; attempt++) {
-            if (planBounds) {
+        if (planBounds) {
+            const placed = tryPlaceExteriorDimensionLabel({
+                isHorizontal,
+                side,
+                rowOffsetPx: offsetPx,
+                spanLo,
+                spanHi,
+                anchorX: spanMidX,
+                anchorY: spanMidY,
+                bounds: planBounds,
+                scaleFactor: sf,
+                offsetX: ox,
+                offsetY: oy,
+                textWidth,
+                paddingH: pH,
+                paddingV: pV,
+                placedLabels
+            });
+            if (placed) {
+                labelX = placed.labelX;
+                labelY = placed.labelY;
+            } else {
                 ({ labelX, labelY } = computeExteriorPlanLabelCoords(
                     isHorizontal,
                     side,
@@ -1212,32 +1273,11 @@ const FloorCanvas = ({
                     ox,
                     oy
                 ));
-            } else {
-                labelX = spanMidX * sf + ox;
-                labelY = spanMidY * sf + oy;
             }
-
-            const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
-            const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
-            const labelBounds = isHorizontal
-                ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, pH, pV)
-                : calculateVerticalLabelBounds(labelX, labelY, textWidth, pH, pV);
-
-            const outsidePlan =
-                !planBounds ||
-                isLabelOutsidePlanArea(labelBounds, planBounds, sf, ox, oy);
-            const noOverlap = !hasLabelOverlap(labelBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION);
-
-            if (outsidePlan && noOverlap) {
-                placement.offset = offsetPx;
-                break;
-            }
-
-            offsetPx += laneCfg.laneSpacing;
-            if (offsetPx > laneCfg.maxOffset) {
-                ctx.font = previousFont;
-                return;
-            }
+            placement = { side, offset: offsetPx };
+        } else {
+            labelX = spanMidX * sf + ox;
+            labelY = spanMidY * sf + oy;
         }
 
         if (!storedPlacement) {
@@ -1246,8 +1286,6 @@ const FloorCanvas = ({
         
         // Final label bounds (match ceiling padding)
         let finalLabelBounds;
-        const pH = DIMENSION_CONFIG.LABEL_PADDING_H;
-        const pV = DIMENSION_CONFIG.LABEL_PADDING_V;
         if (isHorizontal) {
             finalLabelBounds = {
                 x: labelX - textWidth / 2 - pH,
@@ -1288,11 +1326,6 @@ const FloorCanvas = ({
                     labelX += adjustment;
                 }
             }
-        }
-
-        if (!isLabelPlacementClean(finalLabelBounds, placedLabels, labelSep)) {
-            ctx.font = previousFont;
-            return;
         }
 
         const dxLine = endX - startX;
