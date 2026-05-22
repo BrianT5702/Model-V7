@@ -102,17 +102,26 @@ FRONTEND_BUILD_PATH = os.path.join(BASE_DIR, 'frontend', FRONTEND_BUILD_SUBDIR)
 
 # CRA puts assets in dist/static/js/... but URLs are /static/js/...
 # Collect from dist/static/ so files land at staticfiles/js/ (not staticfiles/static/js/)
-STATICFILES_DIRS = [
-    os.path.join(FRONTEND_BUILD_PATH, 'static'),
-]
+# Only add dirs that exist — missing path prevents Gunicorn from starting (staticfiles.E002)
+_cra_static_dir = os.path.join(FRONTEND_BUILD_PATH, 'static')
+STATICFILES_DIRS = []
+if os.path.isdir(_cra_static_dir):
+    STATICFILES_DIRS.append(_cra_static_dir)
+elif os.path.isdir(FRONTEND_BUILD_PATH):
+    STATICFILES_DIRS.append(FRONTEND_BUILD_PATH)
 
 # Production: serve collected files from STATIC_ROOT (not finders)
 WHITENOISE_USE_FINDERS = False
 WHITENOISE_AUTOREFRESH = False
 
-# Serve index.html, manifest.json, favicon, etc. from dist root
-WHITENOISE_ROOT = FRONTEND_BUILD_PATH
-WHITENOISE_INDEX_FILE = True
+# Serve favicon/manifest from dist root only if Gunicorn can read the directory
+# (dist is often root-owned after a bad deploy — causes PermissionError and 502)
+if os.path.isdir(FRONTEND_BUILD_PATH) and os.access(FRONTEND_BUILD_PATH, os.R_OK | os.X_OK):
+    WHITENOISE_ROOT = FRONTEND_BUILD_PATH
+    WHITENOISE_INDEX_FILE = True
+else:
+    WHITENOISE_ROOT = None
+    WHITENOISE_INDEX_FILE = False
 
 # Ensure static files are collected to the right place
 STATICFILES_FINDERS = [
