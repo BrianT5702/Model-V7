@@ -8,12 +8,15 @@ const ProjectCard = ({
     onClick,
     onEdit,
     onDelete,
+    enableDrag = true,
 }) => (
     <div
-        draggable
-        onDragStart={(e) => onDragStart(e, project)}
-        onDragEnd={onDragEnd}
-        className={`group bg-white rounded-2xl border p-6 shadow-sm transition-all duration-300 transform cursor-grab active:cursor-grabbing ${
+        draggable={enableDrag}
+        onDragStart={enableDrag ? (e) => onDragStart(e, project) : undefined}
+        onDragEnd={enableDrag ? onDragEnd : undefined}
+        className={`group bg-white rounded-2xl border p-6 shadow-sm transition-all duration-300 transform ${
+            enableDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+        } ${
             isDragging
                 ? 'opacity-50 border-blue-400 ring-2 ring-blue-200 scale-[0.98]'
                 : 'border-gray-200 hover:shadow-xl hover:border-blue-200 hover:-translate-y-2'
@@ -76,9 +79,13 @@ const ProjectCard = ({
         </div>
 
         <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-400">Drag to move</span>
+            {enableDrag ? (
+                <span className="text-gray-400">Drag to move</span>
+            ) : (
+                <span className="text-gray-400">&nbsp;</span>
+            )}
             <span className="text-blue-600 font-medium flex items-center">
-                Open
+                {enableDrag ? 'Open' : 'Click to open'}
                 <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>

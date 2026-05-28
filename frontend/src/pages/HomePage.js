@@ -7,6 +7,7 @@ import api from '../api/api';
 const HomePage = () => {
     const [projects, setProjects] = useState([]);
     const [folders, setFolders] = useState([]);
+    const [foldersAvailable, setFoldersAvailable] = useState(true);
     const [dbConnectionError, setDbConnectionError] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -31,34 +32,42 @@ const HomePage = () => {
         setTimeout(() => setDbConnectionError(false), 5000);
     };
 
-    // Fetch projects and folders from the backend
+    // Fetch projects first; folders are optional (older backends return 404)
     useEffect(() => {
         setIsLoading(true);
-        Promise.all([
-            api.get('projects/'),
-            api.get('project-folders/'),
-        ])
-            .then(([projectsResponse, foldersResponse]) => {
-                setProjects(projectsResponse.data);
-                setFolders(foldersResponse.data);
-                setIsLoading(false);
+
+        api.get('projects/')
+            .then((response) => {
+                setProjects(response.data);
             })
             .catch((error) => {
                 console.error('Error fetching projects:', error);
-                setIsLoading(false);
-
                 if (isDatabaseConnectionError(error)) {
                     showDatabaseError();
+                } else if (error.response) {
+                    const { status, data } = error.response;
+                    console.error(`Error ${status}:`, data.error || 'Failed to load projects');
+                } else if (error.request) {
+                    console.error('Network error: Unable to connect to the server');
                 } else {
-                    if (error.response) {
-                        const { status, data } = error.response;
-                        console.error(`Error ${status}:`, data.error || 'Failed to load projects');
-                    } else if (error.request) {
-                        console.error('Network error: Unable to connect to the server');
-                    } else {
-                        console.error('An unexpected error occurred while loading projects');
-                    }
+                    console.error('An unexpected error occurred while loading projects');
                 }
+            })
+            .finally(() => setIsLoading(false));
+
+        api.get('project-folders/')
+            .then((response) => {
+                setFolders(response.data);
+                setFoldersAvailable(true);
+            })
+            .catch((error) => {
+                if (error.response?.status === 404) {
+                    setFolders([]);
+                    setFoldersAvailable(false);
+                    return;
+                }
+                console.warn('Could not load project folders:', error);
+                setFoldersAvailable(false);
             });
     }, []);
 
@@ -151,6 +160,7 @@ const HomePage = () => {
                         setProjects={setProjects}
                         folders={folders}
                         setFolders={setFolders}
+                        foldersAvailable={foldersAvailable}
                     />
                 </div>
             </div>

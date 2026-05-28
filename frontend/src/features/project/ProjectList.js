@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { FaPlus, FaFolderPlus } from 'react-icons/fa';
 import api from '../../api/api';
 import EditProject from './EditProject';
+import ProjectCard from './ProjectCard';
 import ProjectFolderSection, { UNCATEGORIZED_KEY } from './ProjectFolderSection';
 
-const ProjectList = ({ projects, setProjects, folders, setFolders }) => {
+const ProjectList = ({ projects, setProjects, folders, setFolders, foldersAvailable = true }) => {
     const navigate = useNavigate();
     const [dbConnectionError, setDbConnectionError] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -294,6 +295,15 @@ const ProjectList = ({ projects, setProjects, folders, setFolders }) => {
                 </div>
             )}
 
+            {!foldersAvailable && (
+                <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Project folders are not available on this server yet. Redeploy the backend and run migrations
+                    (<code className="text-xs bg-amber-100 px-1 rounded">python manage.py migrate</code>), then restart Gunicorn.
+                    Your projects still load below.
+                </div>
+            )}
+
+            {foldersAvailable && (
             <div className="flex flex-wrap items-center gap-3 mb-6">
                 {isCreatingFolder ? (
                     <form onSubmit={handleCreateFolder} className="flex items-center gap-2">
@@ -320,6 +330,7 @@ const ProjectList = ({ projects, setProjects, folders, setFolders }) => {
                 )}
                 <p className="text-sm text-gray-500">Drag projects between folders to organize them.</p>
             </div>
+            )}
 
             {!hasAnyContent ? (
                 <div className="text-center py-12">
@@ -337,6 +348,19 @@ const ProjectList = ({ projects, setProjects, folders, setFolders }) => {
                         <FaPlus className="w-4 h-4 mr-2" />
                         Create Project
                     </button>
+                </div>
+            ) : !foldersAvailable ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {sortProjects(safeProjects).map((project) => (
+                        <ProjectCard
+                            key={project.id}
+                            project={project}
+                            enableDrag={false}
+                            onClick={handleProjectClick}
+                            onEdit={handleEditClick}
+                            onDelete={handleDeleteClick}
+                        />
+                    ))}
                 </div>
             ) : (
                 <>
