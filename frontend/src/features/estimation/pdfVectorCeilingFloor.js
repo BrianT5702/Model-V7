@@ -14,6 +14,7 @@ import {
     planCeilingValueDedupKey
 } from '../canvas/DimensionConfig';
 import { calculateOffsetPoints, buildWallOffsetOptions } from '../canvas/drawing';
+import { drawCollectedPlanDimensionsOnContext } from '../canvas/planDimensionDrawing';
 import {
     smartPlacement,
     hasLabelOverlap,
@@ -142,9 +143,8 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
     storeyWalls.forEach((wall) => {
         try {
             const wallThickness = num(wall.thickness, 100);
-            // Use full wall thickness for both floor and ceiling PDF. Half-thickness (ceiling canvas style)
-            // collapses to an almost single line at typical PDF scales; full offset matches floor export clarity.
-            const gapPixels = wallThickness * MODEL_SF;
+            // Match CeilingCanvas/FloorCanvas: offset = half thickness per side (gapPixels/scaleFactor with sf=1).
+            const gapPixels = (wallThickness * MODEL_SF) / 2;
             const offsetOpts = buildWallOffsetOptions(wall, storeyRooms);
 
             let { line1, line2 } = calculateOffsetPoints(
@@ -310,9 +310,12 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
             );
 
             doc.setDrawColor(107, 114, 128);
-            const dash1 = Math.max(0.25, 8 * scale);
-            const dash2 = Math.max(0.15, 4 * scale);
-            if (typeof doc.setLineDashPattern === 'function') doc.setLineDashPattern([dash1, dash2], 0);
+            // Canvas uses fixed [8, 4] px dashes. Do NOT scale by plan fit scale (≈0.01–0.03) or dashes vanish.
+            const innerDashMm = [
+                Math.max(0.8, 8 * PX_TO_MM),
+                Math.max(0.4, 4 * PX_TO_MM)
+            ];
+            if (typeof doc.setLineDashPattern === 'function') doc.setLineDashPattern(innerDashMm, 0);
             doc.line(
                 transformX(line2[0].x),
                 transformY(line2[0].y),
@@ -321,15 +324,33 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
             );
             if (typeof doc.setLineDashPattern === 'function') doc.setLineDashPattern([], 0);
         } catch (_) {
-            doc.setDrawColor(31, 41, 55);
-            doc.setLineWidth(0.35);
+            // Match canvas fallback: dashed inner-face approximation, not a solid centerline.
+            doc.setDrawColor(107, 114, 128);
+            doc.setLineWidth(0.2);
+            const innerDashMm = [
+                Math.max(0.8, 8 * PX_TO_MM),
+                Math.max(0.4, 4 * PX_TO_MM)
+            ];
+            if (typeof doc.setLineDashPattern === 'function') doc.setLineDashPattern(innerDashMm, 0);
+            const sx = num(wall.start_x);
+            const sy = num(wall.start_y);
+            const ex = num(wall.end_x);
+            const ey = num(wall.end_y);
+            const dx = ex - sx;
+            const dy = ey - sy;
+            const len = Math.hypot(dx, dy);
+            if (len > 0) {
+                const nx = dy / len;
+                const ny = -dx / len;
+                const off = num(wall.thickness, 100) / 2;
+                doc.line(
+                    transformX(sx + nx * off),
+                    transformY(sy + ny * off),
+                    transformX(ex + nx * off),
+                    transformY(ey + ny * off)
+                );
+            }
             if (typeof doc.setLineDashPattern === 'function') doc.setLineDashPattern([], 0);
-            doc.line(
-                transformX(num(wall.start_x)),
-                transformY(num(wall.start_y)),
-                transformX(num(wall.end_x)),
-                transformY(num(wall.end_y))
-            );
         }
     });
 }
@@ -906,8 +927,6 @@ function placePdfDimensionLabel({
  */
 function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _scale, layoutHint = {}) {
     const valueDedup = new Set();
-    const edgeLanes = createDimensionLaneCounters();
-    const placedLabels = [];
     const placementMemory = new Map();
     const {
         scale: layoutScale = 0,
@@ -916,19 +935,62 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         geometryBounds: geomIn,
         kind: planKind = 'ceiling',
         ceilingPlans = [],
-        floorPlans = []
+        floorPlans = [],
+        canvasCtx = null,
+        scaleFactor: canvasScaleFactor = 0,
+        offsetX: canvasOffsetX = 0,
+        offsetY: canvasOffsetY = 0,
+        initialScale: canvasInitialScale = 0,
+        canvasWidth = 0,
+        canvasHeight = 0
     } = layoutHint;
+    const useCanvasLayer = Boolean(canvasCtx);
+    const dimensionsToDraw = [];
     const pb = pbIn && boundsValid(pbIn) ? pbIn : null;
     const proj = projIn && boundsValid(projIn) ? projIn : pb;
     if (!pb) return;
-    const avoidArea = {
-        minX: transformX(proj.minX),
-        maxX: transformX(proj.maxX),
-        minY: transformY(proj.minY),
-        maxY: transformY(proj.maxY)
+    let clipModelForDims = pb;
+    if (geomIn && boundsValid(geomIn)) clipModelForDims = geomIn;
+    else if (proj && boundsValid(proj)) clipModelForDims = proj;
+
+    const pushCanvasStripDimension = ({
+        isHorizontal,
+        dimensionValue,
+        dimensionMeta,
+        colorHex,
+        minXModel,
+        maxXModel,
+        minYModel,
+        maxYModel,
+        priority
+    }) => {
+        const cx = (minXModel + maxXModel) / 2;
+        const cy = (minYModel + maxYModel) / 2;
+        dimensionsToDraw.push({
+            dimension: {
+                startX: isHorizontal ? minXModel : cx,
+                endX: isHorizontal ? maxXModel : cx,
+                startY: isHorizontal ? cy : minYModel,
+                endY: isHorizontal ? cy : maxYModel,
+                dimension: dimensionValue,
+                type: dimensionMeta?.type,
+                color: colorHex,
+                priority: priority ?? DIMENSION_CONFIG.PRIORITY.PANEL_GROUP,
+                isHorizontal,
+                avoidArea: proj,
+                groupBounds: {
+                    minX: minXModel,
+                    maxX: maxXModel,
+                    minY: minYModel,
+                    maxY: maxYModel
+                },
+                quantity: dimensionMeta?.quantity,
+                roomId: dimensionMeta?.roomId,
+                isCut: dimensionMeta?.isCut
+            },
+            bounds: clipModelForDims
+        });
     };
-    const avoidMidX = (avoidArea.minX + avoidArea.maxX) / 2;
-    const modelPlanBounds = proj;
 
     const schedulePdfPlanValue = (lengthMm, isHorizontal) => {
         const k = planCeilingValueDedupKey(lengthMm, isHorizontal);
@@ -936,8 +998,43 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         valueDedup.add(k);
         return true;
     };
+    const avoidMidXModel = (proj.minX + proj.maxX) / 2;
 
-    const laneOffsetFor = (isHorizontal, side, priority, spanMin, spanMax) => {
+    let edgeLanes;
+    let placedLabels;
+    let avoidArea;
+    let avoidMidX;
+    let modelPlanBounds = proj;
+    let laneOffsetFor;
+    let roomColor;
+    let cutPanelColor;
+    let panelGroupColor;
+    let pdfExtDash;
+    let pdfDimLineW;
+    let pdfExtLineW;
+    let pdfTick;
+    let modelRectPdf;
+    let drawDashedExtensionLine;
+    let setPdfDash;
+    let drawPdfHorizontalDimArrows;
+    let drawPdfVerticalDimArrows;
+    let drawPdfHorizontalTicks;
+    let drawPdfVerticalTicks;
+    let drawPdfDimTextPadH;
+    let drawPdfDimTextPadV;
+
+    if (!useCanvasLayer && doc) {
+    edgeLanes = createDimensionLaneCounters();
+    placedLabels = [];
+    avoidArea = {
+        minX: transformX(proj.minX),
+        maxX: transformX(proj.maxX),
+        minY: transformY(proj.minY),
+        maxY: transformY(proj.maxY)
+    };
+    avoidMidX = (avoidArea.minX + avoidArea.maxX) / 2;
+
+    laneOffsetFor = (isHorizontal, side, priority, spanMin, spanMax) => {
         const laneCfg = getPlanDimensionLaneConfig(priority);
         const px = consumeDimensionLane(
             edgeLanes,
@@ -946,7 +1043,8 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             laneCfg.baseOffset,
             laneCfg.laneSpacing,
             spanMin,
-            spanMax
+            spanMax,
+            priority
         );
         return Math.min(px, laneCfg.maxOffset) * PX_TO_MM;
     };
@@ -1105,10 +1203,14 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             /* ignore */
         }
     };
+    }
 
     const drawPdfVerticalStripDimension = ({
-        text,
+        dimensionValue,
+        dimensionMeta,
+        text: textIn,
         colorRgb,
+        colorHex,
         minXModel,
         maxXModel,
         minYModel,
@@ -1117,6 +1219,23 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         preferredSide,
         priority = DIMENSION_CONFIG.PRIORITY.PANEL_GROUP
     }) => {
+        if (useCanvasLayer) {
+            pushCanvasStripDimension({
+                isHorizontal: false,
+                dimensionValue,
+                dimensionMeta,
+                colorHex: colorHex || DIMENSION_CONFIG.COLORS.PANEL_GROUP,
+                minXModel,
+                maxXModel,
+                minYModel,
+                maxYModel,
+                priority
+            });
+            return;
+        }
+        const text =
+            textIn ||
+            pdfSafePlanDimensionText(dimensionMeta, dimensionValue);
         const xc = transformX((minXModel + maxXModel) / 2);
         const yLo = transformY(minYModel);
         const yHi = transformY(maxYModel);
@@ -1196,8 +1315,11 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
     };
 
     const drawPdfHorizontalStripDimension = ({
-        text,
+        dimensionValue,
+        dimensionMeta,
+        text: textIn,
         colorRgb,
+        colorHex,
         minXModel,
         maxXModel,
         minYModel,
@@ -1206,6 +1328,23 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         preferredSide,
         priority = DIMENSION_CONFIG.PRIORITY.PANEL_GROUP
     }) => {
+        if (useCanvasLayer) {
+            pushCanvasStripDimension({
+                isHorizontal: true,
+                dimensionValue,
+                dimensionMeta,
+                colorHex: colorHex || DIMENSION_CONFIG.COLORS.PANEL_GROUP,
+                minXModel,
+                maxXModel,
+                minYModel,
+                maxYModel,
+                priority
+            });
+            return;
+        }
+        const text =
+            textIn ||
+            pdfSafePlanDimensionText(dimensionMeta, dimensionValue);
         const yc = transformY((minYModel + maxYModel) / 2);
         const xL = transformX(minXModel);
         const xR = transformX(maxXModel);
@@ -1337,30 +1476,26 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                     if (isHorizontalStrategy) {
                         if (matchesRoomDim(dimensionValue, roomLength)) return;
                         if (!schedulePdfPlanValue(dimensionValue, false)) return;
-                        const text = pdfSafePlanDimensionText(
-                            { type: 'grouped_length_horizontal', quantity: qty, roomId },
-                            dimensionValue
-                        );
                         drawPdfVerticalStripDimension({
-                            text,
+                            dimensionValue,
+                            dimensionMeta: { type: 'grouped_length_horizontal', quantity: qty, roomId },
+                            colorHex: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
                             colorRgb: panelGroupColor,
                             minXModel: minX,
                             maxXModel: maxX,
                             minYModel: minY,
                             maxYModel: maxY,
                             dimKey: `fp_g_v_${roomId}_${dimensionValue}_${qty}`,
-                            preferredSide: transformX(centerX) > avoidMidX ? 'side2' : 'side1',
+                            preferredSide: centerX > avoidMidXModel ? 'side2' : 'side1',
                             priority: DIMENSION_CONFIG.PRIORITY.PANEL_GROUP
                         });
                     } else {
                         if (matchesRoomDim(dimensionValue, roomWidth)) return;
                         if (!schedulePdfPlanValue(dimensionValue, true)) return;
-                        const text = pdfSafePlanDimensionText(
-                            { type: 'grouped_width_vertical', quantity: qty, roomId },
-                            dimensionValue
-                        );
                         drawPdfHorizontalStripDimension({
-                            text,
+                            dimensionValue,
+                            dimensionMeta: { type: 'grouped_width_vertical', quantity: qty, roomId },
+                            colorHex: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
                             colorRgb: panelGroupColor,
                             minXModel: minX,
                             maxXModel: maxX,
@@ -1389,29 +1524,25 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
 
                     if (isHorizontalStrategy) {
                         if (!schedulePdfPlanValue(dimVal, false)) return;
-                        const text = pdfSafePlanDimensionText(
-                            { type: 'individual_panel', roomId },
-                            dimVal
-                        );
                         drawPdfVerticalStripDimension({
-                            text,
+                            dimensionValue: dimVal,
+                            dimensionMeta: { type: 'individual_panel', roomId },
+                            colorHex: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
                             colorRgb: panelGroupColor,
                             minXModel: minX,
                             maxXModel: maxX,
                             minYModel: minY,
                             maxYModel: maxY,
                             dimKey: `fp_ind_v_${panel.id}_${dimVal}`,
-                            preferredSide: transformX(cx) > avoidMidX ? 'side2' : 'side1',
+                            preferredSide: cx > avoidMidXModel ? 'side2' : 'side1',
                             priority: DIMENSION_CONFIG.PRIORITY.PANEL
                         });
                     } else {
                         if (!schedulePdfPlanValue(dimVal, true)) return;
-                        const text = pdfSafePlanDimensionText(
-                            { type: 'individual_panel', roomId },
-                            dimVal
-                        );
                         drawPdfHorizontalStripDimension({
-                            text,
+                            dimensionValue: dimVal,
+                            dimensionMeta: { type: 'individual_panel', roomId },
+                            colorHex: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
                             colorRgb: panelGroupColor,
                             minXModel: minX,
                             maxXModel: maxX,
@@ -1460,19 +1591,17 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                     const drawV = (typeTag, val, roomDim) => {
                         if (matchesRoomDim(val, roomDim)) return;
                         if (!schedulePdfPlanValue(val, false)) return;
-                        const text = pdfSafePlanDimensionText(
-                            { type: typeTag, quantity: qty, roomId },
-                            val
-                        );
                         drawPdfVerticalStripDimension({
-                            text,
+                            dimensionValue: val,
+                            dimensionMeta: { type: typeTag, quantity: qty, roomId },
+                            colorHex: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
                             colorRgb: panelGroupColor,
                             minXModel: minX,
                             maxXModel: maxX,
                             minYModel: minY,
                             maxYModel: maxY,
                             dimKey: `cp_g_v_${roomId}_${val}_${qty}_${typeTag}`,
-                            preferredSide: transformX(centerX) > avoidMidX ? 'side2' : 'side1',
+                            preferredSide: centerX > avoidMidXModel ? 'side2' : 'side1',
                             priority: DIMENSION_CONFIG.PRIORITY.PANEL_GROUP
                         });
                     };
@@ -1480,12 +1609,10 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                     const drawH = (typeTag, val, roomDim) => {
                         if (matchesRoomDim(val, roomDim)) return;
                         if (!schedulePdfPlanValue(val, true)) return;
-                        const text = pdfSafePlanDimensionText(
-                            { type: typeTag, quantity: qty, roomId },
-                            val
-                        );
                         drawPdfHorizontalStripDimension({
-                            text,
+                            dimensionValue: val,
+                            dimensionMeta: { type: typeTag, quantity: qty, roomId },
+                            colorHex: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
                             colorRgb: panelGroupColor,
                             minXModel: minX,
                             maxXModel: maxX,
@@ -1512,10 +1639,6 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                     if (matchesRoomDim(panelWidth, roomWidth)) return;
 
                     if (!schedulePdfPlanValue(panelWidth, true)) return;
-                    const text = pdfSafePlanDimensionText(
-                        { type: 'individual_panel', roomId },
-                        panelWidth
-                    );
 
                     const minX = num(panel.start_x ?? panel.x);
                     const maxX = panelExtentX(panel);
@@ -1523,7 +1646,9 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                     const maxY = panelExtentY(panel);
 
                     drawPdfHorizontalStripDimension({
-                        text,
+                        dimensionValue: panelWidth,
+                        dimensionMeta: { type: 'individual_panel', roomId },
+                        colorHex: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
                         colorRgb: panelGroupColor,
                         minXModel: minX,
                         maxXModel: maxX,
@@ -1557,12 +1682,14 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         const rid = panelRoomId(panel);
         if (stripWide) {
             if (!schedulePdfPlanValue(lenMm, false)) return;
-            const show = pdfSafePlanDimensionText(
-                { type: 'cut_panel', isCut: true, roomId: rid != null ? rid : undefined },
-                lenMm
-            );
             drawPdfVerticalStripDimension({
-                text: show,
+                dimensionValue: lenMm,
+                dimensionMeta: {
+                    type: 'cut_panel',
+                    isCut: true,
+                    roomId: rid != null ? rid : undefined
+                },
+                colorHex: DIMENSION_CONFIG.COLORS.CUT_PANEL,
                 colorRgb: cutPanelColor,
                 minXModel: bb.minX,
                 maxXModel: bb.maxX,
@@ -1573,12 +1700,14 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             });
         } else {
             if (!schedulePdfPlanValue(lenMm, true)) return;
-            const show = pdfSafePlanDimensionText(
-                { type: 'cut_panel', isCut: true, roomId: rid != null ? rid : undefined },
-                lenMm
-            );
             drawPdfHorizontalStripDimension({
-                text: show,
+                dimensionValue: lenMm,
+                dimensionMeta: {
+                    type: 'cut_panel',
+                    isCut: true,
+                    roomId: rid != null ? rid : undefined
+                },
+                colorHex: DIMENSION_CONFIG.COLORS.CUT_PANEL,
                 colorRgb: cutPanelColor,
                 minXModel: bb.minX,
                 maxXModel: bb.maxX,
@@ -1607,7 +1736,9 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         const widthRounded = Math.round(roomW);
         if (schedulePdfPlanValue(widthRounded, true)) {
             drawPdfHorizontalStripDimension({
-                text: String(widthRounded),
+                dimensionValue: widthRounded,
+                dimensionMeta: { type: 'room' },
+                colorHex: DIMENSION_CONFIG.COLORS.ROOM,
                 colorRgb: roomColor,
                 minXModel: roomMinX,
                 maxXModel: roomMaxX,
@@ -1621,7 +1752,9 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         const heightRounded = Math.round(roomH);
         if (schedulePdfPlanValue(heightRounded, false)) {
             drawPdfVerticalStripDimension({
-                text: String(heightRounded),
+                dimensionValue: heightRounded,
+                dimensionMeta: { type: 'room' },
+                colorHex: DIMENSION_CONFIG.COLORS.ROOM,
                 colorRgb: roomColor,
                 minXModel: roomMinX,
                 maxXModel: roomMinX,
@@ -1632,6 +1765,19 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             });
         }
     });
+
+    if (useCanvasLayer && dimensionsToDraw.length > 0) {
+        drawCollectedPlanDimensionsOnContext(canvasCtx, dimensionsToDraw, planKind, {
+            scaleFactor: canvasScaleFactor,
+            offsetX: canvasOffsetX,
+            offsetY: canvasOffsetY,
+            initialScale: canvasInitialScale || canvasScaleFactor,
+            placementMemory,
+            dimensionValuesSeen: new Set(),
+            canvasWidth,
+            canvasHeight
+        });
+    }
 }
 
 
@@ -2239,19 +2385,41 @@ function drawPlanPage(doc, {
         drawZoneOutlines(doc, storeyZones, transformX, transformY);
     }
     drawRoomOutlines(doc, storeyRooms, transformX, transformY);
-    const pdfMinYForDims = planMargin + titleHeight + 10;
-    drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, scale, {
-        pdfMinY: pdfMinYForDims,
-        offsetY,
-        pageMinModelY: b.minY,
-        scale,
-        pageBounds: b,
-        projectBounds: boundsValid(roomBounds) ? roomBounds : b,
-        geometryBounds: geometryBoundsUnpadded,
-        kind,
-        ceilingPlans,
-        floorPlans
-    });
+
+    const PDF_DIM_RENDER_PX_PER_MM = 8;
+    if (typeof document !== 'undefined') {
+        const dimCanvas = document.createElement('canvas');
+        const canvasW = Math.ceil(planPageWidth * PDF_DIM_RENDER_PX_PER_MM);
+        const canvasH = Math.ceil(planPageHeight * PDF_DIM_RENDER_PX_PER_MM);
+        dimCanvas.width = canvasW;
+        dimCanvas.height = canvasH;
+        const dimCtx = dimCanvas.getContext('2d');
+        if (dimCtx) {
+            dimCtx.clearRect(0, 0, canvasW, canvasH);
+            const dimScale = scale * PDF_DIM_RENDER_PX_PER_MM;
+            drawPlanDimensions(null, storeyRooms, panels, transformX, transformY, scale, {
+                canvasCtx: dimCtx,
+                scaleFactor: dimScale,
+                offsetX: (offsetX - b.minX * scale) * PDF_DIM_RENDER_PX_PER_MM,
+                offsetY: (offsetY - b.minY * scale) * PDF_DIM_RENDER_PX_PER_MM,
+                initialScale: dimScale,
+                canvasWidth: canvasW,
+                canvasHeight: canvasH,
+                pageBounds: b,
+                projectBounds: boundsValid(roomBounds) ? roomBounds : b,
+                geometryBounds: geometryBoundsUnpadded,
+                kind,
+                ceilingPlans,
+                floorPlans
+            });
+            try {
+                const imgData = dimCanvas.toDataURL('image/png');
+                doc.addImage(imgData, 'PNG', 0, 0, planPageWidth, planPageHeight);
+            } catch (dimImgErr) {
+                console.warn('[pdfVectorCeilingFloor] Failed to composite dimension layer:', dimImgErr);
+            }
+        }
+    }
 
     drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale);
 

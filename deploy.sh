@@ -74,6 +74,10 @@ if [[ "${SKIP_FRONTEND_BUILD:-0}" == "1" ]]; then
     echo "    Using uploaded frontend/$FRONTEND_BUILD_DIR (no npm build)"
 else
     npm ci
+    # dist/ may be owned by urmodel from a prior deploy; brian must be able to clear it
+    if [[ -d "$FRONTEND_BUILD_DIR" ]]; then
+        sudo chown -R "$(whoami):$(whoami)" "$FRONTEND_BUILD_DIR" 2>/dev/null || true
+    fi
     rm -rf "$FRONTEND_BUILD_DIR"
     export GENERATE_SOURCEMAP=false
     export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}"

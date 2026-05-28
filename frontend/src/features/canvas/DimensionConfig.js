@@ -30,6 +30,7 @@ export const DIMENSION_CONFIG = {
     SPAN_ENDPOINT_TOUCH_TOL_MM: 2, // End-to-end chain tolerance (model mm)
     PLAN_EXTERIOR_ROW_BASE: 10,    // Unified exterior row offset (px) — same for all tiers on one lane
     PLAN_EXTERIOR_ROW_SPACING: 10, // Row step between span lanes (px)
+    PLAN_ROOM_EXTERIOR_BOOST: 10,  // Extra px so room/wall dims sit outside grouped panel rows on the same edge
     PLAN_ROOM_MAX_OFFSET: 48,       // Max px from project edge — room tier
     PLAN_GROUPED_MAX_OFFSET: 36,    // Max px from project edge — grouped tier
     PLAN_INNER_MAX_OFFSET: 28,      // Max px from project edge — individual/cut tier
@@ -339,6 +340,7 @@ export function getDimensionEdge(isHorizontal, side) {
  * @param {number} [spanMin] - span start along edge (model X for horizontal, Y for vertical)
  * @param {number} [spanMax] - span end along edge
  * @param {number} [laneSpacing] - px between rows; use WALL_EXTERNAL_LANE_SPACING for full wall dims
+ * @param {number|null} [priority] - when ROOM (or higher tier), adds PLAN_ROOM_EXTERIOR_BOOST
  */
 export function consumeDimensionLane(
     lanes,
@@ -347,7 +349,8 @@ export function consumeDimensionLane(
     baseOffset,
     laneSpacing,
     spanMin = null,
-    spanMax = null
+    spanMax = null,
+    priority = null
 ) {
     if (!lanes) return baseOffset;
     const edge = getDimensionEdge(isHorizontal, side);
@@ -380,14 +383,20 @@ export function consumeDimensionLane(
         lanes[edge] = Math.max(lanes[edge] ?? 0, laneIndex + 1);
         lanes._lastLaneIndex = laneIndex;
         lanes._lastEdge = edge;
-        // Same lane index => same row for all types (panel, grouped, wall); priority must not shift row
         const rowBase = DIMENSION_CONFIG.PLAN_EXTERIOR_ROW_BASE;
         const rowSpacing = DIMENSION_CONFIG.PLAN_EXTERIOR_ROW_SPACING;
-        return rowBase + laneIndex * rowSpacing;
+        let offset = rowBase + laneIndex * rowSpacing;
+        if (priority != null && priority <= DIMENSION_CONFIG.PRIORITY.ROOM) {
+            offset += DIMENSION_CONFIG.PLAN_ROOM_EXTERIOR_BOOST;
+        }
+        return offset;
     }
 
-    const stackedOffset = baseOffset + (lanes[edge] ?? 0) * spacing;
+    let stackedOffset = baseOffset + (lanes[edge] ?? 0) * spacing;
     lanes[edge] = (lanes[edge] ?? 0) + 1;
+    if (priority != null && priority <= DIMENSION_CONFIG.PRIORITY.ROOM) {
+        stackedOffset += DIMENSION_CONFIG.PLAN_ROOM_EXTERIOR_BOOST;
+    }
     return stackedOffset;
 }
 
@@ -454,6 +463,58 @@ export function isLabelOutsidePlanArea(
         mm.minX > planBounds.maxX + sep ||
         mm.maxY < planBounds.minY - sep ||
         mm.minY > planBounds.maxY + sep
+    );
+}
+
+/** inner = grouped/panel rows; outer = room/project envelope (separate vertical columns). */
+export function getPlanExteriorColumnStorageKey(vEdge, priority) {
+    if (!vEdge) return null;
+    const tier =
+        priority != null && priority <= DIMENSION_CONFIG.PRIORITY.ROOM ? 'outer' : 'inner';
+    return `${vEdge}:${tier}`;
+}
+
+export function getPlanExteriorFixedColumnX(dimensionLanes, vEdge, priority) {
+    const key = getPlanExteriorColumnStorageKey(vEdge, priority);
+    if (!key || !dimensionLanes?._wallExteriorLabelX) return null;
+    const x = dimensionLanes._wallExteriorLabelX[key];
+    return x != null && Number.isFinite(x) ? x : null;
+}
+
+export function rememberPlanExteriorColumnX(dimensionLanes, vEdge, priority, labelX) {
+    const key = getPlanExteriorColumnStorageKey(vEdge, priority);
+    if (!key || !Number.isFinite(labelX) || !dimensionLanes) return;
+    if (!dimensionLanes._wallExteriorLabelX) {
+        dimensionLanes._wallExteriorLabelX = {};
+    }
+    if (dimensionLanes._wallExteriorLabelX[key] == null) {
+        dimensionLanes._wallExteriorLabelX[key] = labelX;
+    }
+}
+
+/** Room-tier dims stay at least one row outside the innermost panel column on this edge. */
+export function applyPlanOuterTierMinOffset(dimensionLanes, vEdge, priority, offsetPx) {
+    if (priority == null || priority > DIMENSION_CONFIG.PRIORITY.ROOM || !vEdge) {
+        return offsetPx;
+    }
+    const innerMax = dimensionLanes?._planInnerMaxOffsetPx?.[`${vEdge}:inner`];
+    if (innerMax != null && Number.isFinite(innerMax)) {
+        return Math.max(offsetPx, innerMax + DIMENSION_CONFIG.PLAN_EXTERIOR_ROW_SPACING);
+    }
+    return offsetPx;
+}
+
+export function recordPlanInnerTierMaxOffset(dimensionLanes, vEdge, priority, offsetPx) {
+    if (priority != null && priority <= DIMENSION_CONFIG.PRIORITY.ROOM || !vEdge || !dimensionLanes) {
+        return;
+    }
+    if (!dimensionLanes._planInnerMaxOffsetPx) {
+        dimensionLanes._planInnerMaxOffsetPx = {};
+    }
+    const key = `${vEdge}:inner`;
+    dimensionLanes._planInnerMaxOffsetPx[key] = Math.max(
+        dimensionLanes._planInnerMaxOffsetPx[key] ?? 0,
+        offsetPx
     );
 }
 

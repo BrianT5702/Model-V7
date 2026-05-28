@@ -86,6 +86,16 @@ const InstallationTimeEstimator = ({
     const [singlePlanPerPage, setSinglePlanPerPage] = useState(true); // Each plan takes a full page
     const [fitToPage, setFitToPage] = useState(false); // Fit plan to fill entire page without boundary
 
+    /** Embedded PDF viewer: fit page width so the plan is readable in the preview box (not tiny "whole page" fit). */
+    const planPdfPreviewHash = 'toolbar=0&navpanes=0&scrollbar=0&view=FitH';
+    const planPdfPreviewBoxStyle = {
+        width: '100%',
+        aspectRatio: planPageOrientation === 'landscape' ? '297 / 210' : '210 / 297',
+        maxHeight: singlePlanPerPage ? 'min(72vh, 760px)' : 'min(40vh, 360px)',
+        minHeight: singlePlanPerPage ? 360 : 220,
+        backgroundColor: '#f9fafb'
+    };
+
     /** Ceiling/floor iframe previews: same jsPDF vector pipeline as PDF export (object URLs). */
     const [vectorPlanPreview, setVectorPlanPreview] = useState({
         wallUrl: null,
@@ -3926,25 +3936,15 @@ const InstallationTimeEstimator = ({
                                                         <span className="ml-2 text-xs font-normal text-green-700">(PDF preview)</span>
                                                     )}
                                                 </h5>
-                                                <div 
+                                                <div
                                                     className="rounded border border-gray-300 overflow-hidden"
-                                                    style={{
-                                                        maxHeight: singlePlanPerPage ? '400px' : '200px',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        backgroundColor: '#f9fafb'
-                                                    }}
+                                                    style={planPdfPreviewBoxStyle}
                                                 >
                                                     {vectorPlanPreview.wallUrl ? (
                                                         <iframe
                                                             title="Wall plan PDF preview"
-                                                            src={`${vectorPlanPreview.wallUrl}#toolbar=0&navpanes=0`}
-                                                            className="w-full rounded border-0 bg-white"
-                                                            style={{
-                                                                height: singlePlanPerPage ? 400 : 200,
-                                                                minHeight: 200
-                                                            }}
+                                                            src={`${vectorPlanPreview.wallUrl}#${planPdfPreviewHash}`}
+                                                            className="w-full h-full block border-0 bg-white"
                                                         />
                                                     ) : (
                                                         <img 
@@ -3973,25 +3973,15 @@ const InstallationTimeEstimator = ({
                                                         <span className="ml-2 text-xs font-normal text-green-700">(PDF preview)</span>
                                                     )}
                                                 </h5>
-                                                <div 
+                                                <div
                                                     className="rounded border border-gray-300 overflow-hidden"
-                                                    style={{
-                                                        maxHeight: singlePlanPerPage ? '400px' : '200px',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        backgroundColor: '#f9fafb'
-                                                    }}
+                                                    style={planPdfPreviewBoxStyle}
                                                 >
                                                     {vectorPlanPreview.ceilingUrl ? (
                                                         <iframe
                                                             title="Ceiling plan PDF preview"
-                                                            src={`${vectorPlanPreview.ceilingUrl}#toolbar=0&navpanes=0`}
-                                                            className="w-full rounded border-0 bg-white"
-                                                            style={{
-                                                                height: singlePlanPerPage ? 400 : 200,
-                                                                minHeight: 200
-                                                            }}
+                                                            src={`${vectorPlanPreview.ceilingUrl}#${planPdfPreviewHash}`}
+                                                            className="w-full h-full block border-0 bg-white"
                                                         />
                                                     ) : (
                                                         <img 
@@ -4020,25 +4010,15 @@ const InstallationTimeEstimator = ({
                                                         <span className="ml-2 text-xs font-normal text-green-700">(PDF preview)</span>
                                                     )}
                                                 </h5>
-                                                <div 
+                                                <div
                                                     className="rounded border border-gray-300 overflow-hidden"
-                                                    style={{
-                                                        maxHeight: singlePlanPerPage ? '400px' : '200px',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        backgroundColor: '#f9fafb'
-                                                    }}
+                                                    style={planPdfPreviewBoxStyle}
                                                 >
                                                     {vectorPlanPreview.floorUrl ? (
                                                         <iframe
                                                             title="Floor plan PDF preview"
-                                                            src={`${vectorPlanPreview.floorUrl}#toolbar=0&navpanes=0`}
-                                                            className="w-full rounded border-0 bg-white"
-                                                            style={{
-                                                                height: singlePlanPerPage ? 400 : 200,
-                                                                minHeight: 200
-                                                            }}
+                                                            src={`${vectorPlanPreview.floorUrl}#${planPdfPreviewHash}`}
+                                                            className="w-full h-full block border-0 bg-white"
                                                         />
                                                     ) : (
                                                         <img 

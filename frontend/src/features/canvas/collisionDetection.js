@@ -120,6 +120,35 @@ export function calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fon
 }
 
 /** Exterior vertical dim text extent (rotated label is tall along Y). */
+/** X center for rotated vertical plan text — in the dimension-line gap (same column as the line). */
+export function exteriorVerticalTextCenterX(labelX, _fontSize, _side, _gapPx = 0) {
+    return labelX;
+}
+
+export function buildVerticalPlanLabelEntry(
+    labelX,
+    labelY,
+    textWidth,
+    fontSize,
+    side,
+    text,
+    angleDeg,
+    extras = {}
+) {
+    const textCenterX = exteriorVerticalTextCenterX(labelX, fontSize, side);
+    const b = calculateRotatedVerticalDimBounds(textCenterX, labelY, textWidth, fontSize, 2);
+    return {
+        x: b.x,
+        y: b.y,
+        width: b.width,
+        height: b.height,
+        side,
+        text,
+        angle: angleDeg,
+        ...extras
+    };
+}
+
 export function exteriorVerticalLabelBounds(
     labelX,
     labelY,
@@ -573,7 +602,8 @@ export function tryPlaceExteriorDimensionLabel({
         const step = Math.max(4, Math.min(halfH / 2, usable / 12 || halfH / 2));
         const yEndLo = yLo + halfH;
         const yEndHi = yHi - halfH;
-        const ys = [yEndLo, yEndHi, yCenter];
+        // Prefer span center (matches horizontal dims and readable placement on the line).
+        const ys = [yCenter, yEndLo, yEndHi];
         for (let d = step; d <= usable / 2 + step; d += step) {
             ys.push(yCenter + d, yCenter - d);
         }

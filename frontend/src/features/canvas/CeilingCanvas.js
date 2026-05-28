@@ -22,13 +22,19 @@ import {
     getPlanExteriorSide,
     getDimensionEdge,
     isLabelOutsidePlanArea,
-    computeExteriorPlanLabelCoords
+    computeExteriorPlanLabelCoords,
+    getPlanExteriorFixedColumnX,
+    rememberPlanExteriorColumnX,
+    applyPlanOuterTierMinOffset,
+    recordPlanInnerTierMaxOffset
 } from './DimensionConfig.js';
 import {
     hasLabelOverlap,
     calculateHorizontalLabelBounds,
     calculateVerticalLabelBounds,
-    exteriorVerticalLabelBounds
+    calculateRotatedVerticalDimBounds,
+    exteriorVerticalTextCenterX,
+    buildVerticalPlanLabelEntry
 } from './collisionDetection.js';
 
 // Build a stable identity key for ceiling panels based on thickness + inner/outer finishes
@@ -355,6 +361,12 @@ const CeilingCanvas = ({
     }, [onCustomSupportsChange]);
     const [supportStartPoint, setSupportStartPoint] = useState(null);
     const [supportPreview, setSupportPreview] = useState(null);
+    /** Sync ref so drawCanvas can exit preview immediately after finishing a rail (React state updates are async). */
+    const supportDrawModeRef = useRef({
+        placing: false,
+        startPoint: null,
+        preview: null
+    });
     const [hoveredRoomId, setHoveredRoomId] = useState(null);
 
     // [NEW] Local state for checkboxes (copying logic from FloorCanvas)
@@ -639,7 +651,22 @@ const CeilingCanvas = ({
         // Draw everything
         drawCanvas(context);
 
-    }, [effectiveRooms, effectiveCeilingPlans, effectiveCeilingPanelsMap, zones, selectedRoomId, selectedPanelId, selectedPanelIdsList, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState]);
+    }, [
+        effectiveRooms,
+        effectiveCeilingPlans,
+        effectiveCeilingPanelsMap,
+        zones,
+        selectedRoomId,
+        selectedPanelId,
+        selectedPanelIdsList,
+        CANVAS_WIDTH,
+        CANVAS_HEIGHT,
+        visibilityState,
+        isPlacingSupport,
+        supportPreview,
+        supportStartPoint,
+        effectiveCustomSupports
+    ]);
 
     // Sync external scale prop with internal zoom
     useEffect(() => {
@@ -770,6 +797,30 @@ const CeilingCanvas = ({
 
         // Draw title and info
         drawTitle(ctx);
+    };
+
+    const clearSupportDrawingMode = (redraw = true) => {
+        supportDrawModeRef.current = { placing: false, startPoint: null, preview: null };
+        setIsPlacingSupport(false);
+        setSupportStartPoint(null);
+        setSupportPreview(null);
+        if (redraw && canvasRef.current) {
+            const ctx = canvasRef.current.getContext('2d');
+            if (ctx) drawCanvas(ctx);
+        }
+    };
+
+    const beginSupportDrawingMode = () => {
+        supportDrawModeRef.current = { placing: true, startPoint: null, preview: null };
+        setIsPlacingSupport(true);
+        setSupportStartPoint(null);
+        setSupportPreview(null);
+    };
+
+    /** Keep ref + state in sync so drawCanvas sees live preview while placing supports. */
+    const syncSupportPreview = (preview) => {
+        supportDrawModeRef.current.preview = preview;
+        setSupportPreview(preview);
     };
 
     // Draw professional grid
@@ -1503,11 +1554,28 @@ const CeilingCanvas = ({
         if (enableAluSuspension && effectiveCustomSupports.length > 0) {
             drawCustomSupports(ctx, effectiveCustomSupports, scaleFactor.current, offsetX.current, offsetY.current);
         }
-        if (supportPreview && isPlacingSupport) {
-            drawSupportPreview(ctx, supportPreview, scaleFactor.current, offsetX.current, offsetY.current);
-        }
-        if (isPlacingSupport && supportPreview && supportPreview.mousePosition && supportPreview.distances) {
-            drawMousePositionDimensions(ctx, supportPreview.mousePosition, supportPreview.distances, scaleFactor.current, offsetX.current, offsetY.current);
+        const supportDraw = supportDrawModeRef.current;
+        const preview = supportDraw.preview;
+        if (supportDraw.placing && preview) {
+            if (
+                supportDraw.startPoint != null &&
+                preview.startX != null &&
+                preview.startY != null &&
+                preview.endX != null &&
+                preview.endY != null
+            ) {
+                drawSupportPreview(ctx, preview, scaleFactor.current, offsetX.current, offsetY.current);
+            }
+            if (preview.mousePosition && preview.distances) {
+                drawMousePositionDimensions(
+                    ctx,
+                    preview.mousePosition,
+                    preview.distances,
+                    scaleFactor.current,
+                    offsetX.current,
+                    offsetY.current
+                );
+            }
         }
     };
 
@@ -1974,7 +2042,7 @@ const CeilingCanvas = ({
             dimension: roomWidth,
             type: 'room_width',
             color: '#1e40af',
-            priority: 1,
+            priority: DIMENSION_CONFIG.PRIORITY.ROOM,
             avoidArea: projectBounds,
             drawnPositions: new Set(),
             roomId: room.id
@@ -1988,7 +2056,7 @@ const CeilingCanvas = ({
             dimension: roomLength,
             type: 'room_length',
             color: '#1e40af',
-            priority: 1,
+            priority: DIMENSION_CONFIG.PRIORITY.ROOM,
             avoidArea: projectBounds,
             drawnPositions: new Set(),
             roomId: room.id
@@ -2416,16 +2484,15 @@ const CeilingCanvas = ({
             laneCfg.baseOffset,
             wallLikeSpacing,
             spanLo,
-            spanHi
+            spanHi,
+            priority
         );
+        const vEdge = !isHorizontal ? getDimensionEdge(false, side) : null;
+        offsetPx = applyPlanOuterTierMinOffset(dimensionLanes, vEdge, priority, offsetPx);
         offsetPx = Math.min(offsetPx, laneCfg.maxOffset);
 
         if (planBounds) {
-            const vEdge = !isHorizontal ? getDimensionEdge(false, side) : null;
-            const fixedColumnX =
-                !isHorizontal && dimensionLanes?._wallExteriorLabelX?.[vEdge] != null
-                    ? dimensionLanes._wallExteriorLabelX[vEdge]
-                    : null;
+            const fixedColumnX = getPlanExteriorFixedColumnX(dimensionLanes, vEdge, priority);
             const placed = placeExteriorWallDimensionAvoidingLabels({
                 isHorizontal,
                 side,
@@ -2450,12 +2517,8 @@ const CeilingCanvas = ({
             offsetPx = placed.rowOffset;
 
             if (!isHorizontal && dimensionLanes) {
-                if (!dimensionLanes._wallExteriorLabelX) {
-                    dimensionLanes._wallExteriorLabelX = {};
-                }
-                if (fixedColumnX == null) {
-                    dimensionLanes._wallExteriorLabelX[vEdge] = labelX;
-                }
+                rememberPlanExteriorColumnX(dimensionLanes, vEdge, priority, labelX);
+                recordPlanInnerTierMaxOffset(dimensionLanes, vEdge, priority, offsetPx);
             }
         } else {
             labelX = spanMidX * sf + ox;
@@ -2469,10 +2532,29 @@ const CeilingCanvas = ({
         const dxLine = endX - startX;
         const dyLine = endY - startY;
         const angleDeg = Math.atan2(dyLine, dxLine) * (180 / Math.PI);
+        const startYScreen = startY * sf + oy;
+        const endYScreen = endY * sf + oy;
+        if (!isHorizontal) {
+            labelY = (startYScreen + endYScreen) / 2;
+        }
+
+        const dimSide = isHorizontal
+            ? side === 'side1'
+                ? 'top'
+                : 'bottom'
+            : side === 'side1'
+                ? 'left'
+                : 'right';
 
         const wallStyleBounds = isHorizontal
             ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, padH, padV)
-            : exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, padH, padV);
+            : calculateRotatedVerticalDimBounds(
+                  exteriorVerticalTextCenterX(labelX, fontSize, dimSide),
+                  labelY,
+                  textWidth,
+                  fontSize,
+                  2
+              );
 
         const isValidPosition =
             wallStyleBounds.x >= 0 &&
@@ -2498,9 +2580,9 @@ const CeilingCanvas = ({
                 textWidth,
                 color
             },
-            scaleFactor.current,
-            offsetX.current,
-            offsetY.current,
+            sf,
+            ox,
+            oy,
             bounds
         );
 
@@ -2522,14 +2604,6 @@ const CeilingCanvas = ({
             });
         }
 
-        const dimSide = isHorizontal
-            ? side === 'side1'
-                ? 'top'
-                : 'bottom'
-            : side === 'side1'
-                ? 'left'
-                : 'right';
-
         if (isHorizontal) {
             allLabels.push({
                 x: wallStyleBounds.x,
@@ -2543,17 +2617,12 @@ const CeilingCanvas = ({
                 textColor: color
             });
         } else {
-            allLabels.push({
-                x: wallStyleBounds.x,
-                y: wallStyleBounds.y,
-                width: wallStyleBounds.width,
-                height: wallStyleBounds.height,
-                side: dimSide,
-                text,
-                angle: angleDeg,
-                type: 'wall',
-                textColor: color
-            });
+            allLabels.push(
+                buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
+                    type: 'wall',
+                    textColor: color
+                })
+            );
         }
 
         if (dedupKey) globalDimensionValues?.add(dedupKey);
@@ -2585,19 +2654,14 @@ const CeilingCanvas = ({
             return;
         }
         
-        // Otherwise, handle support dragging (existing functionality)
-        isDragging.current = true;
-        const rect = canvasRef.current.getBoundingClientRect();
-        lastMousePos.current = {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        };
+        // Placing support: clicks only (onClick), not drag-to-pan
+        e.preventDefault();
     };
 
     // Handle mouse move for hover detection
     const handleMouseMoveHover = (e) => {
-        // Disable room hover when aluminum suspension custom drawing is enabled
-        if (aluSuspensionCustomDrawing) {
+        // Only disable room hover while actively drawing a support rail (not when supports are merely visible)
+        if (enableAluSuspension && isPlacingSupport) {
             return;
         }
         
@@ -2654,7 +2718,8 @@ const CeilingCanvas = ({
                 canvasRef.current.style.cursor = 'pointer';
             } else {
                 setHoveredRoomId(null);
-                canvasRef.current.style.cursor = aluSuspensionCustomDrawing ? 'crosshair' : 'grab';
+                canvasRef.current.style.cursor =
+                    enableAluSuspension && isPlacingSupport ? 'crosshair' : 'grab';
             }
 
             const ctx = canvasRef.current.getContext('2d');
@@ -2663,7 +2728,8 @@ const CeilingCanvas = ({
             }
         } else if (!newHoverId && hadHover) {
             setHoveredRoomId(null);
-            canvasRef.current.style.cursor = aluSuspensionCustomDrawing ? 'crosshair' : 'grab';
+            canvasRef.current.style.cursor =
+                enableAluSuspension && isPlacingSupport ? 'crosshair' : 'grab';
             const ctx = canvasRef.current.getContext('2d');
             if (ctx) {
                 drawCanvas(ctx);
@@ -2755,7 +2821,7 @@ const CeilingCanvas = ({
 
     // Handle mouse move for support preview with 90-degree snapping
     const handleMouseMoveSupport = (e) => {
-        if (!isPlacingSupport || !supportStartPoint) return;
+        if (!supportDrawModeRef.current.placing || !supportDrawModeRef.current.startPoint) return;
         
         const rect = canvasRef.current.getBoundingClientRect();
         const currentX = e.clientX - rect.left;
@@ -2772,28 +2838,26 @@ const CeilingCanvas = ({
         }
         
         // Apply 90-degree snapping
-        const snappedCoords = snapTo90Degrees(supportStartPoint.x, supportStartPoint.y, modelX, modelY);
+        const startPt = supportDrawModeRef.current.startPoint;
+        const snappedCoords = snapTo90Degrees(startPt.x, startPt.y, modelX, modelY);
         
-        setSupportPreview({
-            startX: supportStartPoint.x,
-            startY: supportStartPoint.y,
+        const nextPreview = {
+            startX: startPt.x,
+            startY: startPt.y,
             endX: snappedCoords.x,
             endY: snappedCoords.y,
             originalEndX: modelX,
             originalEndY: modelY,
-            isSnapped: snappedCoords.isSnapped
-        });
-        
-        // Calculate distances to project edges
+            isSnapped: snappedCoords.isSnapped,
+            mousePosition: { x: modelX, y: modelY }
+        };
+
         if (projectData) {
-            const distances = calculateDistancesToEdges(snappedCoords.x, snappedCoords.y);
-            setSupportPreview(prev => ({
-                ...prev,
-                distances: distances
-            }));
+            nextPreview.distances = calculateDistancesToEdges(snappedCoords.x, snappedCoords.y);
         }
-        
-        // Redraw to show preview
+
+        syncSupportPreview(nextPreview);
+
         const ctx = canvasRef.current.getContext('2d');
         if (ctx) {
             drawCanvas(ctx);
@@ -2834,8 +2898,7 @@ const CeilingCanvas = ({
 
     // Handle mouse move for dimension display (only when placing support)
     const handleMouseMoveDimensions = (e) => {
-        // Only calculate dimensions when placing support
-        if (!isPlacingSupport) return;
+        if (!supportDrawModeRef.current.placing) return;
         
         const rect = canvasRef.current.getBoundingClientRect();
         const currentX = e.clientX - rect.left;
@@ -2873,17 +2936,16 @@ const CeilingCanvas = ({
             modelY = wallSnapForDims.y;
         }
         
-        // Calculate distances to project edges
         if (projectData) {
             const distances = calculateDistancesToEdges(modelX, modelY);
-            setSupportPreview(prev => ({
-                ...prev,
+            const nextPreview = {
+                ...(supportDrawModeRef.current.preview ?? {}),
                 mousePosition: { x: modelX, y: modelY },
-                distances: distances
-            }));
+                distances
+            };
+            syncSupportPreview(nextPreview);
         }
-        
-        // Redraw to show dimensions
+
         const ctx = canvasRef.current.getContext('2d');
         if (ctx) {
             drawCanvas(ctx);
@@ -3215,11 +3277,8 @@ const CeilingCanvas = ({
             }
         }
 
-        // If aluminum suspension custom drawing is enabled, disable room selection entirely
-        if (aluSuspensionCustomDrawing) {
-            // Room selection is disabled when aluminum suspension drawing is active
-            // Only handle support placement logic below
-        } else {
+        // While drawing a support rail, defer to support placement (room selection resumes after)
+        if (!(enableAluSuspension && isPlacingSupport)) {
             // Check if a room/zone is currently selected
             const isRoomSelected = selectedRoomId !== null && selectedRoomId !== undefined;
             const selectedRoomIdStr = selectedRoomId ? selectedRoomId.toString() : null;
@@ -3336,31 +3395,45 @@ const CeilingCanvas = ({
                 snappedModelY = wallSnap.y;
             }
             
-            if (!supportStartPoint) {
-                // First click - set start point
-                setSupportStartPoint({ x: snappedModelX, y: snappedModelY });
-                setSupportPreview({ startX: snappedModelX, startY: snappedModelY, endX: snappedModelX, endY: snappedModelY });
+            const railStart = supportDrawModeRef.current.startPoint ?? supportStartPoint;
+            if (!railStart) {
+                const start = { x: snappedModelX, y: snappedModelY };
+                const preview = {
+                    startX: snappedModelX,
+                    startY: snappedModelY,
+                    endX: snappedModelX,
+                    endY: snappedModelY
+                };
+                supportDrawModeRef.current.startPoint = start;
+                syncSupportPreview(preview);
+                setSupportStartPoint(start);
+                const ctx = canvasRef.current?.getContext('2d');
+                if (ctx) drawCanvas(ctx);
             } else {
-                // Second click - finish support line and place supports on intersecting panels
-                // Apply 90-degree snapping to ensure straight lines
-                const snappedCoords = snapTo90Degrees(supportStartPoint.x, supportStartPoint.y, snappedModelX, snappedModelY);
+                const snappedCoords = snapTo90Degrees(
+                    railStart.x,
+                    railStart.y,
+                    snappedModelX,
+                    snappedModelY
+                );
                 const finalEndX = snappedCoords.x;
                 const finalEndY = snappedCoords.y;
 
                 const placementKeys = new Set();
-                const quantizeStep = 5 / modelUnitsPerMm; // 5mm dedupe
-                const placementKey = (x, y) => `${Math.round(x / quantizeStep) * quantizeStep},${Math.round(y / quantizeStep) * quantizeStep}`;
+                const quantizeStep = 5 / modelUnitsPerMm;
+                const placementKey = (x, y) =>
+                    `${Math.round(x / quantizeStep) * quantizeStep},${Math.round(y / quantizeStep) * quantizeStep}`;
                 const supportLinePayload = {
-                    startX: supportStartPoint.x,
-                    startY: supportStartPoint.y,
+                    startX: railStart.x,
+                    startY: railStart.y,
                     endX: finalEndX,
                     endY: finalEndY,
                     isSnapped: snappedCoords.isSnapped
                 };
 
                 const newSupports = buildAluHangersAlongRail(
-                    supportStartPoint.x,
-                    supportStartPoint.y,
+                    railStart.x,
+                    railStart.y,
                     finalEndX,
                     finalEndY,
                     supportLinePayload,
@@ -3368,20 +3441,9 @@ const CeilingCanvas = ({
                     placementKey,
                     placementKeys
                 );
-                
+
                 updateCustomSupports([...effectiveCustomSupports, ...newSupports]);
-                
-                // Reset placement state - auto-disable drawing mode after placing support
-                setSupportStartPoint(null);
-                setSupportPreview(null);
-                setIsPlacingSupport(false);
-                // Note: aluSuspensionCustomDrawing stays enabled so supports remain visible, but drawing mode is off
-                
-                // Redraw canvas
-                const ctx = canvasRef.current.getContext('2d');
-                if (ctx) {
-                    drawCanvas(ctx);
-                }
+                clearSupportDrawingMode(true);
             }
             return;
         }
@@ -3899,11 +3961,10 @@ const CeilingCanvas = ({
                         <div className="flex flex-wrap items-center gap-2">
                             <button
                                 onClick={() => {
-                                    setIsPlacingSupport(!isPlacingSupport);
-                                    // Reset if canceling
                                     if (isPlacingSupport) {
-                                        setSupportStartPoint(null);
-                                        setSupportPreview(null);
+                                        clearSupportDrawingMode(true);
+                                    } else {
+                                        beginSupportDrawingMode();
                                     }
                                 }}
                                 className={`px-3 py-1 text-sm rounded transition-colors ${

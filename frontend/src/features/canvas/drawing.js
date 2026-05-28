@@ -1,7 +1,7 @@
 // Drawing functions extracted from Canvas2D.js
 
 // Import dimension filtering helper
-import { shouldShowWallDimension, shouldShowPanelDimension } from './dimensionFilter.js';
+import { shouldShowWallDimension, shouldShowPanelDimension, filterDimensions } from './dimensionFilter.js';
 // Import dimension configuration
 import {
     DIMENSION_CONFIG,
@@ -3096,6 +3096,197 @@ function generateThicknessColorMap(walls) {
     return colorMap;
 }
 
+/**
+ * Wall + panel dimension labels/lines using the same rules as the 2D wall plan canvas.
+ * Used by drawWalls and PDF export (offscreen canvas composite).
+ */
+export function drawWallPlanDimensionsLayer({
+    context,
+    walls,
+    intersections,
+    rooms = [],
+    wallPanelsMap = {},
+    wallLinesMap,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    center,
+    initialScale = scaleFactor,
+    currentScaleFactor = scaleFactor,
+    SNAP_THRESHOLD = 20,
+    filteredDimensions = null,
+    dimensionVisibility = {},
+    showPanelLines = true,
+    selectedWall = null,
+    tempWall = null,
+    placedLabels = [],
+    allLabels = [],
+    dimensionValuesSeen = null,
+    includeProjectDimensions = false,
+}) {
+    if (!context || !walls?.length || !wallLinesMap?.size) {
+        return { dimensionEdgeExtents: createDimensionEdgeExtents(), placedLabels, allLabels };
+    }
+
+    const showWallDimensions = dimensionVisibility?.wall !== false;
+    const showPanelDimensions = dimensionVisibility?.panel !== false;
+    const showProjectDimensions = dimensionVisibility?.project !== false;
+
+    const actualDimensions = calculateActualProjectDimensions(walls);
+    const modelBounds = {
+        minX: actualDimensions.minX,
+        maxX: actualDimensions.maxX,
+        minY: actualDimensions.minY,
+        maxY: actualDimensions.maxY,
+    };
+
+    const fd = filteredDimensions ?? filterDimensions(walls, intersections, wallPanelsMap);
+    const allPanelLabels = [];
+    const wallDimensionSpecs = [];
+    const dimensionLanes = createDimensionLaneCounters();
+    const dimensionEdgeExtents = createDimensionEdgeExtents();
+
+    const valuesSeen = dimensionValuesSeen ?? new Set();
+    if (!dimensionValuesSeen && (showProjectDimensions || includeProjectDimensions)) {
+        const wKey = planCeilingValueDedupKey(actualDimensions.width, true);
+        const hKey = planCeilingValueDedupKey(actualDimensions.length, false);
+        if (wKey) valuesSeen.add(wKey);
+        if (hKey) valuesSeen.add(hKey);
+    }
+
+    walls.forEach((wall) => {
+        const wallData = wallLinesMap.get(wall.id);
+        if (wallData) {
+            wall._line1 = wallData.line1;
+            wall._line2 = wallData.line2;
+        }
+
+        if (showPanelLines && wallPanelsMap && showPanelDimensions) {
+            const panels = wallPanelsMap[wall.id];
+            if (panels?.length > 0) {
+                const wallThickness = wall.thickness || 100;
+                const gapPixels = wallThickness * scaleFactor;
+                drawPanelDivisions(
+                    context,
+                    wall,
+                    panels,
+                    scaleFactor,
+                    offsetX,
+                    offsetY,
+                    undefined,
+                    gapPixels,
+                    modelBounds,
+                    placedLabels,
+                    allPanelLabels,
+                    true,
+                    fd,
+                    showPanelDimensions,
+                    initialScale,
+                    rooms,
+                    wallLinesMap,
+                    dimensionLanes
+                );
+            }
+        }
+
+        if (showWallDimensions && (!fd || shouldShowWallDimension(wall, intersections, fd.wallDimensions, walls))) {
+            const length = Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y);
+            wallDimensionSpecs.push({
+                startX: wall.start_x,
+                startY: wall.start_y,
+                endX: wall.end_x,
+                endY: wall.end_y,
+                color: selectedWall === wall.id ? 'red' : '#2196F3',
+                modelBounds,
+                wallLinesMap,
+                length,
+                rooms,
+            });
+        }
+    });
+
+    if (tempWall && showWallDimensions) {
+        const length = Math.hypot(tempWall.end_x - tempWall.start_x, tempWall.end_y - tempWall.start_y);
+        wallDimensionSpecs.push({
+            startX: tempWall.start_x,
+            startY: tempWall.start_y,
+            endX: tempWall.end_x,
+            endY: tempWall.end_y,
+            color: '#4CAF50',
+            modelBounds,
+            wallLinesMap: null,
+            length,
+        });
+    }
+
+    wallDimensionSpecs.sort((a, b) => {
+        const aHoriz = Math.abs(a.endX - a.startX) >= Math.abs(a.endY - a.startY);
+        const bHoriz = Math.abs(b.endX - b.startX) >= Math.abs(b.endY - b.startY);
+        if (aHoriz && bHoriz) {
+            const aLo = Math.min(a.startX, a.endX);
+            const bLo = Math.min(b.startX, b.endX);
+            if (aLo !== bLo) return aLo - bLo;
+            return a.length - b.length;
+        }
+        if (!aHoriz && !bHoriz) {
+            const aLo = Math.min(a.startY, a.endY);
+            const bLo = Math.min(b.startY, b.endY);
+            if (aLo !== bLo) return aLo - bLo;
+            return a.length - b.length;
+        }
+        return a.length - b.length;
+    });
+
+    wallDimensionSpecs.forEach((spec) => {
+        drawDimensions(
+            context,
+            spec.startX,
+            spec.startY,
+            spec.endX,
+            spec.endY,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            spec.color,
+            spec.modelBounds,
+            placedLabels,
+            allLabels,
+            true,
+            initialScale,
+            spec.wallLinesMap,
+            valuesSeen,
+            dimensionLanes,
+            spec.rooms,
+            dimensionEdgeExtents
+        );
+    });
+
+    const allCombinedLabels = [...allLabels, ...allPanelLabels];
+    allCombinedLabels.forEach((label) => {
+        label.draw = makeLabelDrawFn(label, scaleFactor, initialScale);
+    });
+    allCombinedLabels.forEach((label) => {
+        label.draw(context);
+    });
+
+    if (includeProjectDimensions && showProjectDimensions) {
+        drawOverallProjectDimensions(
+            context,
+            walls,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            placedLabels,
+            allLabels,
+            initialScale,
+            wallLinesMap,
+            dimensionEdgeExtents
+        );
+    }
+
+    return { dimensionEdgeExtents, placedLabels, allLabels };
+}
+
 // Draw all walls on the canvas
 export function drawWalls({
     context,
@@ -3150,14 +3341,6 @@ export function drawWalls({
         maxY: actualDimensions.maxY
     } : null;
     
-    // Use shared label arrays for collision detection (don't create new ones)
-    // placedLabels and allLabels are passed as parameters
-    const allPanelLabels = [];
-    // Collect wall dimension specs so we can sort by length: smaller inner, larger outer when overlapping
-    const wallDimensionSpecs = [];
-    const dimensionLanes = createDimensionLaneCounters();
-    const dimensionEdgeExtents = createDimensionEdgeExtents();
-
     // First pass: Calculate all wall lines and store them
     const wallLinesMap = new Map(); // Store line1 and line2 for each wall
 
@@ -3929,56 +4112,10 @@ export function drawWalls({
         if (wall.application_type === "partition") {
             drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX, offsetY);
         }
-        // --- Draw panel divisions here (collect panel label info) ---
-        if (showPanelLines && wallPanelsMap && drawPanelDivisions) {
-            const panels = wallPanelsMap[wall.id];
-            if (panels && panels.length > 0) {
-                // Calculate gap in pixels based on wall thickness for panel divisions
-                const wallThickness = wall.thickness || 100; // Default to 100mm if not set
-                const gapPixels = (wallThickness * scaleFactor);
-                
-                drawPanelDivisions(
-                    context,
-                    wall,
-                    panels,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    undefined,
-                    gapPixels,
-                    modelBounds,
-                    placedLabels,
-                    allPanelLabels,
-                    true,
-                    filteredDimensions,
-                    showPanelDimensions,
-                    initialScale,
-                    rooms,
-                    wallLinesMap,
-                    dimensionLanes
-                );
-            }
-        }
-        // --- End panel divisions ---
         if (isEditingMode) {
             const endpointColor = selectedWall === wall.id ? 'red' : '#2196F3';
             drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
             drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
-        }
-        // Collect wall dimension spec for sort-then-draw (smaller value inner, larger outer)
-        if (showWallDimensions && (!filteredDimensions || shouldShowWallDimension(wall, intersections, filteredDimensions.wallDimensions, walls))) {
-            const length = Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y);
-            wallDimensionSpecs.push({
-                startX: wall.start_x,
-                startY: wall.start_y,
-                endX: wall.end_x,
-                endY: wall.end_y,
-                color: selectedWall === wall.id ? 'red' : '#2196F3',
-                modelBounds,
-                wallLinesMap,
-                length,
-                rooms
-            });
         }
         if (isEditingMode) {
             intersections.forEach((inter) => {
@@ -4016,19 +4153,6 @@ export function drawWalls({
         drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, '#4CAF50', [5, 5]);
         drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
         drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
-        if (showWallDimensions) {
-            const length = Math.hypot(tempWall.end_x - tempWall.start_x, tempWall.end_y - tempWall.start_y);
-            wallDimensionSpecs.push({
-                startX: tempWall.start_x,
-                startY: tempWall.start_y,
-                endX: tempWall.end_x,
-                endY: tempWall.end_y,
-                color: '#4CAF50',
-                modelBounds,
-                wallLinesMap: null,
-                length
-            });
-        }
         const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
         if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
             context.beginPath();
@@ -4048,56 +4172,31 @@ export function drawWalls({
             drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 6);
         }
     }
-    // Draw along-edge order so chain segments (shared endpoints) claim the same span lane
-    wallDimensionSpecs.sort((a, b) => {
-        const aHoriz = Math.abs(a.endX - a.startX) >= Math.abs(a.endY - a.startY);
-        const bHoriz = Math.abs(b.endX - b.startX) >= Math.abs(b.endY - b.startY);
-        if (aHoriz && bHoriz) {
-            const aLo = Math.min(a.startX, a.endX);
-            const bLo = Math.min(b.startX, b.endX);
-            if (aLo !== bLo) return aLo - bLo;
-            return a.length - b.length;
-        }
-        if (!aHoriz && !bHoriz) {
-            const aLo = Math.min(a.startY, a.endY);
-            const bLo = Math.min(b.startY, b.endY);
-            if (aLo !== bLo) return aLo - bLo;
-            return a.length - b.length;
-        }
-        return a.length - b.length;
+    const { dimensionEdgeExtents } = drawWallPlanDimensionsLayer({
+        context,
+        walls,
+        intersections,
+        rooms,
+        wallPanelsMap,
+        wallLinesMap,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        center,
+        initialScale,
+        currentScaleFactor,
+        SNAP_THRESHOLD,
+        filteredDimensions,
+        dimensionVisibility,
+        showPanelLines,
+        selectedWall,
+        tempWall,
+        placedLabels,
+        allLabels,
+        dimensionValuesSeen,
+        includeProjectDimensions: false,
     });
-    wallDimensionSpecs.forEach((spec) => {
-        drawDimensions(
-            context,
-            spec.startX,
-            spec.startY,
-            spec.endX,
-            spec.endY,
-            scaleFactor,
-            offsetX,
-            offsetY,
-            spec.color,
-            spec.modelBounds,
-            placedLabels,
-            allLabels,
-            true, // collectOnly
-            initialScale,
-            spec.wallLinesMap,
-            dimensionValuesSeen,
-            dimensionLanes,
-            spec.rooms,
-            dimensionEdgeExtents
-        );
-    });
-    // Second pass: draw all label backgrounds and text (COMBINED for proper layering)
-    // Combine wall and panel labels into one array to ensure proper draw order
-    const allCombinedLabels = [...allLabels, ...allPanelLabels];
-    
-    // Draw all labels together (prevents panel labels from being covered by wall labels)
-    allCombinedLabels.forEach(label => { label.draw = makeLabelDrawFn(label, scaleFactor, initialScale); });
-    allCombinedLabels.forEach(label => { label.draw(context); });
-    
-    // Return the thickness color map and edge extents for project dimension layering
+
     return { thicknessColorMap, dimensionEdgeExtents };
 }
 

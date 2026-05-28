@@ -1709,10 +1709,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         });
                     }
                     
-                    // Load alu suspension custom drawing
-                    if (existingPlan.support_config.aluSuspensionCustomDrawing !== undefined) {
-                        setAluSuspensionCustomDrawing(existingPlan.support_config.aluSuspensionCustomDrawing);
-                    }
+                    // Legacy flag — do not restore as "drawing mode" (blocks room selection); rails stay via customSupports
+                    setAluSuspensionCustomDrawing(false);
                     
                     // Load custom supports if they exist
                     if (existingPlan.support_config.customSupports && Array.isArray(existingPlan.support_config.customSupports)) {
@@ -2634,9 +2632,9 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                         onChange={(e) => {
                                             userChangedSupportOptionsRef.current = true;
                                             setEnableAluSuspension(e.target.checked);
-                                            // Auto-enable custom drawing when alu suspension is enabled
-                                            if (e.target.checked && !aluSuspensionCustomDrawing) {
-                                                setAluSuspensionCustomDrawing(true);
+                                            // Do not lock room selection — use "Draw Support Line" on canvas when needed
+                                            if (!e.target.checked) {
+                                                setAluSuspensionCustomDrawing(false);
                                             }
                                             setTimeout(() => {
                                                 userChangedSupportOptionsRef.current = false;
