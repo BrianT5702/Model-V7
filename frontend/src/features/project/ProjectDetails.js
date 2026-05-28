@@ -614,9 +614,13 @@ const ProjectDetails = () => {
         
         // Only capture when on a canvas tab
         if (['wall-plan', 'ceiling-plan', 'floor-plan'].includes(projectDetails.currentView)) {
-            captureCanvasImage();
+            // Defer capture to keep initial project open/render snappy.
+            const timerId = setTimeout(() => {
+                captureCanvasImage();
+            }, 250);
+            return () => clearTimeout(timerId);
         }
-    }, [projectDetails.currentView, projectDetails.filteredWalls, projectDetails.filteredRooms]);
+    }, [projectDetails.currentView]);
 
     // Memoize the room close handler – closing the tab/panel with "x" wipes all selection
     const handleRoomClose = useCallback(() => {

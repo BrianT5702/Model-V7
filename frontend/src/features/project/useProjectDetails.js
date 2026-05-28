@@ -341,11 +341,15 @@ export default function useProjectDetails(projectId) {
     return sorted;
   }, []);
 
-  const ensureStoreys = useCallback(async (projectData = null) => {
+  const ensureStoreys = useCallback(async (projectData = null, prefetchedStoreys = null) => {
     setIsStoreyLoading(true);
     try {
       if (projectData && Array.isArray(projectData.storeys) && projectData.storeys.length > 0) {
         return applyStoreyList(projectData.storeys);
+      }
+
+      if (Array.isArray(prefetchedStoreys) && prefetchedStoreys.length > 0) {
+        return applyStoreyList(prefetchedStoreys);
       }
 
       const response = await api.get(`/storeys/?project=${projectId}`);
@@ -1166,12 +1170,14 @@ export default function useProjectDetails(projectId) {
         doorsResponse,
         intersectionsResponse,
         roomsResponse,
+        storeysResponse,
       ] = await Promise.all([
         api.get(`/projects/${projectId}/`),
         api.get(`/projects/${projectId}/walls/`),
         api.get(`/doors/?project=${projectId}`),
         api.get(`/intersections/?project=${projectId}`),
         api.get(`/rooms/?project=${projectId}`),
+        api.get(`/storeys/?project=${projectId}`),
       ]);
 
       const projectData = projectResponse.data;
@@ -1180,7 +1186,8 @@ export default function useProjectDetails(projectId) {
       setDoors(doorsResponse.data);
       setJoints(intersectionsResponse.data);
       setRooms(Array.isArray(roomsResponse.data) ? roomsResponse.data : []);
-      await ensureStoreys(projectData);
+      const prefetchedStoreys = Array.isArray(storeysResponse?.data) ? storeysResponse.data : [];
+      await ensureStoreys(projectData, prefetchedStoreys);
       setStoreyError('');
       setProjectLoadError('');
     } catch (error) {

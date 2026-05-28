@@ -355,8 +355,22 @@ class RoomViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Optionally filter rooms by project ID"""
         project_id = self.request.query_params.get('project')
-        queryset = Room.objects.select_related('ceiling_plan', 'floor_plan').prefetch_related(
-            'walls', 'ceiling_zones', 'ceiling_zones__ceiling_plan'
+        # Heavy project refresh hits /rooms and RoomSerializer traverses nested relations
+        # (ceiling/floor plans, zone plans, and panel collections). Prefetch these once
+        # to avoid N+1 query bursts during refresh.
+        queryset = Room.objects.select_related(
+            'storey',
+            'ceiling_plan',
+            'floor_plan',
+        ).prefetch_related(
+            'walls',
+            'ceiling_panels',
+            'floor_panels',
+            'ceiling_zones',
+            'ceiling_zones__ceiling_plan',
+            'ceiling_zones__ceiling_panels',
+            'ceiling_plan__zone',
+            'ceiling_plan__zone__ceiling_panels',
         )
         if project_id:
             queryset = queryset.filter(project_id=project_id)

@@ -392,9 +392,17 @@ class RoomSerializer(serializers.ModelSerializer):
     def get_zone_ceiling_plan(self, obj):
         """Get ceiling plan from zone if room is in a zone"""
         zones = obj.ceiling_zones.all()
+        # Cache per-request zone serialization to avoid repeating expensive
+        # CeilingPlanSerializer(zone.ceiling_plan) work for every room in the same zone.
+        zone_plan_cache = self.context.setdefault('_zone_ceiling_plan_cache', {})
         for zone in zones:
             if hasattr(zone, 'ceiling_plan') and zone.ceiling_plan:
-                return CeilingPlanSerializer(zone.ceiling_plan).data
+                cached = zone_plan_cache.get(zone.id)
+                if cached is not None:
+                    return cached
+                serialized = CeilingPlanSerializer(zone.ceiling_plan, context=self.context).data
+                zone_plan_cache[zone.id] = serialized
+                return serialized
         return None
 
     def update(self, instance, validated_data):
