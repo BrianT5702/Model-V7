@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Project,
+    ProjectFolder,
     Storey,
     Wall,
     Room,
@@ -417,6 +418,29 @@ class RoomSerializer(serializers.ModelSerializer):
         return instance
 
 
+class ProjectFolderSerializer(serializers.ModelSerializer):
+    project_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectFolder
+        fields = ['id', 'name', 'order', 'project_count', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+    def get_project_count(self, obj):
+        return obj.projects.count()
+
+    def validate_name(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('Folder name cannot be empty.')
+        qs = ProjectFolder.objects.filter(name=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('A folder with this name already exists.')
+        return value
+
+
 class ProjectSerializer(serializers.ModelSerializer):
     walls = WallSerializer(many=True, read_only=True)
     rooms = RoomSerializer(many=True, read_only=True)
@@ -429,6 +453,7 @@ class ProjectSerializer(serializers.ModelSerializer):
         model = Project
         fields = [
             'id', 'name', 'width', 'length', 'height', 'calculated_height', 'wall_thickness',
+            'folder', 'list_order',
             'storeys', 'walls', 'rooms', 'doors', 'intersections'
         ]
 
@@ -555,6 +580,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
     Avoids nested walls/rooms/doors/intersections to keep payload small and fast.
     """
     calculated_height = serializers.FloatField(source='height', read_only=True)
+    folder_name = serializers.CharField(source='folder.name', read_only=True, default=None)
 
     class Meta:
         model = Project
@@ -566,6 +592,9 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'height',
             'calculated_height',
             'wall_thickness',
+            'folder',
+            'folder_name',
+            'list_order',
             'created_at',
             'updated_at',
         ]

@@ -6,6 +6,7 @@ import api from '../api/api';
 
 const HomePage = () => {
     const [projects, setProjects] = useState([]);
+    const [folders, setFolders] = useState([]);
     const [dbConnectionError, setDbConnectionError] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -30,18 +31,22 @@ const HomePage = () => {
         setTimeout(() => setDbConnectionError(false), 5000);
     };
 
-    // Fetch projects from the backend
+    // Fetch projects and folders from the backend
     useEffect(() => {
         setIsLoading(true);
-        api.get('projects/')
-            .then((response) => {
-                setProjects(response.data);
+        Promise.all([
+            api.get('projects/'),
+            api.get('project-folders/'),
+        ])
+            .then(([projectsResponse, foldersResponse]) => {
+                setProjects(projectsResponse.data);
+                setFolders(foldersResponse.data);
                 setIsLoading(false);
             })
             .catch((error) => {
                 console.error('Error fetching projects:', error);
                 setIsLoading(false);
-                
+
                 if (isDatabaseConnectionError(error)) {
                     showDatabaseError();
                 } else {
@@ -141,7 +146,12 @@ const HomePage = () => {
                         </div>
                     </div>
                     
-                    <ProjectList projects={projects} setProjects={setProjects} />
+                    <ProjectList
+                        projects={projects}
+                        setProjects={setProjects}
+                        folders={folders}
+                        setFolders={setFolders}
+                    />
                 </div>
             </div>
         </div>

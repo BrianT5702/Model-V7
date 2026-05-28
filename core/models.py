@@ -11,14 +11,42 @@ from .constants import (
     DEFAULT_FACE_THICKNESS
 )
 
+class ProjectFolder(models.Model):
+    """Organizational folder for grouping projects on the list page."""
+    name = models.CharField(max_length=255)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'name', 'id']
+
+    def __str__(self):
+        return self.name
+
+
 class Project(models.Model):
     name = models.CharField(max_length=255)
     width = models.FloatField(help_text="Width of the site in mm")
     length = models.FloatField(help_text="Length of the site in mm")
     height = models.FloatField(help_text="Height of the site in mm")
     wall_thickness = models.FloatField(default=DEFAULT_WALL_THICKNESS, help_text="Default wall thickness in mm")
+    folder = models.ForeignKey(
+        ProjectFolder,
+        related_name='projects',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    list_order = models.PositiveIntegerField(
+        default=0,
+        help_text="Sort order within a folder (or uncategorized group).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['list_order', '-updated_at', '-id']
 
     def __str__(self):
         return self.name

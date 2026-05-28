@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ProjectViewSet,
+    ProjectFolderViewSet,
     WallViewSet,
     RoomViewSet,
     CeilingPanelViewSet,
@@ -20,6 +21,7 @@ from .views import (
 # Create a router for registering viewsets
 router = DefaultRouter()
 router.register(r'projects', ProjectViewSet, basename='project')
+router.register(r'project-folders', ProjectFolderViewSet, basename='project-folder')
 router.register(r'walls', WallViewSet, basename='wall')
 router.register(r'rooms', RoomViewSet, basename='room')
 router.register(r'ceiling-panels', CeilingPanelViewSet, basename='ceiling-panel')  # Endpoint for ceiling panels

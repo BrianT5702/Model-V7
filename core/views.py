@@ -6,9 +6,9 @@ from rest_framework import serializers, viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
-from .models import Project, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
+from .models import Project, ProjectFolder, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
 from .serializers import (
-    ProjectSerializer, ProjectListSerializer, ProjectRetrieveSerializer, StoreySerializer, WallSerializer, RoomSerializer,
+    ProjectSerializer, ProjectListSerializer, ProjectRetrieveSerializer, ProjectFolderSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
     DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer
 )
@@ -27,6 +27,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return (
                 Project.objects
+                .select_related('folder')
                 .only(
                     'id',
                     'name',
@@ -34,10 +35,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     'length',
                     'height',
                     'wall_thickness',
+                    'folder_id',
+                    'list_order',
                     'created_at',
                     'updated_at',
+                    'folder__id',
+                    'folder__name',
                 )
-                .order_by('-updated_at', '-id')
+                .order_by('folder__order', 'list_order', '-updated_at', '-id')
             )
         if self.action == 'retrieve':
             return (
@@ -88,6 +93,21 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ProjectFolderViewSet(viewsets.ModelViewSet):
+    queryset = ProjectFolder.objects.all()
+    serializer_class = ProjectFolderSerializer
+
+    def get_queryset(self):
+        return ProjectFolder.objects.all().order_by('order', 'name', 'id')
+
+    def perform_create(self, serializer):
+        order = serializer.validated_data.get('order')
+        if order is None:
+            existing_max = ProjectFolder.objects.aggregate(Max('order'))['order__max']
+            order = (existing_max or 0) + 1
+        serializer.save(order=order)
 
 
 class StoreyViewSet(viewsets.ModelViewSet):
