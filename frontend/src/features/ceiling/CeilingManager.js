@@ -790,58 +790,30 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         return 50.0; // Default for thinner walls
     };
     
-    // Helper function to get wall direction/label for better UX
+    // Helper function to get wall label for any room shape.
+    // Avoid Top/Bottom/Left/Right naming because it is ambiguous for L-shape rooms.
     const getWallLabel = (wall, room) => {
-        if (!room || !room.room_points || room.room_points.length < 3) {
-            return `Wall #${wall.id}`;
-        }
-        
-        // Calculate room center and bounding box
-        const xs = room.room_points.map(p => p.x);
-        const ys = room.room_points.map(p => p.y);
-        const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
-        const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
-        const minX = Math.min(...xs);
-        const maxX = Math.max(...xs);
-        const minY = Math.min(...ys);
-        const maxY = Math.max(...ys);
-        
-        // Calculate wall midpoint
-        const wallMidX = (wall.start_x + wall.end_x) / 2;
-        const wallMidY = (wall.start_y + wall.end_y) / 2;
-        
-        // Determine wall position relative to room
-        const tolerance = 10; // 10mm tolerance
-        
-        if (Math.abs(wall.start_x - minX) < tolerance && Math.abs(wall.end_x - minX) < tolerance) {
-            return 'Left Wall';
-        } else if (Math.abs(wall.start_x - maxX) < tolerance && Math.abs(wall.end_x - maxX) < tolerance) {
-            return 'Right Wall';
-        } else if (Math.abs(wall.start_y - minY) < tolerance && Math.abs(wall.end_y - minY) < tolerance) {
-            return 'Bottom Wall';
-        } else if (Math.abs(wall.start_y - maxY) < tolerance && Math.abs(wall.end_y - maxY) < tolerance) {
-            return 'Top Wall';
-        }
-        
-        // If not on a clear boundary, use direction
         const dx = wall.end_x - wall.start_x;
         const dy = wall.end_y - wall.start_y;
         const length = Math.sqrt(dx * dx + dy * dy);
-        
+        const wallMidX = (wall.start_x + wall.end_x) / 2;
+        const wallMidY = (wall.start_y + wall.end_y) / 2;
+        const tolerance = 10; // 10mm
+
         if (length < tolerance) {
-            return `Wall #${wall.id}`;
+            return 'Wall Segment';
         }
-        
-        // Determine if primarily horizontal or vertical
-        if (Math.abs(dx) > Math.abs(dy)) {
-            // Horizontal wall
-            if (wallMidY < centerY) return 'Bottom Wall';
-            return 'Top Wall';
-        } else {
-            // Vertical wall
-            if (wallMidX < centerX) return 'Left Wall';
-            return 'Right Wall';
+
+        if (Math.abs(dx) > Math.abs(dy) * 2) {
+            return `Horizontal Wall (Y=${Math.round(wallMidY)})`;
         }
+        if (Math.abs(dy) > Math.abs(dx) * 2) {
+            return `Vertical Wall (X=${Math.round(wallMidX)})`;
+        }
+
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        const normalizedAngle = ((angle % 180) + 180) % 180;
+        return `Angled Wall (${Math.round(normalizedAngle)}°)`;
     };
     
     // Helper function to get joint type icon/color
@@ -995,6 +967,28 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             const wallsResponse = await api.get(`/walls/?project=${projectId}`);
             setAllWalls(wallsResponse.data || []);
             
+            // Auto-regenerate geometry so Cut L / Cut 45 changes are reflected immediately in ceiling panels.
+            // (Saving wall joint fields alone does not update existing generated panel geometry.)
+            const selectedIsZone = typeof selectedRoomId === 'string' && selectedRoomId.startsWith('zone-');
+            const selectedIsSingleRoom = selectedRoomId && !selectedIsZone;
+            if (selectedIsSingleRoom) {
+                const roomIdNum = typeof selectedRoomId === 'string' ? parseInt(selectedRoomId, 10) : selectedRoomId;
+                if (Number.isFinite(roomIdNum)) {
+                    const regenConfig = roomEditConfig || {
+                        panelWidth,
+                        panelLength,
+                        customPanelLength,
+                        ceilingThickness,
+                        orientationStrategy: selectedOrientationStrategy,
+                        innerFaceMaterial: ceilingInnerFaceMaterial,
+                        innerFaceThickness: ceilingInnerFaceThickness,
+                        outerFaceMaterial: ceilingOuterFaceMaterial,
+                        outerFaceThickness: ceilingOuterFaceThickness
+                    };
+                    await generateCeilingPlanForRoom(roomIdNum, regenConfig, { skipJointSave: true });
+                }
+            }
+
             // Show success message
             setJointSaveSuccess(true);
             console.log(`✅ Saved ${savedCount} wall joint configuration(s)`);
@@ -1805,9 +1799,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     // Generate ceiling plan for a specific room only
-    const generateCeilingPlanForRoom = async (roomId, config) => {
+    const generateCeilingPlanForRoom = async (roomId, config, options = {}) => {
         // Save wall joint configurations before generating
-        if (selectedRoomId && Object.keys(wallJointConfigs).length > 0) {
+        const shouldSkipJointSave = Boolean(options?.skipJointSave);
+        if (!shouldSkipJointSave && selectedRoomId && Object.keys(wallJointConfigs).length > 0) {
             await saveWallJointConfigs();
         }
         setIsRegeneratingRoom(true);

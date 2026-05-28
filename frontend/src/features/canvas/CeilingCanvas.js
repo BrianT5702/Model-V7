@@ -115,6 +115,22 @@ function generateCeilingFinishColorMap(panels) {
     return colorMap;
 }
 
+function getPanelShapePoints(panel) {
+    if (!panel) return [];
+    const raw = panel.shape_points ?? panel.shape_data ?? panel.shapeData ?? null;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    }
+    return [];
+}
+
 const DEFAULT_CANVAS_WIDTH = 1000;
 const DEFAULT_CANVAS_HEIGHT = 720;
 const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
@@ -1170,28 +1186,68 @@ const CeilingCanvas = ({
                     }
                 }
                 
-                // Check start end for 45° cut
-                let startHas45 = false;
+                const getCutLHorizontalExtension = (targetWall) => {
+                    if (!targetWall) return null;
+                    if (targetWall.ceiling_cut_l_horizontal_extension !== null && targetWall.ceiling_cut_l_horizontal_extension !== undefined) {
+                        return Number(targetWall.ceiling_cut_l_horizontal_extension);
+                    }
+                    const targetThickness = Number(targetWall.thickness || wallThickness);
+                    if (targetThickness >= 200) return 125.0;
+                    if (targetThickness >= 150) return 100.0;
+                    if (targetThickness >= 125) return 75.0;
+                    if (targetThickness >= 100) return 75.0;
+                    if (targetThickness >= 75) return 50.0;
+                    return 50.0;
+                };
+
+                const resolveJointShortening = (currentWall, joiningWall, is45CutByIntersection) => {
+                    const uses45Cut =
+                        is45CutByIntersection ||
+                        currentWall?.ceiling_joint_type === 'cut_45' ||
+                        joiningWall?.ceiling_joint_type === 'cut_45';
+                    if (uses45Cut) {
+                        return wallThickness * 2;
+                    }
+
+                    const cutLWalls = [currentWall, joiningWall].filter(w => w?.ceiling_joint_type === 'cut_l');
+                    if (cutLWalls.length === 0) return 0;
+
+                    const cutLAdjustments = cutLWalls.map((cutLWall) => {
+                        const horizontalExtension = Number(getCutLHorizontalExtension(cutLWall));
+                        if (!Number.isFinite(horizontalExtension)) return 0;
+                        return Math.max(0, horizontalExtension);
+                    });
+                    return Math.max(0, ...cutLAdjustments);
+                };
+
+                // Check start end for corner shortening (45° cut / Cut L)
+                let startHasTrim = false;
                 let startIsOnLeftSide = false; // true if joining wall is on left side
+                let startTrimAdjust = 0;
                 
-                // Check end end for 45° cut
-                let endHas45 = false;
+                // Check end end for corner shortening (45° cut / Cut L)
+                let endHasTrim = false;
                 let endIsOnLeftSide = false;
+                let endTrimAdjust = 0;
                 
-                // Check each intersection to find 45° cuts at each endpoint
+                // Check each intersection to find corner shortening at each endpoint
                 intersections.forEach(inter => {
-                    if (inter.joining_method === '45_cut' && (inter.wall_1 === wall.id || inter.wall_2 === wall.id)) {
+                    if (inter.wall_1 === wall.id || inter.wall_2 === wall.id) {
                         const joiningWallId = inter.wall_1 === wall.id ? inter.wall_2 : inter.wall_1;
                         const joiningWall = walls.find(w => w.id === joiningWallId);
+                        const is45CutByIntersection = inter.joining_method === '45_cut';
+                        const trimAdjust = resolveJointShortening(wall, joiningWall, is45CutByIntersection);
+                        const shouldApplyShortening = trimAdjust > 0;
                         
-                        if (joiningWall) {
+                        if (joiningWall && shouldApplyShortening) {
                             // Check if this intersection is at start or end
                             const tolerance = 1; // 1mm tolerance
                             const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
                             const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
                             
                             if (isAtStart) {
-                                startHas45 = true;
+                                startHasTrim = true;
+                                startTrimAdjust = Math.max(startTrimAdjust, trimAdjust);
                                 
                                 // Determine which side (left or right) the joining wall is on
                                 const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
@@ -1214,7 +1270,8 @@ const CeilingCanvas = ({
                                 }
                                 
                             } else if (isAtEnd) {
-                                endHas45 = true;
+                                endHasTrim = true;
+                                endTrimAdjust = Math.max(endTrimAdjust, trimAdjust);
                                 
                                 // Determine which side (left or right) the joining wall is on
                                 const joinMidX = (joiningWall.start_x + joiningWall.end_x) / 2;
@@ -1239,62 +1296,56 @@ const CeilingCanvas = ({
                     }
                 });
                 
-                // Apply 45° cut shortening at each end independently
-                // Shorten by the full gap distance (2 * wall thickness) to match the visual gap
-                // The gap between line1 and line2 is 2 * wallThickness (each offset by wallThickness from center)
-                // wallThickness is already declared above, reuse it
-                const finalAdjust = wallThickness * 2; // Shorten by full gap to create seamless edge
-                
                 // Make copies of lines for modification
                 line1 = [...line1.map(p => ({ ...p }))];
                 line2 = [...line2.map(p => ({ ...p }))];
                 
                 // Shorten at START end
-                if (startHas45) {
+                if (startHasTrim && startTrimAdjust > 0) {
                     // If joining wall is on LEFT side, shorten the LEFT line
                     // If joining wall is on RIGHT side, shorten the RIGHT line
                     if (startIsOnLeftSide) {
                         // Shorten left line at start
                         if (line1IsLeft) {
-                            line1[0].x += wallDirX * finalAdjust;
-                            line1[0].y += wallDirY * finalAdjust;
+                            line1[0].x += wallDirX * startTrimAdjust;
+                            line1[0].y += wallDirY * startTrimAdjust;
                         } else {
-                            line2[0].x += wallDirX * finalAdjust;
-                            line2[0].y += wallDirY * finalAdjust;
+                            line2[0].x += wallDirX * startTrimAdjust;
+                            line2[0].y += wallDirY * startTrimAdjust;
                         }
                     } else {
                         // Shorten right line at start
                         if (line1IsLeft) {
-                            line2[0].x += wallDirX * finalAdjust;
-                            line2[0].y += wallDirY * finalAdjust;
+                            line2[0].x += wallDirX * startTrimAdjust;
+                            line2[0].y += wallDirY * startTrimAdjust;
                         } else {
-                            line1[0].x += wallDirX * finalAdjust;
-                            line1[0].y += wallDirY * finalAdjust;
+                            line1[0].x += wallDirX * startTrimAdjust;
+                            line1[0].y += wallDirY * startTrimAdjust;
                         }
                     }
                 }
                 
                 // Shorten at END end
-                if (endHas45) {
+                if (endHasTrim && endTrimAdjust > 0) {
                     // If joining wall is on LEFT side, shorten the LEFT line
                     // If joining wall is on RIGHT side, shorten the RIGHT line
                     if (endIsOnLeftSide) {
                         // Shorten left line at end
                         if (line1IsLeft) {
-                            line1[1].x -= wallDirX * finalAdjust;
-                            line1[1].y -= wallDirY * finalAdjust;
+                            line1[1].x -= wallDirX * endTrimAdjust;
+                            line1[1].y -= wallDirY * endTrimAdjust;
                         } else {
-                            line2[1].x -= wallDirX * finalAdjust;
-                            line2[1].y -= wallDirY * finalAdjust;
+                            line2[1].x -= wallDirX * endTrimAdjust;
+                            line2[1].y -= wallDirY * endTrimAdjust;
                         }
                     } else {
                         // Shorten right line at end
                         if (line1IsLeft) {
-                            line2[1].x -= wallDirX * finalAdjust;
-                            line2[1].y -= wallDirY * finalAdjust;
+                            line2[1].x -= wallDirX * endTrimAdjust;
+                            line2[1].y -= wallDirY * endTrimAdjust;
                         } else {
-                            line1[1].x -= wallDirX * finalAdjust;
-                            line1[1].y -= wallDirY * finalAdjust;
+                            line1[1].x -= wallDirX * endTrimAdjust;
+                            line1[1].y -= wallDirY * endTrimAdjust;
                         }
                     }
                 }
@@ -1460,16 +1511,18 @@ const CeilingCanvas = ({
             // === DRAWING LOGIC ===
             ctx.beginPath();
 
+            const panelShapePoints = getPanelShapePoints(panel);
+
             // 1. CHECK FOR EXACT SHAPE (L-SHAPED PANEL)
             // This is the fix: If shape_points exist, draw the custom polygon
-            if (panel.shape_points && Array.isArray(panel.shape_points) && panel.shape_points.length > 2) {
-                const p0 = panel.shape_points[0];
+            if (panelShapePoints.length > 2) {
+                const p0 = panelShapePoints[0];
                 ctx.moveTo(
                     p0.x * scaleFactor.current + offsetX.current,
                     p0.y * scaleFactor.current + offsetY.current
                 );
-                for (let i = 1; i < panel.shape_points.length; i++) {
-                    const p = panel.shape_points[i];
+                for (let i = 1; i < panelShapePoints.length; i++) {
+                    const p = panelShapePoints[i];
                     ctx.lineTo(
                         p.x * scaleFactor.current + offsetX.current,
                         p.y * scaleFactor.current + offsetY.current
@@ -1495,7 +1548,7 @@ const CeilingCanvas = ({
 
             // --- CUT INDICATOR (Only for Standard Rectangles) ---
             // We skip this for L-shapes because the shape itself indicates the cut
-            if (isCutPanel && (!panel.shape_points || panel.shape_points.length === 0)) {
+            if (isCutPanel && panelShapePoints.length === 0) {
                 const startX = panel.start_x ?? panel.x ?? 0;
                 const startY = panel.start_y ?? panel.y ?? 0;
                 const width = (panel.width) * scaleFactor.current;

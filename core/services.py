@@ -2626,6 +2626,15 @@ class CeilingService:
         if wall.ceiling_cut_l_horizontal_extension is not None:
             return wall.ceiling_cut_l_horizontal_extension
         return CeilingService.get_cut_l_default_horizontal_extension(wall.thickness)
+
+    @staticmethod
+    def get_cut_l_offset_distance(wall):
+        """Return effective inward offset distance for Cut L in mm.
+
+        Legacy behavior: use configured horizontal extension directly as cut depth.
+        """
+        horizontal_extension = CeilingService.get_cut_l_horizontal_extension(wall)
+        return max(0.0, float(horizontal_extension))
     
     @staticmethod
     def calculate_ceiling_area_reduction_for_room(room, ceiling_thickness):
@@ -2652,11 +2661,12 @@ class CeilingService:
                 # Calculate wall length
                 wall_length = ((wall.end_x - wall.start_x) ** 2 + (wall.end_y - wall.start_y) ** 2) ** 0.5
                 
-                # Calculate reduction: (wall_thickness - horizontal_extension) × wall_length
-                reduction = (wall.thickness - horizontal_extension) * wall_length
+                # Calculate reduction: cut_depth × wall_length
+                cut_depth = CeilingService.get_cut_l_offset_distance(wall)
+                reduction = cut_depth * wall_length
                 total_reduction += reduction
                 
-                logger.debug(f"Wall {wall.id}: Cut L reduction = ({wall.thickness} - {horizontal_extension}) × {wall_length} = {reduction}mm²")
+                logger.debug(f"Wall {wall.id}: Cut L reduction = {cut_depth} × {wall_length} = {reduction}mm²")
         
         return total_reduction
     
@@ -2664,7 +2674,7 @@ class CeilingService:
     def calculate_cut_l_wall_offsets(room):
         """Calculate the offset for each wall with Cut L joints
         
-        Returns a dict mapping wall_id to offset value (wall_thickness - horizontal_extension)
+        Returns a dict mapping wall_id to offset value (effective cut depth)
         Only includes walls with Cut L joints.
         
         Args:
@@ -2679,9 +2689,9 @@ class CeilingService:
         for wall in walls:
             if wall.ceiling_joint_type == 'cut_l':
                 horizontal_extension = CeilingService.get_cut_l_horizontal_extension(wall)
-                offset = wall.thickness - horizontal_extension
+                offset = CeilingService.get_cut_l_offset_distance(wall)
                 offsets[wall.id] = offset
-                logger.debug(f"Wall {wall.id}: Cut L offset = {wall.thickness} - {horizontal_extension} = {offset}mm")
+                logger.debug(f"Wall {wall.id}: Cut L offset = {horizontal_extension}mm")
         
         return offsets
     
@@ -2718,13 +2728,13 @@ class CeilingService:
             elif abs(wall.start_x - bounding_box['max_x']) < tolerance and abs(wall.end_x - bounding_box['max_x']) < tolerance:
                 adjusted_box['max_x'] = min(adjusted_box['max_x'], bounding_box['max_x'] - offset)
             
-            # --- BOTTOM BOUNDARY (min_y) ---
+            # Y-side mapping for plan view:
+            # Keep top/bottom aligned with the 2D ceiling plan's visual orientation.
             elif abs(wall.start_y - bounding_box['min_y']) < tolerance and abs(wall.end_y - bounding_box['min_y']) < tolerance:
-                adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
-            
-            # --- TOP BOUNDARY (max_y) ---
-            elif abs(wall.start_y - bounding_box['max_y']) < tolerance and abs(wall.end_y - bounding_box['max_y']) < tolerance:
                 adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
+            
+            elif abs(wall.start_y - bounding_box['max_y']) < tolerance and abs(wall.end_y - bounding_box['max_y']) < tolerance:
+                adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
             
             # --- SPANNING / TOUCHING WALLS ---
             else:
@@ -2734,9 +2744,9 @@ class CeilingService:
                 elif abs(wall.start_x - bounding_box['max_x']) < tolerance:
                     adjusted_box['max_x'] = min(adjusted_box['max_x'], bounding_box['max_x'] - offset)
                 elif abs(wall.start_y - bounding_box['min_y']) < tolerance:
-                    adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
-                elif abs(wall.start_y - bounding_box['max_y']) < tolerance:
                     adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
+                elif abs(wall.start_y - bounding_box['max_y']) < tolerance:
+                    adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
                 
                 # Check End Point
                 if abs(wall.end_x - bounding_box['min_x']) < tolerance:
@@ -2744,9 +2754,9 @@ class CeilingService:
                 elif abs(wall.end_x - bounding_box['max_x']) < tolerance:
                     adjusted_box['max_x'] = min(adjusted_box['max_x'], bounding_box['max_x'] - offset)
                 elif abs(wall.end_y - bounding_box['min_y']) < tolerance:
-                    adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
-                elif abs(wall.end_y - bounding_box['max_y']) < tolerance:
                     adjusted_box['max_y'] = min(adjusted_box['max_y'], bounding_box['max_y'] - offset)
+                elif abs(wall.end_y - bounding_box['max_y']) < tolerance:
+                    adjusted_box['min_y'] = max(adjusted_box['min_y'], bounding_box['min_y'] + offset)
         
         # Recalculate dimensions
         adjusted_box['width'] = adjusted_box['max_x'] - adjusted_box['min_x']
@@ -6102,24 +6112,23 @@ class CeilingService:
             if cut_l_reduction > 0:
                 logger.info(f"  Room {room.id}: Cut L area reduction = {cut_l_reduction:.2f}mm²")
             
-            # Calculate Cut L offset distance (like project-wide generation does)
-            # This is the actual offset distance, not the area reduction
-            cut_l_offset = 0.0
-            walls = room.walls.filter(ceiling_joint_type='cut_l')
-            if walls.exists():
-                w = walls.first()
-                ext = CeilingService.get_cut_l_horizontal_extension(w)
-                cut_l_offset = max(0.0, w.thickness - ext)
-                logger.debug(f"  Room {room.id}: Cut L offset distance = {cut_l_offset}mm (wall thickness: {w.thickness}mm, extension: {ext}mm)")
-            
-            # Use the same approach as project-wide generation: use original bounding box and room_points
-            # and pass cut_l_offset to _generate_shape_aware_panels (it handles the offset internally)
-            # This matches the behavior of _generate_enhanced_room_panels which works correctly
-            logger.debug(f"  Generating panels: {bounding_box['width']}x{bounding_box['height']}mm, {len(room_points)} points, {orientation_type}, cut_l_offset={cut_l_offset}mm")
-            
+            # Apply per-wall/per-side Cut L adjustment before generation.
+            # Using one scalar cut_l_offset shrinks all sides equally, which is incorrect
+            # when only one wall is configured as Cut L.
+            adjusted_bounding_box = CeilingService.adjust_bounding_box_for_cut_l(
+                bounding_box, room, room_points
+            )
+            adjusted_room_points = CeilingService.adjust_room_points_for_cut_l_offset(
+                room_points, room, adjusted_bounding_box, bounding_box
+            )
+            logger.debug(
+                f"  Generating panels: {adjusted_bounding_box['width']}x{adjusted_bounding_box['height']}mm, "
+                f"{len(adjusted_room_points)} points, {orientation_type}, cut_l_offset=0.0 (per-side applied)"
+            )
+
             panels = CeilingService._generate_shape_aware_panels(
-                bounding_box, room_points, orientation_type, panel_width, panel_length, 
-                leftover_tracker, ceiling_thickness, cut_l_offset=cut_l_offset
+                adjusted_bounding_box, adjusted_room_points, orientation_type, panel_width, panel_length,
+                leftover_tracker, ceiling_thickness, cut_l_offset=0.0
             )
             
             logger.debug(f"  Generated {len(panels)} raw panels")
@@ -6666,13 +6675,14 @@ class CeilingService:
                 bounding_box = room_info['bounding_box']
                 room_points = room_info['points']
                 
-                # 2. Calculate Gap (Cut-L Offset)
-                cut_l_offset = 0.0
-                walls = room.walls.filter(ceiling_joint_type='cut_l')
-                if walls.exists():
-                    w = walls.first()
-                    ext = CeilingService.get_cut_l_horizontal_extension(w)
-                    cut_l_offset = max(0.0, w.thickness - ext)
+                # 2. Apply per-wall/per-side Cut L adjustment.
+                # Do not use a single scalar offset here; it incorrectly shrinks every side.
+                adjusted_bounding_box = CeilingService.adjust_bounding_box_for_cut_l(
+                    bounding_box, room, room_points
+                )
+                adjusted_room_points = CeilingService.adjust_room_points_for_cut_l_offset(
+                    room_points, room, adjusted_bounding_box, bounding_box
+                )
 
                 # 3. Determine Orientation (Smart Auto)
                 req_orientation = room_result.get('orientation', 'auto')
@@ -6686,15 +6696,15 @@ class CeilingService:
                 if req_orientation == 'auto':
                     # Trial 1: Vertical
                     v_panels = CeilingService._generate_shape_aware_panels(
-                        bounding_box, room_points, 'vertical', panel_width, panel_length, 
-                        leftover_tracker=None, ceiling_thickness=ceiling_thickness, cut_l_offset=cut_l_offset
+                        adjusted_bounding_box, adjusted_room_points, 'vertical', panel_width, panel_length,
+                        leftover_tracker=None, ceiling_thickness=ceiling_thickness, cut_l_offset=0.0
                     )
                     v_usage = sum(p['width'] * p['length'] for p in v_panels)
                     
                     # Trial 2: Horizontal
                     h_panels = CeilingService._generate_shape_aware_panels(
-                        bounding_box, room_points, 'horizontal', panel_width, panel_length, 
-                        leftover_tracker=None, ceiling_thickness=ceiling_thickness, cut_l_offset=cut_l_offset
+                        adjusted_bounding_box, adjusted_room_points, 'horizontal', panel_width, panel_length,
+                        leftover_tracker=None, ceiling_thickness=ceiling_thickness, cut_l_offset=0.0
                     )
                     h_usage = sum(p['width'] * p['length'] for p in h_panels)
                     
@@ -6710,14 +6720,14 @@ class CeilingService:
 
                 # 4. Final Generation
                 panels = CeilingService._generate_shape_aware_panels(
-                    bounding_box, 
-                    room_points, 
+                    adjusted_bounding_box,
+                    adjusted_room_points,
                     final_orientation, 
                     panel_width, 
                     panel_length, 
                     leftover_tracker, 
                     ceiling_thickness, 
-                    cut_l_offset=cut_l_offset 
+                    cut_l_offset=0.0
                 )
                 
                 # Add Metadata

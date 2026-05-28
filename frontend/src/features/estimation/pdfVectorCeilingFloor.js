@@ -119,6 +119,24 @@ function joiningWallRefPointAwayFromJoint(joiningWall, ix, iy) {
     return { x: (j1x + j2x) / 2, y: (j1y + j2y) / 2 };
 }
 
+function getCutLDefaultHorizontalExtension(wallThickness) {
+    const targetThickness = num(wallThickness, 150);
+    if (targetThickness >= 200) return 125.0;
+    if (targetThickness >= 150) return 100.0;
+    if (targetThickness >= 125) return 75.0;
+    if (targetThickness >= 100) return 75.0;
+    if (targetThickness >= 75) return 50.0;
+    return 50.0;
+}
+
+function getCutLHorizontalExtension(wall, fallbackThickness) {
+    if (!wall) return getCutLDefaultHorizontalExtension(fallbackThickness);
+    if (wall.ceiling_cut_l_horizontal_extension !== null && wall.ceiling_cut_l_horizontal_extension !== undefined) {
+        return num(wall.ceiling_cut_l_horizontal_extension, getCutLDefaultHorizontalExtension(fallbackThickness));
+    }
+    return getCutLDefaultHorizontalExtension(num(wall.thickness, fallbackThickness));
+}
+
 function expandBoundsWalls(wallList, b0 = initialBounds()) {
     let b = { ...b0 };
     (wallList || []).forEach((w) => {
@@ -181,10 +199,12 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
                 line1IsLeft = line1MidY > line2MidY;
             }
 
-            let startHas45 = false;
+            let startHasTrim = false;
             let startIsOnLeftSide = false;
-            let endHas45 = false;
+            let startTrimAdjust = 0;
+            let endHasTrim = false;
             let endIsOnLeftSide = false;
+            let endTrimAdjust = 0;
 
             if (intersections && intersections.length > 0) {
                 const tol = CEILING_FLOOR_INTERSECTION_TOL_MM;
@@ -202,7 +222,6 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
 
                     pairList.forEach((pair) => {
                         const jm = pair?.joining_method ?? inter.joining_method ?? 'butt_in';
-                        if (jm !== '45_cut') return;
 
                         const wa = resolveWallRef(pair?.wall1 ?? inter.wall_1 ?? inter.wall1, storeyWalls);
                         const wb = resolveWallRef(pair?.wall2 ?? inter.wall_2 ?? inter.wall2, storeyWalls);
@@ -210,6 +229,21 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
                         if (!wallIdMatch(wa.id, wall.id) && !wallIdMatch(wb.id, wall.id)) return;
 
                         const joiningWall = wallIdMatch(wa.id, wall.id) ? wb : wa;
+                        const has45Cut =
+                            jm === '45_cut' ||
+                            wall.ceiling_joint_type === 'cut_45' ||
+                            joiningWall?.ceiling_joint_type === 'cut_45';
+                        const cutLWalls = [wall, joiningWall].filter((w) => w?.ceiling_joint_type === 'cut_l');
+                        const cutLAdjust = cutLWalls.length > 0
+                            ? Math.max(
+                                  0,
+                                  ...cutLWalls.map((cutLWall) =>
+                                      Math.max(0, getCutLHorizontalExtension(cutLWall, wallThickness))
+                                  )
+                              )
+                            : 0;
+                        const trimAdjust = has45Cut ? wallThickness * 2 : cutLAdjust;
+                        if (!(trimAdjust > 0)) return;
 
                         let ix = num(inter.x);
                         let iy = num(inter.y);
@@ -238,7 +272,8 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
                         const joinRefY = ref.y;
 
                         if (isAtStart) {
-                            startHas45 = true;
+                            startHasTrim = true;
+                            startTrimAdjust = Math.max(startTrimAdjust, trimAdjust);
                             if (isVertical) {
                                 startIsOnLeftSide = joinRefX < sx;
                             } else if (wallDirX > 0) {
@@ -247,7 +282,8 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
                                 startIsOnLeftSide = joinRefY > sy;
                             }
                         } else if (isAtEnd) {
-                            endHas45 = true;
+                            endHasTrim = true;
+                            endTrimAdjust = Math.max(endTrimAdjust, trimAdjust);
                             if (isVertical) {
                                 endIsOnLeftSide = joinRefX < ex;
                             } else if (wallDirX > 0) {
@@ -260,42 +296,41 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
                 });
             }
 
-            const finalAdjust = wallThickness * 2;
             line1 = line1.map((p) => ({ ...p }));
             line2 = line2.map((p) => ({ ...p }));
 
-            if (startHas45) {
+            if (startHasTrim && startTrimAdjust > 0) {
                 if (startIsOnLeftSide) {
                     if (line1IsLeft) {
-                        line1[0].x += wallDirX * finalAdjust;
-                        line1[0].y += wallDirY * finalAdjust;
+                        line1[0].x += wallDirX * startTrimAdjust;
+                        line1[0].y += wallDirY * startTrimAdjust;
                     } else {
-                        line2[0].x += wallDirX * finalAdjust;
-                        line2[0].y += wallDirY * finalAdjust;
+                        line2[0].x += wallDirX * startTrimAdjust;
+                        line2[0].y += wallDirY * startTrimAdjust;
                     }
                 } else if (line1IsLeft) {
-                    line2[0].x += wallDirX * finalAdjust;
-                    line2[0].y += wallDirY * finalAdjust;
+                    line2[0].x += wallDirX * startTrimAdjust;
+                    line2[0].y += wallDirY * startTrimAdjust;
                 } else {
-                    line1[0].x += wallDirX * finalAdjust;
-                    line1[0].y += wallDirY * finalAdjust;
+                    line1[0].x += wallDirX * startTrimAdjust;
+                    line1[0].y += wallDirY * startTrimAdjust;
                 }
             }
-            if (endHas45) {
+            if (endHasTrim && endTrimAdjust > 0) {
                 if (endIsOnLeftSide) {
                     if (line1IsLeft) {
-                        line1[1].x -= wallDirX * finalAdjust;
-                        line1[1].y -= wallDirY * finalAdjust;
+                        line1[1].x -= wallDirX * endTrimAdjust;
+                        line1[1].y -= wallDirY * endTrimAdjust;
                     } else {
-                        line2[1].x -= wallDirX * finalAdjust;
-                        line2[1].y -= wallDirY * finalAdjust;
+                        line2[1].x -= wallDirX * endTrimAdjust;
+                        line2[1].y -= wallDirY * endTrimAdjust;
                     }
                 } else if (line1IsLeft) {
-                    line2[1].x -= wallDirX * finalAdjust;
-                    line2[1].y -= wallDirY * finalAdjust;
+                    line2[1].x -= wallDirX * endTrimAdjust;
+                    line2[1].y -= wallDirY * endTrimAdjust;
                 } else {
-                    line1[1].x -= wallDirX * finalAdjust;
-                    line1[1].y -= wallDirY * finalAdjust;
+                    line1[1].x -= wallDirX * endTrimAdjust;
+                    line1[1].y -= wallDirY * endTrimAdjust;
                 }
             }
 

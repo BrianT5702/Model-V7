@@ -1515,7 +1515,7 @@ getModelBounds() {
     wallsToCheck.forEach(wall => {
       if (wall.ceiling_joint_type === 'cut_l') {
         const horizontalExtension = this.getCutLHorizontalExtension(wall);
-        const offset = (wall.thickness || 150) - horizontalExtension;
+        const offset = Math.max(0, horizontalExtension);
         offsets[wall.id] = offset;
       }
     });

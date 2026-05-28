@@ -230,7 +230,7 @@ function calculateCutLWallOffsets(room, walls) {
   wallsToCheck.forEach(wall => {
     if (wall.ceiling_joint_type === 'cut_l') {
       const horizontalExtension = getCutLHorizontalExtension(wall);
-      const offset = (wall.thickness || 150) - horizontalExtension;
+      const offset = Math.max(0, horizontalExtension);
       offsets[wall.id] = offset;
       console.log(`[Cut L] Room ${room.id || 'unknown'}: Wall ${wall.id} - thickness: ${wall.thickness}mm, extension: ${horizontalExtension}mm, offset: ${offset}mm`);
     }
