@@ -209,6 +209,10 @@ class Room(models.Model):
         default=False,
         help_text="If True, allows walls in this room to have different heights (for sloped roofs). When enabled, room height updates will not automatically modify wall heights."
     )
+    exclude_from_ceiling = models.BooleanField(
+        default=False,
+        help_text="If True, skip ceiling plan generation for this room (e.g. open void, double-height space)."
+    )
     remarks = models.TextField(blank=True, null=True)
     
     room_points = ArrayField(

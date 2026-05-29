@@ -2150,6 +2150,9 @@ getModelBounds() {
     const zonePanelsMap = new Map(); // zone_id -> { zone, panels, outline_points }
     
     this.project.rooms.forEach(room => {
+      if (room.exclude_from_ceiling) {
+        return;
+      }
       debugLog(`🏠 Checking room ${room.id} (${room.room_name}):`, {
         ceiling_plan: room.ceiling_plan,
         zone_ceiling_plan: room.zone_ceiling_plan,

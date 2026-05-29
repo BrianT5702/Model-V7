@@ -401,7 +401,8 @@ class RoomViewSet(viewsets.ModelViewSet):
         
         try:
             logger.info(f"Updating room with data: {request.data}")
-            RoomService.validate_room_points(request.data.get('room_points', []))
+            if 'room_points' in request.data:
+                RoomService.validate_room_points(request.data.get('room_points', []))
             
             # Get the room instance
             room = self.get_object()
@@ -412,6 +413,10 @@ class RoomViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             updated_room = serializer.save()
             logger.info(f"Updated room height to: {updated_room.height}")
+
+            if updated_room.exclude_from_ceiling and request.data.get('exclude_from_ceiling') is True:
+                from .services import CeilingService
+                CeilingService.clear_room_ceiling_data(updated_room.id)
             
             # If height is being updated, update wall heights (unless allow_variable_wall_heights is enabled)
             # Pass the room's storey_id to prevent cross-level contamination
@@ -424,8 +429,10 @@ class RoomViewSet(viewsets.ModelViewSet):
             elif updated_room.allow_variable_wall_heights and 'height' in request.data:
                 logger.info(f"Skipping wall height update for room {updated_room.id} because allow_variable_wall_heights=True (for sloped roof)")
             
-            # Always recalculate room boundaries after any room update to ensure consistency
-            RoomService.recalculate_room_boundary_from_walls(updated_room.id)
+            # Recalculate boundaries when geometry may have changed (skip metadata-only PATCHes)
+            metadata_only_fields = {'exclude_from_ceiling', 'label_position', 'remarks', 'temperature'}
+            if not set(request.data.keys()).issubset(metadata_only_fields):
+                RoomService.recalculate_room_boundary_from_walls(updated_room.id)
             
             # Update wall base elevations if room base elevation changed
             if 'base_elevation_mm' in request.data:

@@ -1716,7 +1716,11 @@ const FloorCanvas = ({
     };
 
     return (
-        <div className="floor-canvas-container bg-white rounded-xl shadow-lg p-4 sm:p-6 w-full max-w-full min-w-0">
+        <div
+            className={`floor-canvas-container bg-white rounded-xl shadow-lg w-full max-w-full min-w-0 ${
+                isPlanDetailsOpen ? 'p-4 sm:p-5 lg:p-5' : 'p-4 sm:p-6'
+            }`}
+        >
             {/* Header - same line as Wall/Ceiling: title left, Show Plan Details right when collapsed */}
             <div className="floor-canvas-header mb-4 sm:mb-6 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 min-w-0">
@@ -1739,9 +1743,10 @@ const FloorCanvas = ({
                 </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 min-w-0 w-full">
+            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 min-w-0 w-full items-stretch">
                 {/* Main Canvas Area */}
-                <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg flex-1 min-w-0">
+                <div className="floor-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px]">
+                <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg">
                     <div
                         ref={canvasContainerRef}
                         className="relative"
@@ -1813,29 +1818,31 @@ const FloorCanvas = ({
                         </div>
                     </div>
                 </div>
+                </div>
 
-                {/* Plan Details Sidebar - collapsible like Wall/Ceiling Plan */}
-                {isPlanDetailsOpen && (
-                <div className="floor-summary-sidebar flex-shrink-0 w-full lg:w-64 lg:max-w-64 min-w-0">
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 w-full max-w-64 shadow-lg overflow-hidden">
-                        <h4 className="text-xl font-bold text-gray-900 mb-6 flex items-center shrink-0">
-                            <svg className="w-6 h-6 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                            <span className="truncate">Plan Details</span>
-                        </h4>
-                        <div className="flex justify-end mb-4">
+                {/* Plan Details — same width/compact layout as ceiling plan */}
+                {isPlanDetailsOpen ? (
+                <div className="floor-summary-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0">
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 lg:max-h-[min(720px,calc(100vh-10rem))] lg:overflow-y-auto">
+                        <div className="flex flex-col items-stretch gap-2 mb-4">
+                            <h4 className="text-base font-bold text-gray-900 flex items-center shrink-0">
+                                <svg className="w-5 h-5 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                <span className="truncate">Plan Details</span>
+                            </h4>
                             <button
+                                type="button"
                                 onClick={() => setIsPlanDetailsOpen(false)}
-                                className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                                className="self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
                             >
                                 Collapse
                             </button>
                         </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-4 text-left">
                         {/* Stats Grid 1 */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
                             <div>
                                 <div className="text-sm text-gray-600">Total Panels</div>
                                 <div className="text-2xl font-bold text-gray-900">{panelCounts.total}</div>
@@ -1847,7 +1854,7 @@ const FloorCanvas = ({
                         </div>
                         
                         {/* Stats Grid 2 */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
                             <div>
                                 <div className="text-sm text-gray-600">Full Panels</div>
                                 <div className="text-xl font-semibold text-green-600">{panelCounts.full}</div>
@@ -1859,7 +1866,7 @@ const FloorCanvas = ({
                         </div>
                         
                         {/* Stats Grid 3 */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
                             <div>
                                 <div className="text-sm text-gray-600">Waste %</div>
                                 <div className="text-xl font-semibold text-red-600">
@@ -2001,9 +2008,9 @@ const FloorCanvas = ({
                         {/* ------------------------------------------------------- */}
                         {/* COMBINED Dimension Legend & Filter                      */}
                         {/* ------------------------------------------------------- */}
-                        <div className="mt-6 pt-4 border-t border-gray-200">
-                            <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
-                                <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="pt-4 border-t border-gray-200">
+                            <h4 className="font-semibold text-gray-900 mb-4 flex items-center text-sm">
+                                <svg className="w-5 h-5 mr-2 text-gray-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                                 Dimension Legend
@@ -2076,7 +2083,7 @@ const FloorCanvas = ({
                     </div>
                     </div>
                 </div>
-                )}
+                ) : null}
 
             </div>
 

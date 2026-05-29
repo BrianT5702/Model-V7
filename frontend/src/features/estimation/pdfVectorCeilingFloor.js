@@ -694,6 +694,21 @@ function drawNylonHangersOnCeilingPdf(
 
     const WALL_SUPPORT_THRESHOLD_MM = 200;
 
+    const panelsWithStoredNylon = new Set();
+    (ceilingPlans || []).forEach((cp) => {
+        const custom = cp.support_config?.customSupports;
+        if (!Array.isArray(custom)) return;
+        custom.forEach((support) => {
+            if (!support || support.type !== 'nylon') return;
+            let rid = support.room_id ?? cp.room_id ?? cp.room;
+            if (rid != null && typeof rid === 'object') rid = rid.id;
+            const pid = support.panel_id;
+            if (rid != null && pid != null) {
+                panelsWithStoredNylon.add(`${Number(rid)}:${String(pid)}`);
+            }
+        });
+    });
+
     panels.forEach((panel) => {
         let roomId = panel.room_id ?? panel.room;
         if (roomId != null && typeof roomId === 'object') roomId = roomId.id;
@@ -714,6 +729,11 @@ function drawNylonHangersOnCeilingPdf(
 
         const defaultThk = plan?.ceiling_thickness != null ? num(plan.ceiling_thickness) : 150;
         if (!panelNeedsNylonSupportModel(panel, defaultThk)) return;
+
+        const panelId = panel.id ?? panel.panel_id;
+        if (panelId != null && roomId != null && panelsWithStoredNylon.has(`${Number(roomId)}:${String(panelId)}`)) {
+            return;
+        }
 
         const { cx, cy } = panelCenterModelMm(panel);
         if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;

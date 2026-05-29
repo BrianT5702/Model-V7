@@ -52,6 +52,16 @@ const ProjectDetails = () => {
             // ignore storage errors
         }
     }, [controlsSidebarCollapsed]);
+
+    const isWallPlanView = projectDetails.currentView === 'wall-plan';
+
+    useEffect(() => {
+        if (!isWallPlanView && !projectDetails.is3DView) {
+            setControlsSidebarCollapsed(true);
+            setSidebarOpen(false);
+        }
+    }, [isWallPlanView, projectDetails.is3DView]);
+
     const wizardStep = projectDetails.storeyWizardStep;
     const sourceStoreyId = projectDetails.storeyWizardSourceStoreyId ?? projectDetails.activeStoreyId;
     const selectedRoomsSet = new Set(projectDetails.storeyWizardRoomSelections || []);
@@ -970,7 +980,7 @@ const ProjectDetails = () => {
                 <div className="w-full px-4 sm:px-6 py-3" style={{ width: '100%' }}>
                     <div className="flex items-center justify-between w-full">
                         <div className="flex items-center space-x-2 sm:space-x-4">
-                            {!projectDetails.is3DView && (
+                            {!projectDetails.is3DView && isWallPlanView && (
                             <>
                             <button
                                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -1506,15 +1516,15 @@ const ProjectDetails = () => {
 
             <div className="flex min-h-[calc(100vh-120px)] relative" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
                 {/* Mobile Sidebar Overlay (hidden in 3D: sidebar not used) */}
-                {sidebarOpen && !projectDetails.is3DView && (
+                {sidebarOpen && !projectDetails.is3DView && isWallPlanView && (
                     <div 
                         className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
                         onClick={() => setSidebarOpen(false)}
                     ></div>
                 )}
                 
-                {/* Left Sidebar - Controls (hidden in 3D so canvas uses full width; edit is disabled in 3D anyway) */}
-                {!projectDetails.is3DView && (
+                {/* Left Sidebar - wall plan drawing tools only (ceiling/floor use canvas Plan Details) */}
+                {!projectDetails.is3DView && isWallPlanView && (
                 <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transition-all duration-300 ease-in-out w-72 min-w-[280px] max-w-[320px] ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''}`}>

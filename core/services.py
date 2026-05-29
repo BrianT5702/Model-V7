@@ -2986,6 +2986,9 @@ class CeilingService:
         try:
             room = Room.objects.get(id=room_id)
             logger.info(f"Found room: {room.room_name}")
+
+            if getattr(room, 'exclude_from_ceiling', False):
+                raise ValueError(f'Room "{room.room_name}" is marked as not requiring a ceiling.')
             
             # Ensure room boundary points are up-to-date with current wall positions
             from .services import RoomService
@@ -3124,6 +3127,8 @@ class CeilingService:
         room_heights = []
         room_polygons = []
         for room in rooms:
+            if getattr(room, 'exclude_from_ceiling', False):
+                raise ValueError(f'Room "{room.room_name}" is marked as not requiring a ceiling and cannot be merged.')
             points = room.room_points or []
             if len(points) < 3:
                 raise ValueError(f'Room "{room.room_name}" does not have a valid boundary and cannot be merged.')
@@ -3299,6 +3304,8 @@ class CeilingService:
 
         if regenerate_room_plans:
             for room in rooms:
+                if getattr(room, 'exclude_from_ceiling', False):
+                    continue
                 try:
                     CeilingService.generate_ceiling_plan(room.id)
                 except Exception:
@@ -3715,6 +3722,31 @@ class CeilingService:
             return None
 
     @staticmethod
+    def _get_exclude_from_ceiling_room_ids(project_id):
+        from .models import Room
+        return set(
+            Room.objects.filter(project_id=project_id, exclude_from_ceiling=True).values_list('id', flat=True)
+        )
+
+    @staticmethod
+    def _combined_ceiling_exclude_ids(project_id, exclude_room_ids=None):
+        combined = CeilingService._get_exclude_from_ceiling_room_ids(project_id)
+        if exclude_room_ids:
+            combined |= {int(rid) for rid in exclude_room_ids}
+        return combined
+
+    @staticmethod
+    def clear_room_ceiling_data(room_id):
+        from .models import CeilingPlan, CeilingPanel
+        CeilingPanel.objects.filter(room_id=room_id).delete()
+        CeilingPlan.objects.filter(room_id=room_id).delete()
+
+    @staticmethod
+    def clear_excluded_rooms_ceiling_data(project_id):
+        for room_id in CeilingService._get_exclude_from_ceiling_room_ids(project_id):
+            CeilingService.clear_room_ceiling_data(room_id)
+
+    @staticmethod
     def analyze_project_heights(project_id, exclude_room_ids=None):
         """Enhanced project-level height analysis for intelligent ceiling planning
         
@@ -3728,12 +3760,10 @@ class CeilingService:
         
         try:
             project = Project.objects.get(id=project_id)
+            exclude_set = CeilingService._combined_ceiling_exclude_ids(project_id, exclude_room_ids)
             rooms = Room.objects.filter(project=project)
-            if exclude_room_ids:
-                exclude_set = {int(rid) for rid in exclude_room_ids}
+            if exclude_set:
                 rooms = rooms.exclude(id__in=exclude_set)
-            else:
-                exclude_set = set()
             
             if not rooms.exists():
                 return {'error': 'No rooms found in project'}
@@ -6167,7 +6197,7 @@ class CeilingService:
             logger.info("ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker")
             
             all_panels = []
-            rooms = Room.objects.filter(project_id=project_id)
+            rooms = Room.objects.filter(project_id=project_id, exclude_from_ceiling=False)
             rooms_count = rooms.count()
             logger.info(f"Found {rooms_count} rooms in project {project_id}")
             
@@ -6335,13 +6365,18 @@ class CeilingService:
             zones = list(CeilingZone.objects.filter(project_id=project_id).prefetch_related('rooms', 'ceiling_plan', 'ceiling_panels'))
             zone_room_ids = {room.id for zone in zones for room in zone.rooms.all()}
             zone_room_ids_str = {str(rid) for rid in zone_room_ids}
+            no_ceiling_room_ids = CeilingService._get_exclude_from_ceiling_room_ids(project_id)
+            combined_exclude_ids = zone_room_ids | no_ceiling_room_ids
 
-            remaining_rooms_qs = Room.objects.filter(project_id=project_id)
+            remaining_rooms_qs = Room.objects.filter(project_id=project_id, exclude_from_ceiling=False)
             if zone_room_ids:
                 remaining_rooms_qs = remaining_rooms_qs.exclude(id__in=zone_room_ids)
             rooms_exist = remaining_rooms_qs.exists()
 
             if room_specific_config and room_specific_config.get('room_id'):
+                target_room_id = int(room_specific_config.get('room_id'))
+                if target_room_id in no_ceiling_room_ids:
+                    return {'error': 'This room is marked as not requiring a ceiling.'}
                 if str(room_specific_config.get('room_id')) in zone_room_ids_str:
                     return {'error': 'Selected room is part of a merged ceiling zone. Update the zone instead.'}
 
@@ -6417,7 +6452,7 @@ class CeilingService:
                     panel_width,
                     panel_length,
                     ceiling_thickness,
-                    exclude_room_ids=zone_room_ids if zone_room_ids else None
+                    exclude_room_ids=combined_exclude_ids if combined_exclude_ids else None
                 )
                 if 'error' in orientation_analysis:
                     return {'error': orientation_analysis['error']}
@@ -6490,8 +6525,10 @@ class CeilingService:
                 enhanced_panels, project_id, selected_strategy, ceiling_thickness,
                 panel_width, panel_length, custom_panel_length, orientation_strategy,
                 support_type, support_config, room_specific_config, leftover_stats,
-                excluded_room_ids=zone_room_ids if zone_room_ids else None
+                excluded_room_ids=combined_exclude_ids if combined_exclude_ids else None
             )
+
+            CeilingService.clear_excluded_rooms_ceiling_data(project_id)
 
             zone_plans = []
             zone_leftover_totals = {
