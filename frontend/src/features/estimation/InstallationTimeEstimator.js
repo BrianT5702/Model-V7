@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculator from '../panel/PanelCalculator';
 import jsPDF from 'jspdf';
@@ -3218,8 +3219,8 @@ const InstallationTimeEstimator = ({
 
             {/* Export Preview Modal */}
             {showExportPreview && exportData && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto modal-scroll-panel">
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-2xl font-bold text-gray-900">Export Preview</h3>
@@ -4179,7 +4180,7 @@ const InstallationTimeEstimator = ({
                             </div>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
         </div>
     );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ModalOverlay from '../../components/ModalOverlay';
 import useDoorForm from './useDoorForm';
 import api from '../../api/api';
 
@@ -148,8 +149,8 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto">
+    <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto modal-scroll-panel">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Edit Door</h2>
@@ -422,7 +423,7 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
 
       {/* Window Form Modal */}
       {showWindowForm && door?.id && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">
@@ -531,9 +532,9 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
-    </div>
+    </ModalOverlay>
   );
 };
 

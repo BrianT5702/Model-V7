@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
 import DoorTable from '../door/DoorTable';
@@ -3152,7 +3153,7 @@ const Canvas2D = ({
 
             {/* Wall Length Input Modal */}
             {showLengthInput && pendingWallData && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
                         <h3 className="text-lg font-semibold text-gray-900 mb-4">Enter Wall Length</h3>
                         <p className="text-sm text-gray-600 mb-4">
@@ -3204,7 +3205,7 @@ const Canvas2D = ({
                             </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
         </>
     );

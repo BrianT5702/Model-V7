@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import ModalOverlay from '../../components/ModalOverlay';
 import PanelCalculator from './PanelCalculator';
 import { exportCanvasAsImage, exportCanvasAsSVG } from '../canvas/utils';
 
@@ -649,8 +650,8 @@ const PanelCalculationControls = ({
 
             {/* Leftover Panels Modal */}
             {showLeftoverDetails && panelCalculator && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-semibold">Leftover Panels Details</h3>
                             <button 
@@ -713,7 +714,7 @@ const PanelCalculationControls = ({
                             </table>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             {showTable && calculatedPanels && (

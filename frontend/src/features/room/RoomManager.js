@@ -1,4 +1,5 @@
 import React from 'react';
+import ModalOverlay from '../../components/ModalOverlay';
 import useRoomForm from './useRoomForm';
 import { calculateMinWallHeight } from '../../api/api';
 
@@ -404,7 +405,7 @@ const RoomManager = ({
 
             {/* Delete Confirmation Modal */}
             {form.showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-4">
                         <h3 className="text-base font-semibold text-gray-900">Delete Room</h3>
                         <p className="mt-1 text-xs text-gray-500">
@@ -425,7 +426,7 @@ const RoomManager = ({
                             </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
         </div>
     );

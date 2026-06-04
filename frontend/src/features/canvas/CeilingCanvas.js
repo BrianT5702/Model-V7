@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import useScrollContainment from '../../utils/useScrollContainment';
 import {
     calculateOffsetPoints,
     drawOrthoPlanDimensionGeometryLikeWall,
@@ -861,8 +862,13 @@ const CeilingCanvas = ({
 
     // [NEW] Local state for checkboxes (copying logic from FloorCanvas)
     const [visibilityState, setVisibilityState] = useState(dimensionVisibility);
-    const [isSupportSidebarOpen, setIsSupportSidebarOpen] = useState(true);
+    const [isSupportSidebarOpen, setIsSupportSidebarOpen] = useState(false);
     const [isPlanDetailsOpen, setIsPlanDetailsOpen] = useState(false);
+    const supportSidebarScrollRef = useRef(null);
+    const planDetailsScrollRef = useRef(null);
+
+    useScrollContainment(supportSidebarScrollRef, isSupportSidebarOpen);
+    useScrollContainment(planDetailsScrollRef, isPlanDetailsOpen);
 
     // [NEW] Sync state if parent props change
     useEffect(() => {
@@ -5760,7 +5766,10 @@ const CeilingCanvas = ({
             <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 min-w-0 w-full items-stretch">
                 {isSupportSidebarOpen ? (
                     <div className="ceiling-support-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0 order-2 lg:order-1">
-                        <div className="bg-gradient-to-br from-orange-50/80 to-gray-50 border border-orange-200/80 rounded-xl p-3 sm:p-4 shadow-lg text-left lg:sticky lg:top-2 lg:max-h-[min(720px,calc(100vh-10rem))] lg:overflow-y-auto">
+                        <div
+                            ref={supportSidebarScrollRef}
+                            className="bg-gradient-to-br from-orange-50/80 to-gray-50 border border-orange-200/80 rounded-xl p-3 sm:p-4 shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
+                        >
                             <div className="flex flex-col gap-2 mb-3">
                                 <h4 className="text-base font-bold text-gray-900">Support Tools</h4>
                                 <button
@@ -5900,7 +5909,10 @@ const CeilingCanvas = ({
                 {/* Plan details — stats, dimensions, legend */}
                 {isPlanDetailsOpen ? (
                 <div className="ceiling-summary-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0 order-3">
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 lg:max-h-[min(720px,calc(100vh-10rem))] lg:overflow-y-auto">
+                    <div
+                        ref={planDetailsScrollRef}
+                        className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
+                    >
                         <div className="flex flex-col items-stretch gap-2 mb-4">
                             <h4 className="text-base font-bold text-gray-900 flex items-center shrink-0">
                                 <svg className="w-5 h-5 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

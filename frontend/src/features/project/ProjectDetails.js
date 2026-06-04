@@ -9,6 +9,7 @@ import CeilingManager from '../ceiling/CeilingManager';
 import FloorManager from '../floor/FloorManager';
 import InstallationTimeEstimator from '../estimation/InstallationTimeEstimator';
 import api from '../../api/api';
+import ModalOverlay from '../../components/ModalOverlay';
 
 import { 
     FaPencilAlt, 
@@ -912,7 +913,7 @@ const ProjectDetails = () => {
             <div className="w-full" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '100%' }}>
             {/* Full-Screen Loading Modal for Image Capture */}
             {isCapturingImages && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
                     <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md mx-4">
                         <div className="text-center">
                             {captureSuccess ? (
@@ -972,7 +973,7 @@ const ProjectDetails = () => {
                             )}
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             {/* Navigation Bar */}
@@ -1425,8 +1426,8 @@ const ProjectDetails = () => {
 
                     {/* Room Creation Interface */}
                     {projectDetails.showRoomManagerModal && !projectDetails.isRoomManagerMinimized && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-2 sm:p-4">
-                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto">
+                        <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-2 sm:p-4">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto modal-scroll-panel">
                                 <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
                                     <div className="flex-1 min-w-0 pr-2">
                                         <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
@@ -1472,7 +1473,7 @@ const ProjectDetails = () => {
                                     />
                                 </div>
                             </div>
-                        </div>
+                        </ModalOverlay>
                     )}
 
                     {projectDetails.showRoomManagerModal && projectDetails.isRoomManagerMinimized && (
@@ -2177,8 +2178,8 @@ const ProjectDetails = () => {
 
             {/* Modals and Overlays */}
             {projectDetails.showStoreyWizard && !projectDetails.isStoreyWizardMinimized && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto modal-scroll-panel">
                         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                             <div>
                                 <h2 className="text-xl font-semibold text-gray-900">Create New Storey</h2>
@@ -2520,7 +2521,7 @@ const ProjectDetails = () => {
                             </div>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             {projectDetails.showStoreyWizard && projectDetails.isStoreyWizardMinimized && (
@@ -2561,8 +2562,8 @@ const ProjectDetails = () => {
                 {/* Wall Editor Modal */}
                     {((projectDetails.selectedWall !== null || (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor)) && projectDetails.currentMode === 'edit-wall') && (
                 <>
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 modal-backdrop p-2 sm:p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
+                <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto modal-scroll-panel">
                                 <div className="flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
                             <h3 className="text-base sm:text-lg font-semibold text-gray-900">
                                 {projectDetails.selectedWallsForEdit.length > 0 
@@ -3228,14 +3229,14 @@ const ProjectDetails = () => {
                                         </button>
                                         )}
                                     </div>
+                                </div>
                     </div>
-                </div>
-                </div>
+                </ModalOverlay>
                     
                                 {/* Window Form Modal */}
                                 {showWallWindowForm && (
-                                    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-                                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+                                    <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-[60]">
+                                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto modal-scroll-panel">
                                             <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
                                                 <h3 className="text-lg font-semibold text-gray-900">
                                                     {editingWallWindow ? 'Edit Window' : 'Add Window'}
@@ -3422,7 +3423,7 @@ const ProjectDetails = () => {
                                                 </button>
                                             </div>
                                         </div>
-                                    </div>
+                                    </ModalOverlay>
                                 )}
                     </>
                     )}
