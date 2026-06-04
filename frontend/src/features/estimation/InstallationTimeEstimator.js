@@ -1871,21 +1871,28 @@ const InstallationTimeEstimator = ({
             // Store starting position for both columns
             const startY = yPos;
             const leftColumnX = margin;
-            const rightColumnX = margin + (pageWidth - 2 * margin) * 0.5; // Start at 50% for better balance
+            const rightColumnX = margin + contentWidth * 0.5;
             const lineHeight = 6; // Consistent line spacing
             
             doc.setFontSize(10);
             
-            // Left column - Project info
-            doc.text(`Project: ${exportData.projectInfo.name}`, leftColumnX, startY);
-            doc.text(`Rooms: ${exportData.projectInfo.rooms}`, leftColumnX, startY + lineHeight);
-            doc.text(`Doors: ${exportData.projectInfo.doors}`, leftColumnX, startY + (lineHeight * 2));
+            // Project name on its own full-width row so long names don't overlap dimensions
+            const projectLines = doc.splitTextToSize(
+                `Project: ${exportData.projectInfo.name}`,
+                contentWidth
+            );
+            doc.text(projectLines, leftColumnX, startY);
+            const columnStartY = startY + (projectLines.length * lineHeight);
+            
+            // Left column - Rooms and doors
+            doc.text(`Rooms: ${exportData.projectInfo.rooms}`, leftColumnX, columnStartY);
+            doc.text(`Doors: ${exportData.projectInfo.doors}`, leftColumnX, columnStartY + lineHeight);
             
             // Right column - Dimensions and walls
-            doc.text(`Dimensions: ${exportData.projectInfo.dimensions}`, rightColumnX, startY);
-            doc.text(`Walls: ${exportData.projectInfo.walls}`, rightColumnX, startY + lineHeight);
+            doc.text(`Dimensions: ${exportData.projectInfo.dimensions}`, rightColumnX, columnStartY);
+            doc.text(`Walls: ${exportData.projectInfo.walls}`, rightColumnX, columnStartY + lineHeight);
             
-            yPos = startY + (lineHeight * 3) + 8; // Space after the two-column layout
+            yPos = columnStartY + (lineHeight * 2) + 8; // Space after the two-column layout
             checkNewPage();
             
             // Material Quantities Summary
@@ -3264,11 +3271,13 @@ const InstallationTimeEstimator = ({
                             <div className="bg-gray-50 rounded-lg p-4">
                                 <h4 className="font-semibold text-gray-800 mb-3">Project Overview</h4>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div><span className="font-medium">Project:</span> {exportData.projectInfo.name}</div>
-                                    <div><span className="font-medium">Dimensions:</span> {exportData.projectInfo.dimensions}</div>
+                                    <div className="col-span-2 break-words">
+                                        <span className="font-medium">Project:</span> {exportData.projectInfo.name}
+                                    </div>
                                     <div><span className="font-medium">Rooms:</span> {exportData.projectInfo.rooms}</div>
-                                    <div><span className="font-medium">Walls:</span> {exportData.projectInfo.walls}</div>
+                                    <div><span className="font-medium">Dimensions:</span> {exportData.projectInfo.dimensions}</div>
                                     <div><span className="font-medium">Doors:</span> {exportData.projectInfo.doors}</div>
+                                    <div><span className="font-medium">Walls:</span> {exportData.projectInfo.walls}</div>
                                 </div>
                             </div>
 
