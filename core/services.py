@@ -172,7 +172,7 @@ class WallService:
         Otherwise, update all walls.
         
         For walls related to rooms: use the minimum base_elevation_mm of all rooms containing the wall.
-        For walls not related to any room: set to 0.
+        For walls not related to any room: use the wall's storey elevation_mm (or 0).
         """
         from .models import Wall, Room
         import logging
@@ -180,9 +180,9 @@ class WallService:
         logger = logging.getLogger(__name__)
         
         if wall_ids:
-            walls = Wall.objects.filter(id__in=wall_ids).prefetch_related('rooms')
+            walls = Wall.objects.filter(id__in=wall_ids).prefetch_related('rooms', 'storey')
         else:
-            walls = Wall.objects.all().prefetch_related('rooms')
+            walls = Wall.objects.all().prefetch_related('rooms', 'storey')
         
         updated_count = 0
         for wall in walls:
@@ -215,12 +215,14 @@ class WallService:
                         wall.save(update_fields=['base_elevation_mm'])
                         updated_count += 1
             else:
-                # Wall not related to any room, set to 0
-                if wall.base_elevation_mm != 0:
-                    wall.base_elevation_mm = 0
+                storey_elevation = 0.0
+                if wall.storey_id and wall.storey is not None:
+                    storey_elevation = wall.storey.elevation_mm if wall.storey.elevation_mm is not None else 0.0
+                if wall.base_elevation_mm != storey_elevation:
+                    wall.base_elevation_mm = storey_elevation
                     wall.save(update_fields=['base_elevation_mm'])
                     updated_count += 1
-                    logger.info(f"Wall {wall.id}: not in any room, set base_elevation_mm to 0")
+                    logger.info(f"Wall {wall.id}: not in any room, set base_elevation_mm to {storey_elevation}mm (storey elevation)")
         
         logger.info(f"Updated base_elevation_mm for {updated_count} wall(s)")
         return updated_count

@@ -633,6 +633,97 @@ const CeilingCanvas = ({
         return plans;
     }, [isMultiRoomMode, ceilingPlans, ceilingPlan]);
 
+    const getRoomOrientation = useCallback((roomId) => {
+        const normalizedRoomId = typeof roomId === 'string' ? parseInt(roomId, 10) : roomId;
+
+        let ceilingPlan = effectiveCeilingPlans.find(cp => {
+            if (cp.room && (cp.room === roomId || cp.room === normalizedRoomId)) return true;
+            if (cp.room_id && (cp.room_id === roomId || cp.room_id === normalizedRoomId)) return true;
+            if (cp.room && typeof cp.room === 'object' && (cp.room.id === roomId || cp.room.id === normalizedRoomId)) return true;
+            if (cp.room && String(cp.room) === String(roomId)) return true;
+            return false;
+        });
+
+        if (!ceilingPlan) {
+            const room = effectiveRooms.find(r => (r.id === roomId || r.id === normalizedRoomId));
+            if (room && room.ceiling_plan) {
+                ceilingPlan = room.ceiling_plan;
+            }
+        }
+
+        if (ceilingPlan?.orientation_strategy) {
+            const strategy = ceilingPlan.orientation_strategy.toLowerCase();
+            if (strategy === 'horizontal' || strategy === 'all_horizontal') return true;
+            if (strategy === 'vertical' || strategy === 'all_vertical') return false;
+        } else {
+            const roomPanels = effectiveCeilingPanelsMap[roomId] || effectiveCeilingPanelsMap[normalizedRoomId] || [];
+            if (roomPanels.length > 0) {
+                return roomPanels[0].width > roomPanels[0].length;
+            }
+        }
+        return false;
+    }, [effectiveCeilingPlans, effectiveRooms, effectiveCeilingPanelsMap]);
+
+    /** Ceiling plan length/width labels swap with room orientation; offsets stay stored as offset_length (Y) / offset_width (X). */
+    const getNylonPlacementFieldDefs = useCallback((roomId, panel) => {
+        const spanX = Number(panel?.width ?? 0);
+        const spanY = Number(panel?.length ?? 0);
+        const maxX = spanX > 0 ? Math.round(spanX) : null;
+        const maxY = spanY > 0 ? Math.round(spanY) : null;
+        const isHorizontalRoom = getRoomOrientation(roomId);
+        const isHorizontalPanel = spanX > spanY;
+
+        if (isHorizontalRoom) {
+            return {
+                isHorizontalRoom: true,
+                offsetLengthSemantic: 'width',
+                offsetWidthSemantic: 'length',
+                fields: [
+                    {
+                        draftKey: 'offsetWidth',
+                        label: 'On panel length',
+                        max: maxX,
+                        allowCenter: true,
+                        axisHint: 'Along panel span (horizontal on plan)'
+                    },
+                    {
+                        draftKey: 'offsetLength',
+                        label: 'On panel width',
+                        max: maxY,
+                        allowCenter: false,
+                        axisHint: 'Along panel stack (vertical on plan)'
+                    }
+                ]
+            };
+        }
+
+        return {
+            isHorizontalRoom: false,
+            offsetLengthSemantic: 'length',
+            offsetWidthSemantic: 'width',
+            fields: [
+                {
+                    draftKey: 'offsetLength',
+                    label: 'On panel length',
+                    max: maxY,
+                    allowCenter: false,
+                    axisHint: isHorizontalPanel
+                        ? 'Along panel stack (vertical on plan)'
+                        : 'Along panel span (vertical on plan)'
+                },
+                {
+                    draftKey: 'offsetWidth',
+                    label: 'On panel width',
+                    max: maxX,
+                    allowCenter: true,
+                    axisHint: isHorizontalPanel
+                        ? 'Along panel span (horizontal on plan)'
+                        : 'Along panel stack (horizontal on plan)'
+                }
+            ]
+        };
+    }, [getRoomOrientation]);
+
     const getPanelIdentifier = useCallback((panel) => {
         if (!panel) return null;
         const rawId = panel.id ?? panel.panel_id ?? panel.panelId ?? panel.uuid ?? null;
@@ -1911,8 +2002,12 @@ const CeilingCanvas = ({
         (applyToRoom = false) => {
             if (!nylonAddTarget) return false;
             const offLen = Number(nylonAddDraft.offsetLength);
+            const addPanel = findPanelById(nylonAddTarget.panelId, nylonAddTarget.roomId);
+            const addPlacementDefs = getNylonPlacementFieldDefs(nylonAddTarget.roomId, addPanel);
             if (!Number.isFinite(offLen) || offLen < 0) {
-                setNylonFormError('Enter placement on panel length (mm from start).');
+                setNylonFormError(
+                    `Enter placement on panel ${addPlacementDefs.offsetLengthSemantic} (mm from start).`
+                );
                 return false;
             }
             const room = effectiveRooms.find((r) => Number(r.id) === Number(nylonAddTarget.roomId));
@@ -1946,7 +2041,9 @@ const CeilingCanvas = ({
                 if (entry) newEntries.push(entry);
             });
             if (newEntries.length === 0) {
-                setNylonFormError('Placement does not fit the panel(s). Check length and width.');
+                setNylonFormError(
+                    `Placement does not fit the panel(s). Check ${addPlacementDefs.offsetLengthSemantic} and ${addPlacementDefs.offsetWidthSemantic}.`
+                );
                 return false;
             }
             updateCustomSupports((prev) => {
@@ -1966,6 +2063,7 @@ const CeilingCanvas = ({
             effectiveRooms,
             getQualifyingPanelsInRoom,
             findPanelById,
+            getNylonPlacementFieldDefs,
             buildNylonEntryForPanel,
             partitionCustomSupports,
             mergeSupportsWithNylon,
@@ -2880,72 +2978,6 @@ const CeilingCanvas = ({
             drawZoneOutline(ctx, zone);
         });
     };
-
-    // Helper function to get room orientation from ceiling plan
-    // Orientation is always available from the ceiling plan
-    const getRoomOrientation = useCallback((roomId) => {
-        // Normalize roomId to handle both string and number
-        const normalizedRoomId = typeof roomId === 'string' ? parseInt(roomId, 10) : roomId;
-        
-        // First, try to find in effectiveCeilingPlans
-        let ceilingPlan = effectiveCeilingPlans.find(cp => {
-            // Check if room is a number that matches
-            if (cp.room && (cp.room === roomId || cp.room === normalizedRoomId)) return true;
-            // Check if room_id matches
-            if (cp.room_id && (cp.room_id === roomId || cp.room_id === normalizedRoomId)) return true;
-            // Check if room is an object with an id property
-            if (cp.room && typeof cp.room === 'object' && (cp.room.id === roomId || cp.room.id === normalizedRoomId)) return true;
-            // Check if room is a string that matches when converted
-            if (cp.room && String(cp.room) === String(roomId)) return true;
-            return false;
-        });
-        
-        // If not found in effectiveCeilingPlans, try to get from room's ceiling_plan relationship
-        if (!ceilingPlan) {
-            const room = effectiveRooms.find(r => (r.id === roomId || r.id === normalizedRoomId));
-            if (room && room.ceiling_plan) {
-                ceilingPlan = room.ceiling_plan;
-                console.log(`🔍 [Orientation] Room ${roomId}: Found ceiling plan via room.ceiling_plan relationship`);
-            }
-        }
-        
-        if (ceilingPlan) {
-            console.log(`🔍 [Orientation] Room ${roomId}: Found ceiling plan ${ceilingPlan.id}, orientation_strategy: "${ceilingPlan.orientation_strategy}"`);
-            
-            if (ceilingPlan.orientation_strategy) {
-                const strategy = ceilingPlan.orientation_strategy.toLowerCase();
-                // Backend stores values like 'all_horizontal', 'all_vertical', 'horizontal', 'vertical', 'auto', etc.
-                // Check for both 'horizontal'/'all_horizontal' and 'vertical'/'all_vertical'
-                if (strategy === 'horizontal' || strategy === 'all_horizontal') {
-                    console.log(`✅ [Orientation] Room ${roomId}: Detected HORIZONTAL orientation`);
-                    return true;
-                }
-                if (strategy === 'vertical' || strategy === 'all_vertical') {
-                    console.log(`✅ [Orientation] Room ${roomId}: Detected VERTICAL orientation`);
-                    return false;
-                }
-                console.log(`⚠️ [Orientation] Room ${roomId}: Unknown strategy "${strategy}", defaulting to VERTICAL`);
-            } else {
-                console.log(`⚠️ [Orientation] Room ${roomId}: No orientation_strategy found, defaulting to VERTICAL`);
-            }
-        } else {
-            // Last resort: try to infer from panel dimensions
-            const roomPanels = effectiveCeilingPanelsMap[roomId] || effectiveCeilingPanelsMap[normalizedRoomId] || [];
-            if (roomPanels.length > 0) {
-                const firstPanel = roomPanels[0];
-                // For horizontal: width (X-axis span) > length (Y-axis, 1150mm)
-                // For vertical: width (X-axis, 1150mm) < length (Y-axis span)
-                const isHorizontal = firstPanel.width > firstPanel.length;
-                console.log(`🔍 [Orientation] Room ${roomId}: Inferred from panel dimensions (width: ${firstPanel.width}, length: ${firstPanel.length}) - ${isHorizontal ? 'HORIZONTAL' : 'VERTICAL'}`);
-                return isHorizontal;
-            }
-            console.log(`❌ [Orientation] Room ${roomId}: No ceiling plan found. Available plans:`, 
-                effectiveCeilingPlans.map(cp => ({ id: cp.id, room: cp.room, room_id: cp.room_id }))
-            );
-        }
-        // If orientation not found, return false (vertical) as default
-        return false;
-    }, [effectiveCeilingPlans, effectiveRooms, effectiveCeilingPanelsMap]);
 
     // Enhanced ceiling dimension drawing function (optional dimensionCollector: when set, collect for sort-then-draw so larger value is outer)
     const drawEnhancedCeilingDimensions = (ctx, room, roomPanels, roomModelBounds, placedLabels, allLabels, dimensionCollector = null) => {
@@ -5227,11 +5259,60 @@ const CeilingCanvas = ({
         ];
     }, [railEditDraft]);
 
+    const renderNylonOffsetInputs = (draft, setDraft, roomId, panel, { onBlur, autoFocusFirst = false } = {}) => {
+        if (!draft) return null;
+        const { fields } = getNylonPlacementFieldDefs(roomId, panel);
+        return fields.map((field, index) => (
+            <label key={field.draftKey} className="block text-left">
+                <span className="block text-[11px] text-gray-600">
+                    {field.label} (mm from start)
+                    {field.max != null
+                        ? field.allowCenter
+                            ? ` — blank = center (${Math.round(field.max / 2)} mm)`
+                            : ` — max ${field.max}`
+                        : ''}
+                    {field.axisHint ? (
+                        <span className="block text-[10px] text-gray-400 font-normal mt-0.5">
+                            {field.axisHint}
+                        </span>
+                    ) : null}
+                </span>
+                <span className="mt-0.5 flex items-center gap-1.5">
+                    <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="w-full min-w-0 border border-gray-300 rounded-md px-2 py-1 text-sm focus:border-red-400 focus:ring-1 focus:ring-red-300"
+                        value={draft[field.draftKey]}
+                        onChange={(e) => {
+                            setNylonFormError(null);
+                            setDraft((prev) =>
+                                prev ? { ...prev, [field.draftKey]: e.target.value } : prev
+                            );
+                        }}
+                        onBlur={onBlur}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                        }}
+                        placeholder={
+                            field.allowCenter
+                                ? 'Center if empty'
+                                : field.max != null
+                                    ? `e.g. ${Math.round(field.max / 2)}`
+                                    : 'mm'
+                        }
+                        autoFocus={autoFocusFirst && index === 0}
+                    />
+                    <span className="text-[11px] text-gray-400 shrink-0">mm</span>
+                </span>
+            </label>
+        ));
+    };
+
     const renderNylonEditPanel = (wrapperClassName = '') => {
         if (!selectedNylonKey || !nylonEditDraft || isPlacingSupport) return null;
         const panel = findPanelById(nylonEditDraft.panelId, nylonEditDraft.roomId);
-        const panelLength = panel ? Math.round(Number(panel.length ?? 0)) : null;
-        const panelWidth = panel ? Math.round(Number(panel.width ?? 0)) : null;
+        const placementDefs = getNylonPlacementFieldDefs(nylonEditDraft.roomId, panel);
         const selectedHanger = listNylonHangers().find((h) => h.key === selectedNylonKey);
         const lineKeyForUi =
             nylonEditFrozenLineKey ||
@@ -5246,25 +5327,27 @@ const CeilingCanvas = ({
         const lineOffsetLabel = (() => {
             if (lineKeyForUi.startsWith('line:')) return 'same batch line';
             const parts = lineKeyForUi.split(':');
-            if (parts.length >= 2 && parts[1]) return `length ${parts[1]} mm`;
+            const semantic = placementDefs.offsetLengthSemantic;
+            if (parts.length >= 2 && parts[1]) return `${semantic} ${parts[1]} mm`;
             if (selectedHanger?.offset_length != null) {
-                return `length ${Math.round(selectedHanger.offset_length)} mm`;
+                return `${semantic} ${Math.round(selectedHanger.offset_length)} mm`;
             }
             return '';
         })();
         const lineWidthLabel = (() => {
             if (lineKeyForUi.startsWith('line:')) return '';
             const parts = lineKeyForUi.split(':');
+            const semantic = placementDefs.offsetWidthSemantic;
             if (parts.length >= 3) {
-                if (parts[2] === 'center') return ', width center';
-                return `, width ${parts[2]} mm`;
+                if (parts[2] === 'center') return `, ${semantic} center`;
+                return `, ${semantic} ${parts[2]} mm`;
             }
             if (!selectedHanger || selectedHanger.offset_width == null) return '';
             const wPanel = findPanelById(selectedHanger.panel_id, selectedHanger.room_id);
             const w = Number(wPanel?.width ?? 0);
             const ow = Number(selectedHanger.offset_width);
-            if (w > 0 && Math.abs(ow - w / 2) < 2) return ', width center';
-            return `, width ${Math.round(ow)} mm`;
+            if (w > 0 && Math.abs(ow - w / 2) < 2) return `, ${semantic} center`;
+            return `, ${semantic} ${Math.round(ow)} mm`;
         })();
 
         return (
@@ -5274,62 +5357,15 @@ const CeilingCanvas = ({
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
                         {nylonEditDraft.isAuto ? 'Auto hanger' : 'Added hanger'} on panel
                         {nylonEditDraft.panelId != null ? ` #${nylonEditDraft.panelId}` : ''}. Same hanger line = same
-                        length offset and same width position across panels ({lineOffsetLabel}
+                        {placementDefs.offsetLengthSemantic} offset and same {placementDefs.offsetWidthSemantic}{' '}
+                        position across panels ({lineOffsetLabel}
                         {lineWidthLabel}).
                     </p>
                 </div>
                 <div className="space-y-2">
-                    <label className="block text-left">
-                        <span className="block text-[11px] text-gray-600">
-                            On panel length (mm from start)
-                            {panelLength != null ? ` — max ${panelLength}` : ''}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1.5">
-                            <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                className="w-full min-w-0 border border-gray-300 rounded-md px-2 py-1 text-sm focus:border-red-400 focus:ring-1 focus:ring-red-300"
-                                value={nylonEditDraft.offsetLength}
-                                onChange={(e) =>
-                                    setNylonEditDraft((prev) =>
-                                        prev ? { ...prev, offsetLength: e.target.value } : prev
-                                    )
-                                }
-                                onBlur={() => commitNylonEditField('offsetLength')}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') e.currentTarget.blur();
-                                }}
-                            />
-                            <span className="text-[11px] text-gray-400 shrink-0">mm</span>
-                        </span>
-                    </label>
-                    <label className="block text-left">
-                        <span className="block text-[11px] text-gray-600">
-                            On panel width (mm from start)
-                            {panelWidth != null ? ` — blank = center (${Math.round(panelWidth / 2)} mm)` : ''}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1.5">
-                            <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                className="w-full min-w-0 border border-gray-300 rounded-md px-2 py-1 text-sm focus:border-red-400 focus:ring-1 focus:ring-red-300"
-                                value={nylonEditDraft.offsetWidth}
-                                onChange={(e) =>
-                                    setNylonEditDraft((prev) =>
-                                        prev ? { ...prev, offsetWidth: e.target.value } : prev
-                                    )
-                                }
-                                onBlur={() => commitNylonEditField('offsetWidth')}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') e.currentTarget.blur();
-                                }}
-                                placeholder="Center if empty"
-                            />
-                            <span className="text-[11px] text-gray-400 shrink-0">mm</span>
-                        </span>
-                    </label>
+                    {renderNylonOffsetInputs(nylonEditDraft, setNylonEditDraft, nylonEditDraft.roomId, panel, {
+                        onBlur: commitNylonEditField
+                    })}
                 </div>
                 {nylonFormError ? (
                     <p className="text-xs text-red-600 mt-2">{nylonFormError}</p>
@@ -5391,8 +5427,6 @@ const CeilingCanvas = ({
         if (!nylonAddTarget) return null;
         const room = effectiveRooms.find((r) => Number(r.id) === Number(nylonAddTarget.roomId));
         const panel = findPanelById(nylonAddTarget.panelId, nylonAddTarget.roomId);
-        const panelLength = panel ? Math.round(Number(panel.length ?? 0)) : null;
-        const panelWidth = panel ? Math.round(Number(panel.width ?? 0)) : null;
         const qualCount = getQualifyingPanelsInRoom(nylonAddTarget.roomId).length;
 
         return (
@@ -5405,49 +5439,9 @@ const CeilingCanvas = ({
                     </p>
                 </div>
                 <div className="space-y-2">
-                    <label className="block text-left">
-                        <span className="block text-[11px] text-gray-600">
-                            On panel length (mm from start)
-                            {panelLength != null ? ` — max ${panelLength}` : ''}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1.5">
-                            <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                className="w-full min-w-0 border border-gray-300 rounded-md px-2 py-1 text-sm focus:border-red-400 focus:ring-1 focus:ring-red-300"
-                                value={nylonAddDraft.offsetLength}
-                                onChange={(e) => {
-                                    setNylonFormError(null);
-                                    setNylonAddDraft((prev) => ({ ...prev, offsetLength: e.target.value }));
-                                }}
-                                placeholder={panelLength != null ? `e.g. ${Math.round(panelLength / 2)}` : 'mm'}
-                                autoFocus
-                            />
-                            <span className="text-[11px] text-gray-400 shrink-0">mm</span>
-                        </span>
-                    </label>
-                    <label className="block text-left">
-                        <span className="block text-[11px] text-gray-600">
-                            On panel width (mm from start)
-                            {panelWidth != null ? ` — blank = center (${Math.round(panelWidth / 2)} mm)` : ''}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1.5">
-                            <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                className="w-full min-w-0 border border-gray-300 rounded-md px-2 py-1 text-sm focus:border-red-400 focus:ring-1 focus:ring-red-300"
-                                value={nylonAddDraft.offsetWidth}
-                                onChange={(e) => {
-                                    setNylonFormError(null);
-                                    setNylonAddDraft((prev) => ({ ...prev, offsetWidth: e.target.value }));
-                                }}
-                                placeholder="Center if empty"
-                            />
-                            <span className="text-[11px] text-gray-400 shrink-0">mm</span>
-                        </span>
-                    </label>
+                    {renderNylonOffsetInputs(nylonAddDraft, setNylonAddDraft, nylonAddTarget.roomId, panel, {
+                        autoFocusFirst: true
+                    })}
                 </div>
                 {nylonFormError ? (
                     <p className="text-xs text-red-600 mt-2">{nylonFormError}</p>

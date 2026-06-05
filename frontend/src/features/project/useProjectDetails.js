@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import api from '../../api/api';
 import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
-import { areCollinearWalls, calculateIntersection, arePointsEqual, detectRoomWalls } from './projectUtils';
+import {
+  areCollinearWalls,
+  calculateIntersection,
+  arePointsEqual,
+  detectRoomWalls,
+  getWallSegmentKey,
+  getStoreyElevationMm,
+} from './projectUtils';
 import { normalizeWallCoordinates } from '../canvas/drawing';
 import { doPolygonsOverlap } from '../canvas/utils';
 
@@ -1581,9 +1588,6 @@ export default function useProjectDetails(projectId) {
       return null;
     }
 
-    const roomStoreyName =
-      storeys.find(storey => String(storey.id) === String(targetStoreyId))?.name || 'New Level';
-
     const targetStorey =
       storeys.find(storey => String(storey.id) === String(targetStoreyId)) || null;
     // Prioritize overrides parameter (from edit level mode) over storeyWizardRoomOverrides
@@ -1616,6 +1620,11 @@ export default function useProjectDetails(projectId) {
     const wallIds = Array.isArray(room.walls) ? room.walls : [];
     const createdWalls = [];
     const reusedWallIds = [];
+    const existingTargetWallKeys = new Set(
+      walls
+        .filter((w) => String(w.storey) === String(targetStoreyId))
+        .map((w) => getWallSegmentKey(w))
+    );
 
     for (const wallId of wallIds) {
       const wall = walls.find(w => w.id === wallId);
@@ -1643,6 +1652,11 @@ export default function useProjectDetails(projectId) {
          continue;
        }
 
+      const segmentKey = getWallSegmentKey(wall);
+      if (existingTargetWallKeys.has(segmentKey)) {
+        continue;
+      }
+
       const wallPayload = {
         project: projectId,
         storey: targetStoreyId,
@@ -1667,37 +1681,14 @@ export default function useProjectDetails(projectId) {
 
       const wallResponse = await api.post('/walls/', wallPayload);
       createdWalls.push(wallResponse.data);
+      existingTargetWallKeys.add(segmentKey);
     }
 
     if (createdWalls.length > 0) {
       setWalls(prev => [...prev, ...createdWalls]);
     }
 
-    const combinedWallIds = [
-      ...createdWalls.map(w => w.id),
-      ...reusedWallIds
-    ];
-
-    const uniqueWallIds = Array.from(new Set(combinedWallIds));
-
-    const roomPayload = {
-      project: projectId,
-      storey: targetStoreyId,
-      room_name: overrides.room_name || `${room.room_name} (${roomStoreyName})`,
-      floor_type: overrides.floor_type || room.floor_type || 'Panel',
-      floor_thickness: overrides.floor_thickness ?? room.floor_thickness ?? 0,
-      floor_layers: overrides.floor_layers ?? room.floor_layers ?? 1,
-      temperature: overrides.temperature ?? room.temperature ?? 0,
-      height: roomHeight, // Use the calculated roomHeight which respects overrides
-      base_elevation_mm: targetElevation, // Use the calculated targetElevation which respects overrides
-      remarks: overrides.remarks ?? room.remarks ?? '',
-      walls: uniqueWallIds,
-      room_points: overrides.room_points || room.room_points || [],
-    };
-
-    const roomResponse = await api.post('/rooms/', roomPayload);
-    setRooms(prev => [...prev, roomResponse.data]);
-    return roomResponse.data;
+    return { createdWalls, reusedWallIds };
   };
 
   const addRoomsToActiveStorey = useCallback(async () => {
@@ -1709,7 +1700,7 @@ export default function useProjectDetails(projectId) {
       return;
     }
     if (!Array.isArray(levelEditSelections) || levelEditSelections.length === 0) {
-      setLevelEditError('Select at least one room to add to this level.');
+      setLevelEditError('Select at least one room to copy walls from.');
       return;
     }
 
@@ -1726,7 +1717,7 @@ export default function useProjectDetails(projectId) {
     setLevelEditSuccess('');
 
     try {
-      let addedCount = 0;
+      let wallsAdded = 0;
 
       for (const roomId of levelEditSelections) {
         const sourceRoom = rooms.find((room) => String(room.id) === String(roomId));
@@ -1772,16 +1763,16 @@ export default function useProjectDetails(projectId) {
           height: desiredHeight,
         };
 
-        await duplicateRoomToStorey(sourceRoom.id, activeStoreyId, payloadOverrides);
-        addedCount += 1;
+        const result = await duplicateRoomToStorey(sourceRoom.id, activeStoreyId, payloadOverrides);
+        wallsAdded += result?.createdWalls?.length || 0;
       }
 
-      if (addedCount > 0) {
+      if (wallsAdded > 0) {
         setLevelEditSelections([]);
         setLevelEditOverrides({});
-        setLevelEditSuccess(`Added ${addedCount} ${addedCount === 1 ? 'room' : 'rooms'} to ${targetStorey.name}.`);
+        setLevelEditSuccess(`Copied ${wallsAdded} ${wallsAdded === 1 ? 'wall' : 'walls'} to ${targetStorey.name}.`);
       } else {
-        setLevelEditError('No rooms were added. They may already exist on this level.');
+        setLevelEditError('No walls were copied. They may already exist on this level.');
       }
     } catch (error) {
       console.error('Failed to add rooms to level:', error);
@@ -1838,7 +1829,6 @@ export default function useProjectDetails(projectId) {
     const wallThickness = options.thickness ?? project?.wall_thickness ?? 200;
     const roomStoreyName =
       storeys.find(storey => String(storey.id) === String(targetStoreyId))?.name || 'New Level';
-
     const createdWalls = [];
     for (let i = 0; i < points.length; i += 1) {
       const start = points[i];
@@ -2699,6 +2689,7 @@ export default function useProjectDetails(projectId) {
     
     // CRITICAL: Only check intersections with walls on the same storey to prevent cross-level splitting
     const targetStoreyId = activeStoreyId ?? defaultStoreyId;
+    const defaultBaseElevation = getStoreyElevationMm(storeys, targetStoreyId);
     const wallsOnSameStorey = walls.filter(wall => {
       const wallStoreyId = wall.storey ?? wall.storey_id;
       if (targetStoreyId === null || targetStoreyId === undefined) {
@@ -2833,32 +2824,23 @@ export default function useProjectDetails(projectId) {
       });
     });
 
-    // 2.5. Find walls touching start/end points to inherit base_elevation_mm
-    // Check all walls (not just same storey) to find touching walls from any level
+    // 2.5. Inherit base_elevation_mm from touching walls on the same storey only
     const ENDPOINT_TOLERANCE = 0.001; // 1mm tolerance for endpoint matching
-    let baseElevationToUse = null;
-    
-    // Find wall touching start point
-    const startTouchingWall = walls.find(wall => {
-      const distToStart = Math.hypot(wall.start_x - startPoint.x, wall.start_y - startPoint.y);
-      const distToEnd = Math.hypot(wall.end_x - startPoint.x, wall.end_y - startPoint.y);
+    let baseElevationToUse = defaultBaseElevation;
+
+    const findTouchingWallOnStorey = (point) => wallsOnSameStorey.find(wall => {
+      const distToStart = Math.hypot(wall.start_x - point.x, wall.start_y - point.y);
+      const distToEnd = Math.hypot(wall.end_x - point.x, wall.end_y - point.y);
       return distToStart < ENDPOINT_TOLERANCE || distToEnd < ENDPOINT_TOLERANCE;
     });
-    
-    // Find wall touching end point
-    const endTouchingWall = walls.find(wall => {
-      const distToStart = Math.hypot(wall.start_x - endPoint.x, wall.start_y - endPoint.y);
-      const distToEnd = Math.hypot(wall.end_x - endPoint.x, wall.end_y - endPoint.y);
-      return distToStart < ENDPOINT_TOLERANCE || distToEnd < ENDPOINT_TOLERANCE;
-    });
-    
-    // Prefer start wall's base elevation, then end wall's base elevation
+
+    const startTouchingWall = findTouchingWallOnStorey(startPoint);
+    const endTouchingWall = findTouchingWallOnStorey(endPoint);
+
     if (startTouchingWall && startTouchingWall.base_elevation_mm !== undefined && startTouchingWall.base_elevation_mm !== null) {
       baseElevationToUse = Number(startTouchingWall.base_elevation_mm);
-      console.log(`[Wall Creation] Using base_elevation_mm=${baseElevationToUse}mm from start touching wall ${startTouchingWall.id}`);
     } else if (endTouchingWall && endTouchingWall.base_elevation_mm !== undefined && endTouchingWall.base_elevation_mm !== null) {
       baseElevationToUse = Number(endTouchingWall.base_elevation_mm);
-      console.log(`[Wall Creation] Using base_elevation_mm=${baseElevationToUse}mm from end touching wall ${endTouchingWall.id}`);
     }
 
     // 3. Split the new wall at intersection points (sort by distance from start)
@@ -2888,14 +2870,13 @@ export default function useProjectDetails(projectId) {
         outer_face_material: wallProps.outer_face_material || 'PPGI',
         outer_face_thickness: wallProps.outer_face_thickness ?? 0.5,
         project: project.id,
-        storey: activeStoreyId ?? defaultStoreyId  // Always use active storey for new walls
+        storey: activeStoreyId ?? defaultStoreyId,
       };
-      
-      // Set base_elevation_mm if we found a touching wall
-      if (baseElevationToUse !== null) {
+
+      if (startTouchingWall || endTouchingWall) {
         wallData.base_elevation_mm = baseElevationToUse;
       }
-      
+
       newWallSegments.push(wallData);
     }
 

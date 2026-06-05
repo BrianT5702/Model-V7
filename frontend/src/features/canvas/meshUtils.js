@@ -6,6 +6,7 @@ import {
   createFatLineSegmentsFromEdgesGeometry,
   createFatLineSegmentsFromPositions,
 } from './wideLineUtils';
+import { resolveWallBaseElevationMm } from '../project/projectUtils';
 
 // Calculate intersection point between two line segments
 // If allowExtended is true, returns intersection even if outside segments (for extension)
@@ -124,59 +125,8 @@ export function createWallMesh(instance, wall) {
     basePositionY = gap_base_position * scale;
     wallHeight = gap_fill_height * scale;
   } else {
-    // Normal mode: determine base elevation based on whether it was manually set
-    // Use room or wall base elevation directly (absolute values), don't add storey elevation
-    // since rooms on the new level might have different elevations
-    let wallBaseElevation = 0;
-    
-    // If base_elevation_manual is true, use wall's base_elevation_mm (manually set, absolute value)
-    // Otherwise, use the minimum base_elevation_mm from rooms containing this wall (absolute value)
-    if (wall.base_elevation_manual) {
-      // Use manually set wall base elevation (absolute value)
-      wallBaseElevation = wall.base_elevation_mm ?? 0;
-      console.log(`[Wall ${id}] Using wall.base_elevation_mm=${wallBaseElevation}mm (MANUAL - absolute value)`);
-    } else {
-      // Use room base elevation (minimum of all rooms containing this wall, absolute value)
-      const roomsContainingWall = [];
-      
-      // Get rooms from instance.project.rooms that contain this wall
-      if (instance.project && instance.project.rooms) {
-        instance.project.rooms.forEach(room => {
-          const roomWalls = Array.isArray(room.walls) ? room.walls : [];
-          // Check if room.walls contains this wall ID (handle both ID arrays and object arrays)
-          const hasWall = roomWalls.some(w => {
-            const wallId = typeof w === 'object' ? w.id : w;
-            return String(wallId) === String(id);
-          });
-          
-          if (hasWall) {
-            roomsContainingWall.push(room);
-          }
-        });
-      }
-      
-      // Get minimum base_elevation_mm from rooms containing this wall
-      if (roomsContainingWall.length > 0) {
-        const roomBaseElevations = roomsContainingWall
-          .map(room => room.base_elevation_mm)
-          .filter(elev => elev !== undefined && elev !== null)
-          .map(elev => Number(elev) || 0);
-        
-        if (roomBaseElevations.length > 0) {
-          wallBaseElevation = Math.min(...roomBaseElevations);
-          console.log(`[Wall ${id}] Using room base_elevation=${wallBaseElevation}mm (AUTO - minimum from ${roomsContainingWall.length} room(s), absolute value)`);
-        } else {
-          // Fallback to wall's base_elevation_mm if no room base elevations found
-          wallBaseElevation = wall.base_elevation_mm ?? 0;
-          console.log(`[Wall ${id}] Fallback to wall.base_elevation_mm=${wallBaseElevation}mm (no room elevations found)`);
-        }
-      } else {
-        // No rooms found, fallback to wall's base_elevation_mm
-        wallBaseElevation = wall.base_elevation_mm ?? 0;
-        console.log(`[Wall ${id}] Fallback to wall.base_elevation_mm=${wallBaseElevation}mm (no rooms found)`);
-      }
-    }
-    
+    const wallBaseElevation = resolveWallBaseElevationMm(wall, instance.project);
+
     // basePositionY is the Y position for the bottom of the wall in 3D space
     // The wall shape is bottom-aligned (Y=0 to Y=wallHeight in local coords)
     // Door holes are created as part of the wall mesh, so they automatically follow the wall's base position

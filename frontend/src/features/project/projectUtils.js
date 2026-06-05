@@ -1,3 +1,5 @@
+import { normalizeWallCoordinates } from '../canvas/drawing';
+
 /**
  * Check if two walls are collinear (vector approach)
  */
@@ -137,4 +139,58 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
     const dx = px - xx;
     const dy = py - yy;
     return Math.sqrt(dx * dx + dy * dy);
-} 
+}
+
+/** Stable key for a wall segment (normalized direction). */
+export function getWallSegmentKey(wall) {
+  const normalized = normalizeWallCoordinates(
+    { x: wall.start_x, y: wall.start_y },
+    { x: wall.end_x, y: wall.end_y }
+  );
+  const { startPoint, endPoint } = normalized;
+  return `${startPoint.x}|${startPoint.y}|${endPoint.x}|${endPoint.y}`;
+}
+
+/** Elevation (mm) for a storey id; defaults to 0. */
+export function getStoreyElevationMm(storeys, storeyId) {
+  if (storeyId === null || storeyId === undefined) {
+    return 0;
+  }
+  const storey = (storeys || []).find((s) => String(s.id) === String(storeyId));
+  if (!storey || storey.elevation_mm === undefined || storey.elevation_mm === null) {
+    return 0;
+  }
+  return Number(storey.elevation_mm) || 0;
+}
+
+/** Vertical base (mm) for 3D: rooms → wall field → storey elevation. */
+export function resolveWallBaseElevationMm(wall, project = null) {
+  if (wall.base_elevation_manual && wall.base_elevation_mm !== undefined && wall.base_elevation_mm !== null) {
+    return Number(wall.base_elevation_mm) || 0;
+  }
+
+  const rooms = project?.rooms;
+  if (Array.isArray(rooms) && rooms.length > 0) {
+    const wallId = String(wall.id);
+    const containing = rooms.filter((room) => {
+      const roomWalls = Array.isArray(room.walls) ? room.walls : [];
+      return roomWalls.some((w) => String(typeof w === 'object' ? w.id : w) === wallId);
+    });
+    if (containing.length > 0) {
+      const elevations = containing
+        .map((room) => room.base_elevation_mm)
+        .filter((elev) => elev !== undefined && elev !== null)
+        .map((elev) => Number(elev) || 0);
+      if (elevations.length > 0) {
+        return Math.min(...elevations);
+      }
+    }
+  }
+
+  if (wall.base_elevation_mm !== undefined && wall.base_elevation_mm !== null) {
+    return Number(wall.base_elevation_mm) || 0;
+  }
+
+  const storeyId = wall.storey ?? wall.storey_id;
+  return getStoreyElevationMm(project?.storeys, storeyId);
+}

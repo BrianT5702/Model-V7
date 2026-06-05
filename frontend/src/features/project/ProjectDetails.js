@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useProjectDetails from './useProjectDetails';
+import { getWallSegmentKey } from './projectUtils';
 import Canvas2D from '../canvas/Canvas2D';
 import RoomManager from '../room/RoomManager';
 import DoorManager from '../door/DoorManager';
@@ -75,22 +76,10 @@ const ProjectDetails = () => {
         Number(projectDetails.project?.height) || 0,
         Number(projectDetails.projectCalculatedHeight) || 0
     );
-    // Get rooms on the active storey to check for duplicates
-    const activeStoreyRooms = (projectDetails.rooms || []).filter(
-        (room) => String(room.storey) === String(projectDetails.activeStoreyId)
-    );
-    
-    // Create a set of room point signatures for quick lookup
-    const activeStoreyRoomSignatures = new Set(
-        activeStoreyRooms
-            .filter((room) => Array.isArray(room.room_points) && room.room_points.length >= 3)
-            .map((room) => {
-                const normalizedPoints = room.room_points.map((point) => [
-                    Number(point.x) || 0,
-                    Number(point.y) || 0,
-                ]);
-                return JSON.stringify(normalizedPoints);
-            })
+    const activeStoreyWallKeys = new Set(
+        (projectDetails.walls || [])
+            .filter((wall) => String(wall.storey) === String(projectDetails.activeStoreyId))
+            .map((wall) => getWallSegmentKey(wall))
     );
 
     const roomsGroupedForLevelEdit = (projectDetails.storeys || [])
@@ -1185,7 +1174,7 @@ const ProjectDetails = () => {
                             <div>
                                 <h2 className="text-lg font-semibold text-amber-900">Edit Level Mode</h2>
                                 <p className="text-sm text-amber-800">
-                                    Select rooms from other levels to duplicate onto <span className="font-medium">{projectDetails.activeStorey?.name || 'this level'}</span>.
+                                    Select rooms from other levels to copy their wall outlines onto <span className="font-medium">{projectDetails.activeStorey?.name || 'this level'}</span> (walls only, no rooms).
                                 </p>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
@@ -1222,7 +1211,7 @@ const ProjectDetails = () => {
                         <div className="mt-4 max-h-72 overflow-y-auto pr-1">
                             {roomsGroupedForLevelEdit.length === 0 ? (
                                 <p className="text-sm text-amber-700">
-                                    No rooms available on other levels to duplicate.
+                                    No rooms available on other levels to copy walls from.
                                 </p>
                             ) : (
                                 roomsGroupedForLevelEdit.map(({ storey, rooms }) => (
@@ -1241,21 +1230,13 @@ const ProjectDetails = () => {
                                                     (id) => String(id) === String(room.id)
                                                 );
                                                 
-                                                // Check if this room already exists on the active storey
-                                                const roomPoints = Array.isArray(room.room_points) && room.room_points.length >= 3
-                                                    ? room.room_points
-                                                    : null;
-                                                const roomSignature = roomPoints
-                                                    ? JSON.stringify(
-                                                          roomPoints.map((point) => [
-                                                              Number(point.x) || 0,
-                                                              Number(point.y) || 0,
-                                                          ])
-                                                      )
-                                                    : null;
-                                                const alreadyExists = roomSignature
-                                                    ? activeStoreyRoomSignatures.has(roomSignature)
-                                                    : false;
+                                                const sourceWallIds = Array.isArray(room.walls) ? room.walls : [];
+                                                const alreadyExists = sourceWallIds.length > 0 && sourceWallIds.every((wallId) => {
+                                                    const sourceWall = (projectDetails.walls || []).find(
+                                                        (wall) => String(wall.id) === String(wallId)
+                                                    );
+                                                    return sourceWall && activeStoreyWallKeys.has(getWallSegmentKey(sourceWall));
+                                                });
                                                 
                                                 const baseElevation =
                                                     Number(room.base_elevation_mm ?? storey.elevation_mm ?? 0) || 0;
@@ -1306,7 +1287,7 @@ const ProjectDetails = () => {
                                                             <p className="font-medium">{room.room_name}</p>
                                                             {alreadyExists ? (
                                                                 <p className="text-xs text-red-600 font-medium mt-1">
-                                                                    Already exists on {projectDetails.activeStorey?.name || 'this level'}
+                                                                    Walls already copied to {projectDetails.activeStorey?.name || 'this level'}
                                                                 </p>
                                                             ) : (
                                                                 <p className="text-xs text-amber-700">
@@ -2232,13 +2213,13 @@ const ProjectDetails = () => {
                             {wizardStep === 2 && (
                                 <div className="space-y-4">
                                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-                                        Select the rooms from <span className="font-semibold">{projectDetails.storeys.find(s => String(s.id) === String(sourceStoreyId))?.name || 'the base storey'}</span> that should appear on the new storey, or draw new areas on the canvas. Close the polygon by clicking back on the first point.
+                                        Select rooms from <span className="font-semibold">{projectDetails.storeys.find(s => String(s.id) === String(sourceStoreyId))?.name || 'the base storey'}</span> to copy their wall outlines to the new level (walls only, no rooms), or draw new areas on the canvas. Close the polygon by clicking back on the first point.
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="border border-gray-200 rounded-lg">
                                             <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
-                                                <span className="text-sm font-semibold text-gray-700">Rooms to Copy</span>
+                                                <span className="text-sm font-semibold text-gray-700">Rooms to Copy Walls From</span>
                                                 <span className="text-xs text-gray-500">{selectedRoomsSet.size} selected</span>
                                             </div>
                                             <div className="max-h-56 overflow-y-auto">

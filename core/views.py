@@ -261,6 +261,13 @@ class WallViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=data)
         if serializer.is_valid():
             wall = serializer.save(project=project)
+            from .services import WallService
+            if 'base_elevation_mm' in request.data:
+                wall.base_elevation_manual = True
+                wall.save(update_fields=['base_elevation_manual'])
+            else:
+                WallService.update_wall_base_elevations([wall.id])
+            wall.refresh_from_db()
             return Response(WallSerializer(wall).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
