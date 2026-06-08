@@ -264,22 +264,23 @@ const RoomManager = ({
                                                     // If pattern doesn't match, don't update (prevents invalid input)
                                                 }}
                                                 onBlur={(e) => {
-                                                    // On blur, ensure we have a valid number
                                                     const value = e.target.value;
                                                     if (value === '' || value === '-') {
-                                                        form.setBaseElevation(0);
+                                                        form.setBaseElevation(form.defaultBaseElevationMm);
                                                     } else {
                                                         const numValue = parseFloat(value);
-                                                        form.setBaseElevation(isNaN(numValue) ? 0 : numValue);
+                                                        form.setBaseElevation(
+                                                            isNaN(numValue) ? form.defaultBaseElevationMm : numValue
+                                                        );
                                                     }
                                                 }}
-                                                placeholder="0"
+                                                placeholder={String(form.defaultBaseElevationMm)}
                                                 className="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-14 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             />
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">mm</span>
                                         </div>
                                         <p className="text-xs text-gray-500 mt-1">
-                                            Positive = raised, Negative = sunken from ground level
+                                            Defaults to the active level elevation ({form.defaultBaseElevationMm} mm). Positive = raised, negative = sunken from ground level.
                                         </p>
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             {[-300, -150, 0, 150, 300].map(value => (

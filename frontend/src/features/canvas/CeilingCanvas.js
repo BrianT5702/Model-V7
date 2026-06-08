@@ -183,6 +183,8 @@ const CeilingCanvas = ({
     panelsNeedSupport = false,
     customSupports = undefined, // Custom supports from parent (for persistence)
     onCustomSupportsChange = null, // Callback to update custom supports in parent
+    canEditSupports: canEditSupportsProp = undefined,
+    canEditPanels: canEditPanelsProp = undefined,
     onEnableNylonHangersChange = null,
     onEnableAluSuspensionChange = null,
     onNylonHangerOptionsChange = null,
@@ -197,6 +199,9 @@ const CeilingCanvas = ({
     // Dimension visibility (checkbox filter)
     dimensionVisibility = { room: true, panel: true, cutPanel: false }
 }) => {
+    const canEditSupports = canEditSupportsProp ?? Boolean(onCustomSupportsChange);
+    const canEditPanels = canEditPanelsProp ?? Boolean(onPanelSelect);
+
     // Determine if we're in multi-room mode or single-room mode - memoize to prevent recalculation
     const isMultiRoomMode = useMemo(() => rooms.length > 0, [rooms.length]);
     
@@ -756,11 +761,10 @@ const CeilingCanvas = ({
     const effectiveCustomSupports = customSupports !== undefined && Array.isArray(customSupports) ? customSupports : localCustomSupports;
     // Function to update custom supports - use callback if provided, otherwise use local state setter
     const updateCustomSupports = useCallback((newSupportsOrUpdater) => {
-        if (onCustomSupportsChange) {
-            onCustomSupportsChange(newSupportsOrUpdater);
-        } else {
-            setLocalCustomSupports(newSupportsOrUpdater);
+        if (!onCustomSupportsChange) {
+            return;
         }
+        onCustomSupportsChange(newSupportsOrUpdater);
     }, [onCustomSupportsChange]);
 
     const findRailKeyAtPoint = useCallback((modelX, modelY, thresholdModel) => {
@@ -965,6 +969,30 @@ const CeilingCanvas = ({
     useEffect(() => {
         setVisibilityState(dimensionVisibility);
     }, [dimensionVisibility]);
+
+    useEffect(() => {
+        if (canEditSupports) {
+            return;
+        }
+        setSelectedNylonKey(null);
+        setSelectedRailKey(null);
+        setNylonAddTarget(null);
+        setNylonEditDraft(null);
+        setNylonEditFrozenLineKey(null);
+        setNylonAddDraft({ offsetLength: '', offsetWidth: '' });
+        setNylonFormError(null);
+        supportDrawModeRef.current = {
+            placing: false,
+            mode: null,
+            startPoint: null,
+            preview: null,
+            nylonPreview: null
+        };
+        setSupportPlacementMode(null);
+        setIsPlacingSupport(false);
+        setSupportStartPoint(null);
+        setSupportPreview(null);
+    }, [canEditSupports]);
 
     // Track available drawing space for responsive canvas sizing
     // Canvas size from container width + aspect ratio; max height from viewport so canvas stays a good size (not squeezed)
@@ -1483,6 +1511,7 @@ const CeilingCanvas = ({
     };
 
     const beginSupportDrawingMode = () => {
+        if (!canEditSupports) return;
         setSelectedRailKey(null);
         setSelectedNylonKey(null);
         supportDrawModeRef.current = {
@@ -1733,6 +1762,9 @@ const CeilingCanvas = ({
     const autoNylonSyncSignatureRef = useRef('');
 
     useEffect(() => {
+        if (!canEditSupports) {
+            return;
+        }
         const { meta, nylon, rest } = partitionCustomSupports(effectiveCustomSupports);
         const suppressed = new Set(meta.suppressedAutoPanelKeys || []);
         const manualNylon = nylon.filter((s) => !(s.isAuto && !s.isManual));
@@ -1793,6 +1825,7 @@ const CeilingCanvas = ({
             meta
         ));
     }, [
+        canEditSupports,
         enableNylonHangers,
         allCeilingPanelsForAluPlacement,
         effectiveRooms,
@@ -1822,7 +1855,7 @@ const CeilingCanvas = ({
     }, [selectedNylonKey]);
 
     useEffect(() => {
-        if (!selectedNylonKey) {
+        if (!canEditSupports || !selectedNylonKey) {
             setNylonEditDraft(null);
             return;
         }
@@ -1842,10 +1875,11 @@ const CeilingCanvas = ({
             roomId: hanger.room_id,
             panelId: hanger.panel_id
         });
-    }, [selectedNylonKey, listNylonHangers, findPanelById]);
+    }, [canEditSupports, selectedNylonKey, listNylonHangers, findPanelById]);
 
     const updateNylonPlacement = useCallback(
         (nylonKey, offsetLengthRaw, offsetWidthRaw, scope = 'single', frozenLineKey = null) => {
+            if (!canEditSupports) return false;
             const offLen = Number(offsetLengthRaw);
             if (!Number.isFinite(offLen) || offLen < 0) return false;
             const widthRaw = offsetWidthRaw === '' ? null : offsetWidthRaw;
@@ -1942,6 +1976,7 @@ const CeilingCanvas = ({
             return true;
         },
         [
+            canEditSupports,
             partitionCustomSupports,
             effectiveRooms,
             findPanelById,
@@ -1957,6 +1992,7 @@ const CeilingCanvas = ({
 
     const deleteNylonByKey = useCallback(
         (nylonKey) => {
+            if (!canEditSupports) return;
             const hanger = listNylonHangers().find((h) => h.key === nylonKey);
             if (!hanger) return;
             const { meta, nylon, rest } = partitionCustomSupports(effectiveCustomSupports);
@@ -1979,6 +2015,7 @@ const CeilingCanvas = ({
             if (ctx) drawCanvas(ctx);
         },
         [
+            canEditSupports,
             listNylonHangers,
             partitionCustomSupports,
             effectiveCustomSupports,
@@ -2000,7 +2037,7 @@ const CeilingCanvas = ({
 
     const commitNylonAddFromForm = useCallback(
         (applyToRoom = false) => {
-            if (!nylonAddTarget) return false;
+            if (!canEditSupports || !nylonAddTarget) return false;
             const offLen = Number(nylonAddDraft.offsetLength);
             const addPanel = findPanelById(nylonAddTarget.panelId, nylonAddTarget.roomId);
             const addPlacementDefs = getNylonPlacementFieldDefs(nylonAddTarget.roomId, addPanel);
@@ -2058,6 +2095,7 @@ const CeilingCanvas = ({
             return true;
         },
         [
+            canEditSupports,
             nylonAddTarget,
             nylonAddDraft,
             effectiveRooms,
@@ -2072,6 +2110,7 @@ const CeilingCanvas = ({
     );
 
     const beginNylonAddMode = () => {
+        if (!canEditSupports) return;
         setSelectedRailKey(null);
         setSelectedNylonKey(null);
         setNylonEditDraft(null);
@@ -2118,7 +2157,7 @@ const CeilingCanvas = ({
     };
 
     const commitNylonEditField = () => {
-        if (!selectedNylonKey || !nylonEditDraft) return;
+        if (!canEditSupports || !selectedNylonKey || !nylonEditDraft) return;
         updateNylonPlacement(
             selectedNylonKey,
             nylonEditDraft.offsetLength,
@@ -2128,7 +2167,7 @@ const CeilingCanvas = ({
     };
 
     useEffect(() => {
-        if (!selectedNylonKey || isPlacingSupport) return undefined;
+        if (!canEditSupports || !selectedNylonKey || isPlacingSupport) return undefined;
         const onKeyDown = (e) => {
             if (e.key === 'Escape') {
                 setSelectedNylonKey(null);
@@ -2139,10 +2178,10 @@ const CeilingCanvas = ({
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [selectedNylonKey, isPlacingSupport, deleteNylonByKey]);
+    }, [canEditSupports, selectedNylonKey, isPlacingSupport, deleteNylonByKey]);
 
     const commitRailEditField = (field) => {
-        if (!selectedRailKey || !railEditDraft) return;
+        if (!canEditSupports || !selectedRailKey || !railEditDraft) return;
         const raw = railEditDraft[field];
         const mmValue = typeof raw === 'number' ? raw : parseFloat(raw);
         if (!Number.isFinite(mmValue) || mmValue < 0) return;
@@ -3322,7 +3361,7 @@ const CeilingCanvas = ({
             drawnPositions: new Set(),
             roomId: room.id
         };
-
+        
         const lengthDimension = {
             startX: minX,
             endX: minX,
@@ -4537,7 +4576,7 @@ const CeilingCanvas = ({
         const hitThreshold = 14 / scaleFactor.current;
         const nylonPickR = nylonHangerPickRadiusCanvas();
 
-        if (isNylonAddModeActive()) {
+        if (canEditSupports && isNylonAddModeActive()) {
             const panel = findPanelAtModelPoint(modelX, modelY);
             if (panel) {
                 const roomId = panel.room_id ?? panel.room;
@@ -4567,7 +4606,7 @@ const CeilingCanvas = ({
             return;
         }
 
-        if (!isPlacingSupport && listNylonHangers().length > 0) {
+        if (canEditSupports && !isPlacingSupport && listNylonHangers().length > 0) {
             const nylonKey = findNylonKeyAtCanvasPoint(canvasX, canvasY, nylonPickR);
             if (nylonKey) {
                 setSelectedNylonKey(nylonKey);
@@ -4584,7 +4623,7 @@ const CeilingCanvas = ({
             }
         }
 
-        if (enableAluSuspension && !isPlacingSupport && effectiveCustomSupports.length > 0) {
+        if (canEditSupports && enableAluSuspension && !isPlacingSupport && effectiveCustomSupports.length > 0) {
             const railKey = findRailKeyAtPoint(modelX, modelY, hitThreshold);
             if (railKey) {
                 setSelectedRailKey(railKey);
@@ -4712,8 +4751,8 @@ const CeilingCanvas = ({
                 (clickedPanelBelongsToRoomId && clickedPanelBelongsToRoomId === selectedRoomIdStr)
             );
             
-            // PRIORITY 1: If a room is already selected AND user clicks on a panel in that room, select the panel
-            if (isRoomSelected && isPanelInSelectedRoom && clickedPanel) {
+            // PRIORITY 1: If a room is already selected AND user clicks on a panel in that room, select for swap (editors only)
+            if (canEditPanels && isRoomSelected && isPanelInSelectedRoom && clickedPanel) {
                 onPanelSelect?.(clickedPanel);
                 return;
             }
@@ -4774,7 +4813,7 @@ const CeilingCanvas = ({
         }
         
         // If custom alu support placement mode is active, handle rail placement
-        if (enableAluSuspension && isPlacingSupport && supportPlacementMode === 'alu') {
+        if (canEditSupports && enableAluSuspension && isPlacingSupport && supportPlacementMode === 'alu') {
             
             // Apply boundary snapping for support placement
             let snappedModelX = modelX;
@@ -5310,7 +5349,7 @@ const CeilingCanvas = ({
     };
 
     const renderNylonEditPanel = (wrapperClassName = '') => {
-        if (!selectedNylonKey || !nylonEditDraft || isPlacingSupport) return null;
+        if (!canEditSupports || !selectedNylonKey || !nylonEditDraft || isPlacingSupport) return null;
         const panel = findPanelById(nylonEditDraft.panelId, nylonEditDraft.roomId);
         const placementDefs = getNylonPlacementFieldDefs(nylonEditDraft.roomId, panel);
         const selectedHanger = listNylonHangers().find((h) => h.key === selectedNylonKey);
@@ -5424,7 +5463,7 @@ const CeilingCanvas = ({
     };
 
     const renderNylonAddPanel = (wrapperClassName = '') => {
-        if (!nylonAddTarget) return null;
+        if (!canEditSupports || !nylonAddTarget) return null;
         const room = effectiveRooms.find((r) => Number(r.id) === Number(nylonAddTarget.roomId));
         const panel = findPanelById(nylonAddTarget.panelId, nylonAddTarget.roomId);
         const qualCount = getQualifyingPanelsInRoom(nylonAddTarget.roomId).length;
@@ -5492,11 +5531,16 @@ const CeilingCanvas = ({
                 )
         ).size;
         const aluHangerCount = effectiveCustomSupports.filter((s) => s.isIntersectionPoint).length;
-        const canEditSupportOptions = Boolean(onEnableNylonHangersChange && onEnableAluSuspensionChange);
+        const canEditSupportOptions = canEditSupports && Boolean(onEnableNylonHangersChange && onEnableAluSuspensionChange);
 
         return (
             <div className={`text-left ${wrapperClassName}`}>
                 <h4 className="text-sm font-semibold text-gray-900 mb-2">Support systems</h4>
+                {!canEditSupports ? (
+                    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-2">
+                        View-only mode. Log in to add, move, or edit nylon hangers and suspension rails.
+                    </p>
+                ) : null}
                 {!panelsNeedSupport ? (
                     <p className="text-[11px] text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-2">
                         No extra support needed — all panels are under 6000&nbsp;mm in their critical dimension.
@@ -5574,6 +5618,7 @@ const CeilingCanvas = ({
                             {nylonCount === 0 && railCount === 0 && 'No supports placed yet.'}
                         </p>
 
+                        {canEditSupports ? (
                         <div className="flex flex-col gap-1.5">
                             <button
                                 type="button"
@@ -5640,10 +5685,13 @@ const CeilingCanvas = ({
                                 </button>
                             ) : null}
                         </div>
+                        ) : null}
+                        {canEditSupports ? (
                         <p className="text-[10px] text-gray-500 leading-snug">
                             Auto nylon is optional. Manual add works with auto off. Click a red hanger to
                             edit; use the button above to place more.
                         </p>
+                        ) : null}
                     </div>
                 )}
             </div>
@@ -5651,7 +5699,7 @@ const CeilingCanvas = ({
     };
 
     const renderRailEditPanel = (wrapperClassName = '') => {
-        if (!enableAluSuspension || !selectedRailKey || !railEditDraft || isPlacingSupport) {
+        if (!canEditSupports || !enableAluSuspension || !selectedRailKey || !railEditDraft || isPlacingSupport) {
             return null;
         }
         return (
@@ -5880,19 +5928,22 @@ const CeilingCanvas = ({
                         </div>
                         <p className="sm:text-center text-gray-600 order-last sm:order-none">
                             <span className="font-medium">
-                                {listNylonHangers().length > 0 && !isPlacingSupport
+                                {canEditSupports && listNylonHangers().length > 0 && !isPlacingSupport
                                     ? 'Click a red nylon hanger to edit • '
                                     : ''}
-                                {isPlacingSupport && supportPlacementMode === 'nylon-add'
+                                {canEditSupports && isPlacingSupport && supportPlacementMode === 'nylon-add'
                                     ? 'Step 1: click a ceiling panel • '
                                     : ''}
-                                {nylonAddTarget
+                                {canEditSupports && nylonAddTarget
                                     ? 'Step 2: enter placement in Support Tools, then Add • '
                                     : ''}
-                                {enableAluSuspension && !isPlacingSupport
+                                {canEditSupports && enableAluSuspension && !isPlacingSupport
                                     ? 'Click a purple rail to select and edit dimensions • '
                                     : ''}
-                                Click room to select, then click panel • Drag to pan • Use zoom buttons
+                                {canEditPanels
+                                    ? 'Click room to select, then click panel to swap • '
+                                    : 'Click room to view details • '}
+                                Drag to pan • Use zoom buttons
                             </span>
                         </p>
                     </div>

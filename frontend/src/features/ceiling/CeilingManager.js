@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import CeilingCanvas from '../canvas/CeilingCanvas';
 import api from '../../api/api';
 
-const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
+const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
     // Essential state for project-level ceiling planning
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState(null);
@@ -650,8 +651,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     // Save custom supports to backend when they change (debounced)
     const saveCustomSupportsTimeoutRef = useRef(null);
     useEffect(() => {
-        // Skip if no ceiling plan exists yet
-        if (!ceilingPlan || !projectId) return;
+        // Skip if no ceiling plan exists yet or user is view-only
+        if (!canEdit || !ceilingPlan || !projectId) return;
         
         // Clear existing timeout
         if (saveCustomSupportsTimeoutRef.current) {
@@ -693,7 +694,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 clearTimeout(saveCustomSupportsTimeoutRef.current);
             }
         };
-    }, [customSupports, ceilingPlan, projectId, nylonHangerOptions, aluSuspensionCustomDrawing]);
+    }, [canEdit, customSupports, ceilingPlan, projectId, nylonHangerOptions, aluSuspensionCustomDrawing, enableNylonHangers, enableAluSuspension]);
     
     // Track previous selectedRoomId to only reset config when room actually changes (not when allRooms updates)
     const previousSelectedRoomIdForConfigRef = useRef(null);
@@ -915,6 +916,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     
     // Handle joint type change
     const handleJointTypeChange = (wallId, jointType) => {
+        if (!canEdit) return;
         setWallJointConfigs(prev => {
             const updated = { ...prev };
             if (!updated[wallId]) {
@@ -936,6 +938,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     
     // Handle Cut L horizontal extension change
     const handleCutLExtensionChange = (wallId, value) => {
+        if (!canEdit) return;
         setWallJointConfigs(prev => {
             const updated = { ...prev };
             if (!updated[wallId]) {
@@ -948,7 +951,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     
     // Save wall joint configurations
     const saveWallJointConfigs = async () => {
-        if (isSavingJointConfigs) return;
+        if (!canEdit || isSavingJointConfigs) return;
         
         setIsSavingJointConfigs(true);
         setJointSaveSuccess(false);
@@ -1141,6 +1144,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const toggleMergeMode = () => {
+        if (!canEdit) return;
         setIsMergeMode(prev => !prev);
         setMergeSelection([]);
         setMergeError(null);
@@ -1156,6 +1160,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     }, [swapFeedbackTimeoutRef]);
 
     const handlePanelSelection = useCallback((panelId) => {
+        if (!canEdit) return;
+
         const normalizedId = normalizePanelIdentifier(panelId);
 
         if (!normalizedId) {
@@ -1210,7 +1216,12 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
             setPanelSwapSuccess(false);
             return [normalizedId];
         });
-    }, [getPanelByIdentifier, getPanelRoomKey, handlePanelSelectionReset, normalizePanelIdentifier]);
+    }, [canEdit, getPanelByIdentifier, getPanelRoomKey, handlePanelSelectionReset, normalizePanelIdentifier]);
+
+    useEffect(() => {
+        if (canEdit) return;
+        handlePanelSelectionReset();
+    }, [canEdit, handlePanelSelectionReset]);
 
     const handleMergeRoomToggle = (roomId) => {
         setMergeSelection(prev => {
@@ -1222,7 +1233,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const handleMergeCeiling = async () => {
-        if (!projectId) return;
+        if (!canEdit || !projectId) return;
         if (mergeSelection.length < 2) {
             setMergeError('Select at least two rooms to merge.');
             return;
@@ -1301,7 +1312,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const handleDissolveZone = async (zoneId) => {
-        if (!projectId) return;
+        if (!canEdit || !projectId) return;
         setDissolvingZoneId(zoneId);
         setMergeError(null);
         try {
@@ -1327,7 +1338,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const handleExcludeFromCeilingToggle = async (room, excludeFromCeiling) => {
-        if (!room?.id) return;
+        if (!canEdit || !room?.id) return;
         setIsUpdatingExcludeCeiling(true);
         setError(null);
         try {
@@ -1421,6 +1432,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const handleSwapPanels = useCallback(async () => {
+        if (!canEdit) return;
         if (selectedPanelIds.length !== 2) {
             setPanelSwapError('Select two panels within the same room to swap.');
             return;
@@ -1665,11 +1677,14 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         }
     }, [
         allRooms,
+        canEdit,
         ceilingPanels,
+        ceilingZones,
         getPanelByIdentifier,
         getPanelIdentifier,
         getPanelRoomKey,
         handlePanelSelectionReset,
+        normalizeRoomKey,
         processCeilingPanelsForSharing,
         selectedPanelIds,
         updateSharedPanelData
@@ -1785,7 +1800,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const applyZoneSettings = async (zoneId) => {
-        if (!zoneId) return;
+        if (!canEdit || !zoneId) return;
         try {
             setIsRegeneratingZone(true);
             setError(null);
@@ -1853,6 +1868,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
 
     // Generate ceiling plan for a specific room only
     const generateCeilingPlanForRoom = async (roomId, config, options = {}) => {
+        if (!canEdit) return;
         const normalizedRoomId = typeof roomId === 'string' ? parseInt(roomId, 10) : roomId;
         const targetRoom = allRooms.find(r => r.id === normalizedRoomId);
         if (targetRoom?.exclude_from_ceiling) {
@@ -2092,6 +2108,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
     };
 
     const generateCeilingPlan = async () => {
+        if (!canEdit) return;
         // Save wall joint configurations before generating (if any changes)
         if (selectedRoomId && Object.keys(wallJointConfigs).length > 0) {
             try {
@@ -2279,7 +2296,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
         return panelsMap;
     }, [ceilingPanels, showAllRooms, selectedRoomId, selectedStoreyId, allRooms, ceilingZones, excludedCeilingRoomIds]);
 
-    const shouldShowPanelSwapCard = selectedPanelIds.length > 0 || Boolean(panelSwapError) || Boolean(panelSwapSuccess);
+    const shouldShowPanelSwapCard = canEdit && (selectedPanelIds.length > 0 || Boolean(panelSwapError) || Boolean(panelSwapSuccess));
 
     const panelSwapCard = shouldShowPanelSwapCard ? (
         <div className="bg-white border border-blue-200 rounded-lg p-4 space-y-4 shadow-sm">
@@ -2480,8 +2497,14 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 </div>
             </div>
 
+            {!canEdit && (
+                <div className="mx-4 sm:mx-8 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    View-only mode. <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to generate or regenerate ceiling plans.
+                </div>
+            )}
+
                         {/* Controls - right margin so Orientation/Panel/Ceiling cards don't touch boundary */}
-            <div className="control-panel ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0">
+            <fieldset disabled={!canEdit} className="control-panel ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0 border-0 p-0 m-0 min-w-0">
                 {/* Main Controls Row */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-4 sm:mb-6 control-grid ml-0 sm:ml-4 pr-2 sm:pr-0">
                     {/* Strategy Selection */}
@@ -2655,6 +2678,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                 {/* Support configuration + draw/edit tools live in CeilingCanvas → Plan Details sidebar */}
 
                 {/* Action Buttons Row */}
+                {canEdit ? (
                 <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0 sm:space-x-4 mt-6 ml-4 mr-4 sm:mr-6">
                     <div className="flex items-center space-x-3">
                         <button
@@ -2705,11 +2729,16 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         <span className="font-medium">Project:</span> {projectData?.name || 'Loading...'}
                     </div>
                 </div>
+                ) : (
+                    <div className="mt-6 ml-4 mr-4 sm:mr-6 text-sm text-gray-600">
+                        <span className="font-medium">Project:</span> {projectData?.name || 'Loading...'}
+                    </div>
+                )}
                 
 
                 
                 {/* Status Indicators */}
-                {planNeedsRegeneration && (
+                {canEdit && planNeedsRegeneration && (
                     <div className="mt-3 p-3 bg-yellow-100 border border-yellow-300 text-yellow-700 rounded-lg">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center">
@@ -2740,7 +2769,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                     </div>
                 )}
 
-                {isMergeMode && (
+                {canEdit && isMergeMode && (
                     <div className="mt-4 p-5 border-2 border-orange-300 bg-orange-50 rounded-xl shadow-sm">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div>
@@ -2853,6 +2882,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                     Panels: {zone.total_panels} • Waste: {zone.waste_percentage?.toFixed?.(1) ?? '0.0'}% • Orientation: {zone.orientation_strategy}
                                                 </p>
                                             </div>
+                                            {canEdit && (
                                             <button
                                                 onClick={() => handleDissolveZone(zone.id)}
                                                 disabled={dissolvingZoneId === zone.id}
@@ -2864,6 +2894,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                             >
                                                 {dissolvingZoneId === zone.id ? 'Removing...' : 'Unmerge Zone'}
                                             </button>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -2871,7 +2902,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                         </div>
                     </div>
                 )}
-            </div>
+            </fieldset>
 
             {/* Main Content - fills space, scrolls if needed; layout is responsive inside CeilingCanvas */}
             <div className="pt-4 pb-4 ps-4 pe-2 sm:pt-6 sm:pb-6 sm:ps-8 sm:pe-3 w-full min-w-0 min-h-0 flex-1 flex flex-col overflow-y-auto">
@@ -2910,20 +2941,22 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             aluSuspensionCustomDrawing={aluSuspensionCustomDrawing}
                             panelsNeedSupport={panelsNeedSupport}
                             customSupports={customSupports}
-                            onCustomSupportsChange={setCustomSupports}
-                            onEnableNylonHangersChange={setEnableNylonHangers}
-                            onEnableAluSuspensionChange={(checked) => {
+                            canEditSupports={canEdit}
+                            canEditPanels={canEdit}
+                            onCustomSupportsChange={canEdit ? setCustomSupports : null}
+                            onEnableNylonHangersChange={canEdit ? setEnableNylonHangers : null}
+                            onEnableAluSuspensionChange={canEdit ? ((checked) => {
                                 setEnableAluSuspension(checked);
                                 if (!checked) setAluSuspensionCustomDrawing(false);
-                            }}
-                            onNylonHangerOptionsChange={setNylonHangerOptions}
-                            onSupportOptionsUserChange={notifySupportOptionsUserChange}
+                            }) : null}
+                            onNylonHangerOptionsChange={canEdit ? setNylonHangerOptions : null}
+                            onSupportOptionsUserChange={canEdit ? notifySupportOptionsUserChange : null}
                             // Room selection props
                             selectedRoomId={selectedRoomId}
                             showAllRooms={showAllRooms}
-                            selectedPanelId={selectedPanelIds[0] ?? null}
-                            selectedPanelIds={selectedPanelIds}
-                            onPanelSelect={handlePanelSelection}
+                            selectedPanelId={canEdit ? (selectedPanelIds[0] ?? null) : null}
+                            selectedPanelIds={canEdit ? selectedPanelIds : []}
+                            onPanelSelect={canEdit ? handlePanelSelection : null}
                             onRoomSelect={handleRoomSelection}
                             onRoomDeselect={handleRoomDeselection}
                             // Add updateSharedPanelData prop to pass support options
@@ -3069,6 +3102,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                     </p>
                                                     
                                                     {/* Quick Actions */}
+                                                    {canEdit && (
                                                     <div className="flex flex-wrap gap-2 pb-2 border-b border-gray-200">
                                                         <button
                                                             onClick={() => {
@@ -3109,6 +3143,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                             Clear All
                                                         </button>
                                                     </div>
+                                                    )}
                                                     
                                                     <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2">
                                                         {getWallsForSelection.map(wall => {
@@ -3213,7 +3248,8 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                             <select
                                                                                 value={config.jointType || ''}
                                                                                 onChange={(e) => handleJointTypeChange(wall.id, e.target.value || null)}
-                                                                                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                                                disabled={!canEdit}
+                                                                                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                                                             >
                                                                                 <option value="">⚪ Not Set</option>
                                                                                 <option value="AA11">📐 AA11 - No cutting, directly on top</option>
@@ -3238,9 +3274,11 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                                         step="1"
                                                                                         value={config.horizontalExtension || getCutLDefaultExtension(wall.thickness)}
                                                                                         onChange={(e) => handleCutLExtensionChange(wall.id, e.target.value)}
-                                                                                        className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                                                                                        disabled={!canEdit}
+                                                                                        className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                                                                         placeholder={getCutLDefaultExtension(wall.thickness).toString()}
                                                                                     />
+                                                                                    {canEdit && (
                                                                                     <button
                                                                                         onClick={() => handleCutLExtensionChange(wall.id, getCutLDefaultExtension(wall.thickness))}
                                                                                         className="text-xs px-2 py-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
@@ -3248,6 +3286,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                                     >
                                                                                         Reset
                                                                                     </button>
+                                                                                    )}
                                                                                 </div>
                                                                                 <p className="text-xs text-gray-600 mt-1.5">
                                                                                     Vertical depth = ceiling thickness ({ceilingThickness}mm)
@@ -3334,6 +3373,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                 </p>
                                                             )}
                                                         </div>
+                                                        {canEdit && (
                                                         <button
                                                             onClick={saveWallJointConfigs}
                                                             disabled={isSavingJointConfigs || Object.keys(wallJointConfigs).filter(id => wallJointConfigs[id]?.jointType).length === 0}
@@ -3360,6 +3400,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                 </>
                                                             )}
                                                         </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ) : (
@@ -3380,7 +3421,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                     <input
                                                         type="checkbox"
                                                         checked={Boolean(selectedRoom?.exclude_from_ceiling)}
-                                                        disabled={isUpdatingExcludeCeiling || !selectedRoom}
+                                                        disabled={!canEdit || isUpdatingExcludeCeiling || !selectedRoom}
                                                         onChange={(e) => handleExcludeFromCeilingToggle(selectedRoom, e.target.checked)}
                                                         className="mt-0.5 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-400"
                                                     />
@@ -3431,6 +3472,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                 </div>
                                             </div>
                                         </div>
+                                                    {canEdit && (
                                                     <div className="bg-white border border-gray-200 rounded-lg p-4">
                                                         <h4 className="text-sm font-semibold text-gray-700 mb-3">Edit Ceiling Settings</h4>
                                                         <div className="space-y-3 text-sm">
@@ -3677,6 +3719,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                             >
                                                 Reset to Global
                                             </button>
+                                            {canEdit && (
                                             <button
                                                 onClick={() => generateCeilingPlanForRoom(selectedRoomId, roomEditConfig)}
                                                 disabled={isRegeneratingRoom || selectedRoom?.exclude_from_ceiling}
@@ -3699,8 +3742,10 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                     '✓ Apply Settings to this room only'
                                                 )}
                                             </button>
+                                            )}
                                         </div>
                                     </div>
+                                                    )}
                                                 </div>
                                                 <div className="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
                                                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Panel Totals by Dimension</h4>
@@ -3865,6 +3910,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                 </div>
                                                             </div>
                                                         </div>
+                                                        {canEdit && (
                                                         <div className="bg-white border border-gray-200 rounded-lg p-4">
                                                             <h4 className="text-sm font-semibold text-gray-700 mb-3">Zone Ceiling Settings</h4>
                                                             <div className="space-y-3 text-sm">
@@ -3975,6 +4021,7 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                     >
                                                                         Reset to Global
                                                                     </button>
+                                                                    {canEdit && (
                                                                     <button
                                                                         onClick={() => applyZoneSettings(activeZone?.id)}
                                                                         disabled={isRegeneratingZone}
@@ -3996,9 +4043,11 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                                                                             '✓ Apply Settings to this zone only'
                                                                         )}
                                                                     </button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
+                                                        )}
                                                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                                                             <h4 className="text-sm font-semibold text-gray-700 mb-3">Panel Totals by Dimension</h4>
                                                             {activeZonePanelStats?.groupedPanels && activeZonePanelStats.groupedPanels.length > 0 ? (
@@ -4106,15 +4155,23 @@ const CeilingManager = ({ projectId, onClose, onCeilingPlanGenerated, updateShar
                             No Ceiling Plan Generated
                         </h3>
                         <p className="text-gray-600 mb-4">
-                            Generate a ceiling plan to automatically create optimal panel layout for this project.
+                            {canEdit
+                                ? 'Generate a ceiling plan to automatically create optimal panel layout for this project.'
+                                : 'No ceiling plan has been generated for this project yet.'}
                         </p>
-                        <button
-                            onClick={generateCeilingPlan}
-                            disabled={isGenerating}
-                            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            {isGenerating ? 'Generating...' : 'Generate Ceiling Plan'}
-                        </button>
+                        {canEdit ? (
+                            <button
+                                onClick={generateCeilingPlan}
+                                disabled={isGenerating}
+                                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {isGenerating ? 'Generating...' : 'Generate Ceiling Plan'}
+                            </button>
+                        ) : (
+                            <p className="text-sm text-amber-700">
+                                <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to generate ceiling plans.
+                            </p>
+                        )}
                     </div>
                 )}
             </div>

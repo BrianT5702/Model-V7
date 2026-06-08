@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import FloorCanvas from '../canvas/FloorCanvas';
 import api from '../../api/api';
 
-const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPanelData = null }) => {
+const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated, updateSharedPanelData = null }) => {
     // Essential state for project-level floor planning
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState(null);
@@ -61,6 +62,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
     }, [projectId]);
 
     const handleSlabWidthChange = (value) => {
+        if (!canEdit) return;
         const n = parseInt(value, 10);
         if (!Number.isNaN(n) && n > 0) {
             setSlabWidth(n);
@@ -75,6 +77,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
     };
 
     const handleSlabLengthChange = (value) => {
+        if (!canEdit) return;
         const n = parseInt(value, 10);
         if (!Number.isNaN(n) && n > 0) {
             setSlabLength(n);
@@ -400,6 +403,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
     };
 
     const generateFloorPlan = async () => {
+        if (!canEdit) return;
         if (!projectId) {
             setError('No project selected');
             return;
@@ -527,10 +531,22 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                     <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-4">
                             <div>
-                                <h1 className="text-3xl font-bold text-gray-900">Floor Plan Generator</h1>
-                                <p className="text-gray-600 mt-2">
-                                    Generate optimal floor panel layouts with orientation strategies to minimize waste
-                                </p>
+                                <h1 className="text-3xl font-bold text-gray-900">
+                                    {canEdit ? 'Floor Plan Generator' : 'Floor Plan'}
+                                </h1>
+                                {canEdit ? (
+                                    <p className="text-gray-600 mt-2">
+                                        Generate optimal floor panel layouts with orientation strategies to minimize waste
+                                    </p>
+                                ) : (
+                                    <p className="text-amber-800 text-sm mt-2">
+                                        View-only mode.{' '}
+                                        <Link to="/login" className="font-medium underline hover:text-amber-900">
+                                            Log in
+                                        </Link>{' '}
+                                        to generate floor plans or change slab size.
+                                    </p>
+                                )}
                             </div>
                             {/* Level (storey) selector - same as ceiling plan */}
                             {storeys.length > 1 && (
@@ -550,19 +566,21 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                                 </div>
                             )}
                         </div>
-                        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            <div className="flex items-center">
-                                <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span className="text-blue-800 text-sm">
-                                    <strong>Note:</strong> Floor plan is available for rooms with <code className="bg-blue-100 px-1 rounded">floor_type = "panel"</code> (panel layout) or <code className="bg-blue-100 px-1 rounded">floor_type = "slab"</code> (estimated slabs needed).
-                                </span>
+                        {canEdit && (
+                            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-center">
+                                    <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span className="text-blue-800 text-sm">
+                                        <strong>Note:</strong> Floor plan is available for rooms with <code className="bg-blue-100 px-1 rounded">floor_type = "panel"</code> (panel layout) or <code className="bg-blue-100 px-1 rounded">floor_type = "slab"</code> (estimated slabs needed).
+                                    </span>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                     
-                    {planNeedsRegeneration && (
+                    {canEdit && planNeedsRegeneration && (
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                             <div className="flex items-center">
                                 <svg className="w-5 h-5 text-yellow-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -577,7 +595,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                 </div>
             </div>
 
-            {/* Control Panel */}
+            {canEdit && (
             <div className="p-6 ml-8">
                 {/* Dimension visibility checkboxes */}
                 <div className="mb-4 flex items-center space-x-4">
@@ -751,6 +769,7 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                     </div>
                 )}
             </div>
+            )}
 
             {/* Main Content: show canvas when we have a generated plan OR when we have panel/slab rooms (so slab counts and Generate are available) */}
             <div className="p-6 pl-8">
@@ -768,8 +787,9 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                             dimensionVisibility={dimensionVisibility}
                             slabWidth={slabWidth}
                             slabLength={slabLength}
-                            onSlabWidthChange={handleSlabWidthChange}
-                            onSlabLengthChange={handleSlabLengthChange}
+                            canEdit={canEdit}
+                            onSlabWidthChange={canEdit ? handleSlabWidthChange : null}
+                            onSlabLengthChange={canEdit ? handleSlabLengthChange : null}
 
                             floorPanelsMap={(() => {
                                 // Convert filtered floor panels to floorPanelsMap format (by room for selected level)
@@ -830,15 +850,19 @@ const FloorManager = ({ projectId, onClose, onFloorPlanGenerated, updateSharedPa
                             No Floor Plan Generated
                         </h3>
                         <p className="text-gray-600 mb-4">
-                            Generate a floor plan to automatically create optimal panel layout with the best orientation strategy.
+                            {canEdit
+                                ? 'Generate a floor plan to automatically create optimal panel layout with the best orientation strategy.'
+                                : 'No floor plan has been generated for this project yet.'}
                         </p>
-                        <button
-                            onClick={generateFloorPlan}
-                            disabled={isGenerating}
-                            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            {isGenerating ? 'Generating...' : 'Generate Floor Plan'}
-                        </button>
+                        {canEdit && (
+                            <button
+                                onClick={generateFloorPlan}
+                                disabled={isGenerating}
+                                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {isGenerating ? 'Generating...' : 'Generate Floor Plan'}
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

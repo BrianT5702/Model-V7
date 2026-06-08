@@ -27,7 +27,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return (
                 Project.objects
-                .select_related('folder')
+                .select_related('folder', 'created_by', 'last_edited_by')
                 .only(
                     'id',
                     'name',
@@ -37,10 +37,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     'wall_thickness',
                     'folder_id',
                     'list_order',
+                    'created_by_id',
+                    'last_edited_by_id',
                     'created_at',
                     'updated_at',
                     'folder__id',
                     'folder__name',
+                    'created_by__username',
+                    'last_edited_by__username',
                 )
                 .order_by('folder__order', 'list_order', '-updated_at', '-id')
             )
@@ -58,10 +62,45 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return ProjectRetrieveSerializer
         return ProjectSerializer
 
+    def _acting_user(self):
+        user = self.request.user
+        return user if user.is_authenticated else None
+
+    def _refresh_project_for_list(self, project):
+        return (
+            Project.objects
+            .select_related('folder', 'created_by', 'last_edited_by')
+            .get(pk=project.pk)
+        )
+
+    def _list_project_response(self, project, status_code=status.HTTP_200_OK):
+        refreshed = self._refresh_project_for_list(project)
+        return Response(ProjectListSerializer(refreshed).data, status=status_code)
+
+    def perform_create(self, serializer):
+        user = self._acting_user()
+        serializer.save(created_by=user, last_edited_by=user)
+
+    def perform_update(self, serializer):
+        serializer.save(last_edited_by=self._acting_user())
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return self._list_project_response(serializer.instance)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        project = serializer.save()
+        user = request.user if request.user.is_authenticated else None
+        project = serializer.save(created_by=user, last_edited_by=user)
 
         # Create default walls using the service
         # Ensure a default ground-floor storey exists
@@ -76,7 +115,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
 
         WallService.create_default_walls(project, storey=default_storey)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return self._list_project_response(project, status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'])
     def walls(self, request, pk=None):
@@ -103,9 +142,11 @@ class ProjectFolderViewSet(viewsets.ModelViewSet):
         return ProjectFolder.objects.all().order_by('order', 'name', 'id')
 
     def perform_create(self, serializer):
+        parent = serializer.validated_data.get('parent')
         order = serializer.validated_data.get('order')
         if order is None:
-            existing_max = ProjectFolder.objects.aggregate(Max('order'))['order__max']
+            sibling_qs = ProjectFolder.objects.filter(parent=parent)
+            existing_max = sibling_qs.aggregate(Max('order'))['order__max']
             order = (existing_max or 0) + 1
         serializer.save(order=order)
 
@@ -556,6 +597,12 @@ class FloorPlanViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def generate_floor_plan(self, request):
         """Generate floor plan with intelligent panel placement (excluding walls)"""
+        if not request.user.is_authenticated:
+            return Response(
+                {'error': 'Authentication required to generate floor plans.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         project_id = request.data.get('project_id')
         orientation_strategy = request.data.get('orientation_strategy', 'auto')
         panel_width = request.data.get('panel_width', 1150)

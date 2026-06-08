@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.contrib.postgres.fields import ArrayField
@@ -14,6 +15,13 @@ from .constants import (
 class ProjectFolder(models.Model):
     """Organizational folder for grouping projects on the list page."""
     name = models.CharField(max_length=255)
+    parent = models.ForeignKey(
+        'self',
+        related_name='children',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+    )
     order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -41,6 +49,20 @@ class Project(models.Model):
     list_order = models.PositiveIntegerField(
         default=0,
         help_text="Sort order within a folder (or uncategorized group).",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='projects_created',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    last_edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='projects_last_edited',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

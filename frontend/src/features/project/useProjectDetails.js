@@ -12,7 +12,7 @@ import {
 import { normalizeWallCoordinates } from '../canvas/drawing';
 import { doPolygonsOverlap } from '../canvas/utils';
 
-export default function useProjectDetails(projectId) {
+export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   // State
   const [project, setProject] = useState(null);
   const [walls, setWalls] = useState([]);
@@ -84,6 +84,26 @@ export default function useProjectDetails(projectId) {
       console.warn('Failed to prefetch CSRF token:', error);
     });
   }, []);
+
+  useEffect(() => {
+    if (!canEdit) {
+      setIsEditingMode(false);
+      setCurrentMode(null);
+      setIsLevelEditMode(false);
+      setShowWallEditor(false);
+      setShowRoomManagerModal(false);
+      setShowDoorManager(false);
+      setShowDoorEditor(false);
+      setShowStoreyWizard(false);
+      setSelectedWall(null);
+      setSelectedWallsForEdit([]);
+      setSelectedWallsForRoom([]);
+      setEditingRoom(null);
+      setEditingDoor(null);
+      setLevelEditSelections([]);
+      setLevelEditOverrides({});
+    }
+  }, [canEdit]);
 
   const initializeRoomOverride = useCallback((room) => {
     if (!room) {
@@ -176,13 +196,14 @@ export default function useProjectDetails(projectId) {
   }, [storeyWizardDefaultHeight]);
 
   const enterLevelEditMode = useCallback(() => {
+    if (!canEdit) return;
     setIsLevelEditMode(true);
     setLevelEditSelections([]);
     setLevelEditOverrides({});
     setLevelEditError('');
     setLevelEditSuccess('');
     setSelectionContext('room');
-  }, []);
+  }, [canEdit]);
 
   const exitLevelEditMode = useCallback(() => {
     setIsLevelEditMode(false);
@@ -1872,7 +1893,7 @@ export default function useProjectDetails(projectId) {
       floor_layers: options.floor_layers ?? 1,
       temperature: options.temperature ?? 0,
       height: wallHeight,
-      base_elevation_mm: options.base_elevation_mm ?? 0,
+      base_elevation_mm: options.base_elevation_mm ?? getStoreyElevationMm(storeys, targetStoreyId),
       remarks: options.remarks ?? '',
       walls: createdWalls.map(w => w.id),
       room_points: points,
@@ -1943,6 +1964,7 @@ export default function useProjectDetails(projectId) {
 
   // Add toggleMode utility
   const toggleMode = (mode) => {
+    if (!canEdit) return;
     setCurrentMode((prev) => {
       if (prev === mode) {
         // Exiting mode
@@ -3136,5 +3158,6 @@ export default function useProjectDetails(projectId) {
     forceCleanup3D,
     // Canvas image methods
     updateCanvasImage,
+    canEdit,
   };
 } 

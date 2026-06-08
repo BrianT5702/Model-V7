@@ -22,6 +22,7 @@ const ProjectFolderSection = ({
     onProjectDelete,
     defaultCollapsed = false,
     showFolderActions = true,
+    canEdit = true,
 }) => {
     const [collapsed, setCollapsed] = useState(defaultCollapsed);
     const [isEditing, setIsEditing] = useState(false);
@@ -122,6 +123,8 @@ const ProjectFolderSection = ({
                                     key={project.id}
                                     project={project}
                                     isDragging={draggingProjectId === project.id}
+                                    enableDrag={canEdit}
+                                    canEdit={canEdit}
                                     onDragStart={onProjectDragStart}
                                     onDragEnd={onProjectDragEnd}
                                     onClick={onProjectClick}

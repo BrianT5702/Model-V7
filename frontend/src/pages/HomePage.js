@@ -1,16 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { FaCube, FaPlus, FaFolderOpen } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
+import { FaCube, FaPlus } from 'react-icons/fa';
 import CreateProject from '../features/project/CreateProject';
 import ProjectList from '../features/project/ProjectList';
+import AuthStatusBar from '../components/AuthStatusBar';
+import { useAuth } from '../features/auth/AuthContext';
+import { UNCATEGORIZED_KEY } from '../features/project/projectFolderUtils';
 import api from '../api/api';
 
 const HomePage = () => {
+    const { canEdit } = useAuth();
     const [projects, setProjects] = useState([]);
     const [folders, setFolders] = useState([]);
     const [foldersAvailable, setFoldersAvailable] = useState(true);
     const [dbConnectionError, setDbConnectionError] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
+    const [createTargetFolderKey, setCreateTargetFolderKey] = useState(null);
+    const [selectedFolderKey, setSelectedFolderKey] = useState(UNCATEGORIZED_KEY);
     const [isLoading, setIsLoading] = useState(true);
+
+    const openCreateProject = (folderKey = null) => {
+        setCreateTargetFolderKey(folderKey);
+        setShowCreateForm(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const closeCreateProject = () => {
+        setShowCreateForm(false);
+        setCreateTargetFolderKey(null);
+    };
 
     // Utility function to detect database connection errors
     const isDatabaseConnectionError = (error) => {
@@ -71,20 +89,7 @@ const HomePage = () => {
             });
     }, []);
 
-    const quickActions = [
-        {
-            icon: FaPlus,
-            title: "Create New Project",
-            action: () => setShowCreateForm(true),
-            color: "from-blue-500 to-indigo-600"
-        },
-        {
-            icon: FaFolderOpen,
-            title: "View Projects",
-            action: () => document.getElementById('projects-section')?.scrollIntoView({ behavior: 'smooth' }),
-            color: "from-green-500 to-emerald-600"
-        }
-    ];
+    const showCreateButton = canEdit;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50">
@@ -110,19 +115,20 @@ const HomePage = () => {
                         </div>
                         
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:space-x-4">
-                            {quickActions.map((action, index) => (
+                            <AuthStatusBar />
+                            {showCreateButton && (
                                 <button
-                                    key={index}
-                                    onClick={action.action}
-                                    className={`group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl bg-gradient-to-r ${action.color} text-white text-sm sm:text-base font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300`}
+                                    type="button"
+                                    onClick={() => openCreateProject(null)}
+                                    className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm sm:text-base font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
                                 >
                                     <div className="flex items-center justify-center">
-                                        <action.icon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-2 group-hover:scale-110 transition-transform duration-300" />
-                                        <span className="hidden sm:inline">{action.title}</span>
-                                        <span className="sm:hidden">{action.title.replace('New ', '').replace('View ', '')}</span>
+                                        <FaPlus className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-2 group-hover:scale-110 transition-transform duration-300" />
+                                        <span className="hidden sm:inline">Create New Project</span>
+                                        <span className="sm:hidden">Create Project</span>
                                     </div>
                                 </button>
-                            ))}
+                            )}
                         </div>
                     </div>
                 </div>
@@ -131,37 +137,52 @@ const HomePage = () => {
             {/* Main Content */}
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
                 {/* Create Project Section */}
-                {showCreateForm && (
+                {canEdit && showCreateForm && (
                     <div className="mb-8 sm:mb-12">
                         <div className="text-center mb-6 sm:mb-8">
                             <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Project</h2>
                         </div>
                         
                         <div className="flex justify-center">
-                            <CreateProject 
-                                setProjects={setProjects} 
-                                onClose={() => setShowCreateForm(false)}
+                            <CreateProject
+                                projects={projects}
+                                setProjects={setProjects}
+                                folders={folders}
+                                setFolders={setFolders}
+                                foldersAvailable={foldersAvailable}
+                                targetFolderKey={createTargetFolderKey}
+                                onFolderAssigned={(folderKey) => setSelectedFolderKey(folderKey)}
+                                onClose={closeCreateProject}
                             />
                         </div>
                     </div>
                 )}
 
                 {/* Projects Section */}
-                <div id="projects-section">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 mb-6 sm:mb-8">
-                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Projects</h2>
-                        <div className="text-sm text-gray-600">
-                            {isLoading ? 'Loading...' : `${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+                <div id="projects-section" className="flex flex-col min-h-[480px]">
+                    {!canEdit && (
+                        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            You are browsing in view-only mode. <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to create, edit, or delete projects.
                         </div>
-                    </div>
-                    
+                    )}
+
+                    {isLoading ? (
+                        <div className="flex items-center justify-center flex-1 rounded-xl border border-gray-200 bg-white text-gray-500">
+                            Loading projects...
+                        </div>
+                    ) : (
                     <ProjectList
                         projects={projects}
                         setProjects={setProjects}
                         folders={folders}
                         setFolders={setFolders}
                         foldersAvailable={foldersAvailable}
+                        canEdit={canEdit}
+                        selectedFolderKey={selectedFolderKey}
+                        onSelectedFolderKeyChange={setSelectedFolderKey}
+                        onCreateInFolder={openCreateProject}
                     />
+                    )}
                 </div>
             </div>
         </div>

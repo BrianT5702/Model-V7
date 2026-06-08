@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import useProjectDetails from './useProjectDetails';
+import { useAuth } from '../auth/AuthContext';
+import AuthStatusBar from '../../components/AuthStatusBar';
 import { getWallSegmentKey } from './projectUtils';
 import Canvas2D from '../canvas/Canvas2D';
 import RoomManager from '../room/RoomManager';
@@ -34,28 +36,17 @@ import {
 const ProjectDetails = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
-    const projectDetails = useProjectDetails(projectId);
+    const { canEdit } = useAuth();
+    const projectDetails = useProjectDetails(projectId, { canEdit });
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const CONTROLS_SIDEBAR_STORAGE_KEY = 'project.controlsSidebarCollapsed.v2';
-    const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(() => {
-        try {
-            const stored = localStorage.getItem(CONTROLS_SIDEBAR_STORAGE_KEY);
-            if (stored === null) return true;
-            return stored === 'true';
-        } catch {
-            return true;
-        }
-    });
-
-    useEffect(() => {
-        try {
-            localStorage.setItem(CONTROLS_SIDEBAR_STORAGE_KEY, String(controlsSidebarCollapsed));
-        } catch {
-            // ignore storage errors
-        }
-    }, [controlsSidebarCollapsed]);
+    const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
+
+    useEffect(() => {
+        setControlsSidebarCollapsed(true);
+        setSidebarOpen(false);
+    }, [projectId]);
 
     useEffect(() => {
         if (!isWallPlanView && !projectDetails.is3DView) {
@@ -1006,6 +997,7 @@ const ProjectDetails = () => {
                         </div>
                         
                         <div className="flex items-center space-x-2 sm:space-x-3">
+                            <AuthStatusBar />
                             <button
                                 onClick={() => navigate('/')}
                                 className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1027,6 +1019,12 @@ const ProjectDetails = () => {
                     </div>
                 </div>
             </div>
+
+            {!canEdit && (
+                <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-sm text-amber-800">
+                    View-only mode. <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to edit walls, rooms, levels, and plans.
+                </div>
+            )}
 
             {/* Header Section */}
             <div className="bg-white border-b border-gray-200 shadow-sm" style={{ width: '100%', minWidth: '100%' }}>
@@ -1101,6 +1099,8 @@ const ProjectDetails = () => {
                                             </option>
                                         ))}
                                     </select>
+                                    {canEdit && (
+                                        <>
                                     {projectDetails.isLevelEditMode ? (
                                         <button
                                             onClick={projectDetails.exitLevelEditMode}
@@ -1152,6 +1152,8 @@ const ProjectDetails = () => {
                                     >
                                         Add Level
                                     </button>
+                                        </>
+                                    )}
                                     {projectDetails.isStoreyLoading && (
                                         <span className="text-xs text-gray-400">Loading...</span>
                                     )}
@@ -1167,7 +1169,7 @@ const ProjectDetails = () => {
                 </div>
             </div>
             
-            {projectDetails.currentView === 'wall-plan' && projectDetails.isLevelEditMode && (
+            {canEdit && projectDetails.currentView === 'wall-plan' && projectDetails.isLevelEditMode && (
                 <div className="max-w-7xl mx-auto px-6 mt-4">
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1360,7 +1362,7 @@ const ProjectDetails = () => {
             )}
 
             {/* Define Room Container - Above Canvas */}
-            {projectDetails.currentMode === 'define-room' && (
+            {canEdit && projectDetails.currentMode === 'define-room' && (
                 <div className="w-full bg-white border-b border-gray-200 shadow-sm">
                     {/* Room Definition Header */}
                     <div className="p-4 border-b border-gray-200">
@@ -1534,6 +1536,8 @@ const ProjectDetails = () => {
                                 Collapse
                             </button>
                         </div>
+                        {canEdit ? (
+                        <>
                         {/* Edit Mode Toggle (sidebar hidden in 3D) */}
                         <div className="mb-6">
                     <button
@@ -1906,6 +1910,19 @@ const ProjectDetails = () => {
                                 )}
                             </div>
                         )}
+                        </>
+                        ) : (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                                <p className="font-medium mb-1">View-only mode</p>
+                                <p>
+                                    You can explore this project, but editing tools are disabled.
+                                    {' '}
+                                    <Link to="/login" className="underline hover:text-amber-900">Log in</Link>
+                                    {' '}
+                                    to add walls, rooms, doors, and levels.
+                                </p>
+                            </div>
+                        )}
 
                     </div>
                 </div>
@@ -2104,6 +2121,7 @@ const ProjectDetails = () => {
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager
                                             projectId={projectId}
+                                            canEdit={canEdit}
                                             onClose={() => {
                                                 projectDetails.resetAllSelections();
                                                 projectDetails.setCurrentView('wall-plan');
@@ -2136,6 +2154,7 @@ const ProjectDetails = () => {
                                     ) : (
                                         <CeilingManager
                                             projectId={projectId}
+                                            canEdit={canEdit}
                                             room={projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 ? projectDetails.filteredRooms[0] : null}
                                             onClose={() => {
                                                 projectDetails.resetAllSelections();

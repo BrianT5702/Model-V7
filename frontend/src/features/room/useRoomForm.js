@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { calculateMinWallHeight } from '../../api/api';
+import { getStoreyElevationMm } from '../project/projectUtils';
 
 /**
  * useRoomForm - Custom hook for managing room form state and logic
@@ -80,12 +81,18 @@ export default function useRoomForm({
   const defaultStoreyId = normaliseStoreyId(
     initialRoom?.storey ?? initialRoom?.storey_id ?? activeStoreyId ?? (storeys[0]?.id ?? null)
   );
+  const resolveDefaultBaseElevation = (storeyIdValue) =>
+    getStoreyElevationMm(storeys, normaliseStoreyId(storeyIdValue ?? activeStoreyId ?? storeys[0]?.id));
+  const defaultBaseElevationMm = useMemo(
+    () => resolveDefaultBaseElevation(defaultStoreyId),
+    [storeys, activeStoreyId, defaultStoreyId]
+  );
   const [storeyId, setStoreyId] = useState(defaultStoreyId);
   // Store as string to allow intermediate typing states like "-" or "-3"
   const [baseElevation, setBaseElevation] = useState(
     initialRoom?.base_elevation_mm !== undefined && initialRoom?.base_elevation_mm !== null
       ? initialRoom.base_elevation_mm.toString()
-      : '0'
+      : defaultBaseElevationMm.toString()
   );
   
   // Helper function to set base elevation allowing intermediate typing states
@@ -115,18 +122,18 @@ export default function useRoomForm({
       setTemperature(initialRoom.temperature || '');
       setRoomHeight(initialRoom.height || '');
       setAllowVariableWallHeights(initialRoom?.allow_variable_wall_heights || false);
+      const editStoreyId = normaliseStoreyId(
+        initialRoom.storey ?? initialRoom.storey_id ?? activeStoreyId ?? (storeys[0]?.id ?? null)
+      );
       setBaseElevation(
         initialRoom.base_elevation_mm !== undefined && initialRoom.base_elevation_mm !== null
           ? initialRoom.base_elevation_mm.toString()
-          : '0'
+          : resolveDefaultBaseElevation(editStoreyId).toString()
       );
-      setStoreyId(
-        normaliseStoreyId(
-          initialRoom.storey ?? initialRoom.storey_id ?? activeStoreyId ?? (storeys[0]?.id ?? null)
-        )
-      );
+      setStoreyId(editStoreyId);
     } else {
       // Clear form fields when not editing (for creating new room)
+      const targetStoreyId = normaliseStoreyId(activeStoreyId ?? (storeys[0]?.id ?? null));
       setRoomName('');
       setFloorType('');
       setFloorThickness('');
@@ -135,10 +142,8 @@ export default function useRoomForm({
       setTemperature('');
       setRoomHeight('');
       setAllowVariableWallHeights(false);
-      setBaseElevation('0');
-      setStoreyId(
-        normaliseStoreyId(activeStoreyId ?? (storeys[0]?.id ?? null))
-      );
+      setBaseElevation(resolveDefaultBaseElevation(targetStoreyId).toString());
+      setStoreyId(targetStoreyId);
     }
   }, [initialRoom, activeStoreyId, storeys]);
 
@@ -292,6 +297,7 @@ export default function useRoomForm({
     setStoreyId,
     baseElevation,
     setBaseElevation: setBaseElevationSafe,
+    defaultBaseElevationMm,
     remarks,
     setRemarks,
     allowVariableWallHeights,

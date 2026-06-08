@@ -828,8 +828,13 @@ class RoomService:
                 )
 
         base_elevation = room_data.get('base_elevation_mm')
-        if base_elevation is None and storey is not None:
-            base_elevation = storey.elevation_mm
+        if storey is not None:
+            storey_elevation = storey.elevation_mm if storey.elevation_mm is not None else 0.0
+            if base_elevation is None:
+                base_elevation = storey_elevation
+            elif base_elevation == 0 and storey_elevation != 0:
+                # Upper levels: treat forgotten/default 0 as storey elevation
+                base_elevation = storey_elevation
 
         room = Room.objects.create(
             project_id=project_id,

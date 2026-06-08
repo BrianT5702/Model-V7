@@ -384,7 +384,7 @@ function oppositePlanEdge(edge) {
     return 'top';
 }
 
-/** Wall/ceiling/floor plan dimension font size (sqrt zoom scaling, min 10px). */
+/** Wall/ceiling/floor plan dimension font size (sqrt zoom scaling, clamped min–max px). */
 export function computeWallPlanDimensionFontSize(scaleFactor, initialScale = 1) {
     const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
     let fontSize;
@@ -398,7 +398,8 @@ export function computeWallPlanDimensionFontSize(scaleFactor, initialScale = 1) 
     } else {
         fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
     }
-    return Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+    return Math.min(fontSize, DIMENSION_CONFIG.FONT_SIZE_MAX);
 }
 
 /** One placement side per plan edge so chained wall dims (10250 + 7940) share the same column. */
@@ -1320,19 +1321,7 @@ function drawProjectDimension(
 
     context.save();
     context.fillStyle = color;
-    const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
-    let fontSize;
-    let sqrtScaledFontSize = 0;
-    if (initialScale > 0 && scaleFactor > initialScale) {
-        const zoomRatio = scaleFactor / initialScale;
-        sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-    }
-    if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-        fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-    } else {
-        fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-    }
-    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+    const fontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
     context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
     const text = formatDimMmCanvas(length);
     const textWidth = context.measureText(text).width;
@@ -1690,32 +1679,8 @@ export function drawDimensions(
     
     context.save();
     context.fillStyle = color;
-    // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
-    const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
-    let fontSize;
-    
-    // Calculate square root scaled font size if user has zoomed in
-    let sqrtScaledFontSize = 0;
-    if (initialScale > 0 && scaleFactor > initialScale) {
-        // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-        // This means 2x zoom only results in ~1.41x text size, not 2x
-        const zoomRatio = scaleFactor / initialScale;
-        sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-    }
-    
-    // Use the maximum of calculated and square root scaled to prevent discontinuity
-    // This ensures smooth transition when crossing the minimum threshold
-    if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-        // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
-        fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-    } else {
-        // Above minimum threshold - use max of calculated and square root scaled
-        // This prevents sudden drop when crossing the threshold
-        fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-    }
-    
-    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
-    const standardWallFontSize = fontSize;
+    const standardWallFontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
+    let fontSize = standardWallFontSize;
     if (modelBounds) {
         const projectSize = Math.max(
             (modelBounds.maxX - modelBounds.minX) || 1,
@@ -4433,31 +4398,8 @@ export function drawPanelDivisions(
             const text = fullLabelText;
             
             // IMPORTANT: Set font BEFORE measuring text width!
-            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
-            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
-            let fontSize;
-            
-            // Calculate square root scaled font size if user has zoomed in
-            let sqrtScaledFontSize = 0;
-            if (initialScale > 0 && scaleFactor > initialScale) {
-                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-                // This means 2x zoom only results in ~1.41x text size, not 2x
-                const zoomRatio = scaleFactor / initialScale;
-                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-            }
-            
-            // Use the maximum of calculated and square root scaled to prevent discontinuity
-            // This ensures smooth transition when crossing the minimum threshold
-            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
-                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-            } else {
-                // Above minimum threshold - use max of calculated and square root scaled
-                // This prevents sudden drop when crossing the threshold
-                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-            }
-            
-            const standardPanelFontSize = fontSize;
+            const standardPanelFontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
+            let fontSize = standardPanelFontSize;
             fontSize = applyNearWallFontSize(standardPanelFontSize);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const textWidth = context.measureText(text).width;
@@ -4692,19 +4634,7 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
         if (label.type === 'wall' && label.obliqueAngle != null && !Number.isNaN(label.obliqueAngle)) {
             const centerX = label.x + label.width / 2;
             const centerY = label.y + label.height / 2;
-            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
-            let fontSize;
-            let sqrtScaledFontSize = 0;
-            if (initialScale > 0 && scaleFactor > initialScale) {
-                const zoomRatio = scaleFactor / initialScale;
-                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-            }
-            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-            } else {
-                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-            }
-            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+            const fontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             context.translate(centerX, centerY);
             context.rotate((label.obliqueAngle * Math.PI) / 180);
@@ -4726,31 +4656,7 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             context.translate(centerX, centerY);
             context.rotate(-Math.PI / 2);
             context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
-            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
-            const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
-            let fontSize;
-            
-            // Calculate square root scaled font size if user has zoomed in
-            let sqrtScaledFontSize = 0;
-            if (initialScale > 0 && scaleFactor > initialScale) {
-                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-                // This means 2x zoom only results in ~1.41x text size, not 2x
-                const zoomRatio = scaleFactor / initialScale;
-                sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-            }
-            
-            // Use the maximum of calculated and square root scaled to prevent discontinuity
-            // This ensures smooth transition when crossing the minimum threshold
-            if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
-                fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-            } else {
-                // Above minimum threshold - use max of calculated and square root scaled
-                // This prevents sudden drop when crossing the threshold
-                fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-            }
-            
-            fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+            const fontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const twV = context.measureText(label.text).width;
             const thV = fontSize * 0.75;
@@ -4763,31 +4669,7 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
         } else {
             // Horizontal
             context.fillStyle = label.textColor != null ? label.textColor : (label.type === 'panel' ? '#FF6B35' : '#2196F3');
-            // Calculate font size: if calculated value is below minimum, use minimum; when zooming, scale from minimum
-            const calculatedFontSize2 = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
-            let fontSize2;
-            
-            // Calculate square root scaled font size if user has zoomed in
-            let sqrtScaledFontSize2 = 0;
-            if (initialScale > 0 && scaleFactor > initialScale) {
-                // User has zoomed in - scale from minimum using square root to reduce aggressiveness
-                // This means 2x zoom only results in ~1.41x text size, not 2x
-                const zoomRatio = scaleFactor / initialScale;
-                sqrtScaledFontSize2 = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-            }
-            
-            // Use the maximum of calculated and square root scaled to prevent discontinuity
-            // This ensures smooth transition when crossing the minimum threshold
-            if (calculatedFontSize2 < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-                // Below minimum threshold - use square root scaling if zoomed, otherwise minimum
-                fontSize2 = sqrtScaledFontSize2 > 0 ? sqrtScaledFontSize2 : DIMENSION_CONFIG.FONT_SIZE_MIN;
-            } else {
-                // Above minimum threshold - use max of calculated and square root scaled
-                // This prevents sudden drop when crossing the threshold
-                fontSize2 = Math.max(calculatedFontSize2, sqrtScaledFontSize2 || DIMENSION_CONFIG.FONT_SIZE_MIN);
-            }
-            
-            fontSize2 = Math.max(fontSize2, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+            const fontSize2 = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize2}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const twH = context.measureText(label.text).width;
             const thH = fontSize2 * 0.75;

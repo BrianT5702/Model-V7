@@ -1793,7 +1793,7 @@ export function drawVectorWallPlan(
 
                         let angle = Math.atan2(y2 - y1, x2 - x1);
                         const doorWidth = door.width;
-                        const doorThickness = 150;
+                        const doorThickness = wall.thickness || 100;
 
                         const doorColor = [255, 165, 0]; // Orange
                         const strokeColor = [0, 0, 0];
@@ -1848,110 +1848,44 @@ export function drawVectorWallPlan(
                         // === SWING DOOR DRAWING ===
                         if (door.door_type === 'swing') {
                             const radius = doorWidth / (door.configuration === 'double_sided' ? 2 : 1);
-                            const thickness = doorThickness;
-                            
+
                             const drawSwingPanel = (hingeOffset, direction) => {
                                 const isRight = direction === 'right';
                                 const arcStart = isRight ? Math.PI : 0;
                                 const arcEnd = isRight ? Math.PI * 1.5 : -Math.PI * 0.5;
                                 const anticlockwise = !isRight;
-                                
-                                // Draw arc - EXACT same as canvas: ctx.arc(0, 0, radius * scale, arcStart, arcEnd, anticlockwise)
-                                // In local door space, after translate(hingeOffset * scale, 0) and rotate(angle)
-                                const numSegments = 30; // More segments for smoother arc
+
+                                const numSegments = 30;
                                 const arcPoints = [];
                                 for (let i = 0; i <= numSegments; i++) {
                                     const t = i / numSegments;
                                     let localAngle;
                                     if (anticlockwise) {
-                                        // Counter-clockwise: go backwards
                                         localAngle = arcStart + (arcEnd - arcStart) * (1 - t);
                                         if (arcEnd < arcStart) {
                                             localAngle = arcStart - (arcStart - arcEnd) * t;
                                         }
                                     } else {
-                                        // Clockwise: go forwards
                                         localAngle = arcStart + (arcEnd - arcStart) * t;
                                     }
                                     const localX = hingeOffset + radius * Math.cos(localAngle);
                                     const localY = radius * Math.sin(localAngle);
                                     arcPoints.push(transformDoorPoint(localX, localY));
                                 }
-                                
-                                // Draw arc segments
+
                                 doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
                                 doc.setLineWidth(lineWidth);
                                 for (let i = 0; i < arcPoints.length - 1; i++) {
                                     doc.line(arcPoints[i].x, arcPoints[i].y, arcPoints[i + 1].x, arcPoints[i + 1].y);
                                 }
-                                
-                                // Draw door panel rectangle at arc end - EXACT same as canvas
-                                // Canvas sequence (in local door space after translate to door center and rotate by wall angle):
-                                // 1. ctx.translate(hingeOffset * scale, 0) - hinge is now at origin
-                                // 2. ctx.arc(0, 0, radius * scale, arcStart, arcEnd, anticlockwise) - draw arc
-                                // 3. arcEndX = Math.cos(arcEnd) * radius * scale (relative to hinge/origin)
-                                // 4. arcEndY = Math.sin(arcEnd) * radius * scale (relative to hinge/origin)
-                                // 5. ctx.translate(arcEndX, arcEndY) - move to arc end
-                                // 6. ctx.rotate(Math.atan2(arcEndY, arcEndX)) - rotate by angle from origin to arc end
-                                // 7. ctx.fillRect(-radius * scale, -thickness * scale / 2, radius * scale, thickness * scale)
-                                
-                                // Calculate arc end position relative to hinge (in local door space after first translate)
+
                                 const arcEndX = Math.cos(arcEnd) * radius;
                                 const arcEndY = Math.sin(arcEnd) * radius;
-                                
-                                // Panel angle: Math.atan2(arcEndY, arcEndX) - angle from hinge (origin) to arc end
-                                const panelAngle = Math.atan2(arcEndY, arcEndX);
-                                
-                                // Arc end position in local door space (hingeOffset + arcEndX, arcEndY)
-                                const arcEndLocalX = hingeOffset + arcEndX;
-                                const arcEndLocalY = arcEndY;
-                                
-                                const rectWidth = radius;
-                                const rectHeight = thickness;
-                                
-                                // Calculate rectangle corners - EXACT same as canvas fillRect
-                                // Canvas: fillRect(-radius * scale, -thickness * scale / 2, radius * scale, thickness * scale)
-                                // This rectangle is drawn AFTER translate(arcEndX, arcEndY) and rotate(panelAngle)
-                                // So corners are: (-radius, -thickness/2), (0, -thickness/2), (0, thickness/2), (-radius, thickness/2)
-                                const corners = [
-                                    { x: -rectWidth, y: -rectHeight / 2 },
-                                    { x: 0, y: -rectHeight / 2 },
-                                    { x: 0, y: rectHeight / 2 },
-                                    { x: -rectWidth, y: rectHeight / 2 }
-                                ].map(corner => {
-                                    // First rotate by panel angle (around origin, before translate to arc end)
-                                    const cosPanel = Math.cos(panelAngle);
-                                    const sinPanel = Math.sin(panelAngle);
-                                    const rotatedX = corner.x * cosPanel - corner.y * sinPanel;
-                                    const rotatedY = corner.x * sinPanel + corner.y * cosPanel;
-                                    // Then translate to arc end position in local door space
-                                    const localX = arcEndLocalX + rotatedX;
-                                    const localY = arcEndLocalY + rotatedY;
-                                    // Finally transform to PDF coordinates (includes door center translation and wall angle rotation)
-                                    return transformDoorPoint(localX, localY);
-                                });
-                                
-                                // Draw and fill rectangle - EXACT same as canvas
-                                doc.setFillColor(doorColor[0], doorColor[1], doorColor[2]);
-                                doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
-                                doc.setLineWidth(lineWidth);
-                                
-                                // Draw rectangle outline
-                                for (let i = 0; i < corners.length; i++) {
-                                    const next = corners[(i + 1) % corners.length];
-                                    doc.line(corners[i].x, corners[i].y, next.x, next.y);
-                                }
-                                
-                                // Fill rectangle (draw filled polygon by drawing lines close together)
-                                const fillSteps = 8; // More steps for better fill
-                                for (let i = 0; i < fillSteps; i++) {
-                                    const t = i / fillSteps;
-                                    const x1 = corners[0].x + (corners[1].x - corners[0].x) * t;
-                                    const y1 = corners[0].y + (corners[1].y - corners[0].y) * t;
-                                    const x2 = corners[3].x + (corners[2].x - corners[3].x) * t;
-                                    const y2 = corners[3].y + (corners[2].y - corners[3].y) * t;
-                                    doc.line(x1, y1, x2, y2);
-                                }
+                                const hingePoint = transformDoorPoint(hingeOffset, 0);
+                                const leafPoint = transformDoorPoint(hingeOffset + arcEndX, arcEndY);
+                                doc.setDrawColor(doorColor[0], doorColor[1], doorColor[2]);
+                                doc.setLineWidth(lineWidth * 1.2);
+                                doc.line(hingePoint.x, hingePoint.y, leafPoint.x, leafPoint.y);
                             };
 
                             if (door.configuration === 'single_sided') {

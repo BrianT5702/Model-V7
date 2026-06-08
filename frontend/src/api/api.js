@@ -1,30 +1,57 @@
 import axios from 'axios';
 
-// Automatically detect environment and set appropriate base URL
+// Use same-origin /api/ in dev (CRA proxy) and production so session cookies are sent reliably.
 const getBaseURL = () => {
     const explicit = process.env.REACT_APP_API_BASE_URL;
     if (explicit && explicit.trim()) {
         return explicit.trim();
     }
-    if (process.env.NODE_ENV === "production") return "/api/";
-    return "http://127.0.0.1:8000/api/";
+    return '/api/';
 };
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
+const UNSAFE_METHODS = new Set(['post', 'put', 'patch', 'delete']);
+
+const readCsrfFromCookie = () => {
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+};
+
+let cachedCsrfToken = null;
 
 const api = axios.create({
     baseURL: getBaseURL(),
-    timeout: 30000, // 30 second timeout
+    timeout: 30000,
     withCredentials: true,
     xsrfCookieName: 'csrftoken',
     xsrfHeaderName: 'X-CSRFToken',
 });
 
-// Add request interceptor for logging
+const fetchCsrfToken = async () => {
+    const response = await axios.get(`${getBaseURL()}csrf-token/`, {
+        withCredentials: true,
+    });
+    const token = response.data?.csrfToken;
+    if (token) {
+        cachedCsrfToken = token;
+    }
+    return token;
+};
+
 api.interceptors.request.use(
-    (config) => {
+    async (config) => {
+        const method = config.method?.toLowerCase();
+        const url = config.url || '';
+
+        if (UNSAFE_METHODS.has(method) && !url.includes('csrf-token')) {
+            const token = readCsrfFromCookie() || cachedCsrfToken || await fetchCsrfToken();
+            if (token) {
+                config.headers['X-CSRFToken'] = token;
+            }
+        }
+
         if (isDevelopment) {
-            console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+            console.log(`API Request: ${method?.toUpperCase()} ${url}`);
         }
         return config;
     },
@@ -36,11 +63,8 @@ api.interceptors.request.use(
     }
 );
 
-// Add response interceptor for error handling
 api.interceptors.response.use(
-    (response) => {
-        return response;
-    },
+    (response) => response,
     (error) => {
         if (isDevelopment) {
             console.error('API Response Error:', error);
@@ -52,7 +76,6 @@ api.interceptors.response.use(
     }
 );
 
-// Room height calculation
 export const calculateMinWallHeight = (wallIds) => api.post('/rooms/calculate_min_height/', { wall_ids: wallIds });
 
 export default api;

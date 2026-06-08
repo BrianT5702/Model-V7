@@ -385,7 +385,8 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         const angle = Math.atan2(y2 - y1, x2 - x1);
         const doorWidth = door.width;
-        const doorThickness = 150;
+        const wallThickness = wall.thickness || 100;
+        const doorThickness = wallThickness;
 
         const isHovered = door.id === hoveredDoorId;
         let doorColor = 'orange';
@@ -448,7 +449,6 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         // === SWING DOOR DRAWING ===
         if (door.door_type === 'swing') {
             const radius = doorWidth / (door.configuration === 'double_sided' ? 2 : 1);
-            const thickness = doorThickness;
             const drawSwingPanel = (hingeOffset, direction) => {
                 const isRight = direction === 'right';
                 const arcStart = isRight ? Math.PI : 0;
@@ -466,12 +466,13 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
                 const arcEndX = Math.cos(arcEnd) * radius * scale;
                 const arcEndY = Math.sin(arcEnd) * radius * scale;
 
-                ctx.save();
-                ctx.translate(arcEndX, arcEndY);
-                ctx.rotate(Math.atan2(arcEndY, arcEndX));
-                ctx.fillStyle = doorColor;
-                ctx.fillRect(-radius * scale, -thickness * scale / 2, radius * scale, thickness * scale);
-                ctx.restore();
+                // Plan symbol: thin leaf line from hinge to open position (not a solid block)
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(arcEndX, arcEndY);
+                ctx.strokeStyle = doorColor;
+                ctx.lineWidth = Math.max(1.5, lineWidth);
+                ctx.stroke();
                 ctx.restore();
             };
 
@@ -486,14 +487,20 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         // === SLIDE DOOR DRAWING ===
         if (door.door_type === 'slide') {
-            const halfLength = (doorWidth) * 1.1;
-            const thickness = doorThickness * 0.8;
+            const halfLength = doorWidth * 1.1;
+            const thickness = wallThickness;
 
             const drawSlidePanel = (offsetX, direction) => {
                 ctx.save();
                 ctx.translate(offsetX * scale, thickness * scale);
-                ctx.fillStyle = doorColor;
-                ctx.fillRect(-halfLength * scale / 2, -thickness * scale / 2, halfLength * scale, thickness * scale);
+                ctx.strokeStyle = doorColor;
+                ctx.lineWidth = Math.max(1.5, lineWidth);
+                ctx.strokeRect(
+                    -halfLength * scale / 2,
+                    -thickness * scale / 2,
+                    halfLength * scale,
+                    thickness * scale
+                );
 
                 // Draw arrow
                 const arrowY = thickness * scale * 2;

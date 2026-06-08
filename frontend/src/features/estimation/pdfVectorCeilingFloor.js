@@ -13,7 +13,7 @@ import {
     getPlanDimensionLaneConfig,
     planCeilingValueDedupKey
 } from '../canvas/DimensionConfig';
-import { calculateOffsetPoints, buildWallOffsetOptions } from '../canvas/drawing';
+import { calculateOffsetPoints, buildWallOffsetOptions, computeWallPlanDimensionFontSize } from '../canvas/drawing';
 import { drawCollectedPlanDimensionsOnContext } from '../canvas/planDimensionDrawing';
 import {
     smartPlacement,
@@ -1106,9 +1106,7 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
 
     // Match pdfVectorWallPlan.js dimension styling (extension dash, line weights, tick ends, text pad + text).
     const scale = num(_scale, 0);
-    const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scale;
-    let fontSize = calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN ? DIMENSION_CONFIG.FONT_SIZE_MIN : calculatedFontSize;
-    fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN, 10);
+    const fontSize = computeWallPlanDimensionFontSize(scale, scale);
     doc.setFontSize(fontSize);
     doc.setFont('helvetica', DIMENSION_CONFIG.FONT_WEIGHT === 'bold' ? 'bold' : 'normal');
 

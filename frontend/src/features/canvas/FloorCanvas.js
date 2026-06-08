@@ -6,7 +6,8 @@ import {
     buildWallOffsetOptions,
     resolve45CutForceShouldFlip,
     placeExteriorWallDimensionAvoidingLabels,
-    resolveWallExteriorPlacementSide
+    resolveWallExteriorPlacementSide,
+    computeWallPlanDimensionFontSize
 } from './drawing.js';
 import {
     DIMENSION_CONFIG,
@@ -70,6 +71,7 @@ const FloorCanvas = ({
     // Slab size (mm) for slab floor estimation - default 1210 x 3000
     slabWidth = 1210,
     slabLength = 3000,
+    canEdit = true,
     onSlabWidthChange = null,
     onSlabLengthChange = null
 }) => {
@@ -1164,19 +1166,7 @@ const FloorCanvas = ({
         
         const text = formatPlanDimensionLabel(dimension, length);
 
-        const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor.current;
-        let fontSize;
-        let sqrtScaledFontSize = 0;
-        if (initialScale.current > 0 && scaleFactor.current > initialScale.current) {
-            const zoomRatio = scaleFactor.current / initialScale.current;
-            sqrtScaledFontSize = DIMENSION_CONFIG.FONT_SIZE_MIN * Math.sqrt(zoomRatio);
-        }
-        if (calculatedFontSize < DIMENSION_CONFIG.FONT_SIZE_MIN) {
-            fontSize = sqrtScaledFontSize > 0 ? sqrtScaledFontSize : DIMENSION_CONFIG.FONT_SIZE_MIN;
-        } else {
-            fontSize = Math.max(calculatedFontSize, sqrtScaledFontSize || DIMENSION_CONFIG.FONT_SIZE_MIN);
-        }
-        fontSize = Math.max(fontSize, DIMENSION_CONFIG.FONT_SIZE_MIN);
+        const fontSize = computeWallPlanDimensionFontSize(scaleFactor.current, initialScale.current);
         const previousFont = ctx.font;
         ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
         const textWidth = ctx.measureText(text).width;
@@ -1940,32 +1930,38 @@ const FloorCanvas = ({
                         {/* Slab size (mm) - user can set for slab floor estimation; memorized per project */}
                         <div className="pt-4 border-t border-gray-200">
                             <div className="text-sm text-gray-600 mb-2">Slab size (mm)</div>
-                            <div className="flex flex-wrap items-center gap-3">
-                                <div className="flex items-center gap-1.5">
-                                    <label className="text-xs text-gray-500">Width</label>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        value={slabWidth}
-                                        onChange={(e) => onSlabWidthChange?.(e.target.value)}
-                                        className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                                        placeholder="1210"
-                                    />
+                            <fieldset disabled={!canEdit} className="border-0 p-0 m-0 min-w-0">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <div className="flex items-center gap-1.5">
+                                        <label className="text-xs text-gray-500">Width</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={slabWidth}
+                                            onChange={(e) => onSlabWidthChange?.(e.target.value)}
+                                            className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                            placeholder="1210"
+                                        />
+                                    </div>
+                                    <span className="text-gray-400">×</span>
+                                    <div className="flex items-center gap-1.5">
+                                        <label className="text-xs text-gray-500">Length</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={slabLength}
+                                            onChange={(e) => onSlabLengthChange?.(e.target.value)}
+                                            className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                            placeholder="3000"
+                                        />
+                                    </div>
                                 </div>
-                                <span className="text-gray-400">×</span>
-                                <div className="flex items-center gap-1.5">
-                                    <label className="text-xs text-gray-500">Length</label>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        value={slabLength}
-                                        onChange={(e) => onSlabLengthChange?.(e.target.value)}
-                                        className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                                        placeholder="3000"
-                                    />
-                                </div>
+                            </fieldset>
+                            <div className="text-xs text-gray-500 mt-1">
+                                {canEdit
+                                    ? 'Default 1210 × 3000. Used for slab count.'
+                                    : 'View-only — log in to change slab size.'}
                             </div>
-                            <div className="text-xs text-gray-500 mt-1">Default 1210 × 3000. Used for slab count.</div>
                         </div>
                         
                         {/* Slab Floor Summary */}

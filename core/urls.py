@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .auth_views import current_user_view, login_view, logout_view, register_view
 from .views import (
     ProjectViewSet,
     ProjectFolderViewSet,
@@ -38,5 +39,9 @@ router.register(r'storeys', StoreyViewSet, basename='storey')
 # Define urlpatterns
 urlpatterns = [
     path('csrf-token/', csrf_token_view, name='csrf-token'),
+    path('auth/me/', current_user_view, name='auth-me'),
+    path('auth/login/', login_view, name='auth-login'),
+    path('auth/logout/', logout_view, name='auth-logout'),
+    path('auth/register/', register_view, name='auth-register'),
     path('', include(router.urls)),  # Include all routes defined by the router
 ]

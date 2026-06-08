@@ -428,25 +428,57 @@ class RoomSerializer(serializers.ModelSerializer):
 
 class ProjectFolderSerializer(serializers.ModelSerializer):
     project_count = serializers.SerializerMethodField()
+    parent_name = serializers.CharField(source='parent.name', read_only=True, default=None)
 
     class Meta:
         model = ProjectFolder
-        fields = ['id', 'name', 'order', 'project_count', 'created_at', 'updated_at']
+        fields = [
+            'id', 'name', 'parent', 'parent_name', 'order',
+            'project_count', 'created_at', 'updated_at',
+        ]
         read_only_fields = ['created_at', 'updated_at']
 
     def get_project_count(self, obj):
         return obj.projects.count()
 
+    def _would_create_cycle(self, parent):
+        if not self.instance or not parent:
+            return False
+        current = parent
+        while current is not None:
+            if current.pk == self.instance.pk:
+                return True
+            current = current.parent
+        return False
+
     def validate_name(self, value):
         value = (value or '').strip()
         if not value:
             raise serializers.ValidationError('Folder name cannot be empty.')
-        qs = ProjectFolder.objects.filter(name=value)
+        return value
+
+    def validate(self, attrs):
+        parent = attrs.get('parent', getattr(self.instance, 'parent', None))
+        if 'parent' in attrs:
+            parent = attrs['parent']
+        name = attrs.get('name', getattr(self.instance, 'name', None))
+        if not name:
+            return attrs
+
+        qs = ProjectFolder.objects.filter(name=name, parent=parent)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise serializers.ValidationError('A folder with this name already exists.')
-        return value
+            raise serializers.ValidationError({
+                'name': 'A folder with this name already exists in this location.',
+            })
+
+        if self.instance and 'parent' in attrs and self._would_create_cycle(attrs['parent']):
+            raise serializers.ValidationError({
+                'parent': 'Cannot move a folder inside itself or one of its subfolders.',
+            })
+
+        return attrs
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -589,6 +621,18 @@ class ProjectListSerializer(serializers.ModelSerializer):
     """
     calculated_height = serializers.FloatField(source='height', read_only=True)
     folder_name = serializers.CharField(source='folder.name', read_only=True, default=None)
+    created_by_username = serializers.SerializerMethodField()
+    last_edited_by_username = serializers.SerializerMethodField()
+
+    def get_created_by_username(self, obj):
+        if getattr(obj, 'created_by_id', None) and obj.created_by:
+            return obj.created_by.username
+        return None
+
+    def get_last_edited_by_username(self, obj):
+        if getattr(obj, 'last_edited_by_id', None) and obj.last_edited_by:
+            return obj.last_edited_by.username
+        return None
 
     class Meta:
         model = Project
@@ -603,6 +647,8 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'folder',
             'folder_name',
             'list_order',
+            'created_by_username',
+            'last_edited_by_username',
             'created_at',
             'updated_at',
         ]
