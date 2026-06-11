@@ -2,6 +2,8 @@ import { UNCATEGORIZED_KEY } from './ProjectFolderSection';
 
 export { UNCATEGORIZED_KEY };
 
+export const FOLDER_QUERY_PARAM = 'folder';
+
 export const folderKeyToId = (folderKey) => (
     folderKey === UNCATEGORIZED_KEY ? null : folderKey
 );
@@ -36,6 +38,39 @@ export const getFolderPath = (folderKey, folders) => {
 };
 
 export const getFolderLabel = (folderKey, folders) => getFolderPath(folderKey, folders);
+
+export const folderKeyToQueryValue = (folderKey) => {
+    if (folderKey === UNCATEGORIZED_KEY || folderKey == null) {
+        return null;
+    }
+    return String(folderKey);
+};
+
+export const folderKeyFromQueryValue = (value, folders = []) => {
+    if (!value || value === UNCATEGORIZED_KEY) {
+        return UNCATEGORIZED_KEY;
+    }
+    const id = Number(value);
+    if (Number.isNaN(id)) {
+        return UNCATEGORIZED_KEY;
+    }
+    if (folders.length > 0 && !folders.some((folder) => folder.id === id)) {
+        return UNCATEGORIZED_KEY;
+    }
+    return id;
+};
+
+export const buildHomeFolderPath = (folderKey) => {
+    const queryValue = folderKeyToQueryValue(folderKey);
+    return queryValue ? `/?${FOLDER_QUERY_PARAM}=${encodeURIComponent(queryValue)}` : '/';
+};
+
+export const buildProjectPath = (projectId, folderKey) => {
+    const queryValue = folderKeyToQueryValue(folderKey);
+    return queryValue
+        ? `/projects/${projectId}?${FOLDER_QUERY_PARAM}=${encodeURIComponent(queryValue)}`
+        : `/projects/${projectId}`;
+};
 
 /** Ancestor chain for breadcrumb navigation: [{ key, label }, ...] */
 export const getFolderBreadcrumbSegments = (folderKey, folders) => {

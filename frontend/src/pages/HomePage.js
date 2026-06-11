@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { FaCube, FaPlus } from 'react-icons/fa';
 import CreateProject from '../features/project/CreateProject';
 import ProjectList from '../features/project/ProjectList';
 import AuthStatusBar from '../components/AuthStatusBar';
 import { useAuth } from '../features/auth/AuthContext';
-import { UNCATEGORIZED_KEY } from '../features/project/projectFolderUtils';
+import {
+    FOLDER_QUERY_PARAM,
+    UNCATEGORIZED_KEY,
+    folderKeyFromQueryValue,
+    folderKeyToQueryValue,
+} from '../features/project/projectFolderUtils';
 import api from '../api/api';
 
 const HomePage = () => {
@@ -16,8 +21,30 @@ const HomePage = () => {
     const [dbConnectionError, setDbConnectionError] = useState(false);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [createTargetFolderKey, setCreateTargetFolderKey] = useState(null);
-    const [selectedFolderKey, setSelectedFolderKey] = useState(UNCATEGORIZED_KEY);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [selectedFolderKey, setSelectedFolderKey] = useState(() => (
+        folderKeyFromQueryValue(searchParams.get(FOLDER_QUERY_PARAM), [])
+    ));
     const [isLoading, setIsLoading] = useState(true);
+
+    const handleSelectedFolderKeyChange = useCallback((folderKey) => {
+        setSelectedFolderKey(folderKey);
+        const queryValue = folderKeyToQueryValue(folderKey);
+        if (queryValue) {
+            setSearchParams({ [FOLDER_QUERY_PARAM]: queryValue }, { replace: true });
+        } else {
+            setSearchParams({}, { replace: true });
+        }
+    }, [setSearchParams]);
+
+    useEffect(() => {
+        const folderParam = searchParams.get(FOLDER_QUERY_PARAM);
+        if (folderParam === null) {
+            setSelectedFolderKey(UNCATEGORIZED_KEY);
+            return;
+        }
+        setSelectedFolderKey(folderKeyFromQueryValue(folderParam, folders));
+    }, [searchParams, folders]);
 
     const openCreateProject = (folderKey = null) => {
         setCreateTargetFolderKey(folderKey);
@@ -151,7 +178,7 @@ const HomePage = () => {
                                 setFolders={setFolders}
                                 foldersAvailable={foldersAvailable}
                                 targetFolderKey={createTargetFolderKey}
-                                onFolderAssigned={(folderKey) => setSelectedFolderKey(folderKey)}
+                                onFolderAssigned={handleSelectedFolderKeyChange}
                                 onClose={closeCreateProject}
                             />
                         </div>
@@ -188,7 +215,7 @@ const HomePage = () => {
                         canEdit={canEdit}
                         isAuthenticated={isAuthenticated}
                         selectedFolderKey={selectedFolderKey}
-                        onSelectedFolderKeyChange={setSelectedFolderKey}
+                        onSelectedFolderKeyChange={handleSelectedFolderKeyChange}
                         onCreateInFolder={openCreateProject}
                     />
                     )}

@@ -1,9 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useProjectDetails from './useProjectDetails';
 import { useAuth } from '../auth/AuthContext';
 import AuthStatusBar from '../../components/AuthStatusBar';
 import { getWallSegmentKey } from './projectUtils';
+import {
+    FOLDER_QUERY_PARAM,
+    UNCATEGORIZED_KEY,
+    buildHomeFolderPath,
+    folderKeyFromQueryValue,
+} from './projectFolderUtils';
 import Canvas2D from '../canvas/Canvas2D';
 import RoomManager from '../room/RoomManager';
 import DoorManager from '../door/DoorManager';
@@ -36,12 +42,25 @@ import {
 const ProjectDetails = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { canEdit, isAuthenticated } = useAuth();
     const projectDetails = useProjectDetails(projectId, { canEdit });
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
+
+    const getProjectsListPath = useCallback(() => {
+        const folderParam = searchParams.get(FOLDER_QUERY_PARAM);
+        if (folderParam !== null) {
+            return buildHomeFolderPath(folderKeyFromQueryValue(folderParam, []));
+        }
+        const projectFolder = projectDetails.project?.folder;
+        if (projectFolder != null) {
+            return buildHomeFolderPath(projectFolder);
+        }
+        return buildHomeFolderPath(UNCATEGORIZED_KEY);
+    }, [searchParams, projectDetails.project?.folder]);
 
     useEffect(() => {
         setControlsSidebarCollapsed(true);
@@ -877,7 +896,7 @@ const ProjectDetails = () => {
                     <h2 className="text-2xl font-bold text-gray-800 mb-4">Invalid Project</h2>
                     <p className="text-gray-600 mb-6">The project ID is missing or invalid.</p>
                     <button
-                        onClick={() => navigate('/projects')}
+                        onClick={() => navigate(getProjectsListPath())}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
                         Go to Projects
@@ -983,11 +1002,11 @@ const ProjectDetails = () => {
                             </>
                             )}
                             <button
-                                onClick={() => navigate('/')}
+                                onClick={() => navigate(getProjectsListPath())}
                                 className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <FaArrowLeft className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">Back to Home</span>
+                                <span className="hidden sm:inline">Back to Projects</span>
                             </button>
                             <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
                             <div className="flex items-center text-gray-900">
@@ -999,11 +1018,11 @@ const ProjectDetails = () => {
                         <div className="flex items-center space-x-2 sm:space-x-3">
                             <AuthStatusBar />
                             <button
-                                onClick={() => navigate('/')}
+                                onClick={() => navigate(getProjectsListPath())}
                                 className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <FaHome className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">Home</span>
+                                <span className="hidden sm:inline">Projects</span>
                             </button>
                             <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
                             <button

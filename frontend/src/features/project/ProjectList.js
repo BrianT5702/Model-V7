@@ -7,6 +7,7 @@ import ProjectExplorer from './ProjectExplorer';
 import CreateFolderModal from './CreateFolderModal';
 import { UNCATEGORIZED_KEY } from './ProjectFolderSection';
 import {
+    buildProjectPath,
     collectDescendantFolderIds,
     getCreateFolderParentId,
     getFolderLabel,
@@ -147,8 +148,8 @@ const ProjectList = ({
         setProjectToDelete(null);
     };
 
-    const handleProjectClick = (projectId) => {
-        navigate(`/projects/${projectId}`);
+    const handleProjectClick = (projectId, folderKey = selectedFolderKey) => {
+        navigate(buildProjectPath(projectId, folderKey));
     };
 
     const handleProjectDragStart = (e, project) => {

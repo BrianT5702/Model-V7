@@ -760,7 +760,10 @@ const ProjectExplorer = ({
                                             enableDrag={canEdit && !isSearching}
                                             onDragStart={onProjectDragStart}
                                             onDragEnd={onProjectDragEnd}
-                                            onOpen={onProjectClick}
+                                            onOpen={(projectId) => onProjectClick(
+                                                projectId,
+                                                isSearching ? project._folderKey : selectedFolderKey,
+                                            )}
                                             onEdit={onProjectEdit}
                                             onDelete={onProjectDelete}
                                         />
