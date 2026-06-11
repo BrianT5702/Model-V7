@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import api from '../../api/api';
+import { canEditFromUser, isAdminFromUser } from './authUtils';
 
 const AuthContext = createContext(null);
 
@@ -61,10 +62,10 @@ export const AuthProvider = ({ children }) => {
         }
     }, []);
 
-    const registerUser = useCallback(async (username, password) => {
+    const registerUser = useCallback(async (username, password, role = 'drafter') => {
         try {
             await api.get('/csrf-token/');
-            const response = await api.post('auth/register/', { username, password });
+            const response = await api.post('auth/register/', { username, password, role });
             return {
                 success: true,
                 message: response.data.message || 'Account created successfully.',
@@ -75,6 +76,45 @@ export const AuthProvider = ({ children }) => {
             const message = error.response?.data?.error
                 || (Array.isArray(detail) ? detail.join(' ') : detail)
                 || 'Failed to create account. Please try again.';
+            return { success: false, error: message };
+        }
+    }, []);
+
+    const listUsers = useCallback(async () => {
+        try {
+            const response = await api.get('auth/users/');
+            return { success: true, users: response.data.users || [] };
+        } catch (error) {
+            const message = error.response?.data?.error || 'Failed to load accounts.';
+            return { success: false, error: message, users: [] };
+        }
+    }, []);
+
+    const updateUser = useCallback(async (userId, payload) => {
+        try {
+            await api.get('/csrf-token/');
+            const response = await api.patch(`auth/users/${userId}/`, payload);
+            return {
+                success: true,
+                message: response.data.message || 'Account updated.',
+                user: response.data.user,
+            };
+        } catch (error) {
+            const message = error.response?.data?.error || 'Failed to update account.';
+            return { success: false, error: message };
+        }
+    }, []);
+
+    const deleteUser = useCallback(async (userId) => {
+        try {
+            await api.get('/csrf-token/');
+            const response = await api.delete(`auth/users/${userId}/`);
+            return {
+                success: true,
+                message: response.data.message || 'Account removed.',
+            };
+        } catch (error) {
+            const message = error.response?.data?.error || 'Failed to remove account.';
             return { success: false, error: message };
         }
     }, []);
@@ -91,21 +131,27 @@ export const AuthProvider = ({ children }) => {
         }
     }, []);
 
-    const isAdmin = Boolean(user?.is_staff);
+    const isAdmin = isAdminFromUser(user);
+    const canEdit = canEditFromUser(user);
+    const role = user?.role ?? null;
 
     const value = useMemo(() => ({
         user,
+        role,
         isAuthenticated,
         isAdmin,
+        canEdit,
         isLoading,
         authError,
         setAuthError,
         login,
         registerUser,
+        listUsers,
+        updateUser,
+        deleteUser,
         logout,
         refreshAuth,
-        canEdit: isAuthenticated,
-    }), [user, isAuthenticated, isAdmin, isLoading, authError, login, registerUser, logout, refreshAuth]);
+    }), [user, role, isAuthenticated, isAdmin, canEdit, isLoading, authError, login, registerUser, listUsers, updateUser, deleteUser, logout, refreshAuth]);
 
     return (
         <AuthContext.Provider value={value}>

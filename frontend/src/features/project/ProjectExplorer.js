@@ -17,9 +17,35 @@ import { UNCATEGORIZED_KEY } from './ProjectFolderSection';
 import {
     buildFolderTree,
     flattenVisibleFolderTree,
+    getChildFolders,
     getDefaultExpandedFolderIds,
+    getFolderBreadcrumbSegments,
     getFolderPath,
 } from './projectFolderUtils';
+
+const BreadcrumbSeparator = () => (
+    <FaChevronRight className="w-3 h-3 mx-1.5 text-gray-400 shrink-0" aria-hidden="true" />
+);
+
+const BreadcrumbItem = ({ label, onClick, isCurrent = false }) => {
+    if (isCurrent || !onClick) {
+        return (
+            <span className="truncate text-gray-900 font-medium" aria-current={isCurrent ? 'page' : undefined}>
+                {label}
+            </span>
+        );
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="truncate text-gray-700 hover:text-blue-600 hover:underline"
+        >
+            {label}
+        </button>
+    );
+};
 
 const formatDate = (value) => {
     if (!value) return '—';
@@ -198,6 +224,50 @@ const matchesProjectSearch = (project, folderLabel, query) => {
     const haystack = parts.filter((v) => v !== null && v !== undefined).join(' ').toLowerCase();
     return haystack.includes(query);
 };
+
+const SubfolderRow = ({
+    folder,
+    projectCount,
+    subfolderCount,
+    onOpen,
+}) => (
+    <tr
+        className="border-t border-gray-100 hover:bg-amber-50/40 cursor-pointer group"
+        onDoubleClick={() => onOpen(folder.id)}
+    >
+        <td className="px-4 py-3">
+            <button
+                type="button"
+                onClick={() => onOpen(folder.id)}
+                className="flex items-center gap-2 min-w-0 text-left font-medium text-gray-900 hover:text-amber-800"
+            >
+                <FaFolder className="w-4 h-4 shrink-0 text-amber-500" />
+                <span className="truncate">{folder.name}</span>
+            </button>
+        </td>
+        <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-sm">Folder</td>
+        <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-sm">—</td>
+        <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-sm">—</td>
+        <td className="px-4 py-3 hidden sm:table-cell text-gray-500 text-sm">—</td>
+        <td className="px-4 py-3">
+            <div className="flex items-center justify-end gap-2">
+                <span className="text-xs text-gray-400">
+                    {subfolderCount > 0 && `${subfolderCount} folder${subfolderCount !== 1 ? 's' : ''}`}
+                    {subfolderCount > 0 && projectCount > 0 && ', '}
+                    {projectCount > 0 && `${projectCount} project${projectCount !== 1 ? 's' : ''}`}
+                    {subfolderCount === 0 && projectCount === 0 && 'Empty'}
+                </span>
+                <button
+                    type="button"
+                    onClick={() => onOpen(folder.id)}
+                    className="text-xs text-blue-600 font-medium opacity-0 group-hover:opacity-100"
+                >
+                    Open
+                </button>
+            </div>
+        </td>
+    </tr>
+);
 
 const ProjectRow = ({
     project,
@@ -421,15 +491,31 @@ const ProjectExplorer = ({
         });
     }, [visibleFolderRows, isSearching, searchMatchCountByFolder]);
 
-    const selectedLabel = isSearching
-        ? 'Search results'
-        : showSidebar
-            ? getFolderLabel(selectedFolderKey)
-            : 'All projects';
+    const breadcrumbSegments = useMemo(() => {
+        if (!showSidebar || isSearching) return [];
+        return getFolderBreadcrumbSegments(selectedFolderKey, folders);
+    }, [showSidebar, isSearching, selectedFolderKey, folders]);
 
     const folderProjects = projectsByFolder[selectedFolderKey] || [];
     const displayedProjects = isSearching ? searchResults : folderProjects;
-    const displayedCount = displayedProjects.length;
+    const childFolders = useMemo(() => {
+        if (isSearching || !showSidebar) return [];
+        return getChildFolders(selectedFolderKey, folders);
+    }, [isSearching, showSidebar, selectedFolderKey, folders]);
+
+    const subfolderCountById = useMemo(() => {
+        const counts = {};
+        folders.forEach((folder) => {
+            if (folder.parent != null) {
+                counts[folder.parent] = (counts[folder.parent] ?? 0) + 1;
+            }
+        });
+        return counts;
+    }, [folders]);
+
+    const displayedCount = isSearching
+        ? displayedProjects.length
+        : childFolders.length + displayedProjects.length;
 
     const handleSelectFolder = (folderKey) => {
         setSearchQuery('');
@@ -453,13 +539,35 @@ const ProjectExplorer = ({
         <div className="flex flex-col h-full min-h-[420px] bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200 bg-gray-50/80">
-                <nav className="flex items-center text-sm text-gray-600 min-w-0 sm:flex-1">
-                    <span className="font-medium text-gray-900">Projects</span>
-                    <FaChevronRight className="w-3 h-3 mx-2 text-gray-400 shrink-0" />
-                    <span className="truncate text-gray-700">{selectedLabel}</span>
+                <nav className="flex items-center flex-wrap text-sm text-gray-600 min-w-0 sm:flex-1" aria-label="Folder breadcrumb">
+                    <BreadcrumbItem
+                        label="Projects"
+                        onClick={() => handleSelectFolder(UNCATEGORIZED_KEY)}
+                    />
+                    {!isSearching && showSidebar && breadcrumbSegments.map((segment, index) => {
+                        const isLast = index === breadcrumbSegments.length - 1;
+                        return (
+                            <React.Fragment key={segment.key}>
+                                <BreadcrumbSeparator />
+                                <BreadcrumbItem
+                                    label={segment.label}
+                                    onClick={isLast ? null : () => handleSelectFolder(segment.key)}
+                                    isCurrent={isLast}
+                                />
+                            </React.Fragment>
+                        );
+                    })}
+                    {!isSearching && !showSidebar && (
+                        <>
+                            <BreadcrumbSeparator />
+                            <BreadcrumbItem label="All projects" isCurrent />
+                        </>
+                    )}
                     {isSearching && (
                         <>
-                            <FaChevronRight className="w-3 h-3 mx-2 text-gray-400 shrink-0" />
+                            <BreadcrumbSeparator />
+                            <BreadcrumbItem label="Search results" isCurrent />
+                            <BreadcrumbSeparator />
                             <span className="truncate text-gray-500 italic">&ldquo;{searchQuery.trim()}&rdquo;</span>
                         </>
                     )}
@@ -599,7 +707,11 @@ const ProjectExplorer = ({
                                 ) : (
                                     <>
                                         <FaFolderOpen className="w-12 h-12 mb-3 text-gray-300" />
-                                        <p className="text-sm font-medium text-gray-500">This folder is empty</p>
+                                        <p className="text-sm font-medium text-gray-500">
+                                            {selectedFolderKey === UNCATEGORIZED_KEY
+                                                ? 'No projects here yet'
+                                                : 'This folder is empty'}
+                                        </p>
                                 {canEdit && onCreateInFolder && (
                                     <button
                                         type="button"
@@ -627,6 +739,15 @@ const ProjectExplorer = ({
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    {!isSearching && childFolders.map((folder) => (
+                                        <SubfolderRow
+                                            key={`folder-${folder.id}`}
+                                            folder={folder}
+                                            projectCount={(projectsByFolder[folder.id] || []).length}
+                                            subfolderCount={subfolderCountById[folder.id] ?? 0}
+                                            onOpen={handleSelectFolder}
+                                        />
+                                    ))}
                                     {displayedProjects.map((project) => (
                                         <ProjectRow
                                             key={project.id}

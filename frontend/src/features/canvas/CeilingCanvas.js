@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import useScrollContainment from '../../utils/useScrollContainment';
 import {
     calculateOffsetPoints,
@@ -199,6 +201,7 @@ const CeilingCanvas = ({
     // Dimension visibility (checkbox filter)
     dimensionVisibility = { room: true, panel: true, cutPanel: false }
 }) => {
+    const { isAuthenticated } = useAuth();
     const canEditSupports = canEditSupportsProp ?? Boolean(onCustomSupportsChange);
     const canEditPanels = canEditPanelsProp ?? Boolean(onPanelSelect);
 
@@ -5538,7 +5541,16 @@ const CeilingCanvas = ({
                 <h4 className="text-sm font-semibold text-gray-900 mb-2">Support systems</h4>
                 {!canEditSupports ? (
                     <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-2">
-                        View-only mode. Log in to add, move, or edit nylon hangers and suspension rails.
+                        {isAuthenticated ? (
+                            'View-only access. Nylon hangers and suspension rails cannot be edited.'
+                        ) : (
+                            <>
+                                View-only mode.{' '}
+                                <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link>
+                                {' '}
+                                to add, move, or edit nylon hangers and suspension rails.
+                            </>
+                        )}
                     </p>
                 ) : null}
                 {!panelsNeedSupport ? (

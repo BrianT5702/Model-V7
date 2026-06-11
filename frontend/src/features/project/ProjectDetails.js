@@ -36,7 +36,7 @@ import {
 const ProjectDetails = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
-    const { canEdit } = useAuth();
+    const { canEdit, isAuthenticated } = useAuth();
     const projectDetails = useProjectDetails(projectId, { canEdit });
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
@@ -1022,7 +1022,15 @@ const ProjectDetails = () => {
 
             {!canEdit && (
                 <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-sm text-amber-800">
-                    View-only mode. <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to edit walls, rooms, levels, and plans.
+                    {isAuthenticated ? (
+                        'View-only access (Salesman). You can navigate all tabs, view 3D, and export — but cannot edit walls, rooms, levels, or plans.'
+                    ) : (
+                        <>
+                            View-only mode.{' '}
+                            <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link>{' '}
+                            to edit walls, rooms, levels, and plans.
+                        </>
+                    )}
                 </div>
             )}
 
@@ -1915,11 +1923,16 @@ const ProjectDetails = () => {
                             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
                                 <p className="font-medium mb-1">View-only mode</p>
                                 <p>
-                                    You can explore this project, but editing tools are disabled.
-                                    {' '}
-                                    <Link to="/login" className="underline hover:text-amber-900">Log in</Link>
-                                    {' '}
-                                    to add walls, rooms, doors, and levels.
+                                    {isAuthenticated ? (
+                                        'You can explore this project and use 3D/export, but cannot add or edit walls, rooms, doors, or levels.'
+                                    ) : (
+                                        <>
+                                            You can explore this project, but editing tools are disabled.{' '}
+                                            <Link to="/login" className="underline hover:text-amber-900">Log in</Link>
+                                            {' '}
+                                            to add walls, rooms, doors, and levels.
+                                        </>
+                                    )}
                                 </p>
                             </div>
                         )}

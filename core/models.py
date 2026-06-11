@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.contrib.postgres.fields import ArrayField
+from .role_utils import ROLE_CHOICES, ROLE_DRAFTER
 from .constants import (
     WALL_APPLICATION_TYPES, ROOM_FLOOR_TYPES, ROOM_FLOOR_THICKNESS_CHOICES,
     DOOR_TYPES, DOOR_CONFIGURATIONS, DOOR_SIDES, DOOR_SWING_DIRECTIONS,
@@ -11,6 +12,23 @@ from .constants import (
     DEFAULT_DOOR_TYPE, DEFAULT_DOOR_CONFIGURATION, DEFAULT_ROOM_FLOOR_TYPE,
     DEFAULT_FACE_THICKNESS
 )
+
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name='profile',
+        on_delete=models.CASCADE,
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_DRAFTER)
+
+    class Meta:
+        verbose_name = 'User profile'
+        verbose_name_plural = 'User profiles'
+
+    def __str__(self):
+        return f'{self.user.username} ({self.get_role_display()})'
+
 
 class ProjectFolder(models.Model):
     """Organizational folder for grouping projects on the list page."""

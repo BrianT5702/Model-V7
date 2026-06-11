@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import FloorCanvas from '../canvas/FloorCanvas';
 import api from '../../api/api';
 
 const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated, updateSharedPanelData = null }) => {
+    const { isAuthenticated } = useAuth();
     // Essential state for project-level floor planning
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState(null);
@@ -540,11 +542,17 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                                     </p>
                                 ) : (
                                     <p className="text-amber-800 text-sm mt-2">
-                                        View-only mode.{' '}
-                                        <Link to="/login" className="font-medium underline hover:text-amber-900">
-                                            Log in
-                                        </Link>{' '}
-                                        to generate floor plans or change slab size.
+                                        {isAuthenticated ? (
+                                            'View-only access (Salesman). You can view floor plans and export, but cannot generate or edit.'
+                                        ) : (
+                                            <>
+                                                View-only mode.{' '}
+                                                <Link to="/login" className="font-medium underline hover:text-amber-900">
+                                                    Log in
+                                                </Link>{' '}
+                                                to generate floor plans or change slab size.
+                                            </>
+                                        )}
                                     </p>
                                 )}
                             </div>

@@ -19,6 +19,7 @@ const ProjectList = ({
     setFolders,
     foldersAvailable = true,
     canEdit = false,
+    isAuthenticated = false,
     selectedFolderKey: selectedFolderKeyProp,
     onSelectedFolderKeyChange,
     onCreateInFolder,
@@ -243,7 +244,11 @@ const ProjectList = ({
         try {
             const response = await api.post('project-folders/', { name, parent });
             setFolders([...safeFolders, response.data]);
-            setSelectedFolderKey(response.data.id);
+            if (createFolderParentKey !== UNCATEGORIZED_KEY) {
+                setSelectedFolderKey(createFolderParentKey);
+            } else {
+                setSelectedFolderKey(response.data.id);
+            }
         } catch (error) {
             if (isDatabaseConnectionError(error)) {
                 showDatabaseError();
@@ -397,7 +402,11 @@ const ProjectList = ({
                             Create Project
                         </button>
                     ) : (
-                        <p className="text-sm text-gray-500">Log in to create projects.</p>
+                        <p className="text-sm text-gray-500">
+                            {isAuthenticated
+                                ? 'No projects yet. Your account cannot create projects.'
+                                : 'Log in to create projects.'}
+                        </p>
                     )}
                 </div>
             ) : (

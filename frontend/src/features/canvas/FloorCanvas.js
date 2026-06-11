@@ -1960,7 +1960,7 @@ const FloorCanvas = ({
                             <div className="text-xs text-gray-500 mt-1">
                                 {canEdit
                                     ? 'Default 1210 × 3000. Used for slab count.'
-                                    : 'View-only — log in to change slab size.'}
+                                    : 'View-only — slab size cannot be changed.'}
                             </div>
                         </div>
                         

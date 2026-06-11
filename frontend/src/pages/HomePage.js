@@ -9,7 +9,7 @@ import { UNCATEGORIZED_KEY } from '../features/project/projectFolderUtils';
 import api from '../api/api';
 
 const HomePage = () => {
-    const { canEdit } = useAuth();
+    const { canEdit, isAuthenticated } = useAuth();
     const [projects, setProjects] = useState([]);
     const [folders, setFolders] = useState([]);
     const [foldersAvailable, setFoldersAvailable] = useState(true);
@@ -162,7 +162,15 @@ const HomePage = () => {
                 <div id="projects-section" className="flex flex-col min-h-[480px]">
                     {!canEdit && (
                         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            You are browsing in view-only mode. <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to create, edit, or delete projects.
+                            {isAuthenticated ? (
+                                'View-only access (Salesman). You can browse projects, open plans, use 3D, and export — but cannot create or edit.'
+                            ) : (
+                                <>
+                                    You are browsing in view-only mode.{' '}
+                                    <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link>{' '}
+                                    to create, edit, or delete projects.
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -178,6 +186,7 @@ const HomePage = () => {
                         setFolders={setFolders}
                         foldersAvailable={foldersAvailable}
                         canEdit={canEdit}
+                        isAuthenticated={isAuthenticated}
                         selectedFolderKey={selectedFolderKey}
                         onSelectedFolderKeyChange={setSelectedFolderKey}
                         onCreateInFolder={openCreateProject}

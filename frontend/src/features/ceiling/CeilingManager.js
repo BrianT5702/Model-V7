@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import CeilingCanvas from '../canvas/CeilingCanvas';
 import api from '../../api/api';
 
 const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
+    const { isAuthenticated } = useAuth();
     // Essential state for project-level ceiling planning
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState(null);
@@ -2499,7 +2501,15 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
 
             {!canEdit && (
                 <div className="mx-4 sm:mx-8 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    View-only mode. <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to generate or regenerate ceiling plans.
+                    {isAuthenticated ? (
+                        'View-only access (Salesman). You can view ceiling plans and export, but cannot generate or edit.'
+                    ) : (
+                        <>
+                            View-only mode.{' '}
+                            <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link>{' '}
+                            to generate or regenerate ceiling plans.
+                        </>
+                    )}
                 </div>
             )}
 
@@ -4167,6 +4177,10 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                             >
                                 {isGenerating ? 'Generating...' : 'Generate Ceiling Plan'}
                             </button>
+                        ) : isAuthenticated ? (
+                            <p className="text-sm text-amber-700">
+                                No ceiling plan is available yet. Ask a Drafter or Admin to generate one.
+                            </p>
                         ) : (
                             <p className="text-sm text-amber-700">
                                 <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link> to generate ceiling plans.

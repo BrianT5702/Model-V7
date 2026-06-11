@@ -37,6 +37,24 @@ export const getFolderPath = (folderKey, folders) => {
 
 export const getFolderLabel = (folderKey, folders) => getFolderPath(folderKey, folders);
 
+/** Ancestor chain for breadcrumb navigation: [{ key, label }, ...] */
+export const getFolderBreadcrumbSegments = (folderKey, folders) => {
+    if (folderKey === UNCATEGORIZED_KEY || folderKey == null) {
+        return [{ key: UNCATEGORIZED_KEY, label: 'Uncategorized' }];
+    }
+
+    const map = new Map(folders.map((f) => [f.id, f]));
+    const segments = [];
+    let current = map.get(folderKey);
+
+    while (current) {
+        segments.unshift({ key: current.id, label: current.name });
+        current = current.parent ? map.get(current.parent) : null;
+    }
+
+    return segments;
+};
+
 export const mergeProjectFolderMeta = (project, folderKey, folders) => {
     const targetFolderId = folderKeyToId(folderKey);
     return {
@@ -134,8 +152,26 @@ export const collectDescendantFolderIds = (folderKey, folders) => {
     return ids;
 };
 
+export const sortFoldersByOrder = (items) => [...items].sort((a, b) => {
+    const orderA = a.order ?? 0;
+    const orderB = b.order ?? 0;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.name.localeCompare(b.name);
+});
+
+/** Direct child folders of the selected folder (or top-level folders for Uncategorized). */
+export const getChildFolders = (folderKey, folders) => {
+    if (folderKey === UNCATEGORIZED_KEY || folderKey == null) {
+        return sortFoldersByOrder(folders.filter((folder) => !folder.parent));
+    }
+    return sortFoldersByOrder(folders.filter((folder) => folder.parent === folderKey));
+};
+
 export const getDefaultExpandedFolderIds = (folders, selectedFolderKey) => {
     const expanded = new Set(getAncestorFolderIds(selectedFolderKey, folders));
+    if (selectedFolderKey !== UNCATEGORIZED_KEY && selectedFolderKey != null) {
+        expanded.add(selectedFolderKey);
+    }
     folders.forEach((folder) => {
         if (!folder.parent) {
             expanded.add(folder.id);

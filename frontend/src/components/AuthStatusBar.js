@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaSignInAlt, FaSignOutAlt, FaUser, FaUserPlus } from 'react-icons/fa';
+import { FaSignInAlt, FaSignOutAlt, FaUser, FaUsersCog } from 'react-icons/fa';
 import { useAuth } from '../features/auth/AuthContext';
-import AdminCreateUserPanel from './AdminCreateUserPanel';
+import { ROLE_BADGE_CLASSES, ROLE_LABELS } from '../features/auth/authUtils';
+import AdminAccountsModal from './AdminAccountsModal';
 
 const AuthStatusBar = () => {
-    const { isAuthenticated, isAdmin, user, logout, isLoading } = useAuth();
-    const [showCreateUser, setShowCreateUser] = useState(false);
+    const { isAuthenticated, isAdmin, role, user, logout, isLoading } = useAuth();
+    const [showAccountsModal, setShowAccountsModal] = useState(false);
 
     if (isLoading) {
         return null;
     }
+
+    const roleBadgeClass = ROLE_BADGE_CLASSES[role] || 'text-gray-700 bg-gray-50 border-gray-200';
+    const roleLabel = ROLE_LABELS[role] || role;
 
     return (
         <div className="flex items-center gap-2 sm:gap-3">
@@ -19,26 +23,21 @@ const AuthStatusBar = () => {
                     <div className="hidden sm:flex items-center text-sm text-gray-600">
                         <FaUser className="w-4 h-4 mr-2 text-blue-500" />
                         <span>{user?.username}</span>
-                        {isAdmin && (
-                            <span className="ml-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5">
-                                Admin
+                        {role && (
+                            <span className={`ml-2 text-xs border rounded px-1.5 py-0.5 ${roleBadgeClass}`}>
+                                {roleLabel}
                             </span>
                         )}
                     </div>
                     {isAdmin && (
-                        <div className="relative">
-                            <button
-                                type="button"
-                                onClick={() => setShowCreateUser((open) => !open)}
-                                className="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50 transition-colors"
-                            >
-                                <FaUserPlus className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">Create user</span>
-                            </button>
-                            {showCreateUser && (
-                                <AdminCreateUserPanel onClose={() => setShowCreateUser(false)} />
-                            )}
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowAccountsModal(true)}
+                            className="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50 transition-colors"
+                        >
+                            <FaUsersCog className="w-4 h-4 sm:mr-2" />
+                            <span className="hidden sm:inline">Accounts</span>
+                        </button>
                     )}
                     <button
                         type="button"
@@ -62,6 +61,10 @@ const AuthStatusBar = () => {
                         <span className="hidden sm:inline">Login</span>
                     </Link>
                 </>
+            )}
+
+            {showAccountsModal && (
+                <AdminAccountsModal onClose={() => setShowAccountsModal(false)} />
             )}
         </div>
     );
