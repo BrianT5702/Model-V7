@@ -2423,9 +2423,9 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
     }
 
     return (
-        <div className="ceiling-manager flex flex-col min-h-0 min-w-0 w-full">
+        <div className="ceiling-manager flex flex-col min-h-0 min-w-0 w-full bg-transparent dark:bg-gray-900 transition-colors">
             {/* Header - extra right padding so View/Level controls don't touch boundary */}
-            <div className="px-4 sm:px-6 pr-6 sm:pr-8 py-4 border-b border-gray-200 ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0">
+            <div className="px-4 sm:px-6 pr-6 sm:pr-8 py-4 border-b border-gray-200 dark:border-gray-700 ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
                     <div className="min-w-0">
                         <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">

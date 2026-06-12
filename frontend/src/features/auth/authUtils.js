@@ -28,3 +28,8 @@ export const isAdminFromUser = (user) => {
     if (typeof user.is_admin === 'boolean') return user.is_admin;
     return user.role === ROLES.ADMIN;
 };
+
+export const canCommentFromUser = (user) => {
+    if (!user) return false;
+    return user.role === ROLES.SALESMAN;
+};

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
@@ -21,6 +21,8 @@ import {
   compareDimensions
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
+import { adjustPlanStrokeColor, getPlanCanvasBackground } from './planCanvasTheme';
+import { useTheme } from '../theme/ThemeContext';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
 import { filterDimensions } from './dimensionFilter.js';
@@ -71,7 +73,11 @@ const Canvas2D = ({
     allWalls = null, // All walls (unfiltered) for panel calculations across all storeys
     // Panel division visibility is controlled by parent (ProjectDetails/useProjectDetails)
     showPanelLines = false,
-    onTogglePanelLines = () => {}
+    onTogglePanelLines = () => {},
+    commentWallSelectMode = false,
+    selectedWallsForComment = [],
+    onCommentWallSelect = () => {},
+    commentHighlightWallIds = [],
 }) => {
 
     const canvasRef = useRef(null);
@@ -121,7 +127,10 @@ const Canvas2D = ({
     const [selectedRoomId, setSelectedRoomId] = useState(null);
     const [roomLabelPositions, setRoomLabelPositions] = useState([]);
     const [forceRefresh, setForceRefresh] = useState(0);
+    const { resolvedTheme } = useTheme();
+
     const lastRoomDataRef = useRef({ rooms: [], walls: [] });
+    const thicknessColorMapRef = useRef(new Map());
     const [thicknessColorMap, setThicknessColorMap] = useState(new Map());
     const [dimensionVisibility, setDimensionVisibility] = useState({
         project: true,
@@ -1089,6 +1098,33 @@ const Canvas2D = ({
         
         const { x, y } = getMousePos(event);
         console.log('Canvas clicked! Screen:', event.clientX, event.clientY, 'Model:', x, y, 'currentMode:', currentMode);
+
+        if (commentWallSelectMode) {
+            let selectedId = null;
+            let minDistance = SNAP_THRESHOLD / scaleFactor.current;
+            walls.forEach((wall) => {
+                const segmentPoint = snapToWallSegment(x, y, wall);
+                if (segmentPoint) {
+                    const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        selectedId = wall.id;
+                    }
+                }
+            });
+            if (selectedId !== null) {
+                const updatedSelection = [...selectedWallsForComment];
+                const wallIndex = updatedSelection.indexOf(selectedId);
+                if (wallIndex === -1) {
+                    updatedSelection.push(selectedId);
+                } else {
+                    updatedSelection.splice(wallIndex, 1);
+                }
+                onCommentWallSelect(updatedSelection);
+            }
+            return;
+        }
+
         if (!isEditingMode) return;
         
         // Deselect room label when clicking on empty space (but not when actively defining a room)
@@ -1385,6 +1421,7 @@ const Canvas2D = ({
                 setSplitHoverDistance(getDistanceFromWallStart(wall, roundedPoint));
                 setHighlightWalls([{ id: wall.id, color: '#F97316' }]);
                 setWallSplitError('');
+                setIsDetailsPanelOpen(true);
                 return;
             }
 
@@ -1546,11 +1583,28 @@ const Canvas2D = ({
             return;
         }
 
-        if (!isEditingMode) {
+        if (!isEditingMode && !commentWallSelectMode) {
             return;
         }
 
         const { x, y } = getMousePos(event);
+
+        if (commentWallSelectMode) {
+            let minWallDistance = SNAP_THRESHOLD / scaleFactor.current;
+            let newHoveredWall = null;
+            walls.forEach((wall) => {
+                const segmentPoint = snapToWallSegment(x, y, wall);
+                if (segmentPoint) {
+                    const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
+                    if (distance < minWallDistance) {
+                        minWallDistance = distance;
+                        newHoveredWall = wall.id;
+                    }
+                }
+            });
+            setHoveredWall(newHoveredWall);
+            return;
+        }
 
         if (currentMode === 'split-wall') {
             if (splitTargetWallId) {
@@ -1676,6 +1730,7 @@ const Canvas2D = ({
             resetSplitState();
         } else {
             setWallSplitError('');
+            setIsDetailsPanelOpen(true);
         }
     }, [currentMode]);
 
@@ -1808,11 +1863,11 @@ const Canvas2D = ({
             setHighlightWalls([{ id: selectedWall, color: '#3B82F6' }]);
         } else if (currentMode !== 'edit-wall') {
             // Clear highlights when exiting edit mode
-            if (currentMode !== 'split-wall' && currentMode !== 'merge-wall') {
+            if (currentMode !== 'split-wall' && currentMode !== 'merge-wall' && !commentWallSelectMode) {
                 setHighlightWalls([]);
             }
         }
-    }, [currentMode, isMultiWallEditMode, selectedWallsForEdit, selectedWall]);
+    }, [currentMode, isMultiWallEditMode, selectedWallsForEdit, selectedWall, commentWallSelectMode]);
 
     // Helper to get joint types for a wall
     const getWallJointTypes = (wall, intersections) => {
@@ -2040,7 +2095,7 @@ const Canvas2D = ({
         };
     }, []);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const context = canvas.getContext('2d');
@@ -2094,8 +2149,10 @@ const Canvas2D = ({
         }
         // === End scale/offset calculation ===
 
-        // Clear using display dimensions (context is already scaled)
+        // Clear and fill using display dimensions (context is already scaled)
         context.clearRect(0, 0, displayWidth, displayHeight);
+        context.fillStyle = getPlanCanvasBackground();
+        context.fillRect(0, 0, displayWidth, displayHeight);
         // Draw grid using display dimensions
         drawGrid(context, displayWidth, displayHeight, gridSize, isDrawing);
         
@@ -2112,11 +2169,17 @@ const Canvas2D = ({
             if (hKey) dimensionValuesSeen.add(hKey);
         }
 
+        const commentHighlights = [
+            ...(commentHighlightWallIds || []).map((id) => ({ id, color: '#F59E0B' })),
+            ...(commentWallSelectMode ? (selectedWallsForComment || []).map((id) => ({ id, color: '#10B981' })) : []),
+        ];
+        const effectiveHighlightWalls = [...commentHighlights, ...highlightWalls];
+
         // Draw walls first (and wall/panel dimensions); then project dimensions so they place outermost
         const wallDrawResult = drawWalls({
             context,
             walls,
-            highlightWalls,
+            highlightWalls: effectiveHighlightWalls,
             selectedWallsForRoom,
             selectedWall,
             hoveredWall,
@@ -2151,8 +2214,24 @@ const Canvas2D = ({
         });
         const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
         const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;
-        // Store thickness color map for the legend
-        setThicknessColorMap(colorMap);
+        // Update legend only when entries change (avoids extra paint after theme redraw)
+        if (colorMap instanceof Map) {
+            const prev = thicknessColorMapRef.current;
+            let changed = prev.size !== colorMap.size;
+            if (!changed) {
+                for (const [key, colors] of colorMap) {
+                    const prevColors = prev.get(key);
+                    if (!prevColors || prevColors.wall !== colors.wall || prevColors.partition !== colors.partition) {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+            if (changed) {
+                thicknessColorMapRef.current = colorMap;
+                setThicknessColorMap(colorMap);
+            }
+        }
 
         // Draw overall project dimensions last so they appear outermost (outside all wall dimensions)
         if (walls.length > 0 && dimensionVisibility.project) {
@@ -2355,7 +2434,11 @@ const Canvas2D = ({
         splitPreviewPoint,
         splitTargetWallId,
         ghostWalls,
-        ghostAreas
+        ghostAreas,
+        commentWallSelectMode,
+        selectedWallsForComment,
+        commentHighlightWallIds,
+        resolvedTheme,
     ]);
 
     // Separate useEffect for room label positions to avoid triggering panel calculations
@@ -2563,15 +2646,15 @@ const Canvas2D = ({
             )}
 
             {/* Main Content - Matching Ceiling Plan Structure */}
-            <div className="wall-canvas-container bg-white rounded-xl shadow-lg p-6">
+            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6">
                 {/* Header */}
                 <div className="wall-canvas-header mb-6">
                     <div className="flex items-center justify-between mb-4 gap-4">
                         <div>
-                            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                                 Wall Plan
                             </h3>
-                            <p className="text-gray-600 text-lg">
+                            <p className="text-gray-600 dark:text-gray-400 text-lg">
                                 Professional Layout
                             </p>
                         </div>
@@ -2594,14 +2677,14 @@ const Canvas2D = ({
                             <div className="wall-canvas-wrapper flex-1 min-w-0">
                                 <div
                                     ref={canvasContainerRef}
-                                    className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg relative"
+                                    className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
                                     style={{
                                         height: `${CANVAS_HEIGHT}px`,
                                         minHeight: `${MIN_CANVAS_HEIGHT}px`
                                     }}
                                 >
-                                    {/* Zoom Controls Overlay */}
-                                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-50">
+                                    {/* Zoom Controls Overlay — top-left avoids overlap with comments / plan details on the right */}
+                                    <div className="plan-canvas-zoom-controls absolute top-4 left-4 flex flex-col gap-2 z-30">
                                         <button
                                             onClick={handleZoomIn}
                                             className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
@@ -2689,8 +2772,8 @@ const Canvas2D = ({
                             {/* Plan Details Sidebar - Matching Ceiling Plan Structure */}
                             {isDetailsPanelOpen && (
                                 <div className="wall-summary-sidebar flex-shrink min-w-0 max-w-64">
-                                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 w-full max-w-64 shadow-lg">
-                                        <h4 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                                    <div className="plan-details-panel bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 w-full max-w-64 shadow-lg">
+                                        <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-6 flex items-center">
                                             <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                             </svg>
@@ -2702,7 +2785,7 @@ const Canvas2D = ({
                                             <div className="flex justify-end">
                                                 <button
                                                     onClick={() => setIsDetailsPanelOpen(false)}
-                                                    className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                                                    className="plan-details-btn px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                                 >
                                                     Collapse
                                                 </button>
@@ -2710,8 +2793,8 @@ const Canvas2D = ({
 
                                                             {/* Manual Wall Split Section */}
                                             {currentMode === 'split-wall' && (
-                                                <div className="bg-white border border-emerald-200 rounded-lg p-5 shadow-sm">
-                                                    <h5 className="font-semibold text-gray-900 mb-3">Manual Wall Split</h5>
+                                                <div className="plan-details-card bg-white border border-emerald-200 dark:border-emerald-800 rounded-lg p-5 shadow-sm">
+                                                    <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Manual Wall Split</h5>
                                                     {!splitTargetWall ? (
                                                         <div className="text-sm text-emerald-700 space-y-2">
                                                             <p>Click a wall on the canvas to select it for splitting.</p>
@@ -2773,9 +2856,9 @@ const Canvas2D = ({
 
                                             {/* Wall Finish Legend */}
                                             {thicknessColorMap && thicknessColorMap.size > 0 && (
-                                                <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-                                                    <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
-                                                        <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <div className="plan-details-card bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                                                    <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                                                        <svg className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                                                         </svg>
                                                         Wall Finish Legend
@@ -2805,7 +2888,7 @@ const Canvas2D = ({
                                                                                             style={{
                                                                                                 top: `${topY}px`,
                                                                                                 height: `${lineHeight}px`,
-                                                                                                backgroundColor: colors.wall
+                                                                                                backgroundColor: adjustPlanStrokeColor(colors.wall)
                                                                                             }}
                                                                                             title="Outer face"
                                                                                         ></div>
@@ -2815,7 +2898,7 @@ const Canvas2D = ({
                                                                                             style={{
                                                                                                 top: `${bottomY}px`,
                                                                                                 height: `${lineHeight}px`,
-                                                                                                backgroundColor: colors.innerWall
+                                                                                                backgroundColor: adjustPlanStrokeColor(colors.innerWall)
                                                                                             }}
                                                                                             title="Inner face"
                                                                                         ></div>
@@ -2827,7 +2910,7 @@ const Canvas2D = ({
                                                                                                 top: `${topY}px`,
                                                                                                 width: `${capWidth}px`,
                                                                                                 height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                                backgroundColor: colors.innerWall
+                                                                                                backgroundColor: adjustPlanStrokeColor(colors.innerWall)
                                                                                             }}
                                                                                         ></div>
                                                                                         {/* End caps - right */}
@@ -2838,7 +2921,7 @@ const Canvas2D = ({
                                                                                                 top: `${topY}px`,
                                                                                                 width: `${capWidth}px`,
                                                                                                 height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                                backgroundColor: colors.innerWall
+                                                                                                backgroundColor: adjustPlanStrokeColor(colors.innerWall)
                                                                                             }}
                                                                                         ></div>
                                                                                     </>
@@ -2853,7 +2936,7 @@ const Canvas2D = ({
                                                                                         style={{
                                                                                             top: `${topY}px`,
                                                                                             height: `${lineHeight}px`,
-                                                                                            backgroundColor: colors.wall
+                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
                                                                                         }}
                                                                                     ></div>
                                                                                     <div
@@ -2861,7 +2944,7 @@ const Canvas2D = ({
                                                                                         style={{
                                                                                             top: `${bottomY}px`,
                                                                                             height: `${lineHeight}px`,
-                                                                                            backgroundColor: colors.wall
+                                                                                            backgroundColor: adjustPlanStrokeColor(colors.partition || colors.wall)
                                                                                         }}
                                                                                     ></div>
                                                                                     {/* Caps */}
@@ -2872,7 +2955,7 @@ const Canvas2D = ({
                                                                                             top: `${topY}px`,
                                                                                             width: `${capWidth}px`,
                                                                                             height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                            backgroundColor: colors.wall
+                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
                                                                                         }}
                                                                                     ></div>
                                                                                     <div
@@ -2882,7 +2965,7 @@ const Canvas2D = ({
                                                                                             top: `${topY}px`,
                                                                                             width: `${capWidth}px`,
                                                                                             height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                            backgroundColor: colors.wall
+                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
                                                                                         }}
                                                                                     ></div>
                                                                                 </>
@@ -2914,9 +2997,9 @@ const Canvas2D = ({
                                             )}
 
                                             {/* Dimension Labels */}
-                                            <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-                                                <h5 className="font-semibold text-gray-900 mb-4 flex items-center">
-                                                    <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <div className="plan-details-card bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                                                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                                                    <svg className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
                                                     </svg>
                                                     Dimension Labels
@@ -2969,9 +3052,9 @@ const Canvas2D = ({
                     </div>
 
                     {/* View Material Needed Section - Matching Ceiling Panel List Structure */}
-                    <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-white rounded-lg shadow-md border border-gray-200">
+                    <div className="plan-details-card mt-4 sm:mt-6 p-3 sm:p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-600">
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-800">View Material Needed</h3>
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-gray-100">View Material Needed</h3>
                             <button
                                 onClick={() => setShowMaterialNeeded(!showMaterialNeeded)}
                                 className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors whitespace-nowrap"

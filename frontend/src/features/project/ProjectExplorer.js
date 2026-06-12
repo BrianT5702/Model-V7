@@ -24,13 +24,13 @@ import {
 } from './projectFolderUtils';
 
 const BreadcrumbSeparator = () => (
-    <FaChevronRight className="w-3 h-3 mx-1.5 text-gray-400 shrink-0" aria-hidden="true" />
+    <FaChevronRight className="w-3 h-3 mx-1.5 text-gray-400 dark:text-gray-500 shrink-0" aria-hidden="true" />
 );
 
 const BreadcrumbItem = ({ label, onClick, isCurrent = false }) => {
     if (isCurrent || !onClick) {
         return (
-            <span className="truncate text-gray-900 font-medium" aria-current={isCurrent ? 'page' : undefined}>
+            <span className="truncate text-gray-900 dark:text-gray-100 font-medium" aria-current={isCurrent ? 'page' : undefined}>
                 {label}
             </span>
         );
@@ -40,7 +40,7 @@ const BreadcrumbItem = ({ label, onClick, isCurrent = false }) => {
         <button
             type="button"
             onClick={onClick}
-            className="truncate text-gray-700 hover:text-blue-600 hover:underline"
+            className="truncate text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
         >
             {label}
         </button>
@@ -92,7 +92,7 @@ const FolderTreeItem = ({
     return (
         <div
             className={`group relative flex items-center gap-1 rounded-md mx-1 transition-opacity ${
-                isDropTarget ? 'bg-blue-100 ring-1 ring-blue-300' : ''
+                isDropTarget ? 'bg-blue-100 dark:bg-blue-950 ring-1 ring-blue-300 dark:ring-blue-700' : ''
             } ${isSearchDimmed ? 'opacity-35' : ''}`}
             style={{ paddingLeft: `${depth * 14}px` }}
             onDragOver={onDragOver}
@@ -106,7 +106,7 @@ const FolderTreeItem = ({
                         e.stopPropagation();
                         onToggleExpand?.();
                     }}
-                    className="p-1 text-gray-400 hover:text-gray-700 rounded shrink-0"
+                    className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 rounded shrink-0"
                     aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
                 >
                     {isExpanded ? <FaChevronDown className="w-3 h-3" /> : <FaChevronRight className="w-3 h-3" />}
@@ -121,8 +121,8 @@ const FolderTreeItem = ({
                     isSelected
                         ? 'bg-blue-600 text-white'
                         : hasSearchMatch
-                            ? 'bg-amber-100 text-amber-950 ring-1 ring-amber-300 hover:bg-amber-200 font-medium'
-                            : 'text-gray-700 hover:bg-gray-100'
+                            ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-100 ring-1 ring-amber-300 dark:ring-amber-700 hover:bg-amber-200 dark:hover:bg-amber-900/60 font-medium'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
             >
                 {isSelected ? (
@@ -140,7 +140,7 @@ const FolderTreeItem = ({
                         </span>
                     ) : null
                 ) : (
-                    <span className={`text-xs shrink-0 ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>
+                    <span className={`text-xs shrink-0 ${isSelected ? 'text-blue-100' : 'text-gray-400 dark:text-gray-500'}`}>
                         {count}
                     </span>
                 )}
@@ -155,7 +155,7 @@ const FolderTreeItem = ({
                             setMenuOpen((open) => !open);
                         }}
                         className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-                            isSelected ? 'text-blue-100 hover:bg-blue-500' : 'text-gray-500 hover:bg-gray-200'
+                            isSelected ? 'text-blue-100 hover:bg-blue-500' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                         aria-label="Folder actions"
                     >
@@ -164,11 +164,11 @@ const FolderTreeItem = ({
                     {menuOpen && (
                         <>
                             <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                            <div className="absolute right-0 top-full mt-1 z-20 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-sm">
+                            <div className="absolute right-0 top-full mt-1 z-20 w-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg py-1 text-sm text-gray-900 dark:text-gray-100">
                                 {onStartCreateSubfolder && (
                                     <button
                                         type="button"
-                                        className="w-full px-3 py-1.5 text-left hover:bg-gray-50 flex items-center gap-2"
+                                        className="w-full px-3 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
                                         onClick={() => {
                                             setMenuOpen(false);
                                             onStartCreateSubfolder(folderKey);
@@ -180,18 +180,18 @@ const FolderTreeItem = ({
                                 )}
                                 <button
                                     type="button"
-                                    className="w-full px-3 py-1.5 text-left hover:bg-gray-50 flex items-center gap-2"
+                                    className="w-full px-3 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
                                     onClick={() => {
                                         setMenuOpen(false);
                                         onRename?.(folderKey);
                                     }}
                                 >
-                                    <FaPencilAlt className="w-3 h-3 text-gray-500" />
+                                    <FaPencilAlt className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                                     Rename
                                 </button>
                                 <button
                                     type="button"
-                                    className="w-full px-3 py-1.5 text-left hover:bg-red-50 text-red-600 flex items-center gap-2"
+                                    className="w-full px-3 py-1.5 text-left hover:bg-red-50 dark:hover:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center gap-2"
                                     onClick={() => {
                                         setMenuOpen(false);
                                         onDelete?.(folderKey);
@@ -232,26 +232,26 @@ const SubfolderRow = ({
     onOpen,
 }) => (
     <tr
-        className="border-t border-gray-100 hover:bg-amber-50/40 cursor-pointer group"
+        className="border-t border-gray-100 dark:border-gray-700 hover:bg-amber-50/40 dark:hover:bg-amber-950/30 cursor-pointer group"
         onDoubleClick={() => onOpen(folder.id)}
     >
         <td className="px-4 py-3">
             <button
                 type="button"
                 onClick={() => onOpen(folder.id)}
-                className="flex items-center gap-2 min-w-0 text-left font-medium text-gray-900 hover:text-amber-800"
+                className="flex items-center gap-2 min-w-0 text-left font-medium text-gray-900 dark:text-gray-100 hover:text-amber-800 dark:hover:text-amber-300"
             >
                 <FaFolder className="w-4 h-4 shrink-0 text-amber-500" />
                 <span className="truncate">{folder.name}</span>
             </button>
         </td>
-        <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-sm">Folder</td>
-        <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-sm">—</td>
-        <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-sm">—</td>
-        <td className="px-4 py-3 hidden sm:table-cell text-gray-500 text-sm">—</td>
+        <td className="px-4 py-3 hidden md:table-cell text-gray-500 dark:text-gray-400 text-sm">Folder</td>
+        <td className="px-4 py-3 hidden md:table-cell text-gray-500 dark:text-gray-400 text-sm">—</td>
+        <td className="px-4 py-3 hidden md:table-cell text-gray-500 dark:text-gray-400 text-sm">—</td>
+        <td className="px-4 py-3 hidden sm:table-cell text-gray-500 dark:text-gray-400 text-sm">—</td>
         <td className="px-4 py-3">
             <div className="flex items-center justify-end gap-2">
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-gray-400 dark:text-gray-500">
                     {subfolderCount > 0 && `${subfolderCount} folder${subfolderCount !== 1 ? 's' : ''}`}
                     {subfolderCount > 0 && projectCount > 0 && ', '}
                     {projectCount > 0 && `${projectCount} project${projectCount !== 1 ? 's' : ''}`}
@@ -260,7 +260,7 @@ const SubfolderRow = ({
                 <button
                     type="button"
                     onClick={() => onOpen(folder.id)}
-                    className="text-xs text-blue-600 font-medium opacity-0 group-hover:opacity-100"
+                    className="text-xs text-blue-600 dark:text-blue-400 font-medium opacity-0 group-hover:opacity-100"
                 >
                     Open
                 </button>
@@ -288,8 +288,8 @@ const ProjectRow = ({
         onDragStart={enableDrag ? (e) => onDragStart(e, project) : undefined}
         onDragEnd={enableDrag ? onDragEnd : undefined}
         onDoubleClick={() => onOpen(project.id)}
-        className={`group border-b border-gray-100 last:border-0 transition-colors ${
-            isDragging ? 'opacity-50 bg-blue-50' : 'hover:bg-gray-50'
+        className={`group border-b border-gray-100 dark:border-gray-800 last:border-0 transition-colors ${
+            isDragging ? 'opacity-50 bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'
         } ${enableDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
     >
         <td className="px-4 py-2.5">
@@ -301,9 +301,17 @@ const ProjectRow = ({
                 <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
                     <FaCube className="w-3.5 h-3.5 text-white" />
                 </span>
-                <span className="font-medium text-gray-900 truncate group-hover:text-blue-600">
+                <span className="font-medium text-gray-900 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">
                     {project.name}
                 </span>
+                {project.unread_comment_count > 0 && (
+                    <span
+                        className="ml-1 min-w-[1.25rem] h-5 px-1.5 inline-flex items-center justify-center rounded-full bg-green-500 text-white text-[11px] font-semibold shrink-0"
+                        title={`${project.unread_comment_count} unread comment${project.unread_comment_count !== 1 ? 's' : ''}`}
+                    >
+                        {project.unread_comment_count > 9 ? '9+' : project.unread_comment_count}
+                    </span>
+                )}
             </button>
         </td>
         {showFolderColumn && (
@@ -315,27 +323,27 @@ const ProjectRow = ({
                             e.stopPropagation();
                             onGoToFolder(project.folder ?? null);
                         }}
-                        className="inline-flex items-center gap-1.5 text-amber-700 hover:text-amber-900 hover:underline max-w-[140px]"
+                        className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 hover:underline max-w-[140px]"
                         title="Go to folder"
                     >
                         <FaFolder className="w-3 h-3 shrink-0" />
                         <span className="truncate">{folderLabel}</span>
                     </button>
                 ) : (
-                    <span className="text-gray-600">{folderLabel}</span>
+                    <span className="text-gray-600 dark:text-gray-400">{folderLabel}</span>
                 )}
             </td>
         )}
-        <td className="px-4 py-2.5 text-sm text-gray-600 hidden md:table-cell whitespace-nowrap">
+        <td className="px-4 py-2.5 text-sm text-gray-600 dark:text-gray-400 hidden md:table-cell whitespace-nowrap">
             {formatDimensions(project)}
         </td>
-        <td className="px-4 py-2.5 text-sm text-gray-600 hidden md:table-cell whitespace-nowrap">
+        <td className="px-4 py-2.5 text-sm text-gray-600 dark:text-gray-400 hidden md:table-cell whitespace-nowrap">
             {project.created_by_username || '—'}
         </td>
-        <td className="px-4 py-2.5 text-sm text-gray-600 hidden md:table-cell whitespace-nowrap">
+        <td className="px-4 py-2.5 text-sm text-gray-600 dark:text-gray-400 hidden md:table-cell whitespace-nowrap">
             {project.last_edited_by_username || '—'}
         </td>
-        <td className="px-4 py-2.5 text-sm text-gray-500 hidden sm:table-cell whitespace-nowrap">
+        <td className="px-4 py-2.5 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell whitespace-nowrap">
             {formatDate(project.updated_at)}
         </td>
         <td className="px-4 py-2.5 text-right">
@@ -347,7 +355,7 @@ const ProjectRow = ({
                             e.stopPropagation();
                             onEdit(project);
                         }}
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                        className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
                         title="Edit project"
                     >
                         <FaPencilAlt className="w-3.5 h-3.5" />
@@ -358,7 +366,7 @@ const ProjectRow = ({
                             e.stopPropagation();
                             onDelete(project.id);
                         }}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 rounded"
                         title="Delete project"
                     >
                         <FaTrash className="w-3.5 h-3.5" />
@@ -368,7 +376,7 @@ const ProjectRow = ({
                 <button
                     type="button"
                     onClick={() => onOpen(project.id)}
-                    className="text-xs text-blue-600 font-medium opacity-0 group-hover:opacity-100"
+                    className="text-xs text-blue-600 dark:text-blue-400 font-medium opacity-0 group-hover:opacity-100"
                 >
                     Open
                 </button>
@@ -536,10 +544,10 @@ const ProjectExplorer = ({
     };
 
     return (
-        <div className="flex flex-col h-full min-h-[420px] bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="project-explorer flex flex-col h-full min-h-[420px] bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden transition-colors">
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200 bg-gray-50/80">
-                <nav className="flex items-center flex-wrap text-sm text-gray-600 min-w-0 sm:flex-1" aria-label="Folder breadcrumb">
+            <div className="explorer-chrome flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 transition-colors">
+                <nav className="flex items-center flex-wrap text-sm text-gray-600 dark:text-gray-300 min-w-0 sm:flex-1" aria-label="Folder breadcrumb">
                     <BreadcrumbItem
                         label="Projects"
                         onClick={() => handleSelectFolder(UNCATEGORIZED_KEY)}
@@ -568,14 +576,14 @@ const ProjectExplorer = ({
                             <BreadcrumbSeparator />
                             <BreadcrumbItem label="Search results" isCurrent />
                             <BreadcrumbSeparator />
-                            <span className="truncate text-gray-500 italic">&ldquo;{searchQuery.trim()}&rdquo;</span>
+                            <span className="truncate text-gray-500 dark:text-gray-400 italic">&ldquo;{searchQuery.trim()}&rdquo;</span>
                         </>
                     )}
-                    <span className="ml-2 text-gray-400 shrink-0">({displayedCount})</span>
+                    <span className="ml-2 text-gray-400 dark:text-gray-500 shrink-0">({displayedCount})</span>
                 </nav>
 
                 <div className="relative w-full sm:w-auto sm:min-w-[220px] sm:max-w-xs order-first sm:order-none">
-                    <FaSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <FaSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500 pointer-events-none" />
                     <input
                         ref={searchInputRef}
                         type="search"
@@ -583,14 +591,14 @@ const ProjectExplorer = ({
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={handleSearchKeyDown}
                         placeholder="Search projects..."
-                        className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                        className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
                         aria-label="Search projects"
                     />
                     {searchQuery && (
                         <button
                             type="button"
                             onClick={() => setSearchQuery('')}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 rounded"
                             aria-label="Clear search"
                         >
                             <FaTimes className="w-3.5 h-3.5" />
@@ -615,7 +623,7 @@ const ProjectExplorer = ({
                     <button
                         type="button"
                         onClick={onStartCreateFolder}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 shrink-0"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 shrink-0 transition-colors"
                         title={createFolderParentLabel === 'top level'
                             ? 'Create folder at top level'
                             : `Create subfolder in ${createFolderParentLabel}`}
@@ -628,12 +636,12 @@ const ProjectExplorer = ({
 
             <div className="flex flex-1 min-h-0 flex-col sm:flex-row">
                 {showSidebar && (
-                <aside className="sm:w-56 lg:w-64 shrink-0 border-b sm:border-b-0 sm:border-r border-gray-200 bg-gray-50/50 overflow-y-auto">
-                    <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <aside className="explorer-chrome sm:w-56 lg:w-64 shrink-0 border-b sm:border-b-0 sm:border-r border-gray-200 dark:border-gray-700 bg-gray-50 overflow-y-auto transition-colors">
+                    <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         Folders
                     </div>
                     {isSearching && (
-                        <p className="px-3 pb-2 text-[11px] text-amber-800 leading-snug">
+                        <p className="px-3 pb-2 text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
                             Highlighted folders contain matches. Click a folder to open it.
                         </p>
                     )}
@@ -679,7 +687,7 @@ const ProjectExplorer = ({
                         ))}
                     </div>
                     {canEdit && (
-                        <p className="px-3 py-2 text-[11px] text-gray-400 leading-snug">
+                        <p className="px-3 py-2 text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
                             Drag projects onto a folder to move them.
                         </p>
                     )}
@@ -690,24 +698,24 @@ const ProjectExplorer = ({
                 <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
                     <div className="overflow-auto flex-1">
                         {displayedCount === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-gray-400 px-4">
+                            <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-gray-400 dark:text-gray-500 px-4">
                                 {isSearching ? (
                                     <>
-                                        <FaSearch className="w-12 h-12 mb-3 text-gray-300" />
-                                        <p className="text-sm font-medium text-gray-500">No projects match your search</p>
-                                        <p className="text-xs mt-1 text-gray-400">Try a different name, folder, or dimension</p>
+                                        <FaSearch className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
+                                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No projects match your search</p>
+                                        <p className="text-xs mt-1 text-gray-400 dark:text-gray-500">Try a different name, folder, or dimension</p>
                                         <button
                                             type="button"
                                             onClick={() => setSearchQuery('')}
-                                            className="mt-3 text-sm text-blue-600 hover:underline"
+                                            className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline"
                                         >
                                             Clear search
                                         </button>
                                     </>
                                 ) : (
                                     <>
-                                        <FaFolderOpen className="w-12 h-12 mb-3 text-gray-300" />
-                                        <p className="text-sm font-medium text-gray-500">
+                                        <FaFolderOpen className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
+                                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
                                             {selectedFolderKey === UNCATEGORIZED_KEY
                                                 ? 'No projects here yet'
                                                 : 'This folder is empty'}
@@ -716,7 +724,7 @@ const ProjectExplorer = ({
                                     <button
                                         type="button"
                                         onClick={onCreateInFolder}
-                                        className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+                                        className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40"
                                     >
                                         <FaPlus className="w-3.5 h-3.5" />
                                         New project in {currentFolderLabel}
@@ -727,7 +735,7 @@ const ProjectExplorer = ({
                             </div>
                         ) : (
                             <table className="w-full text-left">
-                                <thead className="sticky top-0 bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                <thead className="explorer-chrome sticky top-0 bg-gray-50 border-b border-gray-200 dark:border-gray-700 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                     <tr>
                                         <th className="px-4 py-2.5">Name</th>
                                         {isSearching && <th className="px-4 py-2.5">Folder</th>}
@@ -773,7 +781,7 @@ const ProjectExplorer = ({
                         )}
                     </div>
 
-                    <footer className="px-4 py-2 border-t border-gray-100 bg-gray-50/50 text-xs text-gray-500">
+                    <footer className="explorer-chrome px-4 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 text-xs text-gray-500 dark:text-gray-400 transition-colors">
                         {isSearching
                             ? `${displayedCount} result${displayedCount !== 1 ? 's' : ''} across all folders`
                             : `${displayedCount} item${displayedCount !== 1 ? 's' : ''}`}

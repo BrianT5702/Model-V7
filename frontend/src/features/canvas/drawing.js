@@ -19,6 +19,15 @@ import {
     getPlanExteriorSide,
     getDimensionEdge
 } from './DimensionConfig.js';
+import {
+    adjustPlanStrokeColor,
+    getPlanCanvasGridColor,
+    getPlanDefaultWallColors,
+    getPlanLabelBackground,
+    getPlanWallHslLightness,
+    getPlanWallHslSaturation,
+    isPlanCanvasDark,
+} from './planCanvasTheme';
 // Import collision detection utilities
 import {
     hasLabelOverlap,
@@ -1067,7 +1076,7 @@ export function testNormalization() {
 
 // Draw the grid on the canvas
 export function drawGrid(context, canvasWidth, canvasHeight, gridSize, isDrawing) {
-    context.strokeStyle = isDrawing ? DIMENSION_CONFIG.COLORS.GRID_ACTIVE : DIMENSION_CONFIG.COLORS.GRID;
+    context.strokeStyle = getPlanCanvasGridColor(isDrawing);
     context.lineWidth = isDrawing ? DIMENSION_CONFIG.GRID_LINE_WIDTH_ACTIVE : DIMENSION_CONFIG.GRID_LINE_WIDTH;
     for (let x = 0; x <= canvasWidth; x += gridSize) {
         context.beginPath();
@@ -1398,7 +1407,7 @@ function drawProjectDimension(
         strokeHorizontalDimLineAtY(context, labelY, startXScreen, endXScreen, labelX, textWidth, textPadding);
         canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
 
-        context.fillStyle = '#ffffff';
+        context.fillStyle = getPlanLabelBackground();
         context.fillRect(labelX - textWidth / 2 - 3, labelY - fontSize * 0.35 - 2, textWidth + 6, fontSize * 0.75 + 4);
         context.fillStyle = color;
         context.textAlign = 'center';
@@ -1485,7 +1494,7 @@ function drawProjectDimension(
         context.rotate(-Math.PI / 2);
         const tw = textWidth;
         const th = fontSize * 0.75;
-        context.fillStyle = '#ffffff';
+        context.fillStyle = getPlanLabelBackground();
         context.fillRect(-tw / 2 - 3, -th / 2 - 2, tw + 6, th + 4);
         context.fillStyle = color;
         context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
@@ -1597,8 +1606,10 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
     const tickPx = 4;
     const textPadding = 2;
 
+    const strokeColor = adjustPlanStrokeColor(color);
+
     context.save();
-    context.strokeStyle = color;
+    context.strokeStyle = strokeColor;
 
     if (isHorizontal) {
         const startXScreen = startX * scaleFactor + offsetX;
@@ -1612,7 +1623,7 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
         context.setLineDash([]);
         context.lineWidth = dimLineW;
         strokeHorizontalDimLineAtY(context, labelY, startXScreen, endXScreen, labelX, textWidth, textPadding);
-        canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
+        canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, strokeColor, tickPx);
     } else {
         const xStart = startX * scaleFactor + offsetX;
         const xEnd = endX * scaleFactor + offsetX;
@@ -1627,7 +1638,7 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
         context.setLineDash([]);
         context.lineWidth = dimLineW;
         strokeVerticalDimLineAtX(context, labelX, startYScreen, endYScreen, labelY, textWidth, textPadding);
-        canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
+        canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, strokeColor, tickPx);
     }
     context.restore();
 }
@@ -2830,13 +2841,120 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
     };
 }
 
+/**
+ * Gap-fill wall indicator: soft fill + dashed border + center icon.
+ */
+export function drawGapFillIndicator(context, line1, line2, scaleFactor, offsetX, offsetY, options = {}) {
+    if (!line1?.[0] || !line1?.[1] || !line2?.[0] || !line2?.[1]) return;
+
+    const accent = options.accent ?? '#8B5CF6';
+    const fillColor = options.fillColor ?? 'rgba(139, 92, 246, 0.14)';
+
+    const toCanvas = (point) => ({
+        x: point.x * scaleFactor + offsetX,
+        y: point.y * scaleFactor + offsetY,
+    });
+
+    const corners = [
+        toCanvas(line1[0]),
+        toCanvas(line1[1]),
+        toCanvas(line2[1]),
+        toCanvas(line2[0]),
+    ];
+
+    const traceWallPolygon = (ctx) => {
+        ctx.beginPath();
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < corners.length; i += 1) {
+            ctx.lineTo(corners[i].x, corners[i].y);
+        }
+        ctx.closePath();
+    };
+
+    context.save();
+
+    traceWallPolygon(context);
+    context.fillStyle = fillColor;
+    context.fill();
+
+    traceWallPolygon(context);
+    context.strokeStyle = accent;
+    context.lineWidth = 2;
+    context.setLineDash([7, 5]);
+    context.lineJoin = 'round';
+    context.stroke();
+
+    const centerX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
+    const centerY = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
+    const wallDx = corners[1].x - corners[0].x;
+    const wallDy = corners[1].y - corners[0].y;
+    const wallLen = Math.hypot(wallDx, wallDy);
+    const thickDx = corners[2].x - corners[1].x;
+    const thickDy = corners[2].y - corners[1].y;
+    const thicknessPx = Math.hypot(thickDx, thickDy);
+
+    if (wallLen >= 22) {
+        const perpX = -wallDy / wallLen;
+        const perpY = wallDx / wallLen;
+        const alongX = wallDx / wallLen;
+        const alongY = wallDy / wallLen;
+        const barHalf = Math.min(22, Math.max(12, wallLen * 0.22));
+        const halfThick = thicknessPx / 2;
+        const gap = Math.max(5, halfThick * 0.78);
+
+        context.setLineDash([]);
+        context.strokeStyle = accent;
+        context.lineCap = 'round';
+
+        const drawBar = (offset) => {
+            context.lineWidth = 2;
+            context.beginPath();
+            context.moveTo(centerX + perpX * offset - alongX * barHalf, centerY + perpY * offset - alongY * barHalf);
+            context.lineTo(centerX + perpX * offset + alongX * barHalf, centerY + perpY * offset + alongY * barHalf);
+            context.stroke();
+        };
+
+        drawBar(-gap);
+        drawBar(gap);
+
+        const arrowLen = Math.max(4, gap * 0.88);
+        const tip = 4;
+        context.lineWidth = 1.35;
+        const ax = perpX;
+        const ay = perpY;
+        const bx = alongX;
+        const by = alongY;
+
+        context.beginPath();
+        context.moveTo(centerX - ax * arrowLen, centerY - ay * arrowLen);
+        context.lineTo(centerX + ax * arrowLen, centerY + ay * arrowLen);
+        context.stroke();
+
+        context.beginPath();
+        context.moveTo(centerX - ax * arrowLen, centerY - ay * arrowLen);
+        context.lineTo(centerX - ax * arrowLen + bx * tip, centerY - ay * arrowLen + by * tip);
+        context.lineTo(centerX - ax * arrowLen - bx * tip, centerY - ay * arrowLen - by * tip);
+        context.moveTo(centerX + ax * arrowLen, centerY + ay * arrowLen);
+        context.lineTo(centerX + ax * arrowLen + bx * tip, centerY + ay * arrowLen + by * tip);
+        context.lineTo(centerX + ax * arrowLen - bx * tip, centerY + ay * arrowLen - by * tip);
+        context.stroke();
+    }
+
+    context.restore();
+}
+
+/** @deprecated Use drawGapFillIndicator */
+export const drawGapFillCloudOutline = drawGapFillIndicator;
+
 // Draw a pair of wall lines
 export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, color, dashPattern = [], innerColor = null) {
+    const outerStroke = adjustPlanStrokeColor(color);
+    const innerStroke = innerColor ? adjustPlanStrokeColor(innerColor) : null;
     // If innerColor is provided and different from color, draw each line with different color
     // line1 (outer face) uses color, line2 (inner face) uses innerColor
-    if (innerColor && innerColor !== color && lines.length >= 2) {
+    if (innerStroke && innerStroke !== outerStroke && lines.length >= 2) {
         // Draw outer face (line1) with outer color
-        context.strokeStyle = color;
+        context.strokeStyle = outerStroke;
         context.lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH;
         context.setLineDash(dashPattern);
         context.beginPath();
@@ -2851,7 +2969,7 @@ export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, 
         context.stroke();
         
         // Draw inner face (line2) with inner color
-        context.strokeStyle = innerColor;
+        context.strokeStyle = innerStroke;
         context.beginPath();
         context.moveTo(
             lines[1][0].x * scaleFactor + offsetX,
@@ -2864,7 +2982,7 @@ export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, 
         context.stroke();
     } else {
         // Same material on both faces - use single color
-        context.strokeStyle = color;
+        context.strokeStyle = outerStroke;
         context.lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH;
         context.setLineDash(dashPattern);
         lines.forEach(line => {
@@ -2967,7 +3085,7 @@ export function drawWallCaps(context, wall, joints, center, intersections, SNAP_
                 cap2.x * scaleFactor + offsetX,
                 cap2.y * scaleFactor + offsetY
             );
-            context.strokeStyle = 'black';
+            context.strokeStyle = adjustPlanStrokeColor('black');
             context.setLineDash([]);
             context.lineWidth = DIMENSION_CONFIG.WALL_CAP_LINE_WIDTH;
             context.stroke();
@@ -3006,15 +3124,16 @@ function generateThicknessColorMap(walls) {
             const innerHue = 200; // Blue-ish for inner
             const outerHue = 0; // Red-ish for outer
             colorMap.set(onlyKey, {
-                wall: `hsl(${outerHue}, 70%, 35%)`,
-                partition: `hsl(${outerHue}, 60%, 50%)`,
-                innerWall: `hsl(${innerHue}, 70%, 35%)`,
-                innerPartition: `hsl(${innerHue}, 60%, 50%)`,
+                wall: `hsl(${outerHue}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`,
+                partition: `hsl(${outerHue}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`,
+                innerWall: `hsl(${innerHue}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`,
+                innerPartition: `hsl(${innerHue}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`,
                 label: onlyKey,
                 hasDifferentFaces: true
             });
         } else {
-            colorMap.set(onlyKey, { wall: '#333', partition: '#666', label: onlyKey, hasDifferentFaces: false });
+            const defaults = getPlanDefaultWallColors();
+            colorMap.set(onlyKey, { ...defaults, label: onlyKey });
         }
         return colorMap;
     }
@@ -3031,10 +3150,10 @@ function generateThicknessColorMap(walls) {
             const hueOuter = (index * 360) / keys.length;
             const hueInner = ((index * 360) / keys.length + 180) % 360; // Opposite side of color wheel
             
-            const wallColor = `hsl(${hueOuter}, 70%, 35%)`;
-            const partitionColor = `hsl(${hueOuter}, 60%, 50%)`;
-            const innerWallColor = `hsl(${hueInner}, 70%, 35%)`;
-            const innerPartitionColor = `hsl(${hueInner}, 60%, 50%)`;
+            const wallColor = `hsl(${hueOuter}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`;
+            const partitionColor = `hsl(${hueOuter}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`;
+            const innerWallColor = `hsl(${hueInner}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`;
+            const innerPartitionColor = `hsl(${hueInner}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`;
             
             const parts = key.split('|');
             const label = `${parts[0]}mm | ${parts[1].replace('INT:', 'Int: ')} | ${parts[2].replace('EXT:', 'Ext: ')}`;
@@ -3050,8 +3169,8 @@ function generateThicknessColorMap(walls) {
         } else {
             // Same material on both faces
             const hue = (index * 360) / keys.length;
-            const wallColor = `hsl(${hue}, 70%, 35%)`;
-            const partitionColor = `hsl(${hue}, 60%, 50%)`;
+            const wallColor = `hsl(${hue}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`;
+            const partitionColor = `hsl(${hue}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`;
             const parts = key.split('|');
             const label = `${parts[0]}mm | ${parts[1].replace('INT:', 'Int: ')} | ${parts[2].replace('EXT:', 'Ext: ')}`;
             colorMap.set(key, { wall: wallColor, partition: partitionColor, label, hasDifferentFaces: false });
@@ -3864,7 +3983,7 @@ export function drawWalls({
         
         // Get color for this wall's combination
         const comboKey = getWallFinishKey(wall);
-        const thicknessColors = thicknessColorMap.get(comboKey) || { wall: '#333', partition: '#666', hasDifferentFaces: false };
+        const thicknessColors = thicknessColorMap.get(comboKey) || getPlanDefaultWallColors();
         const hasDiffFaces = thicknessColors.hasDifferentFaces;
         
         // Check if inner and outer materials are actually different
@@ -4098,6 +4217,16 @@ export function drawWalls({
             });
         }
     });
+
+    // Gap-fill indicators on top of wall geometry
+    walls.forEach((wall) => {
+        if (!wall.fill_gap_mode) return;
+        const line1 = wall._line1;
+        const line2 = wall._line2;
+        if (!line1 || !line2) return;
+        drawGapFillIndicator(context, line1, line2, scaleFactor, offsetX, offsetY);
+    });
+
     // Draw temporary wall while adding wall (skip label collection for temp wall)
     if (tempWall) {
         // Calculate gap in pixels based on wall thickness for temp wall
@@ -4186,7 +4315,7 @@ export function drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX
         context.beginPath();
         context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
         context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
-        context.strokeStyle = DIMENSION_CONFIG.COLORS.PARTITION;
+        context.strokeStyle = adjustPlanStrokeColor(DIMENSION_CONFIG.COLORS.PARTITION);
         context.lineWidth = DIMENSION_CONFIG.PARTITION_LINE_WIDTH;
         context.stroke();
     }
@@ -4200,7 +4329,7 @@ export function drawPanelDivisions(
     scaleFactor,
     offsetX,
     offsetY,
-    color = '#333',
+    color = isPlanCanvasDark() ? '#e5e7eb' : '#333',
     FIXED_GAP = 2.5,
     modelBounds = null,
     placedLabels = [],
@@ -4250,7 +4379,7 @@ export function drawPanelDivisions(
         context.beginPath();
         context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
         context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
-        context.strokeStyle = color;
+        context.strokeStyle = adjustPlanStrokeColor(color);
         context.lineWidth = 2;
         context.stroke();
         context.restore();
@@ -4640,9 +4769,9 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             context.rotate((label.obliqueAngle * Math.PI) / 180);
             const tw = context.measureText(label.text).width;
             const th = fontSize * 0.75;
-            context.fillStyle = '#ffffff';
+            context.fillStyle = getPlanLabelBackground();
             context.fillRect(-tw / 2 - 2, -th / 2 - 1, tw + 4, th + 2);
-            context.fillStyle = '#2196F3';
+            context.fillStyle = adjustPlanStrokeColor('#2196F3');
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(label.text, 0, 0);
@@ -4655,29 +4784,34 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             const centerY = label.y + label.height / 2;
             context.translate(centerX, centerY);
             context.rotate(-Math.PI / 2);
-            context.fillStyle = label.type === 'panel' ? '#FF6B35' : '#2196F3';
+            const defaultVerticalColor = label.type === 'panel' ? '#FF6B35' : '#2196F3';
             const fontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const twV = context.measureText(label.text).width;
             const thV = fontSize * 0.75;
-            context.fillStyle = '#ffffff';
+            context.fillStyle = getPlanLabelBackground();
             context.fillRect(-twV / 2 - 2, -thV / 2 - 1, twV + 4, thV + 2);
-            context.fillStyle = label.textColor != null ? label.textColor : (label.type === 'panel' ? '#FF6B35' : '#2196F3');
+            context.fillStyle = adjustPlanStrokeColor(
+                label.textColor != null ? label.textColor : defaultVerticalColor
+            );
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(label.text, 0, 0);
         } else {
             // Horizontal
-            context.fillStyle = label.textColor != null ? label.textColor : (label.type === 'panel' ? '#FF6B35' : '#2196F3');
+            const defaultHorizontalColor = label.type === 'panel' ? '#FF6B35' : '#2196F3';
+            const horizontalTextColor = adjustPlanStrokeColor(
+                label.textColor != null ? label.textColor : defaultHorizontalColor
+            );
             const fontSize2 = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize2}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             const twH = context.measureText(label.text).width;
             const thH = fontSize2 * 0.75;
             if (label.type === 'wall' || label.textColor != null) {
-                context.fillStyle = '#ffffff';
+                context.fillStyle = getPlanLabelBackground();
                 context.fillRect(label.x, label.y, twH + 4, thH + 2);
             }
-            context.fillStyle = label.textColor != null ? label.textColor : (label.type === 'panel' ? '#FF6B35' : '#2196F3');
+            context.fillStyle = horizontalTextColor;
             context.textAlign = 'left';
             context.textBaseline = 'top';
             context.fillText(label.text, label.x + 2, label.y + 2);

@@ -311,12 +311,12 @@ const DoorManager = ({
     <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto modal-scroll-panel">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
+        <div className="form-modal-header">
           <div className="flex-1 min-w-0 pr-2">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+            <h2 className="form-modal-title">
               {isEditMode ? 'Edit Door' : 'Add New Door'}
             </h2>
-            <p className="text-xs sm:text-sm text-gray-500 mt-1">
+            <p className="form-modal-subtitle">
               Storey: {activeStoreyName || (activeStoreyId ? `Level ${activeStoreyId}` : 'Not set')}
             </p>
           </div>
@@ -331,7 +331,7 @@ const DoorManager = ({
         </div>
 
         {/* Content */}
-        <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="form-panel space-y-4">
           {validationError && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
               <div className="flex items-center">
@@ -345,14 +345,14 @@ const DoorManager = ({
 
           {/* Door Type & Configuration Section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Door Type & Configuration</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+            <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Door Type & Configuration</h4>
+            <div className="form-grid mt-2">
               <div>
-                <label className="text-sm font-medium text-gray-700">Type</label>
+                <label className="form-label">Type</label>
                 <select 
                   value={doorType} 
                   onChange={handleTypeChange} 
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="form-control mt-1"
                 >
                   <option value="swing">Swing</option>
                   <option value="slide">Slide</option>
@@ -362,11 +362,11 @@ const DoorManager = ({
 
               {doorType !== 'dock' && (
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Configuration</label>
+                  <label className="form-label">Configuration</label>
                   <select 
                     value={configuration} 
                     onChange={handleConfigChange} 
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   >
                     <option value="single">Single-Sided</option>
                     <option value="double">Double-Sided</option>
@@ -378,41 +378,41 @@ const DoorManager = ({
 
           {/* Dimensions Section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Dimensions</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+            <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Dimensions</h4>
+            <div className="form-grid mt-2">
               <div>
-                <label className="text-sm font-medium text-gray-700">Width (mm)</label>
+                <label className="form-label">Width (mm)</label>
                 <input 
                   type="number" 
                   value={width} 
                   onChange={e => setWidth(e.target.value)} 
                   min="100"
                   step="100"
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                  className="form-control mt-1" 
                 />
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700">Height (mm)</label>
+                <label className="form-label">Height (mm)</label>
                 <input 
                   type="number" 
                   value={height} 
                   onChange={e => setHeight(e.target.value)} 
                   min="100"
                   step="100"
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                  className="form-control mt-1" 
                 />
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700">Thickness (mm)</label>
+                <label className="form-label">Thickness (mm)</label>
                 <input 
                   type="number" 
                   value={thickness} 
                   onChange={e => setThickness(e.target.value)} 
                   min="25"
                   step="25"
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                  className="form-control mt-1" 
                 />
               </div>
             </div>
@@ -420,7 +420,7 @@ const DoorManager = ({
 
           {/* Position Section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position on Wall</h4>
+            <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Position on Wall</h4>
             <div className="mt-3 space-y-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Position Slider</label>
@@ -434,9 +434,9 @@ const DoorManager = ({
                   className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="form-grid">
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Distance from Left (mm)</label>
+                  <label className="form-label">Distance from Left (mm)</label>
                   <input
                     type="number"
                     value={Math.round((localPosition || 0) * wallLength) || 0}
@@ -448,11 +448,11 @@ const DoorManager = ({
                     min="0"
                     max={Math.max(0, Math.round(wallLength))}
                     step="1"
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Distance from Right (mm)</label>
+                  <label className="form-label">Distance from Right (mm)</label>
                   <input
                     type="number"
                     value={Math.max(0, Math.round(wallLength - (localPosition || 0) * wallLength)) || 0}
@@ -465,7 +465,7 @@ const DoorManager = ({
                     min="0"
                     max={Math.max(0, Math.round(wallLength))}
                     step="1"
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   />
                 </div>
               </div>
@@ -510,7 +510,7 @@ const DoorManager = ({
                     <div key={window.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-700">
+                          <span className="form-label">
                             {window.window_type || 'glass'} window
                           </span>
                           <span className="text-xs text-gray-500">
@@ -565,11 +565,11 @@ const DoorManager = ({
                 
                 <div className="p-6 space-y-4">
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Window Type</label>
+                    <label className="form-label">Window Type</label>
                     <select
                       value={windowFormData.window_type}
                       onChange={(e) => setWindowFormData({ ...windowFormData, window_type: e.target.value })}
-                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-control mt-1"
                     >
                       <option value="glass">Glass</option>
                       <option value="panel">Panel</option>
@@ -577,27 +577,27 @@ const DoorManager = ({
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="form-grid-2">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Width (mm)</label>
+                      <label className="form-label">Width (mm)</label>
                       <input
                         type="number"
                         value={windowFormData.width}
                         onChange={(e) => setWindowFormData({ ...windowFormData, width: e.target.value })}
                         min="50"
                         step="50"
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="form-control mt-1"
                       />
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Height (mm)</label>
+                      <label className="form-label">Height (mm)</label>
                       <input
                         type="number"
                         value={windowFormData.height}
                         onChange={(e) => setWindowFormData({ ...windowFormData, height: e.target.value })}
                         min="50"
                         step="50"
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="form-control mt-1"
                       />
                     </div>
                   </div>
@@ -661,21 +661,21 @@ const DoorManager = ({
         <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl sticky bottom-0">
           <button 
             onClick={onClose} 
-            className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            className="form-btn-secondary w-full sm:w-auto"
           >
             Cancel
           </button>
           {isEditMode && (
             <button 
               onClick={handleDelete} 
-              className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              className="form-btn-danger w-full sm:w-auto"
             >
               Delete
             </button>
           )}
           <button 
             onClick={handleSave} 
-            className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            className="form-btn-primary w-full sm:w-auto"
           >
             {isEditMode ? 'Update Door' : 'Add Door'}
           </button>

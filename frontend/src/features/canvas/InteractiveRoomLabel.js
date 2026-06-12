@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useTheme } from '../theme/ThemeContext';
 import { isPointInPolygon } from './utils';
+import {
+    formatRoomHeightForInput,
+    formatRoomHeightLabel,
+    parseRoomHeightInput,
+} from '../room/roomHeightUtils';
+import { buildRoomLabelHtml } from '../room/roomLabelUtils';
 
 const InteractiveRoomLabel = ({ 
     room, 
@@ -27,38 +34,10 @@ const InteractiveRoomLabel = ({
     const descriptionInputRef = useRef(null);
     const labelRef = useRef(null);
     const labelBoxRef = useRef(null);
+    const { isDark } = useTheme();
+    const labelTextColor = isDark ? '#e5e7eb' : '#1f2937';
 
-    // Calculate display text
-    const getDisplayText = () => {
-        const name = room.room_name || 'Unnamed Room';
-        const temperature = room.temperature !== undefined && room.temperature !== null && room.temperature !== 0
-            ? `${room.temperature > 0 ? '+' : ''}${room.temperature}°C`
-            : '';
-        const height = room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
-        
-        // Format: Room name + temperature (if not 0), then external height
-        // If room name is long, we can put temperature on a new line
-        let lines = [];
-        
-        if (temperature) {
-            // Check if room name is long (more than ~15 characters) - put temperature on new line
-            if (name.length > 15) {
-                lines.push(name);
-                lines.push(temperature);
-            } else {
-                // Put room name and temperature on same line
-                lines.push(`${name} ${temperature}`);
-            }
-        } else {
-            // No temperature, just room name
-            lines.push(name);
-        }
-        
-        // Always add external height as last line
-        lines.push(height);
-        
-        return lines.join('<br/>');
-    };
+    const getDisplayText = () => buildRoomLabelHtml(room);
 
     // Helper function to find the closest point on a line segment to a given point
     const closestPointOnSegment = (px, py, x1, y1, x2, y2) => {
@@ -206,7 +185,7 @@ const InteractiveRoomLabel = ({
         }
         setIsEditing(true);
         setEditName(room.room_name || '');
-        setEditHeight(room.height ? room.height.toString() : '');
+        setEditHeight(formatRoomHeightForInput(room));
         setEditDescription(room.remarks || '');
         setTimeout(() => {
             if (nameInputRef.current) {
@@ -219,8 +198,7 @@ const InteractiveRoomLabel = ({
     // Handle single click to select
     const handleClick = (e) => {
         e.stopPropagation();
-        // Disable room selection when in room definition mode
-        if (currentMode === 'define-room') {
+        if (isSelectionDisabled) {
             return;
         }
         onSelect && onSelect(room.id);
@@ -327,11 +305,18 @@ const InteractiveRoomLabel = ({
             updates.room_name = editName.trim();
         }
         
-        const heightValue = parseFloat(editHeight);
-        if (editHeight !== '' && (isNaN(heightValue) || heightValue !== room.height)) {
-            updates.height = heightValue;
-        } else if (editHeight === '' && room.height !== null) {
-            updates.height = null;
+        const parsedHeight = parseRoomHeightInput(editHeight);
+        const currentHeightLabel = formatRoomHeightForInput(room);
+        if (editHeight.trim() === '') {
+            if (room.height !== null) {
+                updates.height = null;
+                updates.height_min = null;
+                updates.height_max = null;
+            }
+        } else if (parsedHeight.ok && editHeight.trim() !== currentHeightLabel) {
+            updates.height = parsedHeight.height;
+            updates.height_min = parsedHeight.height_min;
+            updates.height_max = parsedHeight.height_max;
         }
         
         if (editDescription !== room.remarks) {
@@ -622,6 +607,7 @@ const InteractiveRoomLabel = ({
                             fontFamily: 'Arial',
                             lineHeight: '1.2',
                             textAlign: 'center',
+                            color: labelTextColor,
                             minWidth: `${scaledMinWidth}px`,
                             maxWidth: `${scaledMaxWidth}px`,
                             wordWrap: 'break-word',
@@ -629,7 +615,7 @@ const InteractiveRoomLabel = ({
                             whiteSpace: 'normal',
                             overflow: 'hidden',
                             boxShadow: 'none',
-                            transition: 'all 0.2s ease',
+                            transition: 'opacity 0.2s ease',
                             opacity: isSelectionDisabled ? 0.6 : 1
                         }}
                         dangerouslySetInnerHTML={{ __html: getDisplayText() }}

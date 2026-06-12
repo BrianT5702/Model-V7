@@ -17,6 +17,8 @@ import DoorEditorModal from '../door/DoorEditorModal';
 import CeilingManager from '../ceiling/CeilingManager';
 import FloorManager from '../floor/FloorManager';
 import InstallationTimeEstimator from '../estimation/InstallationTimeEstimator';
+import ProjectCommentsPanel from './ProjectCommentsPanel';
+import { buildRoomLabelLines } from '../room/roomLabelUtils';
 import api from '../../api/api';
 import ModalOverlay from '../../components/ModalOverlay';
 
@@ -36,17 +38,23 @@ import {
     FaLayerGroup,
     FaTimes,
     FaLock,
-    FaUnlock
+    FaUnlock,
+    FaComment,
 } from 'react-icons/fa';
 
 const ProjectDetails = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { canEdit, isAuthenticated } = useAuth();
+    const { canEdit, canComment, isAuthenticated } = useAuth();
     const projectDetails = useProjectDetails(projectId, { canEdit });
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
+    const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
+    const [commentWallSelectMode, setCommentWallSelectMode] = useState(false);
+    const [selectedWallsForComment, setSelectedWallsForComment] = useState([]);
+    const [activeCommentId, setActiveCommentId] = useState(null);
+    const [commentHighlightWallIds, setCommentHighlightWallIds] = useState([]);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
 
@@ -65,7 +73,36 @@ const ProjectDetails = () => {
     useEffect(() => {
         setControlsSidebarCollapsed(true);
         setSidebarOpen(false);
+        setCommentsPanelOpen(false);
+        setCommentWallSelectMode(false);
+        setSelectedWallsForComment([]);
+        setActiveCommentId(null);
+        setCommentHighlightWallIds([]);
     }, [projectId]);
+
+    const handleSelectComment = useCallback((comment) => {
+        if (!comment) {
+            setActiveCommentId(null);
+            setCommentHighlightWallIds([]);
+            return;
+        }
+        const isSame = activeCommentId === comment.id;
+        if (isSame) {
+            setActiveCommentId(null);
+            setCommentHighlightWallIds([]);
+            return;
+        }
+        setActiveCommentId(comment.id);
+        setCommentHighlightWallIds(Array.isArray(comment.wall_ids) ? comment.wall_ids : []);
+        if (comment.wall_ids?.length > 0) {
+            projectDetails.setCurrentView('wall-plan');
+            projectDetails.setIs3DView(false);
+            const firstWall = (projectDetails.walls || []).find((wall) => comment.wall_ids.includes(wall.id));
+            if (firstWall?.storey != null) {
+                projectDetails.setActiveStoreyId(firstWall.storey);
+            }
+        }
+    }, [activeCommentId, projectDetails]);
 
     useEffect(() => {
         if (!isWallPlanView && !projectDetails.is3DView) {
@@ -196,6 +233,7 @@ const ProjectDetails = () => {
 
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
+    const [gapFillError, setGapFillError] = useState('');
     const [isLengthLocked, setIsLengthLocked] = useState(false);
     
     // Window management state for walls
@@ -382,28 +420,7 @@ const ProjectDetails = () => {
                     canvasPosition: { x: canvasX.toFixed(2), y: canvasY.toFixed(2) }
                 });
                 
-                // Prepare text content (same format as InteractiveRoomLabel)
-                const name = room.room_name || 'Unnamed Room';
-                // Don't show temperature if it's 0°C
-                const tempValue = Number(room.temperature);
-                const temperature = (room.temperature !== undefined && room.temperature !== null && tempValue !== 0)
-                    ? `${tempValue > 0 ? '+' : ''}${tempValue}°C`
-                    : '';
-                const height = room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
-                
-                // Format text lines
-                let lines = [];
-                if (temperature) {
-                    if (name.length > 15) {
-                        lines.push(name);
-                        lines.push(temperature);
-                    } else {
-                        lines.push(`${name} ${temperature}`);
-                    }
-                } else {
-                    lines.push(name);
-                }
-                lines.push(height);
+                const lines = buildRoomLabelLines(room);
                 
                 // Draw text on canvas with better styling
                 ctx.save();
@@ -906,8 +923,81 @@ const ProjectDetails = () => {
         );
     }
 
+    const hasRooms = projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0;
+    const panelRoomCount = hasRooms
+        ? projectDetails.filteredRooms.filter(
+            (room) => room.floor_type === 'panel' || room.floor_type === 'Panel'
+        ).length
+        : 0;
+
+    const renderPlanViewTabs = () => (
+        <nav className="plan-view-tabs" aria-label="Plan views">
+            <button
+                type="button"
+                onClick={() => projectDetails.setCurrentView('wall-plan')}
+                className={
+                    projectDetails.currentView === 'wall-plan'
+                        ? 'plan-view-tab-active-blue'
+                        : 'plan-view-tab-inactive'
+                }
+            >
+                <FaSquare className="w-3 h-3 mr-1.5" />
+                Wall
+            </button>
+            <button
+                type="button"
+                onClick={() => projectDetails.setCurrentView('ceiling-plan')}
+                disabled={!hasRooms}
+                className={
+                    !hasRooms
+                        ? 'plan-view-tab-disabled'
+                        : projectDetails.currentView === 'ceiling-plan'
+                        ? 'plan-view-tab-active-green'
+                        : 'plan-view-tab-inactive'
+                }
+            >
+                <FaLayerGroup className="w-3 h-3 mr-1.5" />
+                Ceiling
+            </button>
+            <button
+                type="button"
+                onClick={() => projectDetails.setCurrentView('floor-plan')}
+                disabled={!hasRooms}
+                title={hasRooms ? `${panelRoomCount} panel room(s)` : 'Add rooms first'}
+                className={
+                    !hasRooms
+                        ? 'plan-view-tab-disabled'
+                        : projectDetails.currentView === 'floor-plan'
+                        ? 'plan-view-tab-active-green'
+                        : 'plan-view-tab-inactive'
+                }
+            >
+                <FaSquare className="w-3 h-3 mr-1.5" />
+                Floor
+                {hasRooms && panelRoomCount > 0 && (
+                    <span className="ml-1 opacity-80">({panelRoomCount})</span>
+                )}
+            </button>
+            <button
+                type="button"
+                onClick={() => projectDetails.setCurrentView('installation-estimator')}
+                className={
+                    projectDetails.currentView === 'installation-estimator'
+                        ? 'plan-view-tab-active-orange'
+                        : 'plan-view-tab-inactive'
+                }
+            >
+                <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="hidden md:inline">Summary &amp; Install Time</span>
+                <span className="md:hidden">Summary</span>
+            </button>
+        </nav>
+    );
+
     return (
-        <div className="min-h-screen bg-gray-50 project-details-container">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 project-details-container transition-colors">
             {/* Wrapper to contain header and content for full-width header */}
             <div className="w-full" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '100%' }}>
             {/* Full-Screen Loading Modal for Image Capture */}
@@ -976,7 +1066,7 @@ const ProjectDetails = () => {
             )}
 
             {/* Navigation Bar */}
-            <div className="bg-white border-b border-gray-200 shadow-sm" style={{ width: '100%', minWidth: '100%' }}>
+            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
                 <div className="w-full px-4 sm:px-6 py-3" style={{ width: '100%' }}>
                     <div className="flex items-center justify-between w-full">
                         <div className="flex items-center space-x-2 sm:space-x-4">
@@ -1042,7 +1132,7 @@ const ProjectDetails = () => {
             {!canEdit && (
                 <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-sm text-amber-800">
                     {isAuthenticated ? (
-                        'View-only access (Salesman). You can navigate all tabs, view 3D, and export — but cannot edit walls, rooms, levels, or plans.'
+                        'View-only access (Salesman). You can navigate all tabs, view 3D, export, and leave customer feedback comments — but cannot edit walls, rooms, levels, or plans.'
                     ) : (
                         <>
                             View-only mode.{' '}
@@ -1054,24 +1144,30 @@ const ProjectDetails = () => {
             )}
 
             {/* Header Section */}
-            <div className="bg-white border-b border-gray-200 shadow-sm" style={{ width: '100%', minWidth: '100%' }}>
-                <div className="w-full px-4 sm:px-6 lg:px-8 py-4" style={{ width: '100%' }}>
-                    <div className="flex flex-col lg:flex-row lg:items-center gap-4 w-full">
-                        <div className="flex-shrink-0">
+            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
+                <div className="w-full px-4 sm:px-6 lg:px-8 py-3" style={{ width: '100%' }}>
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4 w-full">
+                        <div className="flex-shrink-0 min-w-0">
                     {(!projectDetails.project || !projectDetails.project.name) ? (
-                                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Loading project...</h1>
+                                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Loading project...</h1>
                             ) : (
-                                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">{projectDetails.project.name}</h1>
+                                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 truncate">{projectDetails.project.name}</h1>
                             )}
                             {projectDetails.project && (
-                                <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                                    Dimensions: {(projectDetails.project?.width ?? '—')} × {(projectDetails.project?.length ?? '—')} × {effectiveProjectHeight} mm
+                                <p className="text-xs text-gray-600 mt-0.5">
+                                    {(projectDetails.project?.width ?? '—')} × {(projectDetails.project?.length ?? '—')} × {effectiveProjectHeight} mm
                                 </p>
                             )}
                         </div>
+
+                        {!projectDetails.is3DView && (
+                            <div className="lg:flex-1 lg:min-w-0 lg:px-2">
+                                {renderPlanViewTabs()}
+                            </div>
+                        )}
                         
                         {/* View Toggle Buttons */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4 lg:flex-1 lg:justify-end">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-2 lg:shrink-0 lg:ml-auto">
                             <button
                                 onClick={() => {
                                     const newViewState = !projectDetails.is3DView;
@@ -1099,6 +1195,20 @@ const ProjectDetails = () => {
                                     </>
                                 )}
                             </button>
+                            {isAuthenticated && (
+                                <button
+                                    type="button"
+                                    onClick={() => setCommentsPanelOpen((open) => !open)}
+                                    className={`relative flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                        commentsPanelOpen
+                                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                            : 'btn-secondary'
+                                    }`}
+                                >
+                                    <FaComment className="mr-2" />
+                                    {canComment ? 'Feedback' : 'Comments'}
+                                </button>
+                            )}
                             {projectDetails.currentView === 'wall-plan' && (
                                 <>
                             <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
@@ -1115,7 +1225,7 @@ const ProjectDetails = () => {
                                             const numericValue = Number(value);
                                             projectDetails.setActiveStoreyId(Number.isNaN(numericValue) ? value : numericValue);
                                         }}
-                                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:min-w-[160px]"
+                                        className="form-control w-full sm:min-w-[140px]"
                                     >
                                         {projectDetails.storeys.length === 0 && (
                                             <option value="">No levels</option>
@@ -1390,7 +1500,7 @@ const ProjectDetails = () => {
 
             {/* Define Room Container - Above Canvas */}
             {canEdit && projectDetails.currentMode === 'define-room' && (
-                <div className="w-full bg-white border-b border-gray-200 shadow-sm">
+                <div className="w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors">
                     {/* Room Definition Header */}
                     <div className="p-4 border-b border-gray-200">
                         <div className="max-w-4xl mx-auto">
@@ -1398,12 +1508,17 @@ const ProjectDetails = () => {
                                 <div>
                                     <h3 className="text-lg font-semibold text-gray-900">Define Room</h3>
                                     <p className="text-sm text-gray-600 mt-1">
-                                        Select walls to define room boundaries. Click on walls to select/deselect them.
+                                        Click on the canvas to place points. Close the loop on the first point, then resume the room form to save.
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <div className="text-sm text-gray-600">
-                                        <span className="font-medium">Selected:</span> {projectDetails.selectedWallsForRoom.length} walls
+                                        <span className="font-medium">Points:</span> {projectDetails.selectedRoomPoints?.length ?? 0}
+                                        {projectDetails.selectedWallsForRoom.length > 0 && (
+                                            <span className="ml-3">
+                                                <span className="font-medium">Walls:</span> {projectDetails.selectedWallsForRoom.length}
+                                            </span>
+                                        )}
                                     </div>
                     <button
                                         onClick={() => projectDetails.setCurrentMode(null)}
@@ -1415,59 +1530,51 @@ const ProjectDetails = () => {
                     </button>
                                 </div>
                             </div>
-                            
-                            {projectDetails.selectedWallsForRoom.length > 0 && (
-                                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                    <div className="flex items-center justify-between">
-                                        <div className="text-sm text-blue-800">
-                                            <span className="font-medium">Ready to create room</span> with {projectDetails.selectedWallsForRoom.length} walls
-                                        </div>
-                                        <button
-                                            onClick={() => projectDetails.setShowRoomManagerModal(!projectDetails.showRoomManagerModal)}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                                        >
-                                            {projectDetails.showRoomManagerModal ? 'Hide Room Form' : 'Create Room'}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     </div>
 
                     {/* Room Creation Interface */}
                     {projectDetails.showRoomManagerModal && !projectDetails.isRoomManagerMinimized && (
-                        <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[11000] p-2 sm:p-4">
-                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto modal-scroll-panel">
-                                <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
+                        <ModalOverlay className="bg-black/50 flex items-center justify-center z-[11000] p-3 sm:p-4">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl max-h-[92vh] flex flex-col modal-scroll-panel">
+                                <div className="form-modal-header shrink-0 rounded-t-xl">
                                     <div className="flex-1 min-w-0 pr-2">
-                                        <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
-                                            {projectDetails.editingRoom ? 'Edit Room' : 'Create New Room'}
+                                        <h2 className="form-modal-title">
+                                            {projectDetails.editingRoom ? 'Edit Room' : 'Create Room'}
                                         </h2>
-                                        <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                                            {projectDetails.currentMode === 'define-room' ? 'Click on the canvas to place points. Close the loop by clicking the first point.' : 'Define room properties'}
-                                        </p>
+                                        {!projectDetails.editingRoom && projectDetails.currentMode === 'define-room' && (
+                                            <p className="form-modal-subtitle">
+                                                Place points on the canvas, then close the loop on the first point.
+                                            </p>
+                                        )}
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1">
                                         <button
                                             onClick={() => projectDetails.setRoomManagerMinimized(true)}
-                                            className="text-gray-500 hover:text-gray-700 transition-colors"
+                                            className="form-icon-btn"
                                             title="Minimize"
                                         >
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                                             </svg>
                                         </button>
                                         <button
-                                            onClick={() => projectDetails.setShowRoomManagerModal(false)}
-                                            className="text-gray-500 hover:text-gray-700 transition-colors"
+                                            onClick={() => {
+                                                if (projectDetails.currentMode === 'define-room' && !projectDetails.editingRoom) {
+                                                    projectDetails.setRoomManagerMinimized(true);
+                                                } else {
+                                                    projectDetails.setShowRoomManagerModal(false);
+                                                }
+                                            }}
+                                            className="form-icon-btn"
+                                            title={projectDetails.currentMode === 'define-room' && !projectDetails.editingRoom ? 'Minimize' : 'Close'}
                                         >
-                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                             </svg>
                                         </button>
                                     </div>
                                 </div>
-                                <div className="p-4 sm:p-6">
                                     <RoomManager
                                         projectId={projectId}
                                         walls={projectDetails.filteredWalls}
@@ -1481,7 +1588,6 @@ const ProjectDetails = () => {
                                         editingRoom={projectDetails.editingRoom}
                                         selectedPolygonPoints={projectDetails.selectedRoomPoints}
                                     />
-                                </div>
                             </div>
                         </ModalOverlay>
                     )}
@@ -1536,7 +1642,7 @@ const ProjectDetails = () => {
                 
                 {/* Left Sidebar - wall plan drawing tools only (ceiling/floor use canvas Plan Details) */}
                 {!projectDetails.is3DView && isWallPlanView && (
-                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white border-r border-gray-200 shadow-sm overflow-y-auto sidebar-scroll transition-all duration-300 ease-in-out w-72 min-w-[280px] max-w-[320px] ${
+                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shadow-sm overflow-y-auto sidebar-scroll transition-all duration-300 ease-in-out w-80 min-w-[300px] max-w-[340px] ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''}`}>
                     <div className="p-4 sm:p-6">
@@ -1743,134 +1849,117 @@ const ProjectDetails = () => {
 
                                 {/* Wall Type Selection */}
                                 {projectDetails.currentMode === 'add-wall' && (
-                                    <div className="p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm space-y-5 max-h-[85vh] overflow-y-auto">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Add Wall Mode</label>
+                                    <div className="form-inline-panel max-h-[85vh] overflow-y-auto">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="form-section-title">Add Wall</span>
                                             <button
                                                 onClick={() => projectDetails.setCurrentMode(null)}
-                                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center gap-2 shadow-sm active:scale-95"
+                                                className="form-btn-danger flex items-center gap-1"
                                                 title="Cancel adding wall"
                                             >
-                                                <FaTimes className="text-xs" />
+                                                <FaTimes className="text-[10px]" />
                                                 <span>Cancel</span>
                                             </button>
                                         </div>
-                                        
-                                        {/* Basic Wall Properties */}
-                                        <div className="space-y-4">
-                                            <div>
-                                                <label className="block text-sm font-semibold text-blue-800 mb-2 uppercase tracking-wide">Wall Type:</label>
-                                                <select 
-                                                    value={projectDetails.selectedWallType} 
+
+                                        <div className="form-grid-narrow">
+                                            <div className="form-field">
+                                                <label className="form-label">Wall Type</label>
+                                                <select
+                                                    value={projectDetails.selectedWallType}
                                                     onChange={(e) => projectDetails.setSelectedWallType(e.target.value)}
-                                                    className="w-full px-4 py-2.5 rounded-lg border-2 border-blue-300 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                        bg-white text-blue-900 font-medium shadow-sm text-sm"
+                                                    className="form-control"
                                                 >
                                                     <option value="wall">Wall</option>
                                                     <option value="partition">Partition</option>
                                                 </select>
                                             </div>
-                                            
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-sm font-semibold text-blue-800 mb-2">Height (mm):</label>
+                                            <div className="form-grid-narrow-pair">
+                                                <div className="form-field">
+                                                    <label className="form-label">Height (mm)</label>
                                                     <input
                                                         type="number"
                                                         value={projectDetails.wallHeight}
                                                         onChange={(e) => projectDetails.setWallHeight(parseFloat(e.target.value) || 2800)}
                                                         min="100"
                                                         step="100"
-                                                        className="w-full px-4 py-2.5 rounded-lg border-2 border-blue-300 
-                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                            bg-white text-blue-900 font-medium shadow-sm text-sm"
+                                                        className="form-control"
                                                     />
                                                 </div>
-                                                <div>
-                                                    <label className="block text-sm font-semibold text-blue-800 mb-2">Thickness (mm):</label>
+                                                <div className="form-field">
+                                                    <label className="form-label">Thickness (mm)</label>
                                                     <input
                                                         type="number"
                                                         value={projectDetails.wallThickness}
                                                         onChange={(e) => projectDetails.setWallThickness(parseFloat(e.target.value) || 200)}
                                                         min="25"
                                                         step="25"
-                                                        className="w-full px-4 py-2.5 rounded-lg border-2 border-blue-300 
-                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                            bg-white text-blue-900 font-medium shadow-sm text-sm"
+                                                        className="form-control"
                                                     />
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Face Finishes */}
-                                        <div className="space-y-4 border-t border-blue-300 pt-4">
-                                            <label className="block text-sm font-semibold text-blue-800 uppercase tracking-wide">Face Finishes</label>
-                                            <div className="grid grid-cols-1 gap-4">
-                                                <div className="space-y-3 bg-white p-4 rounded-lg border border-blue-200">
-                                                    <label className="block text-sm font-semibold text-blue-800">Inner Face</label>
-                                                    <div>
-                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Material:</label>
+                                        <div className="pt-2 border-t border-gray-100">
+                                            <p className="form-section-title mb-2">Face Finishes</p>
+                                            <div className="form-grid-narrow">
+                                                <div className="form-subsection">
+                                                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Inner</p>
+                                                    <div className="form-field">
+                                                        <label className="form-label">Material</label>
                                                         <select
                                                             value={projectDetails.innerFaceMaterial}
                                                             onChange={(e) => projectDetails.setInnerFaceMaterial(e.target.value)}
-                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
-                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                                bg-white text-blue-900 text-sm"
+                                                            className="form-control"
                                                         >
                                                             <option value="PPGI">PPGI</option>
                                                             <option value="S/Steel">S/Steel</option>
                                                             <option value="PVC">PVC</option>
                                                         </select>
                                                     </div>
-                                                    <div>
-                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Thickness (mm):</label>
+                                                    <div className="form-field">
+                                                        <label className="form-label">Thickness (mm)</label>
                                                         <input
                                                             type="number"
                                                             min="0.1"
                                                             step="0.1"
                                                             value={projectDetails.innerFaceThickness}
                                                             onChange={(e) => projectDetails.setInnerFaceThickness(parseFloat(e.target.value) || 0.5)}
-                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
-                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                                bg-white text-blue-900 text-sm"
+                                                            className="form-control"
                                                         />
                                                     </div>
                                                 </div>
-                                                <div className="space-y-3 bg-white p-4 rounded-lg border border-blue-200">
-                                                    <label className="block text-sm font-semibold text-blue-800">Outer Face</label>
-                                                    <div>
-                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Material:</label>
+                                                <div className="form-subsection">
+                                                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Outer</p>
+                                                    <div className="form-field">
+                                                        <label className="form-label">Material</label>
                                                         <select
                                                             value={projectDetails.outerFaceMaterial}
                                                             onChange={(e) => projectDetails.setOuterFaceMaterial(e.target.value)}
-                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
-                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                                bg-white text-blue-900 text-sm"
+                                                            className="form-control"
                                                         >
                                                             <option value="PPGI">PPGI</option>
                                                             <option value="S/Steel">S/Steel</option>
                                                             <option value="PVC">PVC</option>
                                                         </select>
                                                     </div>
-                                                    <div>
-                                                        <label className="block text-sm text-blue-700 mb-1.5 font-medium">Thickness (mm):</label>
+                                                    <div className="form-field">
+                                                        <label className="form-label">Thickness (mm)</label>
                                                         <input
                                                             type="number"
                                                             min="0.1"
                                                             step="0.1"
                                                             value={projectDetails.outerFaceThickness}
                                                             onChange={(e) => projectDetails.setOuterFaceThickness(parseFloat(e.target.value) || 0.5)}
-                                                            className="w-full px-3 py-2.5 rounded-lg border border-blue-300 
-                                                                focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                                bg-white text-blue-900 text-sm"
+                                                            className="form-control"
                                                         />
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-                                        
-                                        <p className="text-sm text-blue-700 mt-3 pt-3 border-t border-blue-300 leading-relaxed">
-                                            Tap on canvas to start drawing. Tap again to finish. Press Cancel to exit.
+
+                                        <p className="form-hint pt-2 border-t border-gray-100">
+                                            Click on the canvas to start drawing. Click again to finish.
                                         </p>
                                     </div>
                                 )}
@@ -1963,13 +2052,13 @@ const ProjectDetails = () => {
                 {/* Main Content Area - min-h-0 so flex child can shrink; overflow-auto so tab content scrolls inside viewport */}
                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                     {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom; tighter margins in 3D for more canvas width */}
-                    <div className={`bg-white rounded-lg shadow-sm border border-gray-200 canvas-container flex-1 flex flex-col min-h-0 overflow-auto ${
+                    <div className={`bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 canvas-container flex-1 flex flex-col min-h-0 overflow-auto ${
                         projectDetails.is3DView ? 'm-2 sm:m-3' : 'm-3 sm:m-6'
                     }`}>
                         {projectDetails.is3DView ? (
                             <div className="flex flex-col">
                                 {/* Tab Navigation - Same structure as 2D */}
-                                <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50">
+                                <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                         <div className="flex flex-wrap gap-1 sm:space-x-1">
                                             <button
@@ -1995,14 +2084,14 @@ const ProjectDetails = () => {
                                                 className={`flex items-center px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 shadow-md ${
                                                     projectDetails.showPanelLines 
                                                         ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 dark:border dark:border-gray-600'
                                                 }`}
                                             >
                                                 <span className="hidden sm:inline">{projectDetails.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines'}</span>
                                                 <span className="sm:hidden">{projectDetails.showPanelLines ? 'Hide' : 'Show'}</span>
                                             </button>
                                         </div>
-                                        <div className="text-xs sm:text-sm text-gray-600">
+                                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                                             <span className="font-medium">View:</span> {projectDetails.isInteriorView ? 'Interior' : 'Exterior'} • 
                                             <span className="ml-1">Use pinch-to-zoom on mobile</span>
                                         </div>
@@ -2013,7 +2102,7 @@ const ProjectDetails = () => {
                                 <div className="relative w-full">
                                     <div 
                                         id="three-canvas-container" 
-                                        className="w-full bg-gray-50 active relative overflow-visible" 
+                                        className="w-full bg-gray-50 dark:bg-gray-800 active relative overflow-visible transition-colors" 
                                         style={{ 
                                             height: `${threeDContainerHeight}px`,
                                             minHeight: `${MIN_CANVAS_HEIGHT}px`
@@ -2023,80 +2112,6 @@ const ProjectDetails = () => {
                             </div>
                         ) : (
                             <div className="flex flex-col">
-                                {/* Tab Navigation */}
-                                <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                        <div className="flex flex-wrap gap-1 sm:space-x-1">
-                                            <button
-                                                onClick={() => projectDetails.setCurrentView('wall-plan')}
-                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
-                                                    projectDetails.currentView === 'wall-plan'
-                                                        ? 'bg-blue-600 text-white shadow-md'
-                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                                }`}
-                                            >
-                                                <FaSquare className="inline mr-1 sm:mr-2" />
-                                                <span className="hidden sm:inline">Wall Plan</span>
-                                                <span className="sm:hidden">Wall</span>
-                                            </button>
-                                            <button
-                                                onClick={() => projectDetails.setCurrentView('ceiling-plan')}
-                                                disabled={!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0}
-                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
-                                                    (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0)
-                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                        : projectDetails.currentView === 'ceiling-plan'
-                                                        ? 'bg-green-600 text-white shadow-md'
-                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                                }`}
-                                            >
-                                                <FaLayerGroup className="inline mr-1 sm:mr-2" />
-                                                <span className="hidden sm:inline">Ceiling Plan</span>
-                                                <span className="sm:hidden">Ceiling</span>
-                                            </button>
-                                            <button
-                                                onClick={() => projectDetails.setCurrentView('floor-plan')}
-                                                disabled={
-                                                    !projectDetails.filteredRooms ||
-                                                    projectDetails.filteredRooms.length === 0
-                                                }
-                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
-                                                    (!projectDetails.filteredRooms || projectDetails.filteredRooms.length === 0)
-                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                        : projectDetails.currentView === 'floor-plan'
-                                                        ? 'bg-green-600 text-white shadow-md'
-                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                                }`}
-                                            >
-                                                <FaSquare className="inline mr-1 sm:mr-2" />
-                                                <span className="hidden sm:inline">Floor Plan</span>
-                                                <span className="sm:hidden">Floor</span>
-                                                {projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 && (
-                                                    <span className="ml-1 text-xs hidden sm:inline">
-                                                        ({projectDetails.filteredRooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel').length} panel rooms)
-                                                    </span>
-                                                )}
-                                            </button>
-                                            <button
-                                                onClick={() => projectDetails.setCurrentView('installation-estimator')}
-                                                className={`px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 ${
-                                                    projectDetails.currentView === 'installation-estimator'
-                                                        ? 'bg-orange-600 text-white shadow-md'
-                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                                }`}
-                                            >
-                                                <svg className="w-4 h-4 inline mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
-                                                <span className="hidden lg:inline">Project Summary & Installation Time</span>
-                                                <span className="lg:hidden hidden sm:inline">Summary</span>
-                                                <span className="sm:hidden">Time</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                {/* Tab Content */}
                                 <div className="relative">
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D
@@ -2149,6 +2164,10 @@ const ProjectDetails = () => {
                                             ghostAreas={projectDetails.filteredGhostAreas}
                                             showPanelLines={projectDetails.showPanelLines}
                                             onTogglePanelLines={projectDetails.togglePanelLines}
+                                            commentWallSelectMode={commentWallSelectMode}
+                                            selectedWallsForComment={selectedWallsForComment}
+                                            onCommentWallSelect={setSelectedWallsForComment}
+                                            commentHighlightWallIds={commentHighlightWallIds}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager
@@ -2236,7 +2255,7 @@ const ProjectDetails = () => {
                                             type="text"
                                             value={projectDetails.storeyWizardName || ''}
                                             onChange={(e) => projectDetails.setStoreyWizardName(e.target.value)}
-                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            className="form-control"
                                             placeholder="e.g., First Floor"
                                         />
                                     </div>
@@ -2245,7 +2264,7 @@ const ProjectDetails = () => {
                                         <select
                                             value={sourceStoreyId ?? ''}
                                             onChange={handleSourceStoreyChange}
-                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            className="form-control"
                                         >
                                             <option value="">None (start blank)</option>
                                             {projectDetails.storeys.map((storey) => (
@@ -2431,7 +2450,7 @@ const ProjectDetails = () => {
                                                             return (
                                                                 <div key={`override-${room.id}`} className="border border-gray-200 rounded-lg px-3 py-2">
                                                                     <div className="flex justify-between items-center">
-                                                                        <span className="text-sm font-medium text-gray-700">{room.room_name}</span>
+                                                                        <span className="form-label">{room.room_name}</span>
                                                                         <span className="text-xs text-gray-500">
                                                                             Ground top: {originalBase + originalHeight} mm
                                                                         </span>
@@ -2471,7 +2490,7 @@ const ProjectDetails = () => {
                                                     return (
                                                         <div key={area.id} className="border border-gray-200 rounded-lg px-3 py-2">
                                                             <div className="flex justify-between items-center">
-                                                                <span className="text-sm font-medium text-gray-700">Area {index + 1}</span>
+                                                                <span className="form-label">Area {index + 1}</span>
                                                                 <span className="text-xs text-gray-500">
                                                                     {area.points.length} points
                                                                 </span>
@@ -2596,8 +2615,8 @@ const ProjectDetails = () => {
                 <>
                 <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto modal-scroll-panel">
-                                <div className="flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                                <div className="form-modal-header">
+                            <h3 className="form-modal-title">
                                 {projectDetails.selectedWallsForEdit.length > 0 
                                     ? `Edit ${projectDetails.selectedWallsForEdit.length} Wall${projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''}`
                                     : 'Edit Wall'}
@@ -2618,7 +2637,7 @@ const ProjectDetails = () => {
                                     </button>
                                 </div>
                         {/* Wall editor content */}
-                                <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 space-y-4 sm:space-y-6">
+                                <div className="form-panel space-y-4">
                                     {/* Multi-wall info */}
                                     {projectDetails.selectedWallsForEdit.length > 0 && (
                                         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -2632,11 +2651,11 @@ const ProjectDetails = () => {
                                     {/* Position & Dimensions Section - Only show for single wall */}
                                     {projectDetails.selectedWall !== null && (
                                     <div>
-                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position & Dimensions</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Position & Dimensions</h4>
+                                        <div className="form-grid mt-2">
                                             <div className="space-y-3">
                                                 <label className="block">
-                                                    <span className="text-sm font-medium text-gray-700">Start Point</span>
+                                                    <span className="form-label">Start Point</span>
                                                     <div className="grid grid-cols-2 gap-2 mt-1">
                                                         <div>
                                                             <span className="text-xs text-gray-500">X:</span>
@@ -2676,8 +2695,7 @@ const ProjectDetails = () => {
                                                                         setEditedWall({ ...editedWall, start_x: newStartX });
                                                                     }
                                                                 }}
-                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                className="form-control mt-1"
                                                             />
                                                         </div>
                                                         <div>
@@ -2718,8 +2736,7 @@ const ProjectDetails = () => {
                                                                         setEditedWall({ ...editedWall, start_y: newStartY });
                                                                     }
                                                                 }}
-                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                className="form-control mt-1"
                                                             />
                                                         </div>
                                                     </div>
@@ -2728,7 +2745,7 @@ const ProjectDetails = () => {
 
                                             <div className="space-y-3">
                                                 <label className="block">
-                                                    <span className="text-sm font-medium text-gray-700">End Point</span>
+                                                    <span className="form-label">End Point</span>
                                                     <div className="grid grid-cols-2 gap-2 mt-1">
                                                         <div>
                                                             <span className="text-xs text-gray-500">X:</span>
@@ -2785,8 +2802,7 @@ const ProjectDetails = () => {
                                                                         setEditedWall({ ...editedWall, end_x: newEndX });
                                                                     }
                                                                 }}
-                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                className="form-control mt-1"
                                                             />
                                                         </div>
                                                         <div>
@@ -2844,8 +2860,7 @@ const ProjectDetails = () => {
                                                                         setEditedWall({ ...editedWall, end_y: newEndY });
                                                                     }
                                                                 }}
-                                                                className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                className="form-control mt-1"
                                                             />
                                                         </div>
                                                     </div>
@@ -2855,7 +2870,7 @@ const ProjectDetails = () => {
                                             <div className="md:col-span-2">
                                                 <label className="block">
                                                     <div className="flex items-center justify-between mb-1">
-                                                        <span className="text-sm font-medium text-gray-700">Wall Length (mm):</span>
+                                                        <span className="form-label">Wall Length (mm):</span>
                                                         <button
                                                             type="button"
                                                             onClick={() => setIsLengthLocked(!isLengthLocked)}
@@ -2909,9 +2924,7 @@ const ProjectDetails = () => {
                                                         min="0"
                                                         step="1"
                                                         disabled={isLengthLocked}
-                                                        className={`mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                                                            ${isLengthLocked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                        className={`form-control mt-1 ${isLengthLocked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
                                                     />
                                                     {isLengthLocked && (
                                                         <p className="mt-1 text-xs text-blue-600">
@@ -2926,54 +2939,50 @@ const ProjectDetails = () => {
 
                                     {/* Wall Properties Section */}
                                     <div>
-                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Wall Properties</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Wall Properties</h4>
+                                        <div className="form-grid mt-2">
                                             <label className="block">
-                                                <span className="text-sm font-medium text-gray-700">Wall Height (mm):</span>
+                                                <span className="form-label">Wall Height (mm):</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.height || ''} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, height: parseFloat(e.target.value) })} 
                                                     min="10"
                                                     step="10"
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    className="form-control mt-1"
                                                 />
                                             </label>
 
                                             <label className="block">
-                                                <span className="text-sm font-medium text-gray-700">Wall Base Elevation (mm):</span>
+                                                <span className="form-label">Wall Base Elevation (mm):</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.base_elevation_mm ?? 0} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, base_elevation_mm: parseFloat(e.target.value) || 0 })} 
                                                     step="10"
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    className="form-control mt-1"
                                                     placeholder="0"
                                                 />
                                             </label>
 
                                             <label className="block">
-                                                <span className="text-sm font-medium text-gray-700">Wall Thickness (mm):</span>
+                                                <span className="form-label">Wall Thickness (mm):</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.thickness || ''} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, thickness: parseFloat(e.target.value) })} 
                                                     min="25"
                                                     step="25"
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    className="form-control mt-1"
                                                 />
                                             </label>
 
                                             <label className="block">
-                                                <span className="text-sm font-medium text-gray-700">Wall Type:</span>
+                                                <span className="form-label">Wall Type:</span>
                                                 <select 
                                                     value={editedWall?.application_type || 'wall'} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, application_type: e.target.value })} 
-                                                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                        focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    className="form-control mt-1"
                                                 >
                                                     <option value="wall">Wall</option>
                                                     <option value="partition">Partition</option>
@@ -2984,17 +2993,16 @@ const ProjectDetails = () => {
 
                                     {/* Face Finishes Section */}
                                     <div>
-                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Face Finishes</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-                                            <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
-                                                <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Inner Face</h5>
+                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Face Finishes</h4>
+                                        <div className="form-grid mt-2">
+                                            <div className="form-subsection">
+                                                <h5 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Inner Face</h5>
                                                 <label className="block">
-                                                    <span className="text-sm font-medium text-gray-700">Material:</span>
+                                                    <span className="form-label">Material:</span>
                                                     <select
                                                         value={editedWall?.inner_face_material || 'PPGI'}
                                                         onChange={(e) => setEditedWall({ ...editedWall, inner_face_material: e.target.value })}
-                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                        className="form-control mt-1"
                                                     >
                                                         <option value="PPGI">PPGI</option>
                                                         <option value="S/Steel">S/Steel</option>
@@ -3002,27 +3010,25 @@ const ProjectDetails = () => {
                                                     </select>
                                                 </label>
                                                 <label className="block">
-                                                    <span className="text-sm font-medium text-gray-700">Thickness (mm):</span>
+                                                    <span className="form-label">Thickness (mm):</span>
                                                     <input
                                                         type="number"
                                                         min="0.1"
                                                         step="0.1"
                                                         value={editedWall?.inner_face_thickness ?? 0.5}
                                                         onChange={(e) => setEditedWall({ ...editedWall, inner_face_thickness: parseFloat(e.target.value) })}
-                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                        className="form-control mt-1"
                                                     />
                                                 </label>
                                             </div>
-                                            <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
-                                                <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Outer Face</h5>
+                                            <div className="form-subsection">
+                                                <h5 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Outer Face</h5>
                                                 <label className="block">
-                                                    <span className="text-sm font-medium text-gray-700">Material:</span>
+                                                    <span className="form-label">Material:</span>
                                                     <select
                                                         value={editedWall?.outer_face_material || 'PPGI'}
                                                         onChange={(e) => setEditedWall({ ...editedWall, outer_face_material: e.target.value })}
-                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                        className="form-control mt-1"
                                                     >
                                                         <option value="PPGI">PPGI</option>
                                                         <option value="S/Steel">S/Steel</option>
@@ -3030,15 +3036,14 @@ const ProjectDetails = () => {
                                                     </select>
                                                 </label>
                                                 <label className="block">
-                                                    <span className="text-sm font-medium text-gray-700">Thickness (mm):</span>
+                                                    <span className="form-label">Thickness (mm):</span>
                                                     <input
                                                         type="number"
                                                         min="0.1"
                                                         step="0.1"
                                                         value={editedWall?.outer_face_thickness ?? 0.5}
                                                         onChange={(e) => setEditedWall({ ...editedWall, outer_face_thickness: parseFloat(e.target.value) })}
-                                                        className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg 
-                                                            focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                        className="form-control mt-1"
                                                     />
                                                 </label>
                                             </div>
@@ -3048,12 +3053,12 @@ const ProjectDetails = () => {
                                     {/* Gap-Fill Toggle Section - Only show for single wall */}
                                     {projectDetails.selectedWall !== null && (
                                     <div>
-                                        <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Advanced Options</h4>
+                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Advanced Options</h4>
                                         <div className="mt-3">
-                                            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
-                                                <div className="flex-1">
-                                                    <h5 className="font-medium text-gray-800 mb-1">Fill Gap Between Rooms</h5>
-                                                    <p className="text-sm text-gray-600">
+                                            <div className="form-toggle-row">
+                                                <div className="flex-1 min-w-0">
+                                                    <h5 className="text-xs font-medium text-gray-800">Fill Gap Between Rooms</h5>
+                                                    <p className="form-hint">
                                                         Fill only the gap between rooms with different heights
                                                     </p>
                                                     {editedWall?.gap_fill_height && (
@@ -3061,34 +3066,40 @@ const ProjectDetails = () => {
                                                             Current: {editedWall.gap_fill_height}mm at {editedWall.gap_base_position}mm position
                                                         </div>
                                                     )}
+                                                    {gapFillError && (
+                                                        <div className="mt-2 text-xs text-red-600 font-medium">
+                                                            {gapFillError}
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <button
                                                     onClick={async () => {
                                                         const enabled = !editedWall.fill_gap_mode;
-                                                        
+                                                        setGapFillError('');
+
                                                         try {
                                                             const response = await api.post(
                                                                 `/walls/${editedWall.id}/toggle_gap_fill/`,
                                                                 { enabled }
                                                             );
                                                             if (response.status === 200) {
-                                                                // Update local state
                                                                 setEditedWall({ ...editedWall, ...response.data });
-                                                                // Refresh walls list
                                                                 const wallsResponse = await api.get(`/walls/?project=${projectId}`);
                                                                 projectDetails.setWalls(wallsResponse.data);
-                                                                // Rebuild 3D scene
                                                                 if (projectDetails.threeCanvas) {
                                                                     projectDetails.threeCanvas.buildModel();
                                                                 }
                                                             }
                                                         } catch (error) {
+                                                            const message = error.response?.data?.error
+                                                                || 'Failed to toggle gap-fill mode.';
+                                                            setGapFillError(message);
                                                             console.error('Error toggling gap-fill mode:', error);
                                                         }
                                                     }}
-                                                    className={`ml-4 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                                                    className={`shrink-0 form-btn ${
                                                         editedWall?.fill_gap_mode
-                                                            ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg'
+                                                            ? 'bg-green-600 text-white hover:bg-green-700'
                                                             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                                     }`}
                                                 >
@@ -3131,7 +3142,7 @@ const ProjectDetails = () => {
                                                     <div key={window.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                                                         <div className="flex-1">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="text-sm font-medium text-gray-700">
+                                                                <span className="form-label">
                                                                     {window.window_type || 'glass'} window
                                                                 </span>
                                                                 <span className="text-xs text-gray-500">
@@ -3164,7 +3175,7 @@ const ProjectDetails = () => {
                                     )}
 
                                     {/* Action Buttons at the Bottom Right */}
-                                    <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 px-4 sm:px-6 pb-4 sm:pb-6">
+                                    <div className="form-actions px-4 pb-4">
                                         <button
                                             onClick={async () => {
                                                 if (projectDetails.selectedWallsForEdit.length > 0) {
@@ -3242,7 +3253,7 @@ const ProjectDetails = () => {
                                                     setEditedWall(null);
                                                 }
                                             }}
-                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-medium"
+                                            className="form-btn-primary w-full sm:w-auto"
                                         >
                                             Save
                                         </button>
@@ -3254,7 +3265,7 @@ const ProjectDetails = () => {
                                                 projectDetails.setWallToDelete(projectDetails.selectedWall);
                                                 projectDetails.setShowWallDeleteConfirm(true);
                                             }}
-                                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 
+                                            className="form-btn-danger w-full sm:w-auto 
                                                 transition-colors text-sm font-medium"
                                         >
                                             Remove Wall
@@ -3292,7 +3303,7 @@ const ProjectDetails = () => {
                                                     <select
                                                         value={wallWindowFormData.window_type}
                                                         onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, window_type: e.target.value })}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                        className="form-control"
                                                     >
                                                         <option value="glass">Glass</option>
                                                     </select>
@@ -3307,7 +3318,7 @@ const ProjectDetails = () => {
                                                             onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, width: parseFloat(e.target.value) || 0 })}
                                                             min="100"
                                                             step="50"
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                            className="form-control"
                                                         />
                                                     </div>
                                                     
@@ -3319,14 +3330,14 @@ const ProjectDetails = () => {
                                                             onChange={(e) => setWallWindowFormData({ ...wallWindowFormData, height: parseFloat(e.target.value) || 0 })}
                                                             min="100"
                                                             step="50"
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                            className="form-control"
                                                         />
                                                     </div>
                                                 </div>
                                                 
                                                 {/* Position Along Wall */}
                                                 <div>
-                                                    <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position Along Wall</h4>
+                                                    <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Position Along Wall</h4>
                                                     <div className="mt-3 space-y-4">
                                                         <div>
                                                             <label className="text-sm font-medium text-gray-700 mb-2 block">Position Slider</label>
@@ -3342,7 +3353,7 @@ const ProjectDetails = () => {
                                                         </div>
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                             <div>
-                                                                <label className="text-sm font-medium text-gray-700">Distance from Left (mm)</label>
+                                                                <label className="form-label">Distance from Left (mm)</label>
                                                                 <input
                                                                     type="number"
                                                                     value={Math.round((wallWindowFormData.position_x || 0) * (editedWall ? Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0)) : 0)) || 0}
@@ -3355,11 +3366,11 @@ const ProjectDetails = () => {
                                                                     min="0"
                                                                     max={editedWall ? Math.round(Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0))) : 0}
                                                                     step="1"
-                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                    className="form-control mt-1"
                                                                 />
                                                             </div>
                                                             <div>
-                                                                <label className="text-sm font-medium text-gray-700">Distance from Right (mm)</label>
+                                                                <label className="form-label">Distance from Right (mm)</label>
                                                                 <input
                                                                     type="number"
                                                                     value={Math.round((1 - (wallWindowFormData.position_x || 0)) * (editedWall ? Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0)) : 0)) || 0}
@@ -3373,7 +3384,7 @@ const ProjectDetails = () => {
                                                                     min="0"
                                                                     max={editedWall ? Math.round(Math.hypot((editedWall.end_x || 0) - (editedWall.start_x || 0), (editedWall.end_y || 0) - (editedWall.start_y || 0))) : 0}
                                                                     step="1"
-                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                    className="form-control mt-1"
                                                                 />
                                                             </div>
                                                         </div>
@@ -3382,7 +3393,7 @@ const ProjectDetails = () => {
                                                 
                                                 {/* Position Height */}
                                                 <div>
-                                                    <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position Height</h4>
+                                                    <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Position Height</h4>
                                                     <div className="mt-3 space-y-4">
                                                         <div>
                                                             <label className="text-sm font-medium text-gray-700 mb-2 block">Position Slider</label>
@@ -3398,7 +3409,7 @@ const ProjectDetails = () => {
                                                         </div>
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                             <div>
-                                                                <label className="text-sm font-medium text-gray-700">Distance from Bottom (mm)</label>
+                                                                <label className="form-label">Distance from Bottom (mm)</label>
                                                                 <input
                                                                     type="number"
                                                                     value={Math.round((wallWindowFormData.position_y || 0) * (editedWall?.height || 0)) || 0}
@@ -3411,11 +3422,11 @@ const ProjectDetails = () => {
                                                                     min="0"
                                                                     max={Math.round(editedWall?.height || 0)}
                                                                     step="1"
-                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                    className="form-control mt-1"
                                                                 />
                                                             </div>
                                                             <div>
-                                                                <label className="text-sm font-medium text-gray-700">Distance from Top (mm)</label>
+                                                                <label className="form-label">Distance from Top (mm)</label>
                                                                 <input
                                                                     type="number"
                                                                     value={Math.round((1 - (wallWindowFormData.position_y || 0)) * (editedWall?.height || 0)) || 0}
@@ -3429,7 +3440,7 @@ const ProjectDetails = () => {
                                                                     min="0"
                                                                     max={Math.round(editedWall?.height || 0)}
                                                                     step="1"
-                                                                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                    className="form-control mt-1"
                                                                 />
                                                             </div>
                                                         </div>
@@ -3587,6 +3598,26 @@ const ProjectDetails = () => {
                 </div>
             )}
 
+            <ProjectCommentsPanel
+                projectId={projectId}
+                isOpen={commentsPanelOpen}
+                onClose={() => {
+                    setCommentsPanelOpen(false);
+                    setCommentWallSelectMode(false);
+                    setSelectedWallsForComment([]);
+                    setActiveCommentId(null);
+                    setCommentHighlightWallIds([]);
+                }}
+                canComment={canComment}
+                canEdit={canEdit}
+                isAuthenticated={isAuthenticated}
+                commentWallSelectMode={commentWallSelectMode}
+                onToggleWallSelectMode={setCommentWallSelectMode}
+                selectedWallsForComment={selectedWallsForComment}
+                onClearSelectedWalls={() => setSelectedWallsForComment([])}
+                activeCommentId={activeCommentId}
+                onSelectComment={handleSelectComment}
+            />
 
             </div>
         </div>

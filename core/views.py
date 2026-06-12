@@ -6,12 +6,16 @@ from rest_framework import serializers, viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
-from .models import Project, ProjectFolder, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
+from .models import Project, ProjectFolder, ProjectComment, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
 from .serializers import (
     ProjectSerializer, ProjectListSerializer, ProjectRetrieveSerializer, ProjectFolderSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
-    DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer
+    DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer,
+    ProjectCommentSerializer,
 )
+from .comment_utils import get_unread_comment_counts, mark_project_comments_read
+from .permissions import CanAddProjectComment
+from .role_utils import user_can_edit
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
 
 
@@ -61,6 +65,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
         if self.action == 'retrieve':
             return ProjectRetrieveSerializer
         return ProjectSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action == 'list':
+            queryset = self.filter_queryset(self.get_queryset())
+            project_ids = list(queryset.values_list('id', flat=True))
+            context['unread_comment_counts'] = get_unread_comment_counts(
+                self.request.user,
+                project_ids,
+            )
+        return context
 
     def _acting_user(self):
         user = self.request.user
@@ -132,6 +147,78 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(
+        detail=True,
+        methods=['get', 'post'],
+        url_path='comments',
+        permission_classes=[CanAddProjectComment],
+    )
+    def comments(self, request, pk=None):
+        project = self.get_object()
+
+        if request.method == 'GET':
+            if not request.user.is_authenticated:
+                return Response({'error': 'Authentication required.'}, status=status.HTTP_401_UNAUTHORIZED)
+            comments = (
+                ProjectComment.objects
+                .filter(project=project)
+                .select_related('author')
+                .order_by('-created_at', '-id')
+            )
+            serializer = ProjectCommentSerializer(comments, many=True)
+            return Response({'comments': serializer.data}, status=status.HTTP_200_OK)
+
+        body = (request.data.get('body') or '').strip()
+        if not body:
+            return Response({'error': 'Comment text is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_wall_ids = request.data.get('wall_ids') or []
+        if not isinstance(raw_wall_ids, list):
+            return Response({'error': 'wall_ids must be a list of integers.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        wall_ids = []
+        for value in raw_wall_ids:
+            try:
+                wall_ids.append(int(value))
+            except (TypeError, ValueError):
+                return Response({'error': 'wall_ids must be a list of integers.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if wall_ids:
+            valid_ids = set(
+                Wall.objects.filter(project=project, id__in=wall_ids).values_list('id', flat=True)
+            )
+            invalid = [wall_id for wall_id in wall_ids if wall_id not in valid_ids]
+            if invalid:
+                return Response(
+                    {'error': f'Invalid wall IDs for this project: {invalid}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            wall_ids = list(dict.fromkeys(wall_ids))
+
+        comment = ProjectComment.objects.create(
+            project=project,
+            author=request.user,
+            body=body,
+            wall_ids=wall_ids,
+        )
+        serializer = ProjectCommentSerializer(comment)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='comments/mark-read',
+        permission_classes=[CanAddProjectComment],
+    )
+    def mark_comments_read(self, request, pk=None):
+        if not request.user.is_authenticated:
+            return Response({'error': 'Authentication required.'}, status=status.HTTP_401_UNAUTHORIZED)
+        if not user_can_edit(request.user):
+            return Response({'error': 'Only editors can mark comments as read.'}, status=status.HTTP_403_FORBIDDEN)
+        project = self.get_object()
+        mark_project_comments_read(request.user, project)
+        return Response({'message': 'Comments marked as read.'}, status=status.HTTP_200_OK)
 
 
 class ProjectFolderViewSet(viewsets.ModelViewSet):
@@ -468,17 +555,29 @@ class RoomViewSet(viewsets.ModelViewSet):
             
             # If height is being updated, update wall heights (unless allow_variable_wall_heights is enabled)
             # Pass the room's storey_id to prevent cross-level contamination
-            if 'height' in request.data and request.data['height'] is not None and not updated_room.allow_variable_wall_heights:
+            height_changed = any(
+                key in request.data and request.data.get(key) is not None
+                for key in ('height', 'height_min', 'height_max')
+            )
+            if height_changed and not updated_room.allow_variable_wall_heights:
                 wall_ids = list(updated_room.walls.values_list('id', flat=True))
                 room_storey_id = updated_room.storey_id if updated_room.storey_id else None
-                logger.info(f"Updating {len(wall_ids)} walls with new height: {request.data['height']}, room storey: {room_storey_id}")
-                updated_count = RoomService.update_wall_heights_for_room(wall_ids, request.data['height'], room_storey_id=room_storey_id)
+                target_height = updated_room.height
+                logger.info(f"Updating {len(wall_ids)} walls with new height: {target_height}, room storey: {room_storey_id}")
+                updated_count = RoomService.update_wall_heights_for_room(wall_ids, target_height, room_storey_id=room_storey_id)
                 logger.info(f"Successfully updated {updated_count} walls")
             elif updated_room.allow_variable_wall_heights and 'height' in request.data:
                 logger.info(f"Skipping wall height update for room {updated_room.id} because allow_variable_wall_heights=True (for sloped roof)")
             
             # Recalculate boundaries when geometry may have changed (skip metadata-only PATCHes)
-            metadata_only_fields = {'exclude_from_ceiling', 'label_position', 'remarks', 'temperature'}
+            metadata_only_fields = {
+                'exclude_from_ceiling',
+                'label_position',
+                'remarks',
+                'temperature',
+                'temperature_min',
+                'temperature_max',
+            }
             if not set(request.data.keys()).issubset(metadata_only_fields):
                 RoomService.recalculate_room_boundary_from_walls(updated_room.id)
             

@@ -152,8 +152,8 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
     <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto modal-scroll-panel">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Edit Door</h2>
+        <div className="form-modal-header">
+          <h2 className="form-modal-title">Edit Door</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 transition-colors"
@@ -165,17 +165,17 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
         </div>
 
         {/* Content */}
-        <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="form-panel space-y-4">
           {/* Door Type & Configuration Section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Door Type & Configuration</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+            <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Door Type & Configuration</h4>
+            <div className="form-grid mt-2">
               <div>
-                <label className="text-sm font-medium text-gray-700">Door Type</label>
+                <label className="form-label">Door Type</label>
                 <select
                   value={form.doorType}
                   onChange={form.handleTypeChange}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="form-control mt-1"
                 >
                   <option value="swing">Swing</option>
                   <option value="slide">Slide</option>
@@ -185,11 +185,11 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
 
               {form.doorType !== 'dock' && (
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Configuration</label>
+                  <label className="form-label">Configuration</label>
                   <select
                     value={form.configuration}
                     onChange={form.handleConfigChange}
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   >
                     <option value="single">Single-Sided</option>
                     <option value="double">Double-Sided</option>
@@ -201,41 +201,41 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
 
           {/* Dimensions Section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Dimensions</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+            <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Dimensions</h4>
+            <div className="form-grid mt-2">
               <div>
-                <label className="text-sm font-medium text-gray-700">Width (mm)</label>
+                <label className="form-label">Width (mm)</label>
                 <input
                   type="number"
                   value={form.width}
                   onChange={e => form.setWidth(e.target.value)}
                   min="100"
                   step="100"
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="form-control mt-1"
                 />
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700">Height (mm)</label>
+                <label className="form-label">Height (mm)</label>
                 <input
                   type="number"
                   value={form.height}
                   onChange={e => form.setHeight(e.target.value)}
                   min="100"
                   step="100"
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="form-control mt-1"
                 />
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700">Thickness (mm)</label>
+                <label className="form-label">Thickness (mm)</label>
                 <input
                   type="number"
                   value={form.thickness}
                   onChange={e => form.setThickness(e.target.value)}
                   min="25"
                   step="25"
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="form-control mt-1"
                 />
               </div>
             </div>
@@ -243,7 +243,7 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
 
           {/* Position Section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Position on Wall</h4>
+            <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Position on Wall</h4>
             <div className="mt-3 space-y-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Position Slider</label>
@@ -257,9 +257,9 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
                   className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="form-grid">
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Distance from Left (mm)</label>
+                  <label className="form-label">Distance from Left (mm)</label>
                   <input
                     type="number"
                     value={Math.round(form.leftDistance) || 0}
@@ -267,11 +267,11 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
                     min="0"
                     max={Math.max(0, Math.round(form.wallLength))}
                     step="1"
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Distance from Right (mm)</label>
+                  <label className="form-label">Distance from Right (mm)</label>
                   <input
                     type="number"
                     value={Math.round(form.rightDistance) || 0}
@@ -279,7 +279,7 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
                     min="0"
                     max={Math.max(0, Math.round(form.wallLength))}
                     step="1"
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   />
                 </div>
               </div>
@@ -288,8 +288,8 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
 
           {/* Control Buttons Section */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">Controls</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+            <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Controls</h4>
+            <div className="form-grid mt-2">
               {form.doorType !== 'dock' && (
                 <button
                   onClick={form.handleFlipDirection}
@@ -332,7 +332,7 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
                     <div key={window.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-700">
+                          <span className="form-label">
                             {window.window_type || 'glass'} window
                           </span>
                           <span className="text-xs text-gray-500">
@@ -369,19 +369,19 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
         <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl sticky bottom-0">
           <button
             onClick={onClose}
-            className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            className="form-btn-secondary w-full sm:w-auto"
           >
             Cancel
           </button>
           <button
             onClick={form.handleDelete}
-            className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+            className="form-btn-danger w-full sm:w-auto"
           >
             Delete
           </button>
           <button
             onClick={form.handleSave}
-            className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            className="form-btn-primary w-full sm:w-auto"
           >
             Save
           </button>
@@ -444,11 +444,11 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
             
             <div className="p-6 space-y-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Window Type</label>
+                <label className="form-label">Window Type</label>
                 <select
                   value={windowFormData.window_type}
                   onChange={(e) => setWindowFormData({ ...windowFormData, window_type: e.target.value })}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="form-control mt-1"
                   disabled
                 >
                   <option value="glass">Glass</option>
@@ -456,27 +456,27 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
                 <p className="text-xs text-gray-500 mt-1">Only glass windows are supported</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="form-grid-2">
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Width (mm)</label>
+                  <label className="form-label">Width (mm)</label>
                   <input
                     type="number"
                     value={windowFormData.width}
                     onChange={(e) => setWindowFormData({ ...windowFormData, width: e.target.value })}
                     min="50"
                     step="50"
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Height (mm)</label>
+                  <label className="form-label">Height (mm)</label>
                   <input
                     type="number"
                     value={windowFormData.height}
                     onChange={(e) => setWindowFormData({ ...windowFormData, height: e.target.value })}
                     min="50"
                     step="50"
-                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control mt-1"
                   />
                 </div>
               </div>

@@ -6,6 +6,7 @@ import ProjectDetails from './features/project/ProjectDetails';
 import LoginPage from './features/auth/LoginPage';
 import ProtectedRoute from './features/auth/ProtectedRoute';
 import { AuthProvider } from './features/auth/AuthContext';
+import { ThemeProvider } from './features/theme/ThemeContext';
 
 // Ensure scroll position is reset on route changes and browser
 // doesn't try to "restore" scroll from the previous page.
@@ -27,9 +28,10 @@ const ScrollToTop = () => {
 
 const App = () => {
     return (
+        <ThemeProvider>
         <AuthProvider>
             <Router>
-                <div className="App">
+                <div className="App min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors">
                     <ScrollToTop />
                     <Routes>
                         <Route path="/" element={<HomePage />} />
@@ -48,6 +50,7 @@ const App = () => {
                 </div>
             </Router>
         </AuthProvider>
+        </ThemeProvider>
     );
 };
 

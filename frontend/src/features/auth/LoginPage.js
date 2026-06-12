@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FaCube, FaSignInAlt } from 'react-icons/fa';
 import { useAuth } from './AuthContext';
+import ThemeToggle from '../../components/ThemeToggle';
 
 const LoginPage = () => {
     const navigate = useNavigate();
@@ -34,24 +35,27 @@ const LoginPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 flex items-center justify-center px-4 py-10">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-gray-950 dark:via-gray-900 dark:to-slate-900 flex items-center justify-center px-4 py-10 transition-colors relative">
+            <div className="absolute top-4 right-4">
+                <ThemeToggle />
+            </div>
             <div className="w-full max-w-md">
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 mb-4">
                         <FaCube className="w-8 h-8" />
                     </div>
-                    <h1 className="text-3xl font-bold text-gray-900">System V7.0</h1>
-                    <p className="text-gray-600 mt-2">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">System V7.0</h1>
+                    <p className="text-gray-600 dark:text-gray-400 mt-2">
                         Sign in to create projects and make edits. Guests can still browse and view.
                     </p>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 sm:p-8">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-6">Sign in</h2>
+                <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-6 sm:p-8">
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">Sign in</h2>
 
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div>
-                            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="username" className="form-label">
                                 Username
                             </label>
                             <input
@@ -59,14 +63,14 @@ const LoginPage = () => {
                                 type="text"
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
-                                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="form-control mt-1"
                                 autoComplete="username"
                                 required
                             />
                         </div>
 
                         <div>
-                            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="password" className="form-label">
                                 Password
                             </label>
                             <input
@@ -74,7 +78,7 @@ const LoginPage = () => {
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="form-control mt-1"
                                 autoComplete="current-password"
                                 required
                             />

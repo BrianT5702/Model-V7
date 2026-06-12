@@ -92,6 +92,55 @@ class Project(models.Model):
         return self.name
 
 
+class ProjectComment(models.Model):
+    """Customer feedback left by salesman on a project, optionally tied to walls."""
+    project = models.ForeignKey(
+        Project,
+        related_name='comments',
+        on_delete=models.CASCADE,
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='project_comments',
+        on_delete=models.CASCADE,
+    )
+    body = models.TextField()
+    wall_ids = ArrayField(
+        models.IntegerField(),
+        default=list,
+        blank=True,
+        help_text='Wall IDs referenced by this comment.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f'Comment on {self.project.name} by {self.author.username}'
+
+
+class ProjectCommentReadStatus(models.Model):
+    """Tracks when a user last viewed comments on a project (for unread badges)."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='comment_read_statuses',
+        on_delete=models.CASCADE,
+    )
+    project = models.ForeignKey(
+        Project,
+        related_name='comment_read_statuses',
+        on_delete=models.CASCADE,
+    )
+    last_read_at = models.DateTimeField()
+
+    class Meta:
+        unique_together = ('user', 'project')
+
+    def __str__(self):
+        return f'{self.user.username} read {self.project.name} at {self.last_read_at}'
+
+
 class Storey(models.Model):
     """Represents a vertical level within a project."""
     project = models.ForeignKey(
@@ -234,12 +283,36 @@ class Room(models.Model):
         decimal_places=2, 
         null=True, 
         blank=True, 
-        help_text="Room temperature in °C (Optional)."
+        help_text="Primary room temperature in °C (max when a range is set)."
+    )
+    temperature_min = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Minimum room temperature in °C when a range is specified.",
+    )
+    temperature_max = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Maximum room temperature in °C when a range is specified.",
     )
     height = models.FloatField(
         null=True, 
         blank=True, 
-        help_text="Height of the room in mm (will be set to minimum wall height if not specified)"
+        help_text="Primary room height in mm (max when a range is set; used for wall/plan calculations)"
+    )
+    height_min = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Minimum room height in mm when a range is specified",
+    )
+    height_max = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum room height in mm when a range is specified",
     )
     base_elevation_mm = models.FloatField(
         default=0.0,

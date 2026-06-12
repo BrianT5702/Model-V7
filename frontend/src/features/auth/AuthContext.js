@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import api from '../../api/api';
-import { canEditFromUser, isAdminFromUser } from './authUtils';
+import { canCommentFromUser, canEditFromUser, isAdminFromUser } from './authUtils';
 
 const AuthContext = createContext(null);
 
@@ -133,6 +133,7 @@ export const AuthProvider = ({ children }) => {
 
     const isAdmin = isAdminFromUser(user);
     const canEdit = canEditFromUser(user);
+    const canComment = canCommentFromUser(user);
     const role = user?.role ?? null;
 
     const value = useMemo(() => ({
@@ -141,6 +142,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated,
         isAdmin,
         canEdit,
+        canComment,
         isLoading,
         authError,
         setAuthError,
@@ -151,7 +153,7 @@ export const AuthProvider = ({ children }) => {
         deleteUser,
         logout,
         refreshAuth,
-    }), [user, role, isAuthenticated, isAdmin, canEdit, isLoading, authError, login, registerUser, listUsers, updateUser, deleteUser, logout, refreshAuth]);
+    }), [user, role, isAuthenticated, isAdmin, canEdit, canComment, isLoading, authError, login, registerUser, listUsers, updateUser, deleteUser, logout, refreshAuth]);
 
     return (
         <AuthContext.Provider value={value}>

@@ -373,6 +373,17 @@ class WallService:
             raise ValueError(
                 'Walls must have the same inner/outer face material and face thickness to merge.'
             )
+        if bool(wall_1.fill_gap_mode) != bool(wall_2.fill_gap_mode):
+            raise ValueError(
+                'Walls must have the same gap-fill setting to merge.'
+            )
+        if wall_1.fill_gap_mode and (
+            wall_1.gap_fill_height != wall_2.gap_fill_height or
+            wall_1.gap_base_position != wall_2.gap_base_position
+        ):
+            raise ValueError(
+                'Walls must have the same gap-fill height and base position to merge.'
+            )
 
         # Check if walls share endpoints
         if wall_1.end_x == wall_2.start_x and wall_1.end_y == wall_2.start_y:
@@ -395,7 +406,7 @@ class WallService:
             new_start_x, new_start_y, new_end_x, new_end_y
         )
         
-        # Create the merged wall (face materials/thicknesses match by validation above)
+        # Create the merged wall (properties match by validation above)
         merged_wall = Wall.objects.create(
             project=wall_1.project,
             storey=wall_1.storey,
@@ -410,6 +421,16 @@ class WallService:
             inner_face_thickness=getattr(wall_1, 'inner_face_thickness', 0.5),
             outer_face_material=getattr(wall_1, 'outer_face_material', 'PPGI'),
             outer_face_thickness=getattr(wall_1, 'outer_face_thickness', 0.5),
+            base_elevation_mm=wall_1.base_elevation_mm,
+            base_elevation_manual=wall_1.base_elevation_manual,
+            has_concrete_base=wall_1.has_concrete_base,
+            concrete_base_height=wall_1.concrete_base_height,
+            fill_gap_mode=wall_1.fill_gap_mode,
+            gap_fill_height=wall_1.gap_fill_height,
+            gap_base_position=wall_1.gap_base_position,
+            ceiling_joint_type=wall_1.ceiling_joint_type,
+            ceiling_cut_l_horizontal_extension=wall_1.ceiling_cut_l_horizontal_extension,
+            is_default=wall_1.is_default,
         )
 
         wall_1.delete()
@@ -417,39 +438,129 @@ class WallService:
         return merged_wall
 
     @staticmethod
-    def set_gap_fill_mode(wall, enabled):
-        """Set gap-fill mode for a wall between rooms with different heights"""
-        wall.fill_gap_mode = enabled
-        
-        if enabled:
-            # When enabling gap-fill mode, get room information
-            rooms = wall.rooms.all()
-            if rooms.count() == 2:
-                room1, room2 = rooms[0], rooms[1]
-                height1 = room1.height if hasattr(room1, 'height') and room1.height else 3000
-                height2 = room2.height if hasattr(room2, 'height') and room2.height else 3000
-                
-                # Calculate the gap height and base position
-                if height1 != height2:
-                    # Gap starts at the lower room's ceiling height
-                    lower_height = min(height1, height2)
-                    higher_height = max(height1, height2)
-                    gap_height = higher_height - lower_height
-                    base_position = lower_height
-                    
-                    wall.gap_fill_height = gap_height
-                    wall.gap_base_position = base_position
+    def _effective_ceiling_height(entity, default_height=3000.0):
+        """Top elevation (mm) from base + height for a room or wall."""
+        base = getattr(entity, 'base_elevation_mm', None) or 0.0
+        height = getattr(entity, 'height_max', None)
+        if height is None:
+            height = getattr(entity, 'height', None)
+        if height is None:
+            height = default_height
+        return float(base) + float(height)
+
+    @staticmethod
+    def _rooms_for_gap_fill(wall):
+        if wall.storey_id:
+            return list(wall.rooms.filter(storey_id=wall.storey_id))
+        return list(wall.rooms.all())
+
+    @staticmethod
+    def _adjacent_walls_for_gap_fill(wall, tolerance=1.0):
+        from math import hypot
+
+        if not wall.storey_id:
+            return []
+
+        candidates = Wall.objects.filter(
+            project_id=wall.project_id,
+            storey_id=wall.storey_id,
+        ).exclude(id=wall.id)
+
+        wall_points = [(wall.start_x, wall.start_y), (wall.end_x, wall.end_y)]
+        adjacent = []
+        for other in candidates:
+            other_points = [(other.start_x, other.start_y), (other.end_x, other.end_y)]
+            for wall_point in wall_points:
+                for other_point in other_points:
+                    if hypot(wall_point[0] - other_point[0], wall_point[1] - other_point[1]) <= tolerance:
+                        adjacent.append((other, wall_point))
+                        break
                 else:
-                    # Same height - can't fill gap
-                    raise ValueError("Cannot enable gap-fill mode for walls between rooms with the same height")
-            else:
-                # Not between exactly 2 rooms
-                raise ValueError("Gap-fill mode can only be enabled for walls between exactly 2 rooms")
+                    continue
+                break
+        return adjacent
+
+    @staticmethod
+    def _side_of_wall(wall, junction_point, other_wall):
+        """Return +1/-1 for which side of wall the other wall sits on."""
+        dx = wall.end_x - wall.start_x
+        dy = wall.end_y - wall.start_y
+        other_mid_x = (other_wall.start_x + other_wall.end_x) / 2.0
+        other_mid_y = (other_wall.start_y + other_wall.end_y) / 2.0
+        px, py = junction_point
+        cross = dx * (other_mid_y - py) - dy * (other_mid_x - px)
+        return 1 if cross >= 0 else -1
+
+    @staticmethod
+    def _gap_fill_from_adjacent_walls(wall):
+        adjacent = WallService._adjacent_walls_for_gap_fill(wall)
+        if not adjacent:
+            return None
+
+        side_heights = {}
+        for other, junction in adjacent:
+            side = WallService._side_of_wall(wall, junction, other)
+            ceiling = WallService._effective_ceiling_height(other, default_height=wall.height or 3000.0)
+            side_heights.setdefault(side, []).append(ceiling)
+
+        if len(side_heights) < 2:
+            return None
+
+        side_maxes = [max(heights) for heights in side_heights.values()]
+        lower = min(side_maxes)
+        higher = max(side_maxes)
+        if lower == higher:
+            return None
+
+        return {
+            'gap_fill_height': higher - lower,
+            'gap_base_position': lower,
+        }
+
+    @staticmethod
+    def _gap_fill_from_rooms(wall):
+        rooms = WallService._rooms_for_gap_fill(wall)
+        if len(rooms) < 2:
+            return None
+
+        ceilings = [WallService._effective_ceiling_height(room) for room in rooms]
+        lower = min(ceilings)
+        higher = max(ceilings)
+        if lower == higher:
+            return None
+
+        return {
+            'gap_fill_height': higher - lower,
+            'gap_base_position': lower,
+        }
+
+    @staticmethod
+    def set_gap_fill_mode(wall, enabled):
+        """Set gap-fill mode for a wall between areas with different ceiling heights."""
+        wall.fill_gap_mode = enabled
+
+        if enabled:
+            gap = WallService._gap_fill_from_rooms(wall)
+            if gap is None:
+                gap = WallService._gap_fill_from_adjacent_walls(wall)
+
+            if gap is None:
+                rooms = WallService._rooms_for_gap_fill(wall)
+                if len(rooms) < 2:
+                    raise ValueError(
+                        'Cannot enable gap-fill: this wall is not linked to two rooms and no '
+                        'height difference was detected from adjacent walls on each side.'
+                    )
+                raise ValueError(
+                    'Cannot enable gap-fill: the rooms on both sides of this wall have the same ceiling height.'
+                )
+
+            wall.gap_fill_height = gap['gap_fill_height']
+            wall.gap_base_position = gap['gap_base_position']
         else:
-            # When disabling, clear gap-fill fields
             wall.gap_fill_height = None
             wall.gap_base_position = None
-        
+
         wall.save()
         return wall
 
@@ -792,10 +903,24 @@ class RoomService:
     def create_room_with_height(room_data):
         """Create a room with automatic height calculation and wall height updates."""
         from .models import Room, Wall
+        from .room_height_utils import normalize_room_height_fields
+        from .room_temperature_utils import normalize_room_temperature_fields
         import logging
         
         logger = logging.getLogger(__name__)
         logger.info(f"create_room_with_height called with room_data: {room_data}")
+
+        room_data = dict(room_data)
+        if room_data.get('height') is not None or room_data.get('height_min') is not None:
+            try:
+                normalize_room_height_fields(room_data)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+        if room_data.get('temperature') is not None or room_data.get('temperature_min') is not None:
+            try:
+                normalize_room_temperature_fields(room_data)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
         
         # Calculate minimum wall height if room height is not provided
         if not room_data.get('height') and room_data.get('walls'):
@@ -843,7 +968,11 @@ class RoomService:
             floor_type=room_data.get('floor_type', 'None'),
             floor_thickness=room_data.get('floor_thickness'),
             temperature=room_data.get('temperature'),
+            temperature_min=room_data.get('temperature_min'),
+            temperature_max=room_data.get('temperature_max'),
             height=room_data.get('height'),
+            height_min=room_data.get('height_min'),
+            height_max=room_data.get('height_max'),
             base_elevation_mm=base_elevation if base_elevation is not None else 0.0,
             allow_variable_wall_heights=room_data.get('allow_variable_wall_heights', False),
             remarks=room_data.get('remarks', ''),

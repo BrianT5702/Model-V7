@@ -1,6 +1,19 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import {
+    getPlanCanvasBackground,
+    getPlanCanvasGridColor,
+    adjustPlanStrokeColor,
+    buildCeilingPanelFinishColors,
+    getCeilingNeutralPanelColors,
+    getPlanDimensionStrokeColor,
+    getPlanLabelBackground,
+    getPlanWallInnerStroke,
+    getPlanWallOuterStroke,
+    isPlanCanvasDark,
+} from './planCanvasTheme';
+import { useTheme } from '../theme/ThemeContext';
 import useScrollContainment from '../../utils/useScrollContainment';
 import {
     calculateOffsetPoints,
@@ -67,10 +80,7 @@ function generateCeilingFinishColorMap(panels) {
         const colorMap = new Map();
         const onlyKey = keys[0];
         colorMap.set(onlyKey, {
-            panelFillFull: 'rgba(148, 163, 184, 0.35)', // lighter
-            panelFillCut: 'rgba(148, 163, 184, 0.7)',   // darker
-            panelStrokeFull: '#9ca3af',
-            panelStrokeCut: '#4b5563',
+            ...getCeilingNeutralPanelColors(),
             label: onlyKey,
             hasDifferentFaces: false
         });
@@ -89,26 +99,30 @@ function generateCeilingFinishColorMap(panels) {
         const outerHue = baseHue;
         const innerHue = (baseHue + 180) % 360;
 
+        const outerFull = buildCeilingPanelFinishColors(outerHue, false);
+        const outerCut = buildCeilingPanelFinishColors(outerHue, true);
+        const innerFull = buildCeilingPanelFinishColors(innerHue, false);
+        const innerCut = buildCeilingPanelFinishColors(innerHue, true);
+
         if (hasDiffFaces) {
             colorMap.set(key, {
-                // Full vs cut use same hue, different depth
-                panelFillFull: `hsla(${outerHue}, 70%, 65%, 0.45)`,
-                panelFillCut: `hsla(${outerHue}, 70%, 40%, 0.8)`,
-                panelStrokeFull: `hsl(${outerHue}, 70%, 35%)`,
-                panelStrokeCut: `hsl(${outerHue}, 80%, 20%)`,
-                innerPanelFillFull: `hsla(${innerHue}, 70%, 65%, 0.45)`,
-                innerPanelFillCut: `hsla(${innerHue}, 70%, 40%, 0.8)`,
-                innerPanelStrokeFull: `hsl(${innerHue}, 70%, 35%)`,
-                innerPanelStrokeCut: `hsl(${innerHue}, 80%, 20%)`,
+                panelFillFull: outerFull.fill,
+                panelFillCut: outerCut.fill,
+                panelStrokeFull: outerFull.stroke,
+                panelStrokeCut: outerCut.stroke,
+                innerPanelFillFull: innerFull.fill,
+                innerPanelFillCut: innerCut.fill,
+                innerPanelStrokeFull: innerFull.stroke,
+                innerPanelStrokeCut: innerCut.stroke,
                 label: key,
                 hasDifferentFaces: true
             });
         } else {
             colorMap.set(key, {
-                panelFillFull: `hsla(${outerHue}, 70%, 65%, 0.45)`,
-                panelFillCut: `hsla(${outerHue}, 70%, 40%, 0.8)`,
-                panelStrokeFull: `hsl(${outerHue}, 70%, 35%)`,
-                panelStrokeCut: `hsl(${outerHue}, 80%, 20%)`,
+                panelFillFull: outerFull.fill,
+                panelFillCut: outerCut.fill,
+                panelStrokeFull: outerFull.stroke,
+                panelStrokeCut: outerCut.stroke,
                 label: key,
                 hasDifferentFaces: false
             });
@@ -202,6 +216,7 @@ const CeilingCanvas = ({
     dimensionVisibility = { room: true, panel: true, cutPanel: false }
 }) => {
     const { isAuthenticated } = useAuth();
+    const { resolvedTheme } = useTheme();
     const canEditSupports = canEditSupportsProp ?? Boolean(onCustomSupportsChange);
     const canEditPanels = canEditPanelsProp ?? Boolean(onPanelSelect);
 
@@ -1239,8 +1254,8 @@ const CeilingCanvas = ({
         };
     }, [ceilingPlan, effectiveCeilingPanelsMap, ceilingPanels, zones]);
 
-    // Initialize and draw canvas
-    useEffect(() => {
+    // Initialize and draw canvas (layout effect = redraw before paint, avoids theme-toggle flash)
+    useLayoutEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const context = canvas.getContext('2d');
@@ -1286,7 +1301,8 @@ const CeilingCanvas = ({
         supportStartPoint,
         effectiveCustomSupports,
         selectedRailKey,
-        selectedNylonKey
+        selectedNylonKey,
+        resolvedTheme,
     ]);
 
     useEffect(() => {
@@ -1387,7 +1403,7 @@ const CeilingCanvas = ({
     // Main drawing function
     const drawCanvas = (ctx) => {
         // Clear canvas
-        ctx.fillStyle = '#fafafa';
+        ctx.fillStyle = getPlanCanvasBackground();
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         // Each redraw should recompute dimension labels from scratch
@@ -1489,8 +1505,6 @@ const CeilingCanvas = ({
             drawFn(ctx);
         });
 
-        // Draw title and info
-        drawTitle(ctx);
     };
 
     const clearSupportDrawingMode = (redraw = true) => {
@@ -2208,7 +2222,7 @@ const CeilingCanvas = ({
         const gridOffsetY = offsetY.current % gridSize;
         
         // Draw grid with proper styling - same as wall plan
-        ctx.strokeStyle = '#ddd'; // Same color as wall plan
+        ctx.strokeStyle = getPlanCanvasGridColor();
         ctx.lineWidth = 1; // Same line width as wall plan
         
         // Draw vertical lines - fixed spacing regardless of scale
@@ -2327,7 +2341,7 @@ const CeilingCanvas = ({
             ctx.lineWidth = 6 * scaleFactor.current; // Thicker border for better visibility
         } else if (isZoneSelectionActive) {
             ctx.fillStyle = 'rgba(156, 163, 175, 0.05)'; // Dimmed when zone is selected
-            ctx.strokeStyle = '#d1d5db';
+            ctx.strokeStyle = adjustPlanStrokeColor('#d1d5db');
             ctx.lineWidth = 1 * scaleFactor.current;
         } else if (isHovered) {
             ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; // Light blue for hovered room
@@ -2336,11 +2350,11 @@ const CeilingCanvas = ({
         } else if (isRoomMode) {
             // When in single room mode, dim unselected rooms
             ctx.fillStyle = 'rgba(156, 163, 175, 0.02)'; // Very light gray for unselected rooms
-            ctx.strokeStyle = '#d1d5db'; // Light gray border for unselected rooms
+            ctx.strokeStyle = adjustPlanStrokeColor('#d1d5db');
             ctx.lineWidth = 1 * scaleFactor.current;
         } else {
             ctx.fillStyle = 'rgba(156, 163, 175, 0.05)'; // Very light gray for unselected rooms
-            ctx.strokeStyle = '#9ca3af'; // Gray border for unselected rooms
+            ctx.strokeStyle = adjustPlanStrokeColor('#9ca3af');
             ctx.lineWidth = 2 * scaleFactor.current;
         }
 
@@ -2391,14 +2405,14 @@ const CeilingCanvas = ({
                 labelWidth = ctx.measureText(labelText).width;
                 labelHeight = Math.max(14, 16 * scaleFactor.current);
                 padding = 4;
-                textColor = '#9ca3af';
+                textColor = isPlanCanvasDark() ? '#d1d5db' : '#9ca3af';
                 bgColor = null; // No background
             } else {
                 ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
                 labelWidth = ctx.measureText(labelText).width;
                 labelHeight = Math.max(14, 16 * scaleFactor.current);
                 padding = 4;
-                textColor = '#6b7280';
+                textColor = isPlanCanvasDark() ? '#e5e7eb' : '#6b7280';
                 bgColor = null; // No background
             }
             
@@ -2715,7 +2729,7 @@ const CeilingCanvas = ({
 
                 // Draw the double-line wall with different styles for outer and inner lines
                 // Draw outer face (line1) - solid line
-                ctx.strokeStyle = '#333333'; // Dark gray for outer face
+                ctx.strokeStyle = getPlanWallOuterStroke();
                 ctx.lineWidth = 2;
                 ctx.setLineDash([]); // Solid line for outer face
                 
@@ -2731,7 +2745,7 @@ const CeilingCanvas = ({
                 ctx.stroke();
 
                 // Draw inner face (line2) - dashed line
-                ctx.strokeStyle = '#6b7280'; // Gray color for inner face
+                ctx.strokeStyle = getPlanWallInnerStroke();
                 ctx.lineWidth = 2;
                 ctx.setLineDash([8, 4]); // Fixed dash pattern for inner face
 
@@ -2759,7 +2773,7 @@ const CeilingCanvas = ({
             } catch (error) {
                 
                 // Fallback: draw simple wall line (inner face approximation)
-                ctx.strokeStyle = '#6b7280';
+                ctx.strokeStyle = getPlanWallInnerStroke();
                 ctx.lineWidth = 2; // Fixed line width like wall plan
                 ctx.setLineDash([8, 4]); // Fixed dash pattern
                 
@@ -2856,10 +2870,10 @@ const CeilingCanvas = ({
                         // If no alpha channel, fall back to a light gray
                         return 'rgba(156, 163, 175, 0.1)';
                     });
-                    ctx.strokeStyle = '#9ca3af';
+                    ctx.strokeStyle = adjustPlanStrokeColor('#9ca3af');
                 } else {
                     ctx.fillStyle = baseFill;
-                    ctx.strokeStyle = baseStroke;
+                    ctx.strokeStyle = adjustPlanStrokeColor(baseStroke);
                 }
 
                 ctx.lineWidth = shouldDimPanels
@@ -3358,7 +3372,7 @@ const CeilingCanvas = ({
             endY: maxY,
             dimension: roomWidth,
             type: 'room_width',
-            color: '#1e40af',
+            color: getPlanDimensionStrokeColor(DIMENSION_CONFIG.COLORS.ROOM),
             priority: DIMENSION_CONFIG.PRIORITY.ROOM,
             avoidArea: projectBounds,
             drawnPositions: new Set(),
@@ -3372,7 +3386,7 @@ const CeilingCanvas = ({
             endY: maxY,
             dimension: roomLength,
             type: 'room_length',
-            color: '#1e40af',
+            color: getPlanDimensionStrokeColor(DIMENSION_CONFIG.COLORS.ROOM),
             priority: DIMENSION_CONFIG.PRIORITY.ROOM,
             avoidArea: projectBounds,
             drawnPositions: new Set(),
@@ -3752,6 +3766,7 @@ const CeilingCanvas = ({
 
     const drawCeilingDimension = (ctx, dimension, bounds, placedLabels, allLabels, dimensionLanes = null) => {
         const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea } = dimension;
+        const visibleColor = getPlanDimensionStrokeColor(color);
 
         const isHorizontal = getCeilingDimensionOrientation(dimension);
 
@@ -3956,7 +3971,7 @@ const CeilingCanvas = ({
                 labelX,
                 labelY,
                 textWidth,
-                color
+                color: visibleColor
             },
             sf,
             ox,
@@ -3992,34 +4007,19 @@ const CeilingCanvas = ({
                 text,
                 angle: angleDeg,
                 type: 'wall',
-                textColor: color
+                textColor: visibleColor
             });
         } else {
             allLabels.push(
                 buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
                     type: 'wall',
-                    textColor: color
+                    textColor: visibleColor
                 })
             );
         }
 
         if (dedupKey) globalDimensionValues?.add(dedupKey);
         ctx.font = previousFont;
-    };
-
-    // Draw title and scale HUD (fixed screen px — not tied to plan zoom scaleFactor)
-    const drawTitle = (ctx) => {
-        ctx.save();
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
-        ctx.fillRect(12, 12, 148, 44);
-        ctx.fillStyle = '#374151';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.font = `bold 14px 'Segoe UI', Arial, sans-serif`;
-        ctx.fillText('Ceiling Plan', 20, 20);
-        ctx.font = `12px 'Segoe UI', Arial, sans-serif`;
-        ctx.fillText(`Scale: ${currentScale.toFixed(2)}x`, 20, 40);
-        ctx.restore();
     };
 
     // Mouse event handlers
@@ -5180,13 +5180,14 @@ const CeilingCanvas = ({
 
     // Draw distance dimension line
     const drawDistanceDimension = (ctx, x1, y1, x2, y2, distance, edge, scaleFactor, offsetX, offsetY, color = '#10b981') => {
+        const visibleColor = getPlanDimensionStrokeColor(color);
         const canvasX1 = x1 * scaleFactor + offsetX;
         const canvasY1 = y1 * scaleFactor + offsetY;
         const canvasX2 = x2 * scaleFactor + offsetX;
         const canvasY2 = y2 * scaleFactor + offsetY;
         
         // Draw dimension line
-        ctx.strokeStyle = color;
+        ctx.strokeStyle = visibleColor;
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]);
         
@@ -5210,10 +5211,10 @@ const CeilingCanvas = ({
         const textWidth = ctx.measureText(text).width;
         const padding = 4;
         
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillStyle = getPlanLabelBackground();
         ctx.fillRect(midX - textWidth/2 - padding, midY - 8 - padding, textWidth + padding*2, 16 + padding*2);
         
-        ctx.fillStyle = color;
+        ctx.fillStyle = visibleColor;
         ctx.fillText(text, midX, midY);
     };
 
@@ -5773,7 +5774,7 @@ const CeilingCanvas = ({
 
     return (
         <div
-            className={`ceiling-canvas-container bg-white rounded-xl shadow-lg w-full max-w-full min-w-0 ${
+            className={`plan-canvas ceiling-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg w-full max-w-full min-w-0 ${
                 isSupportSidebarOpen || isPlanDetailsOpen
                     ? 'p-4 sm:p-5 lg:p-5'
                     : 'p-4 sm:p-6'
@@ -5783,10 +5784,10 @@ const CeilingCanvas = ({
             <div className="ceiling-canvas-header mb-4 sm:mb-6 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 min-w-0">
                     <div className="min-w-0">
-                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2 truncate">
+                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1 sm:mb-2 truncate">
                             Ceiling Plan
                         </h3>
-                        <p className="text-gray-600 text-base sm:text-lg truncate">
+                        <p className="text-gray-600 dark:text-gray-400 text-base sm:text-lg truncate">
                             {showAllRooms ? 
                                 `All Rooms (${effectiveRooms.length}) - Professional Layout` :
                                 `${effectiveRooms.length > 0 ? effectiveRooms[0]?.room_name || 'Room' : 'Room'} - Professional Layout`
@@ -5846,14 +5847,14 @@ const CeilingCanvas = ({
                 <div className="ceiling-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px] order-1 lg:order-2">
                     <div
                         ref={canvasContainerRef}
-                        className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg relative"
+                        className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
                         style={{
                             height: `${CANVAS_HEIGHT}px`,
                             minHeight: `${MIN_CANVAS_HEIGHT}px`
                         }}
                     >
-                        {/* Zoom Controls Overlay */}
-                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-50">
+                        {/* Zoom Controls Overlay — top-left avoids overlap with comments / plan details on the right */}
+                        <div className="plan-canvas-zoom-controls absolute top-4 left-4 flex flex-col gap-2 z-30">
                             <button
                                 onClick={handleZoomIn}
                                 className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
@@ -5912,7 +5913,7 @@ const CeilingCanvas = ({
                             onContextMenu={(e) => e.preventDefault()}
                         />
                         {enableAluSuspension && effectiveCustomSupports.length > 0 && (
-                            <div className="absolute bottom-3 left-3 z-10 pointer-events-none rounded-lg bg-white/95 border border-purple-200 px-2.5 py-2 shadow-sm text-[11px] text-gray-700 space-y-1.5 max-w-[200px]">
+                            <div className="absolute bottom-3 left-3 z-10 pointer-events-none rounded-lg bg-white/95 dark:bg-gray-800/95 border border-purple-200 dark:border-purple-700 px-2.5 py-2 shadow-sm text-[11px] text-gray-700 dark:text-gray-200 space-y-1.5 max-w-[200px]">
                                 <div className="font-semibold text-purple-900">Alu suspension</div>
                                 <div className="flex items-center gap-2">
                                     <span className="inline-block w-9 h-1 rounded-full bg-purple-800 shrink-0" />
@@ -5968,10 +5969,10 @@ const CeilingCanvas = ({
                 <div className="ceiling-summary-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0 order-3">
                     <div
                         ref={planDetailsScrollRef}
-                        className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
+                        className="plan-details-panel bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
                     >
                         <div className="flex flex-col items-stretch gap-2 mb-4">
-                            <h4 className="text-base font-bold text-gray-900 flex items-center shrink-0">
+                            <h4 className="text-base font-bold text-gray-900 dark:text-gray-100 flex items-center shrink-0">
                                 <svg className="w-5 h-5 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
@@ -5980,7 +5981,7 @@ const CeilingCanvas = ({
                             <button
                                 type="button"
                                 onClick={() => setIsPlanDetailsOpen(false)}
-                                className="self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                                className="plan-details-btn self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             >
                                 Collapse
                             </button>

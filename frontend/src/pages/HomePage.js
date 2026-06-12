@@ -119,7 +119,7 @@ const HomePage = () => {
     const showCreateButton = canEdit;
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-gray-950 dark:via-gray-900 dark:to-slate-900 transition-colors">
             {/* Database Connection Error Message */}
             {dbConnectionError && (
                 <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-xl shadow-lg animate-fade-in">
@@ -133,12 +133,12 @@ const HomePage = () => {
             )}
 
             {/* Header Section */}
-            <div className="bg-white border-b border-gray-200">
+            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center">
                             <FaCube className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600 mr-3 sm:mr-4" />
-                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">System V7.0</h1>
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">System V7.0</h1>
                         </div>
                         
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:space-x-4">
@@ -167,7 +167,7 @@ const HomePage = () => {
                 {canEdit && showCreateForm && (
                     <div className="mb-8 sm:mb-12">
                         <div className="text-center mb-6 sm:mb-8">
-                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Project</h2>
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Create New Project</h2>
                         </div>
                         
                         <div className="flex justify-center">
@@ -202,7 +202,7 @@ const HomePage = () => {
                     )}
 
                     {isLoading ? (
-                        <div className="flex items-center justify-center flex-1 rounded-xl border border-gray-200 bg-white text-gray-500">
+                        <div className="flex items-center justify-center flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">
                             Loading projects...
                         </div>
                     ) : (

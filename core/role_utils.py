@@ -45,6 +45,11 @@ def user_can_edit(user):
     return get_user_role(user) in EDITOR_ROLES
 
 
+def user_can_comment(user):
+    """Salesman accounts can leave customer feedback comments."""
+    return get_user_role(user) == ROLE_SALESMAN
+
+
 def user_is_admin(user):
     return get_user_role(user) == ROLE_ADMIN
 

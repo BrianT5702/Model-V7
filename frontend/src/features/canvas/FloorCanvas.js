@@ -1,4 +1,12 @@
-import React, { useRef, useEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useTheme } from '../theme/ThemeContext';
+import {
+    getPlanCanvasBackground,
+    getPlanCanvasGridColor,
+    getPlanWallInnerStroke,
+    getPlanWallOuterStroke,
+    isPlanCanvasDark,
+} from './planCanvasTheme';
 import {
     calculateOffsetPoints,
     drawOrthoPlanDimensionGeometryLikeWall,
@@ -75,6 +83,7 @@ const FloorCanvas = ({
     onSlabWidthChange = null,
     onSlabLengthChange = null
 }) => {
+    const { resolvedTheme } = useTheme();
     const canvasRef = useRef(null);
     const canvasContainerRef = useRef(null);
     const [canvasSize, setCanvasSize] = useState({
@@ -288,7 +297,7 @@ const FloorCanvas = ({
         return { total: 0, full: 0, cut: 0 };
     };
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -311,7 +320,7 @@ const FloorCanvas = ({
         drawCanvas(ctx);
 
     // [UPDATED] Added visibilityState to dependencies so it redraws when you click checkboxes
-    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState]);
+    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState, resolvedTheme]);
 
     const calculateCanvasTransform = () => {
         if (!rooms || rooms.length === 0) {
@@ -339,7 +348,7 @@ const FloorCanvas = ({
 
     // Main drawing function
     const drawCanvas = (ctx) => {
-        ctx.fillStyle = '#fafafa';
+        ctx.fillStyle = getPlanCanvasBackground();
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         drawGrid(ctx);
@@ -371,8 +380,6 @@ const FloorCanvas = ({
                 });
             }
         }
-
-        drawTitle(ctx);
     };
 
     // Draw professional grid
@@ -382,8 +389,8 @@ const FloorCanvas = ({
         const gridOffsetX = offsetX.current % gridSize;
         const gridOffsetY = offsetY.current % gridSize;
         
-        ctx.strokeStyle = '#ddd'; 
-        ctx.lineWidth = 1; 
+        ctx.strokeStyle = getPlanCanvasGridColor();
+        ctx.lineWidth = 1;
         
         for (let x = -gridOffsetX; x <= CANVAS_WIDTH; x += gridSize) {
             ctx.beginPath();
@@ -484,7 +491,7 @@ const FloorCanvas = ({
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            ctx.fillStyle = '#374151';
+            ctx.fillStyle = isPlanCanvasDark() ? '#e5e7eb' : '#374151';
             ctx.font = `600 ${roomNameFontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             ctx.fillText(room.room_name, canvasX, canvasY);
 
@@ -503,8 +510,8 @@ const FloorCanvas = ({
                     const boxW = textW + padH * 2;
                     const boxH = slabFontSize + padV * 2;
 
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-                    ctx.strokeStyle = 'rgba(156, 163, 175, 0.55)';
+                    ctx.fillStyle = isPlanCanvasDark() ? 'rgba(55, 65, 81, 0.92)' : 'rgba(255, 255, 255, 0.92)';
+                    ctx.strokeStyle = isPlanCanvasDark() ? 'rgba(156, 163, 175, 0.45)' : 'rgba(156, 163, 175, 0.55)';
                     ctx.lineWidth = 1;
                     const bx = canvasX - boxW / 2;
                     const by = slabY - boxH / 2;
@@ -517,7 +524,7 @@ const FloorCanvas = ({
                     ctx.fill();
                     ctx.stroke();
 
-                    ctx.fillStyle = '#4b5563';
+                    ctx.fillStyle = isPlanCanvasDark() ? '#d1d5db' : '#4b5563';
                     ctx.fillText(slabText, canvasX, slabY);
                 }
             }
@@ -621,7 +628,7 @@ const FloorCanvas = ({
                 wall._line1 = line1;
                 wall._line2 = line2;
 
-                ctx.strokeStyle = '#333333'; 
+                ctx.strokeStyle = getPlanWallOuterStroke();
                 ctx.lineWidth = 2;
                 ctx.setLineDash([]); 
                 
@@ -630,7 +637,7 @@ const FloorCanvas = ({
                 ctx.lineTo(line1[1].x * scaleFactor.current + offsetX.current, line1[1].y * scaleFactor.current + offsetY.current);
                 ctx.stroke();
 
-                ctx.strokeStyle = '#6b7280'; 
+                ctx.strokeStyle = getPlanWallInnerStroke();
                 ctx.lineWidth = 2;
                 ctx.setLineDash([8, 4]); 
 
@@ -642,7 +649,7 @@ const FloorCanvas = ({
                 ctx.setLineDash([]);
 
             } catch (error) {
-                ctx.strokeStyle = '#1f2937';
+                ctx.strokeStyle = getPlanWallOuterStroke();
                 ctx.lineWidth = 3 * scaleFactor.current;
                 ctx.setLineDash([]);
                 
@@ -779,18 +786,6 @@ const FloorCanvas = ({
         });
 
         ctx.restore();
-    };
-
-    // Draw title and info
-    const drawTitle = (ctx) => {
-        ctx.fillStyle = '#374151';
-        ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillText('Floor Plan', 20, 20);
-        
-        ctx.font = `${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-        ctx.fillText(`Scale: ${scaleFactor.current.toFixed(2)}x`, 20, 50);
     };
 
     // Helper function to calculate room area
@@ -1707,7 +1702,7 @@ const FloorCanvas = ({
 
     return (
         <div
-            className={`floor-canvas-container bg-white rounded-xl shadow-lg w-full max-w-full min-w-0 ${
+            className={`plan-canvas floor-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg w-full max-w-full min-w-0 ${
                 isPlanDetailsOpen ? 'p-4 sm:p-5 lg:p-5' : 'p-4 sm:p-6'
             }`}
         >
@@ -1715,10 +1710,10 @@ const FloorCanvas = ({
             <div className="floor-canvas-header mb-4 sm:mb-6 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 min-w-0">
                     <div className="min-w-0">
-                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2 truncate">
+                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1 sm:mb-2 truncate">
                             Floor Plan
                         </h3>
-                        <p className="text-gray-600 text-base sm:text-lg truncate">
+                        <p className="text-gray-600 dark:text-gray-400 text-base sm:text-lg truncate">
                             Professional Layout
                         </p>
                     </div>
@@ -1736,7 +1731,7 @@ const FloorCanvas = ({
             <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 min-w-0 w-full items-stretch">
                 {/* Main Canvas Area */}
                 <div className="floor-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px]">
-                <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg">
+                <div className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg">
                     <div
                         ref={canvasContainerRef}
                         className="relative"
@@ -1745,8 +1740,8 @@ const FloorCanvas = ({
                             minHeight: `${MIN_CANVAS_HEIGHT}px`
                         }}
                     >
-                        {/* Zoom Controls */}
-                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-50">
+                        {/* Zoom Controls — top-left avoids overlap with comments / plan details on the right */}
+                        <div className="plan-canvas-zoom-controls absolute top-4 left-4 flex flex-col gap-2 z-30">
                             <button
                                 onClick={handleZoomIn}
                                 className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
@@ -1813,9 +1808,9 @@ const FloorCanvas = ({
                 {/* Plan Details — same width/compact layout as ceiling plan */}
                 {isPlanDetailsOpen ? (
                 <div className="floor-summary-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0">
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 lg:max-h-[min(720px,calc(100vh-10rem))] lg:overflow-y-auto">
+                    <div className="plan-details-panel bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 lg:max-h-[min(720px,calc(100vh-10rem))] lg:overflow-y-auto">
                         <div className="flex flex-col items-stretch gap-2 mb-4">
-                            <h4 className="text-base font-bold text-gray-900 flex items-center shrink-0">
+                            <h4 className="text-base font-bold text-gray-900 dark:text-gray-100 flex items-center shrink-0">
                                 <svg className="w-5 h-5 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
@@ -1824,7 +1819,7 @@ const FloorCanvas = ({
                             <button
                                 type="button"
                                 onClick={() => setIsPlanDetailsOpen(false)}
-                                className="self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                                className="plan-details-btn self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             >
                                 Collapse
                             </button>

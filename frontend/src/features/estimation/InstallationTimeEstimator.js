@@ -19,6 +19,7 @@ import {
     appendVectorCeilingAndFloorPlans,
     buildVectorCeilingFloorPreviewBlobs
 } from './pdfVectorCeilingFloor';
+import { buildRoomLabelLines } from '../room/roomLabelUtils';
 import {
     drawVectorWallPlan,
     calculateGhostDataForStorey,
@@ -609,28 +610,7 @@ const InstallationTimeEstimator = ({
                         canvasPosition: { x: canvasX.toFixed(2), y: canvasY.toFixed(2) }
                     });
                     
-                    // Prepare text content (same format as InteractiveRoomLabel)
-                    const name = room.room_name || 'Unnamed Room';
-                    // Don't show temperature if it's 0°C
-                    const tempValue = Number(room.temperature);
-                    const temperature = (room.temperature !== undefined && room.temperature !== null && tempValue !== 0)
-                        ? `${tempValue > 0 ? '+' : ''}${tempValue}°C`
-                        : '';
-                    const height = room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
-                    
-                    // Format text lines
-                    let lines = [];
-                    if (temperature) {
-                        if (name.length > 15) {
-                            lines.push(name);
-                            lines.push(temperature);
-                        } else {
-                            lines.push(`${name} ${temperature}`);
-                        }
-                    } else {
-                        lines.push(name);
-                    }
-                    lines.push(height);
+                    const lines = buildRoomLabelLines(room);
                     
                     // Draw text on canvas with better styling
                     ctx.save();
@@ -2701,7 +2681,7 @@ const InstallationTimeEstimator = ({
 
     if (isLoading) {
         return (
-            <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6 transition-colors">
                 <div className="animate-pulse">
                     <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
                     <div className="space-y-3">
@@ -2716,7 +2696,7 @@ const InstallationTimeEstimator = ({
 
     if (error) {
         return (
-            <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6 transition-colors">
                 <div className="text-center text-red-600">
                     <svg className="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
@@ -2728,11 +2708,11 @@ const InstallationTimeEstimator = ({
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-lg p-6">
+        <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6 transition-colors">
             {/* Header with Refresh and Export Buttons */}
             <div className="mb-6">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-2xl font-bold text-gray-900">
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                         Project Summary & Installation Time Estimator
                     </h3>
                     
@@ -2763,10 +2743,10 @@ const InstallationTimeEstimator = ({
                     </button>
                 </div>
                 
-                <p className="text-gray-600 mb-2">
+                <p className="text-gray-600 dark:text-gray-400 mb-2">
                     Comprehensive project overview with installation time calculations
                 </p>
-                <p className="text-sm text-blue-600">
+                <p className="text-sm text-blue-600 dark:text-blue-400">
                     💡 Added new levels or walls? Use the green "Refresh Data" button below to update panel counts
                 </p>
             </div>

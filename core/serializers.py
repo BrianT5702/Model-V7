@@ -405,6 +405,43 @@ class RoomSerializer(serializers.ModelSerializer):
                 return serialized
         return None
 
+    def validate(self, attrs):
+        from .room_height_utils import normalize_room_height_fields
+        from .room_temperature_utils import normalize_room_temperature_fields
+
+        height_fields = {'height', 'height_min', 'height_max'}
+        if height_fields.intersection(attrs):
+            payload = {key: attrs.get(key) for key in height_fields if key in attrs}
+            if 'height' not in payload and attrs.get('height_min') is not None and attrs.get('height_max') is not None:
+                payload['height_min'] = attrs.get('height_min')
+                payload['height_max'] = attrs.get('height_max')
+            try:
+                normalize_room_height_fields(payload)
+            except ValueError as exc:
+                raise serializers.ValidationError({'height': str(exc)}) from exc
+            attrs['height'] = payload.get('height')
+            attrs['height_min'] = payload.get('height_min')
+            attrs['height_max'] = payload.get('height_max')
+
+        temperature_fields = {'temperature', 'temperature_min', 'temperature_max'}
+        if temperature_fields.intersection(attrs):
+            payload = {key: attrs.get(key) for key in temperature_fields if key in attrs}
+            if (
+                'temperature' not in payload
+                and attrs.get('temperature_min') is not None
+                and attrs.get('temperature_max') is not None
+            ):
+                payload['temperature_min'] = attrs.get('temperature_min')
+                payload['temperature_max'] = attrs.get('temperature_max')
+            try:
+                normalize_room_temperature_fields(payload)
+            except ValueError as exc:
+                raise serializers.ValidationError({'temperature': str(exc)}) from exc
+            attrs['temperature'] = payload.get('temperature')
+            attrs['temperature_min'] = payload.get('temperature_min')
+            attrs['temperature_max'] = payload.get('temperature_max')
+        return attrs
+
     def update(self, instance, validated_data):
         """Override update to handle partial updates properly"""
         # Handle the walls field separately since it's a ManyToManyField
@@ -614,6 +651,24 @@ class ProjectRetrieveSerializer(serializers.ModelSerializer):
         return max_height
 
 
+class ProjectCommentSerializer(serializers.ModelSerializer):
+    author_username = serializers.CharField(source='author.username', read_only=True)
+
+    class Meta:
+        from .models import ProjectComment
+        model = ProjectComment
+        fields = [
+            'id',
+            'project',
+            'author',
+            'author_username',
+            'body',
+            'wall_ids',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'project', 'author', 'author_username', 'created_at']
+
+
 class ProjectListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for project list endpoint.
@@ -623,6 +678,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
     folder_name = serializers.CharField(source='folder.name', read_only=True, default=None)
     created_by_username = serializers.SerializerMethodField()
     last_edited_by_username = serializers.SerializerMethodField()
+    unread_comment_count = serializers.SerializerMethodField()
 
     def get_created_by_username(self, obj):
         if getattr(obj, 'created_by_id', None) and obj.created_by:
@@ -633,6 +689,10 @@ class ProjectListSerializer(serializers.ModelSerializer):
         if getattr(obj, 'last_edited_by_id', None) and obj.last_edited_by:
             return obj.last_edited_by.username
         return None
+
+    def get_unread_comment_count(self, obj):
+        counts = self.context.get('unread_comment_counts', {})
+        return counts.get(obj.id, 0)
 
     class Meta:
         model = Project
@@ -651,4 +711,5 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'last_edited_by_username',
             'created_at',
             'updated_at',
+            'unread_comment_count',
         ]

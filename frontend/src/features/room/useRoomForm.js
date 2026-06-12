@@ -1,6 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { calculateMinWallHeight } from '../../api/api';
 import { getStoreyElevationMm } from '../project/projectUtils';
+import {
+  formatRoomHeightForInput,
+  parseRoomHeightInput,
+} from './roomHeightUtils';
+import {
+  formatRoomTemperatureForInput,
+  parseRoomTemperatureInput,
+} from './roomTemperatureUtils';
 
 /**
  * useRoomForm - Custom hook for managing room form state and logic
@@ -69,8 +77,8 @@ export default function useRoomForm({
   const [floorType, setFloorType] = useState(initialRoom?.floor_type || '');
   const [floorThickness, setFloorThickness] = useState(initialRoom?.floor_thickness || '');
   const [floorLayers, setFloorLayers] = useState(initialRoom?.floor_layers || 1);
-  const [temperature, setTemperature] = useState(initialRoom?.temperature || '');
-  const [roomHeight, setRoomHeight] = useState(initialRoom?.height || '');
+  const [temperature, setTemperature] = useState(formatRoomTemperatureForInput(initialRoom));
+  const [roomHeight, setRoomHeight] = useState(formatRoomHeightForInput(initialRoom));
   const normaliseStoreyId = (value) => {
     if (value === null || value === undefined || value === '') {
       return null;
@@ -119,8 +127,8 @@ export default function useRoomForm({
       setFloorThickness(initialRoom.floor_thickness);
       setFloorLayers(initialRoom.floor_layers || 1);
       setRemarks(initialRoom.remarks);
-      setTemperature(initialRoom.temperature || '');
-      setRoomHeight(initialRoom.height || '');
+      setTemperature(formatRoomTemperatureForInput(initialRoom));
+      setRoomHeight(formatRoomHeightForInput(initialRoom));
       setAllowVariableWallHeights(initialRoom?.allow_variable_wall_heights || false);
       const editStoreyId = normaliseStoreyId(
         initialRoom.storey ?? initialRoom.storey_id ?? activeStoreyId ?? (storeys[0]?.id ?? null)
@@ -170,7 +178,7 @@ export default function useRoomForm({
           console.log('API response for min height:', response.data);
           if (response.data.min_height) {
             console.log('Setting room height to:', response.data.min_height);
-            setRoomHeight(response.data.min_height);
+            setRoomHeight(String(response.data.min_height));
           }
         })
         .catch(error => {
@@ -181,7 +189,7 @@ export default function useRoomForm({
           if (selectedWalls.length > 0) {
             const minHeight = Math.min(...selectedWalls.map(w => w.height));
             console.log('Fallback: setting room height to:', minHeight);
-            setRoomHeight(minHeight);
+            setRoomHeight(String(minHeight));
           }
         });
     }
@@ -201,11 +209,13 @@ export default function useRoomForm({
     if (floorThickness === '' || floorThickness === null || floorThickness === undefined) {
       errors.floorThickness = 'Floor thickness is required';
     }
-    if (temperature === '' || temperature === null || temperature === undefined) {
-      errors.temperature = 'Temperature is required';
+    const parsedTemperature = parseRoomTemperatureInput(temperature);
+    if (!parsedTemperature.ok) {
+      errors.temperature = parsedTemperature.error;
     }
-    if (!roomHeight || roomHeight <= 0) {
-      errors.roomHeight = 'Room height must be greater than 0';
+    const parsedHeight = parseRoomHeightInput(roomHeight);
+    if (!parsedHeight.ok) {
+      errors.roomHeight = parsedHeight.error;
     }
     if (normalizedPoints.length < 3) {
       errors.polygonPoints = 'At least 3 points are required to define a room';
@@ -232,8 +242,8 @@ export default function useRoomForm({
     return roomName.trim() && 
            floorType && 
            (floorThickness !== '' && floorThickness !== null && floorThickness !== undefined) && 
-           (temperature !== '' && temperature !== null && temperature !== undefined) && 
-           roomHeight && 
+           parseRoomTemperatureInput(temperature).ok && 
+           parseRoomHeightInput(roomHeight).ok && 
            normalizedPoints.length >= 3;
   };
 
@@ -244,13 +254,29 @@ export default function useRoomForm({
     }
     const normalizedPoints = normalizePolygonPoints(selectedPolygonPoints);
 
+    const parsedHeight = parseRoomHeightInput(roomHeight);
+    if (!parsedHeight.ok) {
+      setValidationErrors({ roomHeight: parsedHeight.error });
+      return;
+    }
+
+    const parsedTemperature = parseRoomTemperatureInput(temperature);
+    if (!parsedTemperature.ok) {
+      setValidationErrors({ temperature: parsedTemperature.error });
+      return;
+    }
+
     const roomData = {
       room_name: roomName,
       floor_type: floorType,
       floor_thickness: floorThickness,
       floor_layers: floorLayers || 1,
-      temperature: temperature,
-      height: roomHeight,
+      temperature: parsedTemperature.temperature,
+      temperature_min: parsedTemperature.temperature_min,
+      temperature_max: parsedTemperature.temperature_max,
+      height: parsedHeight.height,
+      height_min: parsedHeight.height_min,
+      height_max: parsedHeight.height_max,
       base_elevation_mm: baseElevation === '' || baseElevation === '-' ? 0 : parseFloat(baseElevation) || 0,
       allow_variable_wall_heights: allowVariableWallHeights,
       remarks: remarks,

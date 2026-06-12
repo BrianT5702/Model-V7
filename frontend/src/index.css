@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  transition: background-color 200ms ease;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -9,6 +17,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100;
 }
 
 code {
@@ -95,10 +104,8 @@ code {
 
 /* Edit mode tool buttons */
 .tool-button {
-  @apply flex flex-col items-center justify-center p-3 sm:p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer;
+  @apply flex flex-col items-center justify-center p-3 sm:p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-800 dark:text-gray-200;
   min-height: 70px;
-  background: white;
-  border-color: #e5e7eb;
 }
 
 @media (min-width: 640px) {
@@ -108,19 +115,19 @@ code {
 }
 
 .tool-button:hover {
-  @apply border-gray-300 bg-gray-50 transform scale-105;
+  @apply border-gray-300 bg-gray-50 dark:border-gray-500 dark:bg-gray-700 transform scale-105;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .tool-button.active {
-  @apply border-blue-500 bg-blue-50 text-blue-700;
+  @apply border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-500;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
   transform: scale-1.02;
   border-width: 3px;
 }
 
 .tool-button.active:hover {
-  @apply border-blue-600 bg-blue-100;
+  @apply border-blue-600 bg-blue-100 dark:bg-blue-900;
 }
 
 /* Ensure header scales with browser zoom on mobile */
@@ -202,15 +209,11 @@ code {
 
 /* Room creation interface styling */
 .room-creation-interface {
-  background: #f9fafb;
-  border-top: 1px solid #e5e7eb;
+  @apply bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800;
 }
 
 .room-form-container {
-  background: white;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e5e7eb;
+  @apply bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm;
 }
 
 /* Canvas switching and visibility */
@@ -245,6 +248,12 @@ code {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+html.dark #three-canvas-container .button-container {
+  background: rgba(31, 41, 55, 0.95);
+  border: 1px solid rgb(75 85 99);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
 #three-canvas-container .button-container button {
   pointer-events: auto;
   margin: 0;
@@ -252,9 +261,17 @@ code {
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+html.dark #three-canvas-container .button-container button {
+  border-color: rgb(75 85 99);
+}
+
 #three-canvas-container .button-container button:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+html.dark #three-canvas-container .button-container button:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 /* Ensure buttons don't overlap */
@@ -319,6 +336,10 @@ code {
   backdrop-filter: blur(8px);
 }
 
+html.dark .project-details-container .bg-white.border-b:first-of-type {
+  background: rgba(17, 24, 39, 0.95);
+}
+
 /* Mobile-specific improvements */
 @media (max-width: 639px) {
   /* Prevent horizontal scrolling */
@@ -326,8 +347,9 @@ code {
     overflow-x: hidden;
   }
   
-  /* Improve touch targets */
-  button, a {
+  /* Improve touch targets (exclude compact form controls) */
+  button:not(.form-btn):not(.form-icon-btn):not(.form-chip):not(.form-chip-active):not(.form-chip-inactive),
+  a {
     min-height: 44px;
     min-width: 44px;
   }
@@ -361,4 +383,630 @@ code {
   .canvas-container {
     margin: 1rem;
   }
+}
+
+/* Compact professional form system */
+@layer components {
+  .form-panel {
+    @apply p-2 sm:p-3;
+  }
+
+  .form-section {
+    @apply space-y-1.5;
+  }
+
+  .form-section-header {
+    @apply flex items-center justify-between gap-2 mb-1 pb-1 border-b border-gray-200;
+  }
+
+  .form-section-title {
+    @apply text-[10px] font-semibold uppercase tracking-wider text-gray-500;
+  }
+
+  .form-field {
+    @apply min-w-0;
+  }
+
+  .form-label {
+    @apply block text-[11px] font-medium text-gray-600 mb-0;
+  }
+
+  .form-control,
+  .form-select {
+    @apply block w-full min-w-0 max-w-full h-7 px-2 text-xs leading-tight text-gray-900 bg-white border border-gray-300 rounded shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed;
+  }
+
+  select.form-control,
+  select.form-select {
+    @apply pr-6 truncate;
+  }
+
+  .form-control-error {
+    @apply border-red-400 focus:ring-red-500 focus:border-red-500;
+  }
+
+  .form-textarea {
+    @apply block w-full min-h-[2.5rem] px-2 py-1 text-xs text-gray-900 bg-white border border-gray-300 rounded shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500;
+  }
+
+  .form-error {
+    @apply text-[10px] text-red-600 mt-0.5;
+  }
+
+  .form-hint {
+    @apply text-[10px] text-gray-500 mt-0.5 leading-snug;
+  }
+
+  .form-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-2 gap-y-1.5;
+  }
+
+  .form-grid-2 {
+    @apply grid grid-cols-2 gap-x-2 gap-y-1.5 min-w-0;
+  }
+
+  /* Single-column layout for narrow sidebars (ignores viewport breakpoints) */
+  .form-grid-narrow {
+    @apply grid grid-cols-1 gap-y-1.5 min-w-0;
+  }
+
+  .form-grid-narrow-pair {
+    @apply grid grid-cols-2 gap-x-1.5 gap-y-1.5 min-w-0;
+  }
+
+  .form-subsection {
+    @apply p-2 bg-gray-50/80 rounded border border-gray-100 space-y-1.5 min-w-0;
+  }
+
+  .form-inline-panel {
+    @apply rounded-lg border border-gray-200 bg-white p-2 space-y-2 shadow-sm min-w-0 overflow-hidden;
+  }
+
+  .form-modal-header {
+    @apply flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gray-50 rounded-t-xl sticky top-0 z-10;
+  }
+
+  .form-modal-title {
+    @apply text-xs font-semibold text-gray-900;
+  }
+
+  .form-modal-subtitle {
+    @apply text-[10px] text-gray-500 mt-0.5 leading-snug;
+  }
+
+  .form-icon-btn {
+    @apply p-1 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors;
+  }
+
+  .form-actions {
+    @apply flex flex-col sm:flex-row justify-end gap-1.5 pt-2 border-t border-gray-200;
+  }
+
+  .form-btn {
+    @apply inline-flex items-center justify-center px-2.5 py-1 text-[11px] font-medium rounded transition-colors focus:outline-none focus:ring-1 focus:ring-offset-1;
+  }
+
+  .form-btn-primary {
+    @apply form-btn text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500 disabled:bg-blue-300 disabled:cursor-not-allowed;
+  }
+
+  .form-btn-secondary {
+    @apply form-btn text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 focus:ring-gray-400;
+  }
+
+  .form-btn-danger {
+    @apply form-btn text-white bg-red-600 hover:bg-red-700 focus:ring-red-500;
+  }
+
+  .form-toggle-row {
+    @apply flex items-center justify-between gap-2 p-2 bg-gray-50 rounded border border-gray-200;
+  }
+
+  .form-chip {
+    @apply px-1.5 py-0.5 text-[10px] rounded border font-medium transition-colors;
+  }
+
+  .form-chip-active {
+    @apply form-chip bg-blue-50 border-blue-400 text-blue-700;
+  }
+
+  .form-chip-inactive {
+    @apply form-chip bg-white border-gray-300 text-gray-600 hover:bg-gray-50;
+  }
+
+  .form-list-panel {
+    @apply bg-white border border-gray-200 rounded-md shadow-sm h-32 overflow-y-auto;
+  }
+
+  .form-list-row {
+    @apply px-2 py-1.5 text-xs text-gray-700 hover:bg-blue-50/60 border-b border-gray-100 last:border-b-0;
+  }
+
+  /* Room form */
+  .room-form {
+    @apply flex flex-col min-h-0 flex-1;
+  }
+
+  .room-form-body {
+    @apply flex-1 overflow-y-auto px-3 py-2.5 space-y-2;
+  }
+
+  .room-form-card {
+    @apply rounded border border-gray-200 bg-white p-2.5 space-y-2 shadow-sm;
+  }
+
+  .room-form-card-title {
+    @apply text-[11px] font-semibold text-gray-800 pb-1 border-b border-gray-100;
+  }
+
+  .room-form-row {
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0;
+  }
+
+  .room-form-row-3 {
+    @apply grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0;
+  }
+
+  .room-form-control {
+    @apply block w-full min-w-0 h-7 px-2 text-xs text-gray-900 bg-white border border-gray-300 rounded shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50;
+  }
+
+  .room-form-control-error {
+    @apply border-red-400 focus:border-red-500 focus:ring-red-500;
+  }
+
+  .room-form-label {
+    @apply block text-[11px] font-medium text-gray-700 mb-0;
+  }
+
+  .room-form-hint {
+    @apply text-[10px] text-gray-500 mt-0.5 leading-snug;
+  }
+
+  .room-form-error {
+    @apply text-[10px] text-red-600 mt-0.5;
+  }
+
+  .room-form-geometry {
+    @apply rounded border border-dashed border-gray-300 bg-gray-50/80 p-1.5 max-h-24 overflow-y-auto;
+  }
+
+  .room-form-footer {
+    @apply shrink-0 flex flex-col-reverse sm:flex-row sm:justify-end gap-1.5 px-3 py-2 border-t border-gray-200 bg-gray-50 rounded-b-xl;
+  }
+
+  /* Plan view tabs — compact strip in project header */
+  .plan-view-tabs {
+    @apply flex items-center gap-0.5 overflow-x-auto pb-0.5 min-w-0;
+    scrollbar-width: thin;
+  }
+
+  .plan-view-tab {
+    @apply inline-flex items-center shrink-0 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap;
+  }
+
+  .plan-view-tab-inactive {
+    @apply plan-view-tab text-gray-600 hover:bg-gray-100 hover:text-gray-900;
+  }
+
+  .plan-view-tab-active-blue {
+    @apply plan-view-tab bg-blue-600 text-white shadow-sm;
+  }
+
+  .plan-view-tab-active-green {
+    @apply plan-view-tab bg-green-600 text-white shadow-sm;
+  }
+
+  .plan-view-tab-active-orange {
+    @apply plan-view-tab bg-orange-600 text-white shadow-sm;
+  }
+
+  .plan-view-tab-disabled {
+    @apply plan-view-tab text-gray-400 bg-gray-100 dark:bg-gray-800 dark:text-gray-500 cursor-not-allowed;
+  }
+}
+
+/* ─── Dark mode: form system & common UI surfaces ─── */
+html.dark .form-section-header {
+  @apply border-gray-700;
+}
+
+html.dark .form-section-title {
+  @apply text-gray-400;
+}
+
+html.dark .form-label {
+  @apply text-gray-400;
+}
+
+html.dark .form-control,
+html.dark .form-select,
+html.dark .room-form-control {
+  @apply bg-gray-800 border-gray-600 text-gray-100 disabled:bg-gray-900 disabled:text-gray-400;
+}
+
+html.dark .form-control::placeholder,
+html.dark .form-select::placeholder,
+html.dark .room-form-control::placeholder,
+html.dark .form-textarea::placeholder {
+  color: rgb(107 114 128);
+}
+
+html.dark .form-textarea {
+  @apply bg-gray-800 border-gray-600 text-gray-100;
+}
+
+html.dark .form-hint,
+html.dark .room-form-hint {
+  color: rgb(156 163 175);
+}
+
+html.dark .form-subsection {
+  @apply bg-gray-800/60 border-gray-700;
+}
+
+html.dark .form-inline-panel {
+  @apply bg-gray-900 border-gray-700;
+}
+
+html.dark .form-modal-header {
+  @apply bg-gray-900 border-gray-700;
+}
+
+html.dark .form-modal-title,
+html.dark .room-form-card-title {
+  @apply text-gray-100;
+}
+
+html.dark .form-modal-subtitle {
+  color: rgb(156 163 175);
+}
+
+html.dark .form-icon-btn {
+  @apply text-gray-400 hover:text-gray-200 hover:bg-gray-800;
+}
+
+html.dark .form-actions {
+  @apply border-gray-700;
+}
+
+html.dark .form-btn-secondary {
+  @apply bg-gray-800 border-gray-600 text-gray-200 hover:bg-gray-700;
+}
+
+html.dark .form-toggle-row {
+  @apply bg-gray-800 border-gray-700;
+}
+
+html.dark .form-chip-active {
+  @apply bg-blue-950 border-blue-600 text-blue-300;
+}
+
+html.dark .form-chip-inactive {
+  @apply bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700;
+}
+
+html.dark .form-list-panel {
+  @apply bg-gray-900 border-gray-700;
+}
+
+html.dark .form-list-row {
+  @apply text-gray-300 border-gray-800 hover:bg-blue-950/40;
+}
+
+html.dark .room-form-card {
+  @apply bg-gray-900 border-gray-700;
+}
+
+html.dark .room-form-card-title {
+  @apply border-gray-800 text-gray-200;
+}
+
+html.dark .room-form-label {
+  @apply text-gray-300;
+}
+
+html.dark .room-form-geometry {
+  @apply bg-gray-800/80 border-gray-600;
+}
+
+html.dark .room-form-footer {
+  @apply bg-gray-900 border-gray-700;
+}
+
+html.dark .plan-view-tab-inactive {
+  @apply text-gray-400 hover:bg-gray-800 hover:text-gray-100;
+}
+
+/* Project explorer — unified dark palette (sidebar/toolbar/footer match) */
+html.dark .project-explorer {
+  background-color: rgb(17 24 39) !important;
+}
+
+html.dark .project-explorer .explorer-chrome {
+  background-color: rgb(31 41 55) !important;
+}
+
+/* Summary tab — installation time estimator */
+html.dark .summary-tab {
+  background-color: rgb(17 24 39) !important;
+  color: rgb(229 231 235);
+}
+
+html.dark .summary-tab .bg-gray-50,
+html.dark .summary-tab [class*="bg-gray-50"] {
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .summary-tab .bg-white,
+html.dark .summary-tab tbody.bg-white,
+html.dark .summary-tab tr.bg-white,
+html.dark .summary-tab [class*="bg-white"]:not([class*="text-white"]) {
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .summary-tab [class*="bg-gradient-to-br"],
+html.dark .summary-tab [class*="bg-gradient-to-br"][class*="from-teal"] {
+  background-image: none !important;
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .summary-tab .bg-blue-50,
+html.dark .summary-tab [class*="bg-blue-50"] {
+  background-color: rgb(30 58 138 / 0.22) !important;
+}
+
+html.dark .summary-tab .bg-indigo-100,
+html.dark .summary-tab [class*="bg-indigo-100"] {
+  background-color: rgb(49 46 129 / 0.35) !important;
+}
+
+html.dark .summary-tab .bg-teal-100,
+html.dark .summary-tab thead[class*="bg-teal"] {
+  background-color: rgb(19 78 74 / 0.45) !important;
+}
+
+html.dark .summary-tab tr[class*="bg-teal-50"],
+html.dark .summary-tab tr.bg-teal-100 {
+  background-color: rgb(19 78 74 / 0.25) !important;
+}
+
+html.dark .summary-tab .border,
+html.dark .summary-tab [class*="border-gray-200"],
+html.dark .summary-tab [class*="border-gray-300"] {
+  border-color: rgb(75 85 99) !important;
+}
+
+html.dark .summary-tab [class*="border-blue-200"],
+html.dark .summary-tab [class*="border-blue-300"] {
+  border-color: rgb(59 130 246 / 0.45) !important;
+}
+
+html.dark .summary-tab [class*="border-green-200"],
+html.dark .summary-tab [class*="border-green-300"] {
+  border-color: rgb(34 197 94 / 0.45) !important;
+}
+
+html.dark .summary-tab [class*="border-purple-200"],
+html.dark .summary-tab [class*="border-purple-300"] {
+  border-color: rgb(168 85 247 / 0.45) !important;
+}
+
+html.dark .summary-tab [class*="border-orange-200"] {
+  border-color: rgb(249 115 22 / 0.45) !important;
+}
+
+html.dark .summary-tab [class*="border-indigo-200"] {
+  border-color: rgb(99 102 241 / 0.45) !important;
+}
+
+html.dark .summary-tab [class*="border-teal-200"] {
+  border-color: rgb(20 184 166 / 0.45) !important;
+}
+
+html.dark .summary-tab [class*="text-blue-800"],
+html.dark .summary-tab [class*="text-blue-700"] {
+  color: rgb(147 197 253) !important;
+}
+
+html.dark .summary-tab [class*="text-green-800"],
+html.dark .summary-tab [class*="text-green-700"],
+html.dark .summary-tab [class*="text-green-900"] {
+  color: rgb(134 239 172) !important;
+}
+
+html.dark .summary-tab [class*="text-purple-800"],
+html.dark .summary-tab [class*="text-purple-700"],
+html.dark .summary-tab [class*="text-purple-900"] {
+  color: rgb(216 180 254) !important;
+}
+
+html.dark .summary-tab [class*="text-orange-700"] {
+  color: rgb(253 186 116) !important;
+}
+
+html.dark .summary-tab [class*="text-indigo-800"] {
+  color: rgb(165 180 252) !important;
+}
+
+html.dark .summary-tab input[type="number"],
+html.dark .summary-tab input[type="text"] {
+  background-color: rgb(17 24 39) !important;
+  color: rgb(243 244 246) !important;
+}
+
+html.dark .summary-tab .bg-purple-100,
+html.dark .summary-tab .bg-blue-100,
+html.dark .summary-tab .bg-green-100 {
+  background-color: rgb(55 65 81) !important;
+}
+
+html.dark .summary-tab .text-purple-700,
+html.dark .summary-tab .text-blue-700,
+html.dark .summary-tab .text-green-700 {
+  color: rgb(209 213 219) !important;
+}
+
+html.dark .summary-tab .bg-gray-200 {
+  background-color: rgb(55 65 81) !important;
+}
+
+html.dark .summary-tab .text-orange-700 {
+  color: rgb(253 186 116) !important;
+}
+
+/* Plan canvas — wall / ceiling / floor tabs (no color transition: avoids label/chrome blink on theme toggle) */
+.plan-canvas,
+.plan-canvas-viewport {
+  transition: none !important;
+}
+
+.plan-canvas-viewport .room-label,
+.plan-canvas-viewport .room-label * {
+  transition: none !important;
+}
+
+/* Canvas zoom controls — stay below comments drawer (z-40) */
+.plan-canvas-zoom-controls {
+  z-index: 30;
+}
+
+html.dark .plan-canvas-zoom-controls button {
+  background-color: rgb(31 41 55);
+  border-color: rgb(75 85 99);
+}
+
+html.dark .plan-canvas-zoom-controls button:hover {
+  background-color: rgb(55 65 81);
+}
+
+html.dark .plan-canvas-zoom-controls button svg {
+  color: rgb(209 213 219);
+}
+
+html.dark .plan-canvas {
+  background-color: rgb(17 24 39) !important;
+  color: rgb(229 231 235);
+}
+
+html.dark .plan-canvas .bg-white,
+html.dark .plan-canvas [class*="bg-white/"] {
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .plan-canvas .border-gray-200,
+html.dark .plan-canvas [class*="border-gray-200"],
+html.dark .plan-canvas [class*="border-gray-300"] {
+  border-color: rgb(75 85 99) !important;
+}
+
+html.dark .plan-canvas tbody.bg-white,
+html.dark .plan-canvas thead.bg-gray-50 {
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .plan-canvas tr.bg-white,
+html.dark .plan-canvas tr.bg-gray-50 {
+  background-color: rgb(31 41 55) !important;
+}
+
+/* Plan Details sidebar — gradient shell + cards (gradient utilities are not remapped globally) */
+html.dark .plan-details-panel {
+  background-color: rgb(31 41 55) !important;
+  background-image: linear-gradient(to bottom right, rgb(55 65 81), rgb(31 41 55)) !important;
+  border-color: rgb(75 85 99) !important;
+  color: rgb(229 231 235);
+}
+
+html.dark .plan-details-panel .plan-details-card,
+html.dark .plan-details-panel .bg-white {
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .plan-details-panel .border-gray-200,
+html.dark .plan-details-panel .border-emerald-200 {
+  border-color: rgb(75 85 99) !important;
+}
+
+html.dark .plan-details-panel .border-t.border-gray-200 {
+  border-top-color: rgb(75 85 99) !important;
+}
+
+html.dark .plan-details-panel .plan-details-btn {
+  background-color: rgb(55 65 81);
+  border-color: rgb(75 85 99);
+  color: rgb(209 213 219);
+}
+
+html.dark .plan-details-panel .plan-details-btn:hover {
+  background-color: rgb(75 85 99);
+}
+
+html.dark .plan-details-panel input[type="number"],
+html.dark .plan-details-panel input[type="text"] {
+  background-color: rgb(17 24 39);
+  border-color: rgb(75 85 99);
+  color: rgb(229 231 235);
+}
+
+html.dark .wall-canvas-container,
+html.dark .ceiling-canvas-container,
+html.dark .floor-canvas-container,
+html.dark .canvas-container,
+html.dark .floor-manager,
+html.dark .ceiling-manager {
+  background-color: rgb(17 24 39) !important;
+}
+
+/* Broad UI chrome remapping for legacy Tailwind utility classes */
+html.dark .bg-white:not(.plan-canvas-viewport) {
+  background-color: rgb(17 24 39) !important;
+}
+
+html.dark .bg-gray-50:not(.explorer-chrome) {
+  background-color: rgb(3 7 18) !important;
+}
+
+html.dark .bg-gray-100 {
+  background-color: rgb(31 41 55);
+}
+
+html.dark .text-gray-900 {
+  color: rgb(243 244 246);
+}
+
+html.dark .text-gray-800 {
+  color: rgb(229 231 235);
+}
+
+html.dark .text-gray-700 {
+  color: rgb(209 213 219);
+}
+
+html.dark .text-gray-600 {
+  color: rgb(156 163 175);
+}
+
+html.dark .text-gray-500 {
+  color: rgb(156 163 175);
+}
+
+html.dark .border-gray-100 {
+  border-color: rgb(31 41 55);
+}
+
+html.dark .border-gray-200 {
+  border-color: rgb(55 65 81);
+}
+
+html.dark .border-gray-300 {
+  border-color: rgb(75 85 99);
+}
+
+html.dark .hover\:bg-gray-50:hover {
+  background-color: rgb(31 41 55);
+}
+
+html.dark .hover\:bg-gray-100:hover {
+  background-color: rgb(31 41 55);
 }

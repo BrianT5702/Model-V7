@@ -3,6 +3,7 @@ import api from '../../api/api';
 import ThreeCanvas3D from '../canvas/ThreeCanvas3D';
 import {
   areCollinearWalls,
+  gapFillSettingsMatch,
   calculateIntersection,
   arePointsEqual,
   detectRoomWalls,
@@ -1970,14 +1971,17 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         // Exiting mode
         if (mode === 'define-room') {
           setShowRoomManagerModal(false);
+          setRoomManagerMinimized(false);
           updateRoomPointsAndDetectWalls([]);
         }
         return null;
       } else {
         // Entering new mode
         if (mode === 'define-room') {
-          setShowRoomManagerModal(true); // Always show modal in define-room mode
-          updateRoomPointsAndDetectWalls([]);    // Clear points when entering
+          setEditingRoom(null);
+          updateRoomPointsAndDetectWalls([]);
+          setShowRoomManagerModal(true);
+          setRoomManagerMinimized(true);
         }
         return mode;
       }
@@ -2026,7 +2030,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     const room = rooms.find(r => r.id === roomId);
     if (room) {
       setEditingRoom(room);
-      setShowRoomManagerModal(true); // Always show modal for editing
+      setShowRoomManagerModal(true);
+      setRoomManagerMinimized(false);
       setSelectedWallsForRoom(room.walls);
       updateRoomPointsAndDetectWalls(room.room_points || []);
     }
@@ -2144,6 +2149,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
           Number(w1.inner_face_thickness) !== Number(w2.inner_face_thickness) ||
           Number(w1.outer_face_thickness) !== Number(w2.outer_face_thickness)
         ) return false;
+        if (!gapFillSettingsMatch(w1, w2)) return false;
         return areCollinearWalls(w1, w2);
       };
       // Recursive merge
@@ -2503,6 +2509,14 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       Number(wall1.outer_face_thickness) !== Number(wall2.outer_face_thickness)
     ) {
       setWallMergeError("Walls must have the same inner/outer face material and face thickness to merge.");
+      setSelectedWallsForRoom([]);
+      setSelectedWallsForEdit([]);
+      setTimeout(() => setWallMergeError(''), 5000);
+      return;
+    }
+
+    if (!gapFillSettingsMatch(wall1, wall2)) {
+      setWallMergeError("Walls must have the same gap-fill settings to merge.");
       setSelectedWallsForRoom([]);
       setSelectedWallsForEdit([]);
       setTimeout(() => setWallMergeError(''), 5000);

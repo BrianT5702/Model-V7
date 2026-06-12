@@ -526,9 +526,9 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
     }
 
     return (
-        <div className="floor-manager bg-gray-50 min-h-screen">
+        <div className="floor-manager bg-gray-50 dark:bg-gray-900 min-h-0 transition-colors">
             {/* Header */}
-            <div className="bg-white shadow-sm border-b border-gray-200 p-6 ml-8">
+            <div className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700 p-6 ml-8 transition-colors">
                 <div className="flex items-center justify-between">
                     <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-4">

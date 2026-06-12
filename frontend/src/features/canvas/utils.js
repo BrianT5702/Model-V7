@@ -896,7 +896,14 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
         if (room.label_position) {
             const pos = transform(room.label_position.x, room.label_position.y);
             const name = room.room_name || 'Unnamed Room';
-            const height = room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
+            const height = (() => {
+                const min = room.height_min ?? room.height;
+                const max = room.height_max ?? room.height;
+                if (min != null && max != null && min !== max) {
+                    return `EXT. HT. ${min}-${max}mm`;
+                }
+                return room.height ? `EXT. HT. ${room.height}mm` : 'EXT. HT. No height';
+            })();
             const baseElevation = room.base_elevation_mm !== undefined && room.base_elevation_mm !== 0 
                 ? `Base: ${room.base_elevation_mm > 0 ? '+' : ''}${room.base_elevation_mm}mm` 
                 : '';

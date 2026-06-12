@@ -3,6 +3,18 @@ import { normalizeWallCoordinates } from '../canvas/drawing';
 /**
  * Check if two walls are collinear (vector approach)
  */
+/** True when both walls have the same gap-fill mode and matching gap settings. */
+export function gapFillSettingsMatch(wall1, wall2) {
+  const gap1 = Boolean(wall1.fill_gap_mode);
+  const gap2 = Boolean(wall2.fill_gap_mode);
+  if (gap1 !== gap2) return false;
+  if (!gap1) return true;
+  return (
+    wall1.gap_fill_height === wall2.gap_fill_height &&
+    wall1.gap_base_position === wall2.gap_base_position
+  );
+}
+
 export function areCollinearWalls(wall1, wall2) {
   const vector1 = {
     x: wall1.end_x - wall1.start_x,
