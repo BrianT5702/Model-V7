@@ -34,6 +34,28 @@ const BRIGHT_STROKE_COLORS = new Set([
 
     '#1d4ed8',
 
+    '#60a5fa',
+
+    '#38bdf8',
+
+    '#22d3ee',
+
+    '#a855f7',
+
+    '#c084fc',
+
+    '#e879f9',
+
+    '#f472b6',
+
+    '#f97316',
+
+    '#fb923c',
+
+    '#f59e0b',
+
+    '#34d399',
+
 ]);
 
 
@@ -476,4 +498,16 @@ export function adjustPlanStrokeColor(color) {
 
 }
 
+/** Theme-aware wall highlight strokes for selection, joints, and edit modes. */
+const PLAN_WALL_HIGHLIGHTS = {
+    jointWall1: { light: '#2563EB', dark: '#22D3EE' },
+    jointWall2: { light: '#7C3AED', dark: '#E879F9' },
+    selection: { light: '#3B82F6', dark: '#60A5FA' },
+    edit: { light: '#F97316', dark: '#FB923C' },
+};
+
+export function getPlanWallHighlightColor(kind = 'selection') {
+    const entry = PLAN_WALL_HIGHLIGHTS[kind] || PLAN_WALL_HIGHLIGHTS.selection;
+    return isPlanCanvasDark() ? entry.dark : entry.light;
+}
 

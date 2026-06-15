@@ -40,6 +40,7 @@ import {
     FaLock,
     FaUnlock,
     FaComment,
+    FaStickyNote,
 } from 'react-icons/fa';
 
 const ProjectDetails = () => {
@@ -55,6 +56,10 @@ const ProjectDetails = () => {
     const [selectedWallsForComment, setSelectedWallsForComment] = useState([]);
     const [activeCommentId, setActiveCommentId] = useState(null);
     const [commentHighlightWallIds, setCommentHighlightWallIds] = useState([]);
+    const [unreadCommentCount, setUnreadCommentCount] = useState(0);
+    const [planAnnotateMode, setPlanAnnotateMode] = useState(false);
+    const [selectedPlanAnnotationId, setSelectedPlanAnnotationId] = useState(null);
+    const [planAnnotationArrowPlacementId, setPlanAnnotationArrowPlacementId] = useState(null);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
 
@@ -78,7 +83,57 @@ const ProjectDetails = () => {
         setSelectedWallsForComment([]);
         setActiveCommentId(null);
         setCommentHighlightWallIds([]);
+        setUnreadCommentCount(0);
+        setPlanAnnotateMode(false);
+        setSelectedPlanAnnotationId(null);
+        setPlanAnnotationArrowPlacementId(null);
     }, [projectId]);
+
+    useEffect(() => {
+        setUnreadCommentCount(projectDetails.project?.unread_comment_count ?? 0);
+    }, [projectDetails.project?.unread_comment_count, projectId]);
+
+    const handleCommentsRead = useCallback(() => {
+        setUnreadCommentCount(0);
+        window.dispatchEvent(new CustomEvent('project-comments-read', {
+            detail: { projectId: Number(projectId) },
+        }));
+    }, [projectId]);
+
+    const handleToggleCommentWallSelectMode = useCallback((enabled) => {
+        setCommentWallSelectMode(enabled);
+        if (enabled) {
+            projectDetails.setCurrentView('wall-plan');
+            projectDetails.setIs3DView(false);
+        }
+    }, [projectDetails]);
+
+    useEffect(() => {
+        if (commentWallSelectMode && !isWallPlanView) {
+            projectDetails.setCurrentView('wall-plan');
+            projectDetails.setIs3DView(false);
+        }
+    }, [commentWallSelectMode, isWallPlanView, projectDetails]);
+
+    const handleTogglePlanAnnotateMode = useCallback((enabled) => {
+        const nextEnabled = typeof enabled === 'boolean' ? enabled : !planAnnotateMode;
+        setPlanAnnotateMode(nextEnabled);
+        if (nextEnabled) {
+            setCommentWallSelectMode(false);
+            projectDetails.setCurrentView('wall-plan');
+            projectDetails.setIs3DView(false);
+        } else {
+            setPlanAnnotationArrowPlacementId(null);
+            setSelectedPlanAnnotationId(null);
+        }
+    }, [planAnnotateMode, projectDetails]);
+
+    useEffect(() => {
+        if (planAnnotateMode && !isWallPlanView) {
+            projectDetails.setCurrentView('wall-plan');
+            projectDetails.setIs3DView(false);
+        }
+    }, [planAnnotateMode, isWallPlanView, projectDetails]);
 
     const handleSelectComment = useCallback((comment) => {
         if (!comment) {
@@ -103,6 +158,11 @@ const ProjectDetails = () => {
             }
         }
     }, [activeCommentId, projectDetails]);
+
+    const handleClearActiveComment = useCallback(() => {
+        setActiveCommentId(null);
+        setCommentHighlightWallIds([]);
+    }, []);
 
     useEffect(() => {
         if (!isWallPlanView && !projectDetails.is3DView) {
@@ -1219,12 +1279,34 @@ const ProjectDetails = () => {
                                     onClick={() => setCommentsPanelOpen((open) => !open)}
                                     className={`relative flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                                         commentsPanelOpen
-                                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                            ? 'bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-900/40 dark:text-amber-100 dark:border-amber-600'
                                             : 'btn-secondary'
                                     }`}
                                 >
                                     <FaComment className="mr-2" />
                                     {canComment ? 'Feedback' : 'Comments'}
+                                    {!canComment && unreadCommentCount > 0 && !commentsPanelOpen && (
+                                        <span
+                                            className="ml-2 min-w-[1.25rem] h-5 px-1.5 inline-flex items-center justify-center rounded-full bg-green-500 text-white text-[11px] font-semibold"
+                                            title={`${unreadCommentCount} unread comment${unreadCommentCount !== 1 ? 's' : ''}`}
+                                        >
+                                            {unreadCommentCount > 9 ? '9+' : unreadCommentCount}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
+                            {canEdit && projectDetails.currentView === 'wall-plan' && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleTogglePlanAnnotateMode(!planAnnotateMode)}
+                                    className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                        planAnnotateMode
+                                            ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-900/40 dark:text-blue-100 dark:border-blue-600'
+                                            : 'btn-secondary'
+                                    }`}
+                                >
+                                    <FaStickyNote className="mr-2" />
+                                    Plan notes
                                 </button>
                             )}
                             {projectDetails.currentView === 'wall-plan' && (
@@ -2130,6 +2212,49 @@ const ProjectDetails = () => {
                             </div>
                         ) : (
                             <div className="flex flex-col">
+                                {planAnnotateMode && (
+                                    <div className="plan-annotate-banner flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-blue-600 text-white text-sm">
+                                        <span>
+                                            Click the plan to place a note. Double-click a note to edit. Select a note to add an arrow.
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleTogglePlanAnnotateMode(false)}
+                                            className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                )}
+                                {activeCommentId && !commentWallSelectMode && (
+                                    <div className="comment-highlight-banner flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-amber-500 text-white text-sm">
+                                        <span>Viewing walls referenced by a comment</span>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearActiveComment}
+                                            className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium"
+                                        >
+                                            Clear highlight
+                                        </button>
+                                    </div>
+                                )}
+                                {commentWallSelectMode && (
+                                    <div className="comment-wall-select-banner flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-green-600 text-white text-sm">
+                                        <span>
+                                            Click walls on the plan to attach them to your comment.
+                                            {selectedWallsForComment.length > 0 && (
+                                                <> {selectedWallsForComment.length} wall{selectedWallsForComment.length !== 1 ? 's' : ''} selected.</>
+                                            )}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleToggleCommentWallSelectMode(false)}
+                                            className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium"
+                                        >
+                                            Done selecting
+                                        </button>
+                                    </div>
+                                )}
                                 <div className="relative">
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D
@@ -2186,6 +2311,24 @@ const ProjectDetails = () => {
                                             selectedWallsForComment={selectedWallsForComment}
                                             onCommentWallSelect={setSelectedWallsForComment}
                                             commentHighlightWallIds={commentHighlightWallIds}
+                                            canAnnotate={canEdit}
+                                            planAnnotateMode={planAnnotateMode}
+                                            planAnnotations={projectDetails.filteredPlanAnnotations}
+                                            selectedPlanAnnotationId={selectedPlanAnnotationId}
+                                            onSelectPlanAnnotation={setSelectedPlanAnnotationId}
+                                            onCreatePlanAnnotation={projectDetails.createPlanAnnotation}
+                                            onUpdatePlanAnnotation={projectDetails.updatePlanAnnotation}
+                                            onDeletePlanAnnotation={async (annotationId) => {
+                                                await projectDetails.deletePlanAnnotation(annotationId);
+                                                if (selectedPlanAnnotationId === annotationId) {
+                                                    setSelectedPlanAnnotationId(null);
+                                                }
+                                                if (planAnnotationArrowPlacementId === annotationId) {
+                                                    setPlanAnnotationArrowPlacementId(null);
+                                                }
+                                            }}
+                                            planAnnotationArrowPlacementId={planAnnotationArrowPlacementId}
+                                            onPlanAnnotationArrowPlacementId={setPlanAnnotationArrowPlacementId}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager
@@ -3630,11 +3773,13 @@ const ProjectDetails = () => {
                 canEdit={canEdit}
                 isAuthenticated={isAuthenticated}
                 commentWallSelectMode={commentWallSelectMode}
-                onToggleWallSelectMode={setCommentWallSelectMode}
+                onToggleWallSelectMode={handleToggleCommentWallSelectMode}
                 selectedWallsForComment={selectedWallsForComment}
                 onClearSelectedWalls={() => setSelectedWallsForComment([])}
                 activeCommentId={activeCommentId}
                 onSelectComment={handleSelectComment}
+                onClearActiveComment={handleClearActiveComment}
+                onCommentsRead={handleCommentsRead}
             />
 
             </div>

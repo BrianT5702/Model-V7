@@ -609,6 +609,7 @@ class ProjectRetrieveSerializer(serializers.ModelSerializer):
     """
     storeys = StoreySerializer(many=True, read_only=True)
     calculated_height = serializers.SerializerMethodField()
+    unread_comment_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -623,7 +624,12 @@ class ProjectRetrieveSerializer(serializers.ModelSerializer):
             'storeys',
             'created_at',
             'updated_at',
+            'unread_comment_count',
         ]
+
+    def get_unread_comment_count(self, obj):
+        counts = self.context.get('unread_comment_counts', {})
+        return counts.get(obj.id, 0)
 
     def get_calculated_height(self, obj):
         max_height = 0.0
@@ -667,6 +673,45 @@ class ProjectCommentSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = ['id', 'project', 'author', 'author_username', 'created_at']
+
+
+class PlanAnnotationSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True, default=None)
+
+    class Meta:
+        from .models import PlanAnnotation
+        model = PlanAnnotation
+        fields = [
+            'id',
+            'project',
+            'storey',
+            'created_by',
+            'created_by_username',
+            'text',
+            'position_x',
+            'position_y',
+            'arrow_target_x',
+            'arrow_target_y',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_by', 'created_by_username', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        project = attrs.get('project') or getattr(self.instance, 'project', None)
+        storey = attrs.get('storey') or getattr(self.instance, 'storey', None)
+        if project and storey and storey.project_id != project.id:
+            raise serializers.ValidationError({'storey': 'Storey does not belong to this project.'})
+
+        arrow_x = attrs.get('arrow_target_x', getattr(self.instance, 'arrow_target_x', None))
+        arrow_y = attrs.get('arrow_target_y', getattr(self.instance, 'arrow_target_y', None))
+        has_x = arrow_x is not None
+        has_y = arrow_y is not None
+        if has_x != has_y:
+            raise serializers.ValidationError({
+                'arrow_target_x': 'Both arrow target coordinates are required for an arrow.',
+            })
+        return attrs
 
 
 class ProjectListSerializer(serializers.ModelSerializer):

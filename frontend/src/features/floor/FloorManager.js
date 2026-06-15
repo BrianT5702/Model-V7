@@ -704,26 +704,6 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                             )}
                         </div>
                     </div>
-
-
-
-                    {/* Wall Thickness Info */}
-                    <div className="control-card bg-blue-50 border-blue-200">
-                        <label className="block text-sm font-semibold text-blue-700 mb-3">
-                            <svg className="w-4 h-4 inline mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            Wall Thickness
-                        </label>
-                        <div className="text-sm text-blue-700">
-                            <div className="flex items-center space-x-2">
-                                <span>Current: {projectData?.wall_thickness || 200}mm</span>
-                            </div>
-                            <p className="text-xs text-blue-600 mt-1">
-                                Floor panels will automatically exclude wall areas using this thickness
-                            </p>
-                        </div>
-                    </div>
                 </div>
 
                 {/* Action Buttons */}

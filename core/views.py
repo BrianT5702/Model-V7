@@ -6,15 +6,15 @@ from rest_framework import serializers, viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
-from .models import Project, ProjectFolder, ProjectComment, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
+from .models import Project, ProjectFolder, ProjectComment, PlanAnnotation, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
 from .serializers import (
     ProjectSerializer, ProjectListSerializer, ProjectRetrieveSerializer, ProjectFolderSerializer, StoreySerializer, WallSerializer, RoomSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
     DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer,
-    ProjectCommentSerializer,
+    ProjectCommentSerializer, PlanAnnotationSerializer,
 )
 from .comment_utils import get_unread_comment_counts, mark_project_comments_read
-from .permissions import CanAddProjectComment
+from .permissions import CanAddProjectComment, PlanAnnotationPermission
 from .role_utils import user_can_edit
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
 
@@ -75,6 +75,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 self.request.user,
                 project_ids,
             )
+        elif self.action == 'retrieve':
+            pk = self.kwargs.get(self.lookup_field)
+            if pk is not None:
+                context['unread_comment_counts'] = get_unread_comment_counts(
+                    self.request.user,
+                    [int(pk)],
+                )
         return context
 
     def _acting_user(self):
@@ -1200,3 +1207,23 @@ class IntersectionViewSet(viewsets.ModelViewSet):
             return Response(IntersectionSerializer(intersection).data, status=status.HTTP_200_OK)
         except Wall.DoesNotExist:
             return Response({'error': 'One or more walls not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class PlanAnnotationViewSet(viewsets.ModelViewSet):
+    queryset = PlanAnnotation.objects.select_related('project', 'storey', 'created_by').all()
+    serializer_class = PlanAnnotationSerializer
+    permission_classes = [PlanAnnotationPermission]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        project_id = self.request.query_params.get('project')
+        storey_id = self.request.query_params.get('storey')
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        if storey_id:
+            queryset = queryset.filter(storey_id=storey_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(created_by=user)

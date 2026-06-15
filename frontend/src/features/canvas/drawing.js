@@ -2948,7 +2948,7 @@ export function drawGapFillIndicator(context, line1, line2, scaleFactor, offsetX
 export const drawGapFillCloudOutline = drawGapFillIndicator;
 
 // Draw a pair of wall lines
-export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, color, dashPattern = [], innerColor = null) {
+export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, color, dashPattern = [], innerColor = null, lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH) {
     const outerStroke = adjustPlanStrokeColor(color);
     const innerStroke = innerColor ? adjustPlanStrokeColor(innerColor) : null;
     // If innerColor is provided and different from color, draw each line with different color
@@ -2956,7 +2956,7 @@ export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, 
     if (innerStroke && innerStroke !== outerStroke && lines.length >= 2) {
         // Draw outer face (line1) with outer color
         context.strokeStyle = outerStroke;
-        context.lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH;
+        context.lineWidth = lineWidth;
         context.setLineDash(dashPattern);
         context.beginPath();
         context.moveTo(
@@ -2984,7 +2984,7 @@ export function drawWallLinePair(context, lines, scaleFactor, offsetX, offsetY, 
     } else {
         // Same material on both faces - use single color
         context.strokeStyle = outerStroke;
-        context.lineWidth = DIMENSION_CONFIG.WALL_LINE_WIDTH;
+        context.lineWidth = lineWidth;
         context.setLineDash(dashPattern);
         lines.forEach(line => {
             context.beginPath();
@@ -4202,7 +4202,10 @@ export function drawWalls({
         }
         wall._line1 = line1;
         wall._line2 = line2;
-        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor, [], innerColor);
+        const highlightLineWidth = highlight
+            ? Math.max(2.5, DIMENSION_CONFIG.WALL_LINE_WIDTH * 2.5)
+            : DIMENSION_CONFIG.WALL_LINE_WIDTH;
+        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor, [], innerColor, highlightLineWidth);
         drawWallCaps(context, wall, joints, center, intersections, SNAP_THRESHOLD, currentScaleFactor, offsetX, offsetY, scaleFactor);
         if (wall.application_type === "partition") {
             drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX, offsetY);

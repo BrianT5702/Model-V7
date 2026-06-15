@@ -54,6 +54,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const [showDoorManager, setShowDoorManager] = useState(false);
   const [doors, setDoors] = useState([]);
   const [filteredDoors, setFilteredDoors] = useState([]);
+  const [planAnnotations, setPlanAnnotations] = useState([]);
+  const [filteredPlanAnnotations, setFilteredPlanAnnotations] = useState([]);
   const [editingDoor, setEditingDoor] = useState(null);
   const [showDoorEditor, setShowDoorEditor] = useState(false);
   const [showStoreyWizard, setShowStoreyWizard] = useState(false);
@@ -540,6 +542,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     });
     setFilteredDoors(visibleDoors);
 
+    const normalizedPlanAnnotations = Array.isArray(planAnnotations) ? planAnnotations : [];
+    setFilteredPlanAnnotations(
+      normalizedPlanAnnotations.filter((annotation) => matchesActiveStorey(annotation.storey))
+    );
+
     const visibleWallIds = new Set(visibleWalls.map((wall) => wall.id));
     const normalizedJoints = Array.isArray(joints) ? joints : [];
     const visibleJoints = normalizedJoints.filter(
@@ -547,7 +554,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         visibleWallIds.has(joint.wall_1) && visibleWallIds.has(joint.wall_2)
     );
     setFilteredJoints(visibleJoints);
-  }, [walls, rooms, doors, joints, activeStoreyId, defaultStoreyId]);
+  }, [walls, rooms, doors, joints, planAnnotations, activeStoreyId, defaultStoreyId]);
 
   useEffect(() => {
     if (selectedWallsForRoom.length === 0) {
@@ -1200,6 +1207,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         intersectionsResponse,
         roomsResponse,
         storeysResponse,
+        planAnnotationsResponse,
       ] = await Promise.all([
         api.get(`/projects/${projectId}/`),
         api.get(`/projects/${projectId}/walls/`),
@@ -1207,6 +1215,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         api.get(`/intersections/?project=${projectId}`),
         api.get(`/rooms/?project=${projectId}`),
         api.get(`/storeys/?project=${projectId}`),
+        api.get(`/plan-annotations/?project=${projectId}`),
       ]);
 
       const projectData = projectResponse.data;
@@ -1215,6 +1224,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       setDoors(doorsResponse.data);
       setJoints(intersectionsResponse.data);
       setRooms(Array.isArray(roomsResponse.data) ? roomsResponse.data : []);
+      setPlanAnnotations(Array.isArray(planAnnotationsResponse.data) ? planAnnotationsResponse.data : []);
       const prefetchedStoreys = Array.isArray(storeysResponse?.data) ? storeysResponse.data : [];
       await ensureStoreys(projectData, prefetchedStoreys);
       setStoreyError('');
@@ -2956,6 +2966,55 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   };
 
   // Expose all state and handlers
+  const createPlanAnnotation = async (position) => {
+    if (!projectId || !activeStoreyId) {
+      return null;
+    }
+    try {
+      await api.get('/csrf-token/');
+      const response = await api.post('plan-annotations/', {
+        project: Number(projectId),
+        storey: activeStoreyId,
+        position_x: position.x,
+        position_y: position.y,
+        text: '',
+      });
+      setPlanAnnotations((prev) => [...prev, response.data]);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to create plan annotation:', error);
+      return null;
+    }
+  };
+
+  const updatePlanAnnotation = async (annotationId, updates, options = {}) => {
+    setPlanAnnotations((prev) => prev.map((annotation) => (
+      annotation.id === annotationId ? { ...annotation, ...updates } : annotation
+    )));
+    if (options.transient) {
+      return;
+    }
+    try {
+      const response = await api.patch(`plan-annotations/${annotationId}/`, updates);
+      setPlanAnnotations((prev) => prev.map((annotation) => (
+        annotation.id === annotationId ? { ...annotation, ...response.data } : annotation
+      )));
+    } catch (error) {
+      console.error('Failed to update plan annotation:', error);
+    }
+  };
+
+  const deletePlanAnnotation = async (annotationId) => {
+    setPlanAnnotations((prev) => prev.filter((annotation) => annotation.id !== annotationId));
+    try {
+      await api.delete(`plan-annotations/${annotationId}/`);
+    } catch (error) {
+      console.error('Failed to delete plan annotation:', error);
+      const response = await api.get(`/plan-annotations/?project=${projectId}`);
+      setPlanAnnotations(Array.isArray(response.data) ? response.data : []);
+    }
+  };
+
   return {
     // State
     project,
@@ -3082,6 +3141,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     doors,
     setDoors,
     filteredDoors,
+    planAnnotations,
+    filteredPlanAnnotations,
+    createPlanAnnotation,
+    updatePlanAnnotation,
+    deletePlanAnnotation,
     editingDoor,
     setEditingDoor,
     showDoorEditor,

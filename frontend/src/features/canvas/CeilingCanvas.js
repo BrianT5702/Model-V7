@@ -1442,6 +1442,10 @@ const CeilingCanvas = ({
             });
         }
 
+        if (enableAluSuspension && effectiveCustomSupports.length > 0) {
+            appendAluRailDimensionsToCollector(effectiveCustomSupports, dimensionsToDraw);
+        }
+
         const dimensionLanes = createDimensionLaneCounters();
 
         // Inner panel dims first; room dims last (outermost row), like wall plan project dims
@@ -1475,6 +1479,7 @@ const CeilingCanvas = ({
                 selectedNylonKey
             );
         }
+
         const supportDraw = supportDrawModeRef.current;
         const preview = supportDraw.preview;
         if (supportDraw.placing && preview) {
@@ -3750,12 +3755,14 @@ const CeilingCanvas = ({
         dimensionLanes = null
     ) => {
         if (typeof dimension.dimension !== 'number') return false;
-        const key = planCeilingValueDedupKey(
-            dimension.dimension,
-            getCeilingDimensionOrientation(dimension)
-        );
-        if (key && dimensionKeysScheduled.current.has(key)) return false;
-        if (key) dimensionKeysScheduled.current.add(key);
+        if (!dimension.skipValueDedup) {
+            const key = planCeilingValueDedupKey(
+                dimension.dimension,
+                getCeilingDimensionOrientation(dimension)
+            );
+            if (key && dimensionKeysScheduled.current.has(key)) return false;
+            if (key) dimensionKeysScheduled.current.add(key);
+        }
         if (dimensionCollector) {
             dimensionCollector.push({ dimension, bounds });
         } else if (ctx) {
@@ -3771,7 +3778,9 @@ const CeilingCanvas = ({
         const isHorizontal = getCeilingDimensionOrientation(dimension);
 
         const dedupKey =
-            typeof length === 'number' ? planCeilingValueDedupKey(length, isHorizontal) : null;
+            !dimension.skipValueDedup && typeof length === 'number'
+                ? planCeilingValueDedupKey(length, isHorizontal)
+                : null;
         const globalDimensionValues = dimensionValuesSeen.current;
         if (dedupKey && globalDimensionValues?.has(dedupKey)) return;
         
@@ -3960,6 +3969,14 @@ const CeilingCanvas = ({
             return;
         }
 
+        if (
+            type?.startsWith('alu_rail_') &&
+            hasLabelOverlap(wallStyleBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)
+        ) {
+            ctx.font = previousFont;
+            return;
+        }
+
         drawOrthoPlanDimensionGeometryLikeWall(
             ctx,
             {
@@ -4022,7 +4039,67 @@ const CeilingCanvas = ({
         ctx.font = previousFont;
     };
 
-    // Mouse event handlers
+    const buildRailDimensionObjects = (sl, railKey) => {
+        if (!sl || !projectBounds) return [];
+        const metrics = getRailEditMetrics(sl);
+        if (!metrics) return [];
+
+        const minShow = 1 / modelUnitsPerMm;
+        const dims = [];
+        const pushDim = (startX, startY, endX, endY, modelDist, isHorizontal, typeSuffix) => {
+            if (modelDist < minShow) return;
+            const loX = Math.min(startX, endX);
+            const hiX = Math.max(startX, endX);
+            const loY = Math.min(startY, endY);
+            const hiY = Math.max(startY, endY);
+            dims.push({
+                startX,
+                startY,
+                endX,
+                endY,
+                dimension: modelToDisplayMm(modelDist),
+                type: `alu_rail_${typeSuffix}_${railKey}`,
+                color: DIMENSION_CONFIG.COLORS.PANEL_GROUP,
+                priority: DIMENSION_CONFIG.PRIORITY.PANEL_GROUP,
+                avoidArea: projectBounds,
+                isHorizontal,
+                skipValueDedup: true,
+                groupBounds: { minX: loX, maxX: hiX, minY: loY, maxY: hiY }
+            });
+        };
+
+        if (metrics.orient === 'horizontal') {
+            pushDim(metrics.leftAnchor.x, sl.startY, sl.startX, sl.startY, metrics.left, true, 'left');
+            pushDim(sl.endX, sl.endY, metrics.rightAnchor.x, sl.endY, metrics.right, true, 'right');
+            pushDim(sl.startX, metrics.topAnchor.y, sl.startX, sl.startY, metrics.top, false, 'top');
+        } else if (metrics.orient === 'vertical') {
+            pushDim(metrics.leftAnchor.x, sl.startY, sl.startX, sl.startY, metrics.left, true, 'left');
+            pushDim(sl.startX, metrics.topAnchor.y, sl.startX, sl.startY, metrics.top, false, 'top');
+            const stopY = metrics.stopWallY ?? metrics.bottomAnchor.y;
+            pushDim(sl.endX, sl.endY, sl.endX, stopY, metrics.bottom, false, 'bottom');
+        } else {
+            pushDim(metrics.leftAnchor.x, sl.startY, sl.startX, sl.startY, metrics.left, true, 'left');
+            pushDim(sl.startX, metrics.topAnchor.y, sl.startX, sl.startY, metrics.top, false, 'top');
+        }
+
+        return dims;
+    };
+
+    const appendAluRailDimensionsToCollector = (supports, dimensionCollector) => {
+        if (!enableAluSuspension || !projectBounds || !dimensionCollector) return;
+        const drawnRails = new Set();
+        (supports || []).forEach((support) => {
+            const sl = support.supportLine;
+            if (!sl) return;
+            const key = aluSupportLineKey(sl.startX, sl.startY, sl.endX, sl.endY);
+            if (drawnRails.has(key)) return;
+            drawnRails.add(key);
+            buildRailDimensionObjects(sl, key).forEach((dimension) => {
+                dimensionCollector.push({ dimension, bounds: projectBounds });
+            });
+        });
+    };
+
     const handleMouseDown = (e) => {
         // Check if we should start canvas dragging (when not placing supports)
         if (!isPlacingSupport) {
@@ -4992,60 +5069,6 @@ const CeilingCanvas = ({
         drawAluHangerAtCenter(ctx, cx, cy, angle, scaleFactor, offsetX, offsetY);
     };
 
-    const drawSelectedRailDimensions = (ctx, sl, scaleFactor, offsetX, offsetY) => {
-        if (!projectData || !sl) return;
-        const metrics = getRailEditMetrics(sl);
-        if (!metrics) return;
-
-        const mm = (modelDist) => modelToDisplayMm(modelDist);
-        const minShow = 1 / modelUnitsPerMm; // hide dims under ~1mm
-
-        const drawDim = (ax, ay, bx, by, modelDist) => {
-            if (modelDist < minShow) return;
-            drawDistanceDimension(
-                ctx, ax, ay, bx, by, mm(modelDist),
-                'selected', scaleFactor, offsetX, offsetY, '#d97706'
-            );
-        };
-
-        // Rail length — label offset beside the line (not on top of hangers)
-        const midX = (sl.startX + sl.endX) / 2;
-        const midY = (sl.startY + sl.endY) / 2;
-        const lenOffset = 80 / modelUnitsPerMm;
-        if (metrics.orient === 'vertical') {
-            drawDim(midX + lenOffset, sl.startY, midX + lenOffset, sl.endY, metrics.length);
-        } else if (metrics.orient === 'horizontal') {
-            drawDim(sl.startX, midY + lenOffset, sl.endX, midY + lenOffset, metrics.length);
-        } else {
-            drawDim(sl.startX, sl.startY, sl.endX, sl.endY, metrics.length);
-        }
-
-        if (metrics.orient === 'horizontal') {
-            drawDim(metrics.leftAnchor.x, sl.startY, sl.startX, sl.startY, metrics.left);
-            drawDim(sl.endX, sl.endY, metrics.rightAnchor.x, sl.endY, metrics.right);
-            drawDim(sl.startX, metrics.topAnchor.y, sl.startX, sl.startY, metrics.top);
-        } else if (metrics.orient === 'vertical') {
-            drawDim(metrics.leftAnchor.x, sl.startY, sl.startX, sl.startY, metrics.left);
-            drawDim(sl.startX, metrics.topAnchor.y, sl.startX, sl.startY, metrics.top);
-            const stopY = metrics.stopWallY ?? metrics.bottomAnchor.y;
-            drawDim(sl.endX, sl.endY, sl.endX, stopY, metrics.bottom);
-        }
-
-        const cStartX = sl.startX * scaleFactor + offsetX;
-        const cStartY = sl.startY * scaleFactor + offsetY;
-        const cEndX = sl.endX * scaleFactor + offsetX;
-        const cEndY = sl.endY * scaleFactor + offsetY;
-        ctx.save();
-        ctx.fillStyle = '#f59e0b';
-        [cStartX, cEndX].forEach((cx, i) => {
-            const cy = i === 0 ? cStartY : cEndY;
-            ctx.beginPath();
-            ctx.arc(cx, cy, Math.max(6, 8 * scaleFactor), 0, 2 * Math.PI);
-            ctx.fill();
-        });
-        ctx.restore();
-    };
-
     const drawCustomSupports = (ctx, supports, scaleFactor, offsetX, offsetY, selectedRailKeyArg = null, selectedNylonKeyArg = null) => {
         ctx.save();
         ctx.lineJoin = 'round';
@@ -5077,7 +5100,19 @@ const CeilingCanvas = ({
             ctx.lineTo(x2, y2);
             ctx.stroke();
             if (isSelected) {
-                drawSelectedRailDimensions(ctx, sl, scaleFactor, offsetX, offsetY);
+                const cStartX = sl.startX * scaleFactor + offsetX;
+                const cStartY = sl.startY * scaleFactor + offsetY;
+                const cEndX = sl.endX * scaleFactor + offsetX;
+                const cEndY = sl.endY * scaleFactor + offsetY;
+                ctx.save();
+                ctx.fillStyle = '#f59e0b';
+                [cStartX, cEndX].forEach((cx, i) => {
+                    const cy = i === 0 ? cStartY : cEndY;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, Math.max(6, 8 * scaleFactor), 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+                ctx.restore();
             }
         });
 

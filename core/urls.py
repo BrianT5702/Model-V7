@@ -23,6 +23,7 @@ from .views import (
     IntersectionViewSet,
     CeilingZoneViewSet,
     StoreyViewSet,
+    PlanAnnotationViewSet,
     csrf_token_view,
 )
 
@@ -42,6 +43,7 @@ router.register(r'windows', WindowViewSet, basename='window')  # New endpoint fo
 router.register(r'wall-windows', WallWindowViewSet, basename='wall-window')  # New endpoint for windows on walls
 router.register(r'intersections', IntersectionViewSet, basename='intersection')  # New endpoint for intersections
 router.register(r'storeys', StoreyViewSet, basename='storey')
+router.register(r'plan-annotations', PlanAnnotationViewSet, basename='plan-annotation')
 
 # Define urlpatterns
 urlpatterns = [

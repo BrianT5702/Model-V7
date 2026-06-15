@@ -116,6 +116,21 @@ const HomePage = () => {
             });
     }, []);
 
+    useEffect(() => {
+        const handleCommentsRead = (event) => {
+            const readProjectId = event.detail?.projectId;
+            if (!readProjectId) return;
+            setProjects((prev) => prev.map((project) => (
+                project.id === readProjectId
+                    ? { ...project, unread_comment_count: 0 }
+                    : project
+            )));
+        };
+
+        window.addEventListener('project-comments-read', handleCommentsRead);
+        return () => window.removeEventListener('project-comments-read', handleCommentsRead);
+    }, []);
+
     const showCreateButton = canEdit;
 
     return (

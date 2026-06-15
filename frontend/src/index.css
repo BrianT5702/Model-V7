@@ -1050,6 +1050,15 @@ html.dark .ceiling-support-panel .border-red-200 {
   border-color: rgb(185 28 28 / 0.45) !important;
 }
 
+html.dark .configure-joints-panel .bg-blue-50 {
+  background-color: rgb(23 37 84 / 0.55) !important;
+}
+
+html.dark .configure-joints-panel select option {
+  background-color: rgb(31 41 55);
+  color: rgb(229 231 235);
+}
+
 html.dark .wall-canvas-container,
 html.dark .ceiling-canvas-container,
 html.dark .floor-canvas-container,
@@ -1110,4 +1119,86 @@ html.dark .hover\:bg-gray-50:hover {
 
 html.dark .hover\:bg-gray-100:hover {
   background-color: rgb(31 41 55);
+}
+
+/* Customer feedback / comments panel */
+html.dark .project-comments-panel {
+  background-color: rgb(17 24 39) !important;
+  border-color: rgb(55 65 81) !important;
+}
+
+html.dark .project-comments-panel header {
+  background-color: rgb(31 41 55) !important;
+  border-color: rgb(55 65 81) !important;
+}
+
+html.dark .project-comments-panel .project-comments-form {
+  background-color: rgb(31 41 55) !important;
+  border-color: rgb(55 65 81) !important;
+}
+
+html.dark .project-comments-panel textarea {
+  background-color: rgb(17 24 39);
+  border-color: rgb(75 85 99);
+  color: rgb(243 244 246);
+}
+
+html.dark .project-comments-panel textarea::placeholder {
+  color: rgb(156 163 175);
+}
+
+html.dark .project-comments-panel .comment-card-active {
+  background-color: rgb(120 53 15 / 0.35) !important;
+  border-color: rgb(217 119 6) !important;
+}
+
+html.dark .project-comments-panel .comment-card {
+  background-color: rgb(17 24 39);
+  border-color: rgb(55 65 81);
+}
+
+html.dark .project-comments-panel .comment-card:hover {
+  background-color: rgb(120 53 15 / 0.2);
+  border-color: rgb(180 83 9 / 0.5);
+}
+
+html.dark .comment-wall-select-banner {
+  background-color: rgb(21 128 61) !important;
+}
+
+html.dark .comment-highlight-banner {
+  background-color: rgb(180 83 9) !important;
+}
+
+html.dark .plan-annotate-banner {
+  background-color: rgb(37 99 235) !important;
+}
+
+html.dark .project-comments-panel .comment-highlight-bar {
+  background-color: rgb(120 53 15 / 0.35) !important;
+  border-color: rgb(180 83 9 / 0.5) !important;
+  color: rgb(254 243 199) !important;
+}
+
+html.dark .project-comments-panel .project-comments-close {
+  color: rgb(229 231 235);
+}
+
+html.dark .project-comments-panel .project-comments-close:hover {
+  background-color: rgb(55 65 81);
+  color: rgb(243 244 246);
+}
+
+html.dark .project-comments-panel .project-comments-footer {
+  background-color: rgb(31 41 55) !important;
+  border-color: rgb(55 65 81) !important;
+}
+
+html.dark .project-comments-panel .project-comments-footer button {
+  border-color: rgb(75 85 99);
+  color: rgb(229 231 235);
+}
+
+html.dark .project-comments-panel .project-comments-footer button:hover {
+  background-color: rgb(55 65 81);
 }

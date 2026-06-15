@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FaComment, FaTimes, FaMapMarkerAlt } from 'react-icons/fa';
 import api from '../../api/api';
 
@@ -28,6 +29,7 @@ const ProjectCommentsPanel = ({
     onClearSelectedWalls,
     activeCommentId,
     onSelectComment,
+    onClearActiveComment,
     onCommentsRead,
 }) => {
     const [comments, setComments] = useState([]);
@@ -72,6 +74,19 @@ const ProjectCommentsPanel = ({
         markRead();
     }, [isOpen, canEdit, projectId, onCommentsRead]);
 
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                onClose?.();
+            }
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isOpen, onClose]);
+
     const handleSubmit = async (event) => {
         event.preventDefault();
         const trimmed = body.trim();
@@ -105,21 +120,21 @@ const ProjectCommentsPanel = ({
 
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md">
+    return createPortal(
+        <div className="fixed inset-0 z-[60] flex justify-end">
             <button
                 type="button"
-                className="flex-1 bg-black/20"
+                className="flex-1 bg-black/40"
                 onClick={onClose}
                 aria-label="Close comments panel"
             />
-            <aside className="w-full max-w-md bg-white shadow-2xl border-l border-gray-200 flex flex-col h-full">
-                <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
-                    <div className="flex items-center gap-2">
-                        <FaComment className="text-amber-600" />
-                        <div>
-                            <h2 className="font-semibold text-gray-900">Customer Feedback</h2>
-                            <p className="text-xs text-gray-500">
+            <aside className="project-comments-panel w-full max-w-md bg-white shadow-2xl border-l border-gray-200 flex flex-col h-full">
+                <header className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <FaComment className="text-amber-600 shrink-0" />
+                        <div className="min-w-0">
+                            <h2 className="font-semibold text-gray-900 truncate">Customer Feedback</h2>
+                            <p className="text-xs text-gray-500 truncate">
                                 {canComment ? 'Share feedback from the customer' : 'Comments from sales'}
                             </p>
                         </div>
@@ -127,12 +142,26 @@ const ProjectCommentsPanel = ({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg"
-                        aria-label="Close"
+                        className="project-comments-close flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg shrink-0"
+                        aria-label="Close comments panel"
                     >
                         <FaTimes />
+                        Close
                     </button>
                 </header>
+
+                {activeCommentId && (
+                    <div className="comment-highlight-bar flex items-center justify-between gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-sm text-amber-900">
+                        <span>Walls highlighted on the plan</span>
+                        <button
+                            type="button"
+                            onClick={() => onClearActiveComment?.()}
+                            className="px-2 py-1 rounded-md bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 shrink-0"
+                        >
+                            Clear highlight
+                        </button>
+                    </div>
+                )}
 
                 <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
                     {isLoading && (
@@ -149,9 +178,9 @@ const ProjectCommentsPanel = ({
                                 key={comment.id}
                                 type="button"
                                 onClick={() => onSelectComment?.(comment)}
-                                className={`w-full text-left rounded-lg border p-3 transition-colors ${
+                                className={`w-full text-left rounded-lg border p-3 transition-colors comment-card ${
                                     isActive
-                                        ? 'border-amber-400 bg-amber-50 ring-1 ring-amber-200'
+                                        ? 'comment-card-active border-amber-400 bg-amber-50 ring-1 ring-amber-200'
                                         : 'border-gray-200 bg-white hover:border-amber-200 hover:bg-amber-50/40'
                                 }`}
                             >
@@ -171,13 +200,25 @@ const ProjectCommentsPanel = ({
                                         {isActive ? ' · highlighted on plan' : ' · click to highlight'}
                                     </p>
                                 )}
+                                {isActive && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onClearActiveComment?.();
+                                        }}
+                                        className="mt-2 text-xs text-amber-800 hover:text-amber-950 underline"
+                                    >
+                                        Clear highlight
+                                    </button>
+                                )}
                             </button>
                         );
                     })}
                 </div>
 
                 {canComment && (
-                    <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4 space-y-3 bg-gray-50">
+                    <form onSubmit={handleSubmit} className="project-comments-form border-t border-gray-200 p-4 space-y-3 bg-gray-50">
                         {error && (
                             <p className="text-sm text-red-600">{error}</p>
                         )}
@@ -232,8 +273,19 @@ const ProjectCommentsPanel = ({
                         </button>
                     </form>
                 )}
+
+                <div className="project-comments-footer border-t border-gray-200 px-4 py-3 bg-gray-50 shrink-0">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                        Close panel
+                    </button>
+                </div>
             </aside>
-        </div>
+        </div>,
+        document.body
     );
 };
 

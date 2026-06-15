@@ -21,7 +21,9 @@ import {
   compareDimensions
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
-import { adjustPlanStrokeColor, getPlanCanvasBackground } from './planCanvasTheme';
+import InteractivePlanAnnotation from './InteractivePlanAnnotation';
+import { drawPlanAnnotationArrows, isPointNearPlanAnnotation } from './drawPlanAnnotations';
+import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightColor } from './planCanvasTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
@@ -78,6 +80,16 @@ const Canvas2D = ({
     selectedWallsForComment = [],
     onCommentWallSelect = () => {},
     commentHighlightWallIds = [],
+    canAnnotate = false,
+    planAnnotateMode = false,
+    planAnnotations = [],
+    selectedPlanAnnotationId = null,
+    onSelectPlanAnnotation = () => {},
+    onCreatePlanAnnotation = async () => null,
+    onUpdatePlanAnnotation = async () => {},
+    onDeletePlanAnnotation = async () => {},
+    planAnnotationArrowPlacementId = null,
+    onPlanAnnotationArrowPlacementId = () => {},
 }) => {
 
     const canvasRef = useRef(null);
@@ -1125,6 +1137,42 @@ const Canvas2D = ({
             return;
         }
 
+        if (planAnnotateMode && canAnnotate) {
+            if (planAnnotationArrowPlacementId) {
+                onUpdatePlanAnnotation(planAnnotationArrowPlacementId, {
+                    arrow_target_x: x,
+                    arrow_target_y: y,
+                });
+                onPlanAnnotationArrowPlacementId(null);
+                return;
+            }
+
+            const canvasX = x * scaleFactor.current + offsetX.current;
+            const canvasY = y * scaleFactor.current + offsetY.current;
+            const hitAnnotation = [...planAnnotations].reverse().find((annotation) => (
+                isPointNearPlanAnnotation(
+                    canvasX,
+                    canvasY,
+                    annotation,
+                    scaleFactor.current,
+                    offsetX.current,
+                    offsetY.current
+                )
+            ));
+
+            if (hitAnnotation) {
+                onSelectPlanAnnotation(hitAnnotation.id);
+                return;
+            }
+
+            onCreatePlanAnnotation({ x, y }).then((created) => {
+                if (created?.id) {
+                    onSelectPlanAnnotation(created.id);
+                }
+            });
+            return;
+        }
+
         if (!isEditingMode) return;
         
         // Deselect room label when clicking on empty space (but not when actively defining a room)
@@ -1356,13 +1404,13 @@ const Canvas2D = ({
                     }
                     onWallsForEditSelect(currentSelection);
                     // Update highlight to show all selected walls
-                    setHighlightWalls(currentSelection.map(id => ({ id, color: '#3B82F6' })));
+                    setHighlightWalls(currentSelection.map(id => ({ id, color: getPlanWallHighlightColor('selection') })));
                 }
             } else {
                 // Single selection mode: select one wall and open editor
                 setSelectedWall(selectedId);
                 onWallSelect(selectedId);
-                setHighlightWalls(selectedId ? [{ id: selectedId, color: '#3B82F6' }] : []);
+                setHighlightWalls(selectedId ? [{ id: selectedId, color: getPlanWallHighlightColor('selection') }] : []);
             }
             return;
         }        
@@ -1419,7 +1467,7 @@ const Canvas2D = ({
                 setSplitPreviewPoint(roundedPoint);
                 setSplitDistanceInput('');
                 setSplitHoverDistance(getDistanceFromWallStart(wall, roundedPoint));
-                setHighlightWalls([{ id: wall.id, color: '#F97316' }]);
+                setHighlightWalls([{ id: wall.id, color: getPlanWallHighlightColor('edit') }]);
                 setWallSplitError('');
                 setIsDetailsPanelOpen(true);
                 return;
@@ -1583,7 +1631,7 @@ const Canvas2D = ({
             return;
         }
 
-        if (!isEditingMode && !commentWallSelectMode) {
+        if (!isEditingMode && !commentWallSelectMode && !planAnnotateMode) {
             return;
         }
 
@@ -1625,7 +1673,7 @@ const Canvas2D = ({
                     const rounded = getRoundedPoint(closest.point);
                     setSplitPreviewPoint(rounded);
                     setSplitHoverDistance(getDistanceFromWallStart(closest.wall, rounded));
-                    setHighlightWalls([{ id: closest.wall.id, color: '#F97316' }]);
+                    setHighlightWalls([{ id: closest.wall.id, color: getPlanWallHighlightColor('edit') }]);
                 } else {
                     setSplitPreviewPoint(null);
                     setSplitHoverDistance(null);
@@ -1858,9 +1906,9 @@ const Canvas2D = ({
     // Update highlights for multi-wall edit mode
     useEffect(() => {
         if (currentMode === 'edit-wall' && isMultiWallEditMode) {
-            setHighlightWalls(selectedWallsForEdit.map(id => ({ id, color: '#3B82F6' })));
+            setHighlightWalls(selectedWallsForEdit.map(id => ({ id, color: getPlanWallHighlightColor('selection') })));
         } else if (currentMode === 'edit-wall' && !isMultiWallEditMode && selectedWall) {
-            setHighlightWalls([{ id: selectedWall, color: '#3B82F6' }]);
+            setHighlightWalls([{ id: selectedWall, color: getPlanWallHighlightColor('selection') }]);
         } else if (currentMode !== 'edit-wall') {
             // Clear highlights when exiting edit mode
             if (currentMode !== 'split-wall' && currentMode !== 'merge-wall' && !commentWallSelectMode) {
@@ -2170,8 +2218,8 @@ const Canvas2D = ({
         }
 
         const commentHighlights = [
-            ...(commentHighlightWallIds || []).map((id) => ({ id, color: '#F59E0B' })),
-            ...(commentWallSelectMode ? (selectedWallsForComment || []).map((id) => ({ id, color: '#10B981' })) : []),
+            ...(commentHighlightWallIds || []).map((id) => ({ id, color: getPlanWallHighlightColor('edit') })),
+            ...(commentWallSelectMode ? (selectedWallsForComment || []).map((id) => ({ id, color: '#34D399' })) : []),
         ];
         const effectiveHighlightWalls = [...commentHighlights, ...highlightWalls];
 
@@ -2352,6 +2400,13 @@ const Canvas2D = ({
         
         // Draw doors
         drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
+        drawPlanAnnotationArrows(
+            context,
+            planAnnotations,
+            scaleFactor.current,
+            offsetX.current,
+            offsetY.current
+        );
         // Draw rooms
         // Draw room preview
         drawRoomPreview(context, selectedRoomPoints, scaleFactor.current, offsetX.current, offsetY.current);
@@ -2439,6 +2494,7 @@ const Canvas2D = ({
         commentWallSelectMode,
         selectedWallsForComment,
         commentHighlightWallIds,
+        planAnnotations,
         resolvedTheme,
     ]);
 
@@ -2752,6 +2808,23 @@ const Canvas2D = ({
                                             onSelect={handleRoomSelect}
                                             currentMode={currentMode}
                                             selectedRoomPoints={selectedRoomPoints}
+                                        />
+                                    ))}
+
+                                    {planAnnotations.map((annotation) => (
+                                        <InteractivePlanAnnotation
+                                            key={annotation.id}
+                                            annotation={annotation}
+                                            scaleFactor={currentScaleFactor}
+                                            offsetX={offsetX.current}
+                                            offsetY={offsetY.current}
+                                            isSelected={selectedPlanAnnotationId === annotation.id}
+                                            onSelect={onSelectPlanAnnotation}
+                                            onUpdate={onUpdatePlanAnnotation}
+                                            onDelete={onDeletePlanAnnotation}
+                                            onStartArrowPlacement={onPlanAnnotationArrowPlacementId}
+                                            isPlacingArrow={planAnnotationArrowPlacementId === annotation.id}
+                                            canEdit={canAnnotate && planAnnotateMode}
                                         />
                                     ))}
                                 </div>
@@ -3092,44 +3165,44 @@ const Canvas2D = ({
             </div>
             
             {selectedIntersection && (
-            <div className="fixed inset-0 bg-black bg-opacity-10 flex justify-end items-start z-50"> {/* Changed to items-start and justify-end */}
-                <div className="bg-white p-4 rounded-lg shadow-lg m-4 max-w-md w-full"> {/* Added margin and reduced padding */}
+            <div className="fixed inset-0 bg-black/10 dark:bg-black/50 flex justify-end items-start z-50">
+                <div className="configure-joints-panel bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-lg shadow-lg m-4 max-w-md w-full">
                 <div className="flex justify-between items-center mb-3">
-                    <h2 className="text-lg font-semibold">Configure Joints</h2>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Configure Joints</h2>
                     <button 
                     onClick={() => {
                         setSelectedIntersection(null);
                         setHighlightWalls([]);
                         setSelectedJointPair(null);
                     }}
-                    className="text-gray-500 hover:text-gray-700"
+                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                     >
                     ×
                     </button>
                 </div>
-                <div className="overflow-y-auto max-h-[70vh]"> {/* Add scroll for many joints */}
+                <div className="overflow-y-auto max-h-[70vh]">
                     {selectedIntersection.pairs.map((pair, index) => (
                     <div
                         key={index}
                         onClick={() => {
                         setSelectedJointPair(index);
                         setHighlightWalls([
-                            { id: pair.wall1.id, color: '#60A5FA' }, // light blue
-                            { id: pair.wall2.id, color: '#A855F7' }  // purple
+                            { id: pair.wall1.id, color: getPlanWallHighlightColor('jointWall1') },
+                            { id: pair.wall2.id, color: getPlanWallHighlightColor('jointWall2') },
                           ]);
                           
                         }}
-                        className={`mb-2 p-2 rounded cursor-pointer transition-colors ${
+                        className={`mb-2 p-2 rounded cursor-pointer transition-colors border ${
                         selectedJointPair === index 
-                            ? 'bg-blue-50 border border-blue-200' 
-                            : 'hover:bg-gray-100'
+                            ? 'bg-blue-50 border-blue-200 dark:bg-blue-950/50 dark:border-blue-600' 
+                            : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
                         }`}
                     >
-                    <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-blue-400" />
+                    <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                    <div className="w-3 h-3 rounded-full bg-blue-500 dark:bg-cyan-400 shrink-0" />
                     <span className="font-medium">Wall {pair.wall1.id}</span>
-                    <div className="mx-2">↔</div>
-                    <div className="w-3 h-3 rounded-full bg-purple-400" />
+                    <div className="mx-2 text-gray-500 dark:text-gray-400">↔</div>
+                    <div className="w-3 h-3 rounded-full bg-purple-500 dark:bg-fuchsia-400 shrink-0" />
                     <span className="font-medium">Wall {pair.wall2.id}</span>
                     </div>
                     <select
@@ -3139,7 +3212,7 @@ const Canvas2D = ({
                         updated[index].joining_method = e.target.value;
                         setSelectedIntersection({ ...selectedIntersection, pairs: updated });
                     }}
-                    className="w-full mt-2 px-2 py-1 border border-gray-300 rounded"
+                    className="w-full mt-2 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                     >
                     <option value="none">None</option>
                     <option value="butt_in">Butt-in</option>
@@ -3155,7 +3228,7 @@ const Canvas2D = ({
                         updated[index].wall2 = temp;
                         setSelectedIntersection({ ...selectedIntersection, pairs: updated });
                         }}
-                        className="text-sm text-blue-500 hover:underline mt-1"
+                        className="text-sm text-blue-500 hover:underline mt-1 dark:text-blue-400"
                     >
                         Flip Wall Order
                     </button>
@@ -3165,7 +3238,7 @@ const Canvas2D = ({
                 ))}
                 <div className="flex justify-end gap-2 mt-4">
                 <button
-                    className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                    className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-400 dark:hover:bg-gray-600"
                     onClick={() => {
                         setSelectedIntersection(null);
                         setHighlightWalls([]);

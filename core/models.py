@@ -176,6 +176,50 @@ class Storey(models.Model):
         return f"{self.project.name} · {self.name}"
 
 
+class PlanAnnotation(models.Model):
+    """Drafter markup on the wall plan: text box with optional arrow pointer."""
+    project = models.ForeignKey(
+        Project,
+        related_name='plan_annotations',
+        on_delete=models.CASCADE,
+    )
+    storey = models.ForeignKey(
+        Storey,
+        related_name='plan_annotations',
+        on_delete=models.CASCADE,
+        help_text='Storey this annotation belongs to.',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='plan_annotations',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    text = models.TextField(blank=True, default='')
+    position_x = models.FloatField(help_text='Text box anchor X in model mm')
+    position_y = models.FloatField(help_text='Text box anchor Y in model mm')
+    arrow_target_x = models.FloatField(
+        null=True,
+        blank=True,
+        help_text='Arrow tip X in model mm; null means no arrow.',
+    )
+    arrow_target_y = models.FloatField(
+        null=True,
+        blank=True,
+        help_text='Arrow tip Y in model mm; null means no arrow.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        preview = (self.text or '').strip()[:40] or 'Annotation'
+        return f'{preview} on {self.project.name}'
+
+
 class Wall(models.Model):
     project = models.ForeignKey(Project, related_name="walls", on_delete=models.CASCADE)
     storey = models.ForeignKey(

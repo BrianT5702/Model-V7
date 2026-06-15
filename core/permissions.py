@@ -41,3 +41,14 @@ class CanAddProjectComment(BasePermission):
         if request.method == 'POST':
             return user_can_comment(request.user)
         return False
+
+
+class PlanAnnotationPermission(BasePermission):
+    """Authenticated users can view plan annotations; only editors can modify."""
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return user_can_edit(request.user)
