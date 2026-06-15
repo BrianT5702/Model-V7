@@ -1,5 +1,7 @@
 // Utility functions extracted from Canvas2D.js
 
+import { resolveDoorPlacement, worldToDoorLocal, getSlidePanelYOffset } from './doorPlacement.js';
+
 // Calculate the area of a polygon given its points
 export function calculatePolygonArea(points) {
     let area = 0;
@@ -236,121 +238,81 @@ export function detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY) {
     const wall = walls.find(w => w.id === door.linked_wall || w.id === door.wall_id);
     if (!wall) continue;
 
-    const x1 = wall.start_x;
-    const y1 = wall.start_y;
-    const x2 = wall.end_x;
-    const y2 = wall.end_y;
+    const placement = resolveDoorPlacement(wall, door);
+    const { slashHalf, isInterior } = placement;
+    const { x: localX, y: localY } = worldToDoorLocal(x, y, placement);
 
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    const doorCenterX = x1 + (x2 - x1) * door.position_x;
-    const doorCenterY = y1 + (y2 - y1) * door.position_x;
-
-    // For the door panel itself
-    const dx = x - doorCenterX;
-    const dy = y - doorCenterY;
-
-    // Rotate point to align with wall orientation
-    const localX = dx * Math.cos(-angle) - dy * Math.sin(-angle);
-    const localY = dx * Math.sin(-angle) + dy * Math.cos(-angle);
-
-    // Define a larger selection area that covers the entire door area
     const halfW = door.width / 2;
-    const halfT = wall.thickness * 1.5; // Make it a bit larger for easier selection
-    
-    // For dock doors, check the area extending outward from the wall
+    const halfT = wall.thickness * 1.5;
+
     if (door.door_type === 'dock') {
-      const dockDoorWidth = door.width * 0.6; // Width parallel to wall: 60% of door width
-      const dockDoorHeight = door.width * 0.6 + 500; // Height extending outward: 60% of door width + 500mm
-      
-      // Check if click is within the dock door rectangle
-      // If interior side, rectangle extends in negative y direction
-      // If exterior side, rectangle extends in positive y direction
-      const isInterior = door.side === 'interior';
-      const minY = isInterior ? -dockDoorHeight : 0;
-      const maxY = isInterior ? 0 : dockDoorHeight;
-      
-      if (Math.abs(localX) <= dockDoorWidth / 2 && 
-          localY >= minY && 
-          localY <= maxY) {
+      const dockDoorWidth = door.width * 0.6;
+      const dockDoorHeight = door.width * 0.6 + 500;
+      const minY = isInterior ? 0 : -dockDoorHeight;
+      const maxY = isInterior ? dockDoorHeight : 0;
+
+      if (Math.abs(localX) <= dockDoorWidth / 2 && localY >= minY && localY <= maxY) {
         return door;
       }
-    } else {
-      // Check main door area (slashed wall portion) for swing/slide doors
-      if (Math.abs(localX) <= halfW && Math.abs(localY) <= halfT) {
-        return door;
-      }
+    } else if (Math.abs(localX) <= halfW && Math.abs(localY) <= halfT) {
+      return door;
     }
-    
-    // For swing doors, also check the arc and door panel area
+
     if (door.door_type === 'swing') {
-      const radius = door.width;
-      const arcDirection = door.swing_direction === 'right' ? 1 : -1;
-      const startAngle = arcDirection === 1 ? Math.PI : 0;
-      const endAngle = arcDirection === 1 ? Math.PI * 1.5 : -Math.PI * 0.5;
-      
-      // Calculate arc end position
-      const arcEndX = doorCenterX + Math.cos(angle + endAngle) * radius;
-      const arcEndY = doorCenterY + Math.sin(angle + endAngle) * radius;
-      
-      // Calculate door panel rectangle points
-      const panelDirX = Math.cos(angle + Math.PI/2 * arcDirection);
-      const panelDirY = Math.sin(angle + Math.PI/2 * arcDirection);
-      
-      // Check if click is within arc radius
-      const distanceToCenter = Math.hypot(x - doorCenterX, y - doorCenterY);
-      if (distanceToCenter <= radius) {
-        // Determine the angle of the click point from the door center
-        const clickAngle = Math.atan2(y - doorCenterY, x - doorCenterX);
-        
-        // Normalize the angles for comparison
-        let normClickAngle = (clickAngle - angle) % (2 * Math.PI);
-        if (normClickAngle < 0) normClickAngle += 2 * Math.PI;
-        
-        let normStartAngle = startAngle % (2 * Math.PI);
-        if (normStartAngle < 0) normStartAngle += 2 * Math.PI;
-        
-        let normEndAngle = endAngle % (2 * Math.PI);
-        if (normEndAngle < 0) normEndAngle += 2 * Math.PI;
-        
-        // Check if the click angle is within the arc range
-        if ((arcDirection === 1 && normClickAngle >= normStartAngle && normClickAngle <= normEndAngle) ||
-            (arcDirection === -1 && (normClickAngle <= normStartAngle || normClickAngle >= normEndAngle))) {
-          return door;
+      const radius = door.width / (door.configuration === 'double_sided' ? 2 : 1);
+      const swingLocalY = isInterior ? -localY : localY;
+      const swingLocalX = localX;
+
+      const checkSwingPanel = (hingeOffset, direction) => {
+        const isRight = direction === 'right';
+        const arcStart = isRight ? Math.PI : 0;
+        const arcEnd = isRight ? Math.PI * 1.5 : -Math.PI * 0.5;
+        const relX = swingLocalX - hingeOffset;
+        const relY = swingLocalY;
+        const distanceToHinge = Math.hypot(relX, relY);
+
+        if (distanceToHinge <= radius) {
+          let clickAngle = Math.atan2(relY, relX);
+          if (clickAngle < 0) clickAngle += 2 * Math.PI;
+          let normStartAngle = arcStart;
+          let normEndAngle = arcEnd;
+          if (normEndAngle < 0) normEndAngle += 2 * Math.PI;
+
+          if (
+            (isRight && clickAngle >= normStartAngle && clickAngle <= normEndAngle) ||
+            (!isRight && (clickAngle <= normStartAngle || clickAngle >= normEndAngle + 2 * Math.PI))
+          ) {
+            return true;
+          }
         }
-      }
-      
-      // Check if click is within door panel rectangle
-      const panelEndX = arcEndX + panelDirX * door.width;
-      const panelEndY = arcEndY + panelDirY * door.width;
-      
-      const panelVector = {
-        x: panelEndX - arcEndX,
-        y: panelEndY - arcEndY
+
+        const arcEndLocalX = hingeOffset + Math.cos(arcEnd) * radius;
+        const arcEndLocalY = Math.sin(arcEnd) * radius;
+        const panelEndLocalX = arcEndLocalX + Math.cos(arcEnd + (Math.PI / 2) * (isRight ? 1 : -1)) * door.width;
+        const panelEndLocalY = arcEndLocalY + Math.sin(arcEnd + (Math.PI / 2) * (isRight ? 1 : -1)) * door.width;
+        const toPanelX = panelEndLocalX - arcEndLocalX;
+        const toPanelY = panelEndLocalY - arcEndLocalY;
+        const panelLength = Math.hypot(toPanelX, toPanelY) || 1;
+        const clickRelArcX = swingLocalX - arcEndLocalX;
+        const clickRelArcY = swingLocalY - arcEndLocalY;
+        const dotProduct = (clickRelArcX * toPanelX + clickRelArcY * toPanelY) / panelLength;
+        const projX = arcEndLocalX + (toPanelX / panelLength) * dotProduct;
+        const projY = arcEndLocalY + (toPanelY / panelLength) * dotProduct;
+        const distanceAlongPanel = Math.hypot(projX - arcEndLocalX, projY - arcEndLocalY);
+        const distanceToPanel = Math.hypot(swingLocalX - projX, swingLocalY - projY);
+
+        return distanceAlongPanel <= door.width && distanceToPanel <= wall.thickness;
       };
-      
-      const clickVector = {
-        x: x - arcEndX,
-        y: y - arcEndY
-      };
-      
-      // Project the click vector onto the panel vector
-      const panelLength = Math.hypot(panelVector.x, panelVector.y);
-      const dotProduct = (clickVector.x * panelVector.x + clickVector.y * panelVector.y) / panelLength;
-      
-      // Calculate the projection point
-      const projX = arcEndX + (panelVector.x / panelLength) * dotProduct;
-      const projY = arcEndY + (panelVector.y / panelLength) * dotProduct;
-      
-      // Check if projection point is within panel length
-      const distanceAlongPanel = Math.hypot(projX - arcEndX, projY - arcEndY);
-      const distanceToPanel = Math.hypot(x - projX, y - projY);
-      
-      if (distanceAlongPanel <= door.width && distanceToPanel <= wall.thickness) {
-        return door;
+
+      if (door.configuration === 'single_sided') {
+        const hingeOffset = door.swing_direction === 'right' ? slashHalf : -slashHalf;
+        if (checkSwingPanel(hingeOffset, door.swing_direction)) return door;
+      } else if (door.configuration === 'double_sided') {
+        if (checkSwingPanel(-slashHalf, 'left') || checkSwingPanel(slashHalf, 'right')) return door;
       }
     }
   }
-  
+
   return null;
 }
 
@@ -363,27 +325,8 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         const wall = walls.find(w => w.id === door.linked_wall || w.id === door.wall_id);
         if (!wall) return;
 
-        const x1 = wall.start_x;
-        const y1 = wall.start_y;
-        const x2 = wall.end_x;
-        const y2 = wall.end_y;
-
-        const wallLength = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-        const slashLength = (door.door_type === 'swing') ? door.width : (door.door_type === 'dock') ? door.width : door.width * 0.85;
-        const halfSlashRatio = (slashLength / wallLength) / 2;
-
-        const gap = 200;
-        const gapRatio = gap / wallLength;
-
-        const clampedPosition = Math.min(
-            Math.max(door.position_x, halfSlashRatio + gapRatio),
-            1 - halfSlashRatio - gapRatio
-        );
-
-        const doorCenterX = x1 + (x2 - x1) * clampedPosition;
-        const doorCenterY = y1 + (y2 - y1) * clampedPosition;
-
-        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const placement = resolveDoorPlacement(wall, door);
+        const { doorCenterX, doorCenterY, angle, ySign, slashHalf, isInterior } = placement;
         const doorWidth = door.width;
         const wallThickness = wall.thickness || 100;
         const doorThickness = wallThickness;
@@ -401,14 +344,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         ctx.save();
         ctx.translate(doorCenterX * scale + offsetX, doorCenterY * scale + offsetY);
         ctx.rotate(angle);
-        // Rotate for interior side on swing/slide doors
-        // For dock doors, side flip is handled by rectangle position (y coordinate), not rotation
-        if (door.door_type !== 'dock' && door.side === 'interior') {
-            ctx.rotate(Math.PI);
-        }
-
-        // Calculate slashHalf for swing and slide doors (needed for door panel positioning)
-        const slashHalf = door.door_type !== 'dock' ? slashLength / 2 : 0;
+        ctx.scale(1, ySign);
 
         // === Slashed Wall Section === (skip for dock doors)
         if (door.door_type !== 'dock') {
@@ -448,6 +384,9 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         // === SWING DOOR DRAWING ===
         if (door.door_type === 'swing') {
+            if (isInterior) {
+                ctx.scale(1, -1);
+            }
             const radius = doorWidth / (door.configuration === 'double_sided' ? 2 : 1);
             const drawSwingPanel = (hingeOffset, direction) => {
                 const isRight = direction === 'right';
@@ -489,10 +428,11 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         if (door.door_type === 'slide') {
             const halfLength = doorWidth * 1.1;
             const thickness = wallThickness;
+            const panelYOffset = getSlidePanelYOffset(placement, thickness);
 
             const drawSlidePanel = (offsetX, direction) => {
                 ctx.save();
-                ctx.translate(offsetX * scale, thickness * scale);
+                ctx.translate(offsetX * scale, panelYOffset * scale);
                 ctx.strokeStyle = doorColor;
                 ctx.lineWidth = Math.max(1.5, lineWidth);
                 ctx.strokeRect(
@@ -502,8 +442,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
                     thickness * scale
                 );
 
-                // Draw arrow
-                const arrowY = thickness * scale * 2;
+                const arrowY = panelYOffset * scale * 2;
                 const arrowHeadSize = 4;
                 const arrowDir = direction === 'right' ? 1 : -1;
                 const arrowStart = -halfLength * scale / 2;
@@ -538,53 +477,22 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         // === DOCK DOOR DRAWING ===
         if (door.door_type === 'dock') {
-            // Rectangle: width (parallel to wall) = door.width * 0.6, height (extending outward) = door.width * 0.6 + 300mm
-            // Note: door.height field is not used for dock door rectangle dimensions
-            const rectWidth = door.width * 0.6; // Width parallel to wall: 60% of door width
-            const rectHeight = door.width * 0.6 + 300; // Height extending outward from wall: 60% of door width + 500mm
-            
-            // Position rectangle extending outward from the wall
-            // The wall line is at y=0
-            // If side is 'exterior', extend in positive y direction (outward)
-            // If side is 'interior', extend in negative y direction (inward)
+            const rectWidth = door.width * 0.6;
+            const rectHeight = door.width * 0.6 + 300;
             const rectX = -rectWidth / 2 * scale;
             const rectW = rectWidth * scale;
             const rectH = rectHeight * scale;
-            
-            // Determine rectangle position based on side
-            let rectY;
-            if (door.side === 'interior') {
-                // Extend in negative y direction (toward interior)
-                rectY = -rectH;
-            } else {
-                // Extend in positive y direction (toward exterior, default)
-                rectY = 0;
-            }
-            
-            // Draw rectangle outline
+            const rectY = isInterior ? 0 : -rectH;
+
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth = lineWidth;
             ctx.strokeRect(rectX, rectY, rectW, rectH);
-            
-            // Draw cross inside rectangle
+
             ctx.beginPath();
-            if (door.side === 'interior') {
-                // For interior side (extending in negative y), adjust cross coordinates
-                // Diagonal from top-left to bottom-right
-                ctx.moveTo(rectX, rectY + rectH);
-                ctx.lineTo(rectX + rectW, rectY);
-                // Diagonal from top-right to bottom-left
-                ctx.moveTo(rectX + rectW, rectY + rectH);
-                ctx.lineTo(rectX, rectY);
-            } else {
-                // For exterior side (extending in positive y), use standard coordinates
-                // Diagonal from top-left to bottom-right
-                ctx.moveTo(rectX, rectY);
-                ctx.lineTo(rectX + rectW, rectY + rectH);
-                // Diagonal from top-right to bottom-left
-                ctx.moveTo(rectX + rectW, rectY);
-                ctx.lineTo(rectX, rectY + rectH);
-            }
+            ctx.moveTo(rectX, rectY);
+            ctx.lineTo(rectX + rectW, rectY + rectH);
+            ctx.moveTo(rectX + rectW, rectY);
+            ctx.lineTo(rectX, rectY + rectH);
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth = lineWidth;
             ctx.stroke();
@@ -595,8 +503,8 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
             ctx.font = `${Math.max(5, rectW * 0.29)}px Arial`; // Font size based on rectangle width
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            const textX = 0; // Center horizontally
-            const textY = rectY + rectH - 10; // Center vertically
+            const textX = 0;
+            const textY = isInterior ? rectH - 10 : rectY + 10;
             ctx.fillText('DL', textX, textY);
             ctx.restore();
         }

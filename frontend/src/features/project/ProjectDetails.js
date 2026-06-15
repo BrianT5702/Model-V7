@@ -1066,7 +1066,7 @@ const ProjectDetails = () => {
             )}
 
             {/* Navigation Bar */}
-            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
+            <div className="project-details-nav sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
                 <div className="w-full px-4 sm:px-6 py-3" style={{ width: '100%' }}>
                     <div className="flex items-center justify-between w-full">
                         <div className="flex items-center space-x-2 sm:space-x-4">
@@ -1099,7 +1099,7 @@ const ProjectDetails = () => {
                                 <span className="hidden sm:inline">Back to Projects</span>
                             </button>
                             <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
-                            <div className="flex items-center text-gray-900">
+                            <div className="flex items-center text-gray-900 dark:text-gray-100">
                                 <FaCube className="w-5 h-5 mr-2 text-blue-600" />
                                 <span className="font-medium hidden sm:inline">Project View</span>
                             </div>
@@ -1144,30 +1144,48 @@ const ProjectDetails = () => {
             )}
 
             {/* Header Section */}
-            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
+            <div className="project-details-header bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
                 <div className="w-full px-4 sm:px-6 lg:px-8 py-3" style={{ width: '100%' }}>
-                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4 w-full">
-                        <div className="flex-shrink-0 min-w-0">
+                    <div
+                        className={`flex flex-col gap-2 w-full min-w-0 lg:grid lg:items-center lg:gap-3 ${
+                            projectDetails.is3DView
+                                ? 'lg:grid-cols-[minmax(0,1fr)_auto]'
+                                : 'lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)_auto]'
+                        }`}
+                    >
+                        <div className="min-w-0">
                     {(!projectDetails.project || !projectDetails.project.name) ? (
-                                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Loading project...</h1>
+                                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-gray-100">Loading project...</h1>
                             ) : (
-                                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 truncate">{projectDetails.project.name}</h1>
+                                <h1
+                                    className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-gray-100 truncate"
+                                    title={projectDetails.project.name}
+                                >
+                                    {projectDetails.project.name}
+                                </h1>
                             )}
                             {projectDetails.project && (
-                                <p className="text-xs text-gray-600 mt-0.5">
+                                <p
+                                    className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 truncate"
+                                    title={`${projectDetails.project?.width ?? '—'} × ${projectDetails.project?.length ?? '—'} × ${effectiveProjectHeight} mm`}
+                                >
                                     {(projectDetails.project?.width ?? '—')} × {(projectDetails.project?.length ?? '—')} × {effectiveProjectHeight} mm
                                 </p>
                             )}
                         </div>
 
-                        {!projectDetails.is3DView && (
-                            <div className="lg:flex-1 lg:min-w-0 lg:px-2">
+                        {!projectDetails.is3DView ? (
+                            <div className="min-w-0 overflow-hidden lg:col-start-2">
                                 {renderPlanViewTabs()}
                             </div>
-                        )}
+                        ) : null}
                         
                         {/* View Toggle Buttons */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-2 lg:shrink-0 lg:ml-auto">
+                        <div
+                            className={`flex flex-wrap items-center gap-2 sm:gap-2 shrink-0 lg:justify-self-end ${
+                                projectDetails.is3DView ? 'lg:col-start-2' : 'lg:col-start-3'
+                            }`}
+                        >
                             <button
                                 onClick={() => {
                                     const newViewState = !projectDetails.is3DView;
@@ -1212,7 +1230,7 @@ const ProjectDetails = () => {
                             {projectDetails.currentView === 'wall-plan' && (
                                 <>
                             <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full sm:w-auto lg:flex-1 lg:justify-end">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full sm:w-auto">
                                 <FaLayerGroup className="text-blue-600 hidden sm:block" />
                                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                                     <select

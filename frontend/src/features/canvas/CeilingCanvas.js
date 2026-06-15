@@ -5396,7 +5396,7 @@ const CeilingCanvas = ({
         return (
             <div className={`text-left ${wrapperClassName}`}>
                 <div className="mb-3">
-                    <h4 className="text-sm font-semibold text-red-900">Edit nylon hanger</h4>
+                    <h4 className="text-sm font-semibold text-red-900 dark:text-red-200">Edit nylon hanger</h4>
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
                         {nylonEditDraft.isAuto ? 'Auto hanger' : 'Added hanger'} on panel
                         {nylonEditDraft.panelId != null ? ` #${nylonEditDraft.panelId}` : ''}. Same hanger line = same
@@ -5456,7 +5456,7 @@ const CeilingCanvas = ({
                     </button>
                     <button
                         type="button"
-                        className="w-full px-2 py-1.5 text-sm rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                        className="support-secondary-btn w-full px-2 py-1.5 text-sm rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
                         onClick={() => deleteNylonByKey(selectedNylonKey)}
                     >
                         Delete hanger
@@ -5475,7 +5475,7 @@ const CeilingCanvas = ({
         return (
             <div className={`text-left ${wrapperClassName}`}>
                 <div className="mb-3">
-                    <h4 className="text-sm font-semibold text-red-900">Add nylon hanger</h4>
+                    <h4 className="text-sm font-semibold text-red-900 dark:text-red-200">Add nylon hanger</h4>
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
                         {room?.room_name ?? 'Room'} — panel
                         {nylonAddTarget.panelId != null ? ` #${nylonAddTarget.panelId}` : ''}. Enter placement (mm from panel start), then add.
@@ -5510,7 +5510,7 @@ const CeilingCanvas = ({
                     ) : null}
                     <button
                         type="button"
-                        className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                        className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                         onClick={() => cancelNylonAddFlow(true)}
                     >
                         Cancel
@@ -5539,9 +5539,9 @@ const CeilingCanvas = ({
 
         return (
             <div className={`text-left ${wrapperClassName}`}>
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Support systems</h4>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Support systems</h4>
                 {!canEditSupports ? (
-                    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-2">
+                    <p className="support-info-amber text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-2">
                         {isAuthenticated ? (
                             'View-only access. Nylon hangers and suspension rails cannot be edited.'
                         ) : (
@@ -5555,7 +5555,7 @@ const CeilingCanvas = ({
                     </p>
                 ) : null}
                 {!panelsNeedSupport ? (
-                    <p className="text-[11px] text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-2">
+                    <p className="support-info-green text-[11px] text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-2">
                         No extra support needed — all panels are under 6000&nbsp;mm in their critical dimension.
                     </p>
                 ) : (
@@ -5589,7 +5589,7 @@ const CeilingCanvas = ({
                                                 }}
                                                 className="w-3.5 h-3.5"
                                             />
-                                            <span>Include accessories</span>
+                                            <span className="text-gray-800 dark:text-gray-200">Include accessories</span>
                                         </label>
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input
@@ -5604,7 +5604,7 @@ const CeilingCanvas = ({
                                                 }}
                                                 className="w-3.5 h-3.5"
                                             />
-                                            <span>Include cable</span>
+                                            <span className="text-gray-800 dark:text-gray-200">Include cable</span>
                                         </label>
                                     </div>
                                 ) : null}
@@ -5623,7 +5623,7 @@ const CeilingCanvas = ({
                             </div>
                         ) : null}
 
-                        <p className="text-[11px] text-gray-600 bg-white/90 border border-gray-200 rounded px-2 py-1.5">
+                        <p className="support-stat-box text-[11px] text-gray-600 bg-white/90 border border-gray-200 rounded px-2 py-1.5">
                             {nylonCount > 0 && `${nylonCount} nylon`}
                             {nylonCount > 0 && railCount > 0 && ' · '}
                             {railCount > 0 && `${railCount} rail${railCount !== 1 ? 's' : ''}`}
@@ -5692,7 +5692,7 @@ const CeilingCanvas = ({
                                         const ctx = canvasRef.current?.getContext('2d');
                                         if (ctx) drawCanvas(ctx);
                                     }}
-                                    className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                                    className="support-secondary-btn w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
                                 >
                                     Clear all supports
                                 </button>
@@ -5718,7 +5718,7 @@ const CeilingCanvas = ({
         return (
             <div className={`text-left ${wrapperClassName}`}>
                 <div className="mb-3">
-                    <h4 className="text-sm font-semibold text-amber-900">Edit suspension rail</h4>
+                    <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Edit suspension rail</h4>
                     <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
                         Edit mm values, then Enter or click away to apply.
                     </p>
@@ -5759,7 +5759,7 @@ const CeilingCanvas = ({
                     </button>
                     <button
                         type="button"
-                        className="w-full px-2 py-1.5 text-sm rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                        className="support-secondary-btn w-full px-2 py-1.5 text-sm rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
                         onClick={() => {
                             deleteRailByKey(selectedRailKey);
                             setSelectedRailKey(null);
@@ -5799,7 +5799,7 @@ const CeilingCanvas = ({
                             <button
                                 type="button"
                                 onClick={() => setIsSupportSidebarOpen(true)}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 transition-colors font-medium"
+                                className="px-3 py-1.5 text-sm rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-950/50 transition-colors font-medium"
                             >
                                 Show Support Tools
                             </button>
@@ -5823,21 +5823,21 @@ const CeilingCanvas = ({
                     <div className="ceiling-support-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0 order-2 lg:order-1">
                         <div
                             ref={supportSidebarScrollRef}
-                            className="bg-gradient-to-br from-orange-50/80 to-gray-50 border border-orange-200/80 rounded-xl p-3 sm:p-4 shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
+                            className="ceiling-support-panel bg-gradient-to-br from-orange-50/80 to-gray-50 border border-orange-200/80 rounded-xl p-3 sm:p-4 shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
                         >
                             <div className="flex flex-col gap-2 mb-3">
-                                <h4 className="text-base font-bold text-gray-900">Support Tools</h4>
+                                <h4 className="text-base font-bold text-gray-900 dark:text-gray-100">Support Tools</h4>
                                 <button
                                     type="button"
                                     onClick={closeSupportSidebar}
-                                    className="self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-white transition-colors"
+                                    className="ceiling-support-btn self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-white transition-colors"
                                 >
                                     Collapse
                                 </button>
                             </div>
                             {renderSupportControlsSection('mb-4')}
-                            {renderRailEditPanel('mb-4 pb-4 border-b border-amber-200 rounded-lg bg-amber-50/70 px-2.5 py-2.5')}
-                            {renderNylonAddPanel('mb-4 pb-4 border-b border-red-200 rounded-lg bg-red-50/50 px-2.5 py-2.5')}
+                            {renderRailEditPanel('support-rail-card mb-4 pb-4 border-b border-amber-200 rounded-lg bg-amber-50/70 px-2.5 py-2.5')}
+                            {renderNylonAddPanel('support-nylon-card mb-4 pb-4 border-b border-red-200 rounded-lg bg-red-50/50 px-2.5 py-2.5')}
                             {renderNylonEditPanel('mb-0 pb-0')}
                         </div>
                     </div>

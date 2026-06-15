@@ -43,6 +43,7 @@ import {
     exteriorVerticalLabelBounds
 } from './collisionDetection.js';
 import { isPointInPolygon } from './utils.js';
+import { buildDoorLabelObstacles } from './doorPlacement.js';
 
 // Store placement decisions for dimensions to prevent position changes on zoom
 // Module-level Map that persists across renders
@@ -3207,9 +3208,18 @@ export function drawWallPlanDimensionsLayer({
     allLabels = [],
     dimensionValuesSeen = null,
     includeProjectDimensions = false,
+    doors = [],
+    doorLabelObstacles = null,
 }) {
     if (!context || !walls?.length || !wallLinesMap?.size) {
         return { dimensionEdgeExtents: createDimensionEdgeExtents(), placedLabels, allLabels };
+    }
+
+    const doorObstacles =
+        doorLabelObstacles ??
+        buildDoorLabelObstacles(doors, walls, scaleFactor, offsetX, offsetY, wallLinesMap);
+    if (doorObstacles.length > 0) {
+        placedLabels.push(...doorObstacles);
     }
 
     const showWallDimensions = dimensionVisibility?.wall !== false;
@@ -3405,7 +3415,8 @@ export function drawWalls({
     showPanelLines = false, // <-- added for panel lines visibility toggle
     initialScale = 1, // <-- added for proper zoom scaling from minimum
     dimensionValuesSeen = null, // <-- shared Set: skip drawing if value already shown (match floor/ceiling dedup)
-    rooms = [] // room list for inner-face offset (wall.rooms / room.walls)
+    rooms = [], // room list for inner-face offset (wall.rooms / room.walls)
+    doors = [],
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
@@ -4289,6 +4300,7 @@ export function drawWalls({
         allLabels,
         dimensionValuesSeen,
         includeProjectDimensions: false,
+        doors,
     });
 
     return { thicknessColorMap, dimensionEdgeExtents };

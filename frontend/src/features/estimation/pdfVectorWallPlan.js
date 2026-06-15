@@ -15,6 +15,7 @@ import {
 } from '../canvas/drawing';
 import { planCeilingValueDedupKey } from '../canvas/DimensionConfig';
 import { filterDimensions } from '../canvas/dimensionFilter';
+import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset } from '../canvas/doorPlacement';
 
 // Copy color mapping functions from drawing.js
 function getWallFinishKey(wall) {
@@ -1766,32 +1767,13 @@ export function drawVectorWallPlan(
                         }
                     });
                     
-                    // Draw doors using EXACT same logic as canvas (drawDoors from utils.js)
+                    // Draw doors using same placement logic as canvas (drawDoors from utils.js)
                     doorsToDraw.forEach((door) => {
                         const wall = wallsToDraw.find(w => w.id === door.linked_wall || w.id === door.wall_id);
                         if (!wall) return;
 
-                        const x1 = wall.start_x;
-                        const y1 = wall.start_y;
-                        const x2 = wall.end_x;
-                        const y2 = wall.end_y;
-
-                        const wallLength = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-                        const slashLength = (door.door_type === 'swing') ? door.width : door.width * 0.85;
-                        const halfSlashRatio = (slashLength / wallLength) / 2;
-
-                        const gap = 200;
-                        const gapRatio = gap / wallLength;
-
-                        const clampedPosition = Math.min(
-                            Math.max(door.position_x, halfSlashRatio + gapRatio),
-                            1 - halfSlashRatio - gapRatio
-                        );
-
-                        const doorCenterX = x1 + (x2 - x1) * clampedPosition;
-                        const doorCenterY = y1 + (y2 - y1) * clampedPosition;
-
-                        let angle = Math.atan2(y2 - y1, x2 - x1);
+                        const placement = resolveDoorPlacement(wall, door);
+                        const { slashHalf, isInterior } = placement;
                         const doorWidth = door.width;
                         const doorThickness = wall.thickness || 100;
 
@@ -1799,23 +1781,13 @@ export function drawVectorWallPlan(
                         const strokeColor = [0, 0, 0];
                         const lineWidth = 0.2;
 
-                        // Helper to transform local door coordinates to PDF coordinates
-                        // Replicates ctx.save(), ctx.translate(), ctx.rotate() behavior
-                        const transformDoorPoint = (localX, localY, doorAngle = angle, doorSide = door.side) => {
-                            let localAngle = doorAngle;
-                            if (doorSide === 'interior') {
-                                localAngle += Math.PI;
-                            }
-                            const cosA = Math.cos(localAngle);
-                            const sinA = Math.sin(localAngle);
-                            const worldX = doorCenterX + (localX * cosA - localY * sinA);
-                            const worldY = doorCenterY + (localX * sinA + localY * cosA);
-                            return { x: transformX(worldX), y: transformY(worldY) };
+                        const transformDoorPoint = (localX, localY, options = {}) => {
+                            const world = doorLocalToWorld(localX, localY, placement, options);
+                            return { x: transformX(world.x), y: transformY(world.y) };
                         };
 
                         // === Slashed Wall Section ===
                         // Draw diagonal slashes to indicate door opening in wall
-                        const slashHalf = slashLength / 2;
                         const slashStart = { x: -slashHalf, y: 0 };
                         const slashEnd = { x: slashHalf, y: 0 };
                         const numSlashes = Math.max(3, Math.floor((doorWidth * scale) / 8)); // More slashes, thicker
@@ -1848,6 +1820,7 @@ export function drawVectorWallPlan(
                         // === SWING DOOR DRAWING ===
                         if (door.door_type === 'swing') {
                             const radius = doorWidth / (door.configuration === 'double_sided' ? 2 : 1);
+                            const swingFlip = { swingInteriorFlip: isInterior };
 
                             const drawSwingPanel = (hingeOffset, direction) => {
                                 const isRight = direction === 'right';
@@ -1870,7 +1843,7 @@ export function drawVectorWallPlan(
                                     }
                                     const localX = hingeOffset + radius * Math.cos(localAngle);
                                     const localY = radius * Math.sin(localAngle);
-                                    arcPoints.push(transformDoorPoint(localX, localY));
+                                    arcPoints.push(transformDoorPoint(localX, localY, swingFlip));
                                 }
 
                                 doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
@@ -1881,8 +1854,8 @@ export function drawVectorWallPlan(
 
                                 const arcEndX = Math.cos(arcEnd) * radius;
                                 const arcEndY = Math.sin(arcEnd) * radius;
-                                const hingePoint = transformDoorPoint(hingeOffset, 0);
-                                const leafPoint = transformDoorPoint(hingeOffset + arcEndX, arcEndY);
+                                const hingePoint = transformDoorPoint(hingeOffset, 0, swingFlip);
+                                const leafPoint = transformDoorPoint(hingeOffset + arcEndX, arcEndY, swingFlip);
                                 doc.setDrawColor(doorColor[0], doorColor[1], doorColor[2]);
                                 doc.setLineWidth(lineWidth * 1.2);
                                 doc.line(hingePoint.x, hingePoint.y, leafPoint.x, leafPoint.y);
@@ -1901,11 +1874,11 @@ export function drawVectorWallPlan(
                         if (door.door_type === 'slide') {
                             const halfLength = (doorWidth) * 1.1;
                             const thickness = doorThickness * 0.8;
+                            const panelYOffset = getSlidePanelYOffset(placement, thickness);
 
                             const drawSlidePanel = (offsetX, direction) => {
-                                // In local door space: panel is at (offsetX, thickness)
                                 const panelLocalX = offsetX;
-                                const panelLocalY = thickness;
+                                const panelLocalY = panelYOffset;
                                 
                                 // Calculate rectangle corners in local space
                                 const corners = [
@@ -1940,7 +1913,7 @@ export function drawVectorWallPlan(
                                 }
 
                                 // Draw arrow - in local space: arrow is at y = thickness * 2
-                                const arrowLocalY = thickness * 2;
+                                const arrowLocalY = panelYOffset * 2;
                                 const arrowHeadSize = 4;
                                 const arrowDir = direction === 'right' ? 1 : -1;
                                 const arrowStartLocalX = -halfLength / 2;
@@ -2022,6 +1995,7 @@ export function drawVectorWallPlan(
                             allLabels,
                             dimensionValuesSeen,
                             includeProjectDimensions: false,
+                            doors: doorsToDraw,
                         });
 
                         drawOverallProjectDimensions(

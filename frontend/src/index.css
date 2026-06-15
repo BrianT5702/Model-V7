@@ -60,7 +60,7 @@ code {
 .project-details-container {
   min-height: 100vh;
   height: auto;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: visible;
   width: 100%;
   max-width: 100%;
@@ -134,7 +134,7 @@ code {
 @media (max-width: 1023px) {
   /* Header and navigation should scale with browser zoom */
   header,
-  .bg-white.border-b {
+  .project-details-header {
     transform: scale(1);
     transform-origin: top left;
   }
@@ -327,8 +327,23 @@ html.dark #three-canvas-container .button-container button:hover {
   animation-delay: 4s;
 }
 
-/* Project Details Navigation */
-.project-details-container .bg-white.border-b:first-of-type {
+/* Project Details top navigation — sticky while scrolling project content */
+.project-details-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  width: 100% !important;
+  min-width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+html.dark .project-details-nav {
+  background-color: rgba(17, 24, 39, 0.95);
+}
+
+/* Legacy selector kept for any older markup without project-details-nav */
+.project-details-container .bg-white.border-b:first-of-type:not(.project-details-header) {
   position: sticky;
   top: 0;
   z-index: 40;
@@ -947,6 +962,92 @@ html.dark .plan-details-panel input[type="text"] {
   background-color: rgb(17 24 39);
   border-color: rgb(75 85 99);
   color: rgb(229 231 235);
+}
+
+/* Ceiling Support Tools sidebar — gradient shell + nested cards */
+html.dark .ceiling-support-panel {
+  background-color: rgb(31 41 55) !important;
+  background-image: linear-gradient(to bottom right, rgb(67 56 45), rgb(31 41 55)) !important;
+  border-color: rgb(180 83 9 / 0.45) !important;
+  color: rgb(229 231 235);
+}
+
+html.dark .ceiling-support-panel .ceiling-support-btn {
+  background-color: rgb(55 65 81);
+  border-color: rgb(75 85 99);
+  color: rgb(209 213 219);
+}
+
+html.dark .ceiling-support-panel .ceiling-support-btn:hover {
+  background-color: rgb(75 85 99);
+}
+
+html.dark .ceiling-support-panel input[type="number"],
+html.dark .ceiling-support-panel input[type="text"] {
+  background-color: rgb(17 24 39);
+  border-color: rgb(75 85 99);
+  color: rgb(229 231 235);
+}
+
+html.dark .ceiling-support-panel .support-stat-box {
+  background-color: rgb(17 24 39) !important;
+  border-color: rgb(75 85 99) !important;
+  color: rgb(156 163 175) !important;
+}
+
+html.dark .ceiling-support-panel .support-info-amber {
+  background-color: rgb(69 26 3 / 0.45) !important;
+  border-color: rgb(180 83 9 / 0.5) !important;
+  color: rgb(253 230 138) !important;
+}
+
+html.dark .ceiling-support-panel .support-info-green {
+  background-color: rgb(6 78 59 / 0.35) !important;
+  border-color: rgb(16 185 129 / 0.45) !important;
+  color: rgb(167 243 208) !important;
+}
+
+html.dark .ceiling-support-panel .support-secondary-btn {
+  background-color: rgb(55 65 81);
+  border-color: rgb(75 85 99);
+  color: rgb(209 213 219);
+}
+
+html.dark .ceiling-support-panel .support-secondary-btn:hover {
+  background-color: rgb(75 85 99);
+}
+
+html.dark .ceiling-support-panel .support-secondary-btn.bg-red-50 {
+  background-color: rgb(127 29 29 / 0.35) !important;
+  border-color: rgb(185 28 28 / 0.45) !important;
+  color: rgb(254 202 202) !important;
+}
+
+html.dark .ceiling-support-panel .support-secondary-btn.bg-red-50:hover {
+  background-color: rgb(153 27 27 / 0.5) !important;
+}
+
+html.dark .ceiling-support-panel .support-nylon-card {
+  background-color: rgb(69 10 10 / 0.35) !important;
+  border-color: rgb(185 28 28 / 0.45) !important;
+}
+
+html.dark .ceiling-support-panel .support-rail-card {
+  background-color: rgb(69 26 3 / 0.35) !important;
+  border-color: rgb(180 83 9 / 0.45) !important;
+}
+
+html.dark .ceiling-support-panel .border-red-100 {
+  border-color: rgb(127 29 29 / 0.5) !important;
+}
+
+html.dark .ceiling-support-panel .bg-red-100 {
+  background-color: rgb(127 29 29 / 0.35) !important;
+  color: rgb(254 202 202) !important;
+}
+
+html.dark .ceiling-support-panel .border-red-200 {
+  border-color: rgb(185 28 28 / 0.45) !important;
 }
 
 html.dark .wall-canvas-container,

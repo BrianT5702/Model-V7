@@ -2210,7 +2210,8 @@ const Canvas2D = ({
             showPanelLines, // Panel lines visibility toggle
             initialScale: initialScale.current,
             dimensionValuesSeen,
-            rooms
+            rooms,
+            doors,
         });
         const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
         const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;
