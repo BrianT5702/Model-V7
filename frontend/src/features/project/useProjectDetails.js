@@ -1207,7 +1207,6 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         intersectionsResponse,
         roomsResponse,
         storeysResponse,
-        planAnnotationsResponse,
       ] = await Promise.all([
         api.get(`/projects/${projectId}/`),
         api.get(`/projects/${projectId}/walls/`),
@@ -1215,8 +1214,20 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         api.get(`/intersections/?project=${projectId}`),
         api.get(`/rooms/?project=${projectId}`),
         api.get(`/storeys/?project=${projectId}`),
-        api.get(`/plan-annotations/?project=${projectId}`),
       ]);
+
+      let planAnnotationsData = [];
+      try {
+        const planAnnotationsResponse = await api.get(`/plan-annotations/?project=${projectId}`);
+        planAnnotationsData = Array.isArray(planAnnotationsResponse.data)
+          ? planAnnotationsResponse.data
+          : [];
+      } catch (annotationError) {
+        const status = annotationError.response?.status;
+        if (![401, 403, 404].includes(status)) {
+          console.warn('Could not load plan annotations:', annotationError);
+        }
+      }
 
       const projectData = projectResponse.data;
       setProject(projectData);
@@ -1224,7 +1235,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       setDoors(doorsResponse.data);
       setJoints(intersectionsResponse.data);
       setRooms(Array.isArray(roomsResponse.data) ? roomsResponse.data : []);
-      setPlanAnnotations(Array.isArray(planAnnotationsResponse.data) ? planAnnotationsResponse.data : []);
+      setPlanAnnotations(planAnnotationsData);
       const prefetchedStoreys = Array.isArray(storeysResponse?.data) ? storeysResponse.data : [];
       await ensureStoreys(projectData, prefetchedStoreys);
       setStoreyError('');
