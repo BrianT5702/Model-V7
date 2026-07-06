@@ -659,6 +659,7 @@ class ProjectRetrieveSerializer(serializers.ModelSerializer):
 
 class ProjectCommentSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source='author.username', read_only=True)
+    resolved_by_username = serializers.CharField(source='resolved_by.username', read_only=True, default=None)
 
     class Meta:
         from .models import ProjectComment
@@ -670,9 +671,22 @@ class ProjectCommentSerializer(serializers.ModelSerializer):
             'author_username',
             'body',
             'wall_ids',
+            'status',
+            'resolved_at',
+            'resolved_by',
+            'resolved_by_username',
             'created_at',
         ]
-        read_only_fields = ['id', 'project', 'author', 'author_username', 'created_at']
+        read_only_fields = [
+            'id',
+            'project',
+            'author',
+            'author_username',
+            'resolved_at',
+            'resolved_by',
+            'resolved_by_username',
+            'created_at',
+        ]
 
 
 class PlanAnnotationSerializer(serializers.ModelSerializer):

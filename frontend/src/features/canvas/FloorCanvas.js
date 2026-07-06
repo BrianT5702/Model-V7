@@ -28,7 +28,6 @@ import {
     getPlanDimensionLaneConfig,
     getPlanExteriorSide,
     getDimensionEdge,
-    isLabelOutsidePlanArea,
     computeExteriorPlanLabelCoords,
     getPlanExteriorFixedColumnX,
     rememberPlanExteriorColumnX,
@@ -40,8 +39,7 @@ import {
     calculateVerticalLabelBounds,
     calculateRotatedVerticalDimBounds,
     exteriorVerticalTextCenterX,
-    buildVerticalPlanLabelEntry,
-    isLabelPlacementClean
+    buildVerticalPlanLabelEntry
 } from './collisionDetection.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 import {
@@ -320,6 +318,8 @@ const FloorCanvas = ({
         drawCanvas(ctx);
 
     // [UPDATED] Added visibilityState to dependencies so it redraws when you click checkboxes
+    // drawCanvas/calculateCanvasTransform are recreated each render; deps list drives redraw.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState, resolvedTheme]);
 
     const calculateCanvasTransform = () => {
@@ -666,7 +666,6 @@ const FloorCanvas = ({
         if (!isPanelFloorRoom(room)) return;
         if (!panels || panels.length === 0 || !room.room_points || room.room_points.length < 3) return;
 
-        const wallThickness = projectData?.wall_thickness || 150;
         ctx.save(); 
 
         /* Floor clipping logic disabled; panels now draw without inner clipping mask.
@@ -1701,26 +1700,22 @@ const FloorCanvas = ({
     };
 
     return (
-        <div
-            className={`plan-canvas floor-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg w-full max-w-full min-w-0 ${
-                isPlanDetailsOpen ? 'p-4 sm:p-5 lg:p-5' : 'p-4 sm:p-6'
-            }`}
-        >
+        <div className="plan-canvas floor-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg w-full max-w-full min-w-0 p-4">
             {/* Header - same line as Wall/Ceiling: title left, Show Plan Details right when collapsed */}
-            <div className="floor-canvas-header mb-4 sm:mb-6 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 min-w-0">
+            <div className="floor-canvas-header mb-3 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 min-w-0">
                     <div className="min-w-0">
-                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1 sm:mb-2 truncate">
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">
                             Floor Plan
                         </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-base sm:text-lg truncate">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 leading-tight truncate">
                             Professional Layout
                         </p>
                     </div>
                     {!isPlanDetailsOpen ? (
                         <button
                             onClick={() => setIsPlanDetailsOpen(true)}
-                            className="px-3 py-1.5 text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0"
+                            className="plan-panel-btn-outline shrink-0"
                         >
                             Show Plan Details
                         </button>
@@ -1728,7 +1723,7 @@ const FloorCanvas = ({
                 </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 min-w-0 w-full items-stretch">
+            <div className="flex flex-col lg:flex-row gap-2 min-w-0 w-full items-stretch">
                 {/* Main Canvas Area */}
                 <div className="floor-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px]">
                 <div className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg">
@@ -1791,16 +1786,16 @@ const FloorCanvas = ({
                         />
                     </div>
                     
-                    <div className="mt-4 flex items-center justify-between text-sm text-gray-600 p-3 bg-gray-50 border-t border-gray-200">
-                        <div className="flex items-center gap-4">
+                    <div className="plan-canvas-meta dark:text-gray-400 px-3 py-1.5 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-2">
                             <span className="font-medium">Scale:</span>
-                            <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+                            <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[10px]">
                                 {currentScale.toFixed(2)}x
                             </span>
                         </div>
-                        <div className="text-center">
-                            <span className="font-medium">Click panels to select • Drag to pan • Use zoom buttons</span>
-                        </div>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                            Click panels to select · Drag to pan · Use zoom buttons
+                        </span>
                     </div>
                 </div>
                 </div>
@@ -1808,10 +1803,10 @@ const FloorCanvas = ({
                 {/* Plan Details — same width/compact layout as ceiling plan */}
                 {isPlanDetailsOpen ? (
                 <div className="floor-summary-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0">
-                    <div className="plan-details-panel bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 lg:max-h-[min(720px,calc(100vh-10rem))] lg:overflow-y-auto">
-                        <div className="flex flex-col items-stretch gap-2 mb-4">
-                            <h4 className="text-base font-bold text-gray-900 dark:text-gray-100 flex items-center shrink-0">
-                                <svg className="w-5 h-5 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="plan-details-panel w-full text-left lg:sticky lg:top-2 lg:max-h-[min(720px,calc(100vh-10rem))] lg:overflow-y-auto">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h4 className="plan-details-panel-title dark:text-gray-100">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
                                 <span className="truncate">Plan Details</span>
@@ -1819,42 +1814,39 @@ const FloorCanvas = ({
                             <button
                                 type="button"
                                 onClick={() => setIsPlanDetailsOpen(false)}
-                                className="plan-details-btn self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                className="plan-panel-btn-secondary"
                             >
                                 Collapse
                             </button>
                         </div>
 
-                    <div className="space-y-4 text-left">
-                        {/* Stats Grid 1 */}
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                    <div className="space-y-2 text-left">
+                        <div className="plan-details-stat-grid">
                             <div>
-                                <div className="text-sm text-gray-600">Total Panels</div>
-                                <div className="text-2xl font-bold text-gray-900">{panelCounts.total}</div>
+                                <div className="plan-details-stat-label">Total Panels</div>
+                                <div className="plan-details-stat-value text-gray-900 dark:text-gray-100">{panelCounts.total}</div>
                             </div>
                             <div>
-                                <div className="text-sm text-gray-600">Rooms</div>
-                                <div className="text-xl font-semibold text-blue-600">{rooms?.filter(r => r.floor_type === 'panel' || r.floor_type === 'Panel').length || 0}</div>
-                            </div>
-                        </div>
-                        
-                        {/* Stats Grid 2 */}
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div>
-                                <div className="text-sm text-gray-600">Full Panels</div>
-                                <div className="text-xl font-semibold text-green-600">{panelCounts.full}</div>
-                            </div>
-                            <div>
-                                <div className="text-sm text-gray-600">Cut Panels</div>
-                                <div className="text-xl font-semibold text-red-600">{panelCounts.cut}</div>
+                                <div className="plan-details-stat-label">Rooms</div>
+                                <div className="plan-details-stat-value-sm text-blue-600">{rooms?.filter(r => r.floor_type === 'panel' || r.floor_type === 'Panel').length || 0}</div>
                             </div>
                         </div>
                         
-                        {/* Stats Grid 3 */}
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                        <div className="plan-details-stat-grid">
                             <div>
-                                <div className="text-sm text-gray-600">Waste %</div>
-                                <div className="text-xl font-semibold text-red-600">
+                                <div className="plan-details-stat-label">Full Panels</div>
+                                <div className="plan-details-stat-value-sm text-green-600">{panelCounts.full}</div>
+                            </div>
+                            <div>
+                                <div className="plan-details-stat-label">Cut Panels</div>
+                                <div className="plan-details-stat-value-sm text-red-600">{panelCounts.cut}</div>
+                            </div>
+                        </div>
+                        
+                        <div className="plan-details-stat-grid">
+                            <div>
+                                <div className="plan-details-stat-label">Waste %</div>
+                                <div className="plan-details-stat-value-sm text-red-600">
                                     {(() => {
                                         if (projectWastePercentage !== undefined && projectWastePercentage !== null) {
                                             return `${Number(projectWastePercentage).toFixed(1)}%`;
@@ -1873,8 +1865,8 @@ const FloorCanvas = ({
                         
                         {/* Recommended Strategy */}
                         <div>
-                            <div className="text-sm text-gray-600">Recommended</div>
-                            <div className="text-lg font-semibold text-green-600">
+                            <div className="plan-details-stat-label">Recommended</div>
+                            <div className="plan-details-stat-value-sm text-green-600">
                                 {(() => {
                                     const recommended = floorPlan?.summary?.recommended_strategy || 
                                                       floorPlan?.recommended_strategy || 
@@ -1902,9 +1894,9 @@ const FloorCanvas = ({
                         </div>
                         
                         {/* Panel Floor Area */}
-                        <div className="pt-4 border-t border-gray-200">
-                            <div className="text-sm text-gray-600">Panel Floor Area</div>
-                            <div className="text-lg font-semibold text-gray-900">
+                        <div className="plan-details-section">
+                            <div className="plan-details-stat-label">Panel Floor Area</div>
+                            <div className="plan-details-stat-value-sm text-gray-900 dark:text-gray-100">
                                 {(() => {
                                     const calculatedArea = calculatePanelFloorArea();
                                     if (calculatedArea === 0) return '0.00 m²';
@@ -1923,8 +1915,8 @@ const FloorCanvas = ({
                         </div>
                         
                         {/* Slab size (mm) - user can set for slab floor estimation; memorized per project */}
-                        <div className="pt-4 border-t border-gray-200">
-                            <div className="text-sm text-gray-600 mb-2">Slab size (mm)</div>
+                        <div className="plan-details-section">
+                            <div className="plan-details-stat-label mb-1.5">Slab size (mm)</div>
                             <fieldset disabled={!canEdit} className="border-0 p-0 m-0 min-w-0">
                                 <div className="flex flex-wrap items-center gap-3">
                                     <div className="flex items-center gap-1.5">
@@ -1934,7 +1926,7 @@ const FloorCanvas = ({
                                             min={1}
                                             value={slabWidth}
                                             onChange={(e) => onSlabWidthChange?.(e.target.value)}
-                                            className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                            className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-500"
                                             placeholder="1210"
                                         />
                                     </div>
@@ -1946,7 +1938,7 @@ const FloorCanvas = ({
                                             min={1}
                                             value={slabLength}
                                             onChange={(e) => onSlabLengthChange?.(e.target.value)}
-                                            className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                            className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-500"
                                             placeholder="3000"
                                         />
                                     </div>
@@ -1960,9 +1952,9 @@ const FloorCanvas = ({
                         </div>
                         
                         {/* Slab Floor Summary */}
-                        <div className="pt-4 border-t border-gray-200">
-                            <div className="text-sm text-gray-600">Slab Floor Summary</div>
-                            <div className="text-lg font-semibold text-green-600">
+                        <div className="plan-details-section">
+                            <div className="plan-details-stat-label">Slab Floor Summary</div>
+                            <div className="plan-details-stat-value-sm text-green-600">
                                 {(() => {
                                     const slabRooms = rooms?.filter(room => 
                                         room.floor_type === 'slab' || room.floor_type === 'Slab'
@@ -1971,14 +1963,12 @@ const FloorCanvas = ({
                                     if (slabRooms.length === 0) return 'No slab floors';
                                     
                                     let totalSlabs = 0;
-                                    let totalArea = 0;
                                     
                                     slabRooms.forEach(room => {
                                         const roomArea = calculateRoomArea(room);
                                         const slabArea = slabWidth * slabLength;
                                         const slabsNeeded = Math.ceil(roomArea / slabArea);
                                         totalSlabs += slabsNeeded;
-                                        totalArea += roomArea;
                                     });
                                     
                                     return `${totalSlabs} slabs needed`;
@@ -1999,15 +1989,15 @@ const FloorCanvas = ({
                         {/* ------------------------------------------------------- */}
                         {/* COMBINED Dimension Legend & Filter                      */}
                         {/* ------------------------------------------------------- */}
-                        <div className="pt-4 border-t border-gray-200">
-                            <h4 className="font-semibold text-gray-900 mb-4 flex items-center text-sm">
-                                <svg className="w-5 h-5 mr-2 text-gray-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="plan-details-section">
+                            <h4 className="plan-details-section-title">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                                 Dimension Legend
                             </h4>
                             
-                            <div className="space-y-3 text-sm">
+                            <div className="space-y-2 text-[11px]">
                                 {/* Overall outline (plan footprint) — per room when multiple rooms */}
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center">
@@ -2079,19 +2069,19 @@ const FloorCanvas = ({
             </div>
 
             {/* Panel List Table */}
-            <div className="mt-6 p-4 bg-white rounded-lg shadow-md border border-gray-200">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold text-gray-800">Floor Panel List</h3>
+            <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600 mt-3">
+                <div className="plan-material-card-header">
+                    <h3 className="plan-material-card-title dark:text-gray-100">Floor Panel List</h3>
                     <button
                         onClick={() => setShowPanelTable(!showPanelTable)}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        className="plan-panel-btn-primary"
                     >
                         {showPanelTable ? 'Hide Panel Table' : 'Show Panel Table'}
                     </button>
                 </div>
 
                 {showPanelTable && (
-                    <div className="space-y-6">
+                    <div className="space-y-4 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                         <div>
                             <h4 className="text-md font-semibold text-gray-700 mb-3">Panel Floors</h4>
                             <div className="overflow-x-auto">

@@ -25,11 +25,60 @@ code {
     monospace;
 }
 
-/* Canvas container expansion */
+/* Canvas container expansion (default; project workspace overrides below) */
 .canvas-container {
   min-height: 400px;
   height: auto;
   overflow: visible;
+}
+
+/* Main plan area: scroll inside viewport while edit sidebar scrolls separately */
+.project-details-workspace .project-details-main {
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-details-workspace .project-details-main > .canvas-container {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 3D view fills the workspace — no outer scroll (orbit / tour use the canvas only) */
+.project-details-workspace .project-details-main > .canvas-container.canvas-container-3d {
+  overflow: hidden;
+  overscroll-behavior: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-container-3d .three-canvas-view {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-container-3d .three-canvas-stage {
+  flex: 1 1 0%;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+}
+
+.canvas-container-3d #three-canvas-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 @media (min-width: 640px) {
@@ -56,12 +105,12 @@ code {
   overflow: visible;
 }
 
-/* Allow page to expand beyond viewport */
+/* Allow page to expand beyond viewport — project details uses a fixed viewport shell */
 .project-details-container {
   min-height: 100vh;
-  height: auto;
-  overflow-x: clip;
-  overflow-y: visible;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   width: 100%;
   max-width: 100%;
 }
@@ -73,6 +122,9 @@ code {
   width: 100%;
   min-width: 0;
   max-width: 100%;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .project-details-container .bg-white.border-b.shadow-sm {
@@ -82,24 +134,39 @@ code {
   flex-shrink: 0;
 }
 
-/* Ensure content area defines the scrollable width */
-.project-details-container .flex.min-h-\[calc\(100vh-120px\)\] {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  flex-shrink: 0;
+/* Workspace: sidebar + canvas share remaining viewport height */
+.project-details-workspace {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* Ensure sidebar can scroll independently */
-.sidebar-scroll {
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
+/* Edit controls sidebar — independent scroll from main content */
+.controls-sidebar-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (min-width: 1024px) {
-  .sidebar-scroll {
-    max-height: calc(100vh - 120px);
+  .project-details-workspace .controls-sidebar-scroll {
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
   }
+}
+
+@media (max-width: 1023px) {
+  .controls-sidebar-scroll {
+    overflow-y: auto;
+    max-height: 100vh;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Legacy alias */
+.sidebar-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Edit mode tool buttons */
@@ -513,6 +580,22 @@ html.dark .project-details-container .bg-white.border-b:first-of-type {
     @apply form-btn text-white bg-red-600 hover:bg-red-700 focus:ring-red-500;
   }
 
+  .notification-banner {
+    @apply fixed left-1/2 -translate-x-1/2 z-50 rounded-lg shadow-lg;
+  }
+
+  .notification-banner-warning {
+    @apply notification-banner bg-yellow-100 border border-yellow-400 text-yellow-800;
+  }
+
+  .notification-banner-success {
+    @apply notification-banner bg-green-100 border border-green-400 text-green-800;
+  }
+
+  .notification-banner-error {
+    @apply notification-banner bg-red-100 border border-red-400 text-red-700;
+  }
+
   .form-toggle-row {
     @apply flex items-center justify-between gap-2 p-2 bg-gray-50 rounded border border-gray-200;
   }
@@ -586,6 +669,34 @@ html.dark .project-details-container .bg-white.border-b:first-of-type {
     @apply rounded border border-dashed border-gray-300 bg-gray-50/80 p-1.5 max-h-24 overflow-y-auto;
   }
 
+  .room-form-option-row {
+    @apply flex items-start gap-2 cursor-pointer rounded border border-gray-200 bg-gray-50/80 px-2 py-1.5;
+  }
+
+  .room-form-option-label {
+    @apply text-[11px] text-gray-700 leading-snug;
+  }
+
+  .room-form-option-hint {
+    @apply block text-[10px] text-gray-500;
+  }
+
+  .room-form-link-btn {
+    @apply mt-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium;
+  }
+
+  .room-form-muted-text {
+    @apply text-xs font-medium text-gray-600;
+  }
+
+  .room-form-geometry-text {
+    @apply text-xs text-gray-700 py-0.5;
+  }
+
+  .room-form-expand-btn {
+    @apply flex items-center gap-1.5 w-full text-left text-xs font-medium text-gray-600 hover:text-gray-800 transition-colors;
+  }
+
   .room-form-footer {
     @apply shrink-0 flex flex-col-reverse sm:flex-row sm:justify-end gap-1.5 px-3 py-2 border-t border-gray-200 bg-gray-50 rounded-b-xl;
   }
@@ -597,7 +708,7 @@ html.dark .project-details-container .bg-white.border-b:first-of-type {
   }
 
   .plan-view-tab {
-    @apply inline-flex items-center shrink-0 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap;
+    @apply inline-flex items-center shrink-0 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap;
   }
 
   .plan-view-tab-inactive {
@@ -616,8 +727,200 @@ html.dark .project-details-container .bg-white.border-b:first-of-type {
     @apply plan-view-tab bg-orange-600 text-white shadow-sm;
   }
 
+  .plan-view-tab-active-violet {
+    @apply plan-view-tab bg-violet-600 text-white shadow-sm;
+  }
+
   .plan-view-tab-disabled {
     @apply plan-view-tab text-gray-400 bg-gray-100 dark:bg-gray-800 dark:text-gray-500 cursor-not-allowed;
+  }
+
+  /* Ceiling manager — compact control panel */
+  .ceiling-manager .control-card {
+    @apply rounded-md border border-gray-200 bg-gray-50/80 p-2.5;
+  }
+
+  .ceiling-manager .control-card select,
+  .ceiling-manager .control-card input[type='number'],
+  .ceiling-manager .control-card input[type='text'] {
+    @apply block w-full min-w-0 h-7 px-2 text-xs text-gray-900 bg-white border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500;
+  }
+
+  /* Floor manager — compact control panel */
+  .floor-manager .control-card {
+    @apply rounded-md border border-gray-200 bg-gray-50/80 p-2.5;
+  }
+
+  .floor-manager .control-card select,
+  .floor-manager .control-card input[type='number'],
+  .floor-manager .control-card input[type='text'] {
+    @apply block w-full min-w-0 h-7 px-2 text-xs text-gray-900 bg-white border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500;
+  }
+
+  /* Summary tab — compact layout */
+  .summary-tab {
+    @apply p-4;
+  }
+
+  .summary-tab-header {
+    @apply mb-3;
+  }
+
+  .summary-tab-title {
+    @apply text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight;
+  }
+
+  .summary-tab-subtitle {
+    @apply text-[11px] text-gray-600 dark:text-gray-400 leading-snug;
+  }
+
+  .summary-tab-hint {
+    @apply text-[11px] text-blue-600 dark:text-blue-400 leading-snug mt-1;
+  }
+
+  .summary-tab-section {
+    @apply rounded-md p-3 mb-3;
+  }
+
+  .summary-tab-section-title {
+    @apply text-xs font-semibold mb-2 flex items-center;
+  }
+
+  .summary-tab-section-title svg {
+    @apply w-3.5 h-3.5 mr-1.5 shrink-0;
+  }
+
+  .summary-tab-stat-grid {
+    @apply grid gap-2 mb-3;
+  }
+
+  .summary-tab-stat-card {
+    @apply rounded-md border p-2.5 text-center;
+  }
+
+  .summary-tab-stat-value {
+    @apply text-lg font-bold leading-tight;
+  }
+
+  .summary-tab-stat-label {
+    @apply text-[11px] leading-tight;
+  }
+
+  .summary-tab-stat-meta {
+    @apply text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug;
+  }
+
+  .summary-tab-btn {
+    @apply inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-50 shrink-0;
+  }
+
+  .summary-tab-btn-primary {
+    @apply summary-tab-btn bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-sm;
+  }
+
+  .summary-tab-btn-success {
+    @apply summary-tab-btn bg-green-600 text-white hover:bg-green-700;
+  }
+
+  .summary-tab-btn-info {
+    @apply summary-tab-btn bg-blue-600 text-white hover:bg-blue-700;
+  }
+
+  .summary-tab-input {
+    @apply w-14 h-7 px-2 text-xs text-center font-semibold border rounded focus:outline-none focus:ring-1;
+  }
+
+  .summary-tab-status-pill {
+    @apply flex items-center justify-center gap-1.5 p-1.5 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600 text-[10px];
+  }
+
+  .summary-tab-table th {
+    @apply px-2 py-1.5 text-[11px];
+  }
+
+  .summary-tab-table td {
+    @apply px-2 py-1.5 text-[11px];
+  }
+
+  /* Wall plan — material panel & canvas chrome */
+  .plan-material-card {
+    @apply mt-3 rounded-md border border-gray-200 bg-white p-2.5 shadow-sm;
+  }
+
+  .plan-material-card-header {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .plan-material-card-title {
+    @apply text-sm font-semibold text-gray-800 leading-tight;
+  }
+
+  .plan-panel-btn {
+    @apply inline-flex items-center px-2 py-1 text-xs rounded-md font-medium transition-colors whitespace-nowrap;
+  }
+
+  .plan-panel-btn-primary {
+    @apply plan-panel-btn bg-blue-600 text-white hover:bg-blue-700;
+  }
+
+  .plan-panel-btn-secondary {
+    @apply plan-panel-btn border border-gray-200 text-gray-600 hover:bg-gray-100;
+  }
+
+  .plan-canvas-meta {
+    @apply mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600;
+  }
+
+  .plan-details-panel {
+    @apply rounded-md border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 p-2.5 shadow-sm;
+  }
+
+  .plan-details-panel-title {
+    @apply text-sm font-semibold text-gray-900 leading-tight flex items-center gap-1.5 shrink-0;
+  }
+
+  .plan-details-panel-title svg {
+    @apply w-3.5 h-3.5 text-blue-600 shrink-0;
+  }
+
+  .plan-details-stat-grid {
+    @apply grid grid-cols-2 gap-x-2 gap-y-2;
+  }
+
+  .plan-details-stat-label {
+    @apply text-[11px] text-gray-600 leading-tight;
+  }
+
+  .plan-details-stat-value {
+    @apply text-lg font-bold tabular-nums leading-tight;
+  }
+
+  .plan-details-stat-value-sm {
+    @apply text-base font-semibold tabular-nums leading-tight;
+  }
+
+  .plan-details-section {
+    @apply pt-2 border-t border-gray-200;
+  }
+
+  .plan-details-section-title {
+    @apply text-xs font-semibold text-gray-900 mb-2 flex items-center gap-1.5;
+  }
+
+  .plan-details-section-title svg {
+    @apply w-3.5 h-3.5 text-gray-600 shrink-0;
+  }
+
+  .ceiling-support-panel {
+    @apply rounded-md border border-orange-200/80 bg-gradient-to-br from-orange-50/80 to-gray-50 p-2.5 shadow-sm;
+  }
+
+  .plan-panel-btn-outline {
+    @apply plan-panel-btn border border-blue-200 text-blue-600 hover:bg-blue-50;
+  }
+
+  .plan-panel-btn-outline-orange {
+    @apply plan-panel-btn border border-orange-200 text-orange-700 hover:bg-orange-50;
   }
 }
 
@@ -689,6 +992,18 @@ html.dark .form-btn-secondary {
   @apply bg-gray-800 border-gray-600 text-gray-200 hover:bg-gray-700;
 }
 
+html.dark .notification-banner-warning {
+  @apply bg-amber-950 border-amber-700 text-amber-100;
+}
+
+html.dark .notification-banner-success {
+  @apply bg-green-950 border-green-700 text-green-100;
+}
+
+html.dark .notification-banner-error {
+  @apply bg-red-950 border-red-700 text-red-100;
+}
+
 html.dark .form-toggle-row {
   @apply bg-gray-800 border-gray-700;
 }
@@ -723,6 +1038,38 @@ html.dark .room-form-label {
 
 html.dark .room-form-geometry {
   @apply bg-gray-800/80 border-gray-600;
+}
+
+html.dark .room-form-geometry-walls {
+  @apply border-green-800 bg-green-950/30;
+}
+
+html.dark .room-form-option-row {
+  @apply bg-gray-800 border-gray-700;
+}
+
+html.dark .room-form-option-label {
+  @apply text-gray-200;
+}
+
+html.dark .room-form-option-hint {
+  color: rgb(156 163 175);
+}
+
+html.dark .room-form-link-btn {
+  @apply text-blue-400 hover:text-blue-300;
+}
+
+html.dark .room-form-muted-text {
+  @apply text-gray-400;
+}
+
+html.dark .room-form-geometry-text {
+  @apply text-gray-300;
+}
+
+html.dark .room-form-expand-btn {
+  @apply text-gray-400 hover:text-gray-200;
 }
 
 html.dark .room-form-footer {
@@ -938,13 +1285,13 @@ html.dark .plan-details-panel .bg-white {
   background-color: rgb(31 41 55) !important;
 }
 
-html.dark .plan-details-panel .border-gray-200,
-html.dark .plan-details-panel .border-emerald-200 {
+html.dark .plan-details-panel [class*="border-gray-200"],
+html.dark .plan-details-panel [class*="border-emerald-200"] {
   border-color: rgb(75 85 99) !important;
 }
 
-html.dark .plan-details-panel .border-t.border-gray-200 {
-  border-top-color: rgb(75 85 99) !important;
+html.dark .plan-details-panel .plan-details-section {
+  border-top-color: rgb(75 85 99);
 }
 
 html.dark .plan-details-panel .plan-details-btn {
@@ -955,6 +1302,55 @@ html.dark .plan-details-panel .plan-details-btn {
 
 html.dark .plan-details-panel .plan-details-btn:hover {
   background-color: rgb(75 85 99);
+}
+
+html.dark .plan-material-card {
+  background-color: rgb(31 41 55) !important;
+  border-color: rgb(75 85 99) !important;
+}
+
+html.dark .plan-material-card-title {
+  color: rgb(243 244 246);
+}
+
+html.dark .plan-canvas-meta {
+  color: rgb(156 163 175);
+}
+
+html.dark .plan-details-panel {
+  background-image: linear-gradient(to bottom right, rgb(55 65 81), rgb(31 41 55)) !important;
+  border-color: rgb(75 85 99) !important;
+}
+
+html.dark .plan-details-panel-title {
+  color: rgb(243 244 246);
+}
+
+html.dark .plan-details-stat-label {
+  color: rgb(156 163 175);
+}
+
+html.dark .ceiling-support-panel {
+  background-image: linear-gradient(to bottom right, rgb(67 20 7 / 0.25), rgb(31 41 55)) !important;
+  border-color: rgb(194 65 12 / 0.35) !important;
+}
+
+html.dark .plan-panel-btn-outline {
+  border-color: rgb(29 78 216);
+  color: rgb(147 197 253);
+}
+
+html.dark .plan-panel-btn-outline:hover {
+  background-color: rgb(30 58 138 / 0.35);
+}
+
+html.dark .plan-panel-btn-outline-orange {
+  border-color: rgb(194 65 12);
+  color: rgb(253 186 116);
+}
+
+html.dark .plan-panel-btn-outline-orange:hover {
+  background-color: rgb(67 20 7 / 0.35);
 }
 
 html.dark .plan-details-panel input[type="number"],
@@ -1066,6 +1462,32 @@ html.dark .canvas-container,
 html.dark .floor-manager,
 html.dark .ceiling-manager {
   background-color: rgb(17 24 39) !important;
+}
+
+html.dark .ceiling-manager .control-card {
+  background-color: rgb(31 41 55 / 0.45);
+  border-color: rgb(55 65 81);
+}
+
+html.dark .ceiling-manager .control-card select,
+html.dark .ceiling-manager .control-card input[type='number'],
+html.dark .ceiling-manager .control-card input[type='text'] {
+  background-color: rgb(31 41 55);
+  border-color: rgb(75 85 99);
+  color: rgb(243 244 246);
+}
+
+html.dark .floor-manager .control-card {
+  background-color: rgb(31 41 55 / 0.45);
+  border-color: rgb(55 65 81);
+}
+
+html.dark .floor-manager .control-card select,
+html.dark .floor-manager .control-card input[type='number'],
+html.dark .floor-manager .control-card input[type='text'] {
+  background-color: rgb(31 41 55);
+  border-color: rgb(75 85 99);
+  color: rgb(243 244 246);
 }
 
 /* Broad UI chrome remapping for legacy Tailwind utility classes */

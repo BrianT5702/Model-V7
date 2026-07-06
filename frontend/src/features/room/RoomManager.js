@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import useRoomForm from './useRoomForm';
 import { calculateMinWallHeight } from '../../api/api';
@@ -46,6 +46,7 @@ const RoomManager = ({
         activeStoreyId
     });
 
+    const [pointsExpanded, setPointsExpanded] = useState(false);
     const showGeometry = !isEditMode && (selectedPolygonPoints.length > 0 || selectedWallIds.length > 0);
     const minWallHeight = selectedWallIds.length > 0
         ? Math.min(...walls.filter(w => selectedWallIds.includes(w.id)).map(w => w.height))
@@ -59,16 +60,34 @@ const RoomManager = ({
                         <h3 className="room-form-card-title">Room outline</h3>
                         {selectedPolygonPoints.length > 0 && (
                             <div className="mb-3">
-                                <p className="text-xs font-medium text-gray-600 mb-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setPointsExpanded((prev) => !prev)}
+                                    className="room-form-expand-btn"
+                                    aria-expanded={pointsExpanded}
+                                >
+                                    <svg
+                                        className={`w-3 h-3 shrink-0 transition-transform ${pointsExpanded ? 'rotate-90' : ''}`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
                                     Points ({selectedPolygonPoints.length})
-                                </p>
-                                <div className={`room-form-geometry ${form.validationErrors.polygonPoints ? 'border-red-300' : ''}`}>
-                                    {selectedPolygonPoints.map((pt, index) => (
-                                        <p key={index} className="text-xs font-mono text-gray-700 py-0.5">
-                                            {index + 1}. ({pt.x.toFixed(0)}, {pt.y.toFixed(0)})
-                                        </p>
-                                    ))}
-                                </div>
+                                    {!pointsExpanded && (
+                                        <span className="text-[10px] font-normal text-gray-400 ml-auto">Expand</span>
+                                    )}
+                                </button>
+                                {pointsExpanded && (
+                                    <div className={`room-form-geometry mt-1.5 ${form.validationErrors.polygonPoints ? 'border-red-300' : ''}`}>
+                                        {selectedPolygonPoints.map((pt, index) => (
+                                            <p key={index} className="room-form-geometry-text font-mono">
+                                                {index + 1}. ({pt.x.toFixed(0)}, {pt.y.toFixed(0)})
+                                            </p>
+                                        ))}
+                                    </div>
+                                )}
                                 {form.validationErrors.polygonPoints && (
                                     <p className="room-form-error">{form.validationErrors.polygonPoints}</p>
                                 )}
@@ -76,14 +95,14 @@ const RoomManager = ({
                         )}
                         {selectedWallIds.length > 0 && (
                             <div>
-                                <p className="text-xs font-medium text-gray-600 mb-1.5">
+                                <p className="room-form-muted-text mb-1.5">
                                     Walls ({selectedWallIds.length})
                                 </p>
-                                <div className="room-form-geometry border-green-200 bg-green-50/50">
+                                <div className="room-form-geometry room-form-geometry-walls border-green-200 bg-green-50/50">
                                     {selectedWallIds.map((wallId) => {
                                         const wall = walls.find(w => w.id === wallId);
                                         return (
-                                            <p key={wallId} className="text-xs text-gray-700 py-0.5">
+                                            <p key={wallId} className="room-form-geometry-text">
                                                 Wall {wallId} · {wall?.height ?? '?'} mm
                                             </p>
                                         );
@@ -155,22 +174,22 @@ const RoomManager = ({
                                             console.error('Error calculating minimum wall height:', error);
                                         });
                                 }}
-                                className="mt-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                className="room-form-link-btn"
                             >
                                 Use minimum wall height ({minWallHeight} mm)
                             </button>
                         )}
                     </Field>
-                    <label className="flex items-start gap-2 cursor-pointer rounded border border-gray-200 bg-gray-50/80 px-2 py-1.5">
+                    <label className="room-form-option-row">
                         <input
                             type="checkbox"
                             checked={form.allowVariableWallHeights}
                             onChange={(e) => form.setAllowVariableWallHeights(e.target.checked)}
-                            className="mt-0.5 h-3.5 w-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                            className="mt-0.5 h-3.5 w-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
                         />
-                        <span className="text-[11px] text-gray-700 leading-snug">
+                        <span className="room-form-option-label">
                             <span className="font-medium">Variable wall heights</span>
-                            <span className="block text-[10px] text-gray-500">
+                            <span className="room-form-option-hint">
                                 Sloped roofs — room height won&apos;t update walls.
                             </span>
                         </span>
@@ -216,11 +235,7 @@ const RoomManager = ({
                                         key={value}
                                         type="button"
                                         onClick={() => form.setBaseElevation(value.toString())}
-                                        className={`px-1.5 py-0.5 text-[10px] rounded border font-medium transition-colors ${
-                                            selected
-                                                ? 'bg-blue-600 border-blue-600 text-white'
-                                                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                                        }`}
+                                        className={selected ? 'form-chip-active' : 'form-chip-inactive'}
                                     >
                                         {value > 0 ? `+${value}` : value}
                                     </button>

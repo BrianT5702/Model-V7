@@ -439,17 +439,8 @@ function isPanelPolygon(pts) {
     return Array.isArray(pts) && pts.length > 2;
 }
 
-/** Model-space offset (mm) outside room — matches FloorCanvas room width/height (+20 mm) when scale allows */
-const DIM_OFFSET_MODEL_MM = 22;
-const DIM_WITNESS_GAP_PDF_MM = 4;
-
+// Room dimension color for PDF vector output
 const roomDimRgb = hexToRgb(DIMENSION_CONFIG.COLORS.ROOM);
-
-/** Model-mm offset so that layoutScale * offset >= minPdfMm (layoutScale = PDF mm per model mm). */
-function modelOffsetForMinPdfGap(layoutScale, minPdfMm) {
-    if (!layoutScale || layoutScale <= 0 || !Number.isFinite(minPdfMm)) return DIM_OFFSET_MODEL_MM;
-    return Math.max(DIM_OFFSET_MODEL_MM, minPdfMm / layoutScale);
-}
 
 function panelBBoxForDims(panel) {
     const pts = panel.shape_points;
@@ -984,7 +975,6 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
     const valueDedup = new Set();
     const placementMemory = new Map();
     const {
-        scale: layoutScale = 0,
         pageBounds: pbIn,
         projectBounds: projIn,
         geometryBounds: geomIn,
@@ -1110,14 +1100,14 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
     doc.setFontSize(fontSize);
     doc.setFont('helvetica', DIMENSION_CONFIG.FONT_WEIGHT === 'bold' ? 'bold' : 'normal');
 
-    const pdfExtDash = [1.2 * PX_TO_MM, 2 * PX_TO_MM];
-    const pdfDimLineW = Math.max(0.35, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * PX_TO_MM * 1.4);
-    const pdfExtLineW = Math.max(0.22, DIMENSION_CONFIG.LINE_WIDTH * PX_TO_MM * 0.9);
-    const pdfTick = 1.3 * PX_TO_MM;
+    pdfExtDash = [1.2 * PX_TO_MM, 2 * PX_TO_MM];
+    pdfDimLineW = Math.max(0.35, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * PX_TO_MM * 1.4);
+    pdfExtLineW = Math.max(0.22, DIMENSION_CONFIG.LINE_WIDTH * PX_TO_MM * 0.9);
+    pdfTick = 1.3 * PX_TO_MM;
 
-    const roomColor = [roomDimRgb.r, roomDimRgb.g, roomDimRgb.b];
-    const cutPanelColor = [cutPanelDimRgb.r, cutPanelDimRgb.g, cutPanelDimRgb.b];
-    const panelGroupColor = [panelGroupDimRgb.r, panelGroupDimRgb.g, panelGroupDimRgb.b];
+    roomColor = [roomDimRgb.r, roomDimRgb.g, roomDimRgb.b];
+    cutPanelColor = [cutPanelDimRgb.r, cutPanelDimRgb.g, cutPanelDimRgb.b];
+    panelGroupColor = [panelGroupDimRgb.r, panelGroupDimRgb.g, panelGroupDimRgb.b];
 
     // Same idea as pdfVectorWallPlan: clip extension dashes to the strict exterior of the drawn plan.
     // Use full geometry (rooms + walls + zones + panels), not projectBounds (room+wall only), or
@@ -1130,7 +1120,7 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
     const tcx1 = transformX(clipModel.maxX);
     const tcy0 = transformY(clipModel.minY);
     const tcy1 = transformY(clipModel.maxY);
-    const modelRectPdf = {
+    modelRectPdf = {
         left: Math.min(tcx0, tcx1),
         right: Math.max(tcx0, tcx1),
         top: Math.min(tcy0, tcy1),
@@ -1179,12 +1169,12 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         }
         return out.length > 0 ? out : [];
     };
-    const drawDashedExtensionLine = (x1, y1, x2, y2) => {
+    drawDashedExtensionLine = (x1, y1, x2, y2) => {
         const segs = extensionSegmentsOutsideModelRect(x1, y1, x2, y2, modelRectPdf);
         segs.forEach((s) => doc.line(s.x1, s.y1, s.x2, s.y2));
     };
 
-    const setPdfDash = (pattern) => {
+    setPdfDash = (pattern) => {
         if (typeof doc.setLineDashPattern !== 'function') return;
         if (pattern && pattern.length > 0) {
             doc.setLineDashPattern(pattern);
@@ -1193,21 +1183,21 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         }
     };
 
-    const drawPdfHorizontalDimArrows = (x0, x1, y, color) => {
+    drawPdfHorizontalDimArrows = (x0, x1, y, color) => {
         doc.setDrawColor(color[0], color[1], color[2]);
         doc.setLineWidth(pdfDimLineW);
         setPdfDash([]);
         doc.line(x0, y - pdfTick, x0, y + pdfTick);
         doc.line(x1, y - pdfTick, x1, y + pdfTick);
     };
-    const drawPdfVerticalDimArrows = (x, y0, y1, color) => {
+    drawPdfVerticalDimArrows = (x, y0, y1, color) => {
         doc.setDrawColor(color[0], color[1], color[2]);
         doc.setLineWidth(pdfDimLineW);
         setPdfDash([]);
         doc.line(x - pdfTick, y0, x + pdfTick, y0);
         doc.line(x - pdfTick, y1, x + pdfTick, y1);
     };
-    const drawPdfHorizontalTicks = (xs, y, color) => {
+    drawPdfHorizontalTicks = (xs, y, color) => {
         if (!xs || xs.length === 0) return;
         doc.setDrawColor(color[0], color[1], color[2]);
         doc.setLineWidth(pdfDimLineW);
@@ -1216,7 +1206,7 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             doc.line(x, y - pdfTick, x, y + pdfTick);
         });
     };
-    const drawPdfVerticalTicks = (x, ys, color) => {
+    drawPdfVerticalTicks = (x, ys, color) => {
         if (!ys || ys.length === 0) return;
         doc.setDrawColor(color[0], color[1], color[2]);
         doc.setLineWidth(pdfDimLineW);
@@ -1225,7 +1215,7 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             doc.line(x - pdfTick, y, x + pdfTick, y);
         });
     };
-    const drawPdfDimTextPadH = (cx, baselineY, text, padMm) => {
+    drawPdfDimTextPadH = (cx, baselineY, text, padMm) => {
         try {
             const tw = doc.getTextWidth(text);
             let th = doc.getFontSize() * 0.45;
@@ -1237,7 +1227,7 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             /* ignore */
         }
     };
-    const drawPdfDimTextPadV = (leftX, gapCenterY, textWidthPx, padMm) => {
+    drawPdfDimTextPadV = (leftX, gapCenterY, textWidthPx, padMm) => {
         try {
             let fh = doc.getFontSize() * 0.45;
             if (typeof doc.getTextDimensions === 'function') {
@@ -1523,7 +1513,6 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                     const minY = Math.min(...grp.map((p) => num(p.start_y ?? p.y)));
                     const maxY = Math.max(...grp.map(panelExtentY));
                     const centerX = (minX + maxX) / 2;
-                    const centerY = (minY + maxY) / 2;
                     const qty = grp.length;
 
                     if (isHorizontalStrategy) {
@@ -1638,7 +1627,6 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
                     const minY = Math.min(...grp.map((p) => num(p.start_y ?? p.y)));
                     const maxY = Math.max(...grp.map(panelExtentY));
                     const centerX = (minX + maxX) / 2;
-                    const centerY = (minY + maxY) / 2;
                     const qty = grp.length;
 
                     const drawV = (typeTag, val, roomDim) => {
@@ -1884,6 +1872,36 @@ function roomLabelPositionModel(room) {
     return { x: cx, y: cy };
 }
 
+function isSlabFloorRoom(room) {
+    const ft = room?.floor_type;
+    return ft === 'slab' || ft === 'Slab';
+}
+
+function storeyHasSlabFloorRooms(storeyRooms) {
+    return (storeyRooms || []).some(isSlabFloorRoom);
+}
+
+function shouldDrawVectorFloorPage(fPanels, storeyRooms) {
+    return (fPanels?.length ?? 0) > 0 || storeyHasSlabFloorRooms(storeyRooms);
+}
+
+function calculateRoomAreaModel(room) {
+    const pts = room?.room_points;
+    if (!Array.isArray(pts) || pts.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < pts.length; i++) {
+        const j = (i + 1) % pts.length;
+        const pi = pts[i];
+        const pj = pts[j];
+        const xi = num(pi?.x ?? (Array.isArray(pi) ? pi[0] : null));
+        const yi = num(pi?.y ?? (Array.isArray(pi) ? pi[1] : null));
+        const xj = num(pj?.x ?? (Array.isArray(pj) ? pj[0] : null));
+        const yj = num(pj?.y ?? (Array.isArray(pj) ? pj[1] : null));
+        area += xi * yj - xj * yi;
+    }
+    return Math.abs(area) / 2;
+}
+
 function roomBBoxModel(room) {
     const pts = room.room_points;
     if (!Array.isArray(pts) || pts.length < 3) return null;
@@ -1907,7 +1925,8 @@ function roomBBoxModel(room) {
  * Room names on the plan (vector PDF). Drawn after dimensions so labels stay readable.
  * `scale` is PDF mm per model mm (same as drawPlanPage local `scale`).
  */
-function drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale) {
+function drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale, options = {}) {
+    const { kind, slabWidth = 1210, slabLength = 3000 } = options;
     const MIN_W_PDF_MM = 5;
     const MIN_H_PDF_MM = 4;
 
@@ -1920,7 +1939,7 @@ function drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale
         if (!bb) return;
         const wPdf = (bb.maxX - bb.minX) * scale;
         const hPdf = (bb.maxY - bb.minY) * scale;
-        const isSlabRoom = room.floor_type === 'slab' || room.floor_type === 'Slab';
+        const isSlabRoom = isSlabFloorRoom(room);
         const minH = isSlabRoom ? MIN_H_PDF_MM * 1.1 : MIN_H_PDF_MM;
         if (wPdf < MIN_W_PDF_MM || hPdf < minH) return;
 
@@ -1933,6 +1952,22 @@ function drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale
         doc.setFontSize(fontPt);
         doc.setTextColor(107, 114, 128);
         doc.text(name, tx, ty, { align: 'center', baseline: 'middle' });
+
+        if (kind === 'floor' && isSlabRoom && hPdf >= minH * 1.5) {
+            const roomArea = calculateRoomAreaModel(room);
+            const slabArea = slabWidth * slabLength;
+            if (roomArea > 0 && slabArea > 0) {
+                const slabsNeeded = Math.ceil(roomArea / slabArea);
+                const slabText = `${slabsNeeded} slab${slabsNeeded === 1 ? '' : 's'} · ${Math.round(slabWidth)}×${Math.round(slabLength)}`;
+                const slabFontPt = Math.max(7, fontPt * 0.82);
+                const lineGapPdf = Math.max(2.5, fontPt * 0.38);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(slabFontPt);
+                doc.setTextColor(75, 85, 99);
+                doc.text(slabText, tx, ty + lineGapPdf, { align: 'center', baseline: 'middle' });
+                doc.setFont('helvetica', 'bold');
+            }
+        }
     });
 
     doc.setFont('helvetica', 'normal');
@@ -2357,7 +2392,9 @@ function drawPlanPage(doc, {
     storeyWalls = [],
     wallIntersections = [],
     ceilingPlans = [],
-    floorPlans = []
+    floorPlans = [],
+    slabWidth = 1210,
+    slabLength = 3000
 }) {
     let roomBounds = initialBounds();
     roomBounds = expandBoundsRooms(storeyRooms, roomBounds);
@@ -2474,7 +2511,11 @@ function drawPlanPage(doc, {
         }
     }
 
-    drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale);
+    drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale, {
+        kind,
+        slabWidth,
+        slabLength
+    });
 
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
@@ -2534,7 +2575,9 @@ export function buildVectorCeilingFloorPreviewBlobs({
     planPageOrientation,
     fitToPage,
     walls = [],
-    wallIntersections = []
+    wallIntersections = [],
+    slabWidth = 1210,
+    slabLength = 3000
 }) {
     const orient = planPageOrientation === 'landscape' ? 'landscape' : 'portrait';
     const ceilingDoc = new jsPDF({ unit: 'mm', format: 'a4', orientation: orient });
@@ -2595,7 +2638,7 @@ export function buildVectorCeilingFloorPreviewBlobs({
             (z) => Array.isArray(z.outline_points) && z.outline_points.length >= 3
         );
         const shouldCeiling = cPanels.length > 0 || hasCeilingOutline;
-        const shouldFloor = fPanels.length > 0;
+        const shouldFloor = shouldDrawVectorFloorPage(fPanels, storeyRooms);
 
         if (shouldCeiling) {
             const ok = drawPlanPage(ceilingDoc, {
@@ -2609,7 +2652,9 @@ export function buildVectorCeilingFloorPreviewBlobs({
                 storeyWalls,
                 wallIntersections,
                 ceilingPlans: allCeilingPlans,
-                floorPlans: allFloorPlans
+                floorPlans: allFloorPlans,
+                slabWidth,
+                slabLength
             });
             if (ok) usedCeiling = true;
         }
@@ -2626,7 +2671,9 @@ export function buildVectorCeilingFloorPreviewBlobs({
                 storeyWalls,
                 wallIntersections,
                 ceilingPlans: allCeilingPlans,
-                floorPlans: allFloorPlans
+                floorPlans: allFloorPlans,
+                slabWidth,
+                slabLength
             });
             if (ok) usedFloor = true;
         }
@@ -2674,7 +2721,9 @@ export function appendVectorCeilingAndFloorPlans(doc, {
     planPageOrientation,
     fitToPage,
     walls = [],
-    wallIntersections = []
+    wallIntersections = [],
+    slabWidth = 1210,
+    slabLength = 3000
 }) {
     let usedVectorCeiling = false;
     let usedVectorFloor = false;
@@ -2731,7 +2780,7 @@ export function appendVectorCeilingAndFloorPlans(doc, {
             (z) => Array.isArray(z.outline_points) && z.outline_points.length >= 3
         );
         const shouldCeiling = cPanels.length > 0 || hasCeilingOutline;
-        const shouldFloor = fPanels.length > 0;
+        const shouldFloor = shouldDrawVectorFloorPage(fPanels, storeyRooms);
 
         if (shouldCeiling) {
             const ok = drawPlanPage(doc, {
@@ -2745,7 +2794,9 @@ export function appendVectorCeilingAndFloorPlans(doc, {
                 storeyWalls,
                 wallIntersections,
                 ceilingPlans: allCeilingPlans,
-                floorPlans: allFloorPlans
+                floorPlans: allFloorPlans,
+                slabWidth,
+                slabLength
             });
             if (ok) usedVectorCeiling = true;
         }
@@ -2762,7 +2813,9 @@ export function appendVectorCeilingAndFloorPlans(doc, {
                 storeyWalls,
                 wallIntersections,
                 ceilingPlans: allCeilingPlans,
-                floorPlans: allFloorPlans
+                floorPlans: allFloorPlans,
+                slabWidth,
+                slabLength
             });
             if (ok) usedVectorFloor = true;
         }

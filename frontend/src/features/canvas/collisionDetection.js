@@ -501,8 +501,14 @@ export function smartPlacement({
             chosen = { ...bestSide2, side: 'side2' };
         } else {
             // Equal overlaps and area - use preferred side
-        chosen = preferredSide === 'side1' ? { ...bestSide1, side: 'side1' } : { ...bestSide2, side: 'side2' };
+            chosen = preferredSide === 'side1'
+                ? (bestSide1 ? { ...bestSide1, side: 'side1' } : null)
+                : (bestSide2 ? { ...bestSide2, side: 'side2' } : null);
         }
+    }
+
+    if (!chosen) {
+        return null;
     }
     
     return {

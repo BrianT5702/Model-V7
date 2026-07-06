@@ -1,4 +1,4 @@
-import THREE, { TextGeometry } from './threeInstance';
+import THREE from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
@@ -14,6 +14,7 @@ import {
 import WallRenderer from './components/WallRenderer';
 import DoorRenderer from './components/DoorRenderer';
 import AnimationManager from './managers/AnimationManager';
+import RoomTourController from './roomTourController';
 
 const isThreeDebugEnabled = process.env.REACT_APP_DEBUG_THREE === 'true';
 const debugLog = (...args) => {
@@ -66,6 +67,7 @@ export default class ThreeCanvas3D {
     this.wallRenderer = new WallRenderer(this);
     this.doorRenderer = new DoorRenderer(this);
     this.animationManager = new AnimationManager(this);
+    this.roomTourController = new RoomTourController(this);
 
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
@@ -163,6 +165,9 @@ export default class ThreeCanvas3D {
     
     this.container.addEventListener('mousemove', (event) => onMouseMoveHandler(this, event));
     this.container.addEventListener('click', (event) => onCanvasClickHandler(this, event));
+    this.container.addEventListener('wheel', (event) => {
+      event.preventDefault();
+    }, { passive: false });
     this.doorButton.addEventListener('click', () => toggleDoorHandler(this));
     // Add double-click to animate door
     this.container.addEventListener('dblclick', (event) => {
@@ -323,6 +328,11 @@ export default class ThreeCanvas3D {
     // Dispose of controls if they exist
     if (this.controls) {
       this.controls.dispose();
+    }
+
+    if (this.roomTourController) {
+      this.roomTourController.dispose();
+      this.roomTourController = null;
     }
 
     if (this.studioGround) {
@@ -560,6 +570,21 @@ animateToExteriorView() {
     this.isInteriorView = false;
 }
 
+setCeilingsVisible(visible) {
+    this.scene.traverse((child) => {
+        if (
+            (child.name && child.name.toLowerCase().includes('ceiling')) ||
+            child.userData?.isCeiling
+        ) {
+            child.visible = visible;
+        }
+    });
+    const showLines = visible && this.showCeilingPanelLines;
+    this.ceilingPanelLines.forEach((line) => {
+        line.visible = showLines;
+    });
+}
+
 getModelBounds() {
     let minX = Infinity, maxX = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
@@ -602,8 +627,47 @@ getModelBounds() {
   // Animation loop
   animate() {
     requestAnimationFrame(() => this.animate());
-    this.controls.update();
+    if (this.roomTourController?.isWalking?.()) {
+      this.roomTourController.update();
+    } else if (this.controls) {
+      this.controls.update();
+    }
     this.renderer.render(this.scene, this.camera);
+  }
+
+  setTourActive(active) {
+    if (!this.roomTourController) {
+      return false;
+    }
+    if (active) {
+      const started = this.roomTourController.activate();
+      if (typeof this.onTourChange === 'function') {
+        this.onTourChange(Boolean(started));
+      }
+      return started;
+    }
+    this.roomTourController.deactivate();
+    if (typeof this.onTourChange === 'function') {
+      this.onTourChange(false);
+    }
+    return true;
+  }
+
+  isTourActive() {
+    return Boolean(this.roomTourController?.isWalking?.());
+  }
+
+  isTourEngaged() {
+    const controller = this.roomTourController;
+    return Boolean(controller?.isPlacing?.() || controller?.isWalking?.());
+  }
+
+  setRoomTourActive(active) {
+    return this.setTourActive(active);
+  }
+
+  isRoomTourActive() {
+    return this.isTourActive();
   }
 
   // Method to update data and rebuild model
@@ -687,6 +751,10 @@ getModelBounds() {
       
       // Update grid size to cover the entire model area
       this.updateGridSize();
+
+      if (this.roomTourController?.isPlacing?.() || this.roomTourController?.isWalking?.()) {
+        this.roomTourController.buildDoorOpenings();
+      }
     } catch (error) {
       console.error('Error building model:', error);
     }
@@ -2274,7 +2342,6 @@ getModelBounds() {
     
     // Use PanelCalculator to generate panels for each dimension
     const calculator = new PanelCalculator();
-    const maxPanelWidth = 1150; // mm
     
     const panels = [];
     
@@ -2365,7 +2432,6 @@ getModelBounds() {
       const wallPanelsMap = this.calculateWallPanels();
       
       let wallsWithPanels = 0;
-      let totalPanelLines = 0;
       
       this.walls.forEach(wall => {
         const panels = wallPanelsMap[wall.id];
@@ -2374,7 +2440,6 @@ getModelBounds() {
         }
         
         wallsWithPanels++;
-        totalPanelLines += panels.length - 1; // Each panel division creates one line
         
         // Creating panel lines for wall
         
@@ -3336,12 +3401,7 @@ getModelBounds() {
         const absoluteBaseElevation = room.base_elevation_mm ?? 0;
         const baseElevation = absoluteBaseElevation * scale;
         
-        // CRITICAL: Match ceiling mesh positioning exactly
-        // The ceiling mesh is positioned at: baseElevation + (maxWallHeight * scale)
-        // The top surface varies based on wall heights at each point
-        // For panel lines, we need to calculate the ceiling top Y at each point
-        
-        // Get room walls to calculate max wall height (matching ceiling mesh logic)
+        // Match ceiling mesh: flat at room.height unless allow_variable_wall_heights is enabled
         let roomWallIds = [];
         if (Array.isArray(room.walls)) {
           roomWallIds = room.walls.map(w => (typeof w === 'object' ? w.id : w));
@@ -3373,12 +3433,19 @@ getModelBounds() {
           pointHeightMap.set(pointKey, wallHeight);
         });
         
-        // Find max wall height for this room (matching createRoomCeilingMesh)
+        // Find room ceiling reference height (matching createRoomCeilingMesh)
         const roomCeilingHeight = this.determineRoomCeilingHeight(room, wallHeightMap, new Map());
         if (!roomCeilingHeight) return;
+
+        // Must match createRoomCeilingMesh: flat at room height unless variable wall heights allowed
+        const allowVariableHeights = room.allow_variable_wall_heights || false;
         
-        // Function to get wall height at a 2D point (matching createRoomCeilingMesh)
+        // Function to get wall height at a 2D point (matching createRoomCeilingMesh getHeightAtVertex)
         const getHeightAtPoint = (pointX, pointY) => {
+          if (!allowVariableHeights) {
+            return roomCeilingHeight;
+          }
+
           // Find closest room point
           let closestPoint = null;
           let minDist = Infinity;
@@ -3398,12 +3465,14 @@ getModelBounds() {
           return roomCeilingHeight || 0;
         };
         
-        // Calculate ceiling top Y at a point
-        // Ceiling mesh position.y = baseElevation + (maxWallHeight * scale)
-        // Top surface local Y = (wallHeight - maxWallHeight) * scale
-        // World Y = position.y + localY = baseElevation + wallHeight * scale
+        // World Y at ceiling top — matches createRoomCeilingMesh positioning:
+        // position.y = baseElevation + roomCeilingHeight * scale
+        // local vertex Y = allowVariableHeights ? (wallHeight - roomCeilingHeight) * scale : 0
         const ceilingLift = PL.CEILING_LIFT_MM * scale;
         const getCeilingTopY = (pointX, pointY) => {
+          if (!allowVariableHeights) {
+            return baseElevation + (roomCeilingHeight * scale) + ceilingLift;
+          }
           const wallHeight = getHeightAtPoint(pointX, pointY);
           return baseElevation + (wallHeight * scale) + ceilingLift;
         };
@@ -5302,9 +5371,6 @@ getModelBounds() {
     
     // Default floor thickness if not specified
     const defaultFloorThickness = 150; // 150mm default
-    
-    // Get wall thickness from project
-    const wallThickness = this.project?.wall_thickness || 200; // Default 200mm if not specified
     
     this.project.rooms.forEach((room, roomIndex) => {
       try {

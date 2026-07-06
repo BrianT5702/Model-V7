@@ -170,7 +170,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             comments = (
                 ProjectComment.objects
                 .filter(project=project)
-                .select_related('author')
+                .select_related('author', 'resolved_by')
                 .order_by('-created_at', '-id')
             )
             serializer = ProjectCommentSerializer(comments, many=True)
@@ -211,6 +211,46 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
         serializer = ProjectCommentSerializer(comment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=['patch'],
+        url_path=r'comments/(?P<comment_id>\d+)/status',
+        permission_classes=[CanAddProjectComment],
+    )
+    def update_comment_status(self, request, pk=None, comment_id=None):
+        if not request.user.is_authenticated:
+            return Response({'error': 'Authentication required.'}, status=status.HTTP_401_UNAUTHORIZED)
+        if not user_can_edit(request.user):
+            return Response({'error': 'Only editors can update comment status.'}, status=status.HTTP_403_FORBIDDEN)
+
+        project = self.get_object()
+        try:
+            comment = ProjectComment.objects.get(project=project, pk=comment_id)
+        except ProjectComment.DoesNotExist:
+            return Response({'error': 'Comment not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = (request.data.get('status') or '').strip().lower()
+        valid_statuses = {ProjectComment.STATUS_OPEN, ProjectComment.STATUS_DONE}
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f'status must be one of: {", ".join(sorted(valid_statuses))}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from django.utils import timezone
+
+        comment.status = new_status
+        if new_status == ProjectComment.STATUS_DONE:
+            comment.resolved_at = timezone.now()
+            comment.resolved_by = request.user
+        else:
+            comment.resolved_at = None
+            comment.resolved_by = None
+        comment.save(update_fields=['status', 'resolved_at', 'resolved_by'])
+
+        serializer = ProjectCommentSerializer(comment)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=True,

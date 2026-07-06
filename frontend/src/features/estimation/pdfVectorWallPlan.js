@@ -16,6 +16,7 @@ import {
 import { planCeilingValueDedupKey } from '../canvas/DimensionConfig';
 import { filterDimensions } from '../canvas/dimensionFilter';
 import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset } from '../canvas/doorPlacement';
+import { withPlanCanvasLightTheme } from '../canvas/planCanvasTheme';
 
 // Copy color mapping functions from drawing.js
 function getWallFinishKey(wall) {
@@ -1975,41 +1976,44 @@ export function drawVectorWallPlan(
                         if (wDedupKey) dimensionValuesSeen.add(wDedupKey);
                         if (hDedupKey) dimensionValuesSeen.add(hDedupKey);
 
-                        const { dimensionEdgeExtents } = drawWallPlanDimensionsLayer({
-                            context: dimCtx,
-                            walls: wallsToDraw,
-                            intersections,
-                            rooms: roomsToDraw,
-                            wallPanelsMap: wallPanelsMapForFilter,
-                            wallLinesMap,
-                            scaleFactor: dimScale,
-                            offsetX: dimOffsetX,
-                            offsetY: dimOffsetY,
-                            center,
-                            initialScale: dimScale,
-                            currentScaleFactor: dimScale,
-                            filteredDimensions,
-                            dimensionVisibility: { wall: true, panel: true, project: false },
-                            showPanelLines: true,
-                            placedLabels,
-                            allLabels,
-                            dimensionValuesSeen,
-                            includeProjectDimensions: false,
-                            doors: doorsToDraw,
-                        });
+                        // PDF pages are white — ignore app dark mode for dimension label colors/backgrounds.
+                        withPlanCanvasLightTheme(() => {
+                            const { dimensionEdgeExtents } = drawWallPlanDimensionsLayer({
+                                context: dimCtx,
+                                walls: wallsToDraw,
+                                intersections,
+                                rooms: roomsToDraw,
+                                wallPanelsMap: wallPanelsMapForFilter,
+                                wallLinesMap,
+                                scaleFactor: dimScale,
+                                offsetX: dimOffsetX,
+                                offsetY: dimOffsetY,
+                                center,
+                                initialScale: dimScale,
+                                currentScaleFactor: dimScale,
+                                filteredDimensions,
+                                dimensionVisibility: { wall: true, panel: true, project: false },
+                                showPanelLines: true,
+                                placedLabels,
+                                allLabels,
+                                dimensionValuesSeen,
+                                includeProjectDimensions: false,
+                                doors: doorsToDraw,
+                            });
 
-                        drawOverallProjectDimensions(
-                            dimCtx,
-                            wallsToDraw,
-                            dimScale,
-                            dimOffsetX,
-                            dimOffsetY,
-                            placedLabels,
-                            allLabels,
-                            dimScale,
-                            wallLinesMap,
-                            dimensionEdgeExtents
-                        );
+                            drawOverallProjectDimensions(
+                                dimCtx,
+                                wallsToDraw,
+                                dimScale,
+                                dimOffsetX,
+                                dimOffsetY,
+                                placedLabels,
+                                allLabels,
+                                dimScale,
+                                wallLinesMap,
+                                dimensionEdgeExtents
+                            );
+                        });
 
                         try {
                             const imgData = dimCanvas.toDataURL('image/png');

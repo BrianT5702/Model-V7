@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
@@ -121,9 +121,6 @@ const Canvas2D = ({
     // Canvas size constants (matching CeilingCanvas)
     const DEFAULT_CANVAS_WIDTH = 1000;
     const DEFAULT_CANVAS_HEIGHT = 650;
-    const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
-    // Increase canvas height ratio on mobile for better visibility
-    const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.85 : 0.7;
     // Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
     const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
     const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
@@ -244,8 +241,6 @@ const Canvas2D = ({
         // Calculate the current view center in model coordinates
         const currentViewCenterX = (canvasCenterX - offsetX.current) / scaleFactor.current;
         const currentViewCenterY = (canvasCenterY - offsetY.current) / scaleFactor.current;
-        
-        const scaleRatio = newScale / scaleFactor.current;
         
         // Keep the same point in model coordinates at the same screen position
         offsetX.current = canvasCenterX - currentViewCenterX * newScale;
@@ -486,7 +481,7 @@ const Canvas2D = ({
     const gridSize = 50;
 
     //start here about the room area defining
-    const calculateRoomArea = (roomWalls) => {
+    const calculateRoomArea = useCallback((roomWalls) => {
         if (!roomWalls || roomWalls.length < 3) return null;
 
         // Calculate ROOM_INSET using a default wall thickness (100mm) for room area calculation
@@ -510,7 +505,7 @@ const Canvas2D = ({
         const area = calculatePolygonArea(insetPoints);
 
         return { insetPoints, area };
-    };
+    }, []);
     
     const getOrderedPoints = (roomWalls) => {
         const connections = new Map();
@@ -963,7 +958,7 @@ const Canvas2D = ({
         return bestResult;
     };
 
-    const resetSplitState = (clearError = false) => {
+    const resetSplitState = useCallback((clearError = false) => {
         setSplitTargetWallId(null);
         setSplitPreviewPoint(null);
         setSplitDistanceInput('');
@@ -973,7 +968,7 @@ const Canvas2D = ({
         if (clearError) {
             setWallSplitError('');
         }
-    };
+    }, [setWallSplitError]);
 
     const isValidSplitPoint = (wall, point) => {
         const wallLength = getWallLength(wall);
@@ -1780,19 +1775,19 @@ const Canvas2D = ({
             setWallSplitError('');
             setIsDetailsPanelOpen(true);
         }
-    }, [currentMode]);
+    }, [currentMode, resetSplitState, setWallSplitError]);
 
     useEffect(() => {
         if (splitTargetWallId && !walls.some(w => w.id === splitTargetWallId)) {
             resetSplitState();
         }
-    }, [splitTargetWallId, walls]);
+    }, [splitTargetWallId, walls, resetSplitState]);
 
     useEffect(() => {
         if (wallSplitSuccess) {
             resetSplitState(true);
         }
-    }, [wallSplitSuccess]);
+    }, [wallSplitSuccess, resetSplitState]);
 
     // Add adjustWallForJointType and dependencies from old code
     const originalWallEndpoints = new Map();
@@ -2474,6 +2469,8 @@ const Canvas2D = ({
             context.restore();
         }
 
+    // Canvas draw helpers are recreated each render; listed deps drive redraw.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         canvasSize.width,
         canvasSize.height,
@@ -2543,7 +2540,7 @@ const Canvas2D = ({
                 walls: walls.map(wall => ({ ...wall }))
             };
         }
-    }, [rooms, walls, scaleFactor.current, offsetX.current, offsetY.current]);
+    }, [rooms, walls, currentScaleFactor, forceRefresh, calculateRoomArea]);
 
     // Handle wall length input confirmation
     const handleLengthConfirm = async () => {
@@ -2703,22 +2700,22 @@ const Canvas2D = ({
             )}
 
             {/* Main Content - Matching Ceiling Plan Structure */}
-            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6">
+            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4">
                 {/* Header */}
-                <div className="wall-canvas-header mb-6">
-                    <div className="flex items-center justify-between mb-4 gap-4">
+                <div className="wall-canvas-header mb-3">
+                    <div className="flex items-center justify-between gap-3">
                         <div>
-                            <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight">
                                 Wall Plan
                             </h3>
-                            <p className="text-gray-600 dark:text-gray-400 text-lg">
+                            <p className="text-xs text-gray-600 dark:text-gray-400 leading-tight">
                                 Professional Layout
                             </p>
                         </div>
                         {!isDetailsPanelOpen && (
                             <button
                                 onClick={() => setIsDetailsPanelOpen(true)}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0"
+                                className="px-2 py-1 text-xs rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0"
                             >
                                 Show Plan Details
                             </button>
@@ -2825,21 +2822,22 @@ const Canvas2D = ({
                                             onStartArrowPlacement={onPlanAnnotationArrowPlacementId}
                                             isPlacingArrow={planAnnotationArrowPlacementId === annotation.id}
                                             canEdit={canAnnotate && planAnnotateMode}
+                                            canDrag={canAnnotate}
                                         />
                                     ))}
                                 </div>
                                 
                                 {/* Canvas Controls */}
-                                <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-                                    <div className="flex items-center gap-4">
+                                <div className="plan-canvas-meta dark:text-gray-400">
+                                    <div className="flex items-center gap-2">
                                         <span className="font-medium">Scale:</span>
-                                        <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+                                        <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[10px]">
                                             {currentScaleFactor.toFixed(2)}x
                                         </span>
                                     </div>
-                                    <div className="text-center">
-                                        <span className="font-medium">Click and drag to navigate • Use zoom buttons</span>
-                                    </div>
+                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                                        Click and drag to navigate · Use zoom buttons
+                                    </span>
                                 </div>
                             </div>
 
@@ -3125,28 +3123,26 @@ const Canvas2D = ({
                         </div>
                     </div>
 
-                    {/* View Material Needed Section - Matching Ceiling Panel List Structure */}
-                    <div className="plan-details-card mt-4 sm:mt-6 p-3 sm:p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-600">
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-gray-100">View Material Needed</h3>
+                    {/* View Material Needed Section */}
+                    <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600">
+                        <div className="plan-material-card-header">
+                            <h3 className="plan-material-card-title dark:text-gray-100">View Material Needed</h3>
                             <button
                                 onClick={() => setShowMaterialNeeded(!showMaterialNeeded)}
-                                className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors whitespace-nowrap"
+                                className="plan-panel-btn-primary"
                             >
                                 {showMaterialNeeded ? 'Hide Details' : 'Show Details'}
                             </button>
                         </div>
 
                         {showMaterialNeeded && (
-                            <div className="space-y-3 sm:space-y-4">
+                            <div className="space-y-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                                 <PanelCalculationControls 
                                     walls={allWalls || walls} 
                                     intersections={intersections}
                                     doors={doors}
                                     showMaterialDetails={showMaterialDetails}
                                     toggleMaterialDetails={toggleMaterialDetails}
-                                    canvasRef={canvasRef}
-                                    rooms={rooms}
                                     project={project}
                                     updateSharedPanelData={updateSharedPanelData}
                                     onRefreshWalls={onRefreshWalls}
@@ -3154,7 +3150,7 @@ const Canvas2D = ({
                                 
                                 {/* Door Table */}
                                 {showMaterialDetails && (
-                                    <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                                    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md p-3 shadow-sm">
                                         <DoorTable doors={doors} />
                                     </div>
                                 )}
@@ -3350,7 +3346,7 @@ const Canvas2D = ({
                         <div className="flex justify-end gap-3">
                             <button
                                 onClick={handleLengthCancel}
-                                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                                className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors"
                             >
                                 Cancel
                             </button>

@@ -46,9 +46,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         panel: false, // Grouped panel dimensions — shown when a room is selected (see ceiling canvas)
         cutPanel: false
     });
-    const toggleDimensionVisibility = (key) => {
-        setDimensionVisibility(prev => ({ ...prev, [key]: !prev[key] }));
-    };
 
     // Orientation strategy
     const [selectedOrientationStrategy, setSelectedOrientationStrategy] = useState('auto');
@@ -177,12 +174,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
     const [zoneRegenerationSuccess, setZoneRegenerationSuccess] = useState(false);
     const [isRegeneratingZone, setIsRegeneratingZone] = useState(false);
 
-    useEffect(() => {
-        if (projectId) {
-            loadProjectData();
-        }
-    }, [projectId]);
-    
     // Check if any panels need support (over 6000mm) - matches CeilingCanvas logic
     // MUST be defined before useEffects that use it
     const panelsNeedSupport = useMemo(() => {
@@ -309,7 +300,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         const normalized = normalizePanelIdentifier(panelId);
         if (!normalized) return null;
         return ceilingPanels.find(panel => getPanelIdentifier(panel) === normalized) || null;
-    }, [ceilingPanels, getPanelIdentifier]);
+    }, [ceilingPanels, getPanelIdentifier, normalizePanelIdentifier]);
 
     const getPanelRoomKey = useCallback((panel) => {
         if (!panel) return null;
@@ -596,7 +587,14 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             }
             // panelsNeedSupport is computed from ceiling panels, no need to restore it
         }
-    }, [sharedPanelData]); // Only depend on sharedPanelData, not local state values
+    }, [
+        sharedPanelData,
+        enableNylonHangers,
+        enableAluSuspension,
+        nylonHangerOptions.includeAccessories,
+        nylonHangerOptions.includeCable,
+        aluSuspensionCustomDrawing,
+    ]); // compare shared snapshot to local state; all deps required for equality checks
     
     // Save support options and global ceiling face finishes to shared panel data whenever they change
     // Skip if we're currently restoring from shared data to prevent loops
@@ -795,7 +793,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         ceilingInnerFaceThickness,
         ceilingOuterFaceMaterial,
         ceilingOuterFaceThickness,
-        roomConfigsByRoomId
+        roomConfigsByRoomId,
+        normalizeRoomKey,
     ]);
     
     // Helper function to get default Cut L horizontal extension based on wall thickness
@@ -1045,106 +1044,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         }
     }, [projectId]);
 
-    const loadProjectData = async () => {
-        try {
-            const pid = parseInt(projectId, 10);
-            const [
-                projectResponse,
-                storeysResponse,
-                roomsResponse,
-                wallsResponse,
-                intersectionsResponse,
-            ] = await Promise.all([
-                api.get(`/projects/${pid}/`),
-                api.get(`/storeys/?project=${pid}`),
-                api.get(`/rooms/?project=${pid}`),
-                api.get(`/walls/?project=${pid}`),
-                api.get(`/intersections/?project=${pid}`),
-            ]);
-
-            setProjectData(projectResponse.data || null);
-
-            const loadedStoreys = storeysResponse.data || [];
-            setStoreys(loadedStoreys);
-            if (loadedStoreys.length > 0 && !selectedStoreyId) {
-                setSelectedStoreyId(loadedStoreys[0].id);
-            }
-
-            const loadedRooms = roomsResponse.data || [];
-            setAllRooms(loadedRooms);
-
-            setAllWalls(wallsResponse.data || []);
-            setAllIntersections(intersectionsResponse.data || []);
-            
-            // Load existing ceiling plan if any
-            await loadExistingCeilingPlan();
-            await loadCeilingZones();
-            
-            // Load ceiling panels and calculate project waste after ceiling plan is loaded
-            try {
-                const panelsResponse = await api.get(`/ceiling-panels/?project=${parseInt(projectId)}`);
-                const loadedPanels = panelsResponse.data || [];
-                
-                console.log('📦 [INITIAL LOAD] Loaded panels:', loadedPanels.length, loadedPanels);
-                console.log('📦 [INITIAL LOAD] Loaded rooms:', loadedRooms.length, loadedRooms);
-                
-                // Calculate waste using leftover-based approach
-                // We need to estimate leftover area from cut panels since database only stores used dimensions
-                if (loadedPanels.length > 0 && loadedRooms.length > 0) {
-                    // Estimate leftover area from cut panels
-                    // For each cut panel, estimate the leftover based on standard panel width (1150mm)
-                    const MAX_PANEL_WIDTH = 1150;
-                    let estimatedLeftoverArea = 0;
-                    
-                    loadedPanels.forEach(panel => {
-                        if (panel.is_cut_panel) {
-                            // If panel is cut, the leftover is approximately (MAX_WIDTH - actual_width) * length
-                            if (panel.width < MAX_PANEL_WIDTH) {
-                                const leftoverWidth = MAX_PANEL_WIDTH - panel.width;
-                                const leftoverArea = leftoverWidth * panel.length;
-                                estimatedLeftoverArea += leftoverArea;
-                                console.log(`📊 [INITIAL LOAD] Cut panel ${panel.panel_id}: leftover ~${leftoverWidth}mm × ${panel.length}mm = ${leftoverArea} mm²`);
-                            }
-                        }
-                    });
-                    
-                    // Calculate total room area
-                    const totalRoomArea = loadedRooms.reduce((sum, room) => {
-                        if (room.room_points && room.room_points.length >= 3) {
-                            let area = 0;
-                            for (let i = 0; i < room.room_points.length; i++) {
-                                const j = (i + 1) % room.room_points.length;
-                                area += room.room_points[i].x * room.room_points[j].y;
-                                area -= room.room_points[j].x * room.room_points[i].y;
-                            }
-                            return sum + Math.abs(area) / 2;
-                        }
-                        return sum;
-                    }, 0);
-                    
-                    if (estimatedLeftoverArea > 0 && totalRoomArea > 0) {
-                        // Formula: waste% = Leftover Area / Total Room Area × 100%
-                        const estimatedWaste = (estimatedLeftoverArea / totalRoomArea) * 100;
-                        setProjectWastePercentage(estimatedWaste);
-                        console.log('📊 [INITIAL LOAD] Estimated leftover area:', estimatedLeftoverArea);
-                        console.log('📊 [INITIAL LOAD] Total room area:', totalRoomArea);
-                        console.log('✅ [INITIAL LOAD] Estimated waste %:', estimatedWaste.toFixed(1) + '%');
-                    } else {
-                        console.log('ℹ️ [INITIAL LOAD] No waste to display (no cut panels or perfect fit)');
-                        setProjectWastePercentage(0);
-                    }
-                }
-            } catch (error) {
-                console.error('❌ [INITIAL LOAD] Error calculating initial waste percentage:', error);
-            }
-            
-            // Load orientation analysis
-            await loadOrientationAnalysis();
-        } catch (error) {
-            console.error('Error loading project data:', error);
-        }
-    };
-
     const toggleMergeMode = () => {
         if (!canEdit) return;
         setIsMergeMode(prev => !prev);
@@ -1369,7 +1268,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
     };
 
     // Process ceiling panels for sharing with other tabs (matches table structure)
-    const processCeilingPanelsForSharing = (panels, rooms) => {
+    const processCeilingPanelsForSharing = useCallback((panels, rooms) => {
         if (!panels || panels.length === 0) return [];
 
         const roomList = rooms || allRooms;
@@ -1431,7 +1330,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             .sort((a, b) => b.quantity - a.quantity);
 
         return panelList;
-    };
+    }, [allRooms, ceilingThickness, selectedRoomId, showAllRooms]);
 
     const handleSwapPanels = useCallback(async () => {
         if (!canEdit) return;
@@ -1692,7 +1591,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         updateSharedPanelData
     ]);
 
-    const loadExistingCeilingPlan = async () => {
+    const loadExistingCeilingPlan = useCallback(async () => {
         try {
             const [planResponse, panelsResponse, zonesResponse] = await Promise.all([
                 api.get(`/ceiling-plans/?project=${parseInt(projectId)}`),
@@ -1799,7 +1698,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         } catch (error) {
             console.error('Error loading ceiling plan:', error);
         }
-    };
+    }, [projectId]);
 
     const applyZoneSettings = async (zoneId) => {
         if (!canEdit || !zoneId) return;
@@ -1850,7 +1749,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         }
     };
 
-    const loadOrientationAnalysis = async () => {
+    const loadOrientationAnalysis = useCallback(async () => {
         try {
             const response = await api.post('/ceiling-plans/analyze_orientations/', {
                 project_id: parseInt(projectId),
@@ -1866,7 +1765,96 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         } catch (error) {
             console.error('Error loading orientation analysis:', error);
         }
-    };
+    }, [projectId, panelWidth, panelLength, customPanelLength, ceilingThickness]);
+
+    const loadProjectData = useCallback(async () => {
+        try {
+            const pid = parseInt(projectId, 10);
+            const [
+                projectResponse,
+                storeysResponse,
+                roomsResponse,
+                wallsResponse,
+                intersectionsResponse,
+            ] = await Promise.all([
+                api.get(`/projects/${pid}/`),
+                api.get(`/storeys/?project=${pid}`),
+                api.get(`/rooms/?project=${pid}`),
+                api.get(`/walls/?project=${pid}`),
+                api.get(`/intersections/?project=${pid}`),
+            ]);
+
+            setProjectData(projectResponse.data || null);
+
+            const loadedStoreys = storeysResponse.data || [];
+            setStoreys(loadedStoreys);
+            if (loadedStoreys.length > 0 && !selectedStoreyId) {
+                setSelectedStoreyId(loadedStoreys[0].id);
+            }
+
+            const loadedRooms = roomsResponse.data || [];
+            setAllRooms(loadedRooms);
+
+            setAllWalls(wallsResponse.data || []);
+            setAllIntersections(intersectionsResponse.data || []);
+            
+            await loadExistingCeilingPlan();
+            await loadCeilingZones();
+            
+            try {
+                const panelsResponse = await api.get(`/ceiling-panels/?project=${parseInt(projectId)}`);
+                const loadedPanels = panelsResponse.data || [];
+                
+                if (loadedPanels.length > 0 && loadedRooms.length > 0) {
+                    const MAX_PANEL_WIDTH = 1150;
+                    let estimatedLeftoverArea = 0;
+                    
+                    loadedPanels.forEach(panel => {
+                        if (panel.is_cut_panel && panel.width < MAX_PANEL_WIDTH) {
+                            estimatedLeftoverArea += (MAX_PANEL_WIDTH - panel.width) * panel.length;
+                        }
+                    });
+                    
+                    const totalRoomArea = loadedRooms.reduce((sum, room) => {
+                        if (room.room_points && room.room_points.length >= 3) {
+                            let area = 0;
+                            for (let i = 0; i < room.room_points.length; i++) {
+                                const j = (i + 1) % room.room_points.length;
+                                area += room.room_points[i].x * room.room_points[j].y;
+                                area -= room.room_points[j].x * room.room_points[i].y;
+                            }
+                            return sum + Math.abs(area) / 2;
+                        }
+                        return sum;
+                    }, 0);
+                    
+                    if (estimatedLeftoverArea > 0 && totalRoomArea > 0) {
+                        setProjectWastePercentage((estimatedLeftoverArea / totalRoomArea) * 100);
+                    } else {
+                        setProjectWastePercentage(0);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ [INITIAL LOAD] Error calculating initial waste percentage:', error);
+            }
+            
+            await loadOrientationAnalysis();
+        } catch (error) {
+            console.error('Error loading project data:', error);
+        }
+    }, [
+        projectId,
+        selectedStoreyId,
+        loadCeilingZones,
+        loadExistingCeilingPlan,
+        loadOrientationAnalysis,
+    ]);
+
+    useEffect(() => {
+        if (projectId) {
+            loadProjectData();
+        }
+    }, [projectId, loadProjectData]);
 
     // Generate ceiling plan for a specific room only
     const generateCeilingPlanForRoom = async (roomId, config, options = {}) => {
@@ -2424,24 +2412,24 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
 
     return (
         <div className="ceiling-manager flex flex-col min-h-0 min-w-0 w-full bg-transparent dark:bg-gray-900 transition-colors">
-            {/* Header - extra right padding so View/Level controls don't touch boundary */}
-            <div className="px-4 sm:px-6 pr-6 sm:pr-8 py-4 border-b border-gray-200 dark:border-gray-700 ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+            {/* Header */}
+            <div className="px-3 sm:px-4 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div className="min-w-0">
-                        <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate leading-tight">
                             Project Ceiling Plan
                         </h2>
-                        <p className="text-xs sm:text-sm text-gray-600 truncate">
+                        <p className="text-[11px] text-gray-600 dark:text-gray-400 truncate leading-tight">
                             Generate optimal ceiling panel layout for the entire project
                         </p>
                     </div>
                     
                     {/* Storey and Room Selection Controls */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                         {/* Storey Selector */}
                         {storeys.length > 1 && (
-                            <div className="flex items-center space-x-2">
-                                <label className="text-sm font-medium text-gray-700">Level:</label>
+                            <div className="flex items-center gap-1.5">
+                                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Level:</label>
                                 <select
                                     value={selectedStoreyId || 'all'}
                                     onChange={(e) => {
@@ -2451,7 +2439,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                         setShowAllRooms(true);
                                         setSelectedRoomId(null);
                                     }}
-                                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="form-control w-auto min-w-[7rem]"
                                 >
                                     {storeys.map(storey => (
                                         <option key={storey.id} value={storey.id}>
@@ -2464,8 +2452,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                         
                         {/* Room Selection Controls */}
                         {filteredRooms.length > 1 && (
-                            <div className="flex items-center space-x-2">
-                                <label className="text-sm font-medium text-gray-700">View:</label>
+                            <div className="flex items-center gap-1.5">
+                                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">View:</label>
                                 <select
                                     value={showAllRooms ? 'all' : selectedRoomId || ''}
                                     onChange={(e) => {
@@ -2477,7 +2465,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                             setSelectedRoomId(parseInt(e.target.value));
                                         }
                                     }}
-                                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="form-control w-auto min-w-[7rem]"
                                 >
                                     <option value="all">All Rooms</option>
                                     {filteredRooms.map(room => (
@@ -2491,7 +2479,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                         )}
                             
                             {!showAllRooms && selectedRoomId && (
-                                <div className="text-sm text-gray-600">
+                                <div className="text-xs text-gray-600 dark:text-gray-400">
                                 <span className="font-medium">Selected:</span> {filteredRooms.find(r => r.id === selectedRoomId)?.room_name}
                                 </div>
                             )}
@@ -2500,7 +2488,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             </div>
 
             {!canEdit && (
-                <div className="mx-4 sm:mx-8 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div className="mx-3 sm:mx-4 mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     {isAuthenticated ? (
                         'View-only access (Salesman). You can view ceiling plans and export, but cannot generate or edit.'
                     ) : (
@@ -2513,14 +2501,13 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 </div>
             )}
 
-                        {/* Controls - right margin so Orientation/Panel/Ceiling cards don't touch boundary */}
-            <fieldset disabled={!canEdit} className="control-panel ml-4 sm:ml-8 mr-4 sm:mr-6 shrink-0 border-0 p-0 m-0 min-w-0">
+            <fieldset disabled={!canEdit} className="control-panel px-3 sm:px-4 py-2 shrink-0 border-0 m-0 min-w-0">
                 {/* Main Controls Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-4 sm:mb-6 control-grid ml-0 sm:ml-4 pr-2 sm:pr-0">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 mb-2 control-grid min-w-0">
                     {/* Strategy Selection */}
                     <div className="control-card">
-                        <label className="block text-sm font-semibold text-gray-700 mb-3">
-                            <svg className="w-4 h-4 inline mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                            <svg className="w-3.5 h-3.5 inline mr-1.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                             </svg>
                             Orientation Strategy
@@ -2540,15 +2527,15 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
 
                     {/* Panel Dimensions */}
                     <div className="control-card">
-                        <label className="block text-sm font-semibold text-gray-700 mb-3">
-                            <svg className="w-4 h-4 inline mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                            <svg className="w-3.5 h-3.5 inline mr-1.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                             </svg>
                             Panel Dimensions
                         </label>
-                        <div className="space-y-3">
-                            <div className="flex items-center space-x-3">
-                                <label className="text-xs font-medium text-gray-600 min-w-[80px]">Width:</label>
+                        <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem]">Width:</label>
                                 <input
                                     type="number"
                                     min="100"
@@ -2556,14 +2543,14 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                     step="50"
                                     value={panelWidth}
                                     onChange={(e) => handlePanelWidthChange(parseInt(e.target.value))}
-                                    className="flex-1"
+                                    className="w-16 min-w-0"
                                     placeholder="1150"
                                 />
-                                <span className="text-xs text-gray-500">mm</span>
+                                <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                             </div>
                             
-                            <div className="flex items-center space-x-3">
-                                <label className="text-xs font-medium text-gray-600 min-w-[80px]">Length:</label>
+                            <div className="flex items-center gap-2">
+                                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem]">Length:</label>
                                 <select
                                     value={panelLength}
                                     onChange={(e) => handlePanelLengthChange(e.target.value)}
@@ -2575,8 +2562,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                             </div>
                             
                             {panelLength === 'custom' && (
-                                <div className="flex items-center space-x-3">
-                                    <label className="text-xs font-medium text-gray-600 min-w-[80px]">Custom:</label>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem]">Custom:</label>
                                     <input
                                         type="number"
                                         min="1000"
@@ -2584,10 +2571,10 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                         step="100"
                                         value={customPanelLength}
                                         onChange={(e) => handleCustomPanelLengthChange(parseInt(e.target.value))}
-                                        className="flex-1"
+                                        className="w-16 min-w-0"
                                         placeholder="5000"
                                     />
-                                    <span className="text-xs text-gray-500">mm</span>
+                                    <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                                 </div>
                             )}
                         </div>
@@ -2595,15 +2582,15 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
 
                     {/* Ceiling Configuration */}
                     <div className="control-card">
-                        <label className="block text-sm font-semibold text-gray-700 mb-3">
-                            <svg className="w-4 h-4 inline mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                            <svg className="w-3.5 h-3.5 inline mr-1.5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                             </svg>
                             Ceiling Settings
                         </label>
-                        <div className="space-y-3">
-                            <div className="flex items-center space-x-3">
-                                <label className="text-xs font-medium text-gray-600 min-w-[80px]">Thickness:</label>
+                        <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem]">Thickness:</label>
                                 <input
                                     type="number"
                                     min="50"
@@ -2611,18 +2598,18 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                     step="10"
                                     value={ceilingThickness}
                                     onChange={(e) => handleCeilingThicknessChange(parseInt(e.target.value))}
-                                    className="flex-1"
+                                    className="w-16 min-w-0"
                                     placeholder="150"
                                 />
-                                <span className="text-xs text-gray-500">mm</span>
+                                <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                             </div>
                             {/* Ceiling face finishes (global defaults for generated panels) */}
-                            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100 mt-2">
+                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-gray-100 dark:border-gray-700 mt-1.5">
                                 <div>
-                                    <div className="text-xs font-semibold text-gray-600 mb-1">Inner Face</div>
+                                    <div className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 mb-0.5">Inner Face</div>
                                     <div className="space-y-1">
-                                        <div className="flex items-center space-x-2">
-                                            <label className="text-xs text-gray-600 min-w-[60px]">Material:</label>
+                                        <div className="flex items-center gap-1.5">
+                                            <label className="text-[10px] text-gray-600 dark:text-gray-400 min-w-[3rem] shrink-0">Material:</label>
                                             <select
                                                 value={ceilingInnerFaceMaterial}
                                                 onChange={(e) => setCeilingInnerFaceMaterial(e.target.value)}
@@ -2634,8 +2621,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                                 <option value="PVC">PVC</option>
                                             </select>
                                         </div>
-                                        <div className="flex items-center space-x-2">
-                                            <label className="text-xs text-gray-600 min-w-[60px]">Sheet thk:</label>
+                                        <div className="flex items-center gap-1.5">
+                                            <label className="text-[10px] text-gray-600 dark:text-gray-400 min-w-[3rem] shrink-0">Sheet thk:</label>
                                             <input
                                                 type="number"
                                                 min="0.3"
@@ -2643,17 +2630,17 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                                 step="0.1"
                                                 value={ceilingInnerFaceThickness}
                                                 onChange={(e) => setCeilingInnerFaceThickness(parseFloat(e.target.value) || 0.5)}
-                                                className="flex-1 text-xs"
+                                                className="w-12 min-w-0 text-xs"
                                             />
-                                            <span className="text-[10px] text-gray-500">mm</span>
+                                            <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                                         </div>
                                     </div>
                                 </div>
                                 <div>
-                                    <div className="text-xs font-semibold text-gray-600 mb-1">Outer Face</div>
+                                    <div className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 mb-0.5">Outer Face</div>
                                     <div className="space-y-1">
-                                        <div className="flex items-center space-x-2">
-                                            <label className="text-xs text-gray-600 min-w-[60px]">Material:</label>
+                                        <div className="flex items-center gap-1.5">
+                                            <label className="text-[10px] text-gray-600 dark:text-gray-400 min-w-[3rem] shrink-0">Material:</label>
                                             <select
                                                 value={ceilingOuterFaceMaterial}
                                                 onChange={(e) => setCeilingOuterFaceMaterial(e.target.value)}
@@ -2665,8 +2652,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                                 <option value="PVC">PVC</option>
                                             </select>
                                         </div>
-                                        <div className="flex items-center space-x-2">
-                                            <label className="text-xs text-gray-600 min-w-[60px]">Sheet thk:</label>
+                                        <div className="flex items-center gap-1.5">
+                                            <label className="text-[10px] text-gray-600 dark:text-gray-400 min-w-[3rem] shrink-0">Sheet thk:</label>
                                             <input
                                                 type="number"
                                                 min="0.3"
@@ -2674,9 +2661,9 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                                 step="0.1"
                                                 value={ceilingOuterFaceThickness}
                                                 onChange={(e) => setCeilingOuterFaceThickness(parseFloat(e.target.value) || 0.5)}
-                                                className="flex-1 text-xs"
+                                                className="w-12 min-w-0 text-xs"
                                             />
-                                            <span className="text-[10px] text-gray-500">mm</span>
+                                            <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                                         </div>
                                     </div>
                                 </div>
@@ -2689,24 +2676,24 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
 
                 {/* Action Buttons Row */}
                 {canEdit ? (
-                <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0 sm:space-x-4 mt-6 ml-4 mr-4 sm:mr-6">
-                    <div className="flex items-center space-x-3">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <button
                             onClick={generateCeilingPlan}
                             disabled={isGenerating}
-                            className="btn-generate px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl"
+                            className="btn-generate inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-md text-sm font-medium hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                         >
                             {isGenerating ? (
-                                <div className="flex items-center space-x-2">
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <div className="flex items-center gap-1.5">
+                                    <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
                                     <span>Generating...</span>
                                 </div>
                             ) : (
-                                <div className="flex items-center space-x-2">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <div className="flex items-center gap-1.5">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </svg>
                                     <span>Generate Ceiling Plan</span>
@@ -2718,29 +2705,29 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                             <button
                                 onClick={generateCeilingPlan}
                                 disabled={isGenerating}
-                                className="btn-regenerate"
+                                className="btn-regenerate px-2.5 py-1.5 text-xs rounded-md"
                             >
                                 {isGenerating ? 'Regenerating...' : '🔄 Regenerate Plan'}
                             </button>
                         )}
                         <button
                             onClick={toggleMergeMode}
-                            className={`px-4 py-2 rounded-xl font-semibold transition-all duration-200 shadow-md hover:shadow-lg ${
+                            className={`px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm ${
                                 isMergeMode
                                     ? 'bg-orange-600 text-white hover:bg-orange-700'
-                                    : 'bg-white text-orange-600 border border-orange-300 hover:bg-orange-50'
+                                    : 'bg-white text-orange-600 border border-orange-300 hover:bg-orange-50 dark:bg-gray-800 dark:text-orange-300 dark:border-orange-600 dark:hover:bg-orange-950/50'
                             }`}
                         >
                             {isMergeMode ? 'Close Merge Mode' : 'Merge Ceilings'}
                         </button>
                     </div>
                     
-                    <div className="text-sm text-gray-600">
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
                         <span className="font-medium">Project:</span> {projectData?.name || 'Loading...'}
                     </div>
                 </div>
                 ) : (
-                    <div className="mt-6 ml-4 mr-4 sm:mr-6 text-sm text-gray-600">
+                    <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
                         <span className="font-medium">Project:</span> {projectData?.name || 'Loading...'}
                     </div>
                 )}

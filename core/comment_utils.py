@@ -22,7 +22,10 @@ def get_unread_comment_counts(user, project_ids):
 
     counts = {project_id: 0 for project_id in project_ids}
     for project_id in project_ids:
-        queryset = ProjectComment.objects.filter(project_id=project_id)
+        queryset = ProjectComment.objects.filter(
+            project_id=project_id,
+            status=ProjectComment.STATUS_OPEN,
+        )
         last_read = read_statuses.get(project_id)
         if last_read is not None:
             queryset = queryset.filter(created_at__gt=last_read)

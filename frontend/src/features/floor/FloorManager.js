@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import FloorCanvas from '../canvas/FloorCanvas';
@@ -120,13 +120,86 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
         });
     }, [floorPanels, filteredRooms]);
 
-    useEffect(() => {
-        if (projectId) {
-            loadProjectData();
+    const loadExistingFloorPlan = useCallback(async () => {
+        try {
+            const planResponse = await api.get(`/floor-plans/?project=${parseInt(projectId)}`);
+            if (planResponse.data && planResponse.data.length > 0) {
+                const existingPlan = planResponse.data[0];
+                
+                // Load panels for the existing plan
+                const panelsResponse = await api.get(`/floor-panels/?project=${parseInt(projectId)}`);
+                const panels = panelsResponse.data || [];
+                
+                console.log('Loaded existing floor plan:', existingPlan);
+                console.log('Loaded floor panels:', panels);
+                
+                // Ensure the floorPlan object has proper panel count data
+                const enhancedPlan = {
+                    ...existingPlan,
+                    total_panels: panels.length,
+                    floor_panels: panels, // Store panels in floor_panels for consistency
+                };
+                
+                setFloorPlan(enhancedPlan);
+                setFloorPanels(panels);
+                
+                // CRITICAL: Load saved generation parameters to restore UI state
+                // Load waste percentage from existing plan
+                if (existingPlan.summary?.project_waste_percentage !== undefined && existingPlan.summary?.project_waste_percentage !== null) {
+                    setProjectWastePercentage(existingPlan.summary.project_waste_percentage);
+                    console.log('📊 [FLOOR INITIAL LOAD] Loaded existing waste % from floor plan:', existingPlan.summary.project_waste_percentage);
+                } else if (existingPlan.waste_percentage !== undefined && existingPlan.waste_percentage !== null) {
+                    setProjectWastePercentage(existingPlan.waste_percentage);
+                    console.log('📊 [FLOOR INITIAL LOAD] Loaded legacy waste % from floor plan:', existingPlan.waste_percentage);
+                }
+
+                if (existingPlan.orientation_strategy) {
+                    setSelectedOrientationStrategy(existingPlan.orientation_strategy);
+                }
+                if (existingPlan.panel_width) {
+                    setPanelWidth(existingPlan.panel_width);
+                }
+                if (existingPlan.panel_length) {
+                    // Check if panel_length is 'auto' or a numeric value
+                    if (existingPlan.panel_length === 'auto') {
+                        setPanelLength('auto');
+                    } else {
+                        // It's a custom value, set dropdown to 'custom' and use the value
+                        setPanelLength('custom');
+                        setCustomPanelLength(existingPlan.panel_length);
+                    }
+                }
+                if (existingPlan.custom_panel_length) {
+                    setCustomPanelLength(existingPlan.custom_panel_length);
+                }
+
+            }
+        } catch (error) {
+            console.error('Error loading floor plan:', error);
         }
     }, [projectId]);
 
-    const loadProjectData = async () => {
+    const loadOrientationAnalysis = useCallback(async () => {
+        try {
+            const response = await api.post('/floor-plans/analyze_floor_orientations/', {
+                project_id: parseInt(projectId),
+                panel_width: panelWidth,
+                panel_length: panelLength === 'auto' ? 'auto' : customPanelLength
+            });
+            
+            if (response.data && !response.data.error) {
+                setOrientationAnalysis(response.data);
+                // Only update strategy if no floor plan exists yet
+                if (!floorPlan) {
+                    setSelectedOrientationStrategy(response.data.recommended_strategy);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading orientation analysis:', error);
+        }
+    }, [projectId, panelWidth, panelLength, customPanelLength, floorPlan]);
+
+    const loadProjectData = useCallback(async () => {
         try {
             const pid = parseInt(projectId, 10);
             const [
@@ -230,7 +303,13 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
         } catch (error) {
             console.error('Error loading project data:', error);
         }
-    };
+    }, [projectId, loadExistingFloorPlan, loadOrientationAnalysis]);
+
+    useEffect(() => {
+        if (projectId) {
+            loadProjectData();
+        }
+    }, [projectId, loadProjectData]);
 
     // Process floor panels for sharing with other tabs (matches table structure)
     const processFloorPanelsForSharing = (panels, rooms) => {
@@ -323,85 +402,6 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
         });
         
         return panelList;
-    };
-
-    const loadExistingFloorPlan = async () => {
-        try {
-            const planResponse = await api.get(`/floor-plans/?project=${parseInt(projectId)}`);
-            if (planResponse.data && planResponse.data.length > 0) {
-                const existingPlan = planResponse.data[0];
-                
-                // Load panels for the existing plan
-                const panelsResponse = await api.get(`/floor-panels/?project=${parseInt(projectId)}`);
-                const panels = panelsResponse.data || [];
-                
-                console.log('Loaded existing floor plan:', existingPlan);
-                console.log('Loaded floor panels:', panels);
-                
-                // Ensure the floorPlan object has proper panel count data
-                const enhancedPlan = {
-                    ...existingPlan,
-                    total_panels: panels.length,
-                    floor_panels: panels, // Store panels in floor_panels for consistency
-                };
-                
-                setFloorPlan(enhancedPlan);
-                setFloorPanels(panels);
-                
-                // CRITICAL: Load saved generation parameters to restore UI state
-                // Load waste percentage from existing plan
-                if (existingPlan.summary?.project_waste_percentage !== undefined && existingPlan.summary?.project_waste_percentage !== null) {
-                    setProjectWastePercentage(existingPlan.summary.project_waste_percentage);
-                    console.log('📊 [FLOOR INITIAL LOAD] Loaded existing waste % from floor plan:', existingPlan.summary.project_waste_percentage);
-                } else if (existingPlan.waste_percentage !== undefined && existingPlan.waste_percentage !== null) {
-                    setProjectWastePercentage(existingPlan.waste_percentage);
-                    console.log('📊 [FLOOR INITIAL LOAD] Loaded legacy waste % from floor plan:', existingPlan.waste_percentage);
-                }
-
-                if (existingPlan.orientation_strategy) {
-                    setSelectedOrientationStrategy(existingPlan.orientation_strategy);
-                }
-                if (existingPlan.panel_width) {
-                    setPanelWidth(existingPlan.panel_width);
-                }
-                if (existingPlan.panel_length) {
-                    // Check if panel_length is 'auto' or a numeric value
-                    if (existingPlan.panel_length === 'auto') {
-                        setPanelLength('auto');
-                    } else {
-                        // It's a custom value, set dropdown to 'custom' and use the value
-                        setPanelLength('custom');
-                        setCustomPanelLength(existingPlan.panel_length);
-                    }
-                }
-                if (existingPlan.custom_panel_length) {
-                    setCustomPanelLength(existingPlan.custom_panel_length);
-                }
-
-            }
-        } catch (error) {
-            console.error('Error loading floor plan:', error);
-        }
-    };
-
-    const loadOrientationAnalysis = async () => {
-        try {
-            const response = await api.post('/floor-plans/analyze_floor_orientations/', {
-                project_id: parseInt(projectId),
-                panel_width: panelWidth,
-                panel_length: panelLength === 'auto' ? 'auto' : customPanelLength
-            });
-            
-            if (response.data && !response.data.error) {
-                setOrientationAnalysis(response.data);
-                // Only update strategy if no floor plan exists yet
-                if (!floorPlan) {
-                    setSelectedOrientationStrategy(response.data.recommended_strategy);
-                }
-            }
-        } catch (error) {
-            console.error('Error loading orientation analysis:', error);
-        }
     };
 
     const generateFloorPlan = async () => {
@@ -528,20 +528,20 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
     return (
         <div className="floor-manager bg-gray-50 dark:bg-gray-900 min-h-0 transition-colors">
             {/* Header */}
-            <div className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700 p-6 ml-8 transition-colors">
-                <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                        <div className="flex flex-wrap items-center gap-4">
-                            <div>
-                                <h1 className="text-3xl font-bold text-gray-900">
+            <div className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 transition-colors">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <div className="min-w-0">
+                                <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight">
                                     {canEdit ? 'Floor Plan Generator' : 'Floor Plan'}
                                 </h1>
                                 {canEdit ? (
-                                    <p className="text-gray-600 mt-2">
+                                    <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-tight mt-0.5">
                                         Generate optimal floor panel layouts with orientation strategies to minimize waste
                                     </p>
                                 ) : (
-                                    <p className="text-amber-800 text-sm mt-2">
+                                    <p className="text-amber-800 dark:text-amber-200 text-xs mt-0.5">
                                         {isAuthenticated ? (
                                             'View-only access (Salesman). You can view floor plans and export, but cannot generate or edit.'
                                         ) : (
@@ -558,12 +558,12 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                             </div>
                             {/* Level (storey) selector - same as ceiling plan */}
                             {storeys.length > 1 && (
-                                <div className="flex items-center space-x-2">
-                                    <label className="text-sm font-medium text-gray-700">Level:</label>
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Level:</label>
                                     <select
                                         value={selectedStoreyId ?? ''}
                                         onChange={(e) => setSelectedStoreyId(e.target.value ? parseInt(e.target.value, 10) : null)}
-                                        className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="form-control w-auto min-w-[7rem]"
                                     >
                                         {storeys.map(storey => (
                                             <option key={storey.id} value={storey.id}>
@@ -575,13 +575,13 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                             )}
                         </div>
                         {canEdit && (
-                            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div className="flex items-center">
-                                    <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div className="mt-2 px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-md">
+                                <div className="flex items-start gap-1.5">
+                                    <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    <span className="text-blue-800 text-sm">
-                                        <strong>Note:</strong> Floor plan is available for rooms with <code className="bg-blue-100 px-1 rounded">floor_type = "panel"</code> (panel layout) or <code className="bg-blue-100 px-1 rounded">floor_type = "slab"</code> (estimated slabs needed).
+                                    <span className="text-blue-800 dark:text-blue-200 text-[11px] leading-snug">
+                                        <strong>Note:</strong> Floor plan is available for rooms with <code className="bg-blue-100 dark:bg-blue-900/60 px-1 rounded text-[10px]">floor_type = "panel"</code> (panel layout) or <code className="bg-blue-100 dark:bg-blue-900/60 px-1 rounded text-[10px]">floor_type = "slab"</code> (estimated slabs needed).
                                     </span>
                                 </div>
                             </div>
@@ -589,12 +589,12 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                     </div>
                     
                     {canEdit && planNeedsRegeneration && (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                            <div className="flex items-center">
-                                <svg className="w-5 h-5 text-yellow-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-200 dark:border-yellow-800 rounded-md px-2.5 py-1.5 shrink-0">
+                            <div className="flex items-center gap-1.5">
+                                <svg className="w-3.5 h-3.5 text-yellow-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                                 </svg>
-                                <span className="text-yellow-800 font-medium">
+                                <span className="text-yellow-800 dark:text-yellow-200 text-xs font-medium">
                                     Floor plan needs regeneration due to parameter changes
                                 </span>
                             </div>
@@ -604,83 +604,81 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
             </div>
 
             {canEdit && (
-            <div className="p-6 ml-8">
+            <div className="px-3 sm:px-4 py-2">
                 {/* Dimension visibility checkboxes */}
-                <div className="mb-4 flex items-center space-x-4">
-                    <label className="flex items-center space-x-2 cursor-pointer">
+                <div className="mb-2 flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                             type="checkbox"
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             checked={dimensionVisibility.room}
                             onChange={() => toggleDimensionVisibility('room')}
                         />
-                        <span className="text-sm text-gray-700">Room dimensions</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300">Room dimensions</span>
                     </label>
-                    <label className="flex items-center space-x-2 cursor-pointer">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                             type="checkbox"
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             checked={dimensionVisibility.panel}
                             onChange={() => toggleDimensionVisibility('panel')}
                         />
-                        <span className="text-sm text-gray-700">Panel dimensions</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300">Panel dimensions</span>
                     </label>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mb-2 max-w-3xl">
                     {/* Strategy Selection */}
                     <div className="control-card">
-                        <label className="block text-sm font-semibold text-gray-700 mb-3">
-                            <svg className="w-4 h-4 inline mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                            <svg className="w-3.5 h-3.5 inline mr-1.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                             </svg>
                             Strategy
                         </label>
-                        <div className="space-y-3">
-                            <div className="flex items-center space-x-3">
-                                <label className="text-sm font-medium text-gray-700">Orientation:</label>
-                                <select
-                                    value={selectedOrientationStrategy}
-                                    onChange={(e) => setSelectedOrientationStrategy(e.target.value)}
-                                    className="flex-1"
-                                >
+                        <div className="flex items-center gap-2">
+                            <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 shrink-0">Orientation:</label>
+                            <select
+                                value={selectedOrientationStrategy}
+                                onChange={(e) => setSelectedOrientationStrategy(e.target.value)}
+                                className="flex-1 min-w-0"
+                            >
                                     <option value="auto">🔄 Auto (Recommended)</option>
                                     <option value="all_horizontal">➡️ All Horizontal</option>
                                     <option value="all_vertical">⬇️ All Vertical</option>
                                     <option value="room_optimal">🎯 Room Optimal</option>
                                 </select>
-                            </div>
                         </div>
                     </div>
 
                     {/* Panel Dimensions */}
                     <div className="control-card">
-                        <label className="block text-sm font-semibold text-gray-700 mb-3">
-                            <svg className="w-4 h-4 inline mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                            <svg className="w-3.5 h-3.5 inline mr-1.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                             </svg>
                             Panel Dimensions
                         </label>
-                        <div className="space-y-3">
-                            <div className="flex items-center space-x-3">
-                                <label className="text-sm font-medium text-gray-700">Width:</label>
+                        <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem] shrink-0">Width:</label>
                                 <input
                                     type="number"
                                     value={panelWidth}
                                     onChange={(e) => handlePanelWidthChange(parseInt(e.target.value))}
-                                    className="flex-1"
+                                    className="w-16 min-w-0"
                                     min="100"
                                     max="2000"
                                     step="50"
                                 />
-                                <span className="text-xs text-gray-500">mm</span>
+                                <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                             </div>
                             
-                            <div className="flex items-center space-x-3">
-                                <label className="text-sm font-medium text-gray-700">Length:</label>
+                            <div className="flex items-center gap-2">
+                                <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem] shrink-0">Length:</label>
                                 <select
                                     value={panelLength}
                                     onChange={(e) => handlePanelLengthChange(e.target.value)}
-                                    className="flex-1"
+                                    className="flex-1 min-w-0"
                                 >
                                     <option value="auto">🔄 Auto (Optimal)</option>
                                     <option value="custom">✏️ Custom</option>
@@ -688,18 +686,18 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                             </div>
                             
                             {panelLength === 'custom' && (
-                                <div className="flex items-center space-x-3">
-                                    <label className="text-sm font-medium text-gray-700">Custom:</label>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem] shrink-0">Custom:</label>
                                     <input
                                         type="number"
                                         value={customPanelLength}
                                         onChange={(e) => handleCustomPanelLengthChange(parseInt(e.target.value))}
-                                        className="flex-1"
+                                        className="w-16 min-w-0"
                                         min="500"
                                         max="15000"
                                         step="100"
                                     />
-                                    <span className="text-xs text-gray-500">mm</span>
+                                    <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                                 </div>
                             )}
                         </div>
@@ -707,24 +705,24 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0 sm:space-x-4 mt-6 ml-4">
-                    <div className="flex items-center space-x-3">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <button
                             onClick={generateFloorPlan}
                             disabled={isGenerating}
-                            className="btn-generate px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl"
+                            className="btn-generate inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-md text-sm font-medium hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                         >
                             {isGenerating ? (
-                                <div className="flex items-center space-x-2">
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <div className="flex items-center gap-1.5">
+                                    <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
                                     <span>Generating...</span>
                                 </div>
                             ) : (
-                                <div className="flex items-center space-x-2">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <div className="flex items-center gap-1.5">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                     </svg>
                                     <span>Generate Floor Plan</span>
@@ -736,7 +734,7 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                             <button
                                 onClick={generateFloorPlan}
                                 disabled={isGenerating}
-                                className="btn-regenerate px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="btn-regenerate px-2.5 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 Regenerate
                             </button>
@@ -744,7 +742,7 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                     </div>
                     
                     {planNeedsRegeneration && (
-                        <div className="text-sm text-yellow-600 bg-yellow-50 px-3 py-2 rounded-lg">
+                        <div className="text-xs text-yellow-600 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/40 px-2 py-1 rounded-md">
                             ⚠️ Parameters changed - regenerate for updated plan
                         </div>
                     )}
@@ -752,7 +750,7 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                 
                 {/* Error Display */}
                 {error && (
-                    <div className="mt-3 p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg">
+                    <div className="mt-2 px-2.5 py-1.5 bg-red-100 dark:bg-red-950/40 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 rounded-md text-xs">
                         {error}
                     </div>
                 )}
@@ -760,7 +758,7 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
             )}
 
             {/* Main Content: show canvas when we have a generated plan OR when we have panel/slab rooms (so slab counts and Generate are available) */}
-            <div className="p-6 pl-8">
+            <div className="px-3 sm:px-4 py-3">
                 {(floorPlan || (filteredRooms.length > 0 && filteredRooms.some(r => (r.floor_type === 'panel' || r.floor_type === 'Panel' || r.floor_type === 'slab' || r.floor_type === 'Slab')))) ? (
                     <div className="space-y-6">
                         {/* Canvas */}

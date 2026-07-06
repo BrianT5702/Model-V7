@@ -1,4 +1,4 @@
-// Drawing functions extracted from Canvas2D.js
+    // Drawing functions extracted from Canvas2D.js
 
 // Import dimension filtering helper
 import { shouldShowWallDimension, shouldShowPanelDimension, filterDimensions } from './dimensionFilter.js';
@@ -8,7 +8,6 @@ import {
     createDimensionLaneCounters,
     createDimensionEdgeExtents,
     consumeDimensionLane,
-    consumeDimensionLaneByEdge,
     recordDimensionEdgeExtent,
     getProjectDimensionOffsetForEdge,
     syncEdgeExtentsFromPlacedLabels,
@@ -48,6 +47,10 @@ import { buildDoorLabelObstacles } from './doorPlacement.js';
 // Store placement decisions for dimensions to prevent position changes on zoom
 // Module-level Map that persists across renders
 const dimensionPlacementMemory = new Map();
+
+export function clearDimensionPlacementMemory() {
+    dimensionPlacementMemory.clear();
+}
 
 /** Same geometry as pdfVectorWallPlan: extension segments outside strict interior of model AABB (screen px) */
 function extensionSegmentsOutsideModelRect(x1, y1, x2, y2, rect) {
@@ -167,95 +170,6 @@ function canvasObliqueTicks(context, px, py, ux, uy, color, tickPx) {
     context.lineTo(px + vx * tickPx, py + vy * tickPx);
     context.stroke();
     context.restore();
-}
-
-// Check if a label bounds rectangle overlaps with a wall line segment
-// Returns true if the label would overlap with the wall line
-function doesLabelOverlapWallLine(labelBounds, line, scaleFactor, offsetX, offsetY, padding = 1) {
-    // Convert line points to screen coordinates
-    const lineStartX = line[0].x * scaleFactor + offsetX;
-    const lineStartY = line[0].y * scaleFactor + offsetY;
-    const lineEndX = line[1].x * scaleFactor + offsetX;
-    const lineEndY = line[1].y * scaleFactor + offsetY;
-    
-    // Add padding to label bounds for safety margin
-    const paddedBounds = {
-        x: labelBounds.x - padding,
-        y: labelBounds.y - padding,
-        width: labelBounds.width + padding * 2,
-        height: labelBounds.height + padding * 2
-    };
-    
-    // Check if line segment intersects with the rectangle
-    // Using line-rectangle intersection algorithm
-    const rectLeft = paddedBounds.x;
-    const rectRight = paddedBounds.x + paddedBounds.width;
-    const rectTop = paddedBounds.y;
-    const rectBottom = paddedBounds.y + paddedBounds.height;
-    
-    // Check if line is completely outside the rectangle
-    const lineMinX = Math.min(lineStartX, lineEndX);
-    const lineMaxX = Math.max(lineStartX, lineEndX);
-    const lineMinY = Math.min(lineStartY, lineEndY);
-    const lineMaxY = Math.max(lineStartY, lineEndY);
-    
-    // Quick rejection test
-    if (lineMaxX < rectLeft || lineMinX > rectRight || lineMaxY < rectTop || lineMinY > rectBottom) {
-        return false;
-    }
-    
-    // Check if any point of the line is inside the rectangle
-    if ((lineStartX >= rectLeft && lineStartX <= rectRight && lineStartY >= rectTop && lineStartY <= rectBottom) ||
-        (lineEndX >= rectLeft && lineEndX <= rectRight && lineEndY >= rectTop && lineEndY <= rectBottom)) {
-        return true;
-    }
-    
-    // Check if line segment intersects rectangle edges
-    // Check intersection with top edge
-    if (lineMinY <= rectTop && lineMaxY >= rectTop) {
-        const t = (rectTop - lineStartY) / (lineEndY - lineStartY);
-        if (t >= 0 && t <= 1) {
-            const intersectX = lineStartX + t * (lineEndX - lineStartX);
-            if (intersectX >= rectLeft && intersectX <= rectRight) {
-                return true;
-            }
-        }
-    }
-    
-    // Check intersection with bottom edge
-    if (lineMinY <= rectBottom && lineMaxY >= rectBottom) {
-        const t = (rectBottom - lineStartY) / (lineEndY - lineStartY);
-        if (t >= 0 && t <= 1) {
-            const intersectX = lineStartX + t * (lineEndX - lineStartX);
-            if (intersectX >= rectLeft && intersectX <= rectRight) {
-                return true;
-            }
-        }
-    }
-    
-    // Check intersection with left edge
-    if (lineMinX <= rectLeft && lineMaxX >= rectLeft) {
-        const t = (rectLeft - lineStartX) / (lineEndX - lineStartX);
-        if (t >= 0 && t <= 1) {
-            const intersectY = lineStartY + t * (lineEndY - lineStartY);
-            if (intersectY >= rectTop && intersectY <= rectBottom) {
-                return true;
-            }
-        }
-    }
-    
-    // Check intersection with right edge
-    if (lineMinX <= rectRight && lineMaxX >= rectRight) {
-        const t = (rectRight - lineStartX) / (lineEndX - lineStartX);
-        if (t >= 0 && t <= 1) {
-            const intersectY = lineStartY + t * (lineEndY - lineStartY);
-            if (intersectY >= rectTop && intersectY <= rectBottom) {
-                return true;
-            }
-        }
-    }
-    
-    return false;
 }
 
 function pointToSegmentDistanceMm(px, py, ax, ay, bx, by) {
@@ -516,12 +430,6 @@ function placeNearWallWallDimension({
     initialScale,
     rotatedVerticalText,
     calculateBounds,
-    side1Bounds,
-    side2Bounds,
-    baseOffset,
-    wallLaneSpacing,
-    spanLo,
-    spanHi
 }) {
     const near = tryPlaceNearWallLabel({
         wall: wallForNear,
@@ -565,7 +473,6 @@ function placeNearWallWallDimension({
             scaleFactor,
             offsetX,
             offsetY,
-            textWidth,
             initialScale,
             wallLinesMap
         )
@@ -584,7 +491,6 @@ function isLabelAcceptableForNearWallPlacement(
     scaleFactor,
     offsetX,
     offsetY,
-    textWidth = 40,
     initialScale = 1,
     wallLinesMap = null
 ) {
@@ -608,7 +514,7 @@ function isLabelAcceptableForNearWallPlacement(
 }
 
 function doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) {
-    if (!wallLinesMap || wallLinesMap.size === 0) return false;
+    if (!(wallLinesMap instanceof Map) || wallLinesMap.size === 0) return false;
     for (const [, wallData] of wallLinesMap) {
         if (doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offsetX, offsetY, 2)) {
             return true;
@@ -677,7 +583,6 @@ function tryPlaceNearWallLabel({
                     scaleFactor,
                     offsetX,
                     offsetY,
-                    textWidth,
                     initialScale,
                     wallLinesMap
                 )
@@ -762,9 +667,6 @@ function isLabelAcceptableForWallDimension(
     offsetY,
     isNearWall,
     initialScale = 1,
-    labelCenterX = null,
-    labelCenterY = null,
-    textWidth = 40
 ) {
     if (isNearWall) {
         const sep = nearWallLabelSeparationPx(scaleFactor, initialScale);
@@ -889,9 +791,12 @@ export function placeExteriorWallDimensionAvoidingLabels({
                 paddingH,
                 paddingV
             });
-            if (columnLocked) {
+            if (columnLocked && placed) {
                 placed = { ...placed, labelX: fixedLabelX };
             }
+        }
+        if (!placed) {
+            return { placed: null, labelBounds: null };
         }
         const labelBounds = boundsFor(placed.labelX, placed.labelY);
         return { placed, labelBounds };
@@ -905,13 +810,13 @@ export function placeExteriorWallDimensionAvoidingLabels({
             }
             for (const yBiasPx of yTry) {
                 const { placed, labelBounds } = tryOnce(rowOffset, yBiasPx);
-                if (isLabelPlacementClean(labelBounds, placedLabels, sep)) {
+                if (placed && labelBounds && isLabelPlacementClean(labelBounds, placedLabels, sep)) {
                     return { ...placed, rowOffset, labelBounds };
                 }
             }
         } else {
             const { placed, labelBounds } = tryOnce(rowOffset, 0);
-            if (isLabelPlacementClean(labelBounds, placedLabels, sep)) {
+            if (placed && labelBounds && isLabelPlacementClean(labelBounds, placedLabels, sep)) {
                 return { ...placed, rowOffset, labelBounds };
             }
         }
@@ -919,44 +824,10 @@ export function placeExteriorWallDimensionAvoidingLabels({
     }
 
     const { placed, labelBounds } = tryOnce(rowOffset, 0);
+    if (!placed) {
+        return null;
+    }
     return { ...placed, rowOffset, labelBounds };
-}
-
-function isLabelClearOfWalls(labelBounds, placedLabels, wallLinesMap, scaleFactor, offsetX, offsetY) {
-    return isLabelAcceptableForWallDimension(
-        labelBounds,
-        placedLabels,
-        wallLinesMap,
-        null,
-        scaleFactor,
-        offsetX,
-        offsetY,
-        true
-    );
-}
-
-function nudgeLabelOutsideWalls(labelX, labelY, calculateBounds, textWidth, exteriorNx, exteriorNy, scaleFactor, offsetX, offsetY, wallLinesMap) {
-    if (!wallLinesMap || wallLinesMap.size === 0) {
-        return { labelX, labelY };
-    }
-    let x = labelX;
-    let y = labelY;
-    const stepPx = Math.max(
-        6,
-        DIMENSION_CONFIG.NEAR_WALL_NUDGE_MM * scaleFactor
-    );
-    const dpx = exteriorNx * stepPx;
-    const dpy = exteriorNy * stepPx;
-    const maxAttempts = 24;
-    for (let i = 0; i < maxAttempts; i++) {
-        const bounds = calculateBounds(x, y, textWidth);
-        if (!doesLabelOverlapAnyWallLine(bounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
-            return { labelX: x, labelY: y };
-        }
-        x += dpx;
-        y += dpy;
-    }
-    return { labelX: x, labelY: y };
 }
 
 function exteriorSideName(nx, ny) {
@@ -1001,7 +872,7 @@ function doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offset
 
 // Check if label bounds overlap any wall thickness corridor
 function doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) {
-    if (!wallLinesMap || wallLinesMap.size === 0) return false;
+    if (!(wallLinesMap instanceof Map) || wallLinesMap.size === 0) return false;
 
     for (const [, wallData] of wallLinesMap) {
         if (doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offsetX, offsetY, 10)) {
@@ -1339,7 +1210,7 @@ function drawProjectDimension(
     const dy = endY - startY;
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-    const { minX, maxX, minY, maxY } = modelBounds;
+    const {maxX, minY} = modelBounds;
     const rectScreen = clipBoundsModel ? modelBoundsToScreenRect(clipBoundsModel, scaleFactor, offsetX, offsetY) : null;
     const extDash = getCanvasExtensionDashPattern(scaleFactor);
     const dimLineW = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
@@ -1390,8 +1261,6 @@ function drawProjectDimension(
         labelX = wallMidX * scaleFactor + offsetX;
 
         const textPadding = 4;
-        const textLeft = labelX - textWidth / 2 - textPadding;
-        const textRight = labelX + textWidth / 2 + textPadding;
         const startXScreen = startX * scaleFactor + offsetX;
         const endXScreen = endX * scaleFactor + offsetX;
         const yWallStart = startY * scaleFactor + offsetY;
@@ -1472,8 +1341,6 @@ function drawProjectDimension(
         labelY = wallMidY * scaleFactor + offsetY;
 
         const textPadding = 4;
-        const textTop = labelY - textWidth / 2 - textPadding;
-        const textBottom = labelY + textWidth / 2 + textPadding;
         const xWallStart = startX * scaleFactor + offsetX;
         const xWallEnd = endX * scaleFactor + offsetX;
         const yStart = startY * scaleFactor + offsetY;
@@ -1808,6 +1675,10 @@ export function drawDimensions(
                     initialScale,
                     rotatedVerticalText: false
                 });
+                if (!near) {
+                    context.restore();
+                    return;
+                }
                 labelX = near.labelX;
                 labelY = near.labelY;
                 placement = { side: 'side1' };
@@ -1839,6 +1710,10 @@ export function drawDimensions(
                     preferredSide: 'side1',
                     lockedSide: null
                 });
+                if (!placement) {
+                    context.restore();
+                    return;
+                }
                 labelX = placement.labelX;
                 labelY = placement.labelY;
                 if (wallLinesMap) {
@@ -2079,6 +1954,10 @@ export function drawDimensions(
                     textWidth,
                     placedLabels
                 });
+                if (!placed) {
+                    context.restore();
+                    return;
+                }
                 labelX = placed.labelX;
                 labelY = placed.labelY;
                 const hEdge = getDimensionEdge(true, placementSide);
@@ -2285,6 +2164,10 @@ export function drawDimensions(
                     fixedLabelX: fixedColumnX,
                     fontSize
                 });
+                if (!placed) {
+                    context.restore();
+                    return;
+                }
                 labelX = placed.labelX;
                 labelY = placed.labelY;
                 if (dimensionLanes) {
@@ -3420,21 +3303,8 @@ export function drawWalls({
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
-    const showWallDimensions = dimensionVisibility?.wall !== false;
-    const showPanelDimensions = dimensionVisibility?.panel !== false;
-    
     // Generate color map based on (thickness + inner/outer finishes)
     const thicknessColorMap = generateThicknessColorMap(walls);
-    
-    // Calculate model bounds for external dimensioning
-    // Use project dimensions as the boundary to keep wall dimensions inside
-    const actualDimensions = calculateActualProjectDimensions(walls);
-    const modelBounds = walls.length > 0 ? {
-        minX: actualDimensions.minX,
-        maxX: actualDimensions.maxX,
-        minY: actualDimensions.minY,
-        maxY: actualDimensions.maxY
-    } : null;
     
     // First pass: Calculate all wall lines and store them
     const wallLinesMap = new Map(); // Store line1 and line2 for each wall
@@ -3601,7 +3471,7 @@ export function drawWalls({
             // valid pairs at 3-wall T-junctions while keeping extend-before-shorten order globally.
             const runVhPairPhase = (phase) => {
             vhPairs.forEach(pairData => {
-                const { verticalWall, horizontalWall, joiningMethod, jointWall1Id, jointWall2Id } = pairData;
+                const { verticalWall, horizontalWall, joiningMethod, jointWall1Id} = pairData;
                 
                 const vWall = verticalWall.wall;
                 const hWall = horizontalWall.wall;
@@ -3825,7 +3695,6 @@ export function drawWalls({
                         // If vertical is on LEFT of horizontal → horizontal should connect to RIGHT line of vertical
                         // If vertical is on RIGHT of horizontal → horizontal should connect to LEFT line of vertical
                         let targetVLine;
-                        let baseTargetX;
                         
                         if (isVerticalOnLeft) {
                             // Vertical is on LEFT of horizontal, horizontal wall1 should connect to RIGHT line of vertical wall2

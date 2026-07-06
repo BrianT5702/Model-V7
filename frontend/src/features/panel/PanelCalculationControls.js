@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import PanelCalculator from './PanelCalculator';
-import { exportCanvasAsImage, exportCanvasAsSVG } from '../canvas/utils';
 
 const PanelCalculationControls = ({ 
     walls, 
@@ -10,8 +9,6 @@ const PanelCalculationControls = ({
     doors, 
     showMaterialDetails, 
     toggleMaterialDetails,
-    canvasRef,
-    rooms = [],
     project = null,
     updateSharedPanelData, // Added prop for sharing data
     onRefreshWalls // Callback to refresh walls from all storeys
@@ -22,8 +19,6 @@ const PanelCalculationControls = ({
     const [cutPanelsCount, setCutPanelsCount] = useState(0);
     const [showLeftoverDetails, setShowLeftoverDetails] = useState(false);
     const [panelCalculator, setPanelCalculator] = useState(null);
-    const [showExportModal, setShowExportModal] = useState(false);
-    const [exportTab, setExportTab] = useState('pdf'); // 'pdf', 'csv', 'sketch'
     const [isCalculating, setIsCalculating] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshMessage, setRefreshMessage] = useState('');
@@ -42,220 +37,6 @@ const PanelCalculationControls = ({
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showMaterialDetails]);
-
-    // Helper to generate CSV string from calculatedPanels
-    const getCSVString = () => {
-        if (!calculatedPanels) return '';
-        const header = 'Width,Length,Thickness,Application,Quantity,Type,Panel Thickness,Finishing';
-        const rows = calculatedPanels.map(panel => {
-            const wallFallback = (!panel.inner_face_material || !panel.outer_face_material) && Array.isArray(walls)
-                ? walls.find(w => String(w.id) === String(panel.anyWallId))
-                : null;
-            const intMat = (panel.inner_face_material ?? wallFallback?.inner_face_material) ?? 'PPGI';
-            const intThk = (panel.inner_face_thickness ?? wallFallback?.inner_face_thickness) ?? 0.5;
-            const extMat = (panel.outer_face_material ?? wallFallback?.outer_face_material) ?? 'PPGI';
-            const extThk = (panel.outer_face_thickness ?? wallFallback?.outer_face_thickness) ?? 0.5;
-            const finishing = (intMat === extMat && intThk === extThk)
-                ? `Both Side ${extThk}mm ${extMat}`
-                : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
-            return `${panel.width},${panel.length},${panel.thickness || 'N/A'},${panel.application},${panel.quantity},${panel.type},${panel.thickness || 'N/A'},"${finishing}"`;
-        });
-        return [header, ...rows].join('\n');
-    };
-
-    // Helper to generate HTML table for PDF preview (as React element)
-    const getPDFTable = () => {
-        if (!calculatedPanels) return null;
-        return (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                <thead>
-                    <tr style={{ background: '#f3f3f3' }}>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Width</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Length</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Thickness</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Application</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Quantity</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Type</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Panel Thickness</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Finishing</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {calculatedPanels.map((panel, idx) => {
-                        const intMat = panel.inner_face_material ?? 'PPGI';
-                        const intThk = panel.inner_face_thickness ?? 0.5;
-                        const extMat = panel.outer_face_material ?? 'PPGI';
-                        const extThk = panel.outer_face_thickness ?? 0.5;
-                        const finishing = (intMat === extMat && intThk === extThk)
-                            ? `Both Side ${extThk}mm ${extMat}`
-                            : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
-                        
-                        return (
-                            <tr key={idx}>
-                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.width}</td>
-                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.length}</td>
-                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.thickness || 'N/A'}</td>
-                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.application}</td>
-                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.quantity}</td>
-                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.type}</td>
-                                <td style={{ border: '1px solid #ccc', padding: '4px' }}>{panel.thickness || 'N/A'}</td>
-                                <td style={{ border: '1px solid #ccc', padding: '4px', fontSize: '12px' }}>{finishing}</td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        );
-    };
-
-    // Helper to generate HTML table as a string for PDF export
-    const getPDFTableHtml = () => {
-        if (!calculatedPanels) return '';
-        const header = `
-            <tr>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Width</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Length</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Thickness</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Application</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Quantity</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Type</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Panel Thickness</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Finishing</th>
-            </tr>
-        `;
-        const rows = calculatedPanels.map(panel => {
-            const wallFallback = (!panel.inner_face_material || !panel.outer_face_material) && Array.isArray(walls)
-                ? walls.find(w => String(w.id) === String(panel.anyWallId))
-                : null;
-            const intMat = (panel.inner_face_material ?? wallFallback?.inner_face_material) ?? 'PPGI';
-            const intThk = (panel.inner_face_thickness ?? wallFallback?.inner_face_thickness) ?? 0.5;
-            const extMat = (panel.outer_face_material ?? wallFallback?.outer_face_material) ?? 'PPGI';
-            const extThk = (panel.outer_face_thickness ?? wallFallback?.outer_face_thickness) ?? 0.5;
-            const finishing = (intMat === extMat && intThk === extThk)
-                ? `Both Side ${extThk}mm ${extMat}`
-                : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
-            
-            return `
-                <tr>
-                    <td style="border:1px solid #ccc;padding:4px;">${panel.width}</td>
-                    <td style="border:1px solid #ccc;padding:4px;">${panel.length}</td>
-                    <td style="border:1px solid #ccc;padding:4px;">${panel.thickness || 'N/A'}</td>
-                    <td style="border:1px solid #ccc;padding:4px;">${panel.application}</td>
-                    <td style="border:1px solid #ccc;padding:4px;">${panel.quantity}</td>
-                    <td style="border:1px solid #ccc;padding:4px;">${panel.type}</td>
-                    <td style="border:1px solid #ccc;padding:4px;">${panel.thickness || 'N/A'}</td>
-                    <td style="border:1px solid #ccc;padding:4px;font-size:12px;">${finishing}</td>
-                </tr>
-            `;
-        }).join('');
-        return `<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
-    };
-
-    // Helper to generate HTML table for door details (React element)
-    const getDoorTable = () => {
-        if (!doors || doors.length === 0) return null;
-        return (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', marginTop: '32px' }}>
-                <thead>
-                    <tr style={{ background: '#f3f3f3' }}>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>No.</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Door Type</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Single/Double Side</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px' }}>Clear Opening Size</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {doors.map((door, idx) => (
-                        <tr key={door.id || idx}>
-                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{idx + 1}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{door.door_type === 'swing' ? 'Swing' : 'Slide'}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{door.configuration === 'single_sided' ? 'Single' : 'Double'}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px', textAlign: 'center' }}>{`W ${door.width}mm x ${door.height}mm HT`}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        );
-    };
-
-    // Helper to generate HTML table as a string for door details (for PDF export)
-    const getDoorTableHtml = () => {
-        if (!doors || doors.length === 0) return '';
-        const header = `
-            <tr>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">No.</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Door Type</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Single/Double Side</th>
-                <th style="border:1px solid #ccc;padding:4px;background:#f3f3f3;">Clear Opening Size</th>
-            </tr>
-        `;
-        const rows = doors.map((door, idx) => `
-            <tr>
-                <td style="border:1px solid #ccc;padding:4px;text-align:center;">${idx + 1}</td>
-                <td style="border:1px solid #ccc;padding:4px;text-align:center;">${door.door_type === 'swing' ? 'Swing' : 'Slide'}</td>
-                <td style="border:1px solid #ccc;padding:4px;text-align:center;">${door.configuration === 'single_sided' ? 'Single' : 'Double'}</td>
-                <td style="border:1px solid #ccc;padding:4px;text-align:center;">W ${door.width}mm x ${door.height}mm HT</td>
-            </tr>
-        `).join('');
-        return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:32px;"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
-    };
-
-    // Helper to generate CSV for doors
-    const getDoorCSV = () => {
-        if (!doors || doors.length === 0) return '';
-        const header = 'No.,Door Type,Single/Double Side,Clear Opening Size';
-        const rows = doors.map((door, idx) =>
-            `${idx + 1},${door.door_type === 'swing' ? 'Swing' : 'Slide'},${door.configuration === 'single_sided' ? 'Single' : 'Double'},W ${door.width}mm x ${door.height}mm HT`
-        );
-        return [header, ...rows].join('\n');
-    };
-
-    // Update getPDFTableHtml and getCSVString to include door table
-    const getPDFTableHtmlWithDoors = () => {
-        return getPDFTableHtml() + getDoorTableHtml();
-    };
-    const getCSVStringWithDoors = () => {
-        return getCSVString() + '\n\n' + getDoorCSV();
-    };
-
-    // Download helpers
-    const downloadCSV = () => {
-        const csv = getCSVStringWithDoors();
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'material_panels_and_doors.csv';
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-    const downloadPDF = () => {
-        // Open a new window with both tables for printing
-        const tableHtml = `<!DOCTYPE html><html><head><title>Material Panels PDF</title><style>
-            table { width: 100%; border-collapse: collapse; font-size: 14px; }
-            th, td { border: 1px solid #ccc; padding: 4px; }
-            th { background: #f3f3f3; }
-        </style></head><body>${getPDFTableHtmlWithDoors()}</body></html>`;
-        const printWindow = window.open('', '', 'width=800,height=600');
-        printWindow.document.write(tableHtml);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
-        // Do NOT close the window automatically!
-    };
-
-    // Sketch export functions
-    const downloadSketchAsPNG = () => {
-        const projectName = project?.name || 'project';
-        const filename = `${projectName}_2d_sketch.png`;
-        exportCanvasAsImage(canvasRef, filename);
-    };
-
-    const downloadSketchAsSVG = () => {
-        const projectName = project?.name || 'project';
-        const filename = `${projectName}_2d_sketch.svg`;
-        exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections, filename);
-    };
 
     const calculateAllPanels = () => {
         try {
@@ -516,11 +297,11 @@ const PanelCalculationControls = ({
     };
 
     return (
-        <div className="w-full mt-2 sm:mt-4 material-list-container">
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-3 sm:mb-4">
+        <div className="w-full mt-2 material-list-container">
+            <div className="flex flex-wrap gap-1.5 mb-2">
                 <button
                     onClick={handleButtonClick}
-                    className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap"
+                    className="plan-panel-btn-primary"
                 >
                     {showMaterialDetails ? 'Hide Material' : 'View Material'}
                 </button>
@@ -528,7 +309,7 @@ const PanelCalculationControls = ({
                 {showMaterialDetails && calculatedPanels && (
                     <button
                         onClick={() => setShowTable(!showTable)}
-                        className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-green-600 text-white rounded hover:bg-green-700 whitespace-nowrap"
+                        className="plan-panel-btn bg-green-600 text-white hover:bg-green-700"
                     >
                         {showTable ? 'Hide Details' : 'Show Details'}
                     </button>
@@ -557,7 +338,7 @@ const PanelCalculationControls = ({
                             }
                         }}
                         disabled={isRefreshing || isCalculating}
-                        className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap flex items-center gap-2"
+                        className="plan-panel-btn bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1.5"
                         title="Refresh walls from all levels/storeys"
                     >
                         {isRefreshing ? (

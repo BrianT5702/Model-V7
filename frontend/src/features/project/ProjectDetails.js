@@ -41,6 +41,12 @@ import {
     FaUnlock,
     FaComment,
     FaStickyNote,
+    FaChevronDown,
+    FaPlus,
+    FaTrash,
+    FaUndo,
+    FaRedo,
+    FaStreetView,
 } from 'react-icons/fa';
 
 const ProjectDetails = () => {
@@ -60,8 +66,48 @@ const ProjectDetails = () => {
     const [planAnnotateMode, setPlanAnnotateMode] = useState(false);
     const [selectedPlanAnnotationId, setSelectedPlanAnnotationId] = useState(null);
     const [planAnnotationArrowPlacementId, setPlanAnnotationArrowPlacementId] = useState(null);
+    const [levelActionsMenuOpen, setLevelActionsMenuOpen] = useState(false);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
+    const undoProjectAction = projectDetails.undoProjectAction;
+    const redoProjectAction = projectDetails.redoProjectAction;
+
+    useEffect(() => {
+        if (!canEdit) {
+            return undefined;
+        }
+
+        const handleKeyDown = (event) => {
+            const target = event.target;
+            const tagName = target?.tagName?.toLowerCase();
+            const isEditableTarget =
+                tagName === 'input' ||
+                tagName === 'textarea' ||
+                tagName === 'select' ||
+                target?.isContentEditable;
+
+            if (isEditableTarget) {
+                return;
+            }
+
+            const key = event.key.toLowerCase();
+            const isUndo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
+            const isRedo =
+                (event.ctrlKey || event.metaKey) &&
+                (key === 'y' || (key === 'z' && event.shiftKey));
+
+            if (isUndo) {
+                event.preventDefault();
+                undoProjectAction();
+            } else if (isRedo) {
+                event.preventDefault();
+                redoProjectAction();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [canEdit, undoProjectAction, redoProjectAction]);
 
     const getProjectsListPath = useCallback(() => {
         const folderParam = searchParams.get(FOLDER_QUERY_PARAM);
@@ -87,6 +133,7 @@ const ProjectDetails = () => {
         setPlanAnnotateMode(false);
         setSelectedPlanAnnotationId(null);
         setPlanAnnotationArrowPlacementId(null);
+        setLevelActionsMenuOpen(false);
     }, [projectId]);
 
     useEffect(() => {
@@ -99,6 +146,12 @@ const ProjectDetails = () => {
             detail: { projectId: Number(projectId) },
         }));
     }, [projectId]);
+
+    const handleCommentStatusChanged = useCallback((status) => {
+        if (status === 'done') {
+            setUnreadCommentCount((count) => Math.max(0, count - 1));
+        }
+    }, []);
 
     const handleToggleCommentWallSelectMode = useCallback((enabled) => {
         setCommentWallSelectMode(enabled);
@@ -163,6 +216,45 @@ const ProjectDetails = () => {
         setActiveCommentId(null);
         setCommentHighlightWallIds([]);
     }, []);
+
+    const handleDeleteActiveStorey = useCallback(() => {
+        if (!projectDetails.activeStoreyId) {
+            return;
+        }
+        const activeId = projectDetails.activeStoreyId;
+        const sortedStoreys = [...(projectDetails.storeys || [])]
+            .sort((a, b) => {
+                const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+                if (orderDiff !== 0) return orderDiff;
+                const elevationDiff = (a.elevation_mm ?? 0) - (b.elevation_mm ?? 0);
+                if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
+                return (a.id ?? 0) - (b.id ?? 0);
+            });
+        const lowest = sortedStoreys[0];
+        if (lowest && String(lowest.id) === String(activeId)) {
+            projectDetails.setStoreyError('Ground floor cannot be deleted.');
+            setTimeout(() => projectDetails.setStoreyError(''), 4000);
+            return;
+        }
+        if (window.confirm('Delete this level? Rooms, walls, and panels on this storey will be removed.')) {
+            projectDetails.deleteStorey(activeId);
+        }
+    }, [projectDetails]);
+
+    const handlePlanViewChange = useCallback((view) => {
+        if (projectDetails.is3DView) {
+            projectDetails.forceCleanup3D();
+            projectDetails.setIs3DView(false);
+        }
+        projectDetails.setCurrentView(view);
+    }, [projectDetails]);
+
+    const handleToggle3DView = useCallback(() => {
+        if (projectDetails.is3DView) {
+            projectDetails.forceCleanup3D();
+        }
+        projectDetails.setIs3DView(!projectDetails.is3DView);
+    }, [projectDetails]);
 
     useEffect(() => {
         if (!isWallPlanView && !projectDetails.is3DView) {
@@ -284,13 +376,6 @@ const ProjectDetails = () => {
     const [isCapturingImages, setIsCapturingImages] = useState(false);
     const [captureSuccess, setCaptureSuccess] = useState(false);
     
-    // Dynamic 3D container height for mobile responsiveness (matching Canvas2D pattern)
-    const [threeDContainerHeight, setThreeDContainerHeight] = useState(800);
-    
-    // Mobile-specific constants (matching Canvas2D)
-    const MAX_CANVAS_HEIGHT_RATIO = typeof window !== 'undefined' && window.innerWidth < 640 ? 0.95 : 0.9;
-    const MIN_CANVAS_HEIGHT = 240;
-
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
     const [gapFillError, setGapFillError] = useState('');
@@ -309,6 +394,7 @@ const ProjectDetails = () => {
     });
     
     // Capture canvas images when switching tabs
+    const { currentView, filteredRooms, updateCanvasImage, storeys } = projectDetails;
     useEffect(() => {
         // Helper function to remove grid lines from canvas
         const removeGridFromCanvas = (sourceCanvas) => {
@@ -415,7 +501,7 @@ const ProjectDetails = () => {
                 return true;
             }
             // Find the storey object
-            const storey = projectDetails.storeys?.find(s => String(s.id) === String(room.storey));
+            const storey = storeys?.find(s => String(s.id) === String(room.storey));
             if (!storey) {
                 // If storey not found, assume ground floor
                 return true;
@@ -622,13 +708,13 @@ const ProjectDetails = () => {
             let canvas = null;
             let planType = null;
             
-            if (projectDetails.currentView === 'wall-plan') {
+            if (currentView === 'wall-plan') {
                 canvas = document.querySelector('canvas[data-plan-type="wall"]');
                 planType = 'wall';
-            } else if (projectDetails.currentView === 'ceiling-plan') {
+            } else if (currentView === 'ceiling-plan') {
                 canvas = document.querySelector('canvas[data-plan-type="ceiling"]');
                 planType = 'ceiling';
-            } else if (projectDetails.currentView === 'floor-plan') {
+            } else if (currentView === 'floor-plan') {
                 canvas = document.querySelector('canvas[data-plan-type="floor"]');
                 planType = 'floor';
             }
@@ -639,8 +725,8 @@ const ProjectDetails = () => {
                     let cleanCanvas = removeGridFromCanvas(canvas);
                     
                     // For wall plan, draw room labels on the canvas
-                    if (planType === 'wall' && projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0) {
-                        console.log(`🔍 Attempting to draw room labels for ${projectDetails.filteredRooms.length} rooms`);
+                    if (planType === 'wall' && filteredRooms && filteredRooms.length > 0) {
+                        console.log(`🔍 Attempting to draw room labels for ${filteredRooms.length} rooms`);
                         
                         // Get transform values from canvas data attributes (set by Canvas2D)
                         // These MUST match the values used by InteractiveRoomLabel for correct positioning
@@ -663,7 +749,7 @@ const ProjectDetails = () => {
                             offsetY: offsetY.toFixed(2),
                             raw: { scaleFactorAttr, offsetXAttr, offsetYAttr }
                         });
-                        console.log(`📋 Rooms with label positions:`, projectDetails.filteredRooms
+                        console.log(`📋 Rooms with label positions:`, filteredRooms
                             .filter(r => r.label_position && r.label_position.x !== undefined && r.label_position.y !== undefined)
                             .map(r => ({
                                 id: r.id,
@@ -681,18 +767,18 @@ const ProjectDetails = () => {
                         labeledCtx.drawImage(cleanCanvas, 0, 0);
                         
                         // Draw room labels using the actual transform values
-                        drawRoomLabelsOnCanvas(labeledCtx, projectDetails.filteredRooms, scaleFactor, offsetX, offsetY);
+                        drawRoomLabelsOnCanvas(labeledCtx, filteredRooms, scaleFactor, offsetX, offsetY);
                         
                         cleanCanvas = labeledCanvas;
                     } else {
-                        console.log(`⚠️ Skipping room labels: planType=${planType}, hasRooms=${!!(projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0)}`);
+                        console.log(`⚠️ Skipping room labels: planType=${planType}, hasRooms=${!!(filteredRooms && filteredRooms.length > 0)}`);
                     }
                     
                     const imageData = cleanCanvas.toDataURL('image/png', 0.9);
                     console.log(`📸 Captured ${planType} plan image (without grid${planType === 'wall' ? ', with room labels' : ''})`);
                     
                     // Store in shared data - use special method for canvas images
-                    projectDetails.updateCanvasImage(planType, imageData);
+                    updateCanvasImage(planType, imageData);
                 } catch (error) {
                     console.warn(`Failed to capture ${planType} plan:`, error);
                 }
@@ -700,14 +786,14 @@ const ProjectDetails = () => {
         };
         
         // Only capture when on a canvas tab
-        if (['wall-plan', 'ceiling-plan', 'floor-plan'].includes(projectDetails.currentView)) {
+        if (['wall-plan', 'ceiling-plan', 'floor-plan'].includes(currentView)) {
             // Defer capture to keep initial project open/render snappy.
             const timerId = setTimeout(() => {
                 captureCanvasImage();
             }, 250);
             return () => clearTimeout(timerId);
         }
-    }, [projectDetails.currentView]);
+    }, [currentView, filteredRooms, updateCanvasImage, storeys]);
 
     // Memoize the room close handler – closing the tab/panel with "x" wipes all selection
     const handleRoomClose = useCallback(() => {
@@ -856,109 +942,6 @@ const ProjectDetails = () => {
         }
     };
 
-    // Calculate dynamic 3D container height for mobile responsiveness
-    useEffect(() => {
-        if (!projectDetails.is3DView) return;
-
-        const updateContainerHeight = () => {
-            // Get the container element
-            const container = document.getElementById('three-canvas-container');
-            if (!container) {
-                // Retry after a short delay if container not found
-                setTimeout(updateContainerHeight, 100);
-                return;
-            }
-
-            // Get the parent container to calculate available space
-            const parentContainer = container.parentElement;
-            if (!parentContainer) return;
-
-            // Get available width from parent container
-            const containerWidth = parentContainer.clientWidth || container.clientWidth || window.innerWidth;
-            
-            // Calculate max height based on viewport
-            const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 600;
-            const maxHeight = viewportHeight * MAX_CANVAS_HEIGHT_RATIO;
-            
-            // Calculate height based on aspect ratio (similar to 2D view)
-            // Increased aspect ratio for taller canvas: 1.0 for mobile, 0.9 for desktop
-            const isMobile = window.innerWidth < 640;
-            const aspectRatio = isMobile ? 1.0 : 0.9; // Taller on mobile to match 2D view
-            const calculatedHeight = containerWidth * aspectRatio;
-            const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
-            const constrainedHeight = Math.min(preferredHeight, maxHeight);
-            const finalHeight = Math.max(constrainedHeight, MIN_CANVAS_HEIGHT);
-
-            // Mobile: use calculated height (fills more space), Desktop: calculated or 1000px max
-            const newHeight = isMobile 
-                ? Math.min(finalHeight, maxHeight) // On mobile, use more of the available space (up to 95% of viewport)
-                : Math.min(finalHeight, 1000); // On desktop, cap at 1000px
-
-            // Only update if height actually changed (prevents infinite loops)
-            setThreeDContainerHeight(prevHeight => {
-                if (Math.abs(prevHeight - newHeight) < 1) {
-                    return prevHeight;
-                }
-                return newHeight;
-            });
-        };
-
-        // Initial calculation with delay to ensure DOM is ready
-        const initialTimeout = setTimeout(updateContainerHeight, 50);
-
-        // Setup ResizeObserver for parent container (watches the canvas-container div)
-        let resizeObserver = null;
-        const parentContainer = document.querySelector('.canvas-container');
-        
-        if (parentContainer && typeof ResizeObserver !== 'undefined') {
-            resizeObserver = new ResizeObserver((entries) => {
-                // Use requestAnimationFrame to throttle updates
-                requestAnimationFrame(() => {
-                    updateContainerHeight();
-                });
-            });
-            resizeObserver.observe(parentContainer);
-        }
-
-        // Window resize and orientation change listeners
-        const handleWindowResize = () => {
-            // Use requestAnimationFrame to throttle resize updates
-            requestAnimationFrame(() => {
-                updateContainerHeight();
-            });
-        };
-        
-        const handleOrientationChange = () => {
-            // Delay slightly to allow browser to finish orientation change
-            setTimeout(() => {
-                updateContainerHeight();
-            }, 100);
-        };
-        
-        if (typeof window !== 'undefined') {
-            window.addEventListener('resize', handleWindowResize);
-            window.addEventListener('orientationchange', handleOrientationChange);
-            // Also listen for visual viewport changes (better for mobile)
-            if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', handleWindowResize);
-            }
-        }
-
-        return () => {
-            clearTimeout(initialTimeout);
-            if (resizeObserver) {
-                resizeObserver.disconnect();
-            }
-            if (typeof window !== 'undefined') {
-                window.removeEventListener('resize', handleWindowResize);
-                window.removeEventListener('orientationchange', handleOrientationChange);
-                if (window.visualViewport) {
-                    window.visualViewport.removeEventListener('resize', handleWindowResize);
-                }
-            }
-        };
-    }, [projectDetails.is3DView]);
-
     useEffect(() => {
         if (projectDetails.is3DView) {
             setSidebarOpen(false);
@@ -994,7 +977,7 @@ const ProjectDetails = () => {
         <nav className="plan-view-tabs" aria-label="Plan views">
             <button
                 type="button"
-                onClick={() => projectDetails.setCurrentView('wall-plan')}
+                onClick={() => handlePlanViewChange('wall-plan')}
                 className={
                     projectDetails.currentView === 'wall-plan'
                         ? 'plan-view-tab-active-blue'
@@ -1006,7 +989,7 @@ const ProjectDetails = () => {
             </button>
             <button
                 type="button"
-                onClick={() => projectDetails.setCurrentView('ceiling-plan')}
+                onClick={() => handlePlanViewChange('ceiling-plan')}
                 disabled={!hasRooms}
                 className={
                     !hasRooms
@@ -1021,7 +1004,7 @@ const ProjectDetails = () => {
             </button>
             <button
                 type="button"
-                onClick={() => projectDetails.setCurrentView('floor-plan')}
+                onClick={() => handlePlanViewChange('floor-plan')}
                 disabled={!hasRooms}
                 title={hasRooms ? `${panelRoomCount} panel room(s)` : 'Add rooms first'}
                 className={
@@ -1040,7 +1023,7 @@ const ProjectDetails = () => {
             </button>
             <button
                 type="button"
-                onClick={() => projectDetails.setCurrentView('installation-estimator')}
+                onClick={() => handlePlanViewChange('installation-estimator')}
                 className={
                     projectDetails.currentView === 'installation-estimator'
                         ? 'plan-view-tab-active-orange'
@@ -1057,9 +1040,9 @@ const ProjectDetails = () => {
     );
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 project-details-container transition-colors">
+        <div className="h-screen max-h-screen flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 project-details-container transition-colors">
             {/* Wrapper to contain header and content for full-width header */}
-            <div className="w-full" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '100%' }}>
+            <div className="flex flex-col flex-1 min-h-0 overflow-hidden w-full" style={{ minWidth: 0, maxWidth: '100%' }}>
             {/* Full-Screen Loading Modal for Image Capture */}
             {isCapturingImages && (
                 <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
@@ -1126,25 +1109,25 @@ const ProjectDetails = () => {
             )}
 
             {/* Navigation Bar */}
-            <div className="project-details-nav sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
-                <div className="w-full px-4 sm:px-6 py-3" style={{ width: '100%' }}>
+            <div className="project-details-nav shrink-0 sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
+                <div className="w-full px-3 sm:px-4 py-2" style={{ width: '100%' }}>
                     <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center space-x-2 sm:space-x-4">
+                        <div className="flex items-center space-x-1.5 sm:space-x-2">
                             {!projectDetails.is3DView && isWallPlanView && (
                             <>
                             <button
                                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                                className="lg:hidden flex items-center px-2 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="lg:hidden flex items-center px-1.5 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                                 aria-label="Toggle controls menu"
                             >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                                 </svg>
                             </button>
                             {controlsSidebarCollapsed && (
                                 <button
                                     onClick={() => setControlsSidebarCollapsed(false)}
-                                    className="hidden lg:flex items-center px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                                    className="hidden lg:flex items-center px-2 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
                                 >
                                     Show Controls
                                 </button>
@@ -1153,33 +1136,55 @@ const ProjectDetails = () => {
                             )}
                             <button
                                 onClick={() => navigate(getProjectsListPath())}
-                                className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                             >
-                                <FaArrowLeft className="w-4 h-4 sm:mr-2" />
+                                <FaArrowLeft className="w-3.5 h-3.5 sm:mr-1.5" />
                                 <span className="hidden sm:inline">Back to Projects</span>
                             </button>
-                            <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
-                            <div className="flex items-center text-gray-900 dark:text-gray-100">
-                                <FaCube className="w-5 h-5 mr-2 text-blue-600" />
+                            <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                            <div className="flex items-center text-sm text-gray-900 dark:text-gray-100">
+                                <FaCube className="w-3.5 h-3.5 mr-1.5 text-blue-600 dark:text-blue-400" />
                                 <span className="font-medium hidden sm:inline">Project View</span>
                             </div>
+                            <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                            <button
+                                type="button"
+                                onClick={handleToggle3DView}
+                                className={`flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                                    projectDetails.is3DView
+                                        ? 'btn-primary'
+                                        : 'btn-secondary'
+                                }`}
+                            >
+                                {projectDetails.is3DView ? (
+                                    <>
+                                        <FaSquare className="mr-1.5 text-xs" />
+                                        2D View
+                                    </>
+                                ) : (
+                                    <>
+                                        <FaCube className="mr-1.5 text-xs" />
+                                        3D View
+                                    </>
+                                )}
+                            </button>
                         </div>
                         
-                        <div className="flex items-center space-x-2 sm:space-x-3">
+                        <div className="flex items-center space-x-1.5 sm:space-x-2">
                             <AuthStatusBar />
                             <button
                                 onClick={() => navigate(getProjectsListPath())}
-                                className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                             >
-                                <FaHome className="w-4 h-4 sm:mr-2" />
+                                <FaHome className="w-3.5 h-3.5 sm:mr-1.5" />
                                 <span className="hidden sm:inline">Projects</span>
                             </button>
-                            <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
+                            <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
                             <button
                                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                                className="flex items-center px-2 sm:px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                             >
-                                <svg className="w-4 h-4 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3.5 h-3.5 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                                 </svg>
                                 <span className="hidden sm:inline">Top</span>
@@ -1190,7 +1195,7 @@ const ProjectDetails = () => {
             </div>
 
             {!canEdit && (
-                <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-sm text-amber-800">
+                <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-sm text-amber-800">
                     {isAuthenticated ? (
                         'View-only access (Salesman). You can navigate all tabs, view 3D, export, and leave customer feedback comments — but cannot edit walls, rooms, levels, or plans.'
                     ) : (
@@ -1204,21 +1209,21 @@ const ProjectDetails = () => {
             )}
 
             {/* Header Section */}
-            <div className="project-details-header bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
-                <div className="w-full px-4 sm:px-6 lg:px-8 py-3" style={{ width: '100%' }}>
+            <div className="project-details-header shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
+                <div className="w-full px-3 sm:px-4 lg:px-6 py-2" style={{ width: '100%' }}>
                     <div
-                        className={`flex flex-col gap-2 w-full min-w-0 lg:grid lg:items-center lg:gap-3 ${
+                        className={`flex flex-col gap-1.5 w-full min-w-0 lg:grid lg:items-center lg:gap-2 ${
                             projectDetails.is3DView
                                 ? 'lg:grid-cols-[minmax(0,1fr)_auto]'
-                                : 'lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)_auto]'
+                                : 'lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_auto]'
                         }`}
                     >
                         <div className="min-w-0">
                     {(!projectDetails.project || !projectDetails.project.name) ? (
-                                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-gray-100">Loading project...</h1>
+                                <h1 className="text-base sm:text-lg lg:text-xl font-bold text-gray-900 dark:text-gray-100">Loading project...</h1>
                             ) : (
                                 <h1
-                                    className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-gray-100 truncate"
+                                    className="text-base sm:text-lg lg:text-xl font-bold text-gray-900 dark:text-gray-100 truncate"
                                     title={projectDetails.project.name}
                                 >
                                     {projectDetails.project.name}
@@ -1226,7 +1231,7 @@ const ProjectDetails = () => {
                             )}
                             {projectDetails.project && (
                                 <p
-                                    className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 truncate"
+                                    className="text-[11px] text-gray-600 dark:text-gray-400 truncate leading-tight"
                                     title={`${projectDetails.project?.width ?? '—'} × ${projectDetails.project?.length ?? '—'} × ${effectiveProjectHeight} mm`}
                                 >
                                     {(projectDetails.project?.width ?? '—')} × {(projectDetails.project?.length ?? '—')} × {effectiveProjectHeight} mm
@@ -1235,55 +1240,52 @@ const ProjectDetails = () => {
                         </div>
 
                         {!projectDetails.is3DView ? (
-                            <div className="min-w-0 overflow-hidden lg:col-start-2">
+                            <div className="min-w-0 lg:col-start-2">
                                 {renderPlanViewTabs()}
                             </div>
                         ) : null}
                         
-                        {/* View Toggle Buttons */}
+                        {/* Header actions */}
                         <div
-                            className={`flex flex-wrap items-center gap-2 sm:gap-2 shrink-0 lg:justify-self-end ${
+                            className={`flex flex-wrap items-center gap-1.5 shrink-0 lg:justify-self-end ${
                                 projectDetails.is3DView ? 'lg:col-start-2' : 'lg:col-start-3'
                             }`}
                         >
-                            <button
-                                onClick={() => {
-                                    const newViewState = !projectDetails.is3DView;
-                                    if (projectDetails.is3DView) {
-                                        // Force cleanup when switching from 3D to 2D
-                                        projectDetails.forceCleanup3D();
-                                    }
-                                    projectDetails.setIs3DView(newViewState);
-                                }}
-                                className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                                    projectDetails.is3DView 
-                                        ? 'btn-primary' 
-                                        : 'btn-secondary'
-                                }`}
-                            >
-                                {projectDetails.is3DView ? (
-                                    <>
-                                        <FaSquare className="mr-2" />
-                                        2D View
-                                    </>
-                                ) : (
-                                    <>
-                                        <FaCube className="mr-2" />
-                                        3D View
-                                    </>
-                                )}
-                            </button>
+                            {canEdit && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => projectDetails.undoProjectAction()}
+                                        disabled={!projectDetails.canUndoProject}
+                                        className="flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Undo (Ctrl+Z)"
+                                    >
+                                        <FaUndo className="mr-1.5 text-xs" />
+                                        <span className="hidden sm:inline">Undo</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => projectDetails.redoProjectAction()}
+                                        disabled={!projectDetails.canRedoProject}
+                                        className="flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Redo (Ctrl+Y)"
+                                    >
+                                        <FaRedo className="mr-1.5 text-xs" />
+                                        <span className="hidden sm:inline">Redo</span>
+                                    </button>
+                                </>
+                            )}
                             {isAuthenticated && (
                                 <button
                                     type="button"
                                     onClick={() => setCommentsPanelOpen((open) => !open)}
-                                    className={`relative flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                    className={`relative flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
                                         commentsPanelOpen
                                             ? 'bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-900/40 dark:text-amber-100 dark:border-amber-600'
                                             : 'btn-secondary'
                                     }`}
                                 >
-                                    <FaComment className="mr-2" />
+                                    <FaComment className="mr-1.5 text-xs" />
                                     {canComment ? 'Feedback' : 'Comments'}
                                     {!canComment && unreadCommentCount > 0 && !commentsPanelOpen && (
                                         <span
@@ -1299,105 +1301,133 @@ const ProjectDetails = () => {
                                 <button
                                     type="button"
                                     onClick={() => handleTogglePlanAnnotateMode(!planAnnotateMode)}
-                                    className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                                    className={`flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
                                         planAnnotateMode
                                             ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-900/40 dark:text-blue-100 dark:border-blue-600'
                                             : 'btn-secondary'
                                     }`}
                                 >
-                                    <FaStickyNote className="mr-2" />
+                                    <FaStickyNote className="mr-1.5 text-xs" />
                                     Plan notes
                                 </button>
                             )}
                             {projectDetails.currentView === 'wall-plan' && (
                                 <>
-                            <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full sm:w-auto">
-                                <FaLayerGroup className="text-blue-600 hidden sm:block" />
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-                                    <select
-                                        value={projectDetails.activeStoreyId ?? ''}
-                                        onChange={(e) => {
-                                            const value = e.target.value;
-                                            if (value === '' || value === undefined) {
-                                                return;
-                                            }
-                                            const numericValue = Number(value);
-                                            projectDetails.setActiveStoreyId(Number.isNaN(numericValue) ? value : numericValue);
-                                        }}
-                                        className="form-control w-full sm:min-w-[140px]"
-                                    >
-                                        {projectDetails.storeys.length === 0 && (
-                                            <option value="">No levels</option>
+                            <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                            <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+                                <FaLayerGroup className="text-blue-600 dark:text-blue-400 hidden sm:block shrink-0 text-sm" />
+                                <select
+                                    value={projectDetails.activeStoreyId ?? ''}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        if (value === '' || value === undefined) {
+                                            return;
+                                        }
+                                        const numericValue = Number(value);
+                                        projectDetails.setActiveStoreyId(Number.isNaN(numericValue) ? value : numericValue);
+                                    }}
+                                    className="form-control min-w-0 w-full sm:min-w-[112px] sm:w-auto"
+                                >
+                                    {projectDetails.storeys.length === 0 && (
+                                        <option value="">No levels</option>
+                                    )}
+                                    {projectDetails.storeys.map((storey) => (
+                                        <option key={storey.id} value={storey.id}>
+                                            {storey.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                {canEdit && (
+                                    <div className="relative shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => setLevelActionsMenuOpen((open) => !open)}
+                                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs sm:text-sm font-medium border transition-colors whitespace-nowrap ${
+                                                projectDetails.isLevelEditMode
+                                                    ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-100 dark:border-amber-600 dark:hover:bg-amber-900/60'
+                                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700'
+                                            }`}
+                                            title="Level actions"
+                                            aria-expanded={levelActionsMenuOpen}
+                                            aria-haspopup="menu"
+                                        >
+                                            <FaCog className="w-3 h-3 shrink-0" />
+                                            <span className="hidden sm:inline">Manage</span>
+                                            <FaChevronDown className={`w-3 h-3 shrink-0 transition-transform ${levelActionsMenuOpen ? 'rotate-180' : ''}`} />
+                                        </button>
+                                        {levelActionsMenuOpen && (
+                                            <>
+                                                <div
+                                                    className="fixed inset-0 z-10"
+                                                    onClick={() => setLevelActionsMenuOpen(false)}
+                                                />
+                                                <div
+                                                    className="absolute right-0 top-full mt-1 z-20 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg py-1 text-sm text-gray-900 dark:text-gray-100"
+                                                    role="menu"
+                                                >
+                                                    {projectDetails.isLevelEditMode ? (
+                                                        <button
+                                                            type="button"
+                                                            role="menuitem"
+                                                            className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-amber-700 dark:text-amber-300"
+                                                            onClick={() => {
+                                                                projectDetails.exitLevelEditMode();
+                                                                setLevelActionsMenuOpen(false);
+                                                            }}
+                                                        >
+                                                            <FaTimes className="w-3 h-3 shrink-0" />
+                                                            Exit Edit Level
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            role="menuitem"
+                                                            className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                                                            onClick={() => {
+                                                                projectDetails.enterLevelEditMode();
+                                                                setLevelActionsMenuOpen(false);
+                                                            }}
+                                                        >
+                                                            <FaEdit className="w-3 h-3 shrink-0" />
+                                                            Edit Level
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        role="menuitem"
+                                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                                                        onClick={() => {
+                                                            projectDetails.openStoreyWizard();
+                                                            setLevelActionsMenuOpen(false);
+                                                        }}
+                                                    >
+                                                        <FaPlus className="w-3 h-3 shrink-0" />
+                                                        Add Level
+                                                    </button>
+                                                    <div className="my-1 border-t border-gray-200 dark:border-gray-600" />
+                                                    <button
+                                                        type="button"
+                                                        role="menuitem"
+                                                        className="w-full px-3 py-2 text-left hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-2 text-red-600 dark:text-red-400"
+                                                        onClick={() => {
+                                                            setLevelActionsMenuOpen(false);
+                                                            handleDeleteActiveStorey();
+                                                        }}
+                                                    >
+                                                        <FaTrash className="w-3 h-3 shrink-0" />
+                                                        Delete Level
+                                                    </button>
+                                                </div>
+                                            </>
                                         )}
-                                        {projectDetails.storeys.map((storey) => (
-                                            <option key={storey.id} value={storey.id}>
-                                                {storey.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {canEdit && (
-                                        <>
-                                    {projectDetails.isLevelEditMode ? (
-                                        <button
-                                            onClick={projectDetails.exitLevelEditMode}
-                                            className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors whitespace-nowrap"
-                                        >
-                                            Exit Edit Level
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={projectDetails.enterLevelEditMode}
-                                            className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 transition-colors whitespace-nowrap"
-                                        >
-                                            Edit Level
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={() => {
-                                            if (!projectDetails.activeStoreyId) {
-                                                return;
-                                            }
-                                            const activeId = projectDetails.activeStoreyId;
-                                            const sortedStoreys = [...(projectDetails.storeys || [])]
-                                                .sort((a, b) => {
-                                                    const orderDiff = (a.order ?? 0) - (b.order ?? 0);
-                                                    if (orderDiff !== 0) return orderDiff;
-                                                    const elevationDiff = (a.elevation_mm ?? 0) - (b.elevation_mm ?? 0);
-                                                    if (Math.abs(elevationDiff) > 1e-6) return elevationDiff;
-                                                    return (a.id ?? 0) - (b.id ?? 0);
-                                                });
-                                            const lowest = sortedStoreys[0];
-                                            if (lowest && String(lowest.id) === String(activeId)) {
-                                                projectDetails.setStoreyError('Ground floor cannot be deleted.');
-                                                setTimeout(() => projectDetails.setStoreyError(''), 4000);
-                                                return;
-                                            }
-                                            if (window.confirm('Delete this level? Rooms, walls, and panels on this storey will be removed.')) {
-                                                projectDetails.deleteStorey(activeId);
-                                            }
-                                        }}
-                                        className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-red-100 text-red-600 hover:bg-red-200 transition-colors whitespace-nowrap"
-                                        title="Delete selected level"
-                                    >
-                                        <span className="hidden sm:inline">Delete Level</span>
-                                        <span className="sm:hidden">Delete</span>
-                                    </button>
-                                    <button
-                                        onClick={projectDetails.openStoreyWizard}
-                                        className="px-3 py-1 rounded-lg text-xs sm:text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
-                                    >
-                                        Add Level
-                                    </button>
-                                        </>
-                                    )}
-                                    {projectDetails.isStoreyLoading && (
-                                        <span className="text-xs text-gray-400">Loading...</span>
-                                    )}
-                                    {projectDetails.storeyError && (
-                                        <span className="text-xs text-red-500">{projectDetails.storeyError}</span>
-                                    )}
-                                </div>
+                                    </div>
+                                )}
+                                {projectDetails.isStoreyLoading && (
+                                    <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">Loading...</span>
+                                )}
+                                {projectDetails.storeyError && (
+                                    <span className="text-xs text-red-500 dark:text-red-400">{projectDetails.storeyError}</span>
+                                )}
                             </div>
                                 </>
                             )}
@@ -1407,7 +1437,8 @@ const ProjectDetails = () => {
             </div>
             
             {canEdit && projectDetails.currentView === 'wall-plan' && projectDetails.isLevelEditMode && (
-                <div className="max-w-7xl mx-auto px-6 mt-4">
+                <div className="shrink-0 max-h-[min(40vh,320px)] overflow-y-auto overscroll-y-contain border-b border-amber-200/80">
+                <div className="max-w-7xl mx-auto px-6 py-4">
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <div>
@@ -1596,11 +1627,12 @@ const ProjectDetails = () => {
                         </div>
                     </div>
                 </div>
+                </div>
             )}
 
             {/* Define Room Container - Above Canvas */}
             {canEdit && projectDetails.currentMode === 'define-room' && (
-                <div className="w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors">
+                <div className="shrink-0 w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors">
                     {/* Room Definition Header */}
                     <div className="p-4 border-b border-gray-200">
                         <div className="max-w-4xl mx-auto">
@@ -1731,7 +1763,7 @@ const ProjectDetails = () => {
                 </div>
             )}
 
-            <div className="flex min-h-[calc(100vh-120px)] relative" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
+            <div className="project-details-workspace flex flex-1 min-h-0 overflow-hidden relative" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
                 {/* Mobile Sidebar Overlay (hidden in 3D: sidebar not used) */}
                 {sidebarOpen && !projectDetails.is3DView && isWallPlanView && (
                     <div 
@@ -1742,7 +1774,7 @@ const ProjectDetails = () => {
                 
                 {/* Left Sidebar - wall plan drawing tools only (ceiling/floor use canvas Plan Details) */}
                 {!projectDetails.is3DView && isWallPlanView && (
-                <div className={`fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shadow-sm overflow-y-auto sidebar-scroll transition-all duration-300 ease-in-out w-80 min-w-[300px] max-w-[340px] ${
+                <div className={`controls-sidebar-scroll fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shadow-sm lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain transition-all duration-300 ease-in-out w-80 min-w-[300px] max-w-[340px] ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''}`}>
                     <div className="p-4 sm:p-6">
@@ -1874,9 +1906,9 @@ const ProjectDetails = () => {
 
                                 {/* Edit Wall Mode Controls */}
                                 {projectDetails.currentMode === 'edit-wall' && (
-                                    <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200 shadow-sm space-y-4">
+                                    <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-gray-800 dark:to-gray-800 rounded-lg border border-green-200 dark:border-green-700 shadow-sm space-y-4">
                                         <div className="flex items-center justify-between mb-2">
-                                            <label className="block text-xs font-semibold text-green-800 uppercase tracking-wide">Edit Wall Mode</label>
+                                            <label className="block text-xs font-semibold text-green-800 dark:text-green-200 uppercase tracking-wide">Edit Wall Mode</label>
                                             <button
                                                 onClick={() => {
                                                     projectDetails.setCurrentMode(null);
@@ -1893,7 +1925,7 @@ const ProjectDetails = () => {
                                         </div>
                                         
                                         {/* Multi-Wall Selection Checkbox */}
-                                        <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-green-200">
+                                        <div className="flex items-center space-x-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-green-200 dark:border-green-600">
                                             <input
                                                 type="checkbox"
                                                 id="multi-wall-edit"
@@ -1906,16 +1938,16 @@ const ProjectDetails = () => {
                                                         projectDetails.setSelectedWall(null);
                                                     }
                                                 }}
-                                                className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                                                className="w-4 h-4 text-green-600 border-gray-300 dark:border-gray-500 rounded focus:ring-green-500 dark:bg-gray-700"
                                             />
-                                            <label htmlFor="multi-wall-edit" className="text-sm font-medium text-green-800 cursor-pointer">
+                                            <label htmlFor="multi-wall-edit" className="text-sm font-medium text-green-800 dark:text-gray-100 cursor-pointer">
                                                 Select Multiple Walls
                                             </label>
                                         </div>
 
                                         {/* Single Wall Selection Info */}
                                         {!projectDetails.isMultiWallEditMode && (
-                                            <div className="text-sm text-green-700 p-3 bg-white rounded-lg border border-green-200">
+                                            <div className="text-sm text-green-700 dark:text-gray-200 p-3 bg-white dark:bg-gray-800 rounded-lg border border-green-200 dark:border-green-600">
                                                 <p>Click on a wall on the canvas to select and edit it.</p>
                                             </div>
                                         )}
@@ -1923,10 +1955,10 @@ const ProjectDetails = () => {
                                         {/* Multi-Wall Selection Info and Button */}
                                         {projectDetails.isMultiWallEditMode && (
                                             <div className="space-y-3">
-                                                <div className="text-sm text-green-700 p-3 bg-white rounded-lg border border-green-200">
+                                                <div className="text-sm text-green-700 dark:text-gray-200 p-3 bg-white dark:bg-gray-800 rounded-lg border border-green-200 dark:border-green-600">
                                                     <p>Click on walls on the canvas to select multiple walls for editing.</p>
                                                     {projectDetails.selectedWallsForEdit.length > 0 && (
-                                                        <p className="mt-2 font-medium">
+                                                        <p className="mt-2 font-medium text-green-900 dark:text-green-100">
                                                             {projectDetails.selectedWallsForEdit.length} wall(s) selected
                                                         </p>
                                                     )}
@@ -2066,8 +2098,8 @@ const ProjectDetails = () => {
 
                                 {/* Merge Confirmation */}
                         {projectDetails.currentMode === 'merge-wall' && (
-                                    <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200 shadow-sm">
-                                        <p className="text-sm text-yellow-800 mb-3 font-medium">
+                                    <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-gray-800 dark:to-gray-800 rounded-lg border border-yellow-200 dark:border-amber-700 shadow-sm">
+                                        <p className="text-sm text-yellow-800 dark:text-amber-100 mb-3 font-medium">
                                             Select exactly 2 walls to merge
                                         </p>
                             <button
@@ -2089,12 +2121,12 @@ const ProjectDetails = () => {
                                 )}
 
                                 {projectDetails.currentMode === 'split-wall' && (
-                                    <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 shadow-sm space-y-3">
-                                        <p className="text-sm text-emerald-800 font-medium">
+                                    <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-gray-800 rounded-lg border border-emerald-200 dark:border-teal-700 shadow-sm space-y-3">
+                                        <p className="text-sm text-emerald-800 dark:text-teal-100 font-medium">
                                             Select a wall, then either click along it to split at a snapped point,
                                             or enter an exact distance in the split panel beside the canvas.
                                         </p>
-                                        <p className="text-xs text-emerald-700">
+                                        <p className="text-xs text-emerald-700 dark:text-teal-200">
                                             Tip: the preview marker updates as you move the cursor over the selected wall.
                                         </p>
                                     </div>
@@ -2149,39 +2181,54 @@ const ProjectDetails = () => {
                 </div>
                 )}
 
-                {/* Main Content Area - min-h-0 so flex child can shrink; overflow-auto so tab content scrolls inside viewport */}
-                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                {/* Main Content Area - scrolls independently from edit sidebar */}
+                <div className="project-details-main flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
                     {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom; tighter margins in 3D for more canvas width */}
-                    <div className={`bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 canvas-container flex-1 flex flex-col min-h-0 overflow-auto ${
-                        projectDetails.is3DView ? 'm-2 sm:m-3' : 'm-3 sm:m-6'
+                    <div className={`bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 canvas-container flex-1 flex flex-col min-h-0 min-w-0 ${
+                        projectDetails.is3DView ? 'canvas-container-3d m-2 sm:m-3' : 'm-3 sm:m-6'
                     }`}>
                         {projectDetails.is3DView ? (
-                            <div className="flex flex-col">
+                            <div className="three-canvas-view flex flex-col flex-1 min-h-0">
                                 {/* Tab Navigation - Same structure as 2D */}
-                                <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                        <div className="flex flex-wrap gap-1 sm:space-x-1">
+                                <div className="px-3 sm:px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors shrink-0">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                                        <div className="flex flex-wrap gap-1">
                                             <button
                                                 onClick={projectDetails.handleViewToggle}
-                                                className="flex items-center px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 bg-green-600 text-white hover:bg-green-700 shadow-md"
+                                                className="flex items-center px-2 sm:px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 bg-green-600 text-white hover:bg-green-700 shadow-sm"
                                             >
                                                 {projectDetails.isInteriorView ? (
                                                     <>
-                                                        <FaEye className="mr-1 sm:mr-2" />
+                                                        <FaEye className="mr-1.5 text-xs" />
                                                         <span className="hidden sm:inline">Switch to Exterior</span>
                                                         <span className="sm:hidden">Exterior</span>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <FaEyeSlash className="mr-1 sm:mr-2" />
+                                                        <FaEyeSlash className="mr-1.5 text-xs" />
                                                         <span className="hidden sm:inline">Switch to Interior</span>
                                                         <span className="sm:hidden">Interior</span>
                                                     </>
                                                 )}
                                             </button>
                                             <button
+                                                onClick={projectDetails.toggleTourMode}
+                                                title={projectDetails.isTourMode ? 'Exit tour' : 'Pick a starting point and walk the model'}
+                                                className={`flex items-center px-2 sm:px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 shadow-sm ${
+                                                    projectDetails.isTourMode
+                                                        ? 'bg-violet-600 text-white hover:bg-violet-700'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 dark:border dark:border-gray-600'
+                                                }`}
+                                            >
+                                                <FaStreetView className="mr-1.5 text-xs" />
+                                                <span className="hidden sm:inline">
+                                                    {projectDetails.isTourMode ? 'Exit Tour' : 'Tour'}
+                                                </span>
+                                                <span className="sm:hidden">{projectDetails.isTourMode ? 'Exit' : 'Tour'}</span>
+                                            </button>
+                                            <button
                                                 onClick={projectDetails.togglePanelLines}
-                                                className={`flex items-center px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition-all duration-200 shadow-md ${
+                                                className={`flex items-center px-2 sm:px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 shadow-sm ${
                                                     projectDetails.showPanelLines 
                                                         ? 'bg-blue-600 text-white hover:bg-blue-700' 
                                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 dark:border dark:border-gray-600'
@@ -2191,22 +2238,28 @@ const ProjectDetails = () => {
                                                 <span className="sm:hidden">{projectDetails.showPanelLines ? 'Hide' : 'Show'}</span>
                                             </button>
                                         </div>
-                                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                                            <span className="font-medium">View:</span> {projectDetails.isInteriorView ? 'Interior' : 'Exterior'} • 
-                                            <span className="ml-1">Use pinch-to-zoom on mobile</span>
+                                        <div className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 leading-tight">
+                                            <span className="font-medium">View:</span>{' '}
+                                            {projectDetails.isTourMode
+                                                ? 'Tour'
+                                                : projectDetails.isInteriorView
+                                                ? 'Interior'
+                                                : 'Exterior'}{' '}
+                                            •
+                                            <span className="ml-1">
+                                                {projectDetails.isTourMode
+                                                    ? 'Click the floor to set start · Start tour or Enter · Esc cancel'
+                                                    : 'Use pinch-to-zoom on mobile'}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                {/* 3D Canvas Content */}
-                                <div className="relative w-full">
-                                    <div 
-                                        id="three-canvas-container" 
-                                        className="w-full bg-gray-50 dark:bg-gray-800 active relative overflow-visible transition-colors" 
-                                        style={{ 
-                                            height: `${threeDContainerHeight}px`,
-                                            minHeight: `${MIN_CANVAS_HEIGHT}px`
-                                        }}
+                                {/* 3D Canvas Content — fills remaining height (no page scroll) */}
+                                <div className="three-canvas-stage">
+                                    <div
+                                        id="three-canvas-container"
+                                        className="bg-gray-50 dark:bg-gray-800 active overflow-hidden transition-colors"
                                     />
                                 </div>
                             </div>
@@ -3335,8 +3388,20 @@ const ProjectDetails = () => {
                                     </div>
                                     )}
 
-                                    {/* Action Buttons at the Bottom Right */}
-                                    <div className="form-actions px-4 pb-4">
+                                    {/* Action Buttons: delete left, save right */}
+                                    <div className={`form-actions px-4 pb-4${projectDetails.selectedWall !== null ? ' !justify-between' : ''}`}>
+                                        {projectDetails.selectedWall !== null && (
+                                        <button
+                                            onClick={() => {
+                                                projectDetails.setWallToDelete(projectDetails.selectedWall);
+                                                projectDetails.setShowWallDeleteConfirm(true);
+                                            }}
+                                            className="form-btn-danger w-full sm:w-auto 
+                                                transition-colors text-sm font-medium"
+                                        >
+                                            Remove Wall
+                                        </button>
+                                        )}
                                         <button
                                             onClick={async () => {
                                                 if (projectDetails.selectedWallsForEdit.length > 0) {
@@ -3418,20 +3483,6 @@ const ProjectDetails = () => {
                                         >
                                             Save
                                         </button>
-                                        
-                                        {/* Remove Wall button - Only show for single wall */}
-                                        {projectDetails.selectedWall !== null && (
-                                        <button
-                                            onClick={() => {
-                                                projectDetails.setWallToDelete(projectDetails.selectedWall);
-                                                projectDetails.setShowWallDeleteConfirm(true);
-                                            }}
-                                            className="form-btn-danger w-full sm:w-auto 
-                                                transition-colors text-sm font-medium"
-                                        >
-                                            Remove Wall
-                                        </button>
-                                        )}
                                     </div>
                                 </div>
                     </div>
@@ -3677,7 +3728,7 @@ const ProjectDetails = () => {
             {/* Notification Banners */}
             {/* Database Connection Error */}
             {projectDetails.dbConnectionError && (
-                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg notification">
+                <div className="notification-banner-error top-4 px-4 py-3">
                     <div className="flex items-center">
                         <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -3689,25 +3740,25 @@ const ProjectDetails = () => {
 
             {/* Wall Delete Confirmation */}
             {projectDetails.showWallDeleteConfirm && (
-                <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-yellow-100 border border-yellow-400 text-yellow-800 px-6 py-4 rounded-lg shadow-lg notification">
+                <div className="notification-banner-warning top-20 px-6 py-4">
                     <div className="flex items-center gap-4">
-                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-6 h-6 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
                         <span className="font-medium">Are you sure you want to delete this wall?</span>
-                        <div className="flex gap-2">
-                                                            <button 
-                                    onClick={projectDetails.handleConfirmWallDelete} 
-                                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium btn-danger"
-                                >
-                                    Delete
-                                </button>
-                                <button 
-                                    onClick={projectDetails.handleCancelWallDelete} 
-                                    className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors font-medium btn-secondary"
-                                >
-                                    Cancel
-                                </button>
+                        <div className="flex gap-2 shrink-0">
+                            <button
+                                onClick={projectDetails.handleConfirmWallDelete}
+                                className="form-btn-danger px-4 py-2 text-sm"
+                            >
+                                Delete
+                            </button>
+                            <button
+                                onClick={projectDetails.handleCancelWallDelete}
+                                className="form-btn-secondary px-4 py-2 text-sm"
+                            >
+                                Cancel
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -3715,7 +3766,7 @@ const ProjectDetails = () => {
 
             {/* Success Messages */}
             {projectDetails.wallDeleteSuccess && (
-                <div className="fixed top-32 left-1/2 transform -translate-x-1/2 z-50 bg-green-100 border border-green-400 text-green-800 px-4 py-3 rounded-lg shadow-lg notification">
+                <div className="notification-banner-success top-32 px-4 py-3">
                     <div className="flex items-center">
                     <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3-9a1 1 0 10-2 0 1 1 0 002 0zm-1-4a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -3726,7 +3777,7 @@ const ProjectDetails = () => {
             )}
 
             {projectDetails.roomCreateSuccess && (
-                <div className="fixed top-40 left-1/2 transform -translate-x-1/2 z-50 bg-green-100 border border-green-400 text-green-800 px-4 py-3 rounded-lg shadow-lg notification">
+                <div className="notification-banner-success top-40 px-4 py-3">
                     <div className="flex items-center">
                     <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3-9a1 1 0 10-2 0 1 1 0 002 0zm-1-4a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -3738,7 +3789,7 @@ const ProjectDetails = () => {
 
             {/* Error Messages */}
             {projectDetails.roomError && (
-                <div className="fixed top-48 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg notification">
+                <div className="notification-banner-error top-48 px-4 py-3">
                     <div className="flex items-center">
                     <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -3749,7 +3800,7 @@ const ProjectDetails = () => {
             )}
 
             {projectDetails.projectLoadError && (
-                <div className="fixed top-56 left-1/2 transform -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg notification">
+                <div className="notification-banner-error top-56 px-4 py-3">
                     <div className="flex items-center">
                         <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -3780,6 +3831,8 @@ const ProjectDetails = () => {
                 onSelectComment={handleSelectComment}
                 onClearActiveComment={handleClearActiveComment}
                 onCommentsRead={handleCommentsRead}
+                onCommentStatusChanged={handleCommentStatusChanged}
+                highlightedWallCount={commentHighlightWallIds.length}
             />
 
             </div>

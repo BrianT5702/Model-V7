@@ -38,6 +38,8 @@ class CanAddProjectComment(BasePermission):
             return True
         if request.method == 'POST' and getattr(view, 'action', None) == 'mark_comments_read':
             return user_can_edit(request.user)
+        if request.method == 'PATCH' and getattr(view, 'action', None) == 'update_comment_status':
+            return user_can_edit(request.user)
         if request.method == 'POST':
             return user_can_comment(request.user)
         return False

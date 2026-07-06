@@ -10,8 +10,10 @@ import {
   getWallSegmentKey,
   getStoreyElevationMm,
 } from './projectUtils';
-import { normalizeWallCoordinates } from '../canvas/drawing';
+import { normalizeWallCoordinates, clearDimensionPlacementMemory } from '../canvas/drawing';
 import { doPolygonsOverlap } from '../canvas/utils';
+import useProjectHistory from './useProjectHistory';
+import { captureProjectSnapshot, restoreProjectSnapshot } from './projectHistorySync';
 
 export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   // State
@@ -29,6 +31,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const [isMultiWallEditMode, setIsMultiWallEditMode] = useState(false);
   const [is3DView, setIs3DView] = useState(false);
   const [isInteriorView, setIsInteriorView] = useState(false);
+  const [isTourMode, setIsTourMode] = useState(false);
   const threeCanvasInstance = useRef(null);
   const [showRoomManager, setShowRoomManager] = useState(false);
   const [selectedWallsForRoom, setSelectedWallsForRoom] = useState([]);
@@ -54,6 +57,15 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const [showDoorManager, setShowDoorManager] = useState(false);
   const [doors, setDoors] = useState([]);
   const [filteredDoors, setFilteredDoors] = useState([]);
+  const wallsRef = useRef(walls);
+  const roomsRef = useRef(rooms);
+  const doorsRef = useRef(doors);
+  const historySyncInFlightRef = useRef(false);
+  const historySyncTimerRef = useRef(null);
+  const historyTargetSnapshotRef = useRef(null);
+  const historySyncGenerationRef = useRef(0);
+  const historyResyncNeededRef = useRef(false);
+  const [isHistoryBusy, setIsHistoryBusy] = useState(false);
   const [planAnnotations, setPlanAnnotations] = useState([]);
   const [filteredPlanAnnotations, setFilteredPlanAnnotations] = useState([]);
   const [editingDoor, setEditingDoor] = useState(null);
@@ -82,6 +94,18 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     if (!activeStoreyId) return null;
     return storeys.find(storey => String(storey.id) === String(activeStoreyId)) || null;
   }, [storeys, activeStoreyId]);
+  useEffect(() => {
+    wallsRef.current = walls;
+  }, [walls]);
+
+  useEffect(() => {
+    roomsRef.current = rooms;
+  }, [rooms]);
+
+  useEffect(() => {
+    doorsRef.current = doors;
+  }, [doors]);
+
   useEffect(() => {
     api.get('/csrf-token/').catch((error) => {
       console.warn('Failed to prefetch CSRF token:', error);
@@ -421,7 +445,6 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       storeys[storeys.length - 1] ||
       null;
 
-    const nextOrder = (storeys[storeys.length - 1]?.order ?? storeys.length - 1) + 1;
     const defaultName = baseStorey
       ? `${baseStorey.name} +1`
       : `Level ${storeys.length + 1}`;
@@ -563,7 +586,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     setSelectedWallsForRoom((prev) =>
       prev.filter((wallId) => filteredWalls.some((wall) => wall.id === wallId))
     );
-  }, [filteredWalls]);
+  }, [filteredWalls, selectedWallsForRoom.length]);
 
   useEffect(() => {
     if (!activeStoreyId) {
@@ -1000,7 +1023,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     if (currentMode === 'storey-area') {
       setCurrentMode(null);
     }
-  }, [selectionContext, selectedRoomPoints, currentMode]);
+  }, [selectionContext, selectedRoomPoints, currentMode, storeyWizardDefaultHeight]);
 
   // Function to update shared panel data from any tab
   // Memoized to prevent unnecessary re-renders and wrapped in useCallback
@@ -1071,7 +1094,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   }, []); // Empty dependency array - function doesn't depend on any props/state
   
   // Function to update canvas images
-  const updateCanvasImage = (planType, imageData) => {
+  const updateCanvasImage = useCallback((planType, imageData) => {
     setSharedPanelData(prev => {
       // Special handling for wallPlansByStorey (array of storey-specific plans)
       if (planType === 'wallPlansByStorey' && Array.isArray(imageData)) {
@@ -1091,7 +1114,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     } else {
       console.log(`📸 Stored ${planType} plan image in shared data`);
     }
-  };
+  }, []);
   
   // Sum panel quantities (each item can have .quantity > 1); fallback to array length for legacy data
   const sumPanelQuantities = (arr) => (arr || []).reduce((sum, p) => sum + (p?.quantity ?? 1), 0);
@@ -1167,13 +1190,166 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     );
   };
 
+  const syncProjectEntitiesFromApi = useCallback(async () => {
+    const [wallsResponse, roomsResponse, doorsResponse, intersectionsResponse] = await Promise.all([
+      api.get(`/projects/${projectId}/walls/`),
+      api.get(`/rooms/?project=${projectId}`),
+      api.get(`/doors/?project=${projectId}`),
+      api.get(`/intersections/?project=${projectId}`),
+    ]);
+    const wallsData = wallsResponse.data || [];
+    const roomsData = Array.isArray(roomsResponse.data) ? roomsResponse.data : [];
+    const doorsData = doorsResponse.data || [];
+    setWalls(wallsData);
+    setRooms(roomsData);
+    setDoors(doorsData);
+    setJoints(intersectionsResponse.data || []);
+    return captureProjectSnapshot(wallsData, roomsData, doorsData);
+  }, [projectId]);
+
+  const snapshotsEntityIdsMatch = useCallback((targetSnapshot, wallsData, roomsData, doorsData) => {
+    const idsMatch = (targetItems, currentItems) => {
+      const targetIds = (targetItems || []).map((item) => item.id).sort((a, b) => a - b);
+      const currentIds = (currentItems || []).map((item) => item.id).sort((a, b) => a - b);
+      if (targetIds.length !== currentIds.length) {
+        return false;
+      }
+      return targetIds.every((id, index) => id === currentIds[index]);
+    };
+    return (
+      idsMatch(targetSnapshot.walls, wallsData)
+      && idsMatch(targetSnapshot.rooms, roomsData)
+      && idsMatch(targetSnapshot.doors, doorsData)
+    );
+  }, []);
+
+  const drainHistorySync = useCallback(async () => {
+    const snapshot = historyTargetSnapshotRef.current;
+    if (!snapshot || historySyncInFlightRef.current) {
+      return;
+    }
+
+    const syncGeneration = historySyncGenerationRef.current;
+    historySyncInFlightRef.current = true;
+    setIsHistoryBusy(true);
+    try {
+      const result = await restoreProjectSnapshot(api, projectId, snapshot);
+
+      // User undid/redid further while this sync was running — keep the newer canvas.
+      if (historySyncGenerationRef.current !== syncGeneration) {
+        return;
+      }
+
+      const idsAlreadyMatch = snapshotsEntityIdsMatch(
+        snapshot,
+        wallsRef.current,
+        roomsRef.current,
+        doorsRef.current
+      );
+
+      if (!idsAlreadyMatch) {
+        setWalls(result.walls);
+        setRooms(result.rooms);
+        setDoors(result.doors);
+      }
+
+      if (result.needsIntersectionRefresh) {
+        try {
+          const intersectionsResponse = await api.get(`/intersections/?project=${projectId}`);
+          setJoints(intersectionsResponse.data || []);
+        } catch (intersectionError) {
+          console.warn('Could not refresh intersections after undo/redo:', intersectionError);
+        }
+        if (threeCanvasInstance.current?.buildModel) {
+          threeCanvasInstance.current.buildModel();
+        }
+      }
+    } catch (error) {
+      console.error('Undo/redo sync failed, refetching project state:', error);
+      try {
+        await syncProjectEntitiesFromApi();
+      } catch (syncError) {
+        console.warn('Failed to recover project state after undo/redo error:', syncError);
+      }
+    } finally {
+      historySyncInFlightRef.current = false;
+      setIsHistoryBusy(false);
+      if (historyResyncNeededRef.current) {
+        historyResyncNeededRef.current = false;
+        void drainHistorySync();
+      }
+    }
+  }, [projectId, syncProjectEntitiesFromApi, snapshotsEntityIdsMatch]);
+
+  const scheduleHistorySync = useCallback(() => {
+    if (historySyncInFlightRef.current) {
+      historyResyncNeededRef.current = true;
+      return;
+    }
+    if (historySyncTimerRef.current) {
+      clearTimeout(historySyncTimerRef.current);
+    }
+    historySyncTimerRef.current = setTimeout(() => {
+      historySyncTimerRef.current = null;
+      void drainHistorySync();
+    }, 200);
+  }, [drainHistorySync]);
+
+  const applyHistorySnapshot = useCallback((snapshot) => {
+    clearDimensionPlacementMemory();
+    historySyncGenerationRef.current += 1;
+    historyTargetSnapshotRef.current = snapshot;
+    setWalls(snapshot.walls || []);
+    setRooms(snapshot.rooms || []);
+    setDoors(snapshot.doors || []);
+    scheduleHistorySync();
+  }, [scheduleHistorySync]);
+
+  const projectHistory = useProjectHistory({ onApplySnapshot: applyHistorySnapshot });
+
+  const commitHistoryAction = useCallback(async (label, actionFn) => {
+    if (!canEdit || historySyncInFlightRef.current) {
+      return actionFn();
+    }
+    const beforeSnapshot = captureProjectSnapshot(
+      wallsRef.current,
+      roomsRef.current,
+      doorsRef.current
+    );
+    try {
+      const result = await actionFn();
+      const afterSnapshot = await syncProjectEntitiesFromApi();
+      projectHistory.push({
+        label,
+        undoSnapshot: beforeSnapshot,
+        redoSnapshot: afterSnapshot,
+      });
+      return result;
+    } catch (error) {
+      try {
+        await syncProjectEntitiesFromApi();
+      } catch (syncError) {
+        console.warn('Failed to resync project entities after history action error:', syncError);
+      }
+      throw error;
+    }
+  }, [canEdit, projectHistory, syncProjectEntitiesFromApi]);
+
+  const undoProjectAction = useCallback(() => {
+    return projectHistory.undo();
+  }, [projectHistory]);
+
+  const redoProjectAction = useCallback(() => {
+    return projectHistory.redo();
+  }, [projectHistory]);
+
   // Add resetAllSelections utility – clears all selection state (e.g. when closing a tab/panel with "x")
-  const resetAllSelections = () => {
+  const resetAllSelections = useCallback(() => {
     setSelectedWall(null);
     setSelectedWallsForEdit([]);
     setSelectedWallsForRoom([]);
     setEditingRoom(null);
-    updateRoomPointsAndDetectWalls([]);
+    setSelectedRoomPoints([]);
     setCurrentMode(null);
     setShowWallEditor(false);
     setShowRoomManagerModal(false);
@@ -1189,7 +1365,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     setRoomError('');
     setWallMergeSuccess(false);
     setSelectionContext('room');
-  };
+  }, []);
 
   // Fetch project details (parallel requests for faster load)
   const fetchProjectDetails = async () => {
@@ -1252,10 +1428,23 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
   useEffect(() => {
     if (projectId && projectId !== 'undefined' && projectId !== 'null') {
+      if (historySyncTimerRef.current) {
+        clearTimeout(historySyncTimerRef.current);
+        historySyncTimerRef.current = null;
+      }
+      projectHistory.clear();
       fetchProjectDetails();
     }
     // eslint-disable-next-line
   }, [projectId]);
+
+  useEffect(() => {
+    return () => {
+      if (historySyncTimerRef.current) {
+        clearTimeout(historySyncTimerRef.current);
+      }
+    };
+  }, []);
 
   // 3D view effect
   useEffect(() => {
@@ -1272,6 +1461,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
               rooms: rooms || []
             } : null;
             const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors, 0.01, projectWithData);
+            threeCanvas.onTourChange = (active) => setIsTourMode(active);
             threeCanvasInstance.current = threeCanvas;
           } catch (error) {
             console.error('Error creating 3D canvas:', error);
@@ -1311,6 +1501,15 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     // eslint-disable-next-line
   }, [is3DView, walls, joints, doors]);
 
+  useEffect(() => {
+    if (!is3DView && isTourMode) {
+      if (threeCanvasInstance.current?.setTourActive) {
+        threeCanvasInstance.current.setTourActive(false);
+      }
+      setIsTourMode(false);
+    }
+  }, [is3DView, isTourMode]);
+
   // Update 3D canvas when walls, joints, doors, project, storeys, or rooms change
   useEffect(() => {
     if (is3DView && threeCanvasInstance.current) {
@@ -1348,7 +1547,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       setCurrentMode(null);
       resetAllSelections();
     }
-  }, [is3DView]);
+  }, [is3DView, resetAllSelections]);
 
   // Clear merge wall selection when user quits merge mode (e.g. Cancel or switch mode)
   const prevCurrentModeRef = useRef(currentMode);
@@ -1450,36 +1649,33 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         }
       }
 
-      const completeRoomData = {
-        ...roomData,
-        room_points: selectedRoomPoints,
-      };
-      const response = await api.post('/rooms/', completeRoomData);
-      if (response.status === 201) {
-        const newRoom = response.data;
-        setRooms((prevRooms) => [...prevRooms, newRoom]);
-        
-        // Refetch walls to get updated heights (especially for shared walls)
-        // Shared walls will have the maximum height of all rooms that share them
-        if (roomData.height !== undefined) {
-          try {
-            const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
-            setWalls(wallsResponse.data);
-            console.log('Refetched walls after room creation to sync shared wall heights');
-          } catch (error) {
-            console.error('Error refetching walls after room creation:', error);
-            // Continue even if refetch fails
+      await commitHistoryAction('Create room', async () => {
+        const completeRoomData = {
+          ...roomData,
+          room_points: selectedRoomPoints,
+        };
+        const response = await api.post('/rooms/', completeRoomData);
+        if (response.status === 201) {
+          const newRoom = response.data;
+          setRooms((prevRooms) => [...prevRooms, newRoom]);
+
+          if (roomData.height !== undefined) {
+            try {
+              const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+              setWalls(wallsResponse.data);
+            } catch (error) {
+              console.error('Error refetching walls after room creation:', error);
+            }
           }
+
+          setRoomCreateSuccess(true);
+          setTimeout(() => setRoomCreateSuccess(false), 3000);
+          setEditingRoom(null);
+          setShowRoomManagerModal(false);
+          updateRoomPointsAndDetectWalls([]);
+          setCurrentMode(null);
         }
-        
-        setRoomCreateSuccess(true);
-        setTimeout(() => setRoomCreateSuccess(false), 3000);
-        // Clear editing room state so form fields are reset for next room
-        setEditingRoom(null);
-        setShowRoomManagerModal(false);
-        updateRoomPointsAndDetectWalls([]);
-        setCurrentMode(null);
-      }
+      });
     } catch (error) {
       console.error('Error creating room:', error);
       if (isDatabaseConnectionError(error)) {
@@ -1493,27 +1689,24 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
   const handleRoomUpdate = async (updatedRoomData) => {
     try {
-      const response = await api.put(`/rooms/${updatedRoomData.id}/`, updatedRoomData);
-      setRooms(rooms.map(room => room.id === updatedRoomData.id ? response.data : room));
-      
-      // Refetch walls to get updated heights (especially for shared walls)
-      // Shared walls will have the maximum height of all rooms that share them
-      if (updatedRoomData.height !== undefined) {
-        try {
-          const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
-          setWalls(wallsResponse.data);
-          console.log('Refetched walls after room height update to sync shared wall heights');
-        } catch (error) {
-          console.error('Error refetching walls after room update:', error);
-          // Continue even if refetch fails
+      await commitHistoryAction('Update room', async () => {
+        const response = await api.put(`/rooms/${updatedRoomData.id}/`, updatedRoomData);
+        setRooms(rooms.map(room => room.id === updatedRoomData.id ? response.data : room));
+
+        if (updatedRoomData.height !== undefined) {
+          try {
+            const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+            setWalls(wallsResponse.data);
+          } catch (error) {
+            console.error('Error refetching walls after room update:', error);
+          }
         }
-      }
-      
-      // Clear editing room state so form fields are reset for next room
-      setEditingRoom(null);
-      setShowRoomManagerModal(false);
-      updateRoomPointsAndDetectWalls([]);
-      setCurrentMode(null);
+
+        setEditingRoom(null);
+        setShowRoomManagerModal(false);
+        updateRoomPointsAndDetectWalls([]);
+        setCurrentMode(null);
+      });
     } catch (error) {
       console.error('Error updating room:', error);
       if (isDatabaseConnectionError(error)) {
@@ -1525,40 +1718,15 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   };
 
-  // Separate function for label position updates that doesn't trigger room state updates
-  const handleRoomLabelPositionUpdate = async (roomId, labelPosition) => {
-    try {
-      // Get the current room to include all required fields
-      const currentRoom = rooms.find(room => room.id === roomId);
-      if (!currentRoom) {
-        console.error('Room not found:', roomId);
-        return;
-      }
-      
-      // Send only the label position for partial update
-      console.log('Sending label position update:', { label_position: labelPosition });
-      const response = await api.patch(`/rooms/${roomId}/`, { label_position: labelPosition });
-      // Don't update the rooms state to avoid triggering panel calculations
-      console.log('Label position updated successfully');
-    } catch (error) {
-      console.error('Error updating room label position:', error);
-      console.error('Error response data:', error.response?.data);
-      if (isDatabaseConnectionError(error)) {
-        setRoomError('Fail to connect to database. Try again later.');
-      } else {
-        setRoomError('Failed to update room label position.');
-      }
-      setTimeout(() => setRoomError(''), 5000);
-    }
-  };
-
   const handleRoomDelete = async (roomId) => {
     try {
-      await api.delete(`/rooms/${roomId}/`);
-      setRooms(rooms.filter(room => room.id !== roomId));
-      setShowRoomManagerModal(false);
-      updateRoomPointsAndDetectWalls([]);
-      setCurrentMode(null);
+      await commitHistoryAction('Delete room', async () => {
+        await api.delete(`/rooms/${roomId}/`);
+        setRooms(rooms.filter(room => room.id !== roomId));
+        setShowRoomManagerModal(false);
+        updateRoomPointsAndDetectWalls([]);
+        setCurrentMode(null);
+      });
     } catch (error) {
       console.error('Error deleting room:', error);
       if (isDatabaseConnectionError(error)) {
@@ -1573,18 +1741,20 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   // Door handlers (partial)
   const handleCreateDoor = async (doorData) => {
     try {
-      const completeDoorData = {
-        ...doorData,
-        swing_direction: 'right',
-        slide_direction: 'right',
-        side: 'interior',
-        storey: activeStoreyId ?? defaultStoreyId
-      };
-      const response = await api.post('/doors/create_door/', completeDoorData);
-      setDoors([...doors, response.data]);
-      setShowDoorManager(false);
-      setCurrentMode(null);
-      setSelectedDoorWall(null);
+      await commitHistoryAction('Add door', async () => {
+        const completeDoorData = {
+          ...doorData,
+          swing_direction: 'right',
+          slide_direction: 'right',
+          side: 'interior',
+          storey: activeStoreyId ?? defaultStoreyId
+        };
+        const response = await api.post('/doors/create_door/', completeDoorData);
+        setDoors([...doors, response.data]);
+        setShowDoorManager(false);
+        setCurrentMode(null);
+        setSelectedDoorWall(null);
+      });
     } catch (error) {
       console.error('Error creating door:', error);
     }
@@ -1592,28 +1762,30 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
   const handleUpdateDoor = async (updatedDoor) => {
     try {
-      const wallId = updatedDoor.linked_wall || updatedDoor.wall_id;
-      const response = await api.put(`/doors/${updatedDoor.id}/`, {
-        project: projectId,
-        linked_wall: wallId,
-        width: updatedDoor.width,
-        height: updatedDoor.height,
-        thickness: updatedDoor.thickness,
-        position_x: updatedDoor.position_x,
-        position_y: updatedDoor.position_y,
-        door_type: updatedDoor.door_type,
-        configuration: updatedDoor.configuration,
-        swing_direction: updatedDoor.swing_direction,
-        slide_direction: updatedDoor.slide_direction,
-        side: updatedDoor.side,
-        orientation: updatedDoor.orientation || 'horizontal',
-        storey: updatedDoor.storey ?? activeStoreyId ?? defaultStoreyId,
+      await commitHistoryAction('Update door', async () => {
+        const wallId = updatedDoor.linked_wall || updatedDoor.wall_id;
+        const response = await api.put(`/doors/${updatedDoor.id}/`, {
+          project: projectId,
+          linked_wall: wallId,
+          width: updatedDoor.width,
+          height: updatedDoor.height,
+          thickness: updatedDoor.thickness,
+          position_x: updatedDoor.position_x,
+          position_y: updatedDoor.position_y,
+          door_type: updatedDoor.door_type,
+          configuration: updatedDoor.configuration,
+          swing_direction: updatedDoor.swing_direction,
+          slide_direction: updatedDoor.slide_direction,
+          side: updatedDoor.side,
+          orientation: updatedDoor.orientation || 'horizontal',
+          storey: updatedDoor.storey ?? activeStoreyId ?? defaultStoreyId,
+        });
+        const updated = response.data;
+        setDoors(doors.map(d => d.id === updated.id ? updated : d));
+        setShowDoorEditor(false);
+        setEditingDoor(null);
+        setSelectedDoorWall(null);
       });
-      const updated = response.data;
-      setDoors(doors.map(d => d.id === updated.id ? updated : d));
-      setShowDoorEditor(false);
-      setEditingDoor(null);
-      setSelectedDoorWall(null);
     } catch (error) {
       console.error('Failed to update door:', error);
       if (error.response && error.response.data) {
@@ -1624,7 +1796,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   };
 
-  const duplicateRoomToStorey = async (roomId, targetStoreyId, overrides = {}) => {
+  const duplicateRoomToStorey = useCallback(async (roomId, targetStoreyId, overrides = {}) => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) {
       console.warn('Room not found for duplication:', roomId);
@@ -1732,7 +1904,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
 
     return { createdWalls, reusedWallIds };
-  };
+  }, [rooms, storeys, storeyWizardRoomOverrides, walls, projectId]);
 
   const addRoomsToActiveStorey = useCallback(async () => {
     if (!isLevelEditMode) {
@@ -2021,15 +2193,14 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
   // Update handleWallCreate to refresh walls after creation
   const handleWallCreate = async (wallData) => {
-    try {
-      // Normalize wall coordinates before sending to backend
+    return commitHistoryAction('Add wall', async () => {
       const normalizedCoords = normalizeWallCoordinates(
         { x: wallData.start_x, y: wallData.start_y },
         { x: wallData.end_x, y: wallData.end_y }
       );
-      
-      const dataToSend = { 
-        ...wallData, 
+
+      const dataToSend = {
+        ...wallData,
         start_x: normalizedCoords.startPoint.x,
         start_y: normalizedCoords.startPoint.y,
         end_x: normalizedCoords.endPoint.x,
@@ -2038,12 +2209,9 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         storey: wallData.storey ?? activeStoreyId ?? defaultStoreyId
       };
       const response = await api.post('/walls/create_wall/', dataToSend);
-      await refreshWalls(); // Ensure UI is in sync with backend
+      await refreshWalls();
       return response.data;
-    } catch (error) {
-      console.error('Error creating wall:', error);
-      throw error;
-    }
+    });
   };
 
   // Add this function to handle room selection and open the editor modal
@@ -2067,20 +2235,19 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   // Add this function to handle wall updates
   const handleWallUpdate = async (updatedWall) => {
     try {
-      // Validate that wall dimensions are greater than 0
       if (updatedWall.height <= 0 || updatedWall.thickness <= 0) {
         alert("Wall Height and Thickness must be greater than 0");
         return;
       }
-      const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
-      const updatedWallData = response.data;
-      setWalls(prevWalls =>
-        prevWalls.map(wall =>
-          wall.id === updatedWallData.id ? updatedWallData : wall
-        )
-      );
-      // Optionally, refresh walls from backend for full sync
-      // await refreshWalls();
+      await commitHistoryAction('Update wall', async () => {
+        const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
+        const updatedWallData = response.data;
+        setWalls(prevWalls =>
+          prevWalls.map(wall =>
+            wall.id === updatedWallData.id ? updatedWallData : wall
+          )
+        );
+      });
     } catch (error) {
       alert('Failed to update wall');
     }
@@ -2089,19 +2256,19 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   // Add a new helper function handleWallUpdateNoMerge that is like handleWallUpdate but does not call checkAndMergeWalls
   const handleWallUpdateNoMerge = async (updatedWall) => {
     try {
-      // Validate that wall dimensions are greater than 0
       if (updatedWall.height <= 0 || updatedWall.thickness <= 0) {
         alert("Wall Height and Thickness must be greater than 0");
         return;
       }
-      const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
-      const updatedWallData = response.data;
-      setWalls(prevWalls =>
-        prevWalls.map(wall =>
-          wall.id === updatedWallData.id ? updatedWallData : wall
-        )
-      );
-      // Do NOT call checkAndMergeWalls here
+      await commitHistoryAction('Update wall', async () => {
+        const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
+        const updatedWallData = response.data;
+        setWalls(prevWalls =>
+          prevWalls.map(wall =>
+            wall.id === updatedWallData.id ? updatedWallData : wall
+          )
+        );
+      });
     } catch (error) {
       if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || (error.response?.status >= 500 && error.response?.status < 600)) {
         setDbConnectionError(true);
@@ -2114,7 +2281,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
   // Add this function to handle wall deletion
   const handleWallDelete = async (wallId) => {
-    try {
+    return commitHistoryAction('Delete wall', async () => {
       // Find the wall to be deleted
       const wallToDelete = walls.find(w => w.id === wallId);
       if (!wallToDelete) return;
@@ -2231,10 +2398,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         }
       }
       setWalls(updatedWalls);
-    } catch (error) {
-      console.error('Error deleting wall:', error);
-      throw error;
-    }
+    });
   };
 
   // Add these functions to handle wall delete confirmation/cancellation
@@ -2415,16 +2579,18 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     const createdSegments = [];
 
     try {
-      const firstSegment = await createSegment(startPoint, roundedSplitMidPoint);
-      createdSegments.push(firstSegment);
-      const secondSegment = await createSegment(roundedSplitMidPoint, endPoint);
-      createdSegments.push(secondSegment);
+      await commitHistoryAction('Split wall', async () => {
+        const firstSegment = await createSegment(startPoint, roundedSplitMidPoint);
+        createdSegments.push(firstSegment);
+        const secondSegment = await createSegment(roundedSplitMidPoint, endPoint);
+        createdSegments.push(secondSegment);
 
-      await api.delete(`/walls/${wallId}/`);
-      await refreshWalls();
-      setWallSplitError('');
-      setWallSplitSuccess(true);
-      setTimeout(() => setWallSplitSuccess(false), 3000);
+        await api.delete(`/walls/${wallId}/`);
+        await refreshWalls();
+        setWallSplitError('');
+        setWallSplitSuccess(true);
+        setTimeout(() => setWallSplitSuccess(false), 3000);
+      });
     } catch (error) {
       console.error('Failed to split wall:', error);
       setWallSplitError('Unable to split wall. Please try again.');
@@ -2583,6 +2749,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
 
     try {
+      await commitHistoryAction('Merge walls', async () => {
       const response = await api.post("/walls/merge_walls/", {
         wall_ids: [wall1.id, wall2.id],
       });
@@ -2693,6 +2860,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
           }
         }
       }
+      });
     } catch (error) {
       setSelectedWallsForRoom([]);
       setSelectedWallsForEdit([]);
@@ -2727,10 +2895,12 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   // Add this function to handle door deletion
   const handleDeleteDoor = async (doorId) => {
     try {
-      await api.delete(`/doors/${doorId}/`);
-      setDoors(prevDoors => prevDoors.filter(door => door.id !== doorId));
-      setShowDoorEditor(false);
-      setEditingDoor(null);
+      await commitHistoryAction('Delete door', async () => {
+        await api.delete(`/doors/${doorId}/`);
+        setDoors(prevDoors => prevDoors.filter(door => door.id !== doorId));
+        setShowDoorEditor(false);
+        setEditingDoor(null);
+      });
     } catch (error) {
       console.error('Error deleting door:', error);
       alert('Failed to delete door.');
@@ -2943,7 +3113,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     newWallSegments = newWallSegments.filter(w => !isZeroLength(w));
 
     // 4. Delete split walls, add new segments (API)
-    try {
+    return commitHistoryAction('Add wall', async () => {
       for (const wall of wallsToDelete) {
         await api.delete(`/walls/${wall.id}/`);
       }
@@ -2958,21 +3128,38 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       }
       await refreshWalls();
       return createdWalls;
-    } catch (error) {
-      console.error('Error in modular wall splitting:', error);
-      throw error;
-    }
+    });
   };
 
   // Add this function to toggle between interior and exterior 3D views
   const handleViewToggle = () => {
     if (!threeCanvasInstance.current) return;
+    if (isTourMode) {
+      threeCanvasInstance.current.setTourActive(false);
+      setIsTourMode(false);
+    }
     if (isInteriorView) {
       threeCanvasInstance.current.animateToExteriorView();
       setIsInteriorView(false);
     } else {
       threeCanvasInstance.current.animateToInteriorView();
       setIsInteriorView(true);
+    }
+  };
+
+  const toggleTourMode = () => {
+    if (!threeCanvasInstance.current) return;
+    const next = !isTourMode;
+    if (next) {
+      const started = threeCanvasInstance.current.setTourActive(true);
+      if (!started) {
+        window.alert('Add walls to the project before starting a tour.');
+        return;
+      }
+      setIsTourMode(true);
+    } else {
+      threeCanvasInstance.current.setTourActive(false);
+      setIsTourMode(false);
     }
   };
 
@@ -3097,6 +3284,10 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     setIs3DView,
     isInteriorView,
     setIsInteriorView,
+    isTourMode,
+    toggleTourMode,
+    isRoomTourMode: isTourMode,
+    toggleRoomTourMode: toggleTourMode,
     threeCanvasInstance,
     showRoomManager,
     setShowRoomManager,
@@ -3222,7 +3413,6 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     handleViewToggle,
     completeStoreyWizard,
     computeStoreyWizardElevation,
-    computeStoreyWizardElevation,
     isStoreyWizardMinimized,
     setStoreyWizardMinimized,
     togglePanelLines: () => {
@@ -3248,5 +3438,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     // Canvas image methods
     updateCanvasImage,
     canEdit,
+    undoProjectAction,
+    redoProjectAction,
+    canUndoProject: projectHistory.canUndo,
+    canRedoProject: projectHistory.canRedo,
+    isHistoryBusy,
+    historyVersion: projectHistory.version,
   };
 } 

@@ -94,6 +94,13 @@ class Project(models.Model):
 
 class ProjectComment(models.Model):
     """Customer feedback left by salesman on a project, optionally tied to walls."""
+    STATUS_OPEN = 'open'
+    STATUS_DONE = 'done'
+    STATUS_CHOICES = (
+        (STATUS_OPEN, 'Open'),
+        (STATUS_DONE, 'Done'),
+    )
+
     project = models.ForeignKey(
         Project,
         related_name='comments',
@@ -110,6 +117,19 @@ class ProjectComment(models.Model):
         default=list,
         blank=True,
         help_text='Wall IDs referenced by this comment.',
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=STATUS_OPEN,
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='resolved_project_comments',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

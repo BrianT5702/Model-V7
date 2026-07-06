@@ -88,6 +88,19 @@ export function isPlanCanvasDark() {
 
 
 
+/** Run drawing code with light plan theme (e.g. PDF export on white pages). */
+export function withPlanCanvasLightTheme(fn) {
+    const wasDark = planThemeIsDark;
+    planThemeIsDark = false;
+    try {
+        return fn();
+    } finally {
+        planThemeIsDark = wasDark;
+    }
+}
+
+
+
 export function getPlanCanvasBackground() {
 
     return isPlanCanvasDark() ? '#1f2937' : '#fafafa';

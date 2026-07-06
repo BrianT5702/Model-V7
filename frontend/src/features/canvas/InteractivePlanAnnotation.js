@@ -14,6 +14,7 @@ const InteractivePlanAnnotation = ({
     onStartArrowPlacement,
     isPlacingArrow = false,
     canEdit = false,
+    canDrag = false,
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [draftText, setDraftText] = useState(annotation.text || '');
@@ -46,10 +47,14 @@ const InteractivePlanAnnotation = ({
     };
 
     const handleMouseDown = (event) => {
-        if (!canEdit || isEditing) {
+        if ((!canDrag && !canEdit) || isEditing) {
+            return;
+        }
+        if (event.button !== 0) {
             return;
         }
         event.stopPropagation();
+        event.preventDefault();
         onSelect?.(annotation.id);
         setIsDragging(true);
         setDragOffset({
@@ -88,17 +93,20 @@ const InteractivePlanAnnotation = ({
 
     const hasArrow = annotation.arrow_target_x != null && annotation.arrow_target_y != null;
     const displayText = (annotation.text || '').trim() || 'Double-click to edit';
+    const isMovable = canDrag || canEdit;
 
     return (
         <div
-            className="absolute z-20"
+            className={`absolute ${isSelected || isDragging ? 'z-[45]' : 'z-[35]'}`}
             style={{
                 left: `${canvasX}px`,
                 top: `${canvasY}px`,
                 transform: 'translate(0, 0)',
                 pointerEvents: 'auto',
+                cursor: isDragging ? 'grabbing' : isMovable ? 'grab' : 'default',
             }}
             onMouseDown={handleMouseDown}
+            onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => {
                 if (!canEdit) return;
                 event.stopPropagation();

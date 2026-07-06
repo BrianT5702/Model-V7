@@ -37,7 +37,6 @@ import {
     getPlanDimensionLaneConfig,
     getPlanExteriorSide,
     getDimensionEdge,
-    isLabelOutsidePlanArea,
     computeExteriorPlanLabelCoords,
     getPlanExteriorFixedColumnX,
     rememberPlanExteriorColumnX,
@@ -775,7 +774,7 @@ const CeilingCanvas = ({
     const [showMaterialsTable, setShowMaterialsTable] = useState(false);
     const [isPlacingSupport, setIsPlacingSupport] = useState(false);
     // Use customSupports from props if provided, otherwise use local state as fallback
-    const [localCustomSupports, setLocalCustomSupports] = useState([]);
+    const [localCustomSupports] = useState([]);
     const effectiveCustomSupports = customSupports !== undefined && Array.isArray(customSupports) ? customSupports : localCustomSupports;
     // Function to update custom supports - use callback if provided, otherwise use local state setter
     const updateCustomSupports = useCallback((newSupportsOrUpdater) => {
@@ -1064,17 +1063,6 @@ const CeilingCanvas = ({
         };
     }, []);
     
-    // Initialize mouse position tracking
-    useEffect(() => {
-        if (projectData) {
-            setSupportPreview(prev => ({
-                ...prev,
-                mousePosition: { x: 0, y: 0 },
-                distances: calculateDistancesToEdges(0, 0)
-            }));
-        }
-    }, [projectData]);
-    
     // Set proper cursor when placing support mode changes
     useEffect(() => {
         if (canvasRef.current) {
@@ -1285,6 +1273,8 @@ const CeilingCanvas = ({
         // Draw everything
         drawCanvas(context);
 
+    // drawCanvas/calculateCanvasTransform are recreated each render; deps list drives redraw.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         effectiveRooms,
         effectiveCeilingPlans,
@@ -1341,14 +1331,6 @@ const CeilingCanvas = ({
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [selectedRailKey, isPlacingSupport, deleteRailByKey]);
-
-    // Sync external scale prop with internal zoom
-    useEffect(() => {
-        if (scale !== undefined && scale !== currentScale) {
-            console.log('External scale changed from', currentScale, 'to', scale);
-            zoomToCenter(scale);
-        }
-    }, [scale]);
 
     // Calculate optimal canvas transformation
     const calculateCanvasTransform = () => {
@@ -1858,6 +1840,7 @@ const CeilingCanvas = ({
         panelNeedsNylonSupport,
         buildNylonEntryForPanel,
         ensureStableNylonKey,
+        nylonHangerKey,
         mergeSupportsWithNylon,
         updateCustomSupports
     ]);
@@ -1997,6 +1980,8 @@ const CeilingCanvas = ({
             if (ctx) drawCanvas(ctx);
             return true;
         },
+        // drawCanvas is intentionally omitted — redraw is triggered via layout effect deps.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         [
             canEditSupports,
             partitionCustomSupports,
@@ -2036,6 +2021,8 @@ const CeilingCanvas = ({
             const ctx = canvasRef.current?.getContext('2d');
             if (ctx) drawCanvas(ctx);
         },
+        // drawCanvas is intentionally omitted — redraw is triggered via layout effect deps.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         [
             canEditSupports,
             listNylonHangers,
@@ -2116,6 +2103,8 @@ const CeilingCanvas = ({
             if (ctx) drawCanvas(ctx);
             return true;
         },
+        // drawCanvas is intentionally omitted — redraw is triggered via layout effect deps.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         [
             canEditSupports,
             nylonAddTarget,
@@ -2389,7 +2378,7 @@ const CeilingCanvas = ({
             
             // Calculate label dimensions FIRST based on state (before finding position)
             // This ensures collision detection uses exact same bounds as what will be drawn
-            let labelWidth, labelHeight, padding, textColor, bgColor, bgOpacity;
+            let labelWidth, labelHeight, padding, textColor, bgColor;
             
             if (isSelected) {
                 ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
@@ -4223,37 +4212,6 @@ const CeilingCanvas = ({
         return inside;
     };
 
-    // Minimum distance from a point to the edges of a polygon (in model units, mm)
-    const getMinDistanceToPolygonEdges = (x, y, polygon) => {
-        if (!polygon || polygon.length < 2) return Infinity;
-        
-        let minDist = Infinity;
-        for (let i = 0; i < polygon.length; i++) {
-            const j = (i + 1) % polygon.length;
-            const x1 = polygon[i].x;
-            const y1 = polygon[i].y;
-            const x2 = polygon[j].x;
-            const y2 = polygon[j].y;
-            
-            const dx = x2 - x1;
-            const dy = y2 - y1;
-            const lengthSq = dx * dx + dy * dy;
-            let t = 0;
-            if (lengthSq > 0) {
-                t = ((x - x1) * dx + (y - y1) * dy) / lengthSq;
-                t = Math.max(0, Math.min(1, t));
-            }
-            
-            const projX = x1 + t * dx;
-            const projY = y1 + t * dy;
-            const dist = Math.hypot(x - projX, y - projY);
-            if (dist < minDist) {
-                minDist = dist;
-            }
-        }
-        return minDist;
-    };
-
     const handleMouseMove = (e) => {
         // Handle canvas dragging first
         if (isDraggingCanvas.current) {
@@ -4451,6 +4409,17 @@ const CeilingCanvas = ({
         };
     }, [projectData, getWallFaceDistances]);
 
+    // Initialize mouse position tracking for support placement preview
+    useEffect(() => {
+        if (projectData) {
+            setSupportPreview(prev => ({
+                ...prev,
+                mousePosition: { x: 0, y: 0 },
+                distances: calculateDistancesToEdges(0, 0)
+            }));
+        }
+    }, [projectData, calculateDistancesToEdges]);
+
     // Snap alu support points to the nearest wall centerline (middle of wall thickness).
     const snapPointToNearestWall = useCallback((x, y) => {
         if (!Array.isArray(walls) || walls.length === 0) return null;
@@ -4520,7 +4489,7 @@ const CeilingCanvas = ({
         }
         
         return false;
-    }, [effectiveCeilingPanelsMap]);
+    }, [effectiveCeilingPanelsMap, getRoomOrientation]);
 
     const handleMouseUp = () => {
         isDragging.current = false;
@@ -4606,6 +4575,15 @@ const CeilingCanvas = ({
         }
     };
 
+    // Sync external scale prop with internal zoom
+    useEffect(() => {
+        if (scale !== undefined && scale !== currentScale) {
+            zoomToCenter(scale);
+        }
+    // zoomToCenter is defined above and recreated each render; only react to external scale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scale, currentScale]);
+
     // Zoom at current view position (keeps the point under mouse stationary)
     const zoomAtCurrentView = (newScale) => {
         // Calculate the current view center in model coordinates
@@ -4615,9 +4593,6 @@ const CeilingCanvas = ({
         // Convert view center to model coordinates
         const modelCenterX = (viewCenterX - offsetX.current) / scaleFactor.current;
         const modelCenterY = (viewCenterY - offsetY.current) / scaleFactor.current;
-        
-        // Calculate scale ratio
-        const scaleRatio = newScale / scaleFactor.current;
         
         // Calculate new offset to keep the model center point stationary
         offsetX.current = viewCenterX - modelCenterX * newScale;
@@ -5808,33 +5783,27 @@ const CeilingCanvas = ({
     };
 
     return (
-        <div
-            className={`plan-canvas ceiling-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg w-full max-w-full min-w-0 ${
-                isSupportSidebarOpen || isPlanDetailsOpen
-                    ? 'p-4 sm:p-5 lg:p-5'
-                    : 'p-4 sm:p-6'
-            }`}
-        >
+        <div className="plan-canvas ceiling-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg w-full max-w-full min-w-0 p-4">
             {/* Header */}
-            <div className="ceiling-canvas-header mb-4 sm:mb-6 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 min-w-0">
+            <div className="ceiling-canvas-header mb-3 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 min-w-0">
                     <div className="min-w-0">
-                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1 sm:mb-2 truncate">
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">
                             Ceiling Plan
                         </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-base sm:text-lg truncate">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 leading-tight truncate">
                             {showAllRooms ? 
                                 `All Rooms (${effectiveRooms.length}) - Professional Layout` :
                                 `${effectiveRooms.length > 0 ? effectiveRooms[0]?.room_name || 'Room' : 'Room'} - Professional Layout`
                             }
                         </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                         {!isSupportSidebarOpen ? (
                             <button
                                 type="button"
                                 onClick={() => setIsSupportSidebarOpen(true)}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-950/50 transition-colors font-medium"
+                                className="plan-panel-btn-outline-orange"
                             >
                                 Show Support Tools
                             </button>
@@ -5843,7 +5812,7 @@ const CeilingCanvas = ({
                             <button
                                 type="button"
                                 onClick={() => setIsPlanDetailsOpen(true)}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium"
+                                className="plan-panel-btn-outline"
                             >
                                 Show Plan Details
                             </button>
@@ -5853,26 +5822,26 @@ const CeilingCanvas = ({
             </div>
 
             {/* Support tools (left) | Canvas | Plan details (right) */}
-            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 min-w-0 w-full items-stretch">
+            <div className="flex flex-col lg:flex-row gap-2 min-w-0 w-full items-stretch">
                 {isSupportSidebarOpen ? (
                     <div className="ceiling-support-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0 order-2 lg:order-1">
                         <div
                             ref={supportSidebarScrollRef}
-                            className="ceiling-support-panel bg-gradient-to-br from-orange-50/80 to-gray-50 border border-orange-200/80 rounded-xl p-3 sm:p-4 shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
+                            className="ceiling-support-panel text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
                         >
-                            <div className="flex flex-col gap-2 mb-3">
-                                <h4 className="text-base font-bold text-gray-900 dark:text-gray-100">Support Tools</h4>
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight">Support Tools</h4>
                                 <button
                                     type="button"
                                     onClick={closeSupportSidebar}
-                                    className="ceiling-support-btn self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-white transition-colors"
+                                    className="plan-panel-btn-secondary"
                                 >
                                     Collapse
                                 </button>
                             </div>
-                            {renderSupportControlsSection('mb-4')}
-                            {renderRailEditPanel('support-rail-card mb-4 pb-4 border-b border-amber-200 rounded-lg bg-amber-50/70 px-2.5 py-2.5')}
-                            {renderNylonAddPanel('support-nylon-card mb-4 pb-4 border-b border-red-200 rounded-lg bg-red-50/50 px-2.5 py-2.5')}
+                            {renderSupportControlsSection('mb-3')}
+                            {renderRailEditPanel('support-rail-card mb-3 pb-3 border-b border-amber-200 rounded-md bg-amber-50/70 px-2 py-2')}
+                            {renderNylonAddPanel('support-nylon-card mb-3 pb-3 border-b border-red-200 rounded-md bg-red-50/50 px-2 py-2')}
                             {renderNylonEditPanel('mb-0 pb-0')}
                         </div>
                     </div>
@@ -5966,33 +5935,31 @@ const CeilingCanvas = ({
                         )}
                     </div>
                     
-                    {/* Canvas Controls - wrap on small screens */}
-                    <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 text-sm text-gray-600">
-                        <div className="flex items-center gap-2 sm:gap-4">
+                    {/* Canvas Controls */}
+                    <div className="plan-canvas-meta dark:text-gray-400 px-1">
+                        <div className="flex items-center gap-2">
                             <span className="font-medium">Scale:</span>
-                            <span className="font-mono bg-gray-100 px-2 py-1 rounded tabular-nums">
+                            <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[10px] tabular-nums">
                                 {currentScale.toFixed(2)}x
                             </span>
                         </div>
-                        <p className="sm:text-center text-gray-600 order-last sm:order-none">
-                            <span className="font-medium">
-                                {canEditSupports && listNylonHangers().length > 0 && !isPlacingSupport
-                                    ? 'Click a red nylon hanger to edit • '
-                                    : ''}
-                                {canEditSupports && isPlacingSupport && supportPlacementMode === 'nylon-add'
-                                    ? 'Step 1: click a ceiling panel • '
-                                    : ''}
-                                {canEditSupports && nylonAddTarget
-                                    ? 'Step 2: enter placement in Support Tools, then Add • '
-                                    : ''}
-                                {canEditSupports && enableAluSuspension && !isPlacingSupport
-                                    ? 'Click a purple rail to select and edit dimensions • '
-                                    : ''}
-                                {canEditPanels
-                                    ? 'Click room to select, then click panel to swap • '
-                                    : 'Click room to view details • '}
-                                Drag to pan • Use zoom buttons
-                            </span>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-snug">
+                            {canEditSupports && listNylonHangers().length > 0 && !isPlacingSupport
+                                ? 'Click a red nylon hanger to edit · '
+                                : ''}
+                            {canEditSupports && isPlacingSupport && supportPlacementMode === 'nylon-add'
+                                ? 'Step 1: click a ceiling panel · '
+                                : ''}
+                            {canEditSupports && nylonAddTarget
+                                ? 'Step 2: enter placement in Support Tools, then Add · '
+                                : ''}
+                            {canEditSupports && enableAluSuspension && !isPlacingSupport
+                                ? 'Click a purple rail to edit · '
+                                : ''}
+                            {canEditPanels
+                                ? 'Click room to select, then click panel to swap · '
+                                : 'Click room to view details · '}
+                            Drag to pan · Use zoom buttons
                         </p>
                     </div>
                     
@@ -6004,11 +5971,11 @@ const CeilingCanvas = ({
                 <div className="ceiling-summary-sidebar flex-shrink-0 w-full lg:w-[14.5rem] min-w-0 order-3">
                     <div
                         ref={planDetailsScrollRef}
-                        className="plan-details-panel bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-3 sm:p-4 w-full shadow-lg text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
+                        className="plan-details-panel w-full text-left lg:sticky lg:top-2 max-h-[min(720px,calc(100vh-10rem))] overflow-y-auto scroll-contain-panel"
                     >
-                        <div className="flex flex-col items-stretch gap-2 mb-4">
-                            <h4 className="text-base font-bold text-gray-900 dark:text-gray-100 flex items-center shrink-0">
-                                <svg className="w-5 h-5 mr-2 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h4 className="plan-details-panel-title dark:text-gray-100">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
                                 <span className="truncate">Plan Details</span>
@@ -6016,39 +5983,38 @@ const CeilingCanvas = ({
                             <button
                                 type="button"
                                 onClick={() => setIsPlanDetailsOpen(false)}
-                                className="plan-details-btn self-start px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                className="plan-panel-btn-secondary"
                             >
                                 Collapse
                             </button>
                         </div>
 
                         {ceilingPlan ? (
-                            <div className="space-y-4 text-left">
-                                {/* Stats - no inner box, same style as Floor Plan */}
-                                <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                            <div className="space-y-2 text-left">
+                                <div className="plan-details-stat-grid">
                                     <div className="text-left">
-                                        <div className="text-sm text-gray-600">Total Panels</div>
-                                        <div className="text-2xl font-bold text-gray-900 tabular-nums">{getAccuratePanelCounts.total}</div>
+                                        <div className="plan-details-stat-label">Total Panels</div>
+                                        <div className="plan-details-stat-value text-gray-900 dark:text-gray-100">{getAccuratePanelCounts.total}</div>
                                     </div>
                                     <div className="text-left">
-                                        <div className="text-sm text-gray-600">Rooms</div>
-                                        <div className="text-xl font-semibold text-blue-600 tabular-nums">{effectiveRooms.length}</div>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                                    <div className="text-left">
-                                        <div className="text-sm text-gray-600">Full Panels</div>
-                                        <div className="text-xl font-semibold text-green-600 tabular-nums">{getAccuratePanelCounts.full}</div>
-                                    </div>
-                                    <div className="text-left">
-                                        <div className="text-sm text-gray-600">Cut Panels</div>
-                                        <div className="text-xl font-semibold text-orange-600 tabular-nums">{getAccuratePanelCounts.cut}</div>
+                                        <div className="plan-details-stat-label">Rooms</div>
+                                        <div className="plan-details-stat-value-sm text-blue-600">{effectiveRooms.length}</div>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                                <div className="plan-details-stat-grid">
                                     <div className="text-left">
-                                        <div className="text-sm text-gray-600">Waste %</div>
-                                        <div className="text-xl font-semibold text-red-600 tabular-nums">
+                                        <div className="plan-details-stat-label">Full Panels</div>
+                                        <div className="plan-details-stat-value-sm text-green-600">{getAccuratePanelCounts.full}</div>
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="plan-details-stat-label">Cut Panels</div>
+                                        <div className="plan-details-stat-value-sm text-orange-600">{getAccuratePanelCounts.cut}</div>
+                                    </div>
+                                </div>
+                                <div className="plan-details-stat-grid">
+                                    <div className="text-left">
+                                        <div className="plan-details-stat-label">Waste %</div>
+                                        <div className="plan-details-stat-value-sm text-red-600">
                                             {(() => {
                                                 if (projectWastePercentage !== undefined && projectWastePercentage !== null) {
                                                     return `${Number(projectWastePercentage).toFixed(1)}%`;
@@ -6080,8 +6046,8 @@ const CeilingCanvas = ({
                                     </div>
                                 </div>
                                 <div className="text-left">
-                                    <div className="text-sm text-gray-600">Orientation</div>
-                                    <div className="text-lg font-semibold text-green-600">
+                                    <div className="plan-details-stat-label">Orientation</div>
+                                    <div className="plan-details-stat-value-sm text-green-600">
                                         {(() => {
                                             const strategy = ceilingPlan?.orientation_strategy ||
                                                              ceilingPlan?.strategy_used ||
@@ -6101,12 +6067,12 @@ const CeilingCanvas = ({
                                 {calculatePanelsNeedSupport ? (
                                     <>
                                         <div className="text-left">
-                                            <div className="text-sm text-gray-600">Support Status</div>
-                                            <div className="text-lg font-semibold text-amber-600">Needed</div>
+                                            <div className="plan-details-stat-label">Support Status</div>
+                                            <div className="plan-details-stat-value-sm text-amber-600">Needed</div>
                                         </div>
                                         <div className="text-left">
-                                            <div className="text-sm text-gray-600">Support Type</div>
-                                            <div className="text-lg font-semibold text-indigo-600">
+                                            <div className="plan-details-stat-label">Support Type</div>
+                                            <div className="plan-details-stat-value-sm text-indigo-600">
                                                 {[
                                                     (enableNylonHangers || listNylonHangers().length > 0) && 'Nylon',
                                                     enableAluSuspension && 'Alu'
@@ -6116,8 +6082,8 @@ const CeilingCanvas = ({
                                             </div>
                                         </div>
                                         <div className="text-left">
-                                            <div className="text-sm text-gray-600">Panels Needing Support</div>
-                                            <div className="text-lg font-semibold text-amber-600 tabular-nums">
+                                            <div className="plan-details-stat-label">Panels Needing Support</div>
+                                            <div className="plan-details-stat-value-sm text-amber-600 tabular-nums">
                                                 {(() => {
                                                     const isHorizontalOrientation = effectiveRooms.length > 0 && effectiveRooms[0] ? getRoomOrientation(effectiveRooms[0].id) : false;
                                                     if (ceilingPlan?.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels)) {
@@ -6131,20 +6097,20 @@ const CeilingCanvas = ({
                                     </>
                                 ) : (
                                     <div className="text-left">
-                                        <div className="text-sm text-gray-600">Support Status</div>
-                                        <div className="text-lg font-semibold text-green-600">Not Needed</div>
+                                        <div className="plan-details-stat-label">Support Status</div>
+                                        <div className="plan-details-stat-value-sm text-green-600">Not Needed</div>
                                     </div>
                                 )}
 
                                 {/* Dimension Legend - no inner box, border-t section like Floor Plan */}
-                                <div className="pt-4 border-t border-gray-200 text-left">
-                                    <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
-                                        <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <div className="plan-details-section">
+                                    <h4 className="plan-details-section-title">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
                                         Dimension Legend
                                     </h4>
-                                    <div className="space-y-3 text-sm">
+                                    <div className="space-y-2 text-[11px]">
                                         {/* Overall outline (plan footprint) — not wall-by-wall; per room when multiple rooms */}
                                         <div className="flex items-center justify-between gap-3 min-w-0">
                                             <div className="flex items-center min-w-0">
@@ -6274,12 +6240,12 @@ const CeilingCanvas = ({
             </div>
 
             {/* Materials Table Section */}
-            <div className="mt-6 p-4 bg-white rounded-lg shadow-md border border-gray-200">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold text-gray-800">Ceiling Materials</h3>
+            <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600 mt-3">
+                <div className="plan-material-card-header">
+                    <h3 className="plan-material-card-title dark:text-gray-100">Ceiling Materials</h3>
                     <button
                         onClick={() => setShowMaterialsTable(!showMaterialsTable)}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        className="plan-panel-btn-primary"
                     >
                         {showMaterialsTable ? 'Hide Materials Table' : 'Show Materials Table'}
                     </button>
@@ -6289,7 +6255,7 @@ const CeilingCanvas = ({
                     const materials = generateMaterialsSummary();
                     const panelList = generatePanelList();
                     return (
-                        <div className="space-y-8">
+                        <div className="space-y-4 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                             {/* Nylon hangers */}
                             <div>
                                 <h4 className="text-sm font-semibold text-gray-800 mb-2">Nylon hangers</h4>

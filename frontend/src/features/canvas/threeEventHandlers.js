@@ -1,6 +1,9 @@
 // Event handler utilities for ThreeCanvas3D.js
 
 export function onMouseMoveHandler(instance, event) {
+  if (instance.isTourEngaged?.()) {
+    return;
+  }
   // Calculate mouse position in normalized device coordinates
   const rect = instance.renderer.domElement.getBoundingClientRect();
   instance.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -27,6 +30,13 @@ export function onMouseMoveHandler(instance, event) {
 }
 
 export function onCanvasClickHandler(instance, event) {
+  if (instance.roomTourController?.isPlacing?.()) {
+    instance.roomTourController.handlePlacementClick(event);
+    return;
+  }
+  if (instance.isTourActive?.()) {
+    return;
+  }
   const rect = instance.renderer.domElement.getBoundingClientRect();
   instance.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   instance.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;

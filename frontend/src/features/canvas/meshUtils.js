@@ -115,7 +115,10 @@ export function createWallMesh(instance, wall) {
   // Wall thickness positioning logic will be handled here
   // (Joint flipping logic removed for now)
 
-  const wallDoors = instance.doors.filter(d => String(d.wall) === String(id));
+  const wallDoors = instance.doors.filter((d) => {
+    const ids = [d.wall, d.linked_wall, d.wall_id].filter((entry) => entry != null);
+    return ids.some((entry) => String(entry) === String(id));
+  });
   const wallWindows = windows || [];
   // Determine wall height and base position based on gap-fill mode
   let basePositionY = 0;  // Default: floor level
@@ -624,6 +627,15 @@ export function createWallMesh(instance, wall) {
   const finalDx = finalEndX - finalStartX;
   const finalDz = finalEndZ - finalStartZ;
   const finalWallLength = Math.hypot(finalDx, finalDz);
+  wall._tourRun = {
+    ax: finalStartX + instance.modelOffset.x,
+    az: finalStartZ + instance.modelOffset.z,
+    bx: finalEndX + instance.modelOffset.x,
+    bz: finalEndZ + instance.modelOffset.z,
+    runLength: finalWallLength,
+    halfThickness: wallThickness / 2,
+    fullThickness: wallThickness,
+  };
   const wallShape = new instance.THREE.Shape();
   // console.log('[45° Cut Debug] Creating wall shape for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
   // Always create a pure rectangular face (length X, height Y). Miter is applied in geometry later.
@@ -978,7 +990,15 @@ export function createWallMesh(instance, wall) {
       width: cutout.end - cutout.start,
       height: cutout.height,
       depth: wallThickness,
-      wasWallFlipped: wasWallFlipped
+      wasWallFlipped: wasWallFlipped,
+      wallId: String(id),
+      runStartX: finalStartX + instance.modelOffset.x,
+      runStartZ: finalStartZ + instance.modelOffset.z,
+      runEndX: finalEndX + instance.modelOffset.x,
+      runEndZ: finalEndZ + instance.modelOffset.z,
+      runLength: finalWallLength,
+      cutoutStart: cutout.start,
+      cutoutEnd: cutout.end,
     };
     
     // Debug logging for door position calculation

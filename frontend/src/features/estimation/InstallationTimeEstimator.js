@@ -4,16 +4,7 @@ import api from '../../api/api';
 import PanelCalculator from '../panel/PanelCalculator';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { doPolygonsOverlap, findIntersectionPointsBetweenWalls, calculatePolygonVisualCenter, isPointInPolygon } from '../canvas/utils';
-import { calculateOffsetPoints, calculateActualProjectDimensions } from '../canvas/drawing';
-import { DIMENSION_CONFIG } from '../canvas/DimensionConfig';
-import { 
-    smartPlacement, 
-    calculateHorizontalLabelBounds, 
-    calculateVerticalLabelBounds, 
-    hasLabelOverlap 
-} from '../canvas/collisionDetection';
-import { filterDimensions, shouldShowWallDimension } from '../canvas/dimensionFilter';
+import { calculatePolygonVisualCenter } from '../canvas/utils';
 import {
     fetchProjectPanelLayoutForPdf,
     appendVectorCeilingAndFloorPlans,
@@ -167,7 +158,9 @@ const InstallationTimeEstimator = ({
                     planPageOrientation,
                     fitToPage,
                     walls: wallsForVector,
-                    wallIntersections: ceilingFloorIntersections
+                    wallIntersections: ceilingFloorIntersections,
+                    slabWidth,
+                    slabLength
                 });
                 if (cancelled) return;
 
@@ -211,7 +204,9 @@ const InstallationTimeEstimator = ({
         allWalls,
         planPageOrientation,
         fitToPage,
-        defaultStoreyIdForVectorPreview
+        defaultStoreyIdForVectorPreview,
+        slabWidth,
+        slabLength
     ]);
     
     const toggleTableExpansion = (tableName) => {
@@ -2329,7 +2324,9 @@ const InstallationTimeEstimator = ({
                         planPageOrientation,
                         fitToPage,
                         walls: wallsForVector,
-                        wallIntersections: wallIntersectionsForPlans
+                        wallIntersections: wallIntersectionsForPlans,
+                        slabWidth,
+                        slabLength
                     });
                     usedVectorCeiling = flags.usedVectorCeiling;
                     usedVectorFloor = flags.usedVectorFloor;
@@ -2681,7 +2678,7 @@ const InstallationTimeEstimator = ({
 
     if (isLoading) {
         return (
-            <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6 transition-colors">
+            <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg transition-colors">
                 <div className="animate-pulse">
                     <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
                     <div className="space-y-3">
@@ -2696,7 +2693,7 @@ const InstallationTimeEstimator = ({
 
     if (error) {
         return (
-            <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6 transition-colors">
+            <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg transition-colors">
                 <div className="text-center text-red-600">
                     <svg className="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
@@ -2708,33 +2705,41 @@ const InstallationTimeEstimator = ({
     }
 
     return (
-        <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6 transition-colors">
+        <div className="summary-tab bg-white dark:bg-gray-900 rounded-xl shadow-lg transition-colors">
             {/* Header with Refresh and Export Buttons */}
-            <div className="mb-6">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                        Project Summary & Installation Time Estimator
-                    </h3>
+            <div className="summary-tab-header">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
+                    <div className="min-w-0">
+                        <h3 className="summary-tab-title">
+                            Project Summary & Installation Time Estimator
+                        </h3>
+                        <p className="summary-tab-subtitle">
+                            Comprehensive project overview with installation time calculations
+                        </p>
+                        <p className="summary-tab-hint">
+                            Added new levels or walls? Use Refresh Data below to update panel counts.
+                        </p>
+                    </div>
                     
                     {/* Export Button */}
                     <button
                         onClick={prepareExportData}
                         disabled={isLoading || isCapturingImages}
-                        className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-lg flex items-center disabled:opacity-50"
+                        className="summary-tab-btn-primary"
                     >
                         {isCapturingImages ? (
                             <>
-                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
                                 Capturing Images...
                             </>
                         ) : isLoading ? (
                             <>
-                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
                                 Auto-Fetching Data...
                             </>
                         ) : (
                             <>
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                                 Export Project Report
@@ -2742,61 +2747,47 @@ const InstallationTimeEstimator = ({
                         )}
                     </button>
                 </div>
-                
-                <p className="text-gray-600 dark:text-gray-400 mb-2">
-                    Comprehensive project overview with installation time calculations
-                </p>
-                <p className="text-sm text-blue-600 dark:text-blue-400">
-                    💡 Added new levels or walls? Use the green "Refresh Data" button below to update panel counts
-                </p>
             </div>
 
             {/* Auto-Fetch Status and Controls */}
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                        <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="summary-tab-section bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2">
+                    <div className="flex items-start gap-1.5 min-w-0">
+                        <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <div>
-                            <h4 className="font-medium text-blue-800">Materials & Data Management</h4>
-                            <p className="text-sm text-blue-700 mt-1">
+                        <div className="min-w-0">
+                            <h4 className="text-xs font-semibold text-blue-800 dark:text-blue-200">Materials & Data Management</h4>
+                            <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5 leading-snug">
                                 {sharedPanelData && (sharedPanelData.wallPanels || sharedPanelData.ceilingPanels || sharedPanelData.floorPanels) 
-                                    ? '✅ Project data is loaded and ready for export'
-                                    : '⏳ No project data found - click "Refresh Data" or "Fetch Data & Images"'
+                                    ? 'Project data is loaded and ready for export'
+                                    : 'No project data found — click Refresh Data or Fetch Data & Images'
                                 }
                             </p>
-                            <p className="text-xs text-blue-600 mt-1">
-                                🔄 Added new levels/walls? Click <strong>Refresh Data</strong> to reload all levels
-                            </p>
                             {(!sharedPanelData?.wallPlanImage || !sharedPanelData?.ceilingPlanImage || !sharedPanelData?.floorPlanImage) && (
-                                <p className="text-xs text-orange-700 mt-2 flex items-center">
-                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z" />
-                                    </svg>
-                                    💡 Tip: Click "Auto-Fetch Data & Images" button to automatically capture plan images for the PDF, or visit each tab manually
+                                <p className="text-[10px] text-orange-700 dark:text-orange-300 mt-1 leading-snug">
+                                    Tip: Use Fetch Data & Images to capture plan images for the PDF
                                 </p>
                             )}
                         </div>
                     </div>
                     
                     {/* Refresh and Auto-Fetch Buttons */}
-                    <div className="flex gap-2">
-                        {/* Refresh Data Button */}
+                    <div className="flex flex-wrap gap-1.5 shrink-0">
                         <button
                             onClick={handleManualRefresh}
                             disabled={isLoading || isCapturingImages}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center font-medium"
+                            className="summary-tab-btn-success"
                             title="Refresh all data from all levels/storeys"
                         >
                             {isLoading ? (
                                 <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
                                     Refreshing...
                                 </>
                             ) : (
                                 <>
-                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
                                     Refresh Data
@@ -2804,25 +2795,24 @@ const InstallationTimeEstimator = ({
                             )}
                         </button>
 
-                        {/* Auto-Fetch Button */}
                         <button
                             onClick={() => triggerAutoFetch()}
                             disabled={isLoading || isCapturingImages}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center"
+                            className="summary-tab-btn-info"
                         >
                             {isCapturingImages ? (
                                 <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                    Capturing Images...
+                                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
+                                    Capturing...
                                 </>
                             ) : isLoading ? (
                                 <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                    Loading Data...
+                                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
+                                    Loading...
                                 </>
                             ) : (
                                 <>
-                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
                                     Fetch Data & Images
@@ -2833,276 +2823,238 @@ const InstallationTimeEstimator = ({
                 </div>
                 
                 {/* Data Status Indicators */}
-                <div className="mt-3 grid grid-cols-3 gap-4 text-xs">
-                    <div className="flex items-center justify-center p-2 bg-white rounded border">
-                        <span className={`w-2 h-2 rounded-full mr-2 ${sharedPanelData?.wallPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                <div className="mt-2 grid grid-cols-3 gap-1.5 text-[10px]">
+                    <div className="summary-tab-status-pill">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sharedPanelData?.wallPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
                         <span>Wall Plan</span>
                     </div>
-                    <div className="flex items-center justify-center p-2 bg-white rounded border">
-                        <span className={`w-2 h-2 rounded-full mr-2 ${sharedPanelData?.ceilingPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                    <div className="summary-tab-status-pill">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sharedPanelData?.ceilingPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
                         <span>Ceiling Plan</span>
                     </div>
-                    <div className="flex items-center justify-center p-2 bg-white rounded border">
-                        <span className={`w-2 h-2 rounded-full mr-2 ${sharedPanelData?.floorPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                    <div className="summary-tab-status-pill">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sharedPanelData?.floorPanels ? 'bg-green-500' : 'bg-gray-300'}`}></span>
                         <span>Floor Plan</span>
                     </div>
                 </div>
             </div>
 
             {/* Project Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-600">{rooms.length}</div>
-                        <div className="text-sm text-blue-700">Rooms</div>
-                    </div>
+            <div className="summary-tab-stat-grid grid-cols-2 lg:grid-cols-4">
+                <div className="summary-tab-stat-card bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/40 dark:to-blue-900/30 border-blue-200 dark:border-blue-800">
+                    <div className="summary-tab-stat-value text-blue-600">{rooms.length}</div>
+                    <div className="summary-tab-stat-label text-blue-700 dark:text-blue-300">Rooms</div>
                 </div>
-                <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-4">
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-green-600">{walls.length}</div>
-                        <div className="text-sm text-green-700">Walls</div>
-                    </div>
+                <div className="summary-tab-stat-card bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950/40 dark:to-green-900/30 border-green-200 dark:border-green-800">
+                    <div className="summary-tab-stat-value text-green-600">{walls.length}</div>
+                    <div className="summary-tab-stat-label text-green-700 dark:text-green-300">Walls</div>
                 </div>
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-lg p-4">
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-600">{doors.length}</div>
-                        <div className="text-sm text-purple-700">Doors</div>
-                    </div>
+                <div className="summary-tab-stat-card bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/40 dark:to-purple-900/30 border-purple-200 dark:border-purple-800">
+                    <div className="summary-tab-stat-value text-purple-600">{doors.length}</div>
+                    <div className="summary-tab-stat-label text-purple-700 dark:text-purple-300">Doors</div>
                 </div>
-                <div className="bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200 rounded-lg p-4">
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-orange-600">
-                            {projectData ? `${Math.round(projectData.width / 1000)} × ${Math.round(projectData.length / 1000)}` : 'N/A'}
-                        </div>
-                        <div className="text-sm text-orange-700">Dimensions (m)</div>
+                <div className="summary-tab-stat-card bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950/40 dark:to-orange-900/30 border-orange-200 dark:border-orange-800">
+                    <div className="summary-tab-stat-value text-orange-600">
+                        {projectData ? `${Math.round(projectData.width / 1000)} × ${Math.round(projectData.length / 1000)}` : 'N/A'}
                     </div>
+                    <div className="summary-tab-stat-label text-orange-700 dark:text-orange-300">Dimensions (m)</div>
                 </div>
             </div>
 
             {/* Installation Rate Inputs */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-5">
-                    <h4 className="font-semibold text-blue-800 mb-3 flex items-center">
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="summary-tab-stat-grid grid-cols-1 md:grid-cols-3">
+                <div className="summary-tab-section bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/40 dark:to-blue-900/30 border border-blue-200 dark:border-blue-800 mb-0">
+                    <h4 className="summary-tab-section-title text-blue-800 dark:text-blue-200">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                         </svg>
                         Panels per Day
                     </h4>
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-1.5">
                         <input
                             type="number"
                             min="1"
                             value={panelsPerDay}
                             onChange={(e) => handleInputChange('panels', e.target.value)}
-                            className="w-20 px-3 py-2 border border-blue-300 rounded-lg text-center font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="summary-tab-input border-blue-300 text-blue-900 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-blue-700 dark:text-blue-100"
                         />
-                        <span className="ml-2 text-blue-700 font-medium">panels/day</span>
+                        <span className="text-[11px] text-blue-700 dark:text-blue-300 font-medium">panels/day</span>
                     </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-5">
-                    <h4 className="font-semibold text-green-800 mb-3 flex items-center">
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="summary-tab-section bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950/40 dark:to-green-900/30 border border-green-200 dark:border-green-800 mb-0">
+                    <h4 className="summary-tab-section-title text-green-800 dark:text-green-200">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m5-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                         </svg>
                         Doors per Day
                     </h4>
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-1.5">
                         <input
                             type="number"
                             min="1"
                             value={doorsPerDay}
                             onChange={(e) => handleInputChange('doors', e.target.value)}
-                            className="w-20 px-3 py-2 border border-green-300 rounded-lg text-center font-bold text-green-900 focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            className="summary-tab-input border-green-300 text-green-900 focus:ring-green-500 focus:border-green-500 dark:bg-gray-800 dark:border-green-700 dark:text-green-100"
                         />
-                        <span className="ml-2 text-green-700 font-medium">doors/day</span>
+                        <span className="text-[11px] text-green-700 dark:text-green-300 font-medium">doors/day</span>
                     </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-lg p-5">
-                    <h4 className="font-semibold text-purple-800 mb-3 flex items-center">
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="summary-tab-section bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/40 dark:to-purple-900/30 border border-purple-200 dark:border-purple-800 mb-0">
+                    <h4 className="summary-tab-section-title text-purple-800 dark:text-purple-200">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                         </svg>
                         Slabs per Day
                     </h4>
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-1.5">
                         <input
                             type="number"
                             min="1"
                             value={slabsPerDay}
                             onChange={(e) => handleInputChange('slabs', e.target.value)}
-                            className="w-20 px-3 py-2 border border-purple-300 rounded-lg text-center font-bold text-purple-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            className="summary-tab-input border-purple-300 text-purple-900 focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-800 dark:border-purple-700 dark:text-purple-100"
                         />
-                        <span className="ml-2 text-purple-700 font-medium">slabs/day</span>
+                        <span className="text-[11px] text-purple-700 dark:text-purple-300 font-medium">slabs/day</span>
                     </div>
                 </div>
             </div>
 
             {/* Material Quantities Summary */}
-            <div className="bg-gray-50 rounded-lg p-6 mb-8">
-                <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
-                    <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="summary-tab-section bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                <h4 className="summary-tab-section-title text-gray-800 dark:text-gray-200">
+                    <svg className="text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                     Project Material Quantities
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <div className="text-center">
-                            <div className="text-3xl font-bold text-blue-600">{totalQuantities.panels}</div>
-                            <div className="text-sm text-gray-600">Total Panels</div>
-                            <div className="text-xs text-gray-500 mt-1">
-                                {totalQuantities.ceilingPanels > 0 && `${totalQuantities.ceilingPanels} ceiling`}
-                                {totalQuantities.floorPanels > 0 && totalQuantities.ceilingPanels > 0 && ' + '}
-                                {totalQuantities.floorPanels > 0 && `${totalQuantities.floorPanels} floor`}
-                                {totalQuantities.wallPanelsCount > 0 && (totalQuantities.ceilingPanels > 0 || totalQuantities.floorPanels > 0) && ' + '}
-                                {totalQuantities.wallPanelsCount > 0 && `${totalQuantities.wallPanelsCount} wall`}
-                            </div>
+                <div className="summary-tab-stat-grid grid-cols-1 md:grid-cols-3 mb-0">
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                        <div className="summary-tab-stat-value text-blue-600">{totalQuantities.panels}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Total Panels</div>
+                        <div className="summary-tab-stat-meta">
+                            {totalQuantities.ceilingPanels > 0 && `${totalQuantities.ceilingPanels} ceiling`}
+                            {totalQuantities.floorPanels > 0 && totalQuantities.ceilingPanels > 0 && ' + '}
+                            {totalQuantities.floorPanels > 0 && `${totalQuantities.floorPanels} floor`}
+                            {totalQuantities.wallPanelsCount > 0 && (totalQuantities.ceilingPanels > 0 || totalQuantities.floorPanels > 0) && ' + '}
+                            {totalQuantities.wallPanelsCount > 0 && `${totalQuantities.wallPanelsCount} wall`}
                         </div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <div className="text-center">
-                            <div className="text-3xl font-bold text-green-600">{totalQuantities.doors}</div>
-                            <div className="text-sm text-gray-600">Total Doors</div>
-                            <div className="text-xs text-gray-500 mt-1">From project data</div>
-                        </div>
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                        <div className="summary-tab-stat-value text-green-600">{totalQuantities.doors}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Total Doors</div>
+                        <div className="summary-tab-stat-meta">From project data</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <div className="text-center">
-                            <div className="text-3xl font-bold text-purple-600">{totalQuantities.slabs}</div>
-                            <div className="text-sm text-gray-600">Total Slabs</div>
-                            <div className="text-xs text-gray-500 mt-1">From rooms with slab floors ({slabWidth}×{slabLength}mm)</div>
-                        </div>
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                        <div className="summary-tab-stat-value text-purple-600">{totalQuantities.slabs}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Total Slabs</div>
+                        <div className="summary-tab-stat-meta">Slab floors ({slabWidth}×{slabLength}mm)</div>
                     </div>
                 </div>
             </div>
 
             {/* Detailed Panel Breakdown */}
-            <div className="bg-gray-50 rounded-lg p-6 mb-8">
-                <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
-                    <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="summary-tab-section bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                <h4 className="summary-tab-section-title text-gray-800 dark:text-gray-200">
+                    <svg className="text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                     </svg>
                     Panel Breakdown
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-blue-600">
-                                {totalQuantities.ceilingPanels}
-                            </div>
-                            <div className="text-sm text-gray-600">Ceiling Panels</div>
-                            <div className="text-xs text-gray-500 mt-1">
-                                {ceilingPlans.length > 0 ? `${ceilingPlans.length} plans` : 'No plans'}
-                            </div>
-                        </div>
+                <div className="summary-tab-stat-grid grid-cols-2 md:grid-cols-4 mb-0">
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                        <div className="summary-tab-stat-value text-blue-600">{totalQuantities.ceilingPanels}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Ceiling Panels</div>
+                        <div className="summary-tab-stat-meta">{ceilingPlans.length > 0 ? `${ceilingPlans.length} plans` : 'No plans'}</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-green-600">
-                                {totalQuantities.floorPanels}
-                            </div>
-                            <div className="text-sm text-gray-600">Floor Panels</div>
-                            <div className="text-xs text-gray-500 mt-1">
-                                {floorPlans.length > 0 ? `${floorPlans.length} plans` : 'No plans'}
-                            </div>
-                        </div>
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                        <div className="summary-tab-stat-value text-green-600">{totalQuantities.floorPanels}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Floor Panels</div>
+                        <div className="summary-tab-stat-meta">{floorPlans.length > 0 ? `${floorPlans.length} plans` : 'No plans'}</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-purple-600">
-                                {totalQuantities.wallPanelsCount}
-                            </div>
-                            <div className="text-sm text-gray-600">Wall Panels</div>
-                            <div className="text-xs text-gray-500 mt-1">
-                                {walls.length > 0 ? `${walls.length} walls` : 'No walls'}
-                            </div>
-                        </div>
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                        <div className="summary-tab-stat-value text-purple-600">{totalQuantities.wallPanelsCount}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Wall Panels</div>
+                        <div className="summary-tab-stat-meta">{walls.length > 0 ? `${walls.length} walls` : 'No walls'}</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <div className="text-center">
-                            <div className="text-2xl font-bold text-indigo-600">
-                                {totalQuantities.panels}
-                            </div>
-                            <div className="text-sm text-gray-600">Total Panels</div>
-                            <div className="text-xs text-gray-500 mt-1">
-                                Combined count
-                            </div>
-                        </div>
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                        <div className="summary-tab-stat-value text-indigo-600">{totalQuantities.panels}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Total Panels</div>
+                        <div className="summary-tab-stat-meta">Combined count</div>
                     </div>
                 </div>
             </div>
 
             {/* Panel Area by Thickness */}
             {panelAreaByThickness.length > 0 && (
-                <div className="bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-200 rounded-lg p-6 mb-8">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
-                        <svg className="w-5 h-5 mr-2 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="summary-tab-section bg-gradient-to-br from-teal-50 to-cyan-50 dark:from-teal-950/40 dark:to-cyan-950/30 border border-teal-200 dark:border-teal-800">
+                    <h4 className="summary-tab-section-title text-gray-800 dark:text-gray-200">
+                        <svg className="text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                         </svg>
                         Panel Area by Thickness
                     </h4>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full border border-gray-300 bg-white rounded-lg overflow-hidden">
-                            <thead className="bg-teal-100">
+                        <table className="summary-tab-table min-w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-md overflow-hidden">
+                            <thead className="bg-teal-100 dark:bg-teal-900/50">
                                 <tr>
-                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-semibold text-gray-800 dark:text-gray-200">
                                         Thickness (mm)
                                     </th>
-                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-semibold text-gray-800 dark:text-gray-200">
                                         Total Area (m²)
                                     </th>
-                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-semibold text-gray-800 dark:text-gray-200">
                                         Panel Count
                                     </th>
-                                    <th className="px-4 py-3 border border-gray-300 text-left text-sm font-semibold text-gray-800">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-semibold text-gray-800 dark:text-gray-200">
                                         Breakdown
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white">
+                            <tbody className="bg-white dark:bg-gray-900">
                                 {panelAreaByThickness.map((group, index) => (
-                                    <tr key={group.thickness} className={index % 2 === 0 ? 'bg-white' : 'bg-teal-50'}>
-                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900 font-medium">
+                                    <tr key={group.thickness} className={index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-teal-50 dark:bg-teal-950/20'}>
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 font-medium">
                                             {group.thickness}mm
                                         </td>
-                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                             {(group.area / 1000000).toFixed(2)} m²
                                         </td>
-                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                             {group.count} panels
                                         </td>
-                                        <td className="px-4 py-3 border border-gray-300 text-sm text-gray-600">
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">
                                             {group.types.wall > 0 && (
-                                                <span className="inline-block mr-2 px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
+                                                <span className="inline-block mr-1 px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-[10px]">
                                                     {group.types.wall} wall
                                                 </span>
                                             )}
                                             {group.types.ceiling > 0 && (
-                                                <span className="inline-block mr-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                                                <span className="inline-block mr-1 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded text-[10px]">
                                                     {group.types.ceiling} ceiling
                                                 </span>
                                             )}
                                             {group.types.floor > 0 && (
-                                                <span className="inline-block mr-2 px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
+                                                <span className="inline-block mr-1 px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded text-[10px]">
                                                     {group.types.floor} floor
                                                 </span>
                                             )}
                                         </td>
                                     </tr>
                                 ))}
-                                <tr className="bg-teal-100 font-semibold">
-                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                <tr className="bg-teal-100 dark:bg-teal-900/50 font-semibold">
+                                    <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                         Total
                                     </td>
-                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                    <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                         {(panelAreaByThickness.reduce((sum, g) => sum + g.area, 0) / 1000000).toFixed(2)} m²
                                     </td>
-                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-900">
+                                    <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                         {panelAreaByThickness.reduce((sum, g) => sum + g.count, 0)} panels
                                     </td>
-                                    <td className="px-4 py-3 border border-gray-300 text-sm text-gray-600">
+                                    <td className="border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">
                                         Total area across all thicknesses
                                     </td>
                                 </tr>
@@ -3113,85 +3065,84 @@ const InstallationTimeEstimator = ({
             )}
 
             {/* Installation Time Estimates */}
-            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg p-6">
-                <h4 className="font-semibold text-indigo-800 mb-4 flex items-center">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="summary-tab-section bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/30 border border-indigo-200 dark:border-indigo-800">
+                <h4 className="summary-tab-section-title text-indigo-800 dark:text-indigo-200">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     Estimated Installation Time
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200 text-center">
-                        <div className="text-3xl font-bold text-indigo-600">{installationEstimates.days}</div>
-                        <div className="text-sm text-gray-600">Working Days</div>
-                        <div className="text-xs text-gray-500 mt-1">Including 20% buffer</div>
+                <div className="summary-tab-stat-grid grid-cols-1 md:grid-cols-3 mb-0">
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-indigo-200 dark:border-indigo-800">
+                        <div className="summary-tab-stat-value text-indigo-600">{installationEstimates.days}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Working Days</div>
+                        <div className="summary-tab-stat-meta">Including 20% buffer</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200 text-center">
-                        <div className="text-3xl font-bold text-indigo-600">{installationEstimates.weeks}</div>
-                        <div className="text-sm text-gray-600">Working Weeks</div>
-                        <div className="text-xs text-gray-500 mt-1">5 days per week</div>
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-indigo-200 dark:border-indigo-800">
+                        <div className="summary-tab-stat-value text-indigo-600">{installationEstimates.weeks}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Working Weeks</div>
+                        <div className="summary-tab-stat-meta">5 days per week</div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-indigo-200 text-center">
-                        <div className="text-3xl font-bold text-indigo-600">{installationEstimates.months}</div>
-                        <div className="text-sm text-gray-600">Working Months</div>
-                        <div className="text-xs text-gray-500 mt-1">22 days per month</div>
+                    <div className="summary-tab-stat-card bg-white dark:bg-gray-900 border-indigo-200 dark:border-indigo-800">
+                        <div className="summary-tab-stat-value text-indigo-600">{installationEstimates.months}</div>
+                        <div className="summary-tab-stat-label text-gray-600 dark:text-gray-400">Working Months</div>
+                        <div className="summary-tab-stat-meta">22 days per month</div>
                     </div>
                 </div>
                 
-                <div className="mt-4 p-3 bg-indigo-100 rounded-lg">
-                    <p className="text-sm text-indigo-800">
-                        <strong>Note:</strong> This estimate assumes sequential work (panels, doors, and slabs installed one after another) and includes a 20% buffer for coordination and unexpected issues. 
-                        Actual installation time may vary based on site conditions, crew size, and other factors.
+                <div className="mt-2 px-2 py-1.5 bg-indigo-100 dark:bg-indigo-900/40 rounded-md">
+                    <p className="text-[11px] text-indigo-800 dark:text-indigo-200 leading-snug">
+                        <strong>Note:</strong> Assumes sequential work with a 20% buffer. Actual time may vary by site conditions and crew size.
                     </p>
                 </div>
             </div>
 
             {/* Room Details */}
             {rooms.length > 0 && (
-                <div className="bg-gray-50 rounded-lg p-6 mt-8">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
-                        <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="summary-tab-section bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 mt-3">
+                    <h4 className="summary-tab-section-title text-gray-800 dark:text-gray-200">
+                        <svg className="text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
                         </svg>
                         Room Details
                     </h4>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full border border-gray-300">
-                            <thead className="bg-gray-50">
+                        <table className="summary-tab-table min-w-full border border-gray-300 dark:border-gray-600">
+                            <thead className="bg-gray-50 dark:bg-gray-800">
                                 <tr>
-                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-medium text-gray-700 dark:text-gray-300">
                                         Room Name
                                     </th>
-                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-medium text-gray-700 dark:text-gray-300">
                                         Floor Type
                                     </th>
-                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-medium text-gray-700 dark:text-gray-300">
                                         Floor Thickness
                                     </th>
-                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-medium text-gray-700 dark:text-gray-300">
                                         Height
                                     </th>
-                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                    <th className="border border-gray-300 dark:border-gray-600 text-left font-medium text-gray-700 dark:text-gray-300">
                                         Area
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white">
+                            <tbody className="bg-white dark:bg-gray-900">
                                 {rooms.map((room, index) => (
-                                    <tr key={room.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 font-medium">
+                                    <tr key={room.id} className={index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800/50'}>
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 font-medium">
                                             {room.room_name}
                                         </td>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                             {room.floor_type || 'N/A'}
                                         </td>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                             {room.floor_thickness || 'N/A'}
                                         </td>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                             {room.height ? `${room.height}mm` : 'N/A'}
                                         </td>
-                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                        <td className="border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100">
                                             {room.room_points && room.room_points.length > 0 
                                                 ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
                                                 : 'N/A'}
