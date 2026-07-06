@@ -31,6 +31,7 @@ const TOUR = {
   PLAY_MARGIN_FACTOR: 0.85,
   PLAY_MARGIN_MIN: 100,
   WALL_SAMPLE_OFFSET_MM: 250,
+  STOREY_BAND_TOLERANCE_MM: 450,
 };
 
 function clamp(value, min, max) {
@@ -137,6 +138,17 @@ export default class RoomTourController {
   }
 
   /** Matches wall mesh vertical extent in meshUtils (base elevation + height). */
+  getWallBaseY(wall) {
+    const scale = this.instance.scalingFactor;
+    if (
+      wall.fill_gap_mode
+      && wall.gap_base_position != null
+    ) {
+      return Number(wall.gap_base_position) * scale;
+    }
+    return resolveWallBaseElevationMm(wall, this.instance.project) * scale;
+  }
+
   getWallTopY(wall) {
     const scale = this.instance.scalingFactor;
     if (
@@ -159,7 +171,34 @@ export default class RoomTourController {
     return clearanceY >= this.getWallTopY(wall);
   }
 
-  isExteriorWall(wall) {
+  /**
+   * Tall lower-storey shells (e.g. 25 m ASRS) pass through upper floors in XZ but
+   * should not block walking on those upper floor slabs.
+   */
+  isThroughStoreyShaftWall(wall, zone) {
+    if (!zone) {
+      return false;
+    }
+    const tol = TOUR.STOREY_BAND_TOLERANCE_MM * this.instance.scalingFactor;
+    const wallBase = this.getWallBaseY(wall);
+    const wallTop = this.getWallTopY(wall);
+    const { floorY, ceilingY } = zone;
+    return wallBase < floorY - tol && wallTop > ceilingY + tol;
+  }
+
+  wallBlocksOnPlayerStorey(wall, zone) {
+    if (!zone) {
+      return true;
+    }
+    if (this.isThroughStoreyShaftWall(wall, zone)) {
+      return false;
+    }
+    const wallBase = this.getWallBaseY(wall);
+    const wallTop = this.getWallTopY(wall);
+    return wallTop > zone.floorY && wallBase < zone.ceilingY;
+  }
+
+  isExteriorWall(wall, referenceY = this.player.y) {
     if (!this.floorZones.length) {
       return true;
     }
@@ -173,8 +212,8 @@ export default class RoomTourController {
     const off = TOUR.WALL_SAMPLE_OFFSET_MM * scale;
     const side1 = { x: midX + (nx / len) * off, y: midZ + (nz / len) * off };
     const side2 = { x: midX - (nx / len) * off, y: midZ - (nz / len) * off };
-    const in1 = this.floorZones.some((zone) => isPointInPolygon(side1, zone.polygon));
-    const in2 = this.floorZones.some((zone) => isPointInPolygon(side2, zone.polygon));
+    const in1 = this.findFloorZoneAt(side1.x, side1.y, referenceY) != null;
+    const in2 = this.findFloorZoneAt(side2.x, side2.y, referenceY) != null;
     return !(in1 && in2);
   }
 
@@ -237,6 +276,7 @@ export default class RoomTourController {
     }
 
     const insideRoom = this.isInsideAnyRoom(x, z);
+    const playerZone = this.findFloorZoneAt(this.player.x, this.player.z, this.player.y);
 
     for (const wall of this.instance.walls || []) {
       if (this.isAlongDoorOpening(x, z, wall.id)) {
@@ -248,6 +288,10 @@ export default class RoomTourController {
       }
 
       if (this.isAboveWallTop(wall)) {
+        continue;
+      }
+
+      if (!this.wallBlocksOnPlayerStorey(wall, playerZone)) {
         continue;
       }
 
