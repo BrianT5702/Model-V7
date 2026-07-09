@@ -9,10 +9,12 @@ import {
   getWallRunGeometry,
   isPointInDoorPassage,
   isInDoorMovementZone,
+  isPointInClosedDoorVolume,
   openingMatchesWall,
   shouldSkipCollinearWall,
 } from './tourWallCollision';
 import TourMobileControls, { shouldUseTourMobileControls } from './tourMobileControls';
+import { isDoorOpen, toggleDoorContainer } from './doorInteraction';
 
 const TOUR = {
   WALK_SPEED: 32,
@@ -33,6 +35,7 @@ const TOUR = {
   PLAY_MARGIN_FACTOR: 0.85,
   PLAY_MARGIN_MIN: 100,
   WALL_SAMPLE_OFFSET_MM: 250,
+  DOOR_INTERACT_MAX_DIST_MM: 2800,
 };
 
 function clamp(value, min, max) {
@@ -73,6 +76,9 @@ export default class RoomTourController {
     this.handleCanvasClick = this.handleCanvasClick.bind(this);
     this.handleHudStartClick = this.handleHudStartClick.bind(this);
     this.mobileControls = new TourMobileControls(this);
+    this.facingDoor = null;
+    this.doorPrompt = null;
+    this.doorLookRaycaster = new THREE.Raycaster();
   }
 
   isPlacing() {
@@ -122,17 +128,18 @@ export default class RoomTourController {
   }
 
   isAlongDoorOpening(x, z, wallId = null) {
+    const { instance } = this;
     if (wallId != null) {
       return this.doorOpenings.some((opening) => (
         openingMatchesWall(opening, wallId)
-        && isPointInDoorPassage([opening], x, z)
+        && isPointInDoorPassage([opening], x, z, instance)
       ));
     }
-    return isPointInDoorPassage(this.doorOpenings, x, z);
+    return isPointInDoorPassage(this.doorOpenings, x, z, instance);
   }
 
   findDoorOpeningAt(x, z) {
-    return this.doorOpenings.find((opening) => isPointInDoorPassage([opening], x, z));
+    return this.doorOpenings.find((opening) => isPointInDoorPassage([opening], x, z, this.instance));
   }
 
   getWallGeometry(wall) {
@@ -252,12 +259,16 @@ export default class RoomTourController {
     if (this.isInsideAnyRoom(x, z)) {
       return true;
     }
-    return isPointInDoorPassage(this.doorOpenings, x, z);
+    return isPointInDoorPassage(this.doorOpenings, x, z, this.instance);
   }
 
   isBlockedByWall(x, z) {
+    if (isPointInClosedDoorVolume(this.doorOpenings, x, z, this.instance, this.playerRadius)) {
+      return true;
+    }
+
     // Disable all wall collision inside the door approach zone (main wall + jambs).
-    if (isInDoorMovementZone(this.doorOpenings, x, z, this.playerRadius)) {
+    if (isInDoorMovementZone(this.doorOpenings, x, z, this.playerRadius, this.instance)) {
       return false;
     }
 
@@ -423,7 +434,7 @@ export default class RoomTourController {
       return bestFloorY;
     }
 
-    const inDoor = isPointInDoorPassage(this.doorOpenings, x, z);
+    const inDoor = isPointInDoorPassage(this.doorOpenings, x, z, this.instance);
     if (inDoor) {
       const doorOpening = this.findDoorOpeningAt(x, z);
       if (doorOpening?.roomId != null) {
@@ -522,7 +533,7 @@ export default class RoomTourController {
   }
 
   updateInteriorFeel() {
-    const inDoor = isPointInDoorPassage(this.doorOpenings, this.player.x, this.player.z);
+    const inDoor = isPointInDoorPassage(this.doorOpenings, this.player.x, this.player.z, this.instance);
     const eyeReferenceY = this.player.y + this.eyeHeight * 0.35;
     const inside = this.findFloorZoneAt(this.player.x, this.player.z, eyeReferenceY) != null;
     // Only hide ceiling once clearly inside — not while still in the door corridor.
@@ -538,12 +549,157 @@ export default class RoomTourController {
 
   hudMessage(pointerLocked) {
     if (shouldUseTourMobileControls()) {
-      return '<strong>Tour</strong> — Left joystick move · ▲▼ up/down · Drag screen to look · Esc exit';
+      return '<strong>Tour</strong> — Left stick move · Right side look · RUN sprint · USE door';
     }
     if (pointerLocked) {
-      return '<strong>Tour</strong> — WASD move · Space up · Left Alt down · Shift sprint · Mouse look · Scroll zoom · Esc exit';
+      return '<strong>Tour</strong> — WASD move · Space up · Left Alt down · Shift sprint · E door · Mouse look · Scroll zoom · Esc exit';
     }
-    return '<strong>Tour</strong> — Click the model to capture mouse · Walk or fly between storeys · Esc exit';
+    return '<strong>Tour</strong> — Click the model to capture mouse · E to use doors · Esc exit';
+  }
+
+  createDoorPrompt() {
+    if (this.doorPrompt) {
+      return;
+    }
+    const prompt = document.createElement('button');
+    prompt.type = 'button';
+    prompt.className = 'tour-door-prompt';
+    prompt.style.display = 'none';
+    prompt.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.interactWithFacingDoor();
+    });
+    this.instance.uiContainer.appendChild(prompt);
+    this.doorPrompt = prompt;
+  }
+
+  removeDoorPrompt() {
+    if (this.doorPrompt?.parentNode) {
+      this.doorPrompt.parentNode.removeChild(this.doorPrompt);
+    }
+    this.doorPrompt = null;
+  }
+
+  findFacingDoor() {
+    const { instance } = this;
+    const doors = instance.doorObjects || [];
+    if (!doors.length) {
+      return null;
+    }
+
+    const maxDist = TOUR.DOOR_INTERACT_MAX_DIST_MM * instance.scalingFactor;
+    const eyeY = this.player.y + this.eyeHeight;
+    const cosPitch = Math.cos(this.pitch);
+    const direction = new THREE.Vector3(
+      Math.sin(this.yaw) * cosPitch,
+      Math.sin(this.pitch),
+      Math.cos(this.yaw) * cosPitch
+    ).normalize();
+    const origin = new THREE.Vector3(this.player.x, eyeY, this.player.z);
+
+    const panelMeshes = [];
+    doors.forEach((door) => {
+      door.traverse((child) => {
+        if (child.isMesh && child.visible) {
+          panelMeshes.push(child);
+        }
+      });
+    });
+
+    if (panelMeshes.length) {
+      this.doorLookRaycaster.set(origin, direction);
+      this.doorLookRaycaster.far = maxDist;
+      this.doorLookRaycaster.camera = instance.camera;
+      const hits = this.doorLookRaycaster.intersectObjects(panelMeshes, false);
+
+      for (const hit of hits) {
+        let doorObj = hit.object;
+        while (doorObj && !doorObj.userData?.doorId) {
+          doorObj = doorObj.parent;
+        }
+        if (doorObj?.userData?.doorInfo) {
+          return {
+            container: doorObj,
+            doorInfo: doorObj.userData.doorInfo,
+            distance: hit.distance,
+          };
+        }
+      }
+    }
+
+    const forward = this.getForwardVector();
+    let best = null;
+    let bestScore = Infinity;
+    this.doorOpenings.forEach((opening) => {
+      const dx = opening.centerX - this.player.x;
+      const dz = opening.centerZ - this.player.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > maxDist) {
+        return;
+      }
+      const facing = (dx * forward.x + dz * forward.z) / (dist || 1);
+      if (facing < 0.55) {
+        return;
+      }
+      const score = dist / Math.max(facing, 0.01);
+      if (score < bestScore) {
+        const container = doors.find((entry) => (
+          String(entry.userData?.doorInfo?.id) === String(opening.doorId)
+        ));
+        if (container) {
+          bestScore = score;
+          best = {
+            container,
+            doorInfo: container.userData.doorInfo,
+            distance: dist,
+          };
+        }
+      }
+    });
+    return best;
+  }
+
+  updateDoorPrompt() {
+    if (!this.active) {
+      return;
+    }
+    this.createDoorPrompt();
+    this.facingDoor = this.findFacingDoor();
+    if (!this.doorPrompt) {
+      return;
+    }
+
+    if (!this.facingDoor) {
+      this.doorPrompt.style.display = 'none';
+      this.mobileControls?.setDoorInteractVisible?.(false);
+      return;
+    }
+
+    const open = isDoorOpen(this.instance, this.facingDoor.doorInfo);
+    const label = open ? 'Close door' : 'Open door';
+    const keyHint = shouldUseTourMobileControls() ? '' : ' (E)';
+    if (shouldUseTourMobileControls()) {
+      this.doorPrompt.style.display = 'none';
+      this.mobileControls?.setDoorInteractVisible?.(true, label);
+    } else {
+      this.doorPrompt.textContent = `${label}${keyHint}`;
+      this.doorPrompt.style.display = 'block';
+      this.doorPrompt.setAttribute('aria-label', label);
+      this.mobileControls?.setDoorInteractVisible?.(false);
+    }
+  }
+
+  interactWithFacingDoor() {
+    if (!this.facingDoor?.container) {
+      this.facingDoor = this.findFacingDoor();
+    }
+    if (!this.facingDoor?.container) {
+      return false;
+    }
+    toggleDoorContainer(this.instance, this.facingDoor.container);
+    this.updateDoorPrompt();
+    return true;
   }
 
   placementHudMessage(hasSpawn, invalid = false) {
@@ -729,6 +885,7 @@ export default class RoomTourController {
     window.removeEventListener('keydown', this.handleKeyDown);
     this.attachWalkingListeners();
     this.mobileControls.enable();
+    this.createDoorPrompt();
     if (this.hud) {
       this.hud.innerHTML = this.hudMessage(false);
     }
@@ -839,6 +996,10 @@ export default class RoomTourController {
     if (code === 'altleft') {
       event.preventDefault();
       this.keys.add('altleft');
+    }
+    if (key === 'e' && this.active) {
+      event.preventDefault();
+      this.interactWithFacingDoor();
     }
     if (key === 'escape' && this.active) {
       this.instance.setTourActive(false);
@@ -971,7 +1132,9 @@ export default class RoomTourController {
     this.placementMode = false;
     this.active = false;
     this.pendingSpawn = null;
+    this.facingDoor = null;
     this.mobileControls.disable();
+    this.removeDoorPrompt();
     this.detachListeners();
     this.removePlacementMarker();
     this.removeHud();
@@ -1038,14 +1201,18 @@ export default class RoomTourController {
 
     const len = Math.hypot(moveX, moveZ);
     if (len > 0) {
-      const sprint = this.keys.has('shift') ? TOUR.SPRINT_MULTIPLIER : 1;
+      const sprint = (this.keys.has('shift') || this.mobileControls.isSprintPressed())
+        ? TOUR.SPRINT_MULTIPLIER
+        : 1;
       const speed = TOUR.WALK_SPEED * sprint * delta;
       this.tryMove((moveX / len) * speed, (moveZ / len) * speed);
     }
 
     const flying = this.isFlying();
     if (flying) {
-      const sprint = this.keys.has('shift') ? TOUR.SPRINT_MULTIPLIER : 1;
+      const sprint = (this.keys.has('shift') || this.mobileControls.isSprintPressed())
+        ? TOUR.SPRINT_MULTIPLIER
+        : 1;
       const flySpeed = TOUR.FLY_SPEED * sprint * delta;
       if (this.keys.has('space') || (this.mobileControls.isActive() && this.mobileControls.isUpPressed())) {
         this.player.y += flySpeed;
@@ -1056,6 +1223,7 @@ export default class RoomTourController {
       this.clampVerticalPosition();
     }
     this.updateInteriorFeel();
+    this.updateDoorPrompt();
     this.updateCamera();
   }
 

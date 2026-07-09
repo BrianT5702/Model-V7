@@ -159,12 +159,15 @@ export function isPointInDoorVolume(opening, x, z, options = {}) {
   );
 }
 
-export function isPointNearDoorCutout(openings, x, z, wallId = null, playerRadius = 0) {
+export function isPointNearDoorCutout(openings, x, z, wallId = null, playerRadius = 0, instance = null) {
   if (!openings?.length) {
     return false;
   }
   return openings.some((opening) => {
     if (wallId != null && !openingMatchesWall(opening, wallId)) {
+      return false;
+    }
+    if (instance && !isOpeningPassable(instance, opening)) {
       return false;
     }
     return isPointInDoorVolume(opening, x, z, {
@@ -175,13 +178,13 @@ export function isPointNearDoorCutout(openings, x, z, wallId = null, playerRadiu
   });
 }
 
-/** Door approach + passage — disables wall collision while entering or crossing a doorway. */
-export function isInDoorMovementZone(openings, x, z, playerRadius = 0) {
+/** Door approach + passage — disables wall collision while entering or crossing an open doorway. */
+export function isInDoorMovementZone(openings, x, z, playerRadius = 0, instance = null) {
   if (!openings?.length) {
     return false;
   }
-  return isPointInDoorPassage(openings, x, z)
-    || isPointNearDoorCutout(openings, x, z, null, playerRadius);
+  return isPointInDoorPassage(openings, x, z, instance)
+    || isPointNearDoorCutout(openings, x, z, null, playerRadius, instance);
 }
 
 export function buildDoorOpeningZone(instance, wall, door, gapMarginMm, playerRadius) {
@@ -210,6 +213,8 @@ export function buildDoorOpeningZone(instance, wall, door, gapMarginMm, playerRa
       calc.runEndZ
     );
     const opening = {
+      doorId: door.id,
+      door,
       wallId: String(calc.wallId ?? wall.id),
       wallIds: collectDoorWallIds(door, calc.wallId ?? wall.id),
       roomId: door.room ?? null,
@@ -244,6 +249,8 @@ export function buildDoorOpeningZone(instance, wall, door, gapMarginMm, playerRa
   const cutoutEnd = Math.min(wallLen, doorPos + nominalWidth / 2);
   const { axisX, axisZ, wallAngle } = runAxisFromEndpoints(geom.ax, geom.az, geom.bx, geom.bz);
   const opening = {
+    doorId: door.id,
+    door,
     wallId: String(wall.id),
     wallIds: collectDoorWallIds(door, wall.id),
     roomId: door.room ?? null,
@@ -285,12 +292,52 @@ export function isPointInAnyDoorCutout(openings, x, z, wallId = null, options = 
   });
 }
 
+/** Closed doorways still have wall mesh cutouts — treat the opening volume as solid. */
+export function isPointInClosedDoorVolume(openings, x, z, instance, playerRadius = 0) {
+  if (!openings?.length || !instance) {
+    return false;
+  }
+  return openings.some((opening) => {
+    if (isDoorOpeningPassable(instance, opening)) {
+      return false;
+    }
+    return isPointInDoorVolume(opening, x, z, {
+      interior: true,
+      collision: true,
+      playerRadius,
+    });
+  });
+}
+
 /** World-space corridor aligned to door center and wall axis (stable across room boundary). */
-export function isPointInDoorPassage(openings, x, z) {
+export function isDoorOpeningPassable(instance, opening) {
+  if (!opening?.door) {
+    return true;
+  }
+  const doorInfo = opening.door;
+  if (!instance?.doorStates) {
+    return true;
+  }
+  if (doorInfo.door_type === 'swing' && doorInfo.configuration === 'double_sided') {
+    const leftOpen = instance.doorStates.get(`door_${doorInfo.id}_left`) || false;
+    const rightOpen = instance.doorStates.get(`door_${doorInfo.id}_right`) || false;
+    return leftOpen || rightOpen;
+  }
+  return instance.doorStates.get(`door_${doorInfo.id}`) || false;
+}
+
+function isOpeningPassable(instance, opening) {
+  return isDoorOpeningPassable(instance, opening);
+}
+
+export function isPointInDoorPassage(openings, x, z, instance = null) {
   if (!openings?.length) {
     return false;
   }
   return openings.some((opening) => {
+    if (instance && !isOpeningPassable(instance, opening)) {
+      return false;
+    }
     const relX = x - opening.centerX;
     const relZ = z - opening.centerZ;
     const along = relX * opening.axisX + relZ * opening.axisZ;
@@ -320,8 +367,8 @@ export function shouldSkipCollinearWall(openings, instance, wall, x, z) {
   if (!openings?.length) {
     return false;
   }
-  const nearDoor = isInDoorMovementZone(openings, x, z)
-    || isPointInDoorPassage(openings, x, z);
+  const nearDoor = isInDoorMovementZone(openings, x, z, 0, instance)
+    || isPointInDoorPassage(openings, x, z, instance);
   if (!nearDoor) {
     return false;
   }

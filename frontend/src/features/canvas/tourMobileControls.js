@@ -1,6 +1,7 @@
-const JOYSTICK_RADIUS = 52;
-const DEAD_ZONE = 0.12;
-const TOUCH_LOOK_SCALE = 1.6;
+const JOYSTICK_RADIUS = 64;
+const DEAD_ZONE = 0.1;
+const TOUCH_LOOK_SCALE = 2.1;
+const LOOK_ZONE_WIDTH_RATIO = 0.52;
 
 export function shouldUseTourMobileControls() {
   if (typeof window === 'undefined') {
@@ -21,11 +22,13 @@ export default class TourMobileControls {
     this.controller = controller;
     this.enabled = false;
     this.root = null;
+    this.lookZone = null;
     this.joystickBase = null;
     this.joystickStick = null;
     this.stick = { x: 0, y: 0 };
     this.upPressed = false;
     this.downPressed = false;
+    this.sprintPressed = false;
     this.joystickPointerId = null;
     this.joystickCenter = { x: 0, y: 0 };
     this.lookTouchId = null;
@@ -37,9 +40,12 @@ export default class TourMobileControls {
     this.handleJoystickPointerEnd = this.handleJoystickPointerEnd.bind(this);
     this.handleUpDownPointerDown = this.handleUpDownPointerDown.bind(this);
     this.handleUpDownPointerEnd = this.handleUpDownPointerEnd.bind(this);
+    this.handleSprintPointerDown = this.handleSprintPointerDown.bind(this);
+    this.handleSprintPointerEnd = this.handleSprintPointerEnd.bind(this);
     this.handleLookTouchStart = this.handleLookTouchStart.bind(this);
     this.handleLookTouchMove = this.handleLookTouchMove.bind(this);
     this.handleLookTouchEnd = this.handleLookTouchEnd.bind(this);
+    this.handleDoorInteractClick = this.handleDoorInteractClick.bind(this);
   }
 
   isActive() {
@@ -52,26 +58,36 @@ export default class TourMobileControls {
     }
 
     const root = document.createElement('div');
-    root.className = 'tour-mobile-controls';
+    root.className = 'tour-mobile-controls tour-mobile-controls--pubg';
     root.innerHTML = `
+      <div class="tour-look-zone" aria-hidden="true"></div>
       <div class="tour-joystick" aria-hidden="true">
         <div class="tour-joystick__ring"></div>
         <div class="tour-joystick__stick"></div>
       </div>
-      <div class="tour-vertical-pad" aria-hidden="true">
-        <button type="button" class="tour-pad-btn tour-pad-btn--up" aria-label="Move up">▲</button>
-        <button type="button" class="tour-pad-btn tour-pad-btn--down" aria-label="Move down">▼</button>
+      <button type="button" class="tour-pad-btn tour-pad-btn--sprint" aria-label="Sprint">RUN</button>
+      <div class="tour-action-cluster" aria-hidden="true">
+        <button type="button" class="tour-pad-btn tour-pad-btn--up" aria-label="Fly up">▲</button>
+        <button type="button" class="tour-pad-btn tour-pad-btn--down" aria-label="Fly down">▼</button>
+        <button type="button" class="tour-pad-btn tour-pad-btn--door" aria-label="Use door" style="display:none;">USE</button>
       </div>
     `;
 
     this.controller.instance.uiContainer.appendChild(root);
     this.root = root;
+    this.lookZone = root.querySelector('.tour-look-zone');
     this.joystickBase = root.querySelector('.tour-joystick');
     this.joystickStick = root.querySelector('.tour-joystick__stick');
     const upBtn = root.querySelector('.tour-pad-btn--up');
     const downBtn = root.querySelector('.tour-pad-btn--down');
+    const sprintBtn = root.querySelector('.tour-pad-btn--sprint');
+    this.doorBtn = root.querySelector('.tour-pad-btn--door');
 
     this.joystickBase.addEventListener('pointerdown', this.handleJoystickPointerDown);
+    sprintBtn.addEventListener('pointerdown', this.handleSprintPointerDown);
+    sprintBtn.addEventListener('pointerup', this.handleSprintPointerEnd);
+    sprintBtn.addEventListener('pointercancel', this.handleSprintPointerEnd);
+    sprintBtn.addEventListener('pointerleave', this.handleSprintPointerEnd);
     upBtn.addEventListener('pointerdown', this.handleUpDownPointerDown);
     downBtn.addEventListener('pointerdown', this.handleUpDownPointerDown);
     upBtn.addEventListener('pointerup', this.handleUpDownPointerEnd);
@@ -80,29 +96,59 @@ export default class TourMobileControls {
     downBtn.addEventListener('pointercancel', this.handleUpDownPointerEnd);
     upBtn.addEventListener('pointerleave', this.handleUpDownPointerEnd);
     downBtn.addEventListener('pointerleave', this.handleUpDownPointerEnd);
+    this.doorBtn.addEventListener('click', this.handleDoorInteractClick);
+  }
+
+  handleDoorInteractClick(event) {
+    if (!this.isActive()) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.controller.interactWithFacingDoor();
+  }
+
+  setDoorInteractVisible(visible, label = 'USE') {
+    if (!this.doorBtn) {
+      return;
+    }
+    const shortLabel = label.toLowerCase().includes('close') ? 'CLOSE'
+      : label.toLowerCase().includes('open') ? 'OPEN'
+        : 'USE';
+    this.doorBtn.style.display = visible ? 'flex' : 'none';
+    if (visible) {
+      this.doorBtn.textContent = shortLabel;
+      this.doorBtn.setAttribute('aria-label', label);
+    }
   }
 
   attachLookListeners() {
-    const canvas = this.controller.instance.renderer.domElement;
-    canvas.addEventListener('touchstart', this.handleLookTouchStart, { passive: false });
-    canvas.addEventListener('touchmove', this.handleLookTouchMove, { passive: false });
-    canvas.addEventListener('touchend', this.handleLookTouchEnd);
-    canvas.addEventListener('touchcancel', this.handleLookTouchEnd);
+    if (!this.lookZone) {
+      return;
+    }
+    this.lookZone.addEventListener('touchstart', this.handleLookTouchStart, { passive: false });
+    this.lookZone.addEventListener('touchmove', this.handleLookTouchMove, { passive: false });
+    this.lookZone.addEventListener('touchend', this.handleLookTouchEnd);
+    this.lookZone.addEventListener('touchcancel', this.handleLookTouchEnd);
   }
 
   detachLookListeners() {
-    const canvas = this.controller.instance.renderer.domElement;
-    canvas.removeEventListener('touchstart', this.handleLookTouchStart);
-    canvas.removeEventListener('touchmove', this.handleLookTouchMove);
-    canvas.removeEventListener('touchend', this.handleLookTouchEnd);
-    canvas.removeEventListener('touchcancel', this.handleLookTouchEnd);
+    if (!this.lookZone) {
+      return;
+    }
+    this.lookZone.removeEventListener('touchstart', this.handleLookTouchStart);
+    this.lookZone.removeEventListener('touchmove', this.handleLookTouchMove);
+    this.lookZone.removeEventListener('touchend', this.handleLookTouchEnd);
+    this.lookZone.removeEventListener('touchcancel', this.handleLookTouchEnd);
   }
 
   isPointOnControls(clientX, clientY) {
     if (!this.root) {
       return false;
     }
-    const targets = this.root.querySelectorAll('.tour-joystick, .tour-vertical-pad');
+    const targets = this.root.querySelectorAll(
+      '.tour-joystick, .tour-action-cluster, .tour-pad-btn--sprint'
+    );
     for (const el of targets) {
       const rect = el.getBoundingClientRect();
       if (
@@ -115,6 +161,14 @@ export default class TourMobileControls {
       }
     }
     return false;
+  }
+
+  isInLookZone(clientX) {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    const width = window.innerWidth || document.documentElement.clientWidth;
+    return clientX >= width * (1 - LOOK_ZONE_WIDTH_RATIO);
   }
 
   resetJoystick() {
@@ -177,6 +231,21 @@ export default class TourMobileControls {
     this.resetJoystick();
   }
 
+  handleSprintPointerDown(event) {
+    if (!this.isActive()) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.sprintPressed = true;
+    event.currentTarget.classList.add('is-pressed');
+  }
+
+  handleSprintPointerEnd(event) {
+    this.sprintPressed = false;
+    event.currentTarget.classList.remove('is-pressed');
+  }
+
   handleUpDownPointerDown(event) {
     if (!this.isActive()) {
       return;
@@ -185,21 +254,19 @@ export default class TourMobileControls {
     event.stopPropagation();
     if (event.currentTarget.classList.contains('tour-pad-btn--up')) {
       this.upPressed = true;
-      event.currentTarget.classList.add('is-pressed');
     } else {
       this.downPressed = true;
-      event.currentTarget.classList.add('is-pressed');
     }
+    event.currentTarget.classList.add('is-pressed');
   }
 
   handleUpDownPointerEnd(event) {
     if (event.currentTarget.classList.contains('tour-pad-btn--up')) {
       this.upPressed = false;
-      event.currentTarget.classList.remove('is-pressed');
     } else {
       this.downPressed = false;
-      event.currentTarget.classList.remove('is-pressed');
     }
+    event.currentTarget.classList.remove('is-pressed');
   }
 
   handleLookTouchStart(event) {
@@ -207,7 +274,7 @@ export default class TourMobileControls {
       return;
     }
     const touch = event.touches[0];
-    if (this.isPointOnControls(touch.clientX, touch.clientY)) {
+    if (!this.isInLookZone(touch.clientX) || this.isPointOnControls(touch.clientX, touch.clientY)) {
       return;
     }
     this.lookTouchId = touch.identifier;
@@ -263,6 +330,10 @@ export default class TourMobileControls {
     return this.downPressed;
   }
 
+  isSprintPressed() {
+    return this.sprintPressed;
+  }
+
   enable() {
     if (!shouldUseTourMobileControls()) {
       return;
@@ -280,6 +351,7 @@ export default class TourMobileControls {
     this.enabled = false;
     this.upPressed = false;
     this.downPressed = false;
+    this.sprintPressed = false;
     this.lookTouchId = null;
     this.resetJoystick();
     if (this.root) {

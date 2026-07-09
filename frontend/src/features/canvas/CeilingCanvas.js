@@ -173,7 +173,7 @@ const CeilingCanvas = ({
     onPanelSelect,
     selectedRoomId = null, 
     selectedPanelId = null,
-    scale = 1.0,
+    scale,
     
     // Single-room props (for backward compatibility)
     room = null,
@@ -5940,7 +5940,7 @@ const CeilingCanvas = ({
                         <div className="flex items-center gap-2">
                             <span className="font-medium">Scale:</span>
                             <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[10px] tabular-nums">
-                                {currentScale.toFixed(2)}x
+                                {currentScale < 0.01 ? currentScale.toFixed(4) : currentScale.toFixed(2)}x
                             </span>
                         </div>
                         <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-snug">
