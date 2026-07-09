@@ -8,9 +8,11 @@ import {
   doorMatchesWall,
   getWallRunGeometry,
   isPointInDoorPassage,
+  isInDoorMovementZone,
   openingMatchesWall,
   shouldSkipCollinearWall,
 } from './tourWallCollision';
+import TourMobileControls, { shouldUseTourMobileControls } from './tourMobileControls';
 
 const TOUR = {
   WALK_SPEED: 32,
@@ -31,7 +33,6 @@ const TOUR = {
   PLAY_MARGIN_FACTOR: 0.85,
   PLAY_MARGIN_MIN: 100,
   WALL_SAMPLE_OFFSET_MM: 250,
-  STOREY_BAND_TOLERANCE_MM: 450,
 };
 
 function clamp(value, min, max) {
@@ -71,6 +72,7 @@ export default class RoomTourController {
     this.handlePointerLockChange = this.handlePointerLockChange.bind(this);
     this.handleCanvasClick = this.handleCanvasClick.bind(this);
     this.handleHudStartClick = this.handleHudStartClick.bind(this);
+    this.mobileControls = new TourMobileControls(this);
   }
 
   isPlacing() {
@@ -137,7 +139,6 @@ export default class RoomTourController {
     return getWallRunGeometry(this.instance, wall);
   }
 
-  /** Matches wall mesh vertical extent in meshUtils (base elevation + height). */
   getWallBaseY(wall) {
     const scale = this.instance.scalingFactor;
     if (
@@ -149,6 +150,7 @@ export default class RoomTourController {
     return resolveWallBaseElevationMm(wall, this.instance.project) * scale;
   }
 
+  /** Matches wall mesh vertical extent in meshUtils (base elevation + height). */
   getWallTopY(wall) {
     const scale = this.instance.scalingFactor;
     if (
@@ -166,39 +168,21 @@ export default class RoomTourController {
     return baseY + heightMm * scale;
   }
 
+  wallIntersectsPlayerBody(wall, playerY = this.player.y) {
+    const scale = this.instance.scalingFactor;
+    const baseY = this.getWallBaseY(wall);
+    const topY = this.getWallTopY(wall);
+    const bodyBottom = playerY + 40 * scale;
+    const bodyTop = playerY + Math.max(this.eyeHeight, 1750 * scale);
+    return bodyTop > baseY && bodyBottom < topY;
+  }
+
   isAboveWallTop(wall, playerY = this.player.y) {
     const clearanceY = playerY + this.eyeHeight;
     return clearanceY >= this.getWallTopY(wall);
   }
 
-  /**
-   * Tall lower-storey shells (e.g. 25 m ASRS) pass through upper floors in XZ but
-   * should not block walking on those upper floor slabs.
-   */
-  isThroughStoreyShaftWall(wall, zone) {
-    if (!zone) {
-      return false;
-    }
-    const tol = TOUR.STOREY_BAND_TOLERANCE_MM * this.instance.scalingFactor;
-    const wallBase = this.getWallBaseY(wall);
-    const wallTop = this.getWallTopY(wall);
-    const { floorY, ceilingY } = zone;
-    return wallBase < floorY - tol && wallTop > ceilingY + tol;
-  }
-
-  wallBlocksOnPlayerStorey(wall, zone) {
-    if (!zone) {
-      return true;
-    }
-    if (this.isThroughStoreyShaftWall(wall, zone)) {
-      return false;
-    }
-    const wallBase = this.getWallBaseY(wall);
-    const wallTop = this.getWallTopY(wall);
-    return wallTop > zone.floorY && wallBase < zone.ceilingY;
-  }
-
-  isExteriorWall(wall, referenceY = this.player.y) {
+  isExteriorWall(wall) {
     if (!this.floorZones.length) {
       return true;
     }
@@ -212,13 +196,15 @@ export default class RoomTourController {
     const off = TOUR.WALL_SAMPLE_OFFSET_MM * scale;
     const side1 = { x: midX + (nx / len) * off, y: midZ + (nz / len) * off };
     const side2 = { x: midX - (nx / len) * off, y: midZ - (nz / len) * off };
-    const in1 = this.findFloorZoneAt(side1.x, side1.y, referenceY) != null;
-    const in2 = this.findFloorZoneAt(side2.x, side2.y, referenceY) != null;
+    const in1 = this.floorZones.some((zone) => isPointInPolygon(side1, zone.polygon));
+    const in2 = this.floorZones.some((zone) => isPointInPolygon(side2, zone.polygon));
     return !(in1 && in2);
   }
 
   isFlying() {
-    return this.keys.has('space') || this.keys.has('altleft');
+    const mobile = this.mobileControls?.isActive();
+    return this.keys.has('space') || this.keys.has('altleft')
+      || (mobile && (this.mobileControls.isUpPressed() || this.mobileControls.isDownPressed()));
   }
 
   getVerticalBounds() {
@@ -270,16 +256,15 @@ export default class RoomTourController {
   }
 
   isBlockedByWall(x, z) {
-    // Full wall pass-through in door corridor — never push the player sideways at the threshold.
-    if (isPointInDoorPassage(this.doorOpenings, x, z)) {
+    // Disable all wall collision inside the door approach zone (main wall + jambs).
+    if (isInDoorMovementZone(this.doorOpenings, x, z, this.playerRadius)) {
       return false;
     }
 
     const insideRoom = this.isInsideAnyRoom(x, z);
-    const playerZone = this.findFloorZoneAt(this.player.x, this.player.z, this.player.y);
 
     for (const wall of this.instance.walls || []) {
-      if (this.isAlongDoorOpening(x, z, wall.id)) {
+      if (!this.wallIntersectsPlayerBody(wall)) {
         continue;
       }
 
@@ -288,10 +273,6 @@ export default class RoomTourController {
       }
 
       if (this.isAboveWallTop(wall)) {
-        continue;
-      }
-
-      if (!this.wallBlocksOnPlayerStorey(wall, playerZone)) {
         continue;
       }
 
@@ -556,6 +537,9 @@ export default class RoomTourController {
   }
 
   hudMessage(pointerLocked) {
+    if (shouldUseTourMobileControls()) {
+      return '<strong>Tour</strong> — Left joystick move · ▲▼ up/down · Drag screen to look · Esc exit';
+    }
     if (pointerLocked) {
       return '<strong>Tour</strong> — WASD move · Space up · Left Alt down · Shift sprint · Mouse look · Scroll zoom · Esc exit';
     }
@@ -744,6 +728,7 @@ export default class RoomTourController {
 
     window.removeEventListener('keydown', this.handleKeyDown);
     this.attachWalkingListeners();
+    this.mobileControls.enable();
     if (this.hud) {
       this.hud.innerHTML = this.hudMessage(false);
     }
@@ -895,7 +880,7 @@ export default class RoomTourController {
   }
 
   requestPointerLockSafe() {
-    if (!this.active || this.pointerLocked) {
+    if (!this.active || this.pointerLocked || shouldUseTourMobileControls()) {
       return;
     }
     if (performance.now() < this.pointerLockRetryAfter) {
@@ -929,7 +914,9 @@ export default class RoomTourController {
   }
 
   handleCanvasClick() {
-    this.requestPointerLockSafe();
+    if (!shouldUseTourMobileControls()) {
+      this.requestPointerLockSafe();
+    }
   }
 
   beginPlacement() {
@@ -959,6 +946,11 @@ export default class RoomTourController {
     this.instance.animationManager?.killCameraAnimations?.();
     this.prepareTourEnvironment();
 
+    if (this.instance.tourRoomLabels) {
+      this.instance.tourRoomLabels.rebuild();
+      this.instance.tourRoomLabels.setActive(true);
+    }
+
     this.placementMode = true;
     this.pendingSpawn = null;
     this.createPlacementMarker();
@@ -979,10 +971,13 @@ export default class RoomTourController {
     this.placementMode = false;
     this.active = false;
     this.pendingSpawn = null;
+    this.mobileControls.disable();
     this.detachListeners();
     this.removePlacementMarker();
     this.removeHud();
     document.body.style.cursor = 'default';
+
+    this.instance.tourRoomLabels?.setActive(false);
 
     if (typeof this.instance.setCeilingsVisible === 'function') {
       this.instance.setCeilingsVisible(true);
@@ -1033,6 +1028,14 @@ export default class RoomTourController {
       moveZ -= right.z;
     }
 
+    if (this.mobileControls.isActive()) {
+      const stick = this.mobileControls.getStick();
+      if (stick.x !== 0 || stick.y !== 0) {
+        moveX += forward.x * (-stick.y) + right.x * stick.x;
+        moveZ += forward.z * (-stick.y) + right.z * stick.x;
+      }
+    }
+
     const len = Math.hypot(moveX, moveZ);
     if (len > 0) {
       const sprint = this.keys.has('shift') ? TOUR.SPRINT_MULTIPLIER : 1;
@@ -1044,10 +1047,10 @@ export default class RoomTourController {
     if (flying) {
       const sprint = this.keys.has('shift') ? TOUR.SPRINT_MULTIPLIER : 1;
       const flySpeed = TOUR.FLY_SPEED * sprint * delta;
-      if (this.keys.has('space')) {
+      if (this.keys.has('space') || (this.mobileControls.isActive() && this.mobileControls.isUpPressed())) {
         this.player.y += flySpeed;
       }
-      if (this.keys.has('altleft')) {
+      if (this.keys.has('altleft') || (this.mobileControls.isActive() && this.mobileControls.isDownPressed())) {
         this.player.y -= flySpeed;
       }
       this.clampVerticalPosition();
@@ -1058,5 +1061,6 @@ export default class RoomTourController {
 
   dispose() {
     this.deactivate();
+    this.mobileControls.dispose();
   }
 }

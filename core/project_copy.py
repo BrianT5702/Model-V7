@@ -41,6 +41,10 @@ def _json_default(value):
     raise TypeError(f'Object of type {type(value).__name__} is not JSON serializable')
 
 
+def _is_concrete_relation_field(field):
+    return field.is_relation and field.concrete and not field.many_to_many
+
+
 def _serialize_model(instance):
     data = {'_pk': instance.pk}
     for field in instance._meta.concrete_fields:
@@ -48,7 +52,7 @@ def _serialize_model(instance):
             continue
         if field.many_to_many:
             continue
-        if field.many_to_one:
+        if _is_concrete_relation_field(field):
             data[field.name] = getattr(instance, f'{field.name}_id')
         else:
             data[field.name] = field.value_from_object(instance)
@@ -148,13 +152,37 @@ def export_project_to_file(project_name: str, output_path: str) -> dict:
 def _create_rows(model, rows, pk_map, fk_maps=None, null_fields=None):
     fk_maps = fk_maps or {}
     null_fields = null_fields or []
+    fk_field_names = {
+        field.name
+        for field in model._meta.concrete_fields
+        if _is_concrete_relation_field(field)
+    }
+
+    def set_fk(row, field_name, value):
+        row.pop(field_name, None)
+        if field_name in fk_field_names:
+            row[f'{field_name}_id'] = value
+        else:
+            row[field_name] = value
+
+    def finalize_row_fks(row):
+        for field_name in fk_field_names:
+            if field_name in row:
+                row[f'{field_name}_id'] = row.pop(field_name)
+
     for row in rows:
         old_pk = row.pop('_pk')
         for field_name, ref_map in fk_maps.items():
-            if row.get(field_name) is not None:
-                row[field_name] = ref_map[row[field_name]]
+            if field_name not in row:
+                continue
+            value = row.pop(field_name)
+            if value is not None:
+                value = ref_map[value]
+            set_fk(row, field_name, value)
         for field_name in null_fields:
-            row[field_name] = None
+            row.pop(field_name, None)
+            set_fk(row, field_name, None)
+        finalize_row_fks(row)
         instance = model.objects.create(**row)
         pk_map[old_pk] = instance.pk
     return pk_map
@@ -169,9 +197,12 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     old_project_pk = project_row.pop('_pk')
     project_name = rename or project_row.get('name') or payload.get('source_project_name')
     project_row['name'] = project_name
-    project_row['folder'] = None
-    project_row['created_by'] = None
-    project_row['last_edited_by'] = None
+    project_row['folder_id'] = None
+    project_row.pop('folder', None)
+    project_row['created_by_id'] = None
+    project_row.pop('created_by', None)
+    project_row['last_edited_by_id'] = None
+    project_row.pop('last_edited_by', None)
 
     existing = Project.objects.filter(name=project_name).first()
     if existing and not replace:
@@ -188,6 +219,10 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     door_map = {}
     zone_map = {}
 
+    for field in Project._meta.concrete_fields:
+        if _is_concrete_relation_field(field):
+            project_row.pop(field.name, None)
+
     project = Project.objects.create(**project_row)
 
     _create_rows(
@@ -200,7 +235,8 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     wall_rows = []
     for row in payload.get('walls', []):
         item = dict(row)
-        item['project'] = project.pk
+        item['project_id'] = project.pk
+        item.pop('project', None)
         wall_rows.append(item)
     _create_rows(
         Wall,
@@ -212,7 +248,8 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     room_rows = []
     for row in payload.get('rooms', []):
         item = dict(row)
-        item['project'] = project.pk
+        item['project_id'] = project.pk
+        item.pop('project', None)
         room_rows.append(item)
     _create_rows(
         Room,
@@ -228,7 +265,8 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     door_rows = []
     for row in payload.get('doors', []):
         item = dict(row)
-        item['project'] = project.pk
+        item['project_id'] = project.pk
+        item.pop('project', None)
         door_rows.append(item)
     _create_rows(
         Door,
@@ -254,7 +292,8 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     intersection_rows = []
     for row in payload.get('intersections', []):
         item = dict(row)
-        item['project'] = project.pk
+        item['project_id'] = project.pk
+        item.pop('project', None)
         intersection_rows.append(item)
     _create_rows(
         Intersection,
@@ -266,7 +305,8 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     annotation_rows = []
     for row in payload.get('plan_annotations', []):
         item = dict(row)
-        item['project'] = project.pk
+        item['project_id'] = project.pk
+        item.pop('project', None)
         annotation_rows.append(item)
     _create_rows(
         PlanAnnotation,
@@ -279,7 +319,8 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     zone_rows = []
     for row in payload.get('ceiling_zones', []):
         item = dict(row)
-        item['project'] = project.pk
+        item['project_id'] = project.pk
+        item.pop('project', None)
         zone_rows.append(item)
     _create_rows(
         CeilingZone,
@@ -323,9 +364,12 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
     for row in payload.get('comments', []):
         item = dict(row)
         item.pop('_pk', None)
-        item['project'] = project.pk
-        item['author'] = None
-        item['resolved_by'] = None
+        item['project_id'] = project.pk
+        item.pop('project', None)
+        item['author_id'] = None
+        item.pop('author', None)
+        item['resolved_by_id'] = None
+        item.pop('resolved_by', None)
         wall_ids = item.get('wall_ids') or []
         item['wall_ids'] = [wall_map[int(wall_id)] for wall_id in wall_ids if int(wall_id) in wall_map]
         ProjectComment.objects.create(**item)

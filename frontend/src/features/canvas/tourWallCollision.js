@@ -140,18 +140,48 @@ export function worldToWallLocalXZ(opening, x, z) {
 
 export function isPointInDoorVolume(opening, x, z, options = {}) {
   const { localX, localZ } = worldToWallLocalXZ(opening, x, z);
-  const alongMargin = options.interior
-    ? opening.interiorSideMargin
-    : opening.sideMargin;
-  const perpMargin = options.interior
-    ? opening.interiorPerpMargin
-    : opening.perpMargin;
+  const collisionBoost = options.collision ? 1.3 : 1;
+  let alongMargin = (
+    options.interior ? opening.interiorSideMargin : opening.sideMargin
+  ) * collisionBoost;
+  let perpMargin = (
+    options.interior ? opening.interiorPerpMargin : opening.perpMargin
+  ) * collisionBoost;
+  if (options.collision && options.playerRadius) {
+    alongMargin += options.playerRadius * 0.42;
+    perpMargin += options.playerRadius * 0.42;
+  }
   return (
     localX >= opening.cutoutStart - alongMargin
     && localX <= opening.cutoutEnd + alongMargin
     && localZ >= -perpMargin
     && localZ <= opening.wallThickness + perpMargin
   );
+}
+
+export function isPointNearDoorCutout(openings, x, z, wallId = null, playerRadius = 0) {
+  if (!openings?.length) {
+    return false;
+  }
+  return openings.some((opening) => {
+    if (wallId != null && !openingMatchesWall(opening, wallId)) {
+      return false;
+    }
+    return isPointInDoorVolume(opening, x, z, {
+      interior: true,
+      collision: true,
+      playerRadius,
+    });
+  });
+}
+
+/** Door approach + passage — disables wall collision while entering or crossing a doorway. */
+export function isInDoorMovementZone(openings, x, z, playerRadius = 0) {
+  if (!openings?.length) {
+    return false;
+  }
+  return isPointInDoorPassage(openings, x, z)
+    || isPointNearDoorCutout(openings, x, z, null, playerRadius);
 }
 
 export function buildDoorOpeningZone(instance, wall, door, gapMarginMm, playerRadius) {
@@ -287,7 +317,12 @@ export function distPointToSegment2D(px, pz, ax, az, bx, bz) {
 }
 
 export function shouldSkipCollinearWall(openings, instance, wall, x, z) {
-  if (!openings?.length || !isPointInDoorPassage(openings, x, z)) {
+  if (!openings?.length) {
+    return false;
+  }
+  const nearDoor = isInDoorMovementZone(openings, x, z)
+    || isPointInDoorPassage(openings, x, z);
+  if (!nearDoor) {
     return false;
   }
 

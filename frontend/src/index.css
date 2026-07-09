@@ -300,6 +300,123 @@ code {
   display: none;
 }
 
+/* Minecraft-style floating room names during 3D tour */
+.tour-room-label-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tour-room-label {
+  transform: translate(-50%, -100%);
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.tour-room-label__title {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-shadow:
+    1px 1px 0 #2b2b2b,
+    -1px -1px 0 #2b2b2b,
+    1px -1px 0 #2b2b2b,
+    -1px 1px 0 #2b2b2b;
+}
+
+.tour-room-label__meta {
+  margin-top: 2px;
+  color: #d1d5db;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-shadow: 1px 1px 0 #1f2937;
+}
+
+/* Tour mobile game-style controls (phone / tablet) */
+.tour-mobile-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  display: none;
+}
+
+.tour-joystick {
+  position: absolute;
+  left: 16px;
+  bottom: 80px;
+  width: 120px;
+  height: 120px;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.tour-joystick__ring {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.tour-joystick__stick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(124, 58, 237, 0.88);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.tour-vertical-pad {
+  position: absolute;
+  right: 16px;
+  bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.tour-pad-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(15, 23, 42, 0.55);
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.tour-pad-btn.is-pressed {
+  background: rgba(124, 58, 237, 0.92);
+  border-color: rgba(255, 255, 255, 0.55);
+  transform: scale(0.96);
+}
+
 /* 3D View Button Positioning */
 #three-canvas-container button {
   z-index: 10;

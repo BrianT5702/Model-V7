@@ -15,6 +15,7 @@ import WallRenderer from './components/WallRenderer';
 import DoorRenderer from './components/DoorRenderer';
 import AnimationManager from './managers/AnimationManager';
 import RoomTourController from './roomTourController';
+import TourRoomLabelManager from './tourRoomLabels';
 
 const isThreeDebugEnabled = process.env.REACT_APP_DEBUG_THREE === 'true';
 const debugLog = (...args) => {
@@ -68,6 +69,7 @@ export default class ThreeCanvas3D {
     this.doorRenderer = new DoorRenderer(this);
     this.animationManager = new AnimationManager(this);
     this.roomTourController = new RoomTourController(this);
+    this.tourRoomLabels = new TourRoomLabelManager(this);
 
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
@@ -246,7 +248,8 @@ export default class ThreeCanvas3D {
     
     // Update renderer size (will use pixel ratio automatically)
     this.renderer.setSize(width, height);
-    
+    this.tourRoomLabels?.syncRendererSize();
+
     debugLog(`📱 Resize: ${width}x${height} (aspect: ${this.camera.aspect.toFixed(2)})`);
   }
 
@@ -333,6 +336,11 @@ export default class ThreeCanvas3D {
     if (this.roomTourController) {
       this.roomTourController.dispose();
       this.roomTourController = null;
+    }
+
+    if (this.tourRoomLabels) {
+      this.tourRoomLabels.dispose();
+      this.tourRoomLabels = null;
     }
 
     if (this.studioGround) {
@@ -633,6 +641,18 @@ getModelBounds() {
       this.controls.update();
     }
     this.renderer.render(this.scene, this.camera);
+
+    if (this.isTourEngaged()) {
+      const playerRef = this.roomTourController.isWalking()
+        ? this.roomTourController.player
+        : {
+          x: this.camera.position.x,
+          y: this.camera.position.y,
+          z: this.camera.position.z,
+        };
+      this.tourRoomLabels?.update(playerRef);
+      this.tourRoomLabels?.render();
+    }
   }
 
   setTourActive(active) {
@@ -754,6 +774,9 @@ getModelBounds() {
 
       if (this.roomTourController?.isPlacing?.() || this.roomTourController?.isWalking?.()) {
         this.roomTourController.buildDoorOpenings();
+      }
+      if (this.tourRoomLabels?.active) {
+        this.tourRoomLabels.rebuild();
       }
     } catch (error) {
       console.error('Error building model:', error);
