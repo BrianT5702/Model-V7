@@ -101,7 +101,7 @@ if [[ ! -f "$MANIFEST" ]]; then
     echo "ERROR: Missing $MANIFEST — frontend build did not complete."
     exit 1
 fi
-MAIN_JS=$(grep -oE 'static/js/main\.[a-f0-9]+\.js' "$MANIFEST" | head -1)
+MAIN_JS=$(grep -oE 'static/js/main\.[A-Za-z0-9_-]+\.js' "$MANIFEST" | head -1)
 if [[ -n "$MAIN_JS" ]]; then
     if [[ ! -f "$APP_DIR/frontend/$FRONTEND_BUILD_DIR/$MAIN_JS" ]]; then
         echo "ERROR: Manifest references $MAIN_JS but file is missing in frontend/$FRONTEND_BUILD_DIR."

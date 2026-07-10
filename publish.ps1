@@ -32,7 +32,7 @@ if (-not (Test-Path "$Root\frontend\dist\asset-manifest.json")) {
     throw "Build failed: frontend\dist\asset-manifest.json missing"
 }
 
-$mainJsMatch = Select-String -Path "$Root\frontend\dist\asset-manifest.json" -Pattern 'static/js/main\.[a-f0-9]+\.js' | Select-Object -First 1
+$mainJsMatch = Select-String -Path "$Root\frontend\dist\asset-manifest.json" -Pattern 'static/js/main\.[A-Za-z0-9_-]+\.js' | Select-Object -First 1
 $mainJsPath = if ($mainJsMatch) { $mainJsMatch.Matches.Value } else { $null }
 if ($mainJsPath) { Write-Host "    Built: $mainJsPath" }
 

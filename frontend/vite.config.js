@@ -70,6 +70,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const outDir = process.env.BUILD_PATH || 'dist';
   return {
+    appType: 'spa',
     plugins: [treatJsFilesAsJsx(), react({ include: /\.(jsx|js)$/ }), craAssetManifest(outDir)],
     envPrefix: ['VITE_', 'REACT_APP_'],
     define: buildProcessEnvDefines(mode, env),
