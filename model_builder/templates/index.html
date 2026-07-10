@@ -12,14 +12,13 @@
     <link rel="manifest" href="/manifest.json" />
     <title>Model-V7.0 - BIM System</title>
     
-    <!-- React App CSS - Dynamically loaded from asset-manifest.json -->
-    <link href="{% react_asset 'css' %}" rel="stylesheet">
+    <!-- Vite build is ES modules — type="module" required (CRA/webpack used classic scripts) -->
+    <link href="{% react_asset 'css' %}" rel="stylesheet" crossorigin>
 </head>
 <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     
-    <!-- React App JavaScript - Dynamically loaded from asset-manifest.json -->
-    <script defer="defer" src="{% react_asset 'js' %}"></script>
+    <script type="module" crossorigin src="{% react_asset 'js' %}"></script>
 </body>
 </html>
