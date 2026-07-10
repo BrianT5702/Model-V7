@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { isCoarsePointerDevice } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
 import { useAuth } from '../auth/AuthContext';
 import {
     getPlanCanvasBackground,
@@ -1094,6 +1094,7 @@ const CeilingCanvas = ({
     // Canvas dragging state (separate from support dragging)
     const isDraggingCanvas = useRef(false);
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
+    const lastTwoFingerCenter = useRef(null);
     const hasUserPositionedView = useRef(false); // Track if user has manually positioned the view
 
     // Canvas dimensions are derived from container size for responsiveness
@@ -4500,15 +4501,60 @@ const CeilingCanvas = ({
         isDraggingCanvas.current = false;
     };
 
+    const handleTouchStart = (e) => {
+        if (!isCoarsePointerDevice() || e.touches.length !== 2) {
+            return;
+        }
+        lastTwoFingerCenter.current = getTouchCenter(e.touches);
+        isDraggingCanvas.current = true;
+        hasUserPositionedView.current = true;
+        e.preventDefault();
+    };
+
+    const handleTouchMove = (e) => {
+        if (!isCoarsePointerDevice() || e.touches.length !== 2 || !lastTwoFingerCenter.current) {
+            return;
+        }
+        const center = getTouchCenter(e.touches);
+        if (!center) {
+            return;
+        }
+        offsetX.current += center.x - lastTwoFingerCenter.current.x;
+        offsetY.current += center.y - lastTwoFingerCenter.current.y;
+        lastTwoFingerCenter.current = center;
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+            drawCanvas(ctx);
+        }
+        e.preventDefault();
+    };
+
+    const handleTouchEnd = () => {
+        if (!isCoarsePointerDevice()) {
+            return;
+        }
+        lastTwoFingerCenter.current = null;
+        isDraggingCanvas.current = false;
+    };
+
     // Add global mouse up event listener for canvas dragging
     useEffect(() => {
         const handleGlobalMouseUp = () => {
             isDraggingCanvas.current = false;
         };
+
+        const handleGlobalTouchEnd = () => {
+            lastTwoFingerCenter.current = null;
+            isDraggingCanvas.current = false;
+        };
         
         document.addEventListener('mouseup', handleGlobalMouseUp);
+        document.addEventListener('touchend', handleGlobalTouchEnd);
+        document.addEventListener('touchcancel', handleGlobalTouchEnd);
         return () => {
             document.removeEventListener('mouseup', handleGlobalMouseUp);
+            document.removeEventListener('touchend', handleGlobalTouchEnd);
+            document.removeEventListener('touchcancel', handleGlobalTouchEnd);
         };
     }, []);
 
@@ -5874,7 +5920,8 @@ const CeilingCanvas = ({
                             }`}
                             style={{
                                 width: '100%',
-                                height: '100%'
+                                height: '100%',
+                                touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
                             }}
                             onMouseDown={handleMouseDown}
                             onMouseMove={(e) => {
@@ -5885,6 +5932,9 @@ const CeilingCanvas = ({
                             }}
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
                             onClick={handleCanvasClick}
                             onContextMenu={(e) => e.preventDefault()}
                         />
@@ -5963,7 +6013,9 @@ const CeilingCanvas = ({
                             {canEditPanels
                                 ? 'Click room to select, then click panel to swap · '
                                 : 'Click room to view details · '}
-                            Drag to pan · Use zoom buttons
+                            {isCoarsePointerDevice()
+                                ? 'Swipe to scroll · Two fingers to pan · Zoom buttons to zoom'
+                                : 'Drag to pan · Use zoom buttons'}
                         </p>
                     </div>
                     

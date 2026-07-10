@@ -259,7 +259,15 @@ code {
 .wall-canvas,
 .ceiling-canvas,
 .floor-canvas {
-  touch-action: none;
+  touch-action: pan-y;
+}
+
+@media (min-width: 1024px) {
+  .wall-canvas,
+  .ceiling-canvas,
+  .floor-canvas {
+    touch-action: none;
+  }
 }
 
 /* Ensure header scales with browser zoom on mobile */

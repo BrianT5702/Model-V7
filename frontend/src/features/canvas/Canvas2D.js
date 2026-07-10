@@ -23,7 +23,7 @@ import {
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
-import { isCoarsePointerDevice } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
 import { drawPlanAnnotationArrows, isPointNearPlanAnnotation } from './drawPlanAnnotations';
 import {
     buildPlanNoteFromPlacement,
@@ -215,6 +215,7 @@ const Canvas2D = ({
     const suppressNextContextMenu = useRef(false);
     const lastMousePos = useRef({ x: 0, y: 0 });
     const lastTouchPos = useRef({ x: 0, y: 0 });
+    const lastTwoFingerCenter = useRef(null);
     const isTouchDragging = useRef(false);
     const touchStartTime = useRef(0);
 
@@ -337,7 +338,7 @@ const Canvas2D = ({
         e.preventDefault();
     };
 
-    // Touch event handlers for mobile canvas dragging
+    // Touch: on phones single-finger scrolls the page; two-finger drag pans the plan.
     const handleTouchStart = (e) => {
         if (planAnnotateMode && planNoteAddMode && canAnnotate && !planAnnotationArrowPlacementId && e.touches.length === 1) {
             const touch = e.touches[0];
@@ -347,12 +348,22 @@ const Canvas2D = ({
             return;
         }
 
-        // Only allow dragging with single touch (not pinch-to-zoom)
+        if (isCoarsePointerDevice()) {
+            if (e.touches.length === 2) {
+                lastTwoFingerCenter.current = getTouchCenter(e.touches);
+                isTouchDragging.current = true;
+                isDraggingCanvas.current = true;
+                isZoomed.current = true;
+                e.preventDefault();
+            }
+            return;
+        }
+
         if (e.touches.length === 1) {
             const touch = e.touches[0];
             touchStartTime.current = Date.now();
             lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
-            isTouchDragging.current = false; // Will be set to true on move if movement is significant
+            isTouchDragging.current = false;
         }
     };
 
@@ -370,46 +381,43 @@ const Canvas2D = ({
             return;
         }
 
-        // Only handle single touch for dragging
+        if (isCoarsePointerDevice()) {
+            if (e.touches.length === 2 && lastTwoFingerCenter.current) {
+                const center = getTouchCenter(e.touches);
+                if (center) {
+                    offsetX.current += center.x - lastTwoFingerCenter.current.x;
+                    offsetY.current += center.y - lastTwoFingerCenter.current.y;
+                    lastTwoFingerCenter.current = center;
+                    setForceRefresh((prev) => prev + 1);
+                }
+                e.preventDefault();
+            }
+            return;
+        }
+
         if (e.touches.length === 1 && lastTouchPos.current) {
             const touch = e.touches[0];
             const deltaX = touch.clientX - lastTouchPos.current.x;
             const deltaY = touch.clientY - lastTouchPos.current.y;
-            
-            // Check if movement is significant enough to be considered dragging (not a tap)
             const movementDistance = Math.hypot(deltaX, deltaY);
-            const isHorizontalGesture = Math.abs(deltaX) > Math.abs(deltaY) * 1.25;
 
             if (movementDistance > 5) {
-                if (isCoarsePointerDevice() && !isHorizontalGesture) {
-                    isTouchDragging.current = false;
-                    isDraggingCanvas.current = false;
-                    lastTouchPos.current = null;
-                    return;
-                }
-
                 if (!isTouchDragging.current) {
-                    // Start dragging
                     isTouchDragging.current = true;
                     isDraggingCanvas.current = true;
                     isZoomed.current = true;
-                    e.preventDefault(); // Prevent scrolling
+                    e.preventDefault();
                 }
-                
+
                 if (isTouchDragging.current) {
-                    // Update canvas offset
                     offsetX.current += deltaX;
                     offsetY.current += deltaY;
-                    
                     lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
-                    
-                    // Trigger a re-render
-                    setForceRefresh(prev => prev + 1);
-                    e.preventDefault(); // Prevent scrolling
+                    setForceRefresh((prev) => prev + 1);
+                    e.preventDefault();
                 }
             }
         } else if (e.touches.length > 1) {
-            // Multi-touch detected, cancel dragging (likely pinch-to-zoom)
             isTouchDragging.current = false;
             isDraggingCanvas.current = false;
         }
@@ -430,16 +438,25 @@ const Canvas2D = ({
             return;
         }
 
-        // Check if this was a tap (not a drag)
+        if (isCoarsePointerDevice()) {
+            const wasTwoFingerPan = Boolean(lastTwoFingerCenter.current);
+            lastTwoFingerCenter.current = null;
+            isTouchDragging.current = false;
+            isDraggingCanvas.current = false;
+            lastTouchPos.current = null;
+            if (wasTwoFingerPan) {
+                e.preventDefault();
+            }
+            return;
+        }
+
         const touchDuration = Date.now() - touchStartTime.current;
-        const wasTap = !isTouchDragging.current && touchDuration < 300; // Less than 300ms
-        
+        const wasTap = !isTouchDragging.current && touchDuration < 300;
+
         isTouchDragging.current = false;
         isDraggingCanvas.current = false;
         lastTouchPos.current = null;
-        
-        // If it was a tap, don't prevent default to allow normal click handling
-        // The click event will be fired after touchend
+
         if (!wasTap) {
             e.preventDefault();
         }
@@ -473,6 +490,7 @@ const Canvas2D = ({
         const handleGlobalTouchEnd = () => {
             isTouchDragging.current = false;
             isDraggingCanvas.current = false;
+            lastTwoFingerCenter.current = null;
         };
         
         document.addEventListener('mouseup', handleGlobalMouseUp);
@@ -3014,7 +3032,9 @@ const Canvas2D = ({
                                         </span>
                                     </div>
                                     <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                                        Click and drag to navigate · Use zoom buttons
+                                        {isCoarsePointerDevice()
+                                            ? 'Swipe to scroll · Two fingers to pan · Zoom buttons to zoom'
+                                            : 'Click and drag to navigate · Use zoom buttons'}
                                     </span>
                                 </div>
                             </div>

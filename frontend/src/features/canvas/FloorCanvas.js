@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { isCoarsePointerDevice } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
 import { useTheme } from '../theme/ThemeContext';
 import {
     getPlanCanvasBackground,
@@ -118,6 +118,7 @@ const FloorCanvas = ({
     
     // Canvas dragging state (separate from other dragging)
     const isDraggingCanvas = useRef(false);
+    const lastTwoFingerCenter = useRef(null);
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
     const hasUserPositionedView = useRef(false);
     
@@ -1574,14 +1575,59 @@ const FloorCanvas = ({
         isDraggingCanvas.current = false;
     };
 
+    const handleTouchStart = (e) => {
+        if (!isCoarsePointerDevice() || e.touches.length !== 2) {
+            return;
+        }
+        lastTwoFingerCenter.current = getTouchCenter(e.touches);
+        isDraggingCanvas.current = true;
+        hasUserPositionedView.current = true;
+        e.preventDefault();
+    };
+
+    const handleTouchMove = (e) => {
+        if (!isCoarsePointerDevice() || e.touches.length !== 2 || !lastTwoFingerCenter.current) {
+            return;
+        }
+        const center = getTouchCenter(e.touches);
+        if (!center) {
+            return;
+        }
+        offsetX.current += center.x - lastTwoFingerCenter.current.x;
+        offsetY.current += center.y - lastTwoFingerCenter.current.y;
+        lastTwoFingerCenter.current = center;
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+            drawCanvas(ctx);
+        }
+        e.preventDefault();
+    };
+
+    const handleTouchEnd = () => {
+        if (!isCoarsePointerDevice()) {
+            return;
+        }
+        lastTwoFingerCenter.current = null;
+        isDraggingCanvas.current = false;
+    };
+
     useEffect(() => {
         const handleGlobalMouseUp = () => {
             isDraggingCanvas.current = false;
         };
+
+        const handleGlobalTouchEnd = () => {
+            lastTwoFingerCenter.current = null;
+            isDraggingCanvas.current = false;
+        };
         
         document.addEventListener('mouseup', handleGlobalMouseUp);
+        document.addEventListener('touchend', handleGlobalTouchEnd);
+        document.addEventListener('touchcancel', handleGlobalTouchEnd);
         return () => {
             document.removeEventListener('mouseup', handleGlobalMouseUp);
+            document.removeEventListener('touchend', handleGlobalTouchEnd);
+            document.removeEventListener('touchcancel', handleGlobalTouchEnd);
         };
     }, []);
 
@@ -1746,13 +1792,17 @@ const FloorCanvas = ({
                             className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
                             style={{
                                 width: '100%',
-                                height: '100%'
+                                height: '100%',
+                                touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
                             }}
                             onWheel={handleWheel}
                             onMouseDown={handleMouseDown}
                             onMouseMove={handleMouseMove}
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
                             onClick={handleCanvasClick}
                             onContextMenu={(e) => e.preventDefault()}
                         />
@@ -1798,7 +1848,9 @@ const FloorCanvas = ({
                             </span>
                         </div>
                         <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                            Click panels to select · Drag to pan · Use zoom buttons
+                            {isCoarsePointerDevice()
+                                ? 'Swipe to scroll · Two fingers to pan · Zoom buttons to zoom'
+                                : 'Click panels to select · Drag to pan · Use zoom buttons'}
                         </span>
                     </div>
                 </div>
