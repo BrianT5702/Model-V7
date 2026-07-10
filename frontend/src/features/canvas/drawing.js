@@ -3337,7 +3337,7 @@ export function drawWalls({
     // Second pass: Extend lines to intersections (before 45° cuts)
     // This ensures perfect alignment at intersections
     intersections.forEach(inter => {
-        const tolerance = SNAP_THRESHOLD / currentScaleFactor;
+        const tolerance = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
         
         // Find all walls that meet at this intersection
         const wallsAtIntersection = [];
@@ -3938,7 +3938,7 @@ export function drawWalls({
         
         // Check each intersection to find 45° cuts at each endpoint
         intersections.forEach(inter => {
-            const tolerance = SNAP_THRESHOLD / currentScaleFactor;
+            const tolerance = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
             const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
             const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
             

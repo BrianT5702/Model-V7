@@ -24,10 +24,12 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   },
-  "proxy": "http://127.0.0.1:8000",
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start:cra": "react-scripts start",
+    "build:cra": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
@@ -51,8 +53,10 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",
-    "tailwindcss": "^3.3.5"
+    "tailwindcss": "^3.3.5",
+    "vite": "^6.0.3"
   }
 }

@@ -13,7 +13,7 @@ import {
     drawWallPlanDimensionsLayer,
     drawOverallProjectDimensions
 } from '../canvas/drawing';
-import { planCeilingValueDedupKey } from '../canvas/DimensionConfig';
+import { planCeilingValueDedupKey, DIMENSION_CONFIG } from '../canvas/DimensionConfig';
 import { filterDimensions } from '../canvas/dimensionFilter';
 import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset } from '../canvas/doorPlacement';
 import { withPlanCanvasLightTheme } from '../canvas/planCanvasTheme';
@@ -753,8 +753,7 @@ export function drawVectorWallPlan(
                     // Draw walls using EXACT same logic as canvas (drawWalls from drawing.js)
                     // First pass: Calculate all wall lines and store them
                     const wallLinesMap = new Map(); // Store line1 and line2 for each wall
-                    /** Model mm — aligns with drawing.js `SNAP_THRESHOLD / currentScaleFactor` at typical zoom */
-                    const MODEL_SNAP_TOLERANCE_MM = 35;
+                    const MODEL_SNAP_TOLERANCE_MM = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
 
                     wallsToDraw.forEach((wall) => {
                         const wallThickness = wall.thickness || 100;

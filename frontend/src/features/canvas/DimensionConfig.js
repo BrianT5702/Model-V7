@@ -28,6 +28,8 @@ export const DIMENSION_CONFIG = {
     PLAN_EXTERIOR_SEP_MM: 10,       // Label must clear project envelope by this (mm)
     SPAN_LANE_GAP_MM: 80,           // Min gap between separated spans before a new row (touching ends share a row)
     SPAN_ENDPOINT_TOUCH_TOL_MM: 2, // End-to-end chain tolerance (model mm)
+    /** Fixed model-mm tolerance for wall joint/intersection geometry (draw + PDF). Not zoom-dependent. */
+    WALL_JOINT_TOLERANCE_MM: 35,
     PLAN_EXTERIOR_ROW_BASE: 10,    // Unified exterior row offset (px) — same for all tiers on one lane
     PLAN_EXTERIOR_ROW_SPACING: 10, // Row step between span lanes (px)
     PLAN_ROOM_EXTERIOR_BOOST: 10,  // Extra px so room/wall dims sit outside grouped panel rows on the same edge

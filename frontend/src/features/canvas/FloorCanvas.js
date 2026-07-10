@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { isCoarsePointerDevice } from '../../utils/pointerUtils';
 import { useTheme } from '../theme/ThemeContext';
 import {
     getPlanCanvasBackground,
@@ -1524,6 +1525,9 @@ const FloorCanvas = ({
     };
 
     const handleMouseDown = (e) => {
+        if (isCoarsePointerDevice()) {
+            return;
+        }
         isDraggingCanvas.current = true;
         hasUserPositionedView.current = true;
         lastCanvasMousePos.current = { x: e.clientX, y: e.clientY };

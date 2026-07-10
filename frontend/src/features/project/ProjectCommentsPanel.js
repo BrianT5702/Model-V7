@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FaCheck, FaComment, FaTimes, FaMapMarkerAlt, FaUndo } from 'react-icons/fa';
 import api from '../../api/api';
@@ -42,9 +42,11 @@ const ProjectCommentsPanel = ({
     const [feedback, setFeedback] = useState('');
     const [isMinimized, setIsMinimized] = useState(false);
     const [updatingStatusId, setUpdatingStatusId] = useState(null);
+    const activeCommentRef = useRef(null);
 
     const isDrafterView = canEdit && !canComment;
     const isDrafterHighlightView = isDrafterView && activeCommentId && highlightedWallCount > 0;
+    const activeComment = comments.find((comment) => comment.id === activeCommentId) || null;
 
     const handleFinishWallSelect = useCallback(() => {
         onToggleWallSelectMode?.(false);
@@ -106,6 +108,12 @@ const ProjectCommentsPanel = ({
             setIsMinimized(false);
         }
     }, [activeCommentId, highlightedWallCount]);
+
+    useEffect(() => {
+        if (!isMinimized && activeCommentId && activeCommentRef.current) {
+            activeCommentRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }, [isMinimized, activeCommentId]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -234,7 +242,7 @@ const ProjectCommentsPanel = ({
             <div className="fixed bottom-6 right-6 z-[11000] pointer-events-none">
                 <div className="project-comments-minimized pointer-events-auto bg-gray-900/90 text-white px-4 py-3 rounded-lg shadow-lg max-w-sm border border-gray-700">
                     <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium">Viewing referenced walls…</div>
+                        <div className="text-sm font-medium">Customer feedback</div>
                         <button
                             type="button"
                             onClick={() => setIsMinimized(false)}
@@ -243,7 +251,22 @@ const ProjectCommentsPanel = ({
                             Restore panel
                         </button>
                     </div>
-                    <p className="text-xs text-gray-200 mt-2">
+                    {activeComment && (
+                        <div className="mt-2 border-t border-gray-700 pt-2">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="text-xs font-medium text-gray-100">
+                                    {activeComment.author_username || 'Unknown'}
+                                </span>
+                                <span className="text-[10px] text-gray-400 shrink-0">
+                                    {formatDateTime(activeComment.created_at)}
+                                </span>
+                            </div>
+                            <p className="text-xs text-gray-100 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                {activeComment.body}
+                            </p>
+                        </div>
+                    )}
+                    <p className="text-xs text-gray-300 mt-2">
                         {highlightedWallCount} wall{highlightedWallCount !== 1 ? 's' : ''} highlighted on the floor plan.
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -256,7 +279,7 @@ const ProjectCommentsPanel = ({
                         </button>
                         <button
                             type="button"
-                            onClick={() => setIsMinimized(false)}
+                            onClick={() => onClearActiveComment?.()}
                             className="px-3 py-1.5 rounded-md bg-amber-600 text-xs font-medium hover:bg-amber-500 transition-colors"
                         >
                             Back to comments
@@ -329,6 +352,7 @@ const ProjectCommentsPanel = ({
                         return (
                             <button
                                 key={comment.id}
+                                ref={isActive ? activeCommentRef : null}
                                 type="button"
                                 onClick={() => onSelectComment?.(comment)}
                                 className={`w-full text-left rounded-lg border p-3 transition-colors comment-card ${

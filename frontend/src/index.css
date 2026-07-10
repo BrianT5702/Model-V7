@@ -115,6 +115,23 @@ code {
   max-width: 100%;
 }
 
+@media (max-width: 1023px) {
+  .project-details-container {
+    height: auto;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: auto;
+  }
+
+  .wall-canvas,
+  .ceiling-canvas,
+  .floor-canvas {
+    touch-action: pan-y;
+  }
+}
+
 /* Ensure headers span full width and match scrollable content */
 .project-details-container > div:first-of-type {
   display: flex;
@@ -139,6 +156,32 @@ code {
   flex: 1 1 0%;
   min-height: 0;
   overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .project-details-container > div:first-of-type {
+    overflow: visible;
+    flex: 1 0 auto;
+    min-height: auto;
+  }
+
+  .project-details-workspace {
+    overflow: visible;
+    flex: 1 0 auto;
+    min-height: auto;
+  }
+
+  .project-details-workspace .project-details-main {
+    overflow: visible;
+    flex: 1 0 auto;
+    min-height: auto;
+  }
+
+  .project-details-workspace .project-details-main > .canvas-container:not(.canvas-container-3d) {
+    overflow: visible;
+    flex: 1 0 auto;
+    min-height: auto;
+  }
 }
 
 /* Edit controls sidebar — independent scroll from main content */
@@ -195,6 +238,12 @@ code {
 
 .tool-button.active:hover {
   @apply border-blue-600 bg-blue-100 dark:bg-blue-900;
+}
+
+.wall-canvas,
+.ceiling-canvas,
+.floor-canvas {
+  touch-action: none;
 }
 
 /* Ensure header scales with browser zoom on mobile */

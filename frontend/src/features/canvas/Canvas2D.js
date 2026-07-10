@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
+import PanelCalculator from '../panel/PanelCalculator';
 import DoorTable from '../door/DoorTable';
 import { calculatePolygonArea, findIntersectionPointsBetweenWalls } from './utils';
 import {
@@ -22,6 +23,7 @@ import {
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
+import { isCoarsePointerDevice } from '../../utils/pointerUtils';
 import { drawPlanAnnotationArrows, isPointNearPlanAnnotation } from './drawPlanAnnotations';
 import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightColor } from './planCanvasTheme';
 import { useTheme } from '../theme/ThemeContext';
@@ -298,7 +300,16 @@ const Canvas2D = ({
             
             // Check if movement is significant enough to be considered dragging (not a tap)
             const movementDistance = Math.hypot(deltaX, deltaY);
-            if (movementDistance > 5) { // 5px threshold to distinguish drag from tap
+            const isHorizontalGesture = Math.abs(deltaX) > Math.abs(deltaY) * 1.25;
+
+            if (movementDistance > 5) {
+                if (isCoarsePointerDevice() && !isHorizontalGesture) {
+                    isTouchDragging.current = false;
+                    isDraggingCanvas.current = false;
+                    lastTouchPos.current = null;
+                    return;
+                }
+
                 if (!isTouchDragging.current) {
                     // Start dragging
                     isTouchDragging.current = true;
@@ -1970,7 +1981,6 @@ const Canvas2D = ({
 
     // Calculate panels for each wall
     const wallPanelsMap = React.useMemo(() => {
-        const PanelCalculator = require('../panel/PanelCalculator').default || require('../panel/PanelCalculator');
         const map = {};
         walls.forEach(wall => {
             const jointTypes = getWallJointTypes(wall, intersections);
@@ -2785,7 +2795,7 @@ const Canvas2D = ({
                                         style={{
                                             width: '100%',
                                             height: '100%',
-                                            touchAction: 'none' // Prevent default touch behaviors like scrolling
+                                            touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
                                         }}
                                     />
                                     

@@ -1040,9 +1040,9 @@ const ProjectDetails = () => {
     );
 
     return (
-        <div className="h-screen max-h-screen flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 project-details-container transition-colors">
+        <div className="min-h-screen lg:h-screen lg:max-h-screen flex flex-col overflow-y-auto lg:overflow-hidden bg-gray-50 dark:bg-gray-950 project-details-container transition-colors">
             {/* Wrapper to contain header and content for full-width header */}
-            <div className="flex flex-col flex-1 min-h-0 overflow-hidden w-full" style={{ minWidth: 0, maxWidth: '100%' }}>
+            <div className="flex flex-col flex-1 min-h-0 lg:overflow-hidden overflow-visible w-full" style={{ minWidth: 0, maxWidth: '100%' }}>
             {/* Full-Screen Loading Modal for Image Capture */}
             {isCapturingImages && (
                 <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
@@ -1763,7 +1763,7 @@ const ProjectDetails = () => {
                 </div>
             )}
 
-            <div className="project-details-workspace flex flex-1 min-h-0 overflow-hidden relative" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
+            <div className="project-details-workspace flex flex-1 min-h-0 lg:overflow-hidden overflow-visible relative" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
                 {/* Mobile Sidebar Overlay (hidden in 3D: sidebar not used) */}
                 {sidebarOpen && !projectDetails.is3DView && isWallPlanView && (
                     <div 
@@ -2182,7 +2182,7 @@ const ProjectDetails = () => {
                 )}
 
                 {/* Main Content Area - scrolls independently from edit sidebar */}
-                <div className="project-details-main flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+                <div className="project-details-main flex-1 flex flex-col min-h-0 min-w-0 lg:overflow-hidden overflow-visible">
                     {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom; tighter margins in 3D for more canvas width */}
                     <div className={`bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 canvas-container flex-1 flex flex-col min-h-0 min-w-0 ${
                         projectDetails.is3DView ? 'canvas-container-3d m-2 sm:m-3' : 'm-3 sm:m-6'

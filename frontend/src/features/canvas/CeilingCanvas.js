@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { isCoarsePointerDevice } from '../../utils/pointerUtils';
 import { useAuth } from '../auth/AuthContext';
 import {
     getPlanCanvasBackground,
@@ -4090,6 +4091,9 @@ const CeilingCanvas = ({
     };
 
     const handleMouseDown = (e) => {
+        if (isCoarsePointerDevice()) {
+            return;
+        }
         // Check if we should start canvas dragging (when not placing supports)
         if (!isPlacingSupport) {
             isDraggingCanvas.current = true;
