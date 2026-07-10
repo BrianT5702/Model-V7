@@ -704,6 +704,8 @@ class PlanAnnotationSerializer(serializers.ModelSerializer):
             'text',
             'position_x',
             'position_y',
+            'box_width_mm',
+            'box_height_mm',
             'arrow_target_x',
             'arrow_target_y',
             'created_at',

@@ -46,13 +46,23 @@ code {
   flex: 1 1 0%;
   min-height: 0;
   height: auto;
+}
+
+.project-details-workspace .project-details-main > .canvas-container.canvas-container-2d {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-details-workspace .project-details-main > .canvas-container.canvas-container-2d .canvas-panel-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
-/* 3D view fills the workspace — no outer scroll (orbit / tour use the canvas only) */
 .project-details-workspace .project-details-main > .canvas-container.canvas-container-3d {
   overflow: hidden;
   overscroll-behavior: none;
@@ -178,6 +188,12 @@ code {
   }
 
   .project-details-workspace .project-details-main > .canvas-container:not(.canvas-container-3d) {
+    overflow: visible;
+    flex: 1 0 auto;
+    min-height: auto;
+  }
+
+  .project-details-workspace .project-details-main > .canvas-container.canvas-container-2d .canvas-panel-scroll {
     overflow: visible;
     flex: 1 0 auto;
     min-height: auto;
@@ -1494,7 +1510,34 @@ html.dark .summary-tab .text-orange-700 {
   transition: none !important;
 }
 
-/* Canvas zoom controls — stay below comments drawer (z-40) */
+/* Canvas zoom controls — sticky overlay on plan scroll; below comments drawer (z-40) */
+.plan-canvas-zoom-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.plan-canvas-zoom-stack > .plan-canvas-viewport,
+.plan-canvas-zoom-stack > .relative {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.plan-canvas-zoom-stack > .plan-canvas-zoom-controls {
+  grid-column: 1;
+  grid-row: 1;
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+  justify-self: start;
+  margin: 1rem 0 0 1rem;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.plan-canvas-zoom-stack > .plan-canvas-zoom-controls button {
+  pointer-events: auto;
+}
+
 .plan-canvas-zoom-controls {
   z-index: 30;
 }
@@ -1859,7 +1902,13 @@ html.dark .comment-highlight-banner {
 }
 
 html.dark .plan-annotate-banner {
-  background-color: rgb(37 99 235) !important;
+  background-color: transparent;
+}
+
+.project-details-sticky-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 html.dark .project-comments-panel .comment-highlight-bar {

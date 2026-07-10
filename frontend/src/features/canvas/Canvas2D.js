@@ -25,6 +25,10 @@ import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
 import { isCoarsePointerDevice } from '../../utils/pointerUtils';
 import { drawPlanAnnotationArrows, isPointNearPlanAnnotation } from './drawPlanAnnotations';
+import {
+    buildPlanNoteFromPlacement,
+    getPlanNotePlacementRect,
+} from './planAnnotationUtils';
 import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightColor } from './planCanvasTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { drawDoors } from './utils';
@@ -84,6 +88,8 @@ const Canvas2D = ({
     commentHighlightWallIds = [],
     canAnnotate = false,
     planAnnotateMode = false,
+    planNoteAddMode = false,
+    onPlanNoteAddModeChange = () => {},
     planAnnotations = [],
     selectedPlanAnnotationId = null,
     onSelectPlanAnnotation = () => {},
@@ -92,6 +98,7 @@ const Canvas2D = ({
     onDeletePlanAnnotation = async () => {},
     planAnnotationArrowPlacementId = null,
     onPlanAnnotationArrowPlacementId = () => {},
+    annotationIdRemap = null,
 }) => {
 
     const canvasRef = useRef(null);
@@ -153,6 +160,49 @@ const Canvas2D = ({
     const [splitDistanceInput, setSplitDistanceInput] = useState('');
     const [splitHoverDistance, setSplitHoverDistance] = useState(null);
     const [isProcessingSplit, setIsProcessingSplit] = useState(false);
+    const [autoEditPlanAnnotationId, setAutoEditPlanAnnotationId] = useState(null);
+    const [isPlacingPlanNote, setIsPlacingPlanNote] = useState(false);
+    const [placementPreviewTick, setPlacementPreviewTick] = useState(0);
+    const suppressNextPlanNoteClickRef = useRef(false);
+    const planNotePlacementRef = useRef(null);
+    const getPointerModelPosRef = useRef(() => ({ x: 0, y: 0 }));
+
+    useEffect(() => {
+        if (!annotationIdRemap) {
+            return;
+        }
+        setAutoEditPlanAnnotationId((prev) => (
+            prev === annotationIdRemap.from ? annotationIdRemap.to : prev
+        ));
+    }, [annotationIdRemap]);
+
+    const cancelPlanNotePlacement = useCallback(() => {
+        planNotePlacementRef.current = null;
+        setIsPlacingPlanNote(false);
+    }, []);
+
+    const finalizePlanNotePlacement = useCallback((placement) => {
+        const box = buildPlanNoteFromPlacement(
+            { x: placement.startX, y: placement.startY },
+            { x: placement.currentX, y: placement.currentY },
+            scaleFactor.current,
+        );
+        const created = onCreatePlanAnnotation(box);
+        if (created?.id) {
+            onSelectPlanAnnotation(created.id);
+            setAutoEditPlanAnnotationId(created.id);
+        }
+        suppressNextPlanNoteClickRef.current = true;
+        planNotePlacementRef.current = null;
+        setIsPlacingPlanNote(false);
+        onPlanNoteAddModeChange(false);
+    }, [onCreatePlanAnnotation, onSelectPlanAnnotation, onPlanNoteAddModeChange]);
+
+    const startPlanNotePlacement = useCallback((x, y) => {
+        planNotePlacementRef.current = { startX: x, startY: y, currentX: x, currentY: y };
+        setIsPlacingPlanNote(true);
+        setPlacementPreviewTick((tick) => tick + 1);
+    }, []);
 
     const offsetX = useRef(0);
     const offsetY = useRef(0);
@@ -268,6 +318,13 @@ const Canvas2D = ({
 
     // Canvas dragging functions
     const handleCanvasMouseDown = (e) => {
+        if (planAnnotateMode && planNoteAddMode && canAnnotate && !planAnnotationArrowPlacementId && e.button === 0) {
+            const { x, y } = getPointerModelPosRef.current(e.clientX, e.clientY);
+            startPlanNotePlacement(x, y);
+            e.preventDefault();
+            return;
+        }
+
         // Only initiate dragging with the right mouse button
         if (e.button !== 2) {
             return;
@@ -282,6 +339,14 @@ const Canvas2D = ({
 
     // Touch event handlers for mobile canvas dragging
     const handleTouchStart = (e) => {
+        if (planAnnotateMode && planNoteAddMode && canAnnotate && !planAnnotationArrowPlacementId && e.touches.length === 1) {
+            const touch = e.touches[0];
+            const { x, y } = getPointerModelPosRef.current(touch.clientX, touch.clientY);
+            startPlanNotePlacement(x, y);
+            e.preventDefault();
+            return;
+        }
+
         // Only allow dragging with single touch (not pinch-to-zoom)
         if (e.touches.length === 1) {
             const touch = e.touches[0];
@@ -292,6 +357,19 @@ const Canvas2D = ({
     };
 
     const handleTouchMove = (e) => {
+        if (planNotePlacementRef.current && e.touches.length === 1) {
+            const touch = e.touches[0];
+            const { x, y } = getPointerModelPosRef.current(touch.clientX, touch.clientY);
+            planNotePlacementRef.current = {
+                ...planNotePlacementRef.current,
+                currentX: x,
+                currentY: y,
+            };
+            setPlacementPreviewTick((tick) => tick + 1);
+            e.preventDefault();
+            return;
+        }
+
         // Only handle single touch for dragging
         if (e.touches.length === 1 && lastTouchPos.current) {
             const touch = e.touches[0];
@@ -338,6 +416,20 @@ const Canvas2D = ({
     };
 
     const handleTouchEnd = (e) => {
+        if (planNotePlacementRef.current) {
+            const touch = e.changedTouches[0];
+            if (touch) {
+                const { x, y } = getPointerModelPosRef.current(touch.clientX, touch.clientY);
+                finalizePlanNotePlacement({
+                    ...planNotePlacementRef.current,
+                    currentX: x,
+                    currentY: y,
+                });
+            }
+            e.preventDefault();
+            return;
+        }
+
         // Check if this was a tap (not a drag)
         const touchDuration = Date.now() - touchStartTime.current;
         const wasTap = !isTouchDragging.current && touchDuration < 300; // Less than 300ms
@@ -753,12 +845,57 @@ const Canvas2D = ({
     };
 
     // Use for getting correct mouse position
-    const getMousePos = (event) => {
+    const getPointerModelPos = (clientX, clientY) => {
         const rect = canvasRef.current.getBoundingClientRect();
-        const x = (event.clientX - rect.left - offsetX.current) / scaleFactor.current;
-        const y = (event.clientY - rect.top - offsetY.current) / scaleFactor.current;
+        const x = (clientX - rect.left - offsetX.current) / scaleFactor.current;
+        const y = (clientY - rect.top - offsetY.current) / scaleFactor.current;
         return { x, y };
-    };    
+    };
+
+    getPointerModelPosRef.current = getPointerModelPos;
+
+    const getMousePos = (event) => getPointerModelPos(event.clientX, event.clientY);
+
+    useEffect(() => {
+        if (!isPlacingPlanNote) {
+            return undefined;
+        }
+
+        const handleMove = (event) => {
+            if (!planNotePlacementRef.current) {
+                return;
+            }
+            const { x, y } = getPointerModelPosRef.current(event.clientX, event.clientY);
+            planNotePlacementRef.current = {
+                ...planNotePlacementRef.current,
+                currentX: x,
+                currentY: y,
+            };
+            setPlacementPreviewTick((tick) => tick + 1);
+        };
+
+        const handleUp = (event) => {
+            const current = planNotePlacementRef.current;
+            if (!current) {
+                return;
+            }
+            const { x, y } = getPointerModelPosRef.current(event.clientX, event.clientY);
+            finalizePlanNotePlacement({ ...current, currentX: x, currentY: y });
+        };
+
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+        };
+    }, [isPlacingPlanNote, finalizePlanNotePlacement]);
+
+    useEffect(() => {
+        if (!planAnnotateMode || !planNoteAddMode) {
+            cancelPlanNotePlacement();
+        }
+    }, [planAnnotateMode, planNoteAddMode, cancelPlanNotePlacement]);
 
     // Enhanced snapping with wall continuation
     const snapToClosestPoint = (x, y) => {
@@ -1144,6 +1281,11 @@ const Canvas2D = ({
         }
 
         if (planAnnotateMode && canAnnotate) {
+            if (suppressNextPlanNoteClickRef.current) {
+                suppressNextPlanNoteClickRef.current = false;
+                return;
+            }
+
             if (planAnnotationArrowPlacementId) {
                 onUpdatePlanAnnotation(planAnnotationArrowPlacementId, {
                     arrow_target_x: x,
@@ -1171,11 +1313,6 @@ const Canvas2D = ({
                 return;
             }
 
-            onCreatePlanAnnotation({ x, y }).then((created) => {
-                if (created?.id) {
-                    onSelectPlanAnnotation(created.id);
-                }
-            });
             return;
         }
 
@@ -2739,6 +2876,7 @@ const Canvas2D = ({
                         <div className="flex gap-6 min-w-0 w-full max-w-full">
                             {/* Canvas Container */}
                             <div className="wall-canvas-wrapper flex-1 min-w-0">
+                                <div className="plan-canvas-zoom-stack">
                                 <div
                                     ref={canvasContainerRef}
                                     className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
@@ -2747,39 +2885,6 @@ const Canvas2D = ({
                                         minHeight: `${MIN_CANVAS_HEIGHT}px`
                                     }}
                                 >
-                                    {/* Zoom Controls Overlay — top-left avoids overlap with comments / plan details on the right */}
-                                    <div className="plan-canvas-zoom-controls absolute top-4 left-4 flex flex-col gap-2 z-30">
-                                        <button
-                                            onClick={handleZoomIn}
-                                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                                            title="Zoom In"
-                                        >
-                                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                                            </svg>
-                                        </button>
-                                        
-                                        <button
-                                            onClick={handleZoomOut}
-                                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                                            title="Zoom Out"
-                                        >
-                                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
-                                            </svg>
-                                        </button>
-                                        
-                                        <button
-                                            onClick={handleResetZoom}
-                                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
-                                            title="Reset Zoom"
-                                        >
-                                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
                                     <canvas
                                         ref={canvasRef}
                                         data-plan-type="wall"
@@ -2791,13 +2896,41 @@ const Canvas2D = ({
                                         onTouchMove={handleTouchMove}
                                         onTouchEnd={handleTouchEnd}
                                         tabIndex={0}
-                                        className="wall-canvas block w-full cursor-grab active:cursor-grabbing"
+                                        className={`wall-canvas block w-full ${
+                                            planAnnotateMode && planNoteAddMode && canAnnotate
+                                                ? 'cursor-crosshair'
+                                                : 'cursor-grab active:cursor-grabbing'
+                                        }`}
                                         style={{
                                             width: '100%',
                                             height: '100%',
                                             touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
                                         }}
                                     />
+
+                                    {planNotePlacementRef.current && (() => {
+                                        void placementPreviewTick;
+                                        const previewRect = getPlanNotePlacementRect(
+                                            planNotePlacementRef.current,
+                                            currentScaleFactor,
+                                            offsetX.current,
+                                            offsetY.current,
+                                        );
+                                        if (!previewRect) {
+                                            return null;
+                                        }
+                                        return (
+                                            <div
+                                                className="absolute pointer-events-none z-[40] rounded-lg border-2 border-dashed border-blue-500 bg-blue-500/10"
+                                                style={{
+                                                    left: `${previewRect.left}px`,
+                                                    top: `${previewRect.top}px`,
+                                                    width: `${previewRect.width}px`,
+                                                    height: `${previewRect.height}px`,
+                                                }}
+                                            />
+                                        );
+                                    })()}
                                     
                                     {/* Interactive Room Labels */}
                                     {roomLabelPositions.map((labelData) => (
@@ -2820,7 +2953,7 @@ const Canvas2D = ({
 
                                     {planAnnotations.map((annotation) => (
                                         <InteractivePlanAnnotation
-                                            key={annotation.id}
+                                            key={annotation.clientKey || annotation.id}
                                             annotation={annotation}
                                             scaleFactor={currentScaleFactor}
                                             offsetX={offsetX.current}
@@ -2832,9 +2965,44 @@ const Canvas2D = ({
                                             onStartArrowPlacement={onPlanAnnotationArrowPlacementId}
                                             isPlacingArrow={planAnnotationArrowPlacementId === annotation.id}
                                             canEdit={canAnnotate && planAnnotateMode}
-                                            canDrag={canAnnotate}
+                                            canDrag={canAnnotate && planAnnotateMode}
+                                            autoEdit={autoEditPlanAnnotationId === annotation.id}
+                                            onAutoEditConsumed={() => setAutoEditPlanAnnotationId(null)}
+                                            onInteractionStart={cancelPlanNotePlacement}
                                         />
                                     ))}
+                                </div>
+                                <div className="plan-canvas-zoom-controls flex flex-col gap-2">
+                                    <button
+                                        onClick={handleZoomIn}
+                                        className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                                        title="Zoom In"
+                                    >
+                                        <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                                        </svg>
+                                    </button>
+
+                                    <button
+                                        onClick={handleZoomOut}
+                                        className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                                        title="Zoom Out"
+                                    >
+                                        <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
+                                        </svg>
+                                    </button>
+
+                                    <button
+                                        onClick={handleResetZoom}
+                                        className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
+                                        title="Reset Zoom"
+                                    >
+                                        <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    </button>
+                                </div>
                                 </div>
                                 
                                 {/* Canvas Controls */}

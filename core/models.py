@@ -219,6 +219,16 @@ class PlanAnnotation(models.Model):
     text = models.TextField(blank=True, default='')
     position_x = models.FloatField(help_text='Text box anchor X in model mm')
     position_y = models.FloatField(help_text='Text box anchor Y in model mm')
+    box_width_mm = models.FloatField(
+        null=True,
+        blank=True,
+        help_text='Text box width in model mm; null uses client default.',
+    )
+    box_height_mm = models.FloatField(
+        null=True,
+        blank=True,
+        help_text='Text box height in model mm; null uses client default.',
+    )
     arrow_target_x = models.FloatField(
         null=True,
         blank=True,

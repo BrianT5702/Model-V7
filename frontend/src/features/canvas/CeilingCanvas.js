@@ -5853,6 +5853,7 @@ const CeilingCanvas = ({
 
                 {/* Canvas Container */}
                 <div className="ceiling-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px] order-1 lg:order-2">
+                    <div className="plan-canvas-zoom-stack">
                     <div
                         ref={canvasContainerRef}
                         className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
@@ -5861,39 +5862,6 @@ const CeilingCanvas = ({
                             minHeight: `${MIN_CANVAS_HEIGHT}px`
                         }}
                     >
-                        {/* Zoom Controls Overlay — top-left avoids overlap with comments / plan details on the right */}
-                        <div className="plan-canvas-zoom-controls absolute top-4 left-4 flex flex-col gap-2 z-30">
-                            <button
-                                onClick={handleZoomIn}
-                                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                                title="Zoom In"
-                            >
-                                <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                                </svg>
-                            </button>
-                            
-                            <button
-                                onClick={handleZoomOut}
-                                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                                title="Zoom Out"
-                            >
-                                <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
-                                </svg>
-                            </button>
-                            
-                            <button
-                                onClick={handleResetZoom}
-                                className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
-                                title="Reset Zoom"
-                            >
-                                <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                            </button>
-                        </div>
-
                         <canvas
                             ref={canvasRef}
                             data-plan-type="ceiling"
@@ -5937,6 +5905,38 @@ const CeilingCanvas = ({
                                 </div>
                             </div>
                         )}
+                    </div>
+                    <div className="plan-canvas-zoom-controls flex flex-col gap-2">
+                        <button
+                            onClick={handleZoomIn}
+                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                            title="Zoom In"
+                        >
+                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                            </svg>
+                        </button>
+
+                        <button
+                            onClick={handleZoomOut}
+                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
+                            title="Zoom Out"
+                        >
+                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
+                            </svg>
+                        </button>
+
+                        <button
+                            onClick={handleResetZoom}
+                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
+                            title="Reset Zoom"
+                        >
+                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
                     </div>
                     
                     {/* Canvas Controls */}

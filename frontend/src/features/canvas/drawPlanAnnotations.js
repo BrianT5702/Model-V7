@@ -1,4 +1,5 @@
 import { isPlanCanvasDark } from './planCanvasTheme';
+import { getPlanNoteBoxSizeMm, getPlanNoteBoxSizePx } from './planAnnotationUtils';
 
 const hasArrowTarget = (annotation) => (
     annotation?.arrow_target_x != null && annotation?.arrow_target_y != null
@@ -22,12 +23,13 @@ export function drawPlanAnnotationArrows(context, annotations, scaleFactor, offs
             return;
         }
 
+        const { box_width_mm, box_height_mm } = getPlanNoteBoxSizeMm(annotation, scaleFactor);
         const start = toCanvasPoint(
-            annotation.position_x,
-            annotation.position_y,
+            annotation.position_x + box_width_mm / 2,
+            annotation.position_y + box_height_mm / 2,
             scaleFactor,
             offsetX,
-            offsetY
+            offsetY,
         );
         const end = toCanvasPoint(
             annotation.arrow_target_x,
@@ -68,17 +70,15 @@ export function drawPlanAnnotationArrows(context, annotations, scaleFactor, offs
     });
 }
 
-export function isPointNearPlanAnnotation(canvasX, canvasY, annotation, scaleFactor, offsetX, offsetY, padding = 8) {
+export function isPointNearPlanAnnotation(canvasX, canvasY, annotation, scaleFactor, offsetX, offsetY, padding = 6) {
     const boxX = annotation.position_x * scaleFactor + offsetX;
     const boxY = annotation.position_y * scaleFactor + offsetY;
-    const text = (annotation.text || '').trim() || 'Note';
-    const approxWidth = Math.min(220, Math.max(72, text.length * 7 + 24));
-    const approxHeight = 44;
+    const { width, height } = getPlanNoteBoxSizePx(annotation, scaleFactor);
 
     return (
         canvasX >= boxX - padding
-        && canvasX <= boxX + approxWidth + padding
+        && canvasX <= boxX + width + padding
         && canvasY >= boxY - padding
-        && canvasY <= boxY + approxHeight + padding
+        && canvasY <= boxY + height + padding
     );
 }

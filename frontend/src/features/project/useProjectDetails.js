@@ -68,6 +68,10 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const [isHistoryBusy, setIsHistoryBusy] = useState(false);
   const [planAnnotations, setPlanAnnotations] = useState([]);
   const [filteredPlanAnnotations, setFilteredPlanAnnotations] = useState([]);
+  const [annotationIdRemap, setAnnotationIdRemap] = useState(null);
+  const pendingAnnotationUpdatesRef = useRef(new Map());
+  const cancelledTempCreatesRef = useRef(new Set());
+  const tempAnnotationIdMapRef = useRef(new Map());
   const [editingDoor, setEditingDoor] = useState(null);
   const [showDoorEditor, setShowDoorEditor] = useState(false);
   const [showStoreyWizard, setShowStoreyWizard] = useState(false);
@@ -3164,38 +3168,134 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   };
 
   // Expose all state and handlers
-  const createPlanAnnotation = async (position) => {
+  const createPlanAnnotation = (placement) => {
     if (!projectId || !activeStoreyId) {
       return null;
     }
-    try {
-      await api.get('/csrf-token/');
-      const response = await api.post('plan-annotations/', {
-        project: Number(projectId),
-        storey: activeStoreyId,
-        position_x: position.x,
-        position_y: position.y,
-        text: '',
+
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      clientKey: tempId,
+      project: Number(projectId),
+      storey: activeStoreyId,
+      position_x: placement.position_x,
+      position_y: placement.position_y,
+      box_width_mm: placement.box_width_mm ?? null,
+      box_height_mm: placement.box_height_mm ?? null,
+      text: '',
+      arrow_target_x: null,
+      arrow_target_y: null,
+    };
+
+    setPlanAnnotations((prev) => [...prev, optimistic]);
+
+    const basePayload = {
+      project: Number(projectId),
+      storey: activeStoreyId,
+      position_x: placement.position_x,
+      position_y: placement.position_y,
+      text: '',
+    };
+    const fullPayload = {
+      ...basePayload,
+      box_width_mm: placement.box_width_mm ?? null,
+      box_height_mm: placement.box_height_mm ?? null,
+    };
+
+    const applyCreatedAnnotation = (response) => {
+      if (cancelledTempCreatesRef.current.has(tempId)) {
+        cancelledTempCreatesRef.current.delete(tempId);
+        tempAnnotationIdMapRef.current.delete(tempId);
+        api.delete(`plan-annotations/${response.data.id}/`).catch(() => {});
+        return;
+      }
+
+      const realId = response.data.id;
+      tempAnnotationIdMapRef.current.set(tempId, realId);
+
+      const pending = pendingAnnotationUpdatesRef.current.get(tempId);
+      pendingAnnotationUpdatesRef.current.delete(tempId);
+      const merged = pending
+        ? { ...response.data, ...pending, clientKey: tempId }
+        : { ...response.data, clientKey: tempId };
+
+      setPlanAnnotations((prev) => prev.map((annotation) => (
+        annotation.id === tempId ? merged : annotation
+      )));
+      setAnnotationIdRemap({ from: tempId, to: realId });
+
+      if (pending) {
+        api.patch(`plan-annotations/${realId}/`, pending).then((patchResponse) => {
+          setPlanAnnotations((prev) => prev.map((annotation) => (
+            annotation.id === realId
+              ? { ...annotation, ...patchResponse.data, clientKey: tempId }
+              : annotation
+          )));
+        }).catch((error) => {
+          console.error('Failed to sync pending plan annotation updates:', error);
+        });
+      }
+    };
+
+    const attemptCreate = (payload) => api.post('plan-annotations/', payload);
+
+    attemptCreate(fullPayload)
+      .then(applyCreatedAnnotation)
+      .catch((error) => {
+        console.error('Failed to create plan annotation with box size:', error);
+        return attemptCreate(basePayload).then(applyCreatedAnnotation);
+      })
+      .catch((error) => {
+        console.error('Failed to create plan annotation:', error);
+        setPlanAnnotations((prev) => prev.map((annotation) => (
+          annotation.id === tempId
+            ? { ...annotation, syncFailed: true }
+            : annotation
+        )));
       });
-      setPlanAnnotations((prev) => [...prev, response.data]);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to create plan annotation:', error);
-      return null;
+
+    return optimistic;
+  };
+
+  const clearAnnotationIdRemap = useCallback(() => {
+    setAnnotationIdRemap(null);
+  }, []);
+
+  const resolvePlanAnnotationId = (annotationId) => {
+    if (!String(annotationId).startsWith('temp-')) {
+      return annotationId;
     }
+    return tempAnnotationIdMapRef.current.get(annotationId) || annotationId;
   };
 
   const updatePlanAnnotation = async (annotationId, updates, options = {}) => {
-    setPlanAnnotations((prev) => prev.map((annotation) => (
-      annotation.id === annotationId ? { ...annotation, ...updates } : annotation
-    )));
+    const resolvedId = resolvePlanAnnotationId(annotationId);
+    setPlanAnnotations((prev) => prev.map((annotation) => {
+      if (annotation.id !== annotationId && annotation.id !== resolvedId) {
+        return annotation;
+      }
+      return {
+        ...annotation,
+        ...updates,
+        id: resolvedId,
+        clientKey: annotation.clientKey || annotation.id,
+      };
+    }));
     if (options.transient) {
       return;
     }
+    if (String(annotationId).startsWith('temp-') && resolvedId === annotationId) {
+      const pending = pendingAnnotationUpdatesRef.current.get(annotationId) || {};
+      pendingAnnotationUpdatesRef.current.set(annotationId, { ...pending, ...updates });
+      return;
+    }
     try {
-      const response = await api.patch(`plan-annotations/${annotationId}/`, updates);
+      const response = await api.patch(`plan-annotations/${resolvedId}/`, updates);
       setPlanAnnotations((prev) => prev.map((annotation) => (
-        annotation.id === annotationId ? { ...annotation, ...response.data } : annotation
+        annotation.id === resolvedId
+          ? { ...annotation, ...response.data, clientKey: annotation.clientKey || annotation.id }
+          : annotation
       )));
     } catch (error) {
       console.error('Failed to update plan annotation:', error);
@@ -3203,9 +3303,18 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   };
 
   const deletePlanAnnotation = async (annotationId) => {
-    setPlanAnnotations((prev) => prev.filter((annotation) => annotation.id !== annotationId));
+    const resolvedId = resolvePlanAnnotationId(annotationId);
+    setPlanAnnotations((prev) => prev.filter((annotation) => (
+      annotation.id !== annotationId && annotation.id !== resolvedId
+    )));
+    if (String(annotationId).startsWith('temp-') && resolvedId === annotationId) {
+      cancelledTempCreatesRef.current.add(annotationId);
+      pendingAnnotationUpdatesRef.current.delete(annotationId);
+      tempAnnotationIdMapRef.current.delete(annotationId);
+      return;
+    }
     try {
-      await api.delete(`plan-annotations/${annotationId}/`);
+      await api.delete(`plan-annotations/${resolvedId}/`);
     } catch (error) {
       console.error('Failed to delete plan annotation:', error);
       const response = await api.get(`/plan-annotations/?project=${projectId}`);
@@ -3345,6 +3454,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     filteredDoors,
     planAnnotations,
     filteredPlanAnnotations,
+    annotationIdRemap,
+    clearAnnotationIdRemap,
     createPlanAnnotation,
     updatePlanAnnotation,
     deletePlanAnnotation,

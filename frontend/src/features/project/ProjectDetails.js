@@ -64,6 +64,7 @@ const ProjectDetails = () => {
     const [commentHighlightWallIds, setCommentHighlightWallIds] = useState([]);
     const [unreadCommentCount, setUnreadCommentCount] = useState(0);
     const [planAnnotateMode, setPlanAnnotateMode] = useState(false);
+    const [planNoteAddMode, setPlanNoteAddMode] = useState(false);
     const [selectedPlanAnnotationId, setSelectedPlanAnnotationId] = useState(null);
     const [planAnnotationArrowPlacementId, setPlanAnnotationArrowPlacementId] = useState(null);
     const [levelActionsMenuOpen, setLevelActionsMenuOpen] = useState(false);
@@ -173,11 +174,12 @@ const ProjectDetails = () => {
         setPlanAnnotateMode(nextEnabled);
         if (nextEnabled) {
             setCommentWallSelectMode(false);
+            setPlanNoteAddMode(false);
             projectDetails.setCurrentView('wall-plan');
             projectDetails.setIs3DView(false);
         } else {
             setPlanAnnotationArrowPlacementId(null);
-            setSelectedPlanAnnotationId(null);
+            setPlanNoteAddMode(false);
         }
     }, [planAnnotateMode, projectDetails]);
 
@@ -187,6 +189,16 @@ const ProjectDetails = () => {
             projectDetails.setIs3DView(false);
         }
     }, [planAnnotateMode, isWallPlanView, projectDetails]);
+
+    useEffect(() => {
+        if (!projectDetails.annotationIdRemap) {
+            return;
+        }
+        const { from, to } = projectDetails.annotationIdRemap;
+        setSelectedPlanAnnotationId((prev) => (prev === from ? to : prev));
+        setPlanAnnotationArrowPlacementId((prev) => (prev === from ? to : prev));
+        projectDetails.clearAnnotationIdRemap();
+    }, [projectDetails.annotationIdRemap, projectDetails]);
 
     const handleSelectComment = useCallback((comment) => {
         if (!comment) {
@@ -255,6 +267,24 @@ const ProjectDetails = () => {
         }
         projectDetails.setIs3DView(!projectDetails.is3DView);
     }, [projectDetails]);
+
+    const exitEditModeIfActive = useCallback(() => {
+        if (!projectDetails.isEditingMode) {
+            return;
+        }
+        projectDetails.setIsEditingMode(false);
+        projectDetails.resetAllSelections();
+    }, [projectDetails]);
+
+    const handleCollapseControlsSidebar = useCallback(() => {
+        setControlsSidebarCollapsed(true);
+        exitEditModeIfActive();
+    }, [exitEditModeIfActive]);
+
+    const handleCloseControlsSidebar = useCallback(() => {
+        setSidebarOpen(false);
+        exitEditModeIfActive();
+    }, [exitEditModeIfActive]);
 
     useEffect(() => {
         if (!isWallPlanView && !projectDetails.is3DView) {
@@ -1108,8 +1138,10 @@ const ProjectDetails = () => {
                 </ModalOverlay>
             )}
 
+            {/* Sticky top chrome: nav, project toolbar, and plan-note banners stay visible while scrolling */}
+            <div className="project-details-sticky-chrome sticky top-0 z-50 shrink-0 w-full bg-gray-50 dark:bg-gray-950">
             {/* Navigation Bar */}
-            <div className="project-details-nav shrink-0 sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
+            <div className="project-details-nav shrink-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
                 <div className="w-full px-3 sm:px-4 py-2" style={{ width: '100%' }}>
                     <div className="flex items-center justify-between w-full">
                         <div className="flex items-center space-x-1.5 sm:space-x-2">
@@ -1434,6 +1466,7 @@ const ProjectDetails = () => {
                         </div>
                     </div>
                 </div>
+            </div>
             </div>
             
             {canEdit && projectDetails.currentView === 'wall-plan' && projectDetails.isLevelEditMode && (
@@ -1768,7 +1801,7 @@ const ProjectDetails = () => {
                 {sidebarOpen && !projectDetails.is3DView && isWallPlanView && (
                     <div 
                         className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-                        onClick={() => setSidebarOpen(false)}
+                        onClick={handleCloseControlsSidebar}
                     ></div>
                 )}
                 
@@ -1782,7 +1815,7 @@ const ProjectDetails = () => {
                         <div className="flex items-center justify-between mb-4 lg:hidden">
                             <h2 className="text-lg font-semibold text-gray-900">Controls</h2>
                             <button
-                                onClick={() => setSidebarOpen(false)}
+                                onClick={handleCloseControlsSidebar}
                                 className="text-gray-500 hover:text-gray-700"
                                 aria-label="Close controls"
                             >
@@ -1795,7 +1828,7 @@ const ProjectDetails = () => {
                         <div className="hidden lg:flex items-center justify-between mb-4">
                             <h2 className="text-lg font-semibold text-gray-900">Controls</h2>
                             <button
-                                onClick={() => setControlsSidebarCollapsed(true)}
+                                onClick={handleCollapseControlsSidebar}
                                 className="px-3 py-1 text-xs sm:text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
                             >
                                 Collapse
@@ -2184,8 +2217,8 @@ const ProjectDetails = () => {
                 {/* Main Content Area - scrolls independently from edit sidebar */}
                 <div className="project-details-main flex-1 flex flex-col min-h-0 min-w-0 lg:overflow-hidden overflow-visible">
                     {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom; tighter margins in 3D for more canvas width */}
-                    <div className={`bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 canvas-container flex-1 flex flex-col min-h-0 min-w-0 ${
-                        projectDetails.is3DView ? 'canvas-container-3d m-2 sm:m-3' : 'm-3 sm:m-6'
+                    <div className={`bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 canvas-container flex-1 min-h-0 min-w-0 ${
+                        projectDetails.is3DView ? 'canvas-container-3d flex flex-col m-2 sm:m-3' : 'canvas-container-2d flex flex-col overflow-hidden m-3 sm:m-6'
                     }`}>
                         {projectDetails.is3DView ? (
                             <div className="three-canvas-view flex flex-col flex-1 min-h-0">
@@ -2264,19 +2297,67 @@ const ProjectDetails = () => {
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col">
+                            <div className="canvas-panel flex flex-col flex-1 min-h-0 min-w-0">
+                                {(planAnnotateMode || (activeCommentId && !commentWallSelectMode) || commentWallSelectMode) && (
+                                    <div className="canvas-panel-banners shrink-0">
                                 {planAnnotateMode && (
-                                    <div className="plan-annotate-banner flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-blue-600 text-white text-sm">
-                                        <span>
-                                            Click the plan to place a note. Double-click a note to edit. Select a note to add an arrow.
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleTogglePlanAnnotateMode(false)}
-                                            className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium"
-                                        >
-                                            Done
-                                        </button>
+                                    <div className="plan-annotate-banner border-b border-blue-700/30 dark:border-blue-500/30 shadow-sm">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-blue-600 text-white text-sm">
+                                            <span>
+                                                {planNoteAddMode
+                                                    ? 'Click for a default text box · Drag to draw a custom size'
+                                                    : 'Select a note to edit, move, or resize · Click Add to place a new note'}
+                                            </span>
+                                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                                {canEdit && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPlanNoteAddMode((active) => !active)}
+                                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium ${
+                                                            planNoteAddMode
+                                                                ? 'bg-amber-300 text-amber-950 hover:bg-amber-200'
+                                                                : 'bg-white/20 hover:bg-white/30'
+                                                        }`}
+                                                    >
+                                                        <FaPlus className="w-3 h-3" />
+                                                        {planNoteAddMode ? 'Adding…' : 'Add note'}
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleTogglePlanAnnotateMode(false)}
+                                                    className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium"
+                                                >
+                                                    Done
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {projectDetails.filteredPlanAnnotations.length > 0 && (
+                                            <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-950/50 text-sm">
+                                                <span className="text-blue-900/70 dark:text-blue-200/70 text-xs font-medium shrink-0">
+                                                    Notes ({projectDetails.filteredPlanAnnotations.length}):
+                                                </span>
+                                                {projectDetails.filteredPlanAnnotations.map((annotation) => {
+                                                    const label = (annotation.text || '').trim() || 'Untitled note';
+                                                    const isActive = selectedPlanAnnotationId === annotation.id;
+                                                    return (
+                                                        <button
+                                                            key={annotation.id}
+                                                            type="button"
+                                                            onClick={() => setSelectedPlanAnnotationId(annotation.id)}
+                                                            className={`max-w-[200px] truncate px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                                                isActive
+                                                                    ? 'bg-amber-100 text-amber-900 border-amber-400 dark:bg-amber-900/50 dark:text-amber-100 dark:border-amber-500'
+                                                                    : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-100 dark:bg-gray-800 dark:text-blue-100 dark:border-blue-700 dark:hover:bg-gray-700'
+                                                            }`}
+                                                            title={label}
+                                                        >
+                                                            {label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 {activeCommentId && !commentWallSelectMode && (
@@ -2308,6 +2389,9 @@ const ProjectDetails = () => {
                                         </button>
                                     </div>
                                 )}
+                                    </div>
+                                )}
+                                <div className="canvas-panel-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain">
                                 <div className="relative">
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D
@@ -2366,6 +2450,8 @@ const ProjectDetails = () => {
                                             commentHighlightWallIds={commentHighlightWallIds}
                                             canAnnotate={canEdit}
                                             planAnnotateMode={planAnnotateMode}
+                                            planNoteAddMode={planNoteAddMode}
+                                            onPlanNoteAddModeChange={setPlanNoteAddMode}
                                             planAnnotations={projectDetails.filteredPlanAnnotations}
                                             selectedPlanAnnotationId={selectedPlanAnnotationId}
                                             onSelectPlanAnnotation={setSelectedPlanAnnotationId}
@@ -2382,6 +2468,7 @@ const ProjectDetails = () => {
                                             }}
                                             planAnnotationArrowPlacementId={planAnnotationArrowPlacementId}
                                             onPlanAnnotationArrowPlacementId={setPlanAnnotationArrowPlacementId}
+                                            annotationIdRemap={projectDetails.annotationIdRemap}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager
@@ -2432,6 +2519,7 @@ const ProjectDetails = () => {
                                             sharedPanelData={projectDetails.sharedPanelData}
                                         />
                                     )}
+                                </div>
                                 </div>
                             </div>
                         )}
