@@ -61,10 +61,8 @@ def react_asset(asset_type='js'):
         # Log error but don't break the template
         print(f"Error loading React assets: {e}")
     
-    # Fallback to default paths if manifest can't be loaded
+    # Fallback paths only for JS. Vite IIFE builds inline CSS in the JS bundle.
     if asset_type == 'js':
         return '/static/js/main.js'
-    elif asset_type == 'css':
-        return '/static/css/main.css'
     return ''
 

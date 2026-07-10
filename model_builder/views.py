@@ -1,27 +1,44 @@
 """
 Custom views for serving React app in production
 """
-from django.shortcuts import render
-from django.conf import settings
-from django.http import Http404
 import os
+
+from django.conf import settings
+from django.http import FileResponse, Http404
+from django.shortcuts import render
+
+
+def _frontend_dist_index_path():
+    frontend_build = getattr(
+        settings,
+        'FRONTEND_BUILD_PATH',
+        os.path.join(settings.BASE_DIR, 'frontend', 'dist'),
+    )
+    return os.path.join(frontend_build, 'index.html')
+
 
 def serve_react_app(request):
     """
-    Serve the React app for all non-API routes
-    Excludes static and media files which should be handled by WhiteNoise
+    Serve the React app for all non-API routes.
+    Prefer Vite's built frontend/dist/index.html (has type=module scripts).
+    Fall back to Django template when dist is missing (local dev).
     """
-    # Get the path from the request
     path = request.path.lstrip('/')
-    
-    # Don't serve the React app for static/media/api paths
-    # These should be handled by WhiteNoise middleware or API routes
-    if (path.startswith('static/') or 
-        path.startswith('media/') or 
-        path.startswith('api/') or
-        '/static/' in path or
-        '/media/' in path):
+
+    if (
+        path.startswith('static/')
+        or path.startswith('media/')
+        or path.startswith('api/')
+        or '/static/' in path
+        or '/media/' in path
+    ):
         raise Http404("Not found")
-    
-    # Otherwise, serve the React app
+
+    dist_index = _frontend_dist_index_path()
+    if os.path.isfile(dist_index):
+        return FileResponse(
+            open(dist_index, 'rb'),
+            content_type='text/html; charset=utf-8',
+        )
+
     return render(request, 'index.html')

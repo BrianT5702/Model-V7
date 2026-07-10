@@ -66,12 +66,30 @@ function craAssetManifest(outDir) {
   };
 }
 
+/** Vite defaults to type=module in index.html; IIFE bundles use classic defer scripts. */
+function fixIndexHtmlForIife() {
+  return {
+    name: 'fix-index-html-iife',
+    transformIndexHtml(html) {
+      return html.replace(
+        /<script type="module" crossorigin src="([^"]+)"><\/script>/,
+        '<script defer src="$1"></script>'
+      );
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const outDir = process.env.BUILD_PATH || 'dist';
   return {
     appType: 'spa',
-    plugins: [treatJsFilesAsJsx(), react({ include: /\.(jsx|js)$/ }), craAssetManifest(outDir)],
+    plugins: [
+      treatJsFilesAsJsx(),
+      react({ include: /\.(jsx|js)$/ }),
+      craAssetManifest(outDir),
+      fixIndexHtmlForIife(),
+    ],
     envPrefix: ['VITE_', 'REACT_APP_'],
     define: buildProcessEnvDefines(mode, env),
     server: {
@@ -92,6 +110,9 @@ export default defineConfig(({ mode }) => {
       target: 'es2020',
       rollupOptions: {
         output: {
+          format: 'iife',
+          name: 'ModelV7App',
+          inlineDynamicImports: true,
           entryFileNames: 'static/js/main.[hash].js',
           chunkFileNames: 'static/js/[name].[hash].js',
           assetFileNames: (assetInfo) => {
