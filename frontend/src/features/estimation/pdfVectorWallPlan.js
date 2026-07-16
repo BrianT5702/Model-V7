@@ -509,9 +509,12 @@ export function drawVectorWallPlan(
                         return;
                     }
                     
-                    // Calculate scale to fit content area (use 80% for a more generous margin)
-                    const scaleX = (planContentWidth * 0.80) / modelWidth;
-                    const scaleY = (planContentHeight * 0.80) / modelHeight;
+                    // Fill most of the content area; landscape uses more width so plans don't sit with large side gaps
+                    const fillFactor = fitToPage
+                        ? (planPageOrientation === 'landscape' ? 0.96 : 0.92)
+                        : (planPageOrientation === 'landscape' ? 0.92 : 0.80);
+                    const scaleX = (planContentWidth * fillFactor) / modelWidth;
+                    const scaleY = (planContentHeight * fillFactor) / modelHeight;
                     const scale = Math.min(scaleX, scaleY);
                     
                     // Ensure scale is valid and reasonable

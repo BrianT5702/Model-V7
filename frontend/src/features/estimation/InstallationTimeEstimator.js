@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculator from '../panel/PanelCalculator';
+import { getPanelFinishingLabel, sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { sortDoorsForMaterialList } from '../door/doorSortUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { calculatePolygonVisualCenter } from '../canvas/utils';
@@ -11,6 +13,9 @@ import {
     buildVectorCeilingFloorPreviewBlobs
 } from './pdfVectorCeilingFloor';
 import { buildRoomLabelLines } from '../room/roomLabelUtils';
+import { sortRoomsByLevelThenName } from '../room/roomSortUtils';
+import { buildWallElevations } from '../panel/wallElevationUtils';
+import { renderElevationViewToDataURL } from '../panel/WallElevationViews';
 import {
     drawVectorWallPlan,
     calculateGhostDataForStorey,
@@ -78,6 +83,8 @@ const InstallationTimeEstimator = ({
     const [planPageOrientation, setPlanPageOrientation] = useState('portrait'); // 'portrait' or 'landscape' for plan pages
     const [singlePlanPerPage, setSinglePlanPerPage] = useState(true); // Each plan takes a full page
     const [fitToPage, setFitToPage] = useState(false); // Fit plan to fill entire page without boundary
+    const [includeFrontElevation, setIncludeFrontElevation] = useState(false);
+    const [includeSideElevation, setIncludeSideElevation] = useState(false);
 
     /** Embedded PDF viewer: fit page width so the plan is readable in the preview box (not tiny "whole page" fit). */
     const planPdfPreviewHash = 'toolbar=0&navpanes=0&scrollbar=0&view=FitH';
@@ -1227,9 +1234,9 @@ const InstallationTimeEstimator = ({
                 });
             });
 
-            // Group panels by dimensions, application, panel thickness, and surface types
+            // Group panels by type, dimensions, application, panel thickness, and surface types
             const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
-                const key = `${panel.width}-${panel.length}-${panel.thickness || 'NA'}-${panel.application}-${panel.inner_face_material || 'PPGI'}-${panel.inner_face_thickness ?? 0.5}-${panel.outer_face_material || 'PPGI'}-${panel.outer_face_thickness ?? 0.5}`;
+                const key = `${panel.type}-${panel.width}-${panel.length}-${panel.thickness || 'NA'}-${panel.application}-${panel.inner_face_material || 'PPGI'}-${panel.inner_face_thickness ?? 0.5}-${panel.outer_face_material || 'PPGI'}-${panel.outer_face_thickness ?? 0.5}`;
                 if (!acc[key]) {
                     acc[key] = {
                         width: panel.width,
@@ -1249,7 +1256,7 @@ const InstallationTimeEstimator = ({
                 return acc;
             }, {});
 
-            return Object.values(groupedPanelsForSharing);
+            return sortMaterialPanels(Object.values(groupedPanelsForSharing));
             
         } catch (error) {
             console.error('Error calculating actual wall panels:', error);
@@ -1327,104 +1334,46 @@ const InstallationTimeEstimator = ({
             panelsByDimension.get(key).quantity++;
         });
 
-        // Convert to array and sort by quantity (descending)
-        const panelList = Array.from(panelsByDimension.values())
-            .sort((a, b) => b.quantity - a.quantity);
-
-        return panelList;
+        // Convert to array and sort like wall plan material list
+        return sortMaterialPanels(Array.from(panelsByDimension.values()));
     };
 
     // Helper function to process floor panels for sharing (similar to FloorManager)
     const processFloorPanelsForSharing = (panels, rooms) => {
         if (!panels || panels.length === 0) return [];
-        
-        const panelList = [];
-        
-        // Group panels by room
-        const panelsByRoom = {};
+
+        const roomById = new Map((rooms || []).map((room) => [String(room.id), room]));
+        const panelsByKey = new Map();
+
         panels.forEach(panel => {
+            if (!panel) return;
             const roomId = panel.room_id || panel.room;
-            if (!panelsByRoom[roomId]) {
-                panelsByRoom[roomId] = [];
+            const room = roomById.get(String(typeof roomId === 'object' ? roomId?.id : roomId));
+            const floorThickness = room?.floor_thickness || 20;
+            const isCut = !!(panel.is_cut_panel || panel.is_cut);
+            const panelType = isCut ? 'Cut' : 'Full';
+            const isVertical = panel.width >= panel.length;
+            let displayWidth = panel.width;
+            let displayLength = panel.length;
+            if (isVertical) {
+                displayWidth = panel.length;
+                displayLength = panel.width;
             }
-            panelsByRoom[roomId].push(panel);
+
+            const key = `${displayWidth}_${displayLength}_${floorThickness}_${panelType}`;
+            if (!panelsByKey.has(key)) {
+                panelsByKey.set(key, {
+                    width: displayWidth,
+                    length: displayLength,
+                    thickness: floorThickness,
+                    quantity: 0,
+                    type: panelType
+                });
+            }
+            panelsByKey.get(key).quantity += 1;
         });
-        
-        // Process each room's panels
-        Object.entries(panelsByRoom).forEach(([roomId, roomPanels]) => {
-            if (!roomPanels || roomPanels.length === 0) return;
-            
-            // Group panels by dimensions
-            const panelsByDimension = new Map();
-            roomPanels.forEach(panel => {
-                const isHorizontal = panel.width < panel.length;
-                const groupingDimension = isHorizontal ? panel.length : panel.width;
-                const dimensionValue = Math.round(groupingDimension * 100) / 100;
-                
-                if (!panelsByDimension.has(dimensionValue)) {
-                    panelsByDimension.set(dimensionValue, []);
-                }
-                panelsByDimension.get(dimensionValue).push(panel);
-            });
-            
-            // Create panel list entries
-            panelsByDimension.forEach((panels, dimension) => {
-                const fullPanels = panels.filter(p => !p.is_cut_panel);
-                const cutPanels = panels.filter(p => p.is_cut_panel);
-                
-                // Get the room for this panel to access floor_thickness
-                const room = rooms.find(r => r.id === parseInt(roomId));
-                const floorThickness = room?.floor_thickness || 20; // Default to 20mm if not specified
-                
-                if (fullPanels.length > 0) {
-                    const panel = fullPanels[0];
-                    const isVertical = panel.width >= panel.length;
-                    
-                    // SWAP: For vertical panels, swap width and length values (keep horizontal unchanged)
-                    let displayWidth = panel.width;
-                    let displayLength = panel.length;
-                    
-                    if (isVertical) {
-                        // Swap values for vertical orientation
-                        displayWidth = panel.length;
-                        displayLength = panel.width;
-                    }
-                    
-                    panelList.push({
-                        width: displayWidth,
-                        length: displayLength,
-                        thickness: floorThickness,
-                        quantity: fullPanels.length,
-                        type: 'Full'
-                    });
-                }
-                
-                if (cutPanels.length > 0) {
-                    const panel = cutPanels[0];
-                    const isVertical = panel.width >= panel.length;
-                    
-                    // SWAP: For vertical panels, swap width and length values (keep horizontal unchanged)
-                    let displayWidth = panel.width;
-                    let displayLength = panel.length;
-                    
-                    if (isVertical) {
-                        // Swap values for vertical orientation
-                        displayWidth = panel.length;
-                        displayLength = panel.width;
-                    }
-                    
-                    panelList.push({
-                        width: displayWidth,
-                        length: displayLength,
-                        thickness: floorThickness,
-                        quantity: cutPanels.length,
-                        type: 'Cut'
-                    });
-                }
-            });
-        });
-        
-        return panelList;
+
+        return sortMaterialPanels(Array.from(panelsByKey.values()));
     };
 
     // Calculate room area using shoelace formula
@@ -1695,7 +1644,7 @@ const InstallationTimeEstimator = ({
         const capturedImages = getCanvasImagesFromSharedData();
         
         // Enrich wall panels with thickness and surface types from walls data (fallbacks when missing)
-        const enrichedWallPanels = (sharedPanelData?.wallPanels || []).map(panel => {
+        const enrichedWallPanels = sortMaterialPanels((sharedPanelData?.wallPanels || []).map(panel => {
             const wall = walls.find(w => String(w.id) === String(panel.wallId || panel.anyWallId));
             const thickness = wall?.thickness || panel.thickness || 150; // Default wall thickness
             const inner_face_material = panel.inner_face_material ?? wall?.inner_face_material ?? 'PPGI';
@@ -1710,8 +1659,10 @@ const InstallationTimeEstimator = ({
                 outer_face_material,
                 outer_face_thickness
             };
-        });
+        }));
         
+        const sortedRooms = sortRoomsByLevelThenName(rooms, storeys);
+
         const data = {
             projectInfo: {
                 name: projectData?.name || 'Unknown Project',
@@ -1720,13 +1671,13 @@ const InstallationTimeEstimator = ({
                 walls: walls.length,
                 doors: doors.length
             },
-            rooms: rooms, // Include full room data for the preview
+            rooms: sortedRooms,
             wallPanels: enrichedWallPanels,
-            ceilingPanels: sharedPanelData?.ceilingPanels || [],
-            floorPanels: sharedPanelData?.floorPanels || [],
+            ceilingPanels: sortMaterialPanels(sharedPanelData?.ceilingPanels || []),
+            floorPanels: sortMaterialPanels(sharedPanelData?.floorPanels || []),
             wallPanelAnalysis: sharedPanelData?.wallPanelAnalysis || null,
-            doors: doors,
-            slabs: rooms.filter(room => room.floor_type === 'slab' || room.floor_type === 'Slab'),
+            doors: sortDoorsForMaterialList(doors),
+            slabs: sortedRooms.filter(room => room.floor_type === 'slab' || room.floor_type === 'Slab'),
             installationEstimates: installationEstimates,
             supportAccessories: {
                 type: sharedPanelData?.supportType || 'nylon',
@@ -1774,9 +1725,9 @@ const InstallationTimeEstimator = ({
         
         setIsExporting(true);
         try {
-            // Create new PDF document - always start with portrait for main content
+            // Create PDF using the export orientation for the whole document
             const doc = new jsPDF({
-                orientation: 'portrait',
+                orientation: planPageOrientation === 'landscape' ? 'landscape' : 'portrait',
                 unit: 'mm',
                 format: 'a4'
             });
@@ -1786,9 +1737,26 @@ const InstallationTimeEstimator = ({
             
             // Set initial position
             let yPos = 20;
-            const pageWidth = doc.internal.pageSize.width;
-            const margin = 20;
+            const isLandscapeLayout = planPageOrientation === 'landscape';
+            const pageWidth = typeof doc.internal.pageSize.getWidth === 'function'
+                ? doc.internal.pageSize.getWidth()
+                : doc.internal.pageSize.width;
+            const margin = isLandscapeLayout ? 12 : 20;
             const contentWidth = pageWidth - (2 * margin);
+            const getPageBreakY = () => {
+                const h = typeof doc.internal.pageSize.getHeight === 'function'
+                    ? doc.internal.pageSize.getHeight()
+                    : doc.internal.pageSize.height;
+                // Tighter bottom margin in landscape so columns can fill the page
+                return h - (isLandscapeLayout ? 10 : 25);
+            };
+            let pageBreakY = getPageBreakY();
+
+            const addDocPage = () => {
+                doc.addPage('a4', planPageOrientation === 'landscape' ? 'landscape' : 'portrait');
+                yPos = 20;
+                pageBreakY = getPageBreakY();
+            };
             
             // Helper function to add text with proper positioning
             const addText = (text, fontSize = 12, isBold = false, alignment = 'left') => {
@@ -1809,9 +1777,8 @@ const InstallationTimeEstimator = ({
             // Helper function to add section header with background (compact)
             const addSectionHeader = (text, color = [66, 139, 202], bgColor = [239, 246, 255]) => {
                 // Check for new page first
-                if (yPos > 230) {
-                    doc.addPage();
-                    yPos = 20;
+                if (yPos > pageBreakY - 20) {
+                    addDocPage();
                 }
                 
                 yPos += 6;
@@ -1833,10 +1800,280 @@ const InstallationTimeEstimator = ({
             
             // Helper function to check if we need a new page
             const checkNewPage = () => {
-                if (yPos > 250) {
-                    doc.addPage();
-                    yPos = 20;
+                if (yPos > pageBreakY) {
+                    addDocPage();
                 }
+            };
+
+            const colGap = isLandscapeLayout ? 6 : 8;
+            const dualColWidth = isLandscapeLayout ? (contentWidth - colGap) / 2 : contentWidth;
+            const dualLeftX = margin;
+            const dualRightX = margin + dualColWidth + colGap;
+            const dualCols = { leftY: yPos, rightY: yPos };
+
+            const syncDualYFromPage = () => {
+                dualCols.leftY = yPos;
+                dualCols.rightY = yPos;
+            };
+
+            // Always fill left column top→bottom, then right, then next page (left again).
+            const pickDualColumn = (minNeededMm) => {
+                pageBreakY = getPageBreakY();
+                if (dualCols.leftY + minNeededMm <= pageBreakY) {
+                    return {
+                        side: 'left',
+                        x: dualLeftX,
+                        y: dualCols.leftY,
+                        width: dualColWidth
+                    };
+                }
+                if (dualCols.rightY + minNeededMm <= pageBreakY) {
+                    return {
+                        side: 'right',
+                        x: dualRightX,
+                        y: dualCols.rightY,
+                        width: dualColWidth
+                    };
+                }
+                addDocPage();
+                dualCols.leftY = 20;
+                dualCols.rightY = 20;
+                return { side: 'left', x: dualLeftX, y: 20, width: dualColWidth };
+            };
+
+            const SECTION_GAP_MM = 8; // space after a finished section before the next banner
+
+            const setDualColumnY = (side, nextY) => {
+                if (side === 'left') dualCols.leftY = nextY;
+                else dualCols.rightY = nextY;
+                yPos = Math.max(dualCols.leftY, dualCols.rightY);
+            };
+
+            // Banner grows downward from startY (no upward overhang — that caused section overlap)
+            const drawColumnSectionHeader = (title, color, bgColor, x, width, startY) => {
+                const bannerH = 10;
+                doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+                doc.roundedRect(x - 1, startY, width + 2, bannerH, 1.5, 1.5, 'F');
+                doc.setTextColor(
+                    Math.max(0, color[0] - 100),
+                    Math.max(0, color[1] - 50),
+                    Math.max(0, color[2] - 50)
+                );
+                doc.setFontSize(10);
+                doc.setFont(undefined, 'bold');
+                doc.text(title, x + 2, startY + 7);
+                doc.setTextColor(0, 0, 0);
+                return startY + bannerH + 2;
+            };
+
+            /** Landscape: pack tables left→bottom, then right→bottom, then next page. */
+            const drawPackedTableSection = (section) => {
+                const {
+                    title,
+                    color = [66, 139, 202],
+                    bgColor = [239, 246, 255],
+                    subtitle = null,
+                    head,
+                    body,
+                    columnStyles = {},
+                    headFill,
+                    altFill,
+                    fontSize = 8,
+                    theme = 'striped'
+                } = section;
+                if (!body || body.length === 0) return;
+
+                const tableHeadH = 7;
+                // Aggressive initial guess — real row height is learned after the first chunk
+                let measuredRowH = Math.max(3.4, fontSize * 0.28 + 2.0);
+                const minRemainToContinue = 18; // mm — keep filling column if more space than this
+
+                const subtitleHeightFor = (width) => {
+                    if (!subtitle) return 0;
+                    doc.setFontSize(9);
+                    return doc.splitTextToSize(subtitle, width).length * 4.0 + 1;
+                };
+
+                let rowIndex = 0;
+                let firstChunk = true;
+                let lastSide = null;
+                let forceSide = null; // keep filling this column until it's truly full
+
+                while (rowIndex < body.length) {
+                    pageBreakY = getPageBreakY();
+                    const includeSubtitle = firstChunk && Boolean(subtitle);
+
+                    let slot;
+                    if (forceSide === 'left' || forceSide === 'right') {
+                        slot = {
+                            side: forceSide,
+                            x: forceSide === 'left' ? dualLeftX : dualRightX,
+                            y: forceSide === 'left' ? dualCols.leftY : dualCols.rightY,
+                            width: dualColWidth
+                        };
+                        // If forced side somehow has no room, clear force and pick normally
+                        if (slot.y + tableHeadH + measuredRowH + 2 > pageBreakY) {
+                            if (forceSide === 'left') dualCols.leftY = pageBreakY + 1;
+                            else dualCols.rightY = pageBreakY + 1;
+                            forceSide = null;
+                            lastSide = null;
+                            continue;
+                        }
+                    } else {
+                        const bannerPad = firstChunk ? 13 + subtitleHeightFor(dualColWidth) : 0;
+                        slot = pickDualColumn(tableHeadH + measuredRowH + 2 + bannerPad);
+                    }
+
+                    const showBanner =
+                        firstChunk ||
+                        slot.side !== lastSide ||
+                        slot.y <= 22;
+
+                    const bannerSpace = showBanner
+                        ? 12 + (includeSubtitle ? subtitleHeightFor(slot.width) : 0)
+                        : 0;
+
+                    const availForRows = pageBreakY - slot.y - bannerSpace - tableHeadH - 2;
+                    let maxRows = Math.floor(availForRows / measuredRowH);
+
+                    if (maxRows < 1) {
+                        if (slot.side === 'left') dualCols.leftY = pageBreakY + 1;
+                        else dualCols.rightY = pageBreakY + 1;
+                        forceSide = null;
+                        lastSide = null;
+                        continue;
+                    }
+
+                    maxRows = Math.min(maxRows, body.length - rowIndex);
+                    const chunk = body.slice(rowIndex, rowIndex + maxRows);
+                    if (chunk.length === 0) break;
+
+                    let y = slot.y;
+                    if (showBanner) {
+                        const label = firstChunk ? title : `${title} (cont.)`;
+                        y = drawColumnSectionHeader(label, color, bgColor, slot.x, slot.width, y);
+                        if (includeSubtitle) {
+                            doc.setFontSize(9);
+                            doc.setFont(undefined, 'normal');
+                            const subLines = doc.splitTextToSize(subtitle, slot.width);
+                            doc.text(subLines, slot.x, y);
+                            y += subLines.length * 4.0 + 1;
+                        }
+                    }
+
+                    const tableStartY = y;
+                    const pagesBefore = doc.internal.getNumberOfPages();
+                    autoTable(doc, {
+                        startY: y,
+                        head: [head],
+                        body: chunk,
+                        theme,
+                        styles: {
+                            fontSize,
+                            cellPadding: 1.0,
+                            overflow: 'ellipsize'
+                        },
+                        headStyles: {
+                            fillColor: headFill || color,
+                            fontStyle: 'bold',
+                            fontSize: Math.min(fontSize + 1, 9),
+                            overflow: 'ellipsize'
+                        },
+                        alternateRowStyles: altFill ? { fillColor: altFill } : undefined,
+                        margin: { left: slot.x, right: pageWidth - slot.x - slot.width },
+                        tableWidth: slot.width,
+                        columnStyles,
+                        // Manual chunking owns pagination — never jump mid-chunk
+                        pageBreak: 'avoid'
+                    });
+
+                    if (doc.internal.getNumberOfPages() > pagesBefore) {
+                        // Chunk still didn't fit — cursors belong on the new page
+                        pageBreakY = getPageBreakY();
+                        dualCols.leftY = 20;
+                        dualCols.rightY = 20;
+                        lastSide = null;
+                    }
+
+                    const finalY = doc.lastAutoTable.finalY;
+                    const drawnRows = chunk.length;
+                    const bodyH = Math.max(0, finalY - tableStartY - tableHeadH);
+                    if (drawnRows > 0 && bodyH > 0) {
+                        measuredRowH = Math.max(3.2, bodyH / drawnRows);
+                    }
+
+                    rowIndex += drawnRows;
+                    firstChunk = false;
+                    lastSide = slot.side;
+
+                    const remain = pageBreakY - finalY;
+                    if (rowIndex < body.length && remain > minRemainToContinue) {
+                        // Column still has usable space — stay here (fixes large empty bottoms)
+                        forceSide = slot.side;
+                        setDualColumnY(slot.side, finalY + 2);
+                    } else if (rowIndex < body.length) {
+                        // Column is full enough — move left→right→next page
+                        forceSide = null;
+                        if (slot.side === 'left') dualCols.leftY = pageBreakY + 1;
+                        else dualCols.rightY = pageBreakY + 1;
+                        lastSide = null;
+                    } else {
+                        // Section finished mid-column — leave cursor for the next section
+                        forceSide = null;
+                        setDualColumnY(slot.side, finalY + SECTION_GAP_MM);
+                    }
+                }
+            };
+
+            const drawFullWidthTableSection = (section) => {
+                const {
+                    title,
+                    color = [66, 139, 202],
+                    bgColor = [239, 246, 255],
+                    subtitle = null,
+                    head,
+                    body,
+                    columnStyles = {},
+                    headFill,
+                    altFill,
+                    fontSize = 8,
+                    theme = 'striped',
+                    headHalign
+                } = section;
+                if (!body || body.length === 0) return;
+                addSectionHeader(title, color, bgColor);
+                if (subtitle) {
+                    addText(subtitle, 11, false);
+                    yPos += 3;
+                }
+                autoTable(doc, {
+                    startY: yPos,
+                    head: [head],
+                    body,
+                    theme,
+                    styles: {
+                        fontSize,
+                        cellPadding: theme === 'grid' ? 3 : 2,
+                        fontStyle: theme === 'grid' ? 'bold' : 'normal',
+                        halign: headHalign || 'left'
+                    },
+                    headStyles: {
+                        fillColor: headFill || color,
+                        fontStyle: 'bold',
+                        fontSize: fontSize + 1,
+                        halign: headHalign || 'left'
+                    },
+                    alternateRowStyles: altFill ? { fillColor: altFill } : undefined,
+                    margin: { left: margin, right: margin },
+                    columnStyles
+                });
+                yPos = doc.lastAutoTable.finalY + 10;
+                checkNewPage();
+            };
+
+            const drawTableSection = (section) => {
+                if (isLandscapeLayout) drawPackedTableSection(section);
+                else drawFullWidthTableSection(section);
             };
             
             // Project Overview - Simple text layout like preview (no table)
@@ -1846,7 +2083,9 @@ const InstallationTimeEstimator = ({
             // Store starting position for both columns
             const startY = yPos;
             const leftColumnX = margin;
-            const rightColumnX = margin + contentWidth * 0.5;
+            const rightColumnX = isLandscapeLayout
+                ? dualRightX
+                : margin + contentWidth * 0.5;
             const lineHeight = 6; // Consistent line spacing
             
             doc.setFontSize(10);
@@ -1868,234 +2107,178 @@ const InstallationTimeEstimator = ({
             doc.text(`Walls: ${exportData.projectInfo.walls}`, rightColumnX, columnStartY + lineHeight);
             
             yPos = columnStartY + (lineHeight * 2) + 8; // Space after the two-column layout
+            if (isLandscapeLayout) syncDualYFromPage();
             checkNewPage();
             
             // Material Quantities Summary
-            // Gray theme like preview
-            addSectionHeader('Material Quantities Summary', [55, 65, 81], [249, 250, 251]); // gray-700, bg-gray-50
-            
             const totalWallPanels = exportData.wallPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
             const totalCeilingPanels = exportData.ceilingPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
             const totalFloorPanels = exportData.floorPanels.reduce((sum, p) => sum + (p.quantity || 1), 0);
             const totalPanels = totalWallPanels + totalCeilingPanels + totalFloorPanels;
             const slabAreaPdf = slabWidth * slabLength;
-            const totalSlabs = exportData.slabs.reduce((sum, room) => {
+            const totalSlabsSummary = exportData.slabs.reduce((sum, room) => {
                 if (room.room_points && room.room_points.length > 0 && slabAreaPdf > 0) {
                     return sum + Math.ceil(calculateRoomArea(room.room_points) / slabAreaPdf);
                 }
                 return sum;
             }, 0);
             
-            const summaryData = [
-                ['Total Panels', totalPanels.toString(), `${totalWallPanels} wall + ${totalCeilingPanels} ceiling + ${totalFloorPanels} floor`],
-                ['Total Doors', exportData.doors.length.toString(), 'From project data'],
-                ['Total Slabs', totalSlabs.toString(), `For rooms with slab floors (${slabWidth}×${slabLength}mm)`]
-            ];
-            
-            autoTable(doc, {
-                startY: yPos,
-                head: [['Category', 'Quantity', 'Details']],
-                body: summaryData,
-                theme: 'striped',
-                styles: { fontSize: 9, cellPadding: 2 }, // smaller rows
-                headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 10 },
-                alternateRowStyles: { fillColor: [249, 250, 251] },
-                margin: { left: margin, right: margin }
+            drawTableSection({
+                title: 'Material Quantities Summary',
+                color: [55, 65, 81],
+                bgColor: [249, 250, 251],
+                headFill: [107, 114, 128],
+                altFill: [249, 250, 251],
+                fontSize: 9,
+                head: ['Category', 'Quantity', 'Details'],
+                body: [
+                    ['Total Panels', totalPanels.toString(), `${totalWallPanels} wall + ${totalCeilingPanels} ceiling + ${totalFloorPanels} floor`],
+                    ['Total Doors', exportData.doors.length.toString(), 'From project data'],
+                    ['Total Slabs', totalSlabsSummary.toString(), `For rooms with slab floors (${slabWidth}×${slabLength}mm)`]
+                ]
             });
-            
-            yPos = doc.lastAutoTable.finalY + 10;
-            checkNewPage();
             
             // Room Details
             if (exportData.rooms && exportData.rooms.length > 0) {
-                // Gray theme like preview
-                addSectionHeader('Room Details', [55, 65, 81], [249, 250, 251]); // gray-700, bg-gray-50
-                addText(`Total: ${exportData.rooms.length} rooms`, 11, false); // Larger total text
-                yPos += 3;
-                
-                const roomData = exportData.rooms.map(room => [
-                    room.room_name || 'Unnamed Room',
-                    room.floor_type || 'N/A',
-                    room.floor_thickness || 'N/A',
-                    room.height || 'N/A',
-                    room.room_points && room.room_points.length > 0 
-                        ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
-                        : 'N/A'
-                ]);
-                
-                             autoTable(doc, {
-                 startY: yPos,
-                 head: [['Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)']],
-                 body: roomData,
-                 theme: 'striped',
-                 styles: { fontSize: 8, cellPadding: 2 }, // smaller
-                 headStyles: { fillColor: [107, 114, 128], fontStyle: 'bold', fontSize: 9 },
-                 alternateRowStyles: { fillColor: [249, 250, 251] },
-                 margin: { left: margin, right: margin }
-             });
-                
-                yPos = doc.lastAutoTable.finalY + 10;
-                checkNewPage();
+                drawTableSection({
+                    title: 'Room Details',
+                    color: [55, 65, 81],
+                    bgColor: [249, 250, 251],
+                    headFill: [107, 114, 128],
+                    altFill: [249, 250, 251],
+                    subtitle: `Total: ${exportData.rooms.length} rooms`,
+                    fontSize: 8,
+                    head: ['Level', 'Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)'],
+                    body: exportData.rooms.map(room => [
+                        room.storey_name || 'Unassigned',
+                        room.room_name || 'Unnamed Room',
+                        room.floor_type || 'N/A',
+                        room.floor_thickness || 'N/A',
+                        room.height || 'N/A',
+                        room.room_points && room.room_points.length > 0 
+                            ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
+                            : 'N/A'
+                    ])
+                });
             }
 
-            // Installation Time Estimates (keep on first page with overview/rooms when possible)
-            // Indigo theme like preview
-            addSectionHeader('Installation Time Estimates', [79, 70, 229], [238, 242, 255]); // indigo-600, bg-indigo-50
-            
-            const installationData = [
-                ['Working Days', 'Working Weeks', 'Working Months'],
-                [
+            // Installation Time Estimates
+            drawTableSection({
+                title: 'Installation Time Estimates',
+                color: [79, 70, 229],
+                bgColor: [238, 242, 255],
+                headFill: [79, 70, 229],
+                fontSize: 10,
+                theme: 'grid',
+                headHalign: 'center',
+                head: ['Working Days', 'Working Weeks', 'Working Months'],
+                body: [[
                     exportData.installationEstimates.days.toString(),
                     exportData.installationEstimates.weeks.toString(),
                     exportData.installationEstimates.months.toString()
-                ]
-            ];
-            
-                         autoTable(doc, {
-                startY: yPos,
-                head: [['Working Days', 'Working Weeks', 'Working Months']],
-                body: [installationData[1]],
-                theme: 'grid',
-                styles: { fontSize: 10, fontStyle: 'bold', cellPadding: 3, halign: 'center' },
-                headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 10, halign: 'center' },
-                margin: { left: margin, right: margin }
+                ]]
             });
-            
-            yPos = doc.lastAutoTable.finalY + 10;
-            checkNewPage();
 
             // Force a new page for detailed panel/support tables
-            doc.addPage();
-            yPos = 20;
+            addDocPage();
+            if (isLandscapeLayout) {
+                dualCols.leftY = 20;
+                dualCols.rightY = 20;
+            }
             
             // Wall Panels
             if (exportData.wallPanels && exportData.wallPanels.length > 0) {
-                // Blue theme like preview
-                addSectionHeader('Wall Panels', [59, 130, 246], [239, 246, 255]); // blue-600, bg-blue-50
-                addText(`Total: ${exportData.wallPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
-                yPos += 3;
-                
-                const wallPanelData = exportData.wallPanels.map((panel, index) => {
-                    const intMat = panel.inner_face_material ?? 'PPGI';
-                    const intThk = panel.inner_face_thickness ?? 0.5;
-                    const extMat = panel.outer_face_material ?? 'PPGI';
-                    const extThk = panel.outer_face_thickness ?? 0.5;
-                    const finishing = (intMat === extMat && intThk === extThk)
-                        ? `Both Side ${extThk}mm ${extMat}`
-                        : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
-                    return [
-                        (index + 1).toString(),
-                        `${panel.width}mm`,
-                        `${panel.length}mm`,
-                        panel.quantity ? panel.quantity.toString() : '1',
-                        panel.type || 'N/A',
-                        panel.application || 'N/A',
-                        `${panel.thickness || 'N/A'}mm`,
-                        finishing
-                    ];
-                });
-                
-                                 autoTable(doc, {
-                    startY: yPos,
-                    head: [['No.', 'Width (mm)', 'Length (mm)', 'Qty', 'Type', 'Application', 'Thk (mm)', 'Finishing']],
-                    body: wallPanelData,
-                    theme: 'striped',
-                    styles: { fontSize: 8, cellPadding: 2 },
-                    headStyles: { fillColor: [59, 130, 246], fontStyle: 'bold', fontSize: 9 },
-                    alternateRowStyles: { fillColor: [239, 246, 255] },
-                    margin: { left: margin, right: margin },
+                drawTableSection({
+                    title: 'Wall Panels',
+                    color: [59, 130, 246],
+                    bgColor: [239, 246, 255],
+                    headFill: [59, 130, 246],
+                    altFill: [239, 246, 255],
+                    subtitle: `Total: ${exportData.wallPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`,
+                    fontSize: 7,
+                    head: ['No.', 'Width (mm)', 'Length (mm)', 'Qty', 'Type', 'Application', 'Thk (mm)', 'Finishing'],
+                    body: exportData.wallPanels.map((panel, index) => {
+                        const finishing = getPanelFinishingLabel(panel);
+                        return [
+                            (index + 1).toString(),
+                            `${panel.width}mm`,
+                            `${panel.length}mm`,
+                            panel.quantity ? panel.quantity.toString() : '1',
+                            panel.type || 'N/A',
+                            panel.application || 'N/A',
+                            `${panel.thickness || 'N/A'}mm`,
+                            finishing
+                        ];
+                    }),
                     columnStyles: {
-                        4: { cellWidth: 16 },   // Type column narrower
-                        0: { cellWidth: 10 }    // No. column tight
+                        4: { cellWidth: isLandscapeLayout ? 14 : 16 },
+                        0: { cellWidth: 9 }
                     }
                 });
-                
-                yPos = doc.lastAutoTable.finalY + 10;
-                checkNewPage();
             }
             
             // Ceiling Panels
             if (exportData.ceilingPanels && exportData.ceilingPanels.length > 0) {
-                // Green theme like preview
-                addSectionHeader('Ceiling Panels', [22, 163, 74], [240, 253, 244]); // green-600, bg-green-50
-                addText(`Total: ${exportData.ceilingPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
-                yPos += 3;
-                
-                const ceilingPanelData = exportData.ceilingPanels.map(panel => {
-                    const intMat = panel.inner_face_material ?? 'PPGI';
-                    const intThk = panel.inner_face_thickness ?? 0.5;
-                    const extMat = panel.outer_face_material ?? 'PPGI';
-                    const extThk = panel.outer_face_thickness ?? 0.5;
-                    const same = intMat === extMat && intThk === extThk;
-                    const finishing = same
-                        ? `Both ${extThk}mm ${extMat}`
-                        : `INT ${intThk}mm ${intMat} / EXT ${extThk}mm ${extMat}`;
-                    return [
-                        `${panel.width || 'N/A'}mm`,
-                        `${panel.length || 'N/A'}mm`,
-                        `${panel.thickness || 'N/A'}mm`,
-                        panel.quantity ? panel.quantity.toString() : '1',
-                        finishing
-                    ];
-                });
-                
-                                 autoTable(doc, {
-                    startY: yPos,
-                    head: [['Width', 'Length', 'Thk', 'Qty', 'Face']],
-                    body: ceilingPanelData,
-                    theme: 'striped',
-                    styles: { fontSize: 8, cellPadding: 2 },
-                    headStyles: { fillColor: [22, 163, 74], fontStyle: 'bold', fontSize: 9 },
-                    alternateRowStyles: { fillColor: [240, 253, 244] },
-                    margin: { left: margin, right: margin },
+                drawTableSection({
+                    title: 'Ceiling Panels',
+                    color: [22, 163, 74],
+                    bgColor: [240, 253, 244],
+                    headFill: [22, 163, 74],
+                    altFill: [240, 253, 244],
+                    subtitle: `Total: ${exportData.ceilingPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`,
+                    fontSize: 7,
+                    head: ['Width', 'Length', 'Thk', 'Qty', 'Face'],
+                    body: exportData.ceilingPanels.map(panel => {
+                        const intMat = panel.inner_face_material ?? 'PPGI';
+                        const intThk = panel.inner_face_thickness ?? 0.5;
+                        const extMat = panel.outer_face_material ?? 'PPGI';
+                        const extThk = panel.outer_face_thickness ?? 0.5;
+                        const same = intMat === extMat && intThk === extThk;
+                        const finishing = same
+                            ? `Both ${extThk}mm ${extMat}`
+                            : `INT ${intThk}mm ${intMat} / EXT ${extThk}mm ${extMat}`;
+                        return [
+                            `${panel.width || 'N/A'}mm`,
+                            `${panel.length || 'N/A'}mm`,
+                            `${panel.thickness || 'N/A'}mm`,
+                            panel.quantity ? panel.quantity.toString() : '1',
+                            finishing
+                        ];
+                    }),
                     columnStyles: {
-                        3: { cellWidth: 10 }, // Qty tight
-                        4: { cellWidth: 40 }  // Face description
+                        3: { cellWidth: 10 },
+                        4: { cellWidth: isLandscapeLayout ? 36 : 40 }
                     }
                 });
-                
-                yPos = doc.lastAutoTable.finalY + 10;
-                checkNewPage();
             }
             
             // Floor Panels
             if (exportData.floorPanels && exportData.floorPanels.length > 0) {
-                // Purple theme like preview
-                addSectionHeader('Floor Panels', [147, 51, 234], [250, 245, 255]); // purple-600, bg-purple-50
-                addText(`Total: ${exportData.floorPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`, 11, false);
-                yPos += 3;
-                
-                const floorPanelData = exportData.floorPanels.map(panel => [
-                    `${panel.width || 'N/A'}mm`,
-                    `${panel.length || 'N/A'}mm`,
-                    `${panel.thickness || 'N/A'}mm`,
-                    panel.quantity ? panel.quantity.toString() : '1',
-                    panel.type || 'N/A'
-                ]);
-                
-                                 autoTable(doc, {
-                    startY: yPos,
-                    head: [['Width', 'Length', 'Thk', 'Qty', 'Type']],
-                    body: floorPanelData,
-                    theme: 'striped',
-                    styles: { fontSize: 8, cellPadding: 2 },
-                    headStyles: { fillColor: [147, 51, 234], fontStyle: 'bold', fontSize: 9 },
-                    alternateRowStyles: { fillColor: [250, 245, 255] },
-                    margin: { left: margin, right: margin },
+                drawTableSection({
+                    title: 'Floor Panels',
+                    color: [147, 51, 234],
+                    bgColor: [250, 245, 255],
+                    headFill: [147, 51, 234],
+                    altFill: [250, 245, 255],
+                    subtitle: `Total: ${exportData.floorPanels.reduce((sum, p) => sum + (p.quantity || 1), 0)} panels`,
+                    fontSize: 8,
+                    head: ['Width', 'Length', 'Thk', 'Qty', 'Type'],
+                    body: exportData.floorPanels.map(panel => [
+                        `${panel.width || 'N/A'}mm`,
+                        `${panel.length || 'N/A'}mm`,
+                        `${panel.thickness || 'N/A'}mm`,
+                        panel.quantity ? panel.quantity.toString() : '1',
+                        panel.type || 'N/A'
+                    ]),
                     columnStyles: {
-                        3: { cellWidth: 14 }, // Qty
-                        4: { cellWidth: 16 }  // Type narrower
+                        3: { cellWidth: 14 },
+                        4: { cellWidth: 16 }
                     }
                 });
-                
-                yPos = doc.lastAutoTable.finalY + 10;
-                checkNewPage();
             }
             
             // Slab Floors
             if (exportData.slabs && exportData.slabs.length > 0) {
-                // Yellow theme like preview
-                addSectionHeader('Slab Floors', [234, 179, 8], [254, 252, 232]); // yellow-600, bg-yellow-50
                 const slabArea = slabWidth * slabLength;
                 const totalSlabs = exportData.slabs.reduce((sum, room) => {
                     if (room.room_points && room.room_points.length > 0 && slabArea > 0) {
@@ -2103,91 +2286,87 @@ const InstallationTimeEstimator = ({
                     }
                     return sum;
                 }, 0);
-                addText(`Total: ${totalSlabs} slabs needed`, 11, false);
-                yPos += 3;
-                
-                const slabData = exportData.slabs.map(room => [
-                    room.room_name || 'Unnamed Room',
-                    room.room_points && room.room_points.length > 0 
-                        ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
-                        : 'N/A',
-                    `${slabWidth} × ${slabLength}mm`,
-                    room.room_points && room.room_points.length > 0
-                        ? Math.ceil(calculateRoomArea(room.room_points) / (slabWidth * slabLength)).toString()
-                        : 'N/A'
-                ]);
-                
-                                 autoTable(doc, {
-                    startY: yPos,
-                    head: [['Room Name', 'Area (m²)', 'Slab Size', 'Slabs']],
-                    body: slabData,
-                    theme: 'striped',
-                    styles: { fontSize: 8, cellPadding: 2 },
-                    headStyles: { fillColor: [234, 179, 8], fontStyle: 'bold', fontSize: 9 },
-                    alternateRowStyles: { fillColor: [254, 252, 232] },
-                    margin: { left: margin, right: margin }
+                drawTableSection({
+                    title: 'Slab Floors',
+                    color: [234, 179, 8],
+                    bgColor: [254, 252, 232],
+                    headFill: [234, 179, 8],
+                    altFill: [254, 252, 232],
+                    subtitle: `Total: ${totalSlabs} slabs needed`,
+                    fontSize: 8,
+                    head: ['Room Name', 'Area (m²)', 'Slab Size', 'Slabs'],
+                    body: exportData.slabs.map(room => [
+                        room.room_name || 'Unnamed Room',
+                        room.room_points && room.room_points.length > 0 
+                            ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
+                            : 'N/A',
+                        `${slabWidth} × ${slabLength}mm`,
+                        room.room_points && room.room_points.length > 0
+                            ? Math.ceil(calculateRoomArea(room.room_points) / (slabWidth * slabLength)).toString()
+                            : 'N/A'
+                    ])
                 });
-                
-                yPos = doc.lastAutoTable.finalY + 10;
-                checkNewPage();
             }
             
             // Doors
             if (exportData.doors && exportData.doors.length > 0) {
-                // Indigo theme like preview
-                addSectionHeader('Doors', [79, 70, 229], [238, 242, 255]); // indigo-600, bg-indigo-50
-                addText(`Total: ${exportData.doors.length} doors`, 11, false);
-                yPos += 3;
-                
-                const doorData = exportData.doors.map(door => [
-                    door.door_type || 'N/A',
-                    `${door.width || 'N/A'}mm`,
-                    `${door.height || 'N/A'}mm`,
-                    `${door.thickness || 'N/A'}mm`
-                ]);
-                
-                                 autoTable(doc, {
-                    startY: yPos,
-                    head: [['Type', 'Width', 'Height', 'Thk']],
-                    body: doorData,
-                    theme: 'striped',
-                    styles: { fontSize: 8, cellPadding: 2 },
-                    headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold', fontSize: 9 },
-                    alternateRowStyles: { fillColor: [238, 242, 255] },
-                    margin: { left: margin, right: margin },
+                drawTableSection({
+                    title: 'Doors',
+                    color: [79, 70, 229],
+                    bgColor: [238, 242, 255],
+                    headFill: [79, 70, 229],
+                    altFill: [238, 242, 255],
+                    subtitle: `Total: ${exportData.doors.length} doors`,
+                    fontSize: 8,
+                    head: ['Type', 'Width', 'Height', 'Thk'],
+                    body: exportData.doors.map(door => [
+                        door.door_type || 'N/A',
+                        `${door.width || 'N/A'}mm`,
+                        `${door.height || 'N/A'}mm`,
+                        `${door.thickness || 'N/A'}mm`
+                    ]),
                     columnStyles: {
-                        0: { cellWidth: 30 }
+                        0: { cellWidth: isLandscapeLayout ? 28 : 30 }
                     }
                 });
-                
-                yPos = doc.lastAutoTable.finalY + 10;
-                checkNewPage();
             }
             
             // Support Accessories
-            // Orange theme like preview
-            addSectionHeader('Support Accessories', [234, 88, 12], [255, 247, 237]); // orange-600, bg-orange-50
-            
             if (exportData.supportAccessories.isNeeded) {
-                const supportData = [
-                    ['Support Type', exportData.supportAccessories.type === 'nylon' ? 'Nylon Hanger' : 'Alu Suspension'],
-                    ['Include Accessories', exportData.supportAccessories.includeAccessories ? 'Yes' : 'No'],
-                    ['Include Cable', exportData.supportAccessories.includeCable ? 'Yes' : 'No']
-                ];
-                
-                                 autoTable(doc, {
-                    startY: yPos,
-                    head: [['Property', 'Value']],
-                    body: supportData,
-                    theme: 'striped',
-                    styles: { fontSize: 9, cellPadding: 2 },
-                    headStyles: { fillColor: [234, 88, 12], fontStyle: 'bold', fontSize: 10 },
-                    alternateRowStyles: { fillColor: [255, 247, 237] },
-                    margin: { left: margin, right: margin }
+                drawTableSection({
+                    title: 'Support Accessories',
+                    color: [234, 88, 12],
+                    bgColor: [255, 247, 237],
+                    headFill: [234, 88, 12],
+                    altFill: [255, 247, 237],
+                    fontSize: 9,
+                    head: ['Property', 'Value'],
+                    body: [
+                        ['Support Type', exportData.supportAccessories.type === 'nylon' ? 'Nylon Hanger' : 'Alu Suspension'],
+                        ['Include Accessories', exportData.supportAccessories.includeAccessories ? 'Yes' : 'No'],
+                        ['Include Cable', exportData.supportAccessories.includeCable ? 'Yes' : 'No']
+                    ]
                 });
-                
-                yPos = doc.lastAutoTable.finalY + 10;
+            } else if (isLandscapeLayout) {
+                const slot = pickDualColumn(24);
+                let y = drawColumnSectionHeader(
+                    'Support Accessories',
+                    [234, 88, 12],
+                    [255, 247, 237],
+                    slot.x,
+                    slot.width,
+                    slot.y
+                );
+                doc.setFontSize(8);
+                doc.setFont(undefined, 'normal');
+                const note = doc.splitTextToSize(
+                    'Not needed in this project - All ceiling panels are under 6000mm length',
+                    slot.width
+                );
+                doc.text(note, slot.x, y);
+                setDualColumnY(slot.side, y + note.length * 4 + 6);
             } else {
+                addSectionHeader('Support Accessories', [234, 88, 12], [255, 247, 237]);
                 addText('Not needed in this project - All ceiling panels are under 6000mm length', 10);
                 yPos += 5;
             }
@@ -2342,7 +2521,7 @@ const InstallationTimeEstimator = ({
             }
             
             // Add Plan Images Section at the end
-            // Note: Only plan images use the orientation and single plan per page settings
+            // Raster fallback plans follow the same whole-document orientation
             if (exportData.planImages) {
                 // Helper function to add a plan image with proper sizing
                 const addPlanImage = async (imageData, planName) => {
@@ -2651,6 +2830,58 @@ const InstallationTimeEstimator = ({
                 
                 if (!singlePlanPerPage) {
                     checkNewPage();
+                }
+            }
+
+            // Optional whole-model elevations (user toggles in export preview)
+            if (includeFrontElevation || includeSideElevation) {
+                const wallsForElev = (allWalls && allWalls.length > 0) ? allWalls : walls;
+                const elevations = buildWallElevations({
+                    walls: wallsForElev,
+                    allWalls: wallsForElev,
+                    doors,
+                    rooms,
+                });
+
+                const addElevationPage = (viewData, label) => {
+                    if (!viewData || !viewData.faces || viewData.faces.length === 0) {
+                        console.warn(`[PDF] Skipping ${label}: no faces to draw`);
+                        return;
+                    }
+                    const dataUrl = renderElevationViewToDataURL(viewData, { width: 1800, maxDrawH: 1000 });
+                    doc.addPage('a4', planPageOrientation);
+                    const pageW = doc.internal.pageSize.getWidth();
+                    const pageH = doc.internal.pageSize.getHeight();
+                    const margin = fitToPage ? 8 : 16;
+                    const maxW = pageW - margin * 2;
+                    const maxH = pageH - margin * 2 - (fitToPage ? 0 : 14);
+
+                    // Probe natural image size via temporary Image is async; use canvas aspect from data URL by decoding proportions from known draw
+                    // jsPDF can take width/height; measure via Image sync isn't available — use proportional fit with getImageProperties
+                    const props = doc.getImageProperties(dataUrl);
+                    const imgAspect = props.width / props.height;
+                    let drawW = maxW;
+                    let drawH = drawW / imgAspect;
+                    if (drawH > maxH) {
+                        drawH = maxH;
+                        drawW = drawH * imgAspect;
+                    }
+                    const x = (pageW - drawW) / 2;
+                    const y = fitToPage ? (pageH - drawH) / 2 : margin + 12;
+                    if (!fitToPage) {
+                        doc.setFontSize(14);
+                        doc.setTextColor(30, 64, 175);
+                        doc.setFont('helvetica', 'bold');
+                        doc.text(label, margin, margin + 6);
+                    }
+                    doc.addImage(dataUrl, 'PNG', x, y, drawW, drawH);
+                };
+
+                if (includeFrontElevation) {
+                    addElevationPage(elevations.front, 'Front Elevation');
+                }
+                if (includeSideElevation) {
+                    addElevationPage(elevations.side, 'Side Elevation');
                 }
             }
             
@@ -3221,6 +3452,9 @@ const InstallationTimeEstimator = ({
                                             <thead className="bg-gray-50">
                                                 <tr>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Level
+                                                    </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
                                                         Room Name
                                                     </th>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
@@ -3239,7 +3473,10 @@ const InstallationTimeEstimator = ({
                                             </thead>
                                             <tbody className="bg-white">
                                                 {(expandedTables.rooms ? exportData.rooms : exportData.rooms.slice(0, 5)).map((room, index) => (
-                                                    <tr key={index} className="hover:bg-gray-50">
+                                                    <tr key={room.id ?? index} className="hover:bg-gray-50">
+                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                            {room.storey_name || 'Unassigned'}
+                                                        </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
                                                             {room.room_name || 'Unnamed Room'}
                                                         </td>
@@ -3270,7 +3507,7 @@ const InstallationTimeEstimator = ({
                                         className="hover:bg-blue-50 cursor-pointer transition-colors"
                                         onClick={() => toggleTableExpansion('rooms')}
                                     >
-                                        <td colSpan="5" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                        <td colSpan="6" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
                                             {expandedTables.rooms ? (
                                                 <>
                                                     <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3337,13 +3574,7 @@ const InstallationTimeEstimator = ({
                                             </thead>
                                             <tbody className="bg-white">
                                                 {(expandedTables.wallPanels ? exportData.wallPanels : exportData.wallPanels.slice(0, 5)).map((panel, index) => {
-                                                    const intMat = panel.inner_face_material ?? 'PPGI';
-                                                    const intThk = panel.inner_face_thickness ?? 0.5;
-                                                    const extMat = panel.outer_face_material ?? 'PPGI';
-                                                    const extThk = panel.outer_face_thickness ?? 0.5;
-                                                    const finishing = (intMat === extMat && intThk === extThk)
-                                                        ? `Both Side ${extThk}mm ${extMat}`
-                                                        : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+                                                    const finishing = getPanelFinishingLabel(panel);
                                                     return (
                                                         <tr key={index} className="hover:bg-gray-50">
                                                             <td className="px-4 py-2 border border-gray-300 text-center">{index + 1}</td>
@@ -3453,7 +3684,7 @@ const InstallationTimeEstimator = ({
                                                         className="hover:bg-blue-50 cursor-pointer transition-colors"
                                                         onClick={() => toggleTableExpansion('ceilingPanels')}
                                                     >
-                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                        <td colSpan="5" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
                                                             {expandedTables.ceilingPanels ? (
                                                                 <>
                                                                     <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4028,7 +4259,7 @@ const InstallationTimeEstimator = ({
                                             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                                 <div>
                                                     <label className="text-sm font-medium text-gray-700">Page Orientation</label>
-                                                    <p className="text-xs text-gray-500 mt-1">Portrait or landscape</p>
+                                                    <p className="text-xs text-gray-500 mt-1">Whole PDF — landscape uses two columns</p>
                                                 </div>
                                                 <button
                                                     onClick={() => setPlanPageOrientation(planPageOrientation === 'portrait' ? 'landscape' : 'portrait')}
@@ -4073,6 +4304,42 @@ const InstallationTimeEstimator = ({
                                                     {singlePlanPerPage ? 'One per Page' : 'Compact'}
                                                 </button>
                                             </div>
+
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <div>
+                                                    <label className="text-sm font-medium text-gray-700">Front Elevation</label>
+                                                    <p className="text-xs text-gray-500 mt-1">Whole-model front view in PDF</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIncludeFrontElevation(!includeFrontElevation)}
+                                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                        includeFrontElevation
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                    }`}
+                                                >
+                                                    {includeFrontElevation ? 'Included' : 'Not included'}
+                                                </button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <div>
+                                                    <label className="text-sm font-medium text-gray-700">Side Elevation</label>
+                                                    <p className="text-xs text-gray-500 mt-1">Whole-model side view in PDF</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIncludeSideElevation(!includeSideElevation)}
+                                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                        includeSideElevation
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                    }`}
+                                                >
+                                                    {includeSideElevation ? 'Included' : 'Not included'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -4084,6 +4351,13 @@ const InstallationTimeEstimator = ({
                             <div className="flex justify-between items-center">
                                 <p className="text-sm text-gray-600">
                                     This preview shows the data that will be exported. Plan images (without grids) will be included at the end of the PDF.
+                                    {(includeFrontElevation || includeSideElevation) && (
+                                        <span className="block mt-1 text-blue-700">
+                                            Elevations:{' '}
+                                            {[includeFrontElevation && 'Front', includeSideElevation && 'Side'].filter(Boolean).join(' + ')}
+                                            {' '}will be appended.
+                                        </span>
+                                    )}
                                 </p>
                                 <div className="flex space-x-3">
                                     <button

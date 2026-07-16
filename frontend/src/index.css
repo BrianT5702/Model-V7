@@ -301,7 +301,8 @@ code {
 
 /* Ensure flex layouts are responsive and don't overflow */
 .wall-canvas-wrapper,
-.ceiling-canvas-wrapper {
+.ceiling-canvas-wrapper,
+.floor-canvas-wrapper {
   min-width: 0;
   flex: 1 1 0%;
   max-width: 100%;
@@ -318,7 +319,9 @@ code {
 /* Ensure flex containers with gaps don't overflow */
 .wall-canvas-container > div:first-of-type > div.flex.gap-6,
 .ceiling-canvas-container > div.flex.gap-6,
-.floor-canvas-container > div.flex.gap-6 {
+.ceiling-canvas-container > div.flex.gap-2,
+.floor-canvas-container > div.flex.gap-6,
+.floor-canvas-container > div.flex.gap-2 {
   min-width: 0;
   width: 100%;
   max-width: 100%;
@@ -1403,13 +1406,31 @@ html.dark .summary-tab [class*="bg-gradient-to-br"][class*="from-teal"] {
   background-color: rgb(31 41 55) !important;
 }
 
-html.dark .summary-tab .bg-blue-50,
-html.dark .summary-tab [class*="bg-blue-50"] {
+html.dark .summary-tab .bg-blue-50 {
   background-color: rgb(30 58 138 / 0.22) !important;
 }
 
-html.dark .summary-tab .bg-indigo-100,
-html.dark .summary-tab [class*="bg-indigo-100"] {
+html.dark .summary-tab .bg-green-50 {
+  background-color: rgb(20 83 45 / 0.35) !important;
+}
+
+html.dark .summary-tab .bg-purple-50 {
+  background-color: rgb(88 28 135 / 0.35) !important;
+}
+
+html.dark .summary-tab .bg-yellow-50 {
+  background-color: rgb(113 63 18 / 0.35) !important;
+}
+
+html.dark .summary-tab .bg-indigo-50 {
+  background-color: rgb(49 46 129 / 0.35) !important;
+}
+
+html.dark .summary-tab .bg-orange-50 {
+  background-color: rgb(124 45 18 / 0.35) !important;
+}
+
+html.dark .summary-tab .bg-indigo-100 {
   background-color: rgb(49 46 129 / 0.35) !important;
 }
 
@@ -1477,8 +1498,40 @@ html.dark .summary-tab [class*="text-orange-700"] {
   color: rgb(253 186 116) !important;
 }
 
-html.dark .summary-tab [class*="text-indigo-800"] {
+html.dark .summary-tab [class*="text-indigo-800"],
+html.dark .summary-tab [class*="text-indigo-700"] {
   color: rgb(165 180 252) !important;
+}
+
+html.dark .summary-tab [class*="text-yellow-800"],
+html.dark .summary-tab [class*="text-yellow-700"] {
+  color: rgb(253 224 71) !important;
+}
+
+html.dark .summary-tab [class*="text-blue-600"],
+html.dark .summary-tab [class*="text-blue-500"] {
+  color: rgb(96 165 250) !important;
+}
+
+html.dark .summary-tab [class*="text-gray-800"],
+html.dark .summary-tab [class*="text-gray-900"],
+html.dark .summary-tab [class*="text-gray-700"] {
+  color: rgb(229 231 235) !important;
+}
+
+html.dark .summary-tab [class*="text-gray-600"],
+html.dark .summary-tab [class*="text-gray-500"] {
+  color: rgb(156 163 175) !important;
+}
+
+html.dark .summary-tab thead[class*="bg-gray-50"],
+html.dark .summary-tab thead.bg-gray-50 {
+  background-color: rgb(17 24 39) !important;
+}
+
+html.dark .summary-tab tbody [class*="hover:bg-blue-50"]:hover,
+html.dark .summary-tab tr[class*="hover:bg-blue-50"]:hover {
+  background-color: rgb(30 58 138 / 0.35) !important;
 }
 
 html.dark .summary-tab input[type="number"],
@@ -1518,32 +1571,52 @@ html.dark .summary-tab .text-orange-700 {
   transition: none !important;
 }
 
-/* Canvas zoom controls — sticky overlay on plan scroll; below comments drawer (z-40) */
+/*
+ * Zoom stack = canvas height only. Sticky controls are siblings of the viewport
+ * inside this grid, so they pin while scrolling but cannot leave the canvas bounds.
+ */
 .plan-canvas-zoom-stack {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 1fr;
+  position: relative;
+  isolation: isolate;
 }
 
 .plan-canvas-zoom-stack > .plan-canvas-viewport,
 .plan-canvas-zoom-stack > .relative {
-  grid-column: 1;
-  grid-row: 1;
+  grid-area: 1 / 1;
+  min-width: 0;
 }
 
 .plan-canvas-zoom-stack > .plan-canvas-zoom-controls {
-  grid-column: 1;
-  grid-row: 1;
+  grid-area: 1 / 1;
   position: sticky;
   top: 1rem;
   align-self: start;
   justify-self: start;
-  margin: 1rem 0 0 1rem;
+  margin: 2.5rem 0 0 1rem;
   z-index: 30;
+  width: max-content;
+  min-width: 2.5rem;
+  height: auto;
+  max-height: 100%;
+  overflow: visible;
   pointer-events: none;
+}
+
+/* Floor: slightly lower pin to match shorter page chrome above the canvas */
+.floor-canvas-wrapper .plan-canvas-zoom-stack > .plan-canvas-zoom-controls {
+  top: 4rem;
+  margin-top: 4rem;
 }
 
 .plan-canvas-zoom-stack > .plan-canvas-zoom-controls button {
   pointer-events: auto;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
 }
 
 .plan-canvas-zoom-controls {

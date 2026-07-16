@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import CeilingCanvas from '../canvas/CeilingCanvas';
 import api from '../../api/api';
+import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { calculateGhostDataForStorey } from '../estimation/pdfVectorWallPlan';
 
 const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
     const { isAuthenticated } = useAuth();
@@ -285,6 +287,25 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         );
     }, [filteredRooms]);
 
+    // Double-height / lower-level ghosts (same rules as wall / floor plan)
+    const { ghostWalls, ghostAreas } = useMemo(() => {
+        if (!selectedStoreyId || !storeys?.length) {
+            return { ghostWalls: [], ghostAreas: [] };
+        }
+        const targetStorey = storeys.find((s) => String(s.id) === String(selectedStoreyId));
+        if (!targetStorey) {
+            return { ghostWalls: [], ghostAreas: [] };
+        }
+        return calculateGhostDataForStorey(
+            selectedStoreyId,
+            targetStorey,
+            storeys,
+            allWalls,
+            filteredRooms,
+            allRooms
+        );
+    }, [selectedStoreyId, storeys, allWalls, filteredRooms, allRooms]);
+
     const excludedCeilingRoomIds = useMemo(
         () => new Set(allRooms.filter(room => room.exclude_from_ceiling).map(room => room.id)),
         [allRooms]
@@ -354,6 +375,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         const groupedMap = new Map();
         panels.forEach(panel => {
             const panelThickness = panel.thickness || ceilingThickness;
+            const isCut = !!(panel.is_cut_panel || panel.is_cut);
+            const panelType = isCut ? 'cut' : 'full';
             const isVertical = panel.width >= panel.length;
             let displayWidth = panel.width;
             let displayLength = panel.length;
@@ -361,14 +384,23 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
-            const key = `${displayWidth}_${displayLength}_${panelThickness}_${panel.is_cut_panel || panel.is_cut ? 'cut' : 'full'}`;
+            const intMat = panel.inner_face_material ?? 'PPGI';
+            const intThk = panel.inner_face_thickness ?? 0.5;
+            const extMat = panel.outer_face_material ?? 'PPGI';
+            const extThk = panel.outer_face_thickness ?? 0.5;
+            const key = `${displayWidth}_${displayLength}_${panelThickness}_${panelType}_${intMat}_${intThk}_${extMat}_${extThk}`;
             if (!groupedMap.has(key)) {
                 groupedMap.set(key, {
                     width: displayWidth,
                     length: displayLength,
                     thickness: panelThickness,
-                    isCut: panel.is_cut_panel || panel.is_cut,
-                    quantity: 0
+                    type: panelType,
+                    isCut,
+                    quantity: 0,
+                    inner_face_material: intMat,
+                    inner_face_thickness: intThk,
+                    outer_face_material: extMat,
+                    outer_face_thickness: extThk
                 });
             }
             groupedMap.get(key).quantity += 1;
@@ -379,7 +411,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             full,
             cut,
             panels,
-            groupedPanels: Array.from(groupedMap.values())
+            groupedPanels: sortMaterialPanels(Array.from(groupedMap.values()))
         };
     }, [activeZone, ceilingThickness]);
 
@@ -395,6 +427,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         const groupedMap = new Map();
         panels.forEach(panel => {
             const panelThickness = panel.thickness || ceilingThickness;
+            const isCut = !!(panel.is_cut_panel || panel.is_cut);
+            const panelType = isCut ? 'cut' : 'full';
             const isVertical = panel.width >= panel.length;
             let displayWidth = panel.width;
             let displayLength = panel.length;
@@ -402,14 +436,23 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
-            const key = `${displayWidth}_${displayLength}_${panelThickness}_${panel.is_cut_panel || panel.is_cut ? 'cut' : 'full'}`;
+            const intMat = panel.inner_face_material ?? 'PPGI';
+            const intThk = panel.inner_face_thickness ?? 0.5;
+            const extMat = panel.outer_face_material ?? 'PPGI';
+            const extThk = panel.outer_face_thickness ?? 0.5;
+            const key = `${displayWidth}_${displayLength}_${panelThickness}_${panelType}_${intMat}_${intThk}_${extMat}_${extThk}`;
             if (!groupedMap.has(key)) {
                 groupedMap.set(key, {
                     width: displayWidth,
                     length: displayLength,
                     thickness: panelThickness,
-                    isCut: panel.is_cut_panel || panel.is_cut,
-                    quantity: 0
+                    type: panelType,
+                    isCut,
+                    quantity: 0,
+                    inner_face_material: intMat,
+                    inner_face_thickness: intThk,
+                    outer_face_material: extMat,
+                    outer_face_thickness: extThk
                 });
             }
             groupedMap.get(key).quantity += 1;
@@ -420,7 +463,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             full,
             cut,
             panels,
-            groupedPanels: Array.from(groupedMap.values())
+            groupedPanels: sortMaterialPanels(Array.from(groupedMap.values()))
         };
     }, [selectedRoomId, ceilingPanels, ceilingThickness]);
 
@@ -1312,24 +1355,30 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+
+            const intMat = panel.inner_face_material ?? 'PPGI';
+            const intThk = panel.inner_face_thickness ?? 0.5;
+            const extMat = panel.outer_face_material ?? 'PPGI';
+            const extThk = panel.outer_face_thickness ?? 0.5;
             
-            const key = `${displayWidth}_${displayLength}_${panelThickness}`;
+            const key = `${displayWidth}_${displayLength}_${panelThickness}_${intMat}_${intThk}_${extMat}_${extThk}`;
             if (!panelsByDimension.has(key)) {
                 panelsByDimension.set(key, {
                     width: displayWidth,
                     length: displayLength,
                     thickness: panelThickness,
-                    quantity: 0
+                    quantity: 0,
+                    inner_face_material: intMat,
+                    inner_face_thickness: intThk,
+                    outer_face_material: extMat,
+                    outer_face_thickness: extThk
                 });
             }
             panelsByDimension.get(key).quantity++;
         });
 
-        // Convert to array and sort by quantity (descending)
-        const panelList = Array.from(panelsByDimension.values())
-            .sort((a, b) => b.quantity - a.quantity);
-
-        return panelList;
+        // Same order as wall plan material list
+        return sortMaterialPanels(Array.from(panelsByDimension.values()));
     }, [allRooms, ceilingThickness, selectedRoomId, showAllRooms]);
 
     const handleSwapPanels = useCallback(async () => {
@@ -2414,43 +2463,45 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         <div className="ceiling-manager flex flex-col min-h-0 min-w-0 w-full bg-transparent dark:bg-gray-900 transition-colors">
             {/* Header */}
             <div className="px-3 sm:px-4 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div className="min-w-0">
-                        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate leading-tight">
-                            Project Ceiling Plan
-                        </h2>
-                        <p className="text-[11px] text-gray-600 dark:text-gray-400 truncate leading-tight">
-                            Generate optimal ceiling panel layout for the entire project
-                        </p>
-                    </div>
-                    
-                    {/* Storey and Room Selection Controls */}
-                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                        {/* Storey Selector */}
-                        {storeys.length > 1 && (
-                            <div className="flex items-center gap-1.5">
-                                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Level:</label>
-                                <select
-                                    value={selectedStoreyId || 'all'}
-                                    onChange={(e) => {
-                                        const value = e.target.value;
-                                        setSelectedStoreyId(value === 'all' ? null : parseInt(value));
-                                        // Reset room selection when changing storey
-                                        setShowAllRooms(true);
-                                        setSelectedRoomId(null);
-                                    }}
-                                    className="form-control w-auto min-w-[7rem]"
-                                >
-                                    {storeys.map(storey => (
-                                        <option key={storey.id} value={storey.id}>
-                                            {storey.name}
-                                        </option>
-                                    ))}
-                                </select>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <div className="min-w-0">
+                                <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate leading-tight">
+                                    Project Ceiling Plan
+                                </h2>
+                                <p className="text-[11px] text-gray-600 dark:text-gray-400 truncate leading-tight">
+                                    Generate optimal ceiling panel layout for the entire project
+                                </p>
                             </div>
-                        )}
-                        
-                        {/* Room Selection Controls */}
+                            {/* Level (storey) selector — same position as Floor tab */}
+                            {storeys.length > 1 && (
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Level:</label>
+                                    <select
+                                        value={selectedStoreyId || 'all'}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setSelectedStoreyId(value === 'all' ? null : parseInt(value));
+                                            // Reset room selection when changing storey
+                                            setShowAllRooms(true);
+                                            setSelectedRoomId(null);
+                                        }}
+                                        className="form-control w-auto min-w-[7rem]"
+                                    >
+                                        {storeys.map(storey => (
+                                            <option key={storey.id} value={storey.id}>
+                                                {storey.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Room selection controls */}
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
                         {filteredRooms.length > 1 && (
                             <div className="flex items-center gap-1.5">
                                 <label className="text-xs font-medium text-gray-700 dark:text-gray-300">View:</label>
@@ -2477,13 +2528,13 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                 </select>
                             </div>
                         )}
-                            
-                            {!showAllRooms && selectedRoomId && (
-                                <div className="text-xs text-gray-600 dark:text-gray-400">
+
+                        {!showAllRooms && selectedRoomId && (
+                            <div className="text-xs text-gray-600 dark:text-gray-400">
                                 <span className="font-medium">Selected:</span> {filteredRooms.find(r => r.id === selectedRoomId)?.room_name}
-                                </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -2902,7 +2953,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             </fieldset>
 
             {/* Main Content - fills space, scrolls if needed; layout is responsive inside CeilingCanvas */}
-            <div className="pt-4 pb-4 ps-4 pe-2 sm:pt-6 sm:pb-6 sm:ps-8 sm:pe-3 w-full min-w-0 min-h-0 flex-1 flex flex-col overflow-y-auto">
+            <div className="pt-4 pb-4 ps-4 pe-2 sm:pt-6 sm:pb-6 sm:ps-8 sm:pe-3 w-full min-w-0 min-h-0 flex-1 flex flex-col">
                 {ceilingPlan ? (
                     <div className="space-y-6 w-full min-w-0">
                         <div className="space-y-4">
@@ -2959,6 +3010,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                             // Add updateSharedPanelData prop to pass support options
                             updateSharedPanelData={updateSharedPanelData}
                             dimensionVisibility={dimensionVisibility}
+                            ghostWalls={ghostWalls}
+                            ghostAreas={ghostAreas}
                         />
                         </div>
                         

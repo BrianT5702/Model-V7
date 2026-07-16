@@ -22,6 +22,7 @@ import {
     calculateVerticalLabelBounds
 } from '../canvas/collisionDetection';
 import { calculatePolygonVisualCenter, calculateIntersection, isPointInPolygon } from '../canvas/utils';
+import { calculateGhostDataForStorey } from './pdfVectorWallPlan';
 
 /** Align with wall-plan PDF snapping for intersection vs wall endpoints (merged / rounded coords). */
 const CEILING_FLOOR_INTERSECTION_TOL_MM = 35;
@@ -144,6 +145,114 @@ function expandBoundsWalls(wallList, b0 = initialBounds()) {
         b = mergeBounds(b, num(w.end_x), num(w.end_y));
     });
     return b;
+}
+
+function expandBoundsGhostAreas(ghostAreas, b0 = initialBounds()) {
+    let b = { ...b0 };
+    (ghostAreas || []).forEach((ghostArea) => {
+        const points = Array.isArray(ghostArea?.room_points)
+            ? ghostArea.room_points
+            : Array.isArray(ghostArea?.points)
+                ? ghostArea.points
+                : [];
+        b = expandBoundsOutline(points, b);
+    });
+    return b;
+}
+
+/** Ghost voids / lower-storey walls — match wall-plan PDF + Ceiling/Floor canvas. */
+function drawGhostsOnPdf(doc, transformX, transformY, scale, ghostAreas, ghostWalls) {
+    (ghostAreas || []).forEach((ghostArea) => {
+        const points = Array.isArray(ghostArea?.room_points)
+            ? ghostArea.room_points
+            : Array.isArray(ghostArea?.points)
+                ? ghostArea.points
+                : [];
+        if (points.length < 3) return;
+
+        const transformedPoints = points.map((point) => {
+            const x = point.x ?? (Array.isArray(point) ? point[0] : 0);
+            const y = point.y ?? (Array.isArray(point) ? point[1] : 0);
+            return { x: transformX(num(x)), y: transformY(num(y)) };
+        });
+
+        const startX = transformedPoints[0].x;
+        const startY = transformedPoints[0].y;
+        const relLines = [];
+        for (let i = 1; i < transformedPoints.length; i++) {
+            relLines.push([
+                transformedPoints[i].x - transformedPoints[i - 1].x,
+                transformedPoints[i].y - transformedPoints[i - 1].y
+            ]);
+        }
+
+        // Light fill (canvas uses #BFDBFE @ 15%)
+        if (relLines.length > 0 && typeof doc.lines === 'function') {
+            try {
+                if (typeof doc.saveGraphicsState === 'function' && typeof doc.setGState === 'function' && doc.GState) {
+                    doc.saveGraphicsState();
+                    doc.setGState(new doc.GState({ opacity: 0.15 }));
+                }
+                doc.setFillColor(191, 219, 254);
+                doc.lines(relLines, startX, startY, [1, 1], 'F', true);
+                if (typeof doc.restoreGraphicsState === 'function') {
+                    doc.restoreGraphicsState();
+                }
+            } catch {
+                /* fill optional */
+            }
+        }
+
+        doc.setDrawColor(96, 165, 250); // #60A5FA
+        doc.setLineWidth(0.2);
+        if (typeof doc.setLineDashPattern === 'function') {
+            doc.setLineDashPattern([10 * scale, 6 * scale], 0);
+        }
+        for (let i = 0; i < transformedPoints.length; i++) {
+            const current = transformedPoints[i];
+            const next = transformedPoints[(i + 1) % transformedPoints.length];
+            doc.line(current.x, current.y, next.x, next.y);
+        }
+        if (typeof doc.setLineDashPattern === 'function') {
+            doc.setLineDashPattern([], 0);
+        }
+
+        const centroidX = transformedPoints.reduce((sum, p) => sum + p.x, 0) / transformedPoints.length;
+        const centroidY = transformedPoints.reduce((sum, p) => sum + p.y, 0) / transformedPoints.length;
+        doc.setFontSize(8);
+        doc.setTextColor(29, 78, 216); // #1D4ED8
+        const areaName = ghostArea.room_name || 'Area';
+        const originLabel = ghostArea.source_storey_name
+            ? ` (${ghostArea.source_storey_name})`
+            : ' (Below)';
+        doc.text(`${areaName}${originLabel}`, centroidX, centroidY, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+    });
+
+    (ghostWalls || []).forEach((ghostWall) => {
+        if (
+            ghostWall.start_x === undefined ||
+            ghostWall.start_y === undefined ||
+            ghostWall.end_x === undefined ||
+            ghostWall.end_y === undefined
+        ) {
+            return;
+        }
+        doc.setDrawColor(148, 163, 184); // #94A3B8
+        doc.setLineWidth(0.2);
+        if (typeof doc.setLineDashPattern === 'function') {
+            doc.setLineDashPattern([12 * scale, 6 * scale], 0);
+        }
+        doc.line(
+            transformX(num(ghostWall.start_x)),
+            transformY(num(ghostWall.start_y)),
+            transformX(num(ghostWall.end_x)),
+            transformY(num(ghostWall.end_y))
+        );
+        if (typeof doc.setLineDashPattern === 'function') {
+            doc.setLineDashPattern([], 0);
+        }
+    });
 }
 
 /** Double-line walls like FloorCanvas / CeilingCanvas (not a single room outline). */
@@ -757,6 +866,17 @@ function drawNylonHangersOnCeilingPdf(
 
         custom.forEach((support) => {
             if (!support || support.type !== 'nylon') return;
+            // customSupports are shared across all ceiling plans — only draw hangers
+            // belonging to rooms/zones on this storey (avoids lower-floor supports on ghost voids).
+            let supportRid = support.room_id;
+            if (supportRid != null && typeof supportRid === 'object') supportRid = supportRid.id;
+            let supportZid = support.zone_id;
+            if (supportZid != null && typeof supportZid === 'object') supportZid = supportZid.id;
+            const supportOnStorey =
+                (supportRid != null && storeyRoomIdSet.has(Number(supportRid))) ||
+                (supportZid != null && storeyZoneIdSet.has(Number(supportZid)));
+            if (!supportOnStorey) return;
+
             let mx;
             let my;
             if (support.x != null && support.y != null) {
@@ -2394,17 +2514,23 @@ function drawPlanPage(doc, {
     ceilingPlans = [],
     floorPlans = [],
     slabWidth = 1210,
-    slabLength = 3000
+    slabLength = 3000,
+    ghostWalls = [],
+    ghostAreas = []
 }) {
     let roomBounds = initialBounds();
     roomBounds = expandBoundsRooms(storeyRooms, roomBounds);
     roomBounds = expandBoundsWalls(storeyWalls, roomBounds);
+    roomBounds = expandBoundsWalls(ghostWalls, roomBounds);
+    roomBounds = expandBoundsGhostAreas(ghostAreas, roomBounds);
 
     let b = { ...roomBounds };
     (storeyZones || []).forEach((z) => {
         b = expandBoundsOutline(z.outline_points, b);
     });
     b = expandBoundsPanels(panels, b);
+    b = expandBoundsGhostAreas(ghostAreas, b);
+    b = expandBoundsWalls(ghostWalls, b);
 
     if (!boundsValid(b)) {
         console.warn(`[pdfVectorCeilingFloor] Skipping ${kind} page — no bounds`);
@@ -2436,8 +2562,13 @@ function drawPlanPage(doc, {
     const planContentWidth = planPageWidth - 2 * planMargin;
     const planContentHeight = planPageHeight - 2 * planMargin - titleHeight - scaleNoteHeight;
 
-    const scaleX = (planContentWidth * 0.82) / modelW;
-    const scaleY = (planContentHeight * 0.82) / modelH;
+    // Fill most of the content area; landscape uses more width so plans don't sit with large side gaps
+    const orient = planPageOrientation === 'landscape' ? 'landscape' : 'portrait';
+    const fillFactor = fitToPage
+        ? (orient === 'landscape' ? 0.96 : 0.92)
+        : (orient === 'landscape' ? 0.92 : 0.82);
+    const scaleX = (planContentWidth * fillFactor) / modelW;
+    const scaleY = (planContentHeight * fillFactor) / modelH;
     const scale = Math.min(scaleX, scaleY);
     if (scale <= 0 || !Number.isFinite(scale)) return false;
 
@@ -2456,6 +2587,9 @@ function drawPlanPage(doc, {
     doc.setFont(undefined, 'bold');
     doc.setTextColor(0, 0, 0);
     doc.text(title, planPageWidth / 2, planMargin + 6, { align: 'center' });
+
+    // Ghosts behind live geometry (same order as CeilingCanvas / FloorCanvas / wall-plan PDF)
+    drawGhostsOnPdf(doc, transformX, transformY, scale, ghostAreas, ghostWalls);
 
     drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWalls, storeyRooms, wallIntersections);
     drawPanelsOnPdf(doc, panels, transformX, transformY, kind);
@@ -2594,7 +2728,7 @@ export function buildVectorCeilingFloorPreviewBlobs({
     const allCeilingPlans = ceilingPlans || [];
     const allFloorPlans = floorPlans || [];
 
-    const drawPairForStorey = (activeStoreyId, storeyLabel) => {
+    const drawPairForStorey = (activeStoreyId, storeyLabel, targetStorey = null) => {
         const storeyRooms = activeStoreyId == null
             ? allRooms
             : allRooms.filter((r) => matchesActiveStorey(r.storey, activeStoreyId, defaultStoreyId));
@@ -2602,6 +2736,15 @@ export function buildVectorCeilingFloorPreviewBlobs({
             activeStoreyId == null
                 ? allWalls
                 : allWalls.filter((w) => matchesActiveStorey(w.storey, activeStoreyId, defaultStoreyId));
+
+        const { ghostWalls, ghostAreas } = calculateGhostDataForStorey(
+            activeStoreyId,
+            targetStorey,
+            storeys,
+            allWalls,
+            storeyRooms,
+            allRooms
+        );
 
         const roomIdSet = new Set(storeyRooms.map((r) => Number(r.id)));
         const storeyZones = allZones.filter((z) => {
@@ -2654,7 +2797,9 @@ export function buildVectorCeilingFloorPreviewBlobs({
                 ceilingPlans: allCeilingPlans,
                 floorPlans: allFloorPlans,
                 slabWidth,
-                slabLength
+                slabLength,
+                ghostWalls,
+                ghostAreas
             });
             if (ok) usedCeiling = true;
         }
@@ -2673,7 +2818,9 @@ export function buildVectorCeilingFloorPreviewBlobs({
                 ceilingPlans: allCeilingPlans,
                 floorPlans: allFloorPlans,
                 slabWidth,
-                slabLength
+                slabLength,
+                ghostWalls,
+                ghostAreas
             });
             if (ok) usedFloor = true;
         }
@@ -2687,9 +2834,9 @@ export function buildVectorCeilingFloorPreviewBlobs({
             if (Math.abs(ed) > 1e-6) return ed;
             return (a.id ?? 0) - (b.id ?? 0);
         });
-        sorted.forEach((st) => drawPairForStorey(st.id, st.name || `Storey ${st.id}`));
+        sorted.forEach((st) => drawPairForStorey(st.id, st.name || `Storey ${st.id}`, st));
     } else {
-        drawPairForStorey(null, null);
+        drawPairForStorey(null, null, null);
     }
 
     const stripLeadingBlank = (doc) => {
@@ -2736,7 +2883,7 @@ export function appendVectorCeilingAndFloorPlans(doc, {
     const allCeilingPlans = ceilingPlans || [];
     const allFloorPlans = floorPlans || [];
 
-    const drawPairForStorey = (activeStoreyId, storeyLabel) => {
+    const drawPairForStorey = (activeStoreyId, storeyLabel, targetStorey = null) => {
         const storeyRooms = activeStoreyId == null
             ? allRooms
             : allRooms.filter((r) => matchesActiveStorey(r.storey, activeStoreyId, defaultStoreyId));
@@ -2744,6 +2891,15 @@ export function appendVectorCeilingAndFloorPlans(doc, {
             activeStoreyId == null
                 ? allWalls
                 : allWalls.filter((w) => matchesActiveStorey(w.storey, activeStoreyId, defaultStoreyId));
+
+        const { ghostWalls, ghostAreas } = calculateGhostDataForStorey(
+            activeStoreyId,
+            targetStorey,
+            storeys,
+            allWalls,
+            storeyRooms,
+            allRooms
+        );
 
         const roomIdSet = new Set(storeyRooms.map((r) => Number(r.id)));
         const storeyZones = allZones.filter((z) => {
@@ -2796,7 +2952,9 @@ export function appendVectorCeilingAndFloorPlans(doc, {
                 ceilingPlans: allCeilingPlans,
                 floorPlans: allFloorPlans,
                 slabWidth,
-                slabLength
+                slabLength,
+                ghostWalls,
+                ghostAreas
             });
             if (ok) usedVectorCeiling = true;
         }
@@ -2815,7 +2973,9 @@ export function appendVectorCeilingAndFloorPlans(doc, {
                 ceilingPlans: allCeilingPlans,
                 floorPlans: allFloorPlans,
                 slabWidth,
-                slabLength
+                slabLength,
+                ghostWalls,
+                ghostAreas
             });
             if (ok) usedVectorFloor = true;
         }
@@ -2829,9 +2989,9 @@ export function appendVectorCeilingAndFloorPlans(doc, {
             if (Math.abs(ed) > 1e-6) return ed;
             return (a.id ?? 0) - (b.id ?? 0);
         });
-        sorted.forEach((st) => drawPairForStorey(st.id, st.name || `Storey ${st.id}`));
+        sorted.forEach((st) => drawPairForStorey(st.id, st.name || `Storey ${st.id}`, st));
     } else {
-        drawPairForStorey(null, null);
+        drawPairForStorey(null, null, null);
     }
 
     return { usedVectorCeiling, usedVectorFloor };

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import FloorCanvas from '../canvas/FloorCanvas';
 import api from '../../api/api';
+import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { calculateGhostDataForStorey } from '../estimation/pdfVectorWallPlan';
 
 const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated, updateSharedPanelData = null }) => {
     const { isAuthenticated } = useAuth();
@@ -119,6 +121,25 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
             return room.floor_type === 'panel' || room.floor_type === 'Panel';
         });
     }, [floorPanels, filteredRooms]);
+
+    // Double-height / lower-level ghosts (same rules as wall plan)
+    const { ghostWalls, ghostAreas } = useMemo(() => {
+        if (!selectedStoreyId || !storeys?.length) {
+            return { ghostWalls: [], ghostAreas: [] };
+        }
+        const targetStorey = storeys.find((s) => String(s.id) === String(selectedStoreyId));
+        if (!targetStorey) {
+            return { ghostWalls: [], ghostAreas: [] };
+        }
+        return calculateGhostDataForStorey(
+            selectedStoreyId,
+            targetStorey,
+            storeys,
+            allWalls,
+            filteredRooms,
+            allRooms
+        );
+    }, [selectedStoreyId, storeys, allWalls, filteredRooms, allRooms]);
 
     const loadExistingFloorPlan = useCallback(async () => {
         try {
@@ -314,94 +335,39 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
     // Process floor panels for sharing with other tabs (matches table structure)
     const processFloorPanelsForSharing = (panels, rooms) => {
         if (!panels || panels.length === 0) return [];
-        
-        const panelList = [];
-        
-        // Group panels by room
-        const panelsByRoom = {};
+
+        const roomById = new Map((rooms || []).map((room) => [String(room.id), room]));
+        const panelsByKey = new Map();
+
         panels.forEach(panel => {
+            if (!panel) return;
             const roomId = panel.room_id || panel.room;
-            if (!panelsByRoom[roomId]) {
-                panelsByRoom[roomId] = [];
+            const room = roomById.get(String(typeof roomId === 'object' ? roomId?.id : roomId));
+            const floorThickness = room?.floor_thickness || 20;
+            const isCut = !!(panel.is_cut_panel || panel.is_cut);
+            const panelType = isCut ? 'Cut' : 'Full';
+            const isVertical = panel.width >= panel.length;
+            let displayWidth = panel.width;
+            let displayLength = panel.length;
+            if (isVertical) {
+                displayWidth = panel.length;
+                displayLength = panel.width;
             }
-            panelsByRoom[roomId].push(panel);
+
+            const key = `${displayWidth}_${displayLength}_${floorThickness}_${panelType}`;
+            if (!panelsByKey.has(key)) {
+                panelsByKey.set(key, {
+                    width: displayWidth,
+                    length: displayLength,
+                    thickness: floorThickness,
+                    quantity: 0,
+                    type: panelType
+                });
+            }
+            panelsByKey.get(key).quantity += 1;
         });
-        
-        // Process each room's panels
-        Object.entries(panelsByRoom).forEach(([roomId, roomPanels]) => {
-            if (!roomPanels || roomPanels.length === 0) return;
-            
-            // Group panels by dimensions
-            const panelsByDimension = new Map();
-            roomPanels.forEach(panel => {
-                const isHorizontal = panel.width < panel.length;
-                const groupingDimension = isHorizontal ? panel.length : panel.width;
-                const dimensionValue = Math.round(groupingDimension * 100) / 100;
-                
-                if (!panelsByDimension.has(dimensionValue)) {
-                    panelsByDimension.set(dimensionValue, []);
-                }
-                panelsByDimension.get(dimensionValue).push(panel);
-            });
-            
-            // Create panel list entries
-            panelsByDimension.forEach((panels, dimension) => {
-                const fullPanels = panels.filter(p => !p.is_cut_panel);
-                const cutPanels = panels.filter(p => p.is_cut_panel);
-                
-                // Get the room for this panel to access floor_thickness
-                const room = rooms.find(r => r.id === parseInt(roomId));
-                const floorThickness = room?.floor_thickness || 20; // Default to 20mm if not specified
-                
-                if (fullPanels.length > 0) {
-                    const panel = fullPanels[0];
-                    const isVertical = panel.width >= panel.length;
-                    
-                    // SWAP: For vertical panels, swap width and length values (keep horizontal unchanged)
-                    let displayWidth = panel.width;
-                    let displayLength = panel.length;
-                    
-                    if (isVertical) {
-                        // Swap values for vertical orientation
-                        displayWidth = panel.length;
-                        displayLength = panel.width;
-                    }
-                    
-                    panelList.push({
-                        width: displayWidth,
-                        length: displayLength,
-                        thickness: floorThickness,
-                        quantity: fullPanels.length,
-                        type: 'Full'
-                    });
-                }
-                
-                if (cutPanels.length > 0) {
-                    const panel = cutPanels[0];
-                    const isVertical = panel.width >= panel.length;
-                    
-                    // SWAP: For vertical panels, swap width and length values (keep horizontal unchanged)
-                    let displayWidth = panel.width;
-                    let displayLength = panel.length;
-                    
-                    if (isVertical) {
-                        // Swap values for vertical orientation
-                        displayWidth = panel.length;
-                        displayLength = panel.width;
-                    }
-                    
-                    panelList.push({
-                        width: displayWidth,
-                        length: displayLength,
-                        thickness: floorThickness,
-                        quantity: cutPanels.length,
-                        type: 'Cut'
-                    });
-                }
-            });
-        });
-        
-        return panelList;
+
+        return sortMaterialPanels(Array.from(panelsByKey.values()));
     };
 
     const generateFloorPlan = async () => {
@@ -574,18 +540,6 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                                 </div>
                             )}
                         </div>
-                        {canEdit && (
-                            <div className="mt-2 px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-md">
-                                <div className="flex items-start gap-1.5">
-                                    <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span className="text-blue-800 dark:text-blue-200 text-[11px] leading-snug">
-                                        <strong>Note:</strong> Floor plan is available for rooms with <code className="bg-blue-100 dark:bg-blue-900/60 px-1 rounded text-[10px]">floor_type = "panel"</code> (panel layout) or <code className="bg-blue-100 dark:bg-blue-900/60 px-1 rounded text-[10px]">floor_type = "slab"</code> (estimated slabs needed).
-                                    </span>
-                                </div>
-                            </div>
-                        )}
                     </div>
                     
                     {canEdit && planNeedsRegeneration && (
@@ -776,6 +730,9 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
                             canEdit={canEdit}
                             onSlabWidthChange={canEdit ? handleSlabWidthChange : null}
                             onSlabLengthChange={canEdit ? handleSlabLengthChange : null}
+                            storeys={storeys}
+                            ghostWalls={ghostWalls}
+                            ghostAreas={ghostAreas}
 
                             floorPanelsMap={(() => {
                                 // Convert filtered floor panels to floorPanelsMap format (by room for selected level)

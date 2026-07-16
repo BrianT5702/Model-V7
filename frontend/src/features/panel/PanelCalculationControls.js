@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import PanelCalculator from './PanelCalculator';
+import { getPanelFinishingLabel, sortMaterialPanels } from './wallPlanPanelUtils';
 
 const PanelCalculationControls = ({ 
     walls, 
@@ -213,9 +214,9 @@ const PanelCalculationControls = ({
 
         // Share panel data with other tabs if updateSharedPanelData is provided
         if (updateSharedPanelData) {
-            // Group panels by dimensions, application, and surface types for sharing (matches table structure)
+            // Group panels by type, dimensions, application, and surface types for sharing (matches table structure)
             const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
-                const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
+                const key = `${panel.type}-${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
                 if (!acc[key]) {
                     acc[key] = {
                         width: panel.width,
@@ -235,12 +236,12 @@ const PanelCalculationControls = ({
                 return acc;
             }, {});
             
-            updateSharedPanelData('wall-plan', Object.values(groupedPanelsForSharing), analysis);
+            updateSharedPanelData('wall-plan', sortMaterialPanels(Object.values(groupedPanelsForSharing)), analysis);
         }
 
-        // Group panels by dimensions, application, and surface types
+        // Group panels by type, dimensions, application, and surface types
         const groupedPanels = allPanels.reduce((acc, panel) => {
-            const key = `${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
+            const key = `${panel.type}-${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
             if (!acc[key]) {
                 acc[key] = {
                     width: panel.width,
@@ -265,10 +266,11 @@ const PanelCalculationControls = ({
             return;
         }
 
-        setCalculatedPanels(Object.values(groupedPanels));
+        const sortedPanels = sortMaterialPanels(Object.values(groupedPanels));
+        setCalculatedPanels(sortedPanels);
 
         // Calculate cut panels count (only 'side' panels)
-        const cutPanelsCount = Object.values(groupedPanels)
+        const cutPanelsCount = sortedPanels
             .filter(panel => panel.type === 'side')
             .reduce((sum, panel) => sum + panel.quantity, 0);
         setCutPanelsCount(cutPanelsCount);
@@ -515,17 +517,7 @@ const PanelCalculationControls = ({
                         </thead>
                         <tbody>
                             {calculatedPanels.map((panel, index) => {
-                                // Fallback to wall data if panel doesn't carry face info
-                                const wallFallback = (!panel.inner_face_material || !panel.outer_face_material) && Array.isArray(walls)
-                                    ? walls.find(w => String(w.id) === String(panel.anyWallId))
-                                    : null;
-                                const intMat = (panel.inner_face_material ?? wallFallback?.inner_face_material) ?? 'PPGI';
-                                const intThk = (panel.inner_face_thickness ?? wallFallback?.inner_face_thickness) ?? 0.5;
-                                const extMat = (panel.outer_face_material ?? wallFallback?.outer_face_material) ?? 'PPGI';
-                                const extThk = (panel.outer_face_thickness ?? wallFallback?.outer_face_thickness) ?? 0.5;
-                                const finishing = (intMat === extMat && intThk === extThk)
-                                    ? `Both Side ${extThk}mm ${extMat}`
-                                    : `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+                                const finishing = getPanelFinishingLabel(panel);
                                 
                                 return (
                                     <tr key={index} className="hover:bg-gray-50">

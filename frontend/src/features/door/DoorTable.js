@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { sortDoorsForMaterialList } from './doorSortUtils';
 
 const DoorTable = ({ doors }) => {
+    const sortedDoors = useMemo(() => sortDoorsForMaterialList(doors), [doors]);
+
     return (
         <div className="w-full max-w-4xl mt-4">
             <div className="overflow-x-auto">
@@ -14,14 +17,14 @@ const DoorTable = ({ doors }) => {
                         </tr>
                     </thead>
                     <tbody>
-                        {doors.map((door, index) => (
-                            <tr key={door.id} className="hover:bg-gray-50">
+                        {sortedDoors.map((door, index) => (
+                            <tr key={door.id ?? index} className="hover:bg-gray-50">
                                 <td className="px-4 py-2 border text-center">{index + 1}</td>
                                 <td className="px-4 py-2 border text-center">
                                     {door.door_type === 'swing' ? 'Swing' : door.door_type === 'slide' ? 'Slide' : 'Dock Door'}
                                 </td>
                                 <td className="px-4 py-2 border text-center">
-                                    {door.door_type === 'dock' ? 'N/A' : (door.configuration === 'single_sided' ? 'Single' : 'Double')}
+                                    {door.door_type === 'dock' ? 'N/A' : (door.configuration === 'single_sided' || door.configuration === 'single' ? 'Single' : 'Double')}
                                 </td>
                                 <td className="px-4 py-2 border text-center">
                                     {`W ${door.width}mm x ${door.height}mm HT`}
@@ -35,4 +38,4 @@ const DoorTable = ({ doors }) => {
     );
 };
 
-export default DoorTable; 
+export default DoorTable;

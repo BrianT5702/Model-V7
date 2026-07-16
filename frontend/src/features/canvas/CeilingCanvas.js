@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
+import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useAuth } from '../auth/AuthContext';
 import {
     getPlanCanvasBackground,
@@ -52,6 +53,7 @@ import {
     exteriorVerticalTextCenterX,
     buildVerticalPlanLabelEntry
 } from './collisionDetection.js';
+import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
 
 // Build a stable identity key for ceiling panels based on thickness + inner/outer finishes
 function getCeilingPanelFinishKey(panel) {
@@ -213,7 +215,9 @@ const CeilingCanvas = ({
     updateSharedPanelData = null,
     selectedPanelIds = [],
     // Dimension visibility (checkbox filter)
-    dimensionVisibility = { room: true, panel: true, cutPanel: false }
+    dimensionVisibility = { room: true, panel: true, cutPanel: false },
+    ghostWalls = [],
+    ghostAreas = []
 }) => {
     const { isAuthenticated } = useAuth();
     const { resolvedTheme } = useTheme();
@@ -1109,6 +1113,28 @@ const CeilingCanvas = ({
     // large empty gaps.
     const projectBounds = useMemo(() => {
         const hasRooms = effectiveRooms && effectiveRooms.length > 0;
+        const hasGhosts = Array.isArray(ghostAreas) && ghostAreas.length > 0;
+
+        const expandWithGhosts = (bounds) => {
+            if (!hasGhosts || !bounds) return bounds;
+            let { minX, maxX, minY, maxY } = bounds;
+            ghostAreas.forEach((ghostArea) => {
+                const points = Array.isArray(ghostArea.room_points)
+                    ? ghostArea.room_points
+                    : Array.isArray(ghostArea.points)
+                        ? ghostArea.points
+                        : [];
+                points.forEach((p) => {
+                    const x = Number(p.x) || 0;
+                    const y = Number(p.y) || 0;
+                    minX = Math.min(minX, x);
+                    maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y);
+                    maxY = Math.max(maxY, y);
+                });
+            });
+            return { minX, maxX, minY, maxY };
+        };
 
         // If we have rooms, use their actual extents ONLY (including negative coords)
         // so external dimensions hug the true model envelope and don't stick to
@@ -1132,16 +1158,36 @@ const CeilingCanvas = ({
 
             // If for some reason no valid points were found, fall back to projectData
             if (minX === Infinity || minY === Infinity || maxX === -Infinity || maxY === -Infinity) {
-                if (!projectData) return null;
-                return {
+                if (!projectData) return hasGhosts ? expandWithGhosts({ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }) : null;
+                return expandWithGhosts({
                     minX: 0,
                     maxX: projectData.width,
                     minY: 0,
                     maxY: projectData.length
-                };
+                });
             }
 
-            return { minX, maxX, minY, maxY };
+            return expandWithGhosts({ minX, maxX, minY, maxY });
+        }
+
+        if (hasGhosts) {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            ghostAreas.forEach((ghostArea) => {
+                const points = Array.isArray(ghostArea.room_points)
+                    ? ghostArea.room_points
+                    : Array.isArray(ghostArea.points)
+                        ? ghostArea.points
+                        : [];
+                points.forEach((p) => {
+                    minX = Math.min(minX, Number(p.x) || 0);
+                    maxX = Math.max(maxX, Number(p.x) || 0);
+                    minY = Math.min(minY, Number(p.y) || 0);
+                    maxY = Math.max(maxY, Number(p.y) || 0);
+                });
+            });
+            if (Number.isFinite(minX)) {
+                return { minX, maxX, minY, maxY };
+            }
         }
 
         // If no rooms yet, fall back to project dimensions (0..width/length)
@@ -1155,20 +1201,22 @@ const CeilingCanvas = ({
         }
 
         return null;
-    }, [projectData, effectiveRooms]);
+    }, [projectData, effectiveRooms, ghostAreas]);
 
     // Clear dimension placement when ceiling plan data changes so labels re-evaluate (e.g. prefer left)
     useEffect(() => {
         dimensionPlacementMemory.current.clear();
     }, [effectiveCeilingPanelsMap, projectBounds]);
 
-    // Calculate model bounds for dimension positioning (all rooms)
+    // Calculate model bounds for dimension positioning (all rooms + ghost areas)
     const modelBounds = useMemo(() => {
-        if (!effectiveRooms || effectiveRooms.length === 0) return null;
+        if ((!effectiveRooms || effectiveRooms.length === 0) && (!ghostAreas || ghostAreas.length === 0)) {
+            return null;
+        }
         
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         
-        effectiveRooms.forEach(room => {
+        (effectiveRooms || []).forEach(room => {
             if (room.room_points && room.room_points.length > 0) {
                 const roomMinX = Math.min(...room.room_points.map(p => p.x));
                 const roomMaxX = Math.max(...room.room_points.map(p => p.x));
@@ -1181,9 +1229,24 @@ const CeilingCanvas = ({
                 maxY = Math.max(maxY, roomMaxY);
             }
         });
+
+        (ghostAreas || []).forEach((ghostArea) => {
+            const points = Array.isArray(ghostArea.room_points)
+                ? ghostArea.room_points
+                : Array.isArray(ghostArea.points)
+                    ? ghostArea.points
+                    : [];
+            points.forEach((p) => {
+                minX = Math.min(minX, Number(p.x) || 0);
+                maxX = Math.max(maxX, Number(p.x) || 0);
+                minY = Math.min(minY, Number(p.y) || 0);
+                maxY = Math.max(maxY, Number(p.y) || 0);
+            });
+        });
         
+        if (!Number.isFinite(minX)) return null;
         return { minX, maxX, minY, maxY };
-    }, [effectiveRooms]);
+    }, [effectiveRooms, ghostAreas]);
 
     // Helper function to get accurate panel counts from multiple sources
     const getAccuratePanelCounts = useMemo(() => {
@@ -1295,6 +1358,8 @@ const CeilingCanvas = ({
         selectedRailKey,
         selectedNylonKey,
         resolvedTheme,
+        ghostWalls,
+        ghostAreas,
     ]);
 
     useEffect(() => {
@@ -1336,7 +1401,12 @@ const CeilingCanvas = ({
 
     // Calculate optimal canvas transformation
     const calculateCanvasTransform = () => {
-        if ((!effectiveRooms || effectiveRooms.length === 0) && (!zonesAsRooms || zonesAsRooms.length === 0)) {
+        const roomsForBounds = (effectiveRooms && effectiveRooms.length > 0)
+            ? effectiveRooms
+            : (zonesAsRooms || []);
+        const hasGhosts = Array.isArray(ghostAreas) && ghostAreas.length > 0;
+
+        if (roomsForBounds.length === 0 && !hasGhosts) {
             scaleFactor.current = 1;
             initialScale.current = 1; // Set initial scale
             offsetX.current = CANVAS_WIDTH / 2;
@@ -1344,10 +1414,9 @@ const CeilingCanvas = ({
             return;
         }
 
-        // Calculate bounds for all rooms combined
+        // Calculate bounds for all rooms combined (+ ghost areas)
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         
-        const roomsForBounds = effectiveRooms.length > 0 ? effectiveRooms : zonesAsRooms;
         roomsForBounds.forEach(room => {
             if (room.room_points && room.room_points.length > 0) {
                 const xCoords = room.room_points.map(p => p.x);
@@ -1364,6 +1433,30 @@ const CeilingCanvas = ({
                 maxY = Math.max(maxY, roomMaxY);
             }
         });
+
+        if (hasGhosts) {
+            ghostAreas.forEach((ghostArea) => {
+                const points = Array.isArray(ghostArea.room_points)
+                    ? ghostArea.room_points
+                    : Array.isArray(ghostArea.points)
+                        ? ghostArea.points
+                        : [];
+                points.forEach((p) => {
+                    minX = Math.min(minX, Number(p.x) || 0);
+                    maxX = Math.max(maxX, Number(p.x) || 0);
+                    minY = Math.min(minY, Number(p.y) || 0);
+                    maxY = Math.max(maxY, Number(p.y) || 0);
+                });
+            });
+        }
+
+        if (!Number.isFinite(minX)) {
+            scaleFactor.current = 1;
+            initialScale.current = 1;
+            offsetX.current = CANVAS_WIDTH / 2;
+            offsetY.current = CANVAS_HEIGHT / 2;
+            return;
+        }
 
         const fit = computePlanFitTransform(
             CANVAS_WIDTH,
@@ -1384,6 +1477,99 @@ const CeilingCanvas = ({
         }
     };
 
+    const drawGhostAreas = (ctx) => {
+        if (!Array.isArray(ghostAreas) || ghostAreas.length === 0) return;
+
+        ghostAreas.forEach((ghostArea) => {
+            const points = Array.isArray(ghostArea.room_points)
+                ? ghostArea.room_points
+                : Array.isArray(ghostArea.points)
+                    ? ghostArea.points
+                    : [];
+            if (points.length < 3) return;
+
+            const transformedPoints = points.map((point) => ({
+                x: (Number(point.x) || 0) * scaleFactor.current + offsetX.current,
+                y: (Number(point.y) || 0) * scaleFactor.current + offsetY.current,
+            }));
+
+            ctx.save();
+            ctx.beginPath();
+            transformedPoints.forEach((point, index) => {
+                if (index === 0) {
+                    ctx.moveTo(point.x, point.y);
+                } else {
+                    ctx.lineTo(point.x, point.y);
+                }
+            });
+            ctx.closePath();
+
+            ctx.globalAlpha = 0.15;
+            ctx.fillStyle = '#BFDBFE';
+            ctx.fill();
+
+            ctx.globalAlpha = 0.8;
+            ctx.strokeStyle = '#60A5FA';
+            ctx.setLineDash([10, 6]);
+            ctx.lineWidth = Math.max(1, 2 * scaleFactor.current);
+            ctx.stroke();
+            ctx.restore();
+
+            const centroid = transformedPoints.reduce(
+                (acc, point) => {
+                    acc.x += point.x;
+                    acc.y += point.y;
+                    return acc;
+                },
+                { x: 0, y: 0 }
+            );
+            centroid.x /= transformedPoints.length;
+            centroid.y /= transformedPoints.length;
+
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = '#1D4ED8';
+            ctx.font = `${Math.max(12, 160 * scaleFactor.current)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const areaName = ghostArea.room_name || 'Area';
+            const originLabel = ghostArea.source_storey_name
+                ? ` (${ghostArea.source_storey_name})`
+                : ' (Below)';
+            ctx.fillText(`${areaName}${originLabel}`, centroid.x, centroid.y);
+            ctx.restore();
+        });
+    };
+
+    const drawGhostWalls = (ctx) => {
+        if (!Array.isArray(ghostWalls) || ghostWalls.length === 0) return;
+
+        ghostWalls.forEach((ghostWall) => {
+            if (
+                ghostWall.start_x === undefined || ghostWall.start_y === undefined ||
+                ghostWall.end_x === undefined || ghostWall.end_y === undefined
+            ) {
+                return;
+            }
+
+            const startX = ghostWall.start_x * scaleFactor.current + offsetX.current;
+            const startY = ghostWall.start_y * scaleFactor.current + offsetY.current;
+            const endX = ghostWall.end_x * scaleFactor.current + offsetX.current;
+            const endY = ghostWall.end_y * scaleFactor.current + offsetY.current;
+
+            ctx.save();
+            ctx.strokeStyle = '#94A3B8';
+            ctx.globalAlpha = 0.7;
+            ctx.lineWidth = Math.max(1, (ghostWall.thickness || 50) * scaleFactor.current * 0.5);
+            ctx.setLineDash([12, 6]);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.restore();
+        });
+    };
+
     // Main drawing function
     const drawCanvas = (ctx) => {
         // Clear canvas
@@ -1399,6 +1585,10 @@ const CeilingCanvas = ({
 
         // Draw grid
         drawGrid(ctx);
+
+        // Ghosted double-height areas / walls from lower levels (behind current ceiling)
+        drawGhostAreas(ctx);
+        drawGhostWalls(ctx);
 
         // Draw walls first (behind everything else)
         if (walls && walls.length > 0) {
@@ -3655,12 +3845,8 @@ const CeilingCanvas = ({
             panelsByDimension.get(key).panels.push(panel);
         });
 
-        // Convert to array and sort by quantity (descending)
-        const panelList = Array.from(panelsByDimension.values())
-            .sort((a, b) => b.quantity - a.quantity);
-
-        // console.log('📋 Ceiling Panel List Generated:', panelList);
-        return panelList;
+        // Same order as wall plan material list: finishing → thickness → width → length
+        return sortMaterialPanels(Array.from(panelsByDimension.values()));
     };
 
     const generateMaterialsSummary = useCallback(() => {
@@ -5099,8 +5285,60 @@ const CeilingCanvas = ({
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
 
+        // customSupports are project-wide; only draw hangers for rooms/zones on the current view
+        // (otherwise lower-storey supports appear over ghost voids on upper floors).
+        const roomIdSet = new Set(
+            (effectiveRooms || []).map((r) => Number(r.id)).filter(Number.isFinite)
+        );
+        const zoneIdSet = new Set(
+            (zones || []).map((z) => Number(z.id)).filter(Number.isFinite)
+        );
+        const supportCenter = (support) => {
+            if (support?.x != null && support?.y != null) {
+                return { x: Number(support.x), y: Number(support.y) };
+            }
+            const sl = support?.supportLine;
+            if (sl && sl.startX != null && sl.endX != null) {
+                return {
+                    x: (Number(sl.startX) + Number(sl.endX)) / 2,
+                    y: (Number(sl.startY) + Number(sl.endY)) / 2
+                };
+            }
+            return null;
+        };
+        const pointInCurrentRooms = (x, y) => {
+            for (const room of effectiveRooms || []) {
+                if (Array.isArray(room.room_points) && room.room_points.length >= 3) {
+                    if (isPointInPolygon(x, y, room.room_points)) return true;
+                }
+            }
+            for (const zoneRoom of zonesAsRooms || []) {
+                if (Array.isArray(zoneRoom.room_points) && zoneRoom.room_points.length >= 3) {
+                    if (isPointInPolygon(x, y, zoneRoom.room_points)) return true;
+                }
+            }
+            return false;
+        };
+        const supportOnCurrentView = (support) => {
+            if (!support) return false;
+            let rid = support.room_id;
+            if (rid != null && typeof rid === 'object') rid = rid.id;
+            if (rid != null && Number.isFinite(Number(rid))) {
+                return roomIdSet.has(Number(rid));
+            }
+            let zid = support.zone_id;
+            if (zid != null && typeof zid === 'object') zid = zid.id;
+            if (zid != null && Number.isFinite(Number(zid))) {
+                return zoneIdSet.has(Number(zid));
+            }
+            const c = supportCenter(support);
+            if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y)) return false;
+            return pointInCurrentRooms(c.x, c.y);
+        };
+        const viewSupports = (supports || []).filter(supportOnCurrentView);
+
         const drawnRails = new Set();
-        supports.forEach(support => {
+        viewSupports.forEach(support => {
             const sl = support.supportLine;
             if (!sl) return;
             const key = aluSupportLineKey(sl.startX, sl.startY, sl.endX, sl.endY);
@@ -5141,7 +5379,7 @@ const CeilingCanvas = ({
             }
         });
 
-        supports.forEach(support => {
+        viewSupports.forEach(support => {
             if (support.isIntersectionPoint) {
                 if (support.x == null || support.y == null) return;
                 let angle = 0;
@@ -5897,100 +6135,74 @@ const CeilingCanvas = ({
                     </div>
                 ) : null}
 
-                {/* Canvas Container */}
+                {/* Canvas Container — zoom stack height = canvas only, so sticky cannot leave the plan */}
                 <div className="ceiling-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px] order-1 lg:order-2">
                     <div className="plan-canvas-zoom-stack">
-                    <div
-                        ref={canvasContainerRef}
-                        className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
-                        style={{
-                            height: `${CANVAS_HEIGHT}px`,
-                            minHeight: `${MIN_CANVAS_HEIGHT}px`
-                        }}
-                    >
-                        <canvas
-                            ref={canvasRef}
-                            data-plan-type="ceiling"
-                            className={`ceiling-canvas block w-full ${
-                                isPlacingSupport
-                                    ? 'cursor-crosshair'
-                                    : selectedRailKey || selectedNylonKey
-                                        ? 'cursor-default'
-                                        : 'cursor-grab active:cursor-grabbing'
-                            }`}
+                        <div
+                            ref={canvasContainerRef}
+                            className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
                             style={{
-                                width: '100%',
-                                height: '100%',
-                                touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
+                                height: `${CANVAS_HEIGHT}px`,
+                                minHeight: `${MIN_CANVAS_HEIGHT}px`
                             }}
-                            onMouseDown={handleMouseDown}
-                            onMouseMove={(e) => {
-                                handleMouseMove(e);
-                                handleMouseMoveHover(e);
-                                handleMouseMoveSupport(e);
-                                handleMouseMoveDimensions(e);
-                            }}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseUp}
-                            onTouchStart={handleTouchStart}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
-                            onClick={handleCanvasClick}
-                            onContextMenu={(e) => e.preventDefault()}
+                        >
+                            <canvas
+                                ref={canvasRef}
+                                data-plan-type="ceiling"
+                                className={`ceiling-canvas block w-full ${
+                                    isPlacingSupport
+                                        ? 'cursor-crosshair'
+                                        : selectedRailKey || selectedNylonKey
+                                            ? 'cursor-default'
+                                            : 'cursor-grab active:cursor-grabbing'
+                                }`}
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
+                                }}
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={(e) => {
+                                    handleMouseMove(e);
+                                    handleMouseMoveHover(e);
+                                    handleMouseMoveSupport(e);
+                                    handleMouseMoveDimensions(e);
+                                }}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                                onTouchStart={handleTouchStart}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                                onClick={handleCanvasClick}
+                                onContextMenu={(e) => e.preventDefault()}
+                            />
+                            {enableAluSuspension && effectiveCustomSupports.length > 0 && (
+                                <div className="absolute bottom-3 left-3 z-10 pointer-events-none rounded-lg bg-white/95 dark:bg-gray-800/95 border border-purple-200 dark:border-purple-700 px-2.5 py-2 shadow-sm text-[11px] text-gray-700 dark:text-gray-200 space-y-1.5 max-w-[200px]">
+                                    <div className="font-semibold text-purple-900">Alu suspension</div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="inline-block w-9 h-1 rounded-full bg-purple-800 shrink-0" />
+                                        <span>Rail</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="inline-block w-9 h-1 rounded-full bg-amber-500 shrink-0" />
+                                        <span>Selected rail</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="inline-flex w-4 h-4 rounded-full border-2 border-purple-700 bg-white shrink-0" />
+                                        <span>Hanger on panel</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <PlanCanvasZoomControls
+                            onZoomIn={handleZoomIn}
+                            onZoomOut={handleZoomOut}
+                            onReset={handleResetZoom}
                         />
-                        {enableAluSuspension && effectiveCustomSupports.length > 0 && (
-                            <div className="absolute bottom-3 left-3 z-10 pointer-events-none rounded-lg bg-white/95 dark:bg-gray-800/95 border border-purple-200 dark:border-purple-700 px-2.5 py-2 shadow-sm text-[11px] text-gray-700 dark:text-gray-200 space-y-1.5 max-w-[200px]">
-                                <div className="font-semibold text-purple-900">Alu suspension</div>
-                                <div className="flex items-center gap-2">
-                                    <span className="inline-block w-9 h-1 rounded-full bg-purple-800 shrink-0" />
-                                    <span>Rail</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="inline-block w-9 h-1 rounded-full bg-amber-500 shrink-0" />
-                                    <span>Selected rail</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="inline-flex w-4 h-4 rounded-full border-2 border-purple-700 bg-white shrink-0" />
-                                    <span>Hanger on panel</span>
-                                </div>
-                            </div>
-                        )}
                     </div>
-                    <div className="plan-canvas-zoom-controls flex flex-col gap-2">
-                        <button
-                            onClick={handleZoomIn}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom In"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                            </svg>
-                        </button>
 
-                        <button
-                            onClick={handleZoomOut}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom Out"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
-                            </svg>
-                        </button>
-
-                        <button
-                            onClick={handleResetZoom}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Reset Zoom"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                        </button>
-                    </div>
-                    </div>
-                    
                     {/* Canvas Controls */}
-                    <div className="plan-canvas-meta dark:text-gray-400 px-1">
+                    <div className="plan-canvas-meta dark:text-gray-400">
                         <div className="flex items-center gap-2">
                             <span className="font-medium">Scale:</span>
                             <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[10px] tabular-nums">

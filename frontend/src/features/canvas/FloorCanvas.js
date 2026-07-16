@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
+import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useTheme } from '../theme/ThemeContext';
 import {
     getPlanCanvasBackground,
@@ -43,6 +44,8 @@ import {
     buildVerticalPlanLabelEntry
 } from './collisionDetection.js';
 import { calculatePolygonVisualCenter } from './utils.js';
+import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { sortRoomsByLevelThenName } from '../room/roomSortUtils';
 import {
     PLAN_CANVAS_DEFAULT_WIDTH,
     PLAN_CANVAS_DEFAULT_HEIGHT,
@@ -80,7 +83,10 @@ const FloorCanvas = ({
     slabLength = 3000,
     canEdit = true,
     onSlabWidthChange = null,
-    onSlabLengthChange = null
+    onSlabLengthChange = null,
+    storeys = [],
+    ghostWalls = [],
+    ghostAreas = []
 }) => {
     const { resolvedTheme } = useTheme();
     const canvasRef = useRef(null);
@@ -198,16 +204,41 @@ const FloorCanvas = ({
     const CANVAS_WIDTH = Math.round(canvasSize.width);
     const CANVAS_HEIGHT = Math.round(canvasSize.height);
 
-    // Same bounds logic as CeilingCanvas (room outlines, supports negative coords)
-    const projectBounds = useMemo(
-        () => computePlanBoundsFromGeometry(rooms, projectData),
-        [rooms, projectData]
-    );
+    // Same bounds logic as CeilingCanvas (room outlines + ghost areas, supports negative coords)
+    const projectBounds = useMemo(() => {
+        const base = computePlanBoundsFromGeometry(rooms, projectData);
+        if (!Array.isArray(ghostAreas) || ghostAreas.length === 0) {
+            return base;
+        }
+        let minX = base?.minX ?? Infinity;
+        let maxX = base?.maxX ?? -Infinity;
+        let minY = base?.minY ?? Infinity;
+        let maxY = base?.maxY ?? -Infinity;
+        ghostAreas.forEach((ghostArea) => {
+            const points = Array.isArray(ghostArea.room_points)
+                ? ghostArea.room_points
+                : Array.isArray(ghostArea.points)
+                    ? ghostArea.points
+                    : [];
+            points.forEach((p) => {
+                const x = Number(p.x) || 0;
+                const y = Number(p.y) || 0;
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minY = Math.min(minY, y);
+                maxY = Math.max(maxY, y);
+            });
+        });
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
+            return base;
+        }
+        return { minX, maxX, minY, maxY };
+    }, [rooms, projectData, ghostAreas]);
 
     const modelBounds = useMemo(() => {
-        if (!rooms || rooms.length === 0) return null;
+        if ((!rooms || rooms.length === 0) && (!ghostAreas || ghostAreas.length === 0)) return null;
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        rooms.forEach((room) => {
+        (rooms || []).forEach((room) => {
             if (room.room_points && room.room_points.length > 0) {
                 const roomMinX = Math.min(...room.room_points.map((p) => p.x));
                 const roomMaxX = Math.max(...room.room_points.map((p) => p.x));
@@ -219,8 +250,22 @@ const FloorCanvas = ({
                 maxY = Math.max(maxY, roomMaxY);
             }
         });
+        (ghostAreas || []).forEach((ghostArea) => {
+            const points = Array.isArray(ghostArea.room_points)
+                ? ghostArea.room_points
+                : Array.isArray(ghostArea.points)
+                    ? ghostArea.points
+                    : [];
+            points.forEach((p) => {
+                minX = Math.min(minX, Number(p.x) || 0);
+                maxX = Math.max(maxX, Number(p.x) || 0);
+                minY = Math.min(minY, Number(p.y) || 0);
+                maxY = Math.max(maxY, Number(p.y) || 0);
+            });
+        });
+        if (!Number.isFinite(minX)) return null;
         return { minX, maxX, minY, maxY };
-    }, [rooms]);
+    }, [rooms, ghostAreas]);
 
     const isPanelFloorRoom = (room) =>
         room && (room.floor_type === 'panel' || room.floor_type === 'Panel');
@@ -322,10 +367,11 @@ const FloorCanvas = ({
     // [UPDATED] Added visibilityState to dependencies so it redraws when you click checkboxes
     // drawCanvas/calculateCanvasTransform are recreated each render; deps list drives redraw.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState, resolvedTheme]);
+    }, [rooms, walls, intersections, floorPlan, floorPanels, effectiveFloorPanelsMap, CANVAS_WIDTH, CANVAS_HEIGHT, visibilityState, resolvedTheme, ghostWalls, ghostAreas, slabWidth, slabLength]);
 
     const calculateCanvasTransform = () => {
-        if (!rooms || rooms.length === 0) {
+        const bounds = projectBounds;
+        if (!bounds || !Number.isFinite(bounds.minX)) {
             scaleFactor.current = 1;
             initialScale.current = 1;
             offsetX.current = CANVAS_WIDTH / 2;
@@ -333,7 +379,6 @@ const FloorCanvas = ({
             return;
         }
 
-        const bounds = computePlanBoundsFromGeometry(rooms, projectData);
         const fit = computePlanFitTransform(CANVAS_WIDTH, CANVAS_HEIGHT, bounds, { padding: PADDING });
 
         if (!isZoomed.current) {
@@ -348,12 +393,109 @@ const FloorCanvas = ({
         }
     };
 
+    const drawGhostAreas = (ctx) => {
+        if (!Array.isArray(ghostAreas) || ghostAreas.length === 0) return;
+
+        ghostAreas.forEach((ghostArea) => {
+            const points = Array.isArray(ghostArea.room_points)
+                ? ghostArea.room_points
+                : Array.isArray(ghostArea.points)
+                    ? ghostArea.points
+                    : [];
+            if (points.length < 3) return;
+
+            const transformedPoints = points.map((point) => ({
+                x: (Number(point.x) || 0) * scaleFactor.current + offsetX.current,
+                y: (Number(point.y) || 0) * scaleFactor.current + offsetY.current,
+            }));
+
+            ctx.save();
+            ctx.beginPath();
+            transformedPoints.forEach((point, index) => {
+                if (index === 0) {
+                    ctx.moveTo(point.x, point.y);
+                } else {
+                    ctx.lineTo(point.x, point.y);
+                }
+            });
+            ctx.closePath();
+
+            ctx.globalAlpha = 0.15;
+            ctx.fillStyle = '#BFDBFE';
+            ctx.fill();
+
+            ctx.globalAlpha = 0.8;
+            ctx.strokeStyle = '#60A5FA';
+            ctx.setLineDash([10, 6]);
+            ctx.lineWidth = Math.max(1, 2 * scaleFactor.current);
+            ctx.stroke();
+            ctx.restore();
+
+            const centroid = transformedPoints.reduce(
+                (acc, point) => {
+                    acc.x += point.x;
+                    acc.y += point.y;
+                    return acc;
+                },
+                { x: 0, y: 0 }
+            );
+            centroid.x /= transformedPoints.length;
+            centroid.y /= transformedPoints.length;
+
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = '#1D4ED8';
+            ctx.font = `${Math.max(12, 160 * scaleFactor.current)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const areaName = ghostArea.room_name || 'Area';
+            const originLabel = ghostArea.source_storey_name
+                ? ` (${ghostArea.source_storey_name})`
+                : ' (Below)';
+            ctx.fillText(`${areaName}${originLabel}`, centroid.x, centroid.y);
+            ctx.restore();
+        });
+    };
+
+    const drawGhostWalls = (ctx) => {
+        if (!Array.isArray(ghostWalls) || ghostWalls.length === 0) return;
+
+        ghostWalls.forEach((ghostWall) => {
+            if (
+                ghostWall.start_x === undefined || ghostWall.start_y === undefined ||
+                ghostWall.end_x === undefined || ghostWall.end_y === undefined
+            ) {
+                return;
+            }
+
+            const startX = ghostWall.start_x * scaleFactor.current + offsetX.current;
+            const startY = ghostWall.start_y * scaleFactor.current + offsetY.current;
+            const endX = ghostWall.end_x * scaleFactor.current + offsetX.current;
+            const endY = ghostWall.end_y * scaleFactor.current + offsetY.current;
+
+            ctx.save();
+            ctx.strokeStyle = '#94A3B8';
+            ctx.globalAlpha = 0.7;
+            ctx.lineWidth = Math.max(1, (ghostWall.thickness || 50) * scaleFactor.current * 0.5);
+            ctx.setLineDash([12, 6]);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.restore();
+        });
+    };
+
     // Main drawing function
     const drawCanvas = (ctx) => {
         ctx.fillStyle = getPlanCanvasBackground();
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         drawGrid(ctx);
+
+        // Ghosted double-height areas / walls from lower levels (behind current floor)
+        drawGhostAreas(ctx);
+        drawGhostWalls(ctx);
 
         if (walls && walls.length > 0) {
             drawWalls(ctx);
@@ -1660,77 +1802,42 @@ const FloorCanvas = ({
     const panelCounts = getAccuratePanelCounts();
 
     const generatePanelList = () => {
-        const panelList = [];
-        
+        // Group project-wide by display size, thickness, and type (like wall/ceiling materials)
+        const panelsByKey = new Map();
+
         Object.entries(effectiveFloorPanelsMap).forEach(([roomId, roomPanels]) => {
             if (!roomPanels || roomPanels.length === 0) return;
-            
-            // Group panels by dimensions
-            const panelsByDimension = new Map();
+
+            const room = rooms.find(r => String(r.id) === String(roomId));
+            const floorThickness = room?.floor_thickness || 20;
+
             roomPanels.forEach(panel => {
-                // For table, we can group purely by geometry
-                const isHorizontal = panel.width < panel.length;
-                const groupingDimension = isHorizontal ? panel.length : panel.width;
-                const dimensionValue = Math.round(groupingDimension * 100) / 100;
-                
-                if (!panelsByDimension.has(dimensionValue)) {
-                    panelsByDimension.set(dimensionValue, []);
+                if (!panel) return;
+                const isCut = !!(panel.is_cut_panel || panel.is_cut);
+                const panelType = isCut ? 'Cut' : 'Full';
+                const isVertical = panel.width >= panel.length;
+                let displayWidth = panel.width;
+                let displayLength = panel.length;
+                if (isVertical) {
+                    displayWidth = panel.length;
+                    displayLength = panel.width;
                 }
-                panelsByDimension.get(dimensionValue).push(panel);
-            });
-            
-            panelsByDimension.forEach((panels, dimension) => {
-                const fullPanels = panels.filter(p => !p.is_cut_panel);
-                const cutPanels = panels.filter(p => p.is_cut_panel);
-                
-                const room = rooms.find(r => r.id === parseInt(roomId));
-                const floorThickness = room?.floor_thickness || 20; 
-                
-                if (fullPanels.length > 0) {
-                    const panel = fullPanels[0];
-                    const isVertical = panel.width >= panel.length;
-                    
-                    let displayWidth = panel.width;
-                    let displayLength = panel.length;
-                    
-                    if (isVertical) {
-                        displayWidth = panel.length;
-                        displayLength = panel.width;
-                    }
-                    
-                    panelList.push({
+
+                const key = `${displayWidth}_${displayLength}_${floorThickness}_${panelType}`;
+                if (!panelsByKey.has(key)) {
+                    panelsByKey.set(key, {
                         width: displayWidth,
                         length: displayLength,
                         thickness: floorThickness,
-                        quantity: fullPanels.length,
-                        type: 'Full'
+                        quantity: 0,
+                        type: panelType
                     });
                 }
-                
-                if (cutPanels.length > 0) {
-                    const panel = cutPanels[0];
-                    const isVertical = panel.width >= panel.length;
-                    
-                    let displayWidth = panel.width;
-                    let displayLength = panel.length;
-                    
-                    if (isVertical) {
-                        displayWidth = panel.length;
-                        displayLength = panel.width;
-                    }
-                    
-                    panelList.push({
-                        width: displayWidth,
-                        length: displayLength,
-                        thickness: floorThickness,
-                        quantity: cutPanels.length,
-                        type: 'Cut'
-                    });
-                }
+                panelsByKey.get(key).quantity += 1;
             });
         });
-        
-        return panelList;
+
+        return sortMaterialPanels(Array.from(panelsByKey.values()));
     };
 
     const [showPanelTable, setShowPanelTable] = useState(false);
@@ -1773,74 +1880,47 @@ const FloorCanvas = ({
                 </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-2 min-w-0 w-full items-stretch">
+            <div className="flex flex-col lg:flex-row gap-2 min-w-0 w-full items-start">
                 {/* Main Canvas Area */}
-                <div className="floor-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px]">
-                <div className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg">
+                <div className="floor-canvas-wrapper flex-1 min-w-0 w-full lg:min-w-[280px] self-start">
                     <div className="plan-canvas-zoom-stack">
-                    <div
-                        ref={canvasContainerRef}
-                        className="relative"
-                        style={{
-                            height: `${CANVAS_HEIGHT}px`,
-                            minHeight: `${MIN_CANVAS_HEIGHT}px`
-                        }}
-                    >
-                        <canvas
-                            ref={canvasRef}
-                            data-plan-type="floor"
-                            className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
+                        <div
+                            ref={canvasContainerRef}
+                            className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
                             style={{
-                                width: '100%',
-                                height: '100%',
-                                touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
+                                height: `${CANVAS_HEIGHT}px`,
+                                minHeight: `${MIN_CANVAS_HEIGHT}px`
                             }}
-                            onWheel={handleWheel}
-                            onMouseDown={handleMouseDown}
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseUp}
-                            onTouchStart={handleTouchStart}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
-                            onClick={handleCanvasClick}
-                            onContextMenu={(e) => e.preventDefault()}
+                        >
+                            <canvas
+                                ref={canvasRef}
+                                data-plan-type="floor"
+                                className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
+                                }}
+                                onWheel={handleWheel}
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                                onTouchStart={handleTouchStart}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                                onClick={handleCanvasClick}
+                                onContextMenu={(e) => e.preventDefault()}
+                            />
+                        </div>
+                        <PlanCanvasZoomControls
+                            onZoomIn={handleZoomIn}
+                            onZoomOut={handleZoomOut}
+                            onReset={handleResetZoom}
                         />
                     </div>
-                    <div className="plan-canvas-zoom-controls flex flex-col gap-2">
-                        <button
-                            onClick={handleZoomIn}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-blue-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom In"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                            </svg>
-                        </button>
 
-                        <button
-                            onClick={handleZoomOut}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-green-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Zoom Out"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM18 10H10" />
-                            </svg>
-                        </button>
-
-                        <button
-                            onClick={handleResetZoom}
-                            className="w-10 h-10 bg-white border border-gray-300 rounded-lg shadow-lg hover:bg-gray-50 hover:border-purple-400 transition-all duration-200 flex items-center justify-center group"
-                            title="Reset Zoom"
-                        >
-                            <svg className="w-5 h-5 text-gray-600 group-hover:text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                        </button>
-                    </div>
-                    </div>
-                    
-                    <div className="plan-canvas-meta dark:text-gray-400 px-3 py-1.5 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700">
+                    <div className="plan-canvas-meta dark:text-gray-400">
                         <div className="flex items-center gap-2">
                             <span className="font-medium">Scale:</span>
                             <span className="font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[10px]">
@@ -1853,7 +1933,6 @@ const FloorCanvas = ({
                                 : 'Click panels to select · Drag to pan · Use zoom buttons'}
                         </span>
                     </div>
-                </div>
                 </div>
 
                 {/* Plan Details — same width/compact layout as ceiling plan */}
@@ -2220,9 +2299,12 @@ const FloorCanvas = ({
                                     </thead>
                                     <tbody className="bg-white">
                                         {(() => {
-                                            const slabRooms = rooms?.filter(room => 
-                                                room.floor_type === 'slab' || room.floor_type === 'Slab'
-                                            ) || [];
+                                            const slabRooms = sortRoomsByLevelThenName(
+                                                (rooms || []).filter(room =>
+                                                    room.floor_type === 'slab' || room.floor_type === 'Slab'
+                                                ),
+                                                storeys
+                                            );
                                             
                                             if (slabRooms.length === 0) {
                                                 return (
@@ -2240,7 +2322,7 @@ const FloorCanvas = ({
                                                 const slabsNeeded = Math.ceil(roomArea / slabArea);
                                                 
                                                 return (
-                                                    <tr key={index} className="hover:bg-gray-50">
+                                                    <tr key={room.id ?? index} className="hover:bg-gray-50">
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 font-medium">
                                                             {room.room_name || `Room ${room.id}`}
                                                         </td>

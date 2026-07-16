@@ -1,6 +1,75 @@
 import PanelCalculator from './PanelCalculator';
 
 /**
+ * Display label for panel face finishing (matches material tables / PDF export).
+ */
+export function getPanelFinishingLabel(panel) {
+    const intMat = panel?.inner_face_material ?? 'PPGI';
+    const intThk = panel?.inner_face_thickness ?? 0.5;
+    const extMat = panel?.outer_face_material ?? 'PPGI';
+    const extThk = panel?.outer_face_thickness ?? 0.5;
+    if (intMat === extMat && intThk === extThk) {
+        return `Both Side ${extThk}mm ${extMat}`;
+    }
+    return `Ext: ${extThk}mm ${extMat}; Int: ${intThk}mm ${intMat}`;
+}
+
+const PANEL_TYPE_SORT_ORDER = {
+    full: 0,
+    side: 1,
+    cut: 1,
+    leftover: 2,
+};
+
+/**
+ * Sort material panel rows so finishing and type stay grouped (no mixed full/side blocks).
+ * Order: finishing → type (full, side/cut, leftover) → application → thickness →
+ * width (desc) → length (desc when width matches).
+ * Same logic for wall / ceiling / floor export lists.
+ */
+export function sortMaterialPanels(panels) {
+    if (!Array.isArray(panels) || panels.length <= 1) {
+        return panels || [];
+    }
+
+    return [...panels].sort((a, b) => {
+        const finishA = getPanelFinishingLabel(a);
+        const finishB = getPanelFinishingLabel(b);
+        if (finishA !== finishB) {
+            return finishA.localeCompare(finishB, undefined, { sensitivity: 'base' });
+        }
+
+        const typeA = PANEL_TYPE_SORT_ORDER[String(a?.type || '').toLowerCase()] ?? 50;
+        const typeB = PANEL_TYPE_SORT_ORDER[String(b?.type || '').toLowerCase()] ?? 50;
+        if (typeA !== typeB) {
+            return typeA - typeB;
+        }
+
+        const appA = String(a?.application || '');
+        const appB = String(b?.application || '');
+        if (appA !== appB) {
+            return appA.localeCompare(appB, undefined, { sensitivity: 'base' });
+        }
+
+        const thkA = Number(a?.thickness) || 0;
+        const thkB = Number(b?.thickness) || 0;
+        if (thkA !== thkB) {
+            return thkA - thkB;
+        }
+
+        const widthA = Number(a?.width) || 0;
+        const widthB = Number(b?.width) || 0;
+        if (widthA !== widthB) {
+            return widthB - widthA; // wider first
+        }
+
+        const lenA = Number(a?.length) || 0;
+        const lenB = Number(b?.length) || 0;
+        return lenB - lenA; // same width → longer first
+    });
+}
+
+/**
  * Joint types at wall ends — same rules as Canvas2D getWallJointTypes.
  */
 export function getWallJointTypes(wall, intersections) {

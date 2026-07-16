@@ -2426,6 +2426,8 @@ const ProjectDetails = () => {
                                             onRoomLabelPositionUpdate={projectDetails.handleRoomLabelPositionUpdate}
                                             onJointsUpdate={projectDetails.setJoints}
                                             doors={projectDetails.filteredDoors}
+                                            allDoors={projectDetails.doors}
+                                            allRooms={projectDetails.rooms}
                                             onRefreshWalls={projectDetails.refreshWalls}
                                             onDoorSelect={projectDetails.handleDoorSelect}
                                             onDoorWallSelect={(wall) => {
