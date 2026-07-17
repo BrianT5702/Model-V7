@@ -378,7 +378,16 @@ class WallViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         """Update wall properties"""
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        data = request.data.copy()
+        if all(key in data for key in ('start_x', 'start_y', 'end_x', 'end_y')):
+            norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(
+                data['start_x'], data['start_y'], data['end_x'], data['end_y']
+            )
+            data['start_x'] = norm_start_x
+            data['start_y'] = norm_start_y
+            data['end_x'] = norm_end_x
+            data['end_y'] = norm_end_y
+        serializer = self.get_serializer(instance, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         

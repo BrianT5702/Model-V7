@@ -1,8 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
-import PanelCalculator from './PanelCalculator';
 import { getPanelFinishingLabel, sortMaterialPanels } from './wallPlanPanelUtils';
+import {
+    getWallCalculationFingerprint,
+    groupWallPanelsForDisplay,
+} from './wallPanelCalculationUtils';
+import { optimizeWallPanelCalculation } from './wallPanelOptimizer';
 
 const PanelCalculationControls = ({ 
     walls, 
@@ -11,8 +15,8 @@ const PanelCalculationControls = ({
     showMaterialDetails, 
     toggleMaterialDetails,
     project = null,
-    updateSharedPanelData, // Added prop for sharing data
-    onRefreshWalls // Callback to refresh walls from all storeys
+    updateSharedPanelData,
+    onRefreshWalls
 }) => {
     const [calculatedPanels, setCalculatedPanels] = useState(null);
     const [showTable, setShowTable] = useState(false);
@@ -23,291 +27,174 @@ const PanelCalculationControls = ({
     const [isCalculating, setIsCalculating] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshMessage, setRefreshMessage] = useState('');
+    const [optimizationInfo, setOptimizationInfo] = useState(null);
+    const [lastCalculatedFingerprint, setLastCalculatedFingerprint] = useState(null);
 
-    // Auto-show panel table when panels are calculated
+    const currentFingerprint = useMemo(
+        () => getWallCalculationFingerprint(walls, intersections),
+        [walls, intersections]
+    );
+
+    const isStale = Boolean(
+        calculatedPanels &&
+        lastCalculatedFingerprint &&
+        lastCalculatedFingerprint !== currentFingerprint
+    );
+
     useEffect(() => {
         if (calculatedPanels && calculatedPanels.length > 0) {
             setShowTable(true);
         }
     }, [calculatedPanels]);
 
-    // Auto-calculate when showMaterialDetails becomes true and no panels are calculated yet
-    useEffect(() => {
-        if (showMaterialDetails && !calculatedPanels && !isCalculating && walls && walls.length > 0) {
-            calculateAllPanels();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showMaterialDetails]);
-
-    const calculateAllPanels = () => {
+    const calculateAllPanels = useCallback(async () => {
         try {
             setIsCalculating(true);
-            
+            setRefreshMessage('');
+
             if (!walls || !Array.isArray(walls) || walls.length === 0) {
                 console.warn('No walls data available for panel calculation');
-                setIsCalculating(false);
                 return;
             }
-            
+
             if (!intersections || !Array.isArray(intersections)) {
                 console.warn('No intersections data available for panel calculation');
-                setIsCalculating(false);
                 return;
             }
 
-            // Check if PanelCalculator is available
-            if (typeof PanelCalculator !== 'function') {
-                console.error('PanelCalculator class is not available');
-                setIsCalculating(false);
-                return;
-            }
-
-            const calculator = new PanelCalculator();
-            const allPanels = [];
-
-        walls.forEach(wall => {
-            // Validate wall object structure
-            if (!wall || typeof wall.start_x !== 'number' || typeof wall.start_y !== 'number' || 
-                typeof wall.end_x !== 'number' || typeof wall.end_y !== 'number') {
-                console.warn('Invalid wall data structure:', wall);
-                return;
-            }
-            
-            const wallLength = Math.sqrt(
-                Math.pow(wall.end_x - wall.start_x, 2) + 
-                Math.pow(wall.end_y - wall.start_y, 2)
-            );
-
-            // Find all intersections for this wall
-            const wallIntersections = intersections.filter(inter => 
-                inter.pairs && inter.pairs.some(pair => 
-                    pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)
-                )
-            );
-
-            // Determine joint types for both ends
-            let leftJointType = 'butt_in';
-            let rightJointType = 'butt_in';
-
-            // Determine wall orientation and which end is left/right
-            const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
-            const isLeftToRight = wall.end_x > wall.start_x;
-            const isBottomToTop = wall.end_y > wall.start_y;
-
-            // Track all intersections for each end
-            const leftEndIntersections = [];
-            const rightEndIntersections = [];
-
-            wallIntersections.forEach(inter => {
-                if (!inter.pairs) return;
-                inter.pairs.forEach(pair => {
-                    if (pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)) {
-                        // For horizontal walls
-                        if (isHorizontal) {
-                            if (isLeftToRight) {
-                                // Wall goes left to right
-                                if (inter.x === wall.start_x) {
-                                    leftEndIntersections.push(pair.joining_method);
-                                } else if (inter.x === wall.end_x) {
-                                    rightEndIntersections.push(pair.joining_method);
-                                }
-                            } else {
-                                // Wall goes right to left
-                                if (inter.x === wall.start_x) {
-                                    rightEndIntersections.push(pair.joining_method);
-                                } else if (inter.x === wall.end_x) {
-                                    leftEndIntersections.push(pair.joining_method);
-                                }
-                            }
-                        }
-                        // For vertical walls
-                        if (isBottomToTop) {
-                            // Wall goes bottom to top
-                            if (inter.y === wall.start_y) {
-                                leftEndIntersections.push(pair.joining_method);
-                            } else if (inter.y === wall.end_y) {
-                                rightEndIntersections.push(pair.joining_method);
-                            }
-                        } else {
-                            // Wall goes top to bottom
-                            if (inter.y === wall.start_y) {
-                                rightEndIntersections.push(pair.joining_method);
-                            } else if (inter.y === wall.end_y) {
-                                leftEndIntersections.push(pair.joining_method);
-                            }
-                        }
-                    }
-                });
+            const result = await new Promise((resolve) => {
+                window.setTimeout(() => resolve(optimizeWallPanelCalculation(walls, intersections)), 0);
             });
 
-            // Set joint types, prioritizing 45_cut, treat 'none' as 'butt_in' for calculations
-            leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
-            rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
+            const { allPanels, calculator, analysis, combinationsTested, optimizationMode, wallOrder, score } = result;
 
-            // Validate wall height and thickness
-            if (typeof wall.height !== 'number' || typeof wall.thickness !== 'number') {
-                console.warn('Invalid wall height or thickness:', { height: wall.height, thickness: wall.thickness });
+            if (!allPanels || allPanels.length === 0) {
+                setCalculatedPanels(null);
+                setPanelAnalysis(null);
+                setPanelCalculator(null);
+                setOptimizationInfo(null);
                 return;
             }
-            
-            // Use gap_fill_height for calculations if gap-fill mode is enabled
-            const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null) 
-                ? wall.gap_fill_height 
-                : wall.height;
-            
-            // Prepare face information for panel calculation
-            const faceInfo = {
-                innerFaceMaterial: wall.inner_face_material || null,
-                innerFaceThickness: wall.inner_face_thickness || null,
-                outerFaceMaterial: wall.outer_face_material || null,
-                outerFaceThickness: wall.outer_face_thickness || null
-            };
-            
-            const panels = calculator.calculatePanels(
-                wallLength,
-                wall.thickness,
-                { left: leftJointType, right: rightJointType },
-                heightForCalc,
-                faceInfo
-            );
 
-            // Validate panels array
-            if (!panels || !Array.isArray(panels)) {
-                console.warn('No panels returned for wall:', wall.id);
-                return;
-            }
-            
-            // Add wall-specific information to each panel
-            panels.forEach(panel => {
-                if (!panel || typeof panel.width !== 'number') {
-                    console.warn('Invalid panel data:', panel);
-                    return;
-                }
-                
-                let panelType = panel.type;
-                if (panelType === 'leftover' && panel.width < 200 && !panel.isLeftover) {
-                    panelType = 'side';
-                }
-                allPanels.push({
-                    ...panel,
-                    type: panelType,
-                    length: heightForCalc, // Use the same height used for calculations
-                    application: wall.application_type || 'standard',
-                    wallId: wall.id,
-                    thickness: wall.thickness,
-                    wallLength: wallLength,
-                    wallStart: `(${Math.round(wall.start_x)}, ${Math.round(wall.start_y)})`,
-                    wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`,
-                    // Surface type information
-                    inner_face_material: wall.inner_face_material || 'PPGI',
-                    inner_face_thickness: wall.inner_face_thickness ?? 0.5,
-                    outer_face_material: wall.outer_face_material || 'PPGI',
-                    outer_face_thickness: wall.outer_face_thickness ?? 0.5
-                });
+            setPanelAnalysis(analysis);
+            setPanelCalculator(calculator);
+            setOptimizationInfo({
+                combinationsTested,
+                optimizationMode,
+                wallOrder,
+                score,
             });
-        });
+            setLastCalculatedFingerprint(currentFingerprint);
 
-        // Get panel analysis
-        const analysis = calculator.getPanelAnalysis();
-        setPanelAnalysis(analysis);
-        setPanelCalculator(calculator);
-
-        // Share panel data with other tabs if updateSharedPanelData is provided
-        if (updateSharedPanelData) {
-            // Group panels by type, dimensions, application, and surface types for sharing (matches table structure)
-            const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
-                const key = `${panel.type}-${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
-                if (!acc[key]) {
-                    acc[key] = {
-                        width: panel.width,
-                        length: panel.length,
-                        thickness: panel.thickness,
-                        application: panel.application,
-                        quantity: 0,
-                        type: panel.type,
-                        inner_face_material: panel.inner_face_material,
-                        inner_face_thickness: panel.inner_face_thickness,
-                        outer_face_material: panel.outer_face_material,
-                        outer_face_thickness: panel.outer_face_thickness,
-                        anyWallId: panel.wallId
-                    };
-                }
-                acc[key].quantity += 1;
-                return acc;
-            }, {});
-            
-            updateSharedPanelData('wall-plan', sortMaterialPanels(Object.values(groupedPanelsForSharing)), analysis);
-        }
-
-        // Group panels by type, dimensions, application, and surface types
-        const groupedPanels = allPanels.reduce((acc, panel) => {
-            const key = `${panel.type}-${panel.width}-${panel.length}-${panel.thickness}-${panel.application}-${panel.inner_face_material}-${panel.inner_face_thickness}-${panel.outer_face_material}-${panel.outer_face_thickness}`;
-            if (!acc[key]) {
-                acc[key] = {
-                    width: panel.width,
-                    length: panel.length,
-                    thickness: panel.thickness,
-                    application: panel.application,
-                    quantity: 0,
-                    type: panel.type,
-                    inner_face_material: panel.inner_face_material,
-                    inner_face_thickness: panel.inner_face_thickness,
-                    outer_face_material: panel.outer_face_material,
-                    outer_face_thickness: panel.outer_face_thickness
-                };
+            if (updateSharedPanelData) {
+                const groupedPanelsForSharing = groupWallPanelsForDisplay(allPanels);
+                updateSharedPanelData('wall-plan', sortMaterialPanels(groupedPanelsForSharing), analysis);
             }
-            acc[key].quantity += 1;
-            return acc;
-        }, {});
 
-        // Final validation before setting state
-        if (Object.keys(groupedPanels).length === 0) {
-            console.warn('No panels calculated');
-            return;
-        }
+            const sortedPanels = sortMaterialPanels(groupWallPanelsForDisplay(allPanels));
+            setCalculatedPanels(sortedPanels);
 
-        const sortedPanels = sortMaterialPanels(Object.values(groupedPanels));
-        setCalculatedPanels(sortedPanels);
-
-        // Calculate cut panels count (only 'side' panels)
-        const cutPanelsCount = sortedPanels
-            .filter(panel => panel.type === 'side')
-            .reduce((sum, panel) => sum + panel.quantity, 0);
-        setCutPanelsCount(cutPanelsCount);
-        
-        setIsCalculating(false);
+            const sideCutCount = sortedPanels
+                .filter((panel) => panel.type === 'side')
+                .reduce((sum, panel) => sum + panel.quantity, 0);
+            setCutPanelsCount(sideCutCount);
         } catch (error) {
             console.error('Error calculating panels:', error);
             setCalculatedPanels(null);
             setShowTable(false);
+            setOptimizationInfo(null);
+        } finally {
             setIsCalculating(false);
         }
-    };
+    }, [walls, intersections, currentFingerprint, updateSharedPanelData]);
 
-    const handleButtonClick = () => {
-        if (!showMaterialDetails) {
-            // Calculate panels when showing material details
-            calculateAllPanels();
-        } else {
-            // Clear data when hiding material details
-            setCalculatedPanels(null);
-            setPanelAnalysis(null);
+    const handleToggleMaterialView = () => {
+        if (showMaterialDetails) {
             setShowTable(false);
-            setCutPanelsCount(0);
         }
         toggleMaterialDetails();
     };
+
+    const handleRefreshWalls = async () => {
+        if (!onRefreshWalls) return;
+        setIsRefreshing(true);
+        setRefreshMessage('');
+        try {
+            await onRefreshWalls();
+            setRefreshMessage(`Walls refreshed (${walls?.length ?? 0} walls loaded). Click "Calculate Wall Panels" to update counts.`);
+            setTimeout(() => setRefreshMessage(''), 6000);
+        } catch (error) {
+            console.error('Error refreshing walls:', error);
+            setRefreshMessage('Error refreshing walls. Please try again.');
+            setTimeout(() => setRefreshMessage(''), 5000);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
+    const optimizationLabel = optimizationInfo
+        ? optimizationInfo.optimizationMode === 'exhaustive'
+            ? `Tested all ${optimizationInfo.combinationsTested} wall orders`
+            : `Tested ${optimizationInfo.combinationsTested} wall orders (heuristic)`
+        : null;
+
+    const sortedLeftovers = useMemo(() => {
+        const leftovers = panelCalculator?.leftovers || [];
+        return [...leftovers].sort((a, b) => {
+            const lengthA = Number(a?.panelLength) || 0;
+            const lengthB = Number(b?.panelLength) || 0;
+            if (lengthA !== lengthB) return lengthB - lengthA;
+
+            const thicknessA = Number(a?.wallThickness) || 0;
+            const thicknessB = Number(b?.wallThickness) || 0;
+            if (thicknessA !== thicknessB) return thicknessA - thicknessB;
+
+            const longerA = Number(a?.longer_face) || 0;
+            const longerB = Number(b?.longer_face) || 0;
+            if (longerA !== longerB) return longerB - longerA;
+
+            const shorterA = Number(a?.shorter_face) || 0;
+            const shorterB = Number(b?.shorter_face) || 0;
+            if (shorterA !== shorterB) return shorterB - shorterA;
+
+            const leftEdgeA = String(a?.leftEdgeType || '');
+            const leftEdgeB = String(b?.leftEdgeType || '');
+            if (leftEdgeA !== leftEdgeB) return leftEdgeA.localeCompare(leftEdgeB);
+
+            const rightEdgeA = String(a?.rightEdgeType || '');
+            const rightEdgeB = String(b?.rightEdgeType || '');
+            return rightEdgeA.localeCompare(rightEdgeB);
+        });
+    }, [panelCalculator]);
 
     return (
         <div className="w-full mt-2 material-list-container">
             <div className="flex flex-wrap gap-1.5 mb-2">
                 <button
-                    onClick={handleButtonClick}
+                    onClick={handleToggleMaterialView}
                     className="plan-panel-btn-primary"
                 >
                     {showMaterialDetails ? 'Hide Material' : 'View Material'}
                 </button>
-                {/* Show Panel Details button only when material details are visible */}
+
+                {showMaterialDetails && (
+                    <button
+                        onClick={calculateAllPanels}
+                        disabled={isCalculating || isRefreshing || !walls?.length}
+                        className="plan-panel-btn bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+                        title="Find the wall processing order with least waste (uses shared leftovers)"
+                    >
+                        {isCalculating ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                <span>Calculating...</span>
+                            </>
+                        ) : (
+                            <span>Calculate Wall Panels</span>
+                        )}
+                    </button>
+                )}
+
                 {showMaterialDetails && calculatedPanels && (
                     <button
                         onClick={() => setShowTable(!showTable)}
@@ -316,32 +203,13 @@ const PanelCalculationControls = ({
                         {showTable ? 'Hide Details' : 'Show Details'}
                     </button>
                 )}
-                {/* Refresh Walls Button - to reload walls from all levels/storeys */}
+
                 {onRefreshWalls && (
                     <button
-                        onClick={async () => {
-                            setIsRefreshing(true);
-                            setRefreshMessage('');
-                            try {
-                                await onRefreshWalls();
-                                // Recalculate panels after refresh
-                                if (showMaterialDetails) {
-                                    await calculateAllPanels();
-                                }
-                                setRefreshMessage(`✅ Successfully refreshed! Now showing ${walls.length} walls from all levels.`);
-                                setTimeout(() => setRefreshMessage(''), 5000);
-                                console.log('✅ Walls refreshed successfully. Wall count:', walls.length);
-                            } catch (error) {
-                                console.error('❌ Error refreshing walls:', error);
-                                setRefreshMessage('❌ Error refreshing walls. Please try again.');
-                                setTimeout(() => setRefreshMessage(''), 5000);
-                            } finally {
-                                setIsRefreshing(false);
-                            }
-                        }}
+                        onClick={handleRefreshWalls}
                         disabled={isRefreshing || isCalculating}
                         className="plan-panel-btn bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1.5"
-                        title="Refresh walls from all levels/storeys"
+                        title="Reload walls from all levels/storeys"
                     >
                         {isRefreshing ? (
                             <>
@@ -358,33 +226,41 @@ const PanelCalculationControls = ({
                         )}
                     </button>
                 )}
-                {/* Export removed in wall plan tab per requirements */}
             </div>
-            
-            {/* Refresh success/error message */}
+
             {refreshMessage && (
                 <div className={`mb-3 p-3 rounded-lg text-sm ${
-                    refreshMessage.includes('✅') 
-                        ? 'bg-green-50 border border-green-200 text-green-700' 
-                        : 'bg-red-50 border border-red-200 text-red-700'
+                    refreshMessage.toLowerCase().includes('error')
+                        ? 'bg-red-50 border border-red-200 text-red-700'
+                        : 'bg-green-50 border border-green-200 text-green-700'
                 }`}>
                     {refreshMessage}
                 </div>
             )}
-            
-            {/* Info message when onRefreshWalls is not provided */}
-            {!onRefreshWalls && showMaterialDetails && (
-                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                    <strong>💡 Tip:</strong> Added new levels or walls? Go to the <strong>Installation Time Estimator</strong> tab and click the green <strong>"Refresh Data"</strong> button to update wall counts from all levels.
+
+            {showMaterialDetails && !calculatedPanels && !isCalculating && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                    <strong>Manual calculation:</strong> panel counts are not updated automatically when walls or joints change.
+                    Click <strong>Calculate Wall Panels</strong> when you are ready — the system will try different wall orders and pick the least-waste combination.
                 </div>
             )}
 
-            {/* Export UI removed */}
+            {showMaterialDetails && isStale && (
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                    Walls or joints changed since the last calculation. Click <strong>Calculate Wall Panels</strong> to refresh the material list.
+                </div>
+            )}
+
+            {!onRefreshWalls && showMaterialDetails && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                    <strong>Tip:</strong> Added new levels or walls? Use <strong>Refresh Walls</strong>, then click <strong>Calculate Wall Panels</strong>.
+                </div>
+            )}
 
             {showMaterialDetails && (
                 <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <h3 className="text-base sm:text-lg font-semibold mb-2 text-gray-900">Material Analysis</h3>
-                    
+
                     {!walls || walls.length === 0 ? (
                         <div className="text-center py-4 text-gray-500">
                             No walls available for material calculation. Please add walls to your project first.
@@ -392,52 +268,69 @@ const PanelCalculationControls = ({
                     ) : isCalculating ? (
                         <div className="text-center py-8">
                             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                            <p className="mt-2 text-gray-600">Calculating material requirements...</p>
+                            <p className="mt-2 text-gray-600">Optimizing wall panel layout...</p>
+                            {walls.length <= 7 && (
+                                <p className="mt-1 text-xs text-gray-500">Testing all wall processing orders for least waste.</p>
+                            )}
                         </div>
                     ) : panelAnalysis ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
-                        <div className="p-2 bg-white rounded shadow">
-                            <div className="text-sm text-gray-600">Full Panels</div>
-                            <div className="text-xl font-bold">
-                                {panelAnalysis.details.fullPanels + panelAnalysis.details.fullPanelsUsedForCutting}
-                                {panelAnalysis.details.fullPanelsUsedForCutting > 0 && (
-                                    <span className="text-xs text-gray-500"> ({panelAnalysis.details.fullPanelsUsedForCutting} used for cutting)</span>
+                        <>
+                            {optimizationLabel && (
+                                <p className="text-xs text-gray-600 mb-3">
+                                    {optimizationLabel}
+                                    {optimizationInfo?.score && (
+                                        <>
+                                            {' '}
+                                            · New stock cuts: {optimizationInfo.score.fullPanelsUsedForCutting}
+                                            {' '}
+                                            · Leftover reuse: {optimizationInfo.score.leftoverReused}
+                                        </>
+                                    )}
+                                </p>
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+                                <div className="p-2 bg-white rounded shadow">
+                                    <div className="text-sm text-gray-600">Full Panels</div>
+                                    <div className="text-xl font-bold">
+                                        {panelAnalysis.details.fullPanels + panelAnalysis.details.fullPanelsUsedForCutting}
+                                        {panelAnalysis.details.fullPanelsUsedForCutting > 0 && (
+                                            <span className="text-xs text-gray-500"> ({panelAnalysis.details.fullPanelsUsedForCutting} used for cutting)</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="p-2 bg-white rounded shadow">
+                                    <div className="text-sm text-gray-600">Cut Panels</div>
+                                    <div className="text-xl font-bold">{cutPanelsCount}</div>
+                                </div>
+                                <div
+                                    className="p-2 bg-white rounded shadow cursor-pointer hover:bg-gray-50 transition-colors"
+                                    onClick={() => setShowLeftoverDetails(true)}
+                                >
+                                    <div className="text-sm text-gray-600">Leftover Panels</div>
+                                    <div className="text-xl font-bold">{panelAnalysis.details.leftoverPanels}</div>
+                                </div>
+                                {calculatedPanels && (
+                                    <div className="p-2 bg-white rounded shadow">
+                                        <div className="text-sm text-gray-600">Doors Needed</div>
+                                        <div className="text-xl font-bold">{doors.length}</div>
+                                    </div>
                                 )}
                             </div>
+                        </>
+                    ) : (
+                        <div className="text-center py-4 text-gray-500">
+                            Click <strong>Calculate Wall Panels</strong> to generate material quantities.
                         </div>
-                        <div className="p-2 bg-white rounded shadow">
-                            <div className="text-sm text-gray-600">Cut Panels</div>
-                            <div className="text-xl font-bold">{cutPanelsCount}</div>
-                        </div>
-                        <div 
-                            className="p-2 bg-white rounded shadow cursor-pointer hover:bg-gray-50 transition-colors"
-                            onClick={() => setShowLeftoverDetails(true)}
-                        >
-                            <div className="text-sm text-gray-600">Leftover Panels</div>
-                            <div className="text-xl font-bold">{panelAnalysis.details.leftoverPanels}</div>
-                        </div>
-                        {calculatedPanels && (
-                            <div className="p-2 bg-white rounded shadow">
-                                <div className="text-sm text-gray-600">Doors Needed</div>
-                                <div className="text-xl font-bold">{doors.length}</div>
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="text-center py-4 text-gray-500">
-                        No material data available. Please ensure you have walls in your project.
-                    </div>
-                )}
+                    )}
                 </div>
             )}
 
-            {/* Leftover Panels Modal */}
             {showLeftoverDetails && panelCalculator && (
                 <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-semibold">Leftover Panels Details</h3>
-                            <button 
+                            <button
                                 onClick={() => setShowLeftoverDetails(false)}
                                 className="text-gray-500 hover:text-gray-700"
                             >
@@ -458,15 +351,13 @@ const PanelCalculationControls = ({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {panelCalculator.leftovers.map((leftover, index) => {
-                                        // Safely get panel length, with fallback
-                                        // First try leftover.panelLength, then find matching wall and use gap_fill_height if available
+                                    {sortedLeftovers.map((leftover, index) => {
                                         let panelLength = leftover.panelLength;
                                         if (!panelLength) {
-                                            const matchingWall = walls.find(w => w.thickness === leftover.wallThickness);
+                                            const matchingWall = walls.find((w) => w.thickness === leftover.wallThickness);
                                             if (matchingWall) {
-                                                panelLength = (matchingWall.fill_gap_mode && matchingWall.gap_fill_height) 
-                                                    ? matchingWall.gap_fill_height 
+                                                panelLength = (matchingWall.fill_gap_mode && matchingWall.gap_fill_height)
+                                                    ? matchingWall.gap_fill_height
                                                     : matchingWall.height;
                                             }
                                         }
@@ -476,7 +367,7 @@ const PanelCalculationControls = ({
                                         const wallThickness = leftover.wallThickness || 'N/A';
                                         const leftEdge = leftover.leftEdgeType === '45_cut' ? '45° Cut' : 'Straight';
                                         const rightEdge = leftover.rightEdgeType === '45_cut' ? '45° Cut' : (leftover.rightEdgeType || 'Straight');
-                                        
+
                                         return (
                                             <tr key={leftover.id} className="hover:bg-gray-50">
                                                 <td className="px-4 py-2 border text-center">{index + 1}</td>
@@ -518,7 +409,7 @@ const PanelCalculationControls = ({
                         <tbody>
                             {calculatedPanels.map((panel, index) => {
                                 const finishing = getPanelFinishingLabel(panel);
-                                
+
                                 return (
                                     <tr key={index} className="hover:bg-gray-50">
                                         <td className="px-4 py-2 border text-center">{index + 1}</td>
@@ -540,4 +431,4 @@ const PanelCalculationControls = ({
     );
 };
 
-export default PanelCalculationControls; 
+export default PanelCalculationControls;

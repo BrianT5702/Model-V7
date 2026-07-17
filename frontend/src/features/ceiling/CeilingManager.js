@@ -1924,17 +1924,9 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         setError(null);
         setRoomRegenerationSuccess(false);
 
-        console.log('🔄 Regenerating ceiling plan for room:', roomId);
-        console.log('📊 Configuration:', config);
-        console.log('🎯 Orientation Strategy from config:', config.orientationStrategy);
-        console.log('🎯 Global Orientation Strategy:', selectedOrientationStrategy);
-        console.log('🎯 Current roomEditConfig.orientationStrategy:', roomEditConfig.orientationStrategy);
-        console.log('🎯 Dropdown value should match config:', config.orientationStrategy === roomEditConfig.orientationStrategy);
-
         try {
             // Ensure roomId is an integer
             const normalizedRoomId = typeof roomId === 'string' ? parseInt(roomId, 10) : roomId;
-            console.log('🔍 [Room Generation] Normalized room ID:', normalizedRoomId, 'Type:', typeof normalizedRoomId);
             
             // Validate config values
             if (!config.orientationStrategy) {
@@ -2007,15 +1999,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 return;
             }
             
-            console.log('✅ [Room Generation] Room validation passed:', {
-                roomId: normalizedRoomId,
-                roomName: targetRoom.room_name,
-                pointCount: targetRoom.room_points.length,
-                config: roomSpecificConfig
-            });
-            
-            console.log('📤 [Room Generation] Sending request with room_specific_config:', roomSpecificConfig);
-            
             // Send room-specific configuration to backend
             const response = await api.post('/ceiling-plans/generate_enhanced_ceiling_plan/', {
                 project_id: parseInt(projectId),
@@ -2035,29 +2018,21 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 // Room-specific configuration - ONLY this room will use these settings
                 room_specific_config: roomSpecificConfig
             });
-            
-            console.log('✅ API Response:', response.data);
 
             // Check if we have the expected data structure
             // Backend returns: enhanced_panels, ceiling_plans, strategy_used, etc.
             if (response.data.enhanced_panels || response.data.ceiling_plans) {
-                console.log('✅ Ceiling plan generated successfully');
-                
-                // The backend returns enhanced_panels (with room assignments)
                 const newPanels = response.data.enhanced_panels || [];
-                console.log(`📦 Received ${newPanels.length} panels`);
                 
                 // NEW: cache project-wide waste percentage for immediate UI update
                 if (response?.data?.summary?.project_waste_percentage !== undefined && response?.data?.summary?.project_waste_percentage !== null) {
                     setProjectWastePercentage(response.data.summary.project_waste_percentage);
-                    console.log('📊 [UI] Cached project-wide waste % from POST:', response.data.summary.project_waste_percentage);
                 }
                 
                 // Update ceiling plan (take the first one or the one for this room)
                 if (response.data.ceiling_plans && response.data.ceiling_plans.length > 0) {
                     // Update ceilingPlans array for multi-room mode
                     setCeilingPlans(response.data.ceiling_plans);
-                    console.log(`✅ [Room Generation] Updated ceilingPlans array with ${response.data.ceiling_plans.length} plan(s)`);
                     
                     // Try to find the ceiling plan for the selected room
                     const roomCeilingPlan = response.data.ceiling_plans.find(cp => cp.room_id === roomId);
@@ -2077,10 +2052,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 
                 // Reload the room data FIRST to get updated ceiling plan details
                 // This ensures CeilingCanvas has the latest room.ceiling_plan relationship
-                console.log('🔄 [Room Generation] Reloading room data...');
                 const roomsResponse = await api.get(`/rooms/?project=${parseInt(projectId)}`);
                 setAllRooms(roomsResponse.data || []);
-                console.log('✅ [Room Generation] Room data reloaded with updated ceiling_plan relationships');
                 
                 // Reload project data to ensure we have the latest data
                 await new Promise(resolve => setTimeout(resolve, 600));
@@ -2104,8 +2077,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                     });
                 }
                 
-                console.log('✅ [Room Generation] State updated successfully');
-                
                 // Persist the config we just applied to the per-room cache so it is not lost when switching rooms.
                 // (Backend response may not include face materials; we keep exactly what the user applied.)
                 const roomKey = normalizeRoomKey(roomId);
@@ -2124,7 +2095,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                         customPanelLength: updatedRoom.ceiling_plan.custom_panel_length ?? prev.customPanelLength,
                         orientationStrategy: updatedRoom.ceiling_plan.orientation_strategy ?? prev.orientationStrategy
                     }));
-                    console.log('✅ Room edit config updated with new values from database');
                 }
                 
                 // Show success message
@@ -2141,7 +2111,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             setError(errorMessage);
             setIsZonesUpdating(false);
         } finally {
-            console.log('🏁 Finished regeneration process');
             setIsRegeneratingRoom(false);
         }
     };
@@ -2187,7 +2156,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 // Update ceilingPlans array for multi-room mode
                 if (response.data.ceiling_plans && Array.isArray(response.data.ceiling_plans)) {
                     setCeilingPlans(response.data.ceiling_plans);
-                    console.log(`✅ [Full Generate] Updated ceilingPlans array with ${response.data.ceiling_plans.length} plan(s)`);
                 }
                 
                 setCeilingPlan(response.data);
@@ -2208,7 +2176,6 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 }
                 if (response?.data?.summary?.project_waste_percentage !== undefined && response?.data?.summary?.project_waste_percentage !== null) {
                     setProjectWastePercentage(response.data.summary.project_waste_percentage);
-                    console.log('📊 [UI] Cached project-wide waste % from POST (full generate):', response.data.summary.project_waste_percentage);
                 }
                 clearRegenerationFlag(); // Clear the regeneration flag
                 await new Promise(resolve => setTimeout(resolve, 600));

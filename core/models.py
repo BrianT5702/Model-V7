@@ -680,7 +680,7 @@ class CeilingPlan(models.Model):
             import logging
             logger = logging.getLogger(__name__)
             stats = leftover_tracker.get_stats()
-            logger.info(f"Ceiling - Leftover stats: {stats['leftovers_created']} created, "
+            logger.debug(f"Ceiling - Leftover stats: {stats['leftovers_created']} created, "
                        f"{stats['leftovers_reused']} reused, "
                        f"{stats['full_panels_saved']} panels saved")
         

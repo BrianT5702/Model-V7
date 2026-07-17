@@ -54,7 +54,7 @@ export function sortMaterialPanels(panels) {
         const thkA = Number(a?.thickness) || 0;
         const thkB = Number(b?.thickness) || 0;
         if (thkA !== thkB) {
-            return thkA - thkB;
+            return thkB - thkA; // thicker first
         }
 
         const widthA = Number(a?.width) || 0;
@@ -155,7 +155,7 @@ export function buildWallPanelsMapForWallPlan(walls, intersections) {
     walls.forEach((wall) => {
         if (!wall || typeof wall.start_x !== 'number' || typeof wall.end_x !== 'number') return;
 
-        const wallLength = Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y);
+        const wallLength = Math.round(Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y));
         const jointTypes = getWallJointTypes(wall, intersections);
         const heightForCalc =
             wall.fill_gap_mode && wall.gap_fill_height != null ? wall.gap_fill_height : wall.height;

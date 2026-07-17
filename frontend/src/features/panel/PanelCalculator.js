@@ -24,9 +24,20 @@ class PanelCalculator {
 
     // Add new method to clean up leftover panels
     cleanupLeftovers() {
-        this.leftovers = this.leftovers.filter(leftover => 
-            leftover.longer_face > 0 && leftover.shorter_face > 0
-        );
+        this.leftovers = this.leftovers.filter((leftover) => {
+            const wallThickness = Number(leftover.wallThickness) || 0;
+            return (
+                leftover.longer_face > 0 &&
+                leftover.shorter_face > 0 &&
+                leftover.longer_face >= wallThickness
+            );
+        });
+    }
+
+    splitLengthPair(totalLength) {
+        const total = Math.round(totalLength);
+        const first = Math.floor(total / 2);
+        return [first, total - first];
     }
 
     // Enhanced panel calculation with 45-degree cut handling and 20mm optimization
@@ -47,6 +58,7 @@ class PanelCalculator {
         };
         
         const panels = [];
+        wallLength = Math.round(wallLength);
         let remainingLength = wallLength;
         
         // Determine threshold and minimum panel width based on wall height
@@ -85,7 +97,7 @@ class PanelCalculator {
                     // Use the actual width of the last panel (could be 1150mm or 1130mm if optimized)
                     const lastPanelActualWidth = lastFullPanel.actualWidth || lastFullPanel.width;
                     const totalLengthToSplit = lastPanelActualWidth + remainingLength;
-                    const halfLength = Math.floor(totalLengthToSplit / 2);
+                    const [halfLength, secondHalfLength] = this.splitLengthPair(totalLengthToSplit);
                     
                     // console.log(`- Last panel actual width: ${lastPanelActualWidth}mm`);
                     // console.log(`- Total length to split: ${totalLengthToSplit}mm`);
@@ -100,7 +112,7 @@ class PanelCalculator {
                             jointType.left
                         );
                         const secondSidePanel = this.createSidePanelWithCut(
-                            totalLengthToSplit - halfLength, 
+                            secondHalfLength, 
                             wallThickness, 
                             'right',
                             jointType.right
@@ -126,7 +138,7 @@ class PanelCalculator {
                             jointType
                         );
                         const secondSidePanel = this.createSidePanelWithCut(
-                            totalLengthToSplit - halfLength, 
+                            secondHalfLength, 
                             wallThickness, 
                             'right',
                             jointType
@@ -245,8 +257,8 @@ class PanelCalculator {
                 }
             } else {
                 // console.log(`- Remaining length > threshold (${threshold}mm), splitting into two side panels`);
-                const halfLength = Math.floor(remainingLength / 2);
-                // console.log(`- Split lengths: ${halfLength}mm and ${remainingLength - halfLength}mm`);
+                const [halfLength, secondHalfLength] = this.splitLengthPair(remainingLength);
+                // console.log(`- Split lengths: ${halfLength}mm and ${secondHalfLength}mm`);
                 
                 if (typeof jointType === 'object') {
                     const firstSidePanel = this.createSidePanelWithCut(
@@ -256,7 +268,7 @@ class PanelCalculator {
                         jointType.left  // Pass the actual joint type
                     );
                     const secondSidePanel = this.createSidePanelWithCut(
-                        remainingLength - halfLength, 
+                        secondHalfLength, 
                         wallThickness, 
                         'right',
                         jointType.right  // Pass the actual joint type
@@ -270,7 +282,7 @@ class PanelCalculator {
                         jointType  // Pass the actual joint type
                     );
                     const secondSidePanel = this.createSidePanelWithCut(
-                        remainingLength - halfLength, 
+                        secondHalfLength, 
                         wallThickness, 
                         jointType,
                         jointType  // Pass the actual joint type
@@ -362,6 +374,7 @@ class PanelCalculator {
     }
 
     createSidePanelWithCut(width, wallThickness, position, jointType) {
+        width = Math.round(width);
         // console.log(`\nCreating side panel:`);
         // console.log(`- Width: ${width}mm`);
         // console.log(`- Wall thickness: ${wallThickness}mm`);
@@ -571,6 +584,7 @@ class PanelCalculator {
     }
 
     createSidePanel(width, position, jointType) {
+        width = Math.round(width);
         this.panelAnalysis.totalCutPanels++;
         this.panelAnalysis.totalPanels++;
         return {
@@ -583,6 +597,7 @@ class PanelCalculator {
     }
 
     createPanelFromLeftover(leftover, width, position, jointType) {
+        width = Math.round(width);
         this.panelAnalysis.totalLeftoverPanels++;
         this.panelAnalysis.totalPanels++;
         return {
@@ -606,6 +621,29 @@ class PanelCalculator {
                 totalPanels: this.panelAnalysis.totalPanels,
                 fullPanelsUsedForCutting: this.panelAnalysis.fullPanelsUsedForCutting
             }
+        };
+    }
+
+    /**
+     * Lower score = less waste. Used when comparing wall processing orders.
+     */
+    getOptimizationScore() {
+        const leftoverArea = this.leftovers.reduce((sum, leftover) => {
+            const faceWidth = Math.max(leftover.longer_face || 0, leftover.shorter_face || 0);
+            const panelLength = leftover.panelLength || this.currentWallHeight || 0;
+            return sum + (faceWidth * panelLength);
+        }, 0);
+
+        const usableLeftoverCount = this.leftovers.filter((leftover) =>
+            (leftover.longer_face || 0) >= 50 && (leftover.shorter_face || 0) >= 50
+        ).length;
+
+        return {
+            fullPanelsUsedForCutting: this.panelAnalysis.fullPanelsUsedForCutting,
+            leftoverReused: this.panelAnalysis.totalLeftoverPanels,
+            leftoverArea,
+            usableLeftoverCount,
+            totalPanels: this.panelAnalysis.totalPanels,
         };
     }
 

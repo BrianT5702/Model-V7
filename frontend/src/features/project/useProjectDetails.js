@@ -2237,6 +2237,26 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   };
 
   // Add this function to handle wall updates
+  const prepareWallPayloadForSave = (wall) => {
+    const payload = { ...wall };
+    if (
+      payload.start_x != null &&
+      payload.start_y != null &&
+      payload.end_x != null &&
+      payload.end_y != null
+    ) {
+      const normalizedCoords = normalizeWallCoordinates(
+        { x: payload.start_x, y: payload.start_y },
+        { x: payload.end_x, y: payload.end_y }
+      );
+      payload.start_x = normalizedCoords.startPoint.x;
+      payload.start_y = normalizedCoords.startPoint.y;
+      payload.end_x = normalizedCoords.endPoint.x;
+      payload.end_y = normalizedCoords.endPoint.y;
+    }
+    return payload;
+  };
+
   const handleWallUpdate = async (updatedWall) => {
     try {
       if (updatedWall.height <= 0 || updatedWall.thickness <= 0) {
@@ -2244,7 +2264,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         return;
       }
       await commitHistoryAction('Update wall', async () => {
-        const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
+        const response = await api.put(`/walls/${updatedWall.id}/`, prepareWallPayloadForSave(updatedWall));
         const updatedWallData = response.data;
         setWalls(prevWalls =>
           prevWalls.map(wall =>
@@ -2265,7 +2285,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         return;
       }
       await commitHistoryAction('Update wall', async () => {
-        const response = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
+        const response = await api.put(`/walls/${updatedWall.id}/`, prepareWallPayloadForSave(updatedWall));
         const updatedWallData = response.data;
         setWalls(prevWalls =>
           prevWalls.map(wall =>
@@ -2503,7 +2523,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       return;
     }
 
-    const roundValue = (value) => Number(Number(value).toFixed(3));
+    const roundValue = (value) => Math.round(value);
     const projectIdForWall = project?.id ?? targetWall.project ?? projectId;
     const optionalWallFields = [
       'inner_face_color',

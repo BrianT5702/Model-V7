@@ -887,34 +887,41 @@ function doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, off
 // Ensures horizontal walls are created from left to right
 // and vertical walls are created from top to bottom
 export function normalizeWallCoordinates(startPoint, endPoint) {
-    const dx = endPoint.x - startPoint.x;
-    const dy = endPoint.y - startPoint.y;
+    const roundPoint = (point) => ({
+        x: Math.round(point.x),
+        y: Math.round(point.y)
+    });
+    const start = roundPoint(startPoint);
+    const end = roundPoint(endPoint);
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
     
     // Determine if wall is horizontal or vertical
     const isHorizontal = Math.abs(dy) < Math.abs(dx);
     
     if (isHorizontal) {
         // For horizontal walls, ensure start_x < end_x (left to right)
-        if (startPoint.x > endPoint.x) {
+        if (start.x > end.x) {
             return {
-                startPoint: { x: endPoint.x, y: endPoint.y },
-                endPoint: { x: startPoint.x, y: startPoint.y }
+                startPoint: { x: end.x, y: end.y },
+                endPoint: { x: start.x, y: start.y }
             };
         }
     } else {
         // For vertical walls, ensure start_y < end_y (top to bottom)
-        if (startPoint.y > endPoint.y) {
+        if (start.y > end.y) {
             return {
-                startPoint: { x: endPoint.x, y: endPoint.y },
-                endPoint: { x: startPoint.x, y: startPoint.y }
+                startPoint: { x: end.x, y: end.y },
+                endPoint: { x: start.x, y: start.y }
             };
         }
     }
     
     // No change needed
     return {
-        startPoint: { x: startPoint.x, y: startPoint.y },
-        endPoint: { x: endPoint.x, y: endPoint.y }
+        startPoint: { x: start.x, y: start.y },
+        endPoint: { x: end.x, y: end.y }
     };
 }
 

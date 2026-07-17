@@ -15,6 +15,79 @@ except ImportError:  # pragma: no cover - Shapely should be available via requir
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_CEILING_FACE_MATERIAL = 'PPGI'
+DEFAULT_CEILING_FACE_THICKNESS = 0.5
+
+
+def _normalize_ceiling_panel_settings(panel_settings=None):
+    """Normalize ceiling leftover identity fields (faces + sheet thicknesses)."""
+    src = panel_settings or {}
+    try:
+        inner_thk = float(src.get('inner_face_thickness', DEFAULT_CEILING_FACE_THICKNESS))
+    except (TypeError, ValueError):
+        inner_thk = DEFAULT_CEILING_FACE_THICKNESS
+    try:
+        outer_thk = float(src.get('outer_face_thickness', DEFAULT_CEILING_FACE_THICKNESS))
+    except (TypeError, ValueError):
+        outer_thk = DEFAULT_CEILING_FACE_THICKNESS
+    return {
+        'inner_face_material': str(src.get('inner_face_material') or DEFAULT_CEILING_FACE_MATERIAL),
+        'inner_face_thickness': inner_thk,
+        'outer_face_material': str(src.get('outer_face_material') or DEFAULT_CEILING_FACE_MATERIAL),
+        'outer_face_thickness': outer_thk,
+    }
+
+
+def _ceiling_face_thickness_eq(a, b, tol=0.001):
+    try:
+        return abs(float(a) - float(b)) <= tol
+    except (TypeError, ValueError):
+        return False
+
+
+def _ceiling_panel_settings_match(leftover, needed_settings):
+    """True when leftover and needed share the same face materials/thicknesses."""
+    if not needed_settings:
+        return True
+    needed = _normalize_ceiling_panel_settings(needed_settings)
+    return (
+        str(leftover.get('inner_face_material') or DEFAULT_CEILING_FACE_MATERIAL) == needed['inner_face_material']
+        and str(leftover.get('outer_face_material') or DEFAULT_CEILING_FACE_MATERIAL) == needed['outer_face_material']
+        and _ceiling_face_thickness_eq(
+            leftover.get('inner_face_thickness', DEFAULT_CEILING_FACE_THICKNESS),
+            needed['inner_face_thickness'],
+        )
+        and _ceiling_face_thickness_eq(
+            leftover.get('outer_face_thickness', DEFAULT_CEILING_FACE_THICKNESS),
+            needed['outer_face_thickness'],
+        )
+    )
+
+
+def _iter_polygonal_parts(geom, min_area=100.0):
+    """Yield Polygon parts from a Shapely intersection result.
+
+    Grid cells that cross notches/voids in concave rooms often produce a
+    MultiPolygon. Callers must emit one panel per part so smaller regions
+    are not dropped when only the largest piece was kept previously.
+    """
+    if geom is None or geom.is_empty:
+        return
+    geom_type = getattr(geom, 'geom_type', None)
+    if geom_type == 'Polygon':
+        if geom.area > min_area:
+            yield geom
+        return
+    if geom_type == 'MultiPolygon':
+        for part in geom.geoms:
+            if part.area > min_area:
+                yield part
+        return
+    if geom_type == 'GeometryCollection':
+        for sub in geom.geoms:
+            yield from _iter_polygonal_parts(sub, min_area)
+
+
 class LeftoverTracker:
     """
     Tracks leftover panels from cutting operations for reuse in ceiling and floor plans.
@@ -34,7 +107,7 @@ class LeftoverTracker:
             'total_leftover_area': 0.0
         }
     
-    def add_leftover(self, length, thickness, width_remaining):
+    def add_leftover(self, length, thickness, width_remaining, panel_settings=None):
         """
         Add a leftover panel to the tracker.
         
@@ -42,6 +115,9 @@ class LeftoverTracker:
             length: Panel length in mm (e.g., 5000mm)
             thickness: Panel thickness in mm (e.g., 150mm)
             width_remaining: Remaining width after cut in mm (e.g., 550mm from 1150mm)
+            panel_settings: Optional ceiling identity dict. When provided, leftovers
+                may only be reused by panels with the same ceiling thickness (via
+                `thickness`) and the same inner/outer face material + sheet thickness.
         """
         if width_remaining > 0:
             leftover = {
@@ -49,17 +125,30 @@ class LeftoverTracker:
                 'length': length,
                 'thickness': thickness,
                 'width': width_remaining,
-                'created_at': time.time()
+                'created_at': time.time(),
+                'has_ceiling_settings': panel_settings is not None,
             }
+            if panel_settings is not None:
+                leftover.update(_normalize_ceiling_panel_settings(panel_settings))
             self.leftovers.append(leftover)
             self.stats['leftovers_created'] += 1
             self.stats['total_leftover_area'] += length * width_remaining
             
             # Log with context prefix
             prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
-            logger.info(f"{prefix} Leftover created: {width_remaining}mm × {length}mm (thickness: {thickness}mm)")
+            face_info = ""
+            if panel_settings is not None:
+                s = _normalize_ceiling_panel_settings(panel_settings)
+                face_info = (
+                    f", faces: inner {s['inner_face_material']}/{s['inner_face_thickness']}mm, "
+                    f"outer {s['outer_face_material']}/{s['outer_face_thickness']}mm"
+                )
+            logger.debug(
+                f"{prefix} Leftover created: {width_remaining}mm × {length}mm "
+                f"(thickness: {thickness}mm{face_info})"
+            )
     
-    def find_compatible_leftover(self, needed_width, needed_length, needed_thickness):
+    def find_compatible_leftover(self, needed_width, needed_length, needed_thickness, panel_settings=None):
         """
         Find a compatible leftover panel that can be used.
         
@@ -67,6 +156,8 @@ class LeftoverTracker:
             needed_width: Required panel width in mm
             needed_length: Required panel length in mm
             needed_thickness: Required panel thickness in mm
+            panel_settings: Optional ceiling face settings. When provided, leftover
+                must match inner/outer face material and sheet thickness as well.
             
         Returns:
             Compatible leftover dict or None
@@ -77,10 +168,20 @@ class LeftoverTracker:
             if (leftover['length'] >= needed_length and 
                 leftover['thickness'] == needed_thickness and 
                 leftover['width'] >= needed_width):
+
+                # Ceiling leftovers: require same face materials/thicknesses.
+                if panel_settings is not None:
+                    if not leftover.get('has_ceiling_settings'):
+                        continue
+                    if not _ceiling_panel_settings_match(leftover, panel_settings):
+                        continue
+                elif leftover.get('has_ceiling_settings'):
+                    # Floor/legacy callers should not consume ceiling-tagged leftovers.
+                    continue
                 
                 prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
-                logger.info(f"{prefix} Compatible leftover found: {leftover['width']}mm × {leftover['length']}mm "
-                           f"(needed: {needed_width}mm × {needed_length}mm)")
+                logger.debug(f"{prefix} Compatible leftover found: {leftover['width']}mm × {leftover['length']}mm "
+                             f"(needed: {needed_width}mm × {needed_length}mm)")
                 return leftover
         
         return None
@@ -96,8 +197,8 @@ class LeftoverTracker:
         remaining_width = leftover['width'] - width_used
         
         prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
-        logger.info(f"{prefix} Using leftover {leftover['id']}: {width_used}mm from {leftover['width']}mm, "
-                   f"remaining: {remaining_width}mm")
+        logger.debug(f"{prefix} Using leftover {leftover['id']}: {width_used}mm from {leftover['width']}mm, "
+                     f"remaining: {remaining_width}mm")
         
         if remaining_width > 0:
             # Update leftover width
@@ -106,7 +207,7 @@ class LeftoverTracker:
             # Leftover fully used, remove it
             self.leftovers.remove(leftover)
             prefix = f"[{self.context}]" if self.context != 'ACTUAL' else "[GENERATION]"
-            logger.info(f"{prefix} Leftover {leftover['id']} fully consumed")
+            logger.debug(f"{prefix} Leftover {leftover['id']} fully consumed")
         
         self.stats['leftovers_reused'] += 1
         self.stats['full_panels_saved'] += 1  # Each leftover use saves a full panel cut
@@ -118,7 +219,7 @@ class LeftoverTracker:
         after_count = len(self.leftovers)
         
         if before_count != after_count:
-            logger.info(f"Cleaned up {before_count - after_count} exhausted leftovers")
+            logger.debug(f"Cleaned up {before_count - after_count} exhausted leftovers")
     
     def get_stats(self):
         """Get statistics about leftover usage."""
@@ -142,9 +243,15 @@ class LeftoverTracker:
 def normalize_wall_coordinates(start_x, start_y, end_x, end_y):
     """
     Normalize wall coordinates to ensure:
+    - All coordinates are rounded to whole millimeters
     - Horizontal walls are created from left to right (start_x < end_x)
     - Vertical walls are created from top to bottom (start_y < end_y)
     """
+    start_x = round(float(start_x))
+    start_y = round(float(start_y))
+    end_x = round(float(end_x))
+    end_y = round(float(end_y))
+
     dx = end_x - start_x
     dy = end_y - start_y
     
@@ -1764,25 +1871,25 @@ class FloorService:
                 curr_x = minx
                 while curr_x < maxx - 1.0:
                     p_end_x, p_end_y = curr_x + p_width, curr_y + p_height
-                    isValid, is_cut, from_leftover = False, False, False
-                    cut_notes = ""
-                    
+
                     if room_poly:
                         from shapely.geometry import box
                         # 1. TEMPORARY GRID BOX
                         grid_poly = box(curr_x, curr_y, p_end_x, p_end_y)
                         intersection = room_poly.intersection(grid_poly)
-                        
-                        if not intersection.is_empty and intersection.area > 500.0:
-                            isValid = True
-                            i_minx, i_miny, i_maxx, i_maxy = intersection.bounds
-                            
-                            # 2. DEFINE THE ACTUAL PANEL ENVELOPE (The cut size)
+
+                        # Concave rooms can split one grid cell into several polygons;
+                        # emit one floor panel per part (do not keep only the largest).
+                        for part in _iter_polygonal_parts(intersection, min_area=500.0):
+                            is_cut, from_leftover = False, False
+                            cut_notes = ""
+                            i_minx, i_miny, i_maxx, i_maxy = part.bounds
+
                             final_draw_width = i_maxx - i_minx
                             final_draw_length = i_maxy - i_miny
-                            
-                            # 3. CREATE A TIGHT PANEL BOX (This is the fix)
-                            # We create a box that matches the standard width but ONLY the cut length
+                            if final_draw_width < 5 or final_draw_length < 5:
+                                continue
+
                             if orientation == 'vertical':
                                 p_poly = box(curr_x, i_miny, p_end_x, i_maxy)
                                 standard_dim = p_width
@@ -1792,46 +1899,35 @@ class FloorService:
                                 standard_dim = p_height
                                 check_dim = final_draw_length
 
-                            # Cut Detection
                             rect_area = final_draw_width * final_draw_length
-                            is_rectangular = (intersection.area / rect_area) > 0.98
+                            is_rectangular = rect_area > 0 and (part.area / rect_area) > 0.98
                             is_full_standard = check_dim >= (standard_dim - 2.0)
 
                             shape_points = []
                             if not is_rectangular:
                                 is_cut = True
                                 cut_notes = "Shape Fit (L-Cut)"
-                                # Extract exact polygon for L-shaped / irregular cuts
-                                if intersection.geom_type == 'Polygon':
-                                    shape_points = [
-                                        {'x': float(x), 'y': float(y)}
-                                        for x, y in intersection.exterior.coords
-                                    ]
-                                elif intersection.geom_type == 'MultiPolygon':
-                                    largest = max(intersection.geoms, key=lambda a: a.area)
-                                    shape_points = [
-                                        {'x': float(x), 'y': float(y)}
-                                        for x, y in largest.exterior.coords
-                                    ]
+                                shape_points = [
+                                    {'x': float(x), 'y': float(y)}
+                                    for x, y in part.exterior.coords
+                                ]
                             elif not is_full_standard:
                                 is_cut = True
                                 cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
 
-                            # --- LEFTOVER TRACKING ---
                             if leftover_tracker and is_cut:
-                                # PHYSICAL DIFFERENCE using the tight box
-                                waste_poly = p_poly.difference(intersection)
+                                waste_poly = p_poly.difference(part)
                                 if not waste_poly.is_empty:
                                     waste_geoms = waste_poly.geoms if hasattr(waste_poly, 'geoms') else [waste_poly]
-                                    for part in waste_geoms:
-                                        if part.area > 5000.0:
-                                            w_minx, w_miny, w_maxx, w_maxy = part.bounds
+                                    for scrap in waste_geoms:
+                                        if scrap.area > 5000.0:
+                                            w_minx, w_miny, w_maxx, w_maxy = scrap.bounds
                                             scrap_w = w_maxx - w_minx if orientation == 'vertical' else w_maxy - w_miny
                                             scrap_l = w_maxy - w_miny if orientation == 'vertical' else w_maxx - w_minx
-                                            
+
                                             if scrap_w > 50.0:
                                                 leftover_tracker.add_leftover(scrap_l, floor_thickness, scrap_w)
-                                
+
                             panels.append({
                                 'panel_id': f'FP_{panel_counter:03d}',
                                 'start_x': i_minx, 'start_y': i_miny,
@@ -2722,6 +2818,53 @@ class CeilingService:
     DEFAULT_PANEL_WIDTH = 1150  # Default panel width in mm
     DEFAULT_PANEL_LENGTH = 'auto'  # Default panel length (auto = project length)
     DEFAULT_WALL_THICKNESS = 150  # Default wall thickness in mm
+
+    @staticmethod
+    def _resolve_ceiling_panel_settings(room=None, room_config=None):
+        """Resolve inner/outer face settings used for leftover identity matching."""
+        from .models import CeilingPanel
+
+        inner_mat = None
+        inner_thk = None
+        outer_mat = None
+        outer_thk = None
+
+        if room_config:
+            inner_mat = room_config.get('inner_face_material')
+            inner_thk = room_config.get('inner_face_thickness')
+            outer_mat = room_config.get('outer_face_material')
+            outer_thk = room_config.get('outer_face_thickness')
+
+        if room is not None and (
+            inner_mat is None or outer_mat is None or inner_thk is None or outer_thk is None
+        ):
+            existing_panel = CeilingPanel.objects.filter(room=room).first()
+            if existing_panel:
+                if inner_mat is None:
+                    inner_mat = getattr(existing_panel, 'inner_face_material', None)
+                if inner_thk is None:
+                    inner_thk = getattr(existing_panel, 'inner_face_thickness', None)
+                if outer_mat is None:
+                    outer_mat = getattr(existing_panel, 'outer_face_material', None)
+                if outer_thk is None:
+                    outer_thk = getattr(existing_panel, 'outer_face_thickness', None)
+
+        if room is not None:
+            if inner_mat is None:
+                inner_mat = getattr(room, 'inner_face_material', None)
+            if inner_thk is None:
+                inner_thk = getattr(room, 'inner_face_thickness', None)
+            if outer_mat is None:
+                outer_mat = getattr(room, 'outer_face_material', None)
+            if outer_thk is None:
+                outer_thk = getattr(room, 'outer_face_thickness', None)
+
+        return _normalize_ceiling_panel_settings({
+            'inner_face_material': inner_mat,
+            'inner_face_thickness': inner_thk,
+            'outer_face_material': outer_mat,
+            'outer_face_thickness': outer_thk,
+        })
     
     @staticmethod
     def get_cut_l_default_horizontal_extension(wall_thickness):
@@ -3048,7 +3191,7 @@ class CeilingService:
         
         # Only update if different
         if abs(wall.height - new_height) > 0.1:  # Allow small floating point differences
-            logger.info(f"Adjusting wall {wall.id} height for AA11: {wall.height}mm -> {new_height}mm (room height {room.height}mm - ceiling {ceiling_thickness}mm)")
+            logger.debug(f"Adjusting wall {wall.id} height for AA11: {wall.height}mm -> {new_height}mm (room height {room.height}mm - ceiling {ceiling_thickness}mm)")
             wall.height = new_height
             wall.save()
             return True
@@ -3117,11 +3260,11 @@ class CeilingService:
         import logging
         
         logger = logging.getLogger(__name__)
-        logger.info(f"Generating ceiling plan for room {room_id}")
+        logger.debug(f"Generating ceiling plan for room {room_id}")
         
         try:
             room = Room.objects.get(id=room_id)
-            logger.info(f"Found room: {room.room_name}")
+            logger.debug(f"Found room: {room.room_name}")
 
             if getattr(room, 'exclude_from_ceiling', False):
                 raise ValueError(f'Room "{room.room_name}" is marked as not requiring a ceiling.')
@@ -3142,7 +3285,7 @@ class CeilingService:
             
             # Calculate room bounding box
             bounding_box = CeilingService._calculate_room_bounding_box(room.room_points)
-            logger.info(f"Room bounding box: {bounding_box}")
+            logger.debug(f"Room bounding box: {bounding_box}")
             
             # Create leftover tracker for this ceiling plan
             ceiling_leftover_tracker = LeftoverTracker(context='GENERATION')
@@ -3151,7 +3294,7 @@ class CeilingService:
             # Generate optimal panel layout with leftover tracking
             # Note: _generate_panel_layout calls _generate_shape_aware_panels internally
             panels = CeilingService._generate_panel_layout(bounding_box, room.room_points, 1150, 'auto', ceiling_leftover_tracker, ceiling_thickness)
-            logger.info(f"Generated {len(panels)} panels")
+            logger.debug(f"Generated {len(panels)} panels")
             
             # Calculate total area from room points
             total_area = CeilingService._calculate_room_area(room.room_points)
@@ -3217,7 +3360,7 @@ class CeilingService:
             
             # Update ceiling plan statistics with leftover tracker
             ceiling_plan.update_statistics(ceiling_leftover_tracker)
-            logger.info(f"Successfully created ceiling plan with {len(created_panels)} panels (geometry shapes stored)")
+            logger.info(f"Created ceiling plan for room {room_id} with {len(created_panels)} panels")
             
             return ceiling_plan
             
@@ -3940,7 +4083,8 @@ class CeilingService:
                     'points': room.room_points,
                     'area': room_area,
                     'center': CeilingService._calculate_room_center(room.room_points),
-                    'bounding_box': CeilingService._calculate_room_bounding_box(room.room_points)
+                    'bounding_box': CeilingService._calculate_room_bounding_box(room.room_points),
+                    'panel_settings': CeilingService._resolve_ceiling_panel_settings(room=room),
                 }
                 
                 height_groups[room_height]['rooms'].append(room_info)
@@ -4456,7 +4600,7 @@ class CeilingService:
         
         # For performance: use exhaustive search for <= 10 rooms, greedy heuristic for larger projects
         if num_rooms <= 10:
-            logger.info(f"GLOBAL OPTIMIZATION: Testing all {2**num_rooms} combinations for {num_rooms} rooms")
+            logger.debug(f"GLOBAL OPTIMIZATION: Testing all {2**num_rooms} combinations for {num_rooms} rooms")
             
             best_combo = None
             best_leftover_area = float('inf')
@@ -4481,12 +4625,12 @@ class CeilingService:
                     best_result = result
                     
                     combo_str = ', '.join([f"{rooms[j]['name']}:{o[0].upper()}" for j, o in enumerate(orientation_combo)])
-                    logger.info(f"  New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
+                    logger.debug(f"  New best found (combo {i+1}/{len(all_combos)}): {combo_str} > Waste: {leftover_area:,.0f} mm²")
             
             # Log the final best combination
             best_combo_str = ', '.join([f"{rooms[j]['name']}:{o[0].upper()}" for j, o in enumerate(best_combo)])
             waste_pct = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
-            logger.info(f"GLOBAL OPTIMAL FOUND: {best_combo_str} > Project Waste: {waste_pct:.2f}%")
+            logger.debug(f"GLOBAL OPTIMAL FOUND: {best_combo_str} > Project Waste: {waste_pct:.2f}%")
             
             # Calculate waste percentage
             leftover_waste_percentage = (best_leftover_area / best_result['total_room_area'] * 100) if best_result['total_room_area'] > 0 else 0
@@ -4502,7 +4646,7 @@ class CeilingService:
         
         else:
             # For large projects (>10 rooms), use improved greedy heuristic with look-ahead
-            logger.info(f"⚡ GREEDY HEURISTIC: Using smart greedy for {num_rooms} rooms (too many for exhaustive search)")
+            logger.debug(f"⚡ GREEDY HEURISTIC: Using smart greedy for {num_rooms} rooms (too many for exhaustive search)")
             
             total_panels = 0
             total_waste_area = 0.0
@@ -4632,19 +4776,33 @@ class CeilingService:
         """Generate panels for a room with specific orientation with leftover tracking"""
         try:
             bounding_box = room_info['bounding_box']
+            panel_settings = room_info.get('panel_settings')
+            if panel_settings is None:
+                panel_settings = _normalize_ceiling_panel_settings({
+                    'inner_face_material': room_info.get('inner_face_material'),
+                    'inner_face_thickness': room_info.get('inner_face_thickness'),
+                    'outer_face_material': room_info.get('outer_face_material'),
+                    'outer_face_thickness': room_info.get('outer_face_thickness'),
+                })
             
             if orientation == 'vertical':
                 # Vertical orientation: panels run up and down (vertical strips)
-                return CeilingService._generate_horizontal_panels(bounding_box, room_info['points'], panel_width, panel_length, leftover_tracker, ceiling_thickness)
+                return CeilingService._generate_horizontal_panels(
+                    bounding_box, room_info['points'], panel_width, panel_length,
+                    leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
+                )
             else:
                 # Horizontal orientation: panels run left to right (horizontal strips)
-                return CeilingService._generate_vertical_panels(bounding_box, room_info['points'], panel_width, panel_length, leftover_tracker, ceiling_thickness)
+                return CeilingService._generate_vertical_panels(
+                    bounding_box, room_info['points'], panel_width, panel_length,
+                    leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
+                )
                 
         except Exception as e:
             return []
 
     @staticmethod
-    def _generate_vertical_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+    def _generate_vertical_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, panel_settings=None):
         """Generate panels that run left to right (horizontal strips) - used for horizontal orientation with leftover tracking"""
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
@@ -4665,13 +4823,14 @@ class CeilingService:
         
         # Use advanced L-shaped room aware algorithm with room-specific bounding box
         panels = CeilingService._generate_shape_aware_panels(
-            room_bounding_box, room_points, 'horizontal', max_panel_width, panel_length, leftover_tracker, ceiling_thickness
+            room_bounding_box, room_points, 'horizontal', max_panel_width, panel_length,
+            leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
         )
         
         return panels
 
     @staticmethod
-    def _generate_horizontal_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+    def _generate_horizontal_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, panel_settings=None):
         """Generate panels that run up and down (vertical strips) - used for vertical orientation with leftover tracking"""
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
@@ -4681,23 +4840,28 @@ class CeilingService:
         
         # Use advanced L-shaped room aware algorithm with room-specific bounding box
         panels = CeilingService._generate_shape_aware_panels(
-            room_bounding_box, room_points, 'vertical', max_panel_width, panel_length, leftover_tracker, ceiling_thickness
+            room_bounding_box, room_points, 'vertical', max_panel_width, panel_length,
+            leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
         )
         
         return panels
 
     @staticmethod
-    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, cut_l_offset=0.0):
+    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, cut_l_offset=0.0, panel_settings=None):
         """
         Final Generator v11 (Exact Shape Transmission):
         - Calculates the intersection (L-Shape or Rect) including the cut_l gap.
         - Extracts the EXACT polygon vertices from Shapely.
         - Returns 'shape_points' which will be saved to the database.
+        - Leftover reuse requires matching ceiling thickness + face materials/thicknesses
+          when panel_settings is provided.
         """
         try:
             panels = []
             import math
-            
+            normalized_panel_settings = (
+                _normalize_ceiling_panel_settings(panel_settings) if panel_settings is not None else None
+            )
             # 1. CLEAN DATA
             clean_points = []
             for p in room_points:
@@ -4732,7 +4896,7 @@ class CeilingService:
                     room_poly = original_poly
 
             except Exception as e:
-                print(f"⚠️ Shapely init failed: {e}")
+                logger.warning(f"Shapely init failed: {e}")
                 room_poly = None
 
             # 3. DIMENSIONS SETUP
@@ -4781,89 +4945,119 @@ class CeilingService:
                         continue
 
                     # --- INTERSECTION CALCULATION ---
-                    isValid = False
-                    is_cut = False
-                    cut_notes = ""
-                    shape_points = [] # This will hold the L-shape coordinates
-                    
-                    # Defaults for rectangular bounds
-                    final_start_x = p_start_x
-                    final_start_y = p_start_y
-                    final_draw_width = this_p_width
-                    final_draw_length = this_p_height
+                    # One grid cell may intersect a concave room as several polygons
+                    # (e.g. a full-width strip split by a notch). Emit one panel per part.
+                    polygon_parts = []
                     
                     if room_poly:
                         try:
-                            # Create a box for the current panel in the grid
                             p_poly = box(p_start_x, p_start_y, p_end_x, p_end_y)
-                            # Intersection of current panel box and the shrunk room area
                             intersection = room_poly.intersection(p_poly)
-                            
-                            if not intersection.is_empty and intersection.area > 100.0:
-                                isValid = True
-                                minx, miny, maxx, maxy = intersection.bounds
-                                
-                                final_start_x = minx
-                                final_start_y = miny
-                                geo_width_x = maxx - minx
-                                geo_height_y = maxy - miny
-                                final_draw_width = geo_width_x
-                                final_draw_length = geo_height_y
-
-                                # Check if it's a rectangle or an L-shape/complex cut
-                                rect_area = geo_width_x * geo_height_y
-                                is_rectangular = (intersection.area / rect_area) > 0.99
-                                
-                                # Logic for standard dimension check
-                                if orientation == 'horizontal':
-                                    is_full_standard = geo_height_y >= (p_height - 5.0)
-                                    check_dim = geo_height_y
-                                else:
-                                    is_full_standard = geo_width_x >= (p_width - 5.0)
-                                    check_dim = geo_width_x
-
-                                if not is_rectangular:
-                                    is_cut = True
-                                    cut_notes = "Shape Fit (L-Cut)"
-                                    # --- EXTRACT EXACT SHAPE ---
-                                    # This logic extracts the vertices of the L-shape cut
-                                    if intersection.geom_type == 'Polygon':
-                                        shape_points = [{'x': x, 'y': y} for x, y in intersection.exterior.coords]
-                                    elif intersection.geom_type == 'MultiPolygon':
-                                         # Take the largest part of a multi-polygon result
-                                         largest = max(intersection.geoms, key=lambda a: a.area)
-                                         shape_points = [{'x': x, 'y': y} for x, y in largest.exterior.coords]
-                                    
-                                elif not is_full_standard:
-                                    is_cut = True
-                                    cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
-                                else:
-                                    is_cut = False 
-
-                                # Waste Tracking
-                                if leftover_tracker:
-                                    try:
-                                        if orientation == 'horizontal':
-                                            raw_panel = box(minx, miny, minx + geo_width_x, miny + p_height)
-                                        else:
-                                            raw_panel = box(minx, miny, minx + p_width, miny + geo_height_y)
-                                        waste_poly = raw_panel.difference(room_poly)
-                                        if not waste_poly.is_empty:
-                                            geoms = waste_poly.geoms if hasattr(waste_poly, 'geoms') else [waste_poly]
-                                            for waste_piece in geoms:
-                                                if waste_piece.area > 5000.0:
-                                                    wm_minx, wm_miny, wm_maxx, wm_maxy = waste_piece.bounds
-                                                    w_val = (wm_maxy - wm_miny) if orientation == 'horizontal' else (wm_maxx - wm_minx)
-                                                    l_val = (wm_maxx - wm_minx) if orientation == 'horizontal' else (wm_maxy - wm_miny)
-                                                    if w_val > 50.0 and l_val > 50.0:
-                                                        leftover_tracker.add_leftover(l_val, ceiling_thickness, w_val)
-                                    except Exception: pass
-
+                            polygon_parts = list(_iter_polygonal_parts(intersection, min_area=100.0))
                         except Exception as e:
-                            print(f"Intersection Error: {e}")
-                            isValid = True
+                            logger.debug(f"Intersection error: {e}")
+                            polygon_parts = []
                     
-                    if isValid:
+                    for part in polygon_parts:
+                        minx, miny, maxx, maxy = part.bounds
+                        geo_width_x = maxx - minx
+                        geo_height_y = maxy - miny
+                        if geo_width_x < 5 or geo_height_y < 5:
+                            continue
+
+                        final_start_x = minx
+                        final_start_y = miny
+                        final_draw_width = geo_width_x
+                        final_draw_length = geo_height_y
+                        shape_points = []
+                        is_cut = False
+                        cut_notes = ""
+                        from_leftover = False
+
+                        rect_area = geo_width_x * geo_height_y
+                        is_rectangular = rect_area > 0 and (part.area / rect_area) > 0.99
+
+                        # Stock panel axes (same convention as _generate_panels_for_region):
+                        # - "width" = dimension cut from the 1150mm stock edge
+                        # - "length" = run along the panel
+                        if orientation == 'horizontal':
+                            stock_width_used = geo_height_y
+                            stock_length = geo_width_x
+                            is_full_standard = geo_height_y >= (p_height - 5.0)
+                            check_dim = geo_height_y
+                        else:
+                            stock_width_used = geo_width_x
+                            stock_length = geo_height_y
+                            is_full_standard = geo_width_x >= (p_width - 5.0)
+                            check_dim = geo_width_x
+
+                        if not is_rectangular:
+                            is_cut = True
+                            cut_notes = "Shape Fit (L-Cut)"
+                            shape_points = [{'x': x, 'y': y} for x, y in part.exterior.coords]
+                        elif not is_full_standard:
+                            is_cut = True
+                            cut_notes = f"Standard Dim Cut ({int(check_dim)}mm)"
+
+                        # Leftover reuse-first (matches region-based ceiling rules):
+                        # 1) If this piece needs a width cut from a standard panel, try leftovers.
+                        # 2) If none fit, cut a new full panel and bank the remaining strip.
+                        # 3) For full-size L-cuts only, bank geometric scrap pieces as leftovers.
+                        max_stock_width = float(max_panel_width)
+                        needs_width_cut = stock_width_used < (max_stock_width - 5.0)
+
+                        if leftover_tracker and needs_width_cut:
+                            compatible_leftover = leftover_tracker.find_compatible_leftover(
+                                needed_width=stock_width_used,
+                                needed_length=stock_length,
+                                needed_thickness=ceiling_thickness,
+                                panel_settings=normalized_panel_settings,
+                            )
+                            if compatible_leftover:
+                                leftover_tracker.use_leftover(compatible_leftover, stock_width_used)
+                                from_leftover = True
+                                is_cut = True
+                                leftover_note = f"From leftover {compatible_leftover['id']}"
+                                cut_notes = f"{leftover_note}; {cut_notes}" if cut_notes else leftover_note
+                            else:
+                                leftover_width = max_stock_width - stock_width_used
+                                if leftover_width > 5.0:
+                                    leftover_tracker.add_leftover(
+                                        length=stock_length,
+                                        thickness=ceiling_thickness,
+                                        width_remaining=leftover_width,
+                                        panel_settings=normalized_panel_settings,
+                                    )
+                                is_cut = True
+                                if cut_notes:
+                                    cut_notes = f"Cut from full panel; {cut_notes}"
+                                else:
+                                    cut_notes = "Cut from full panel"
+                        elif leftover_tracker and not is_rectangular and not from_leftover:
+                            # Full-width L-cut from a new stock panel: keep usable geometric scraps.
+                            try:
+                                if orientation == 'horizontal':
+                                    raw_panel = box(minx, miny, minx + geo_width_x, miny + p_height)
+                                else:
+                                    raw_panel = box(minx, miny, minx + p_width, miny + geo_height_y)
+                                waste_poly = raw_panel.difference(part)
+                                if not waste_poly.is_empty:
+                                    geoms = waste_poly.geoms if hasattr(waste_poly, 'geoms') else [waste_poly]
+                                    for waste_piece in geoms:
+                                        if waste_piece.area > 5000.0:
+                                            wm_minx, wm_miny, wm_maxx, wm_maxy = waste_piece.bounds
+                                            w_val = (wm_maxy - wm_miny) if orientation == 'horizontal' else (wm_maxx - wm_minx)
+                                            l_val = (wm_maxx - wm_minx) if orientation == 'horizontal' else (wm_maxy - wm_miny)
+                                            if w_val > 50.0 and l_val > 50.0:
+                                                leftover_tracker.add_leftover(
+                                                    l_val,
+                                                    ceiling_thickness,
+                                                    w_val,
+                                                    panel_settings=normalized_panel_settings,
+                                                )
+                            except Exception:
+                                pass
+
                         panel_data = {
                             'panel_id': f"CP_RAW_{panel_counter:03d}",
                             'start_x': final_start_x,
@@ -4873,14 +5067,15 @@ class CeilingService:
                             'thickness': ceiling_thickness,
                             'is_cut': is_cut,
                             'cut_notes': cut_notes,
+                            'from_leftover': from_leftover,
                             'area': final_draw_width * final_draw_length,
-                            # THE CRITICAL DATA:
-                            'shape_points': shape_points  
+                            'shape_points': shape_points,
                         }
-                        # Legacy support
+                        if normalized_panel_settings is not None:
+                            panel_data.update(normalized_panel_settings)
                         panel_data['end_x'] = panel_data['start_x'] + panel_data['width']
                         panel_data['end_y'] = panel_data['start_y'] + panel_data['length']
-                        
+
                         panels.append(panel_data)
                         panel_counter += 1
                         
@@ -4890,8 +5085,8 @@ class CeilingService:
             return panels
 
         except Exception as e:
-            print(f"CRITICAL ERROR in Shape Gen: {e}")
-            return []      
+            logger.error(f"Critical error in ceiling shape generation: {e}")
+            return []
 
     @staticmethod
     def _optimize_panels_dense_fallback(panels, room_points):
@@ -5326,14 +5521,16 @@ class CeilingService:
             return 0
 
     @staticmethod
-    def _generate_panels_for_region(region, orientation, max_panel_width, start_panel_id, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
+    def _generate_panels_for_region(region, orientation, max_panel_width, start_panel_id, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, panel_settings=None):
         """Generate panels for a specific rectangular region with leftover tracking"""
         try:
             panels = []
             panel_id = start_panel_id
             MAX_PANEL_WIDTH = 1150  # Standard maximum panel width
             PANEL_THICKNESS = ceiling_thickness  # Use actual ceiling thickness
-            
+            normalized_panel_settings = (
+                _normalize_ceiling_panel_settings(panel_settings) if panel_settings is not None else None
+            )
             if orientation == 'horizontal':
                 # Panels run left to right (horizontal strips)
                 if panel_length == 'auto':
@@ -5366,7 +5563,8 @@ class CeilingService:
                                     compatible_leftover = leftover_tracker.find_compatible_leftover(
                                         needed_width=panel_height,
                                         needed_length=current_panel_width,
-                                        needed_thickness=PANEL_THICKNESS
+                                        needed_thickness=PANEL_THICKNESS,
+                                        panel_settings=normalized_panel_settings,
                                     )
                                     
                                     if compatible_leftover:
@@ -5386,7 +5584,8 @@ class CeilingService:
                                             leftover_tracker.add_leftover(
                                                 length=current_panel_width,
                                                 thickness=PANEL_THICKNESS,
-                                                width_remaining=leftover_width
+                                                width_remaining=leftover_width,
+                                                panel_settings=normalized_panel_settings,
                                             )
                                 else:
                                     # No tracker, just mark as cut
@@ -5455,7 +5654,8 @@ class CeilingService:
                                     compatible_leftover = leftover_tracker.find_compatible_leftover(
                                         needed_width=panel_width,
                                         needed_length=current_panel_height,
-                                        needed_thickness=PANEL_THICKNESS
+                                        needed_thickness=PANEL_THICKNESS,
+                                        panel_settings=normalized_panel_settings,
                                     )
                                     
                                     if compatible_leftover:
@@ -5475,7 +5675,8 @@ class CeilingService:
                                             leftover_tracker.add_leftover(
                                                 length=current_panel_height,
                                                 thickness=PANEL_THICKNESS,
-                                                width_remaining=leftover_width
+                                                width_remaining=leftover_width,
+                                                panel_settings=normalized_panel_settings,
                                             )
                                 else:
                                     # No tracker, just mark as cut
@@ -6203,9 +6404,12 @@ class CeilingService:
             return {'error': f'Failed to analyze room orientation: {str(e)}'}
     
     @staticmethod
-    def _generate_panels_for_single_room(room, orientation_strategy, panel_width, panel_length, leftover_tracker=None, ceiling_thickness=150):
+    def _generate_panels_for_single_room(room, orientation_strategy, panel_width, panel_length, leftover_tracker=None, ceiling_thickness=150, panel_settings=None):
         """Generate panels for a single room with specified orientation, with optional leftover tracking and reuse."""
         try:
+            resolved_panel_settings = panel_settings
+            if resolved_panel_settings is None:
+                resolved_panel_settings = CeilingService._resolve_ceiling_panel_settings(room=room)
             # Ensure we have valid room_points; if missing/invalid, try to recalculate from walls once
             room_points = getattr(room, 'room_points', None)
 
@@ -6213,7 +6417,7 @@ class CeilingService:
                 try:
                     # Lazy import to avoid circular dependencies
                     from .services import RoomService  # type: ignore
-                    logger.info(f"Room {room.id} has invalid room_points; attempting boundary recalculation from walls")
+                    logger.debug(f"Room {room.id} has invalid room_points; attempting boundary recalculation from walls")
                     if RoomService.recalculate_room_boundary_from_walls(room.id):
                         # Refresh room instance to get updated room_points
                         room.refresh_from_db()
@@ -6276,7 +6480,7 @@ class CeilingService:
             # Calculate Cut L area reduction for this room (for logging)
             cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
             if cut_l_reduction > 0:
-                logger.info(f"  Room {room.id}: Cut L area reduction = {cut_l_reduction:.2f}mm²")
+                logger.debug(f"  Room {room.id}: Cut L area reduction = {cut_l_reduction:.2f}mm²")
             
             # Apply per-wall/per-side Cut L adjustment before generation.
             # Using one scalar cut_l_offset shrinks all sides equally, which is incorrect
@@ -6294,7 +6498,8 @@ class CeilingService:
 
             panels = CeilingService._generate_shape_aware_panels(
                 adjusted_bounding_box, adjusted_room_points, orientation_type, panel_width, panel_length,
-                leftover_tracker, ceiling_thickness, cut_l_offset=0.0
+                leftover_tracker, ceiling_thickness, cut_l_offset=0.0,
+                panel_settings=resolved_panel_settings,
             )
             
             logger.debug(f"  Generated {len(panels)} raw panels")
@@ -6308,8 +6513,9 @@ class CeilingService:
             for panel in panels:
                 panel['room_id'] = room.id
                 panel['room_name'] = room.room_name
+                panel.update(resolved_panel_settings)
             
-            logger.info(f"Successfully generated {len(panels)} panels for room {room.id} ({room.room_name}) with {orientation_type} orientation")
+            logger.debug(f"Successfully generated {len(panels)} panels for room {room.id} ({room.room_name}) with {orientation_type} orientation")
             
             return panels
             
@@ -6330,12 +6536,12 @@ class CeilingService:
             
             # Create leftover tracker for cross-room leftover reuse
             leftover_tracker = LeftoverTracker(context='GENERATION')
-            logger.info("ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker")
+            logger.debug("ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker")
             
             all_panels = []
             rooms = Room.objects.filter(project_id=project_id, exclude_from_ceiling=False)
             rooms_count = rooms.count()
-            logger.info(f"Found {rooms_count} rooms in project {project_id}")
+            logger.debug(f"Found {rooms_count} rooms in project {project_id}")
             
             if rooms_count == 0:
                 logger.error(f"No rooms found for project {project_id}!")
@@ -6350,13 +6556,13 @@ class CeilingService:
             
             # Verify target room exists in queryset
             target_room_exists = rooms.filter(id=custom_room_id).exists()
-            logger.info(f"Target room {custom_room_id} exists in project: {target_room_exists}")
+            logger.debug(f"Target room {custom_room_id} exists in project: {target_room_exists}")
             if not target_room_exists:
                 logger.error(f"Target room {custom_room_id} not found in project {project_id}!")
                 # Try to get the room directly to see if it exists
                 try:
                     target_room = Room.objects.get(id=custom_room_id, project_id=project_id)
-                    logger.info(f"Room {custom_room_id} exists but was filtered out of queryset!")
+                    logger.debug(f"Room {custom_room_id} exists but was filtered out of queryset!")
                 except Room.DoesNotExist:
                     logger.error(f"Room {custom_room_id} does not exist in database!")
                     return [], leftover_tracker
@@ -6367,10 +6573,10 @@ class CeilingService:
             custom_orientation = room_specific_config.get('orientation_strategy', global_orientation_strategy)
             
             rooms_list = list(rooms)  # Convert to list to ensure we can iterate
-            logger.info(f"Generating ceiling panels for {len(rooms_list)} rooms (room-specific mode)")
-            logger.info(f"  Custom room ID: {custom_room_id}")
-            logger.info(f"  Custom orientation from config: {custom_orientation}")
-            logger.info(f"  Global orientation: {global_orientation_strategy}")
+            logger.debug(f"Generating ceiling panels for {len(rooms_list)} rooms (room-specific mode)")
+            logger.debug(f"  Custom room ID: {custom_room_id}")
+            logger.debug(f"  Custom orientation from config: {custom_orientation}")
+            logger.debug(f"  Global orientation: {global_orientation_strategy}")
             
             if len(rooms_list) == 0:
                 logger.error(f"❌ No rooms found for project {project_id}!")
@@ -6382,7 +6588,7 @@ class CeilingService:
             custom_custom_panel_length = room_specific_config.get('custom_panel_length', None) if room_specific_config else None
             custom_ceiling_thickness = room_specific_config.get('ceiling_thickness', global_ceiling_thickness) if room_specific_config else global_ceiling_thickness
             
-            logger.info(f"Room-specific config values: panel_width={custom_panel_width}, panel_length={custom_panel_length}, ceiling_thickness={custom_ceiling_thickness}")
+            logger.debug(f"Room-specific config values: panel_width={custom_panel_width}, panel_length={custom_panel_length}, ceiling_thickness={custom_ceiling_thickness}")
             
             rooms_processed = 0
             for room in rooms_list:
@@ -6395,7 +6601,7 @@ class CeilingService:
                 
                 if room_id_str == custom_room_id_str or int(room.id) == int(custom_room_id):
                     # This is the room being updated - use custom orientation and room-specific parameters
-                    logger.info(f"  [MATCH] Room {room.id} matches target room {custom_room_id}")
+                    logger.debug(f"  [MATCH] Room {room.id} matches target room {custom_room_id}")
                     # Normalize orientation: convert 'vertical'/'horizontal' to 'all_vertical'/'all_horizontal'
                     if custom_orientation:
                         orientation_lower = str(custom_orientation).lower()
@@ -6413,27 +6619,33 @@ class CeilingService:
                     room_panel_length = custom_panel_length
                     room_custom_panel_length = custom_custom_panel_length
                     room_ceiling_thickness = custom_ceiling_thickness
+                    room_panel_settings = CeilingService._resolve_ceiling_panel_settings(
+                        room=room, room_config=room_specific_config
+                    )
                     
-                    logger.info(f"  Room {room.id} ({room.room_name}): Using CUSTOM config - orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
+                    logger.debug(f"  Room {room.id} ({room.room_name}): Using CUSTOM config - orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
                 else:
                     # This room is not the target - use existing or global settings
                     logger.debug(f"  Room {room.id} does not match target {custom_room_id}, using default config")
                     # Check if room has existing ceiling plan with orientation
                     if hasattr(room, 'ceiling_plan') and room.ceiling_plan and room.ceiling_plan.orientation_strategy:
                         room_orientation = room.ceiling_plan.orientation_strategy
-                        logger.info(f"  Room {room.id} ({room.room_name}): Using SAVED orientation = {room_orientation}")
+                        logger.debug(f"  Room {room.id} ({room.room_name}): Using SAVED orientation = {room_orientation}")
                     else:
                         room_orientation = global_orientation_strategy
-                        logger.info(f"  Room {room.id} ({room.room_name}): Using GLOBAL orientation = {room_orientation}")
+                        logger.debug(f"  Room {room.id} ({room.room_name}): Using GLOBAL orientation = {room_orientation}")
                     
                     # Use global parameters for other rooms
                     room_panel_width = global_panel_width
                     room_panel_length = global_panel_length
                     room_custom_panel_length = None
                     room_ceiling_thickness = global_ceiling_thickness
+                    if hasattr(room, 'ceiling_plan') and room.ceiling_plan and room.ceiling_plan.ceiling_thickness:
+                        room_ceiling_thickness = room.ceiling_plan.ceiling_thickness
+                    room_panel_settings = CeilingService._resolve_ceiling_panel_settings(room=room)
                 
                 # Generate panels for this room with its specific orientation and parameters (with leftover tracking)
-                logger.info(f"  Generating panels for room {room.id} with: orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
+                logger.debug(f"  Generating panels for room {room.id} with: orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}, faces={room_panel_settings}")
                 
                 # Check room_points before generation
                 room_points = getattr(room, 'room_points', None)
@@ -6444,10 +6656,10 @@ class CeilingService:
                 
                 room_panels = CeilingService._generate_panels_for_single_room(
                     room, room_orientation, room_panel_width, room_panel_length, 
-                    leftover_tracker, room_ceiling_thickness
+                    leftover_tracker, room_ceiling_thickness, panel_settings=room_panel_settings
                 )
                 
-                logger.info(f"  > Generated {len(room_panels)} panels for room {room.id}")
+                logger.debug(f"  > Generated {len(room_panels)} panels for room {room.id}")
                 
                 # Verify room_id assignment
                 if room_panels:
@@ -6460,7 +6672,7 @@ class CeilingService:
                 # Add to all panels
                 all_panels.extend(room_panels)
             
-            logger.info(f"Processed {rooms_processed} rooms, generated {len(all_panels)} total panels")
+            logger.info(f"Ceiling generation complete: {len(all_panels)} panels across {rooms_processed} rooms")
             
             if len(all_panels) == 0:
                 logger.error(f"⚠️ WARNING: No panels were generated for any room in project {project_id}!")
@@ -6473,7 +6685,7 @@ class CeilingService:
             
             # Log leftover statistics
             leftover_stats = leftover_tracker.get_stats()
-            logger.info(f"ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {leftover_stats}")
+            logger.debug(f"ROOM-SPECIFIC GENERATION COMPLETE - Leftover stats: {leftover_stats}")
             
             return all_panels, leftover_tracker
             
@@ -6516,27 +6728,27 @@ class CeilingService:
                 if str(room_specific_config.get('room_id')) in zone_room_ids_str:
                     return {'error': 'Selected room is part of a merged ceiling zone. Update the zone instead.'}
 
-                logger.info(f"Room-specific ceiling configuration detected for room {room_specific_config.get('room_id')}")
+                logger.debug(f"Room-specific ceiling configuration detected for room {room_specific_config.get('room_id')}")
                 logger.debug(f"Config: {room_specific_config}")
                 
                 # Room-specific generation: generate each room with its own orientation (with leftover tracking)
-                logger.info(f"Calling _generate_panels_with_room_specific_orientation for project {project_id}, room {room_specific_config.get('room_id')}")
+                logger.debug(f"Calling _generate_panels_with_room_specific_orientation for project {project_id}, room {room_specific_config.get('room_id')}")
                 enhanced_panels, project_leftover_tracker = CeilingService._generate_panels_with_room_specific_orientation(
                     project_id, panel_width, panel_length, ceiling_thickness,
                     orientation_strategy, room_specific_config
                 )
                 
-                logger.info(f"Received {len(enhanced_panels)} panels from _generate_panels_with_room_specific_orientation")
+                logger.debug(f"Received {len(enhanced_panels)} panels from _generate_panels_with_room_specific_orientation")
                 
                 # Get leftover stats from tracker
                 leftover_stats = project_leftover_tracker.get_stats()
-                logger.info(f"ROOM-SPECIFIC GENERATION - Leftover stats: {leftover_stats}")
+                logger.debug(f"ROOM-SPECIFIC GENERATION - Leftover stats: {leftover_stats}")
                 target_room_id = room_specific_config.get('room_id')
                 if target_room_id is not None:
                     # Normalize target_room_id to ensure consistent comparison
                     target_room_id_normalized = int(target_room_id) if target_room_id else None
-                    logger.info(f"Checking for panels for target room ID: {target_room_id} (normalized: {target_room_id_normalized})")
-                    logger.info(f"Total panels generated: {len(enhanced_panels)}")
+                    logger.debug(f"Checking for panels for target room ID: {target_room_id} (normalized: {target_room_id_normalized})")
+                    logger.debug(f"Total panels generated: {len(enhanced_panels)}")
                     
                     # Log all unique room_ids in generated panels for debugging
                     unique_room_ids = set()
@@ -6544,7 +6756,7 @@ class CeilingService:
                         room_id = panel.get('room_id')
                         if room_id is not None:
                             unique_room_ids.add(str(room_id))
-                    logger.info(f"Unique room IDs in generated panels: {sorted(unique_room_ids)}")
+                    logger.debug(f"Unique room IDs in generated panels: {sorted(unique_room_ids)}")
                     
                     # Check if panels were generated for the target room
                     generated_for_target_room = False
@@ -6560,7 +6772,7 @@ class CeilingService:
                                 generated_for_target_room = True
                                 matching_panels.append(panel)
                     
-                    logger.info(f"Found {len(matching_panels)} panels matching target room ID {target_room_id}")
+                    logger.debug(f"Found {len(matching_panels)} panels matching target room ID {target_room_id}")
                     
                     if not generated_for_target_room:
                         # Provide more detailed error message
@@ -6696,6 +6908,13 @@ class CeilingService:
             for zp in zone_plans:
                 combined_panels.extend(zp.get('panels', []))
 
+            logger.info(
+                "Ceiling plan generated for project %s: %s panels, strategy=%s",
+                project_id,
+                len(combined_panels),
+                strategy_name,
+            )
+
             return {
                 'project_id': project_id,
                 'strategy_used': strategy_name,
@@ -6732,7 +6951,7 @@ class CeilingService:
             
             # Create project-wide leftover tracker for actual generation
             project_leftover_tracker = LeftoverTracker(context='GENERATION')
-            logger.info(f"ACTUAL CEILING GENERATION STARTING - Created project leftover tracker")
+            logger.debug("ACTUAL CEILING GENERATION STARTING - Created project leftover tracker")
             
             if strategy['orientation_type'] == 'merged':
                 # Generate panels for merged approach with leftover tracking
@@ -6750,7 +6969,7 @@ class CeilingService:
             
             # Get leftover statistics
             leftover_stats = project_leftover_tracker.get_stats()
-            logger.info(f"CEILING GENERATION COMPLETE - Leftover stats: {leftover_stats}")
+            logger.debug(f"CEILING GENERATION COMPLETE - Leftover stats: {leftover_stats}")
             
             return enhanced_panels, leftover_stats
             
@@ -6798,7 +7017,7 @@ class CeilingService:
                     
                     cut_l_reduction = CeilingService.calculate_ceiling_area_reduction_for_room(room, ceiling_thickness)
                     if cut_l_reduction > 0:
-                        logger.info(f"  Room {room_info['id']}: Applied Cut L adjustments (reduction: {cut_l_reduction:.2f}mm²)")
+                        logger.debug(f"  Room {room_info['id']}: Applied Cut L adjustments (reduction: {cut_l_reduction:.2f}mm²)")
                 except Room.DoesNotExist:
                     logger.warning(f"  Room {room_info['id']} not found in database")
                 
@@ -6831,7 +7050,7 @@ class CeilingService:
             logger = logging.getLogger(__name__)
             all_panels = []
             
-            logger.info(f"Processing {len(strategy.get('room_results', []))} rooms for ceiling generation")
+            logger.debug(f"Processing {len(strategy.get('room_results', []))} rooms for ceiling generation")
             
             for room_result in strategy.get('room_results', []):
                 room_id = room_result.get('room_id')
@@ -6884,14 +7103,15 @@ class CeilingService:
                     # Pick Winner (Least Material Used)
                     if h_usage < v_usage:
                         final_orientation = 'horizontal'
-                        logger.info(f"  Room {room_id}: Auto selected HORIZONTAL (Usage: {int(h_usage)} < {int(v_usage)})")
+                        logger.debug(f"  Room {room_id}: Auto selected HORIZONTAL (Usage: {int(h_usage)} < {int(v_usage)})")
                     else:
                         final_orientation = 'vertical'
-                        logger.info(f"  Room {room_id}: Auto selected VERTICAL (Usage: {int(v_usage)} <= {int(h_usage)})")
+                        logger.debug(f"  Room {room_id}: Auto selected VERTICAL (Usage: {int(v_usage)} <= {int(h_usage)})")
                 else:
                     final_orientation = req_orientation
 
                 # 4. Final Generation
+                room_panel_settings = CeilingService._resolve_ceiling_panel_settings(room=room)
                 panels = CeilingService._generate_shape_aware_panels(
                     adjusted_bounding_box,
                     adjusted_room_points,
@@ -6900,20 +7120,22 @@ class CeilingService:
                     panel_length, 
                     leftover_tracker, 
                     ceiling_thickness, 
-                    cut_l_offset=0.0
+                    cut_l_offset=0.0,
+                    panel_settings=room_panel_settings,
                 )
                 
                 # Add Metadata
                 for panel in panels:
                     panel['room_id'] = room_id
                     panel['room_name'] = room_result.get('room_name', f'Room {room_id}')
+                    panel.update(room_panel_settings)
                 
                 all_panels.extend(panels)
             
             return all_panels
             
         except Exception as e:
-            print(f"Error in orchestrator: {e}")
+            logger.error(f"Error in ceiling generation orchestrator: {e}")
             return []
 
     @staticmethod
@@ -7271,7 +7493,7 @@ class CeilingService:
                         ceiling_plan.support_type = room_support_type
                         ceiling_plan.support_config = room_support_config
                         ceiling_plan.save()
-                        logger.info(f"  Updated ceiling plan {ceiling_plan.id} with orientation_strategy: {normalized_orientation}")
+                        logger.debug(f"  Updated ceiling plan {ceiling_plan.id} with orientation_strategy: {normalized_orientation}")
                     
                     # Clear existing panels and create new ones
                     CeilingPanel.objects.filter(room=room).delete()
@@ -7308,7 +7530,7 @@ class CeilingService:
                         original_total_area = ceiling_plan.total_area
                         ceiling_plan.total_area = max(0, original_total_area - cut_l_reduction)
                         ceiling_plan.save()
-                        logger.info(f"  Room {room.id}: Applied Cut L reduction of {cut_l_reduction:.2f}mm² to total_area ({original_total_area:.2f} -> {ceiling_plan.total_area:.2f}mm²)")
+                        logger.debug(f"  Room {room.id}: Applied Cut L reduction of {cut_l_reduction:.2f}mm² to total_area ({original_total_area:.2f} -> {ceiling_plan.total_area:.2f}mm²)")
                     
                     # Convert to serializable dictionary with ALL parameters
                     plan_dict = {
@@ -7377,7 +7599,8 @@ class CeilingService:
                 'points': room.room_points,
                 'area': room_area,
                 'center': center,
-                'bounding_box': bounding_box
+                'bounding_box': bounding_box,
+                'panel_settings': CeilingService._resolve_ceiling_panel_settings(room=room),
             }
             
         except Room.DoesNotExist:
@@ -7517,7 +7740,7 @@ class CeilingService:
                     room_reports.append(room_report)
                     
                 except Exception as e:
-                    print(f"Error processing room {room.id}: {str(e)}")
+                    logger.error(f"Error processing room {room.id}: {str(e)}")
                     continue
             
             # Calculate project-level statistics
@@ -7949,14 +8172,16 @@ class CeilingService:
                 
                 optimized_panels.append(panel)
             
-            print(f"🔧 Panel width optimization completed:")
-            print(f"   - Total panels: {len(panels)}")
-            print(f"   - Narrow panels found: {len(narrow_panels)}")
-            print(f"   - Total excess redistributed: {total_excess}mm")
-            print(f"   - Edge panel max width: {edge_panel_max_width}mm")
-            print(f"   - Middle panel max width: {max_panel_width}mm")
-            print(f"   - Minimum panel width: {min_panel_width}mm")
-            print(f"   - Edge panel redistribution: {'Yes' if total_excess > 0 else 'No'}")
+            logger.debug(
+                "Panel width optimization completed: total=%s narrow=%s excess=%smm edge_max=%s middle_max=%s min=%s redistributed=%s",
+                len(panels),
+                len(narrow_panels),
+                total_excess,
+                edge_panel_max_width,
+                max_panel_width,
+                min_panel_width,
+                total_excess > 0,
+            )
             
             return optimized_panels
             
