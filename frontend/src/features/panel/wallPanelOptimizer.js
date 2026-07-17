@@ -9,8 +9,13 @@ import {
 const EXHAUSTIVE_WALL_LIMIT = 7;
 /** Random samples when running in the background (UI stays responsive via chunking). */
 const HEURISTIC_RANDOM_SAMPLES = 50000;
-/** How many full wall-panel calculations to run before yielding to the browser. */
+/** How many full wall-panel calculations to run before yielding while the tab is visible. */
 const CHUNK_SIZE = 16;
+/**
+ * Background tabs throttle setTimeout to ~1s, which makes CHUNK_SIZE feel "stopped".
+ * When hidden, process larger batches and avoid timer-based yields.
+ */
+const HIDDEN_CHUNK_SIZE = 250;
 
 export function compareScores(a, b) {
     if (!a && !b) return 0;
@@ -36,10 +41,26 @@ function isBetterScore(candidate, currentBest) {
     return compareScores(candidate, currentBest) < 0;
 }
 
+function isDocumentHidden() {
+    return typeof document !== 'undefined' && document.hidden;
+}
+
+/**
+ * Yield control so the UI can paint/respond.
+ * Background tabs throttle setTimeout heavily (~1s), so when hidden we skip
+ * timer yields and only pause on a microtask — work keeps progressing.
+ */
 function yieldToBrowser() {
+    if (isDocumentHidden()) {
+        return Promise.resolve();
+    }
     return new Promise((resolve) => {
         window.setTimeout(resolve, 0);
     });
+}
+
+function currentChunkSize() {
+    return isDocumentHidden() ? HIDDEN_CHUNK_SIZE : CHUNK_SIZE;
 }
 
 function orderKey(order) {
@@ -259,7 +280,8 @@ export async function optimizeWallPanelCalculationAsync(walls = [], intersection
             });
         }
 
-        if (sinceYield >= CHUNK_SIZE) {
+        const chunkSize = currentChunkSize();
+        if (sinceYield >= chunkSize) {
             sinceYield = 0;
             await yieldToBrowser();
         }
