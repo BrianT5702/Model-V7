@@ -530,7 +530,7 @@ class ProjectSerializer(serializers.ModelSerializer):
         model = Project
         fields = [
             'id', 'name', 'width', 'length', 'height', 'calculated_height', 'wall_thickness',
-            'folder', 'list_order',
+            'folder', 'list_order', 'panel_optimization',
             'storeys', 'walls', 'rooms', 'doors', 'intersections'
         ]
 
@@ -621,6 +621,7 @@ class ProjectRetrieveSerializer(serializers.ModelSerializer):
             'height',
             'calculated_height',
             'wall_thickness',
+            'panel_optimization',
             'storeys',
             'created_at',
             'updated_at',
@@ -768,6 +769,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'folder',
             'folder_name',
             'list_order',
+            'panel_optimization',
             'created_by_username',
             'last_edited_by_username',
             'created_at',

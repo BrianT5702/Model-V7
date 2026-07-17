@@ -68,6 +68,16 @@ class Project(models.Model):
         default=0,
         help_text="Sort order within a folder (or uncategorized group).",
     )
+    panel_optimization = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text=(
+            "Persisted best optimized wall panel result: "
+            "{fingerprint, wallOrder, score}. Lets a reopened project "
+            "reproduce the previously computed least-waste arrangement."
+        ),
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name='projects_created',

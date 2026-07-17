@@ -121,19 +121,11 @@ const Canvas2D = ({
     const [highlightWalls, setHighlightWalls] = useState([]);
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
-    const [showMaterialDetails, setShowMaterialDetails] = useState(false);
     const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(false);
     const [showMaterialNeeded, setShowMaterialNeeded] = useState(false);
     const [showElevations, setShowElevations] = useState(false);
     const [wallElevations, setWallElevations] = useState(null);
     const [isGeneratingElevations, setIsGeneratingElevations] = useState(false);
-
-    // Auto-show material details when the section is opened
-    useEffect(() => {
-        if (showMaterialNeeded && !showMaterialDetails) {
-            setShowMaterialDetails(true);
-        }
-    }, [showMaterialNeeded, showMaterialDetails]);
 
     const handleGenerateElevations = useCallback(() => {
         if (showElevations && wallElevations) {
@@ -265,10 +257,6 @@ const Canvas2D = ({
     const showDatabaseError = () => {
         setDbConnectionError(true);
         setTimeout(() => setDbConnectionError(false), 5000); // Hide after 5 seconds
-    };
-
-    const toggleMaterialDetails = () => {
-        setShowMaterialDetails(prev => !prev);
     };
 
     const handleDimensionVisibilityChange = (type) => {
@@ -3011,6 +2999,7 @@ const Canvas2D = ({
                                             onStartArrowPlacement={onPlanAnnotationArrowPlacementId}
                                             isPlacingArrow={planAnnotationArrowPlacementId === annotation.id}
                                             canEdit={canAnnotate && planAnnotateMode}
+                                            canDirectEdit={canAnnotate}
                                             canDrag={canAnnotate && planAnnotateMode}
                                             autoEdit={autoEditPlanAnnotationId === annotation.id}
                                             onAutoEditConsumed={() => setAutoEditPlanAnnotationId(null)}
@@ -3331,7 +3320,7 @@ const Canvas2D = ({
                                 onClick={() => setShowMaterialNeeded(!showMaterialNeeded)}
                                 className="plan-panel-btn-primary"
                             >
-                                {showMaterialNeeded ? 'Hide Details' : 'Show Details'}
+                                {showMaterialNeeded ? 'Hide Material' : 'Show Material'}
                             </button>
                         </div>
 
@@ -3341,19 +3330,15 @@ const Canvas2D = ({
                                     walls={allWalls || walls} 
                                     intersections={intersections}
                                     doors={doors}
-                                    showMaterialDetails={showMaterialDetails}
-                                    toggleMaterialDetails={toggleMaterialDetails}
                                     project={project}
                                     updateSharedPanelData={updateSharedPanelData}
                                     onRefreshWalls={onRefreshWalls}
                                 />
                                 
                                 {/* Door Table */}
-                                {showMaterialDetails && (
-                                    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md p-3 shadow-sm">
-                                        <DoorTable doors={doors} />
-                                    </div>
-                                )}
+                                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md p-3 shadow-sm">
+                                    <DoorTable doors={doors} />
+                                </div>
                             </div>
                         )}
                     </div>

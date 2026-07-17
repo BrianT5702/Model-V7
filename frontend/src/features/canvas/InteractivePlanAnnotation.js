@@ -21,12 +21,14 @@ const InteractivePlanAnnotation = ({
     onStartArrowPlacement,
     isPlacingArrow = false,
     canEdit = false,
+    canDirectEdit = false,
     canDrag = false,
     autoEdit = false,
     onAutoEditConsumed,
     onInteractionStart,
 }) => {
     const [isEditing, setIsEditing] = useState(false);
+    const [isDirectEditActive, setIsDirectEditActive] = useState(false);
     const [draftText, setDraftText] = useState(annotation.text || '');
     const [isDragging, setIsDragging] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
@@ -37,7 +39,10 @@ const InteractivePlanAnnotation = ({
     const wasSelectedOnMouseDownRef = useRef(false);
     const resizeStartRef = useRef(null);
     const textareaRef = useRef(null);
+    const annotationRootRef = useRef(null);
     const { isDark } = useTheme();
+    const editControlsEnabled = canEdit || (canDirectEdit && isDirectEditActive);
+    const dragEnabled = canDrag || (canDirectEdit && isDirectEditActive);
 
     const canvasX = annotation.position_x * scaleFactor + offsetX;
     const canvasY = annotation.position_y * scaleFactor + offsetY;
@@ -46,6 +51,12 @@ const InteractivePlanAnnotation = ({
     useEffect(() => {
         setDraftText(annotation.text || '');
     }, [annotation.text, annotation.id]);
+
+    useEffect(() => {
+        if (!isSelected) {
+            setIsDirectEditActive(false);
+        }
+    }, [isSelected]);
 
     useEffect(() => {
         if (autoEdit && canEdit) {
@@ -62,7 +73,7 @@ const InteractivePlanAnnotation = ({
     }, [isEditing]);
 
     useEffect(() => {
-        if (!isSelected || !canEdit || isEditing) {
+        if (!isSelected || !editControlsEnabled || isEditing) {
             return undefined;
         }
 
@@ -82,7 +93,7 @@ const InteractivePlanAnnotation = ({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isSelected, canEdit, isEditing, annotation.id, onDelete]);
+    }, [isSelected, editControlsEnabled, isEditing, annotation.id, onDelete]);
 
     const commitText = () => {
         const trimmed = draftText.trim();
@@ -92,16 +103,47 @@ const InteractivePlanAnnotation = ({
         }
     };
 
+    useEffect(() => {
+        if (!isSelected || !isDirectEditActive) {
+            return undefined;
+        }
+
+        const handleOutsideMouseDown = (event) => {
+            if (annotationRootRef.current?.contains(event.target)) {
+                return;
+            }
+            if (isEditing) {
+                commitText();
+            }
+            setIsDirectEditActive(false);
+            onSelect?.(null);
+        };
+
+        document.addEventListener('mousedown', handleOutsideMouseDown, true);
+        return () => document.removeEventListener('mousedown', handleOutsideMouseDown, true);
+    }, [
+        isSelected,
+        isDirectEditActive,
+        isEditing,
+        draftText,
+        annotation.id,
+        annotation.text,
+        onSelect,
+        onUpdate,
+    ]);
+
     const startEditing = (event) => {
-        if (!canEdit) {
+        if (!canEdit && !canDirectEdit) {
             return;
         }
         event?.stopPropagation();
+        onSelect?.(annotation.id);
+        setIsDirectEditActive(true);
         setIsEditing(true);
     };
 
     const handleMouseDown = (event) => {
-        if ((!canDrag && !canEdit) || isEditing || isResizing) {
+        if ((!dragEnabled && !editControlsEnabled && !canDirectEdit) || isEditing || isResizing) {
             return;
         }
         if (event.button !== 0) {
@@ -115,6 +157,9 @@ const InteractivePlanAnnotation = ({
         onInteractionStart?.();
         wasSelectedOnMouseDownRef.current = isSelected;
         onSelect?.(annotation.id);
+        if (!dragEnabled) {
+            return;
+        }
         didDragRef.current = false;
         dragStartRef.current = { x: event.clientX, y: event.clientY };
         setIsDragging(true);
@@ -125,7 +170,7 @@ const InteractivePlanAnnotation = ({
     };
 
     const handleResizeMouseDown = (event) => {
-        if (!canEdit || isEditing) {
+        if (!editControlsEnabled || isEditing) {
             return;
         }
         event.stopPropagation();
@@ -173,7 +218,7 @@ const InteractivePlanAnnotation = ({
             lastDragPositionRef.current = null;
             dragStartRef.current = null;
 
-            if (!didDragRef.current && canEdit && wasSelectedOnMouseDownRef.current) {
+            if (!didDragRef.current && editControlsEnabled && wasSelectedOnMouseDownRef.current) {
                 setIsEditing(true);
             }
         };
@@ -184,7 +229,7 @@ const InteractivePlanAnnotation = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, dragOffset, offsetX, offsetY, scaleFactor, annotation.id, onUpdate, canEdit]);
+    }, [isDragging, dragOffset, offsetX, offsetY, scaleFactor, annotation.id, onUpdate, editControlsEnabled]);
 
     useEffect(() => {
         if (!isResizing) {
@@ -228,10 +273,11 @@ const InteractivePlanAnnotation = ({
 
     const hasArrow = annotation.arrow_target_x != null && annotation.arrow_target_y != null;
     const displayText = (annotation.text || '').trim() || 'Click to add text';
-    const isMovable = canDrag || canEdit;
+    const isMovable = dragEnabled;
 
     return (
         <div
+            ref={annotationRootRef}
             className={`absolute ${isSelected || isDragging || isEditing || isResizing ? 'z-[45]' : 'z-[35]'}`}
             style={{
                 left: `${canvasX}px`,
@@ -274,7 +320,7 @@ const InteractivePlanAnnotation = ({
                 ) : (
                     <div
                         className={`flex-1 min-h-0 overflow-auto px-2.5 py-2 text-sm whitespace-pre-wrap break-words ${
-                            canEdit ? 'cursor-text' : ''
+                            editControlsEnabled || canDirectEdit ? 'cursor-text' : ''
                         } ${!(annotation.text || '').trim() ? 'italic opacity-70' : ''}`}
                         onDoubleClick={startEditing}
                     >
@@ -283,7 +329,7 @@ const InteractivePlanAnnotation = ({
                 )}
             </div>
 
-            {canEdit && isSelected && !isEditing && (
+            {editControlsEnabled && isSelected && !isEditing && (
                 <div className={`mt-1 flex flex-wrap items-center gap-1 rounded-lg border px-1.5 py-1 shadow-sm ${
                     isDark ? 'bg-gray-900/95 border-gray-600' : 'bg-white/95 border-gray-300'
                 }`}>
@@ -350,7 +396,7 @@ const InteractivePlanAnnotation = ({
                 </div>
             )}
 
-            {canEdit && isSelected && !isEditing && (
+            {editControlsEnabled && isSelected && !isEditing && (
                 <button
                     type="button"
                     aria-label="Resize note box"
