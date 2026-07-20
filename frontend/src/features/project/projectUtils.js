@@ -206,3 +206,236 @@ export function resolveWallBaseElevationMm(wall, project = null) {
   const storeyId = wall.storey ?? wall.storey_id;
   return getStoreyElevationMm(project?.storeys, storeyId);
 }
+
+/** All walls share type, height, thickness, face finishes, and gap-fill settings. */
+export function wallsHaveSameMergeProperties(walls = []) {
+  if (!Array.isArray(walls) || walls.length < 2) return false;
+  const ref = walls[0];
+  return walls.every((wall) => {
+    if (
+      wall.application_type !== ref.application_type ||
+      wall.height !== ref.height ||
+      wall.thickness !== ref.thickness
+    ) {
+      return false;
+    }
+    if (
+      (wall.inner_face_material ?? '') !== (ref.inner_face_material ?? '') ||
+      (wall.outer_face_material ?? '') !== (ref.outer_face_material ?? '') ||
+      Number(wall.inner_face_thickness) !== Number(ref.inner_face_thickness) ||
+      Number(wall.outer_face_thickness) !== Number(ref.outer_face_thickness)
+    ) {
+      return false;
+    }
+    return gapFillSettingsMatch(wall, ref);
+  });
+}
+
+/** Every wall lies on the same line as the first wall. */
+export function areAllCollinearWalls(walls = []) {
+  if (!Array.isArray(walls) || walls.length < 2) return false;
+  const ref = walls[0];
+  return walls.every((wall) => areCollinearWalls(ref, wall));
+}
+
+/**
+ * Order collinear walls into a single end-to-end chain.
+ * Returns null when endpoints do not form one straight chain.
+ */
+export function orderWallsIntoMergeChain(walls = [], epsilon = 0.5) {
+  if (!Array.isArray(walls) || walls.length === 0) return null;
+  if (walls.length === 1) return walls;
+
+  const endpointEntries = walls.flatMap((wall) => ([
+    { wallId: wall.id, end: 'start', point: { x: wall.start_x, y: wall.start_y } },
+    { wallId: wall.id, end: 'end', point: { x: wall.end_x, y: wall.end_y } },
+  ]));
+
+  const groups = [];
+  endpointEntries.forEach((entry) => {
+    let group = groups.find((candidate) => arePointsEqual(candidate.point, entry.point, epsilon));
+    if (!group) {
+      group = { point: entry.point, members: [] };
+      groups.push(group);
+    }
+    group.members.push(entry);
+  });
+
+  if (groups.some((group) => group.members.length > 2)) return null;
+
+  const terminalGroups = groups.filter((group) => group.members.length === 1);
+  const jointGroups = groups.filter((group) => group.members.length === 2);
+
+  if (terminalGroups.length !== 2 || jointGroups.length !== walls.length - 1) {
+    return null;
+  }
+
+  const wallById = new Map(walls.map((wall) => [wall.id, wall]));
+  const getOtherPoint = (wall, end) => (
+    end === 'start'
+      ? { x: wall.end_x, y: wall.end_y }
+      : { x: wall.start_x, y: wall.start_y }
+  );
+
+  const startEntry = terminalGroups[0].members[0];
+  const ordered = [];
+  const used = new Set();
+
+  let currentWall = wallById.get(startEntry.wallId);
+  if (!currentWall) return null;
+
+  ordered.push(currentWall);
+  used.add(currentWall.id);
+  let openPoint = getOtherPoint(currentWall, startEntry.end);
+
+  while (ordered.length < walls.length) {
+    const nextWall = walls.find((wall) => (
+      !used.has(wall.id) && (
+        arePointsEqual(openPoint, { x: wall.start_x, y: wall.start_y }, epsilon) ||
+        arePointsEqual(openPoint, { x: wall.end_x, y: wall.end_y }, epsilon)
+      )
+    ));
+
+    if (!nextWall) return null;
+
+    ordered.push(nextWall);
+    used.add(nextWall.id);
+
+    if (arePointsEqual(openPoint, { x: nextWall.start_x, y: nextWall.start_y }, epsilon)) {
+      openPoint = { x: nextWall.end_x, y: nextWall.end_y };
+    } else {
+      openPoint = { x: nextWall.start_x, y: nextWall.start_y };
+    }
+  }
+
+  return ordered.length === walls.length ? ordered : null;
+}
+
+/** Return [firstWallId, secondWallId] in the order required by the merge API. */
+export function getWallMergePairIds(wallA, wallB, epsilon = 0.5) {
+  if (
+    arePointsEqual(
+      { x: wallA.end_x, y: wallA.end_y },
+      { x: wallB.start_x, y: wallB.start_y },
+      epsilon
+    )
+  ) {
+    return [wallA.id, wallB.id];
+  }
+  if (
+    arePointsEqual(
+      { x: wallB.end_x, y: wallB.end_y },
+      { x: wallA.start_x, y: wallA.start_y },
+      epsilon
+    )
+  ) {
+    return [wallB.id, wallA.id];
+  }
+  return null;
+}
+
+/** True when two walls can be merged as a pair (properties, collinear, shared endpoint). */
+export function canMergeWallPair(wallA, wallB, epsilon = 0.5) {
+  if (!wallA || !wallB || wallA.id === wallB.id) return false;
+  if (!wallsHaveSameMergeProperties([wallA, wallB])) return false;
+  if (!areCollinearWalls(wallA, wallB)) return false;
+  return Boolean(getWallMergePairIds(wallA, wallB, epsilon));
+}
+
+/**
+ * From a mixed selection, find every continuous identical mergeable chain.
+ * Non-matching / disconnected walls are left out (not an error).
+ * Returns { ok, groups, skippedCount, error }.
+ */
+export function findMergeableWallGroups(selectedWallIds = [], walls = [], epsilon = 0.5) {
+  if (!Array.isArray(selectedWallIds) || selectedWallIds.length < 2) {
+    return { ok: false, groups: [], skippedCount: 0, error: 'Please select at least 2 walls to merge.' };
+  }
+
+  const uniqueIds = [...new Set(selectedWallIds)];
+  const selectedWalls = uniqueIds
+    .map((id) => walls.find((wall) => wall.id === id))
+    .filter(Boolean);
+
+  if (selectedWalls.length < 2) {
+    return { ok: false, groups: [], skippedCount: 0, error: 'Invalid wall selection.' };
+  }
+
+  const adj = new Map(selectedWalls.map((wall) => [wall.id, []]));
+  for (let i = 0; i < selectedWalls.length; i += 1) {
+    for (let j = i + 1; j < selectedWalls.length; j += 1) {
+      const a = selectedWalls[i];
+      const b = selectedWalls[j];
+      if (!canMergeWallPair(a, b, epsilon)) continue;
+      adj.get(a.id).push(b);
+      adj.get(b.id).push(a);
+    }
+  }
+
+  const visited = new Set();
+  const groups = [];
+
+  selectedWalls.forEach((seed) => {
+    if (visited.has(seed.id)) return;
+
+    const component = [];
+    const queue = [seed];
+    visited.add(seed.id);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      component.push(current);
+      (adj.get(current.id) || []).forEach((neighbor) => {
+        if (visited.has(neighbor.id)) return;
+        visited.add(neighbor.id);
+        queue.push(neighbor);
+      });
+    }
+
+    if (component.length < 2) return;
+
+    const ordered = orderWallsIntoMergeChain(component, epsilon);
+    if (!ordered || ordered.length < 2) return;
+
+    const pairsOk = ordered.every((wall, index) => {
+      if (index === ordered.length - 1) return true;
+      return Boolean(getWallMergePairIds(wall, ordered[index + 1], epsilon));
+    });
+    if (!pairsOk) return;
+
+    groups.push(ordered);
+  });
+
+  if (groups.length === 0) {
+    return {
+      ok: false,
+      groups: [],
+      skippedCount: selectedWalls.length,
+      error: 'No continuous identical walls to merge. Walls need matching properties, collinear alignment, and end-to-end connection.',
+    };
+  }
+
+  const mergedIds = new Set(groups.flatMap((group) => group.map((wall) => wall.id)));
+  const skippedCount = selectedWalls.filter((wall) => !mergedIds.has(wall.id)).length;
+
+  return { ok: true, groups, skippedCount, error: null };
+}
+
+/**
+ * Validate a multi-wall merge selection before calling the API.
+ * Mixed selections are allowed: only continuous identical chains are merged.
+ * Returns { ok: true, groups } or { ok: false, error }.
+ */
+export function validateWallsForMerge(selectedWallIds = [], walls = [], epsilon = 0.5) {
+  const result = findMergeableWallGroups(selectedWallIds, walls, epsilon);
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+  return {
+    ok: true,
+    groups: result.groups,
+    // Back-compat: single-chain callers can still read orderedWalls
+    orderedWalls: result.groups.length === 1 ? result.groups[0] : null,
+    skippedCount: result.skippedCount,
+  };
+}

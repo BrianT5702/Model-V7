@@ -1611,13 +1611,7 @@ const Canvas2D = ({
                 const updatedSelection = [...selectedWallsForRoom];
                 const wallIndex = updatedSelection.indexOf(clickedWall.id);
                 if (wallIndex === -1) {
-                  if (updatedSelection.length < 2) {
-                    updatedSelection.push(clickedWall.id);
-                  } else {
-                    setWallMergeError("You can only select up to 2 walls for merging.");
-                    setTimeout(() => setWallMergeError(''), 5000);
-                    return;
-                  }
+                  updatedSelection.push(clickedWall.id);
                 } else {
                   updatedSelection.splice(wallIndex, 1);
                 }

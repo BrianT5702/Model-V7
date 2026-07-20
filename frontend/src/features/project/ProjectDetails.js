@@ -2133,14 +2133,14 @@ const ProjectDetails = () => {
                         {projectDetails.currentMode === 'merge-wall' && (
                                     <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-gray-800 dark:to-gray-800 rounded-lg border border-yellow-200 dark:border-amber-700 shadow-sm">
                                         <p className="text-sm text-yellow-800 dark:text-amber-100 mb-3 font-medium">
-                                            Select exactly 2 walls to merge
+                                            Select walls to merge. Continuous identical walls merge; different ones are left alone.
                                         </p>
                             <button
                                 onClick={() => {
-                                    if (projectDetails.selectedWallsForRoom.length === 2) {
+                                    if (projectDetails.selectedWallsForRoom.length >= 2) {
                                     projectDetails.handleManualWallMerge(projectDetails.selectedWallsForRoom);
                                     } else {
-                                    projectDetails.setWallMergeError("Please select exactly 2 walls to merge.");
+                                    projectDetails.setWallMergeError("Please select at least 2 walls to merge.");
                                     projectDetails.setSelectedWallsForRoom([]);
                                     projectDetails.setSelectedWallsForEdit([]);
                                     setTimeout(() => projectDetails.setWallMergeError(''), 5000);

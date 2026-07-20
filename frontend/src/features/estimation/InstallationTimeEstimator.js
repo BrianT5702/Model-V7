@@ -2331,7 +2331,7 @@ const InstallationTimeEstimator = ({
                 });
             }
             
-            // Support Accessories
+            // Support Accessories — omit section when not needed
             if (exportData.supportAccessories.isNeeded) {
                 drawTableSection({
                     title: 'Support Accessories',
@@ -2347,28 +2347,6 @@ const InstallationTimeEstimator = ({
                         ['Include Cable', exportData.supportAccessories.includeCable ? 'Yes' : 'No']
                     ]
                 });
-            } else if (isLandscapeLayout) {
-                const slot = pickDualColumn(24);
-                let y = drawColumnSectionHeader(
-                    'Support Accessories',
-                    [234, 88, 12],
-                    [255, 247, 237],
-                    slot.x,
-                    slot.width,
-                    slot.y
-                );
-                doc.setFontSize(8);
-                doc.setFont(undefined, 'normal');
-                const note = doc.splitTextToSize(
-                    'Not needed in this project - All ceiling panels are under 6000mm length',
-                    slot.width
-                );
-                doc.text(note, slot.x, y);
-                setDualColumnY(slot.side, y + note.length * 4 + 6);
-            } else {
-                addSectionHeader('Support Accessories', [234, 88, 12], [255, 247, 237]);
-                addText('Not needed in this project - All ceiling panels are under 6000mm length', 10);
-                yPos += 5;
             }
             
             checkNewPage();
@@ -3623,11 +3601,11 @@ const InstallationTimeEstimator = ({
                             </div>
 
                             {/* Ceiling Panels */}
+                            {exportData.ceilingPanels.length > 0 && (
                             <div className="bg-green-50 rounded-lg p-4">
                                 <h4 className="font-semibold text-green-800 mb-3">
                                     Ceiling Panels ({exportData.ceilingPanels.length})
                                 </h4>
-                                {exportData.ceilingPanels.length > 0 ? (
                                     <div className="overflow-x-auto">
                                         <table className="min-w-full border border-gray-300">
                                             <thead className="bg-gray-50">
@@ -3706,19 +3684,15 @@ const InstallationTimeEstimator = ({
                                             </tbody>
                                         </table>
                                     </div>
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        No ceiling panels found. Generate a ceiling plan first.
-                                    </div>
-                                )}
                             </div>
+                            )}
 
                             {/* Floor Panels */}
+                            {exportData.floorPanels.length > 0 && (
                             <div className="bg-purple-50 rounded-lg p-4">
                                 <h4 className="font-semibold text-purple-800 mb-3">
                                     Floor Panels ({exportData.floorPanels.length})
                                 </h4>
-                                {exportData.floorPanels.length > 0 ? (
                                     <div className="overflow-x-auto">
                                         <table className="min-w-full border border-gray-300">
                                             <thead className="bg-gray-50">
@@ -3793,12 +3767,8 @@ const InstallationTimeEstimator = ({
                                             </tbody>
                                         </table>
                                     </div>
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        No floor panels found. Generate a floor plan first.
-                                    </div>
-                                )}
                             </div>
+                            )}
 
                             {/* Slab Panels */}
                             {exportData.slabs.length > 0 && (
@@ -3945,9 +3915,9 @@ const InstallationTimeEstimator = ({
                             )}
 
                                         {/* Support Accessories */}
+            {exportData.supportAccessories.isNeeded && (
             <div className="bg-orange-50 rounded-lg p-4">
                 <h4 className="font-semibold text-orange-800 mb-3">Support Accessories</h4>
-                {exportData.supportAccessories.isNeeded ? (
                     <div className="overflow-x-auto">
                         <table className="min-w-full border border-gray-300">
                             <thead className="bg-gray-50">
@@ -4006,19 +3976,8 @@ const InstallationTimeEstimator = ({
                             </tbody>
                         </table>
                     </div>
-                ) : (
-                    <div className="text-center py-6">
-                        <div className="text-lg font-medium text-orange-700 mb-2">Not needed in this project</div>
-                        <div className="text-sm text-orange-600">All ceiling panels are under 6000mm length</div>
-                        <div className="mt-3 p-3 bg-orange-100 rounded-lg">
-                            <div className="text-xs text-orange-800">
-                                <strong>Note:</strong> Support accessories are only required when ceiling panels exceed 6000mm in length. 
-                                For shorter panels, standard installation methods are sufficient.
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
+            )}
 
                             {/* Installation Estimates */}
                             <div className="bg-indigo-50 rounded-lg p-4">

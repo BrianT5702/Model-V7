@@ -6,7 +6,7 @@ import {
 } from './wallPanelCalculationUtils';
 
 /** Walls at or below this count: try every order (n!). Above: heuristic + random samples. */
-const EXHAUSTIVE_WALL_LIMIT = 7;
+const EXHAUSTIVE_WALL_LIMIT = 8;
 /** Random samples when running in the background (UI stays responsive via chunking). */
 const HEURISTIC_RANDOM_SAMPLES = 50000;
 /** How many full wall-panel calculations to run before yielding while the tab is visible. */

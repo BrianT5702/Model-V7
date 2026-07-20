@@ -722,8 +722,9 @@ function fallbackExteriorWallDimensionPosition({
 }
 
 /**
- * Exterior plan dim: span lanes group chain segments on one row, but wide text can still
- * overlap neighbors. Bump rowOffset until label boxes clear placedLabels (exterior always draws).
+ * Exterior plan dim: span lanes group chain segments on one row.
+ * Prefer sliding label along the span; when lockRow is true (wall chain dims),
+ * never bump to another row — keep the chain visually level.
  */
 export function placeExteriorWallDimensionAvoidingLabels({
     isHorizontal,
@@ -742,11 +743,12 @@ export function placeExteriorWallDimensionAvoidingLabels({
     paddingH = 2,
     paddingV = 8,
     fixedLabelX = null,
-    fontSize = null
+    fontSize = null,
+    lockRow = false
 }) {
     const sep = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
     const rowStep = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
-    const maxBumps = DIMENSION_CONFIG.MAX_ATTEMPTS;
+    const maxBumps = lockRow ? 0 : DIMENSION_CONFIG.MAX_ATTEMPTS;
     let rowOffset = rowOffsetPx;
     const columnLocked = !isHorizontal && fixedLabelX != null && Number.isFinite(fixedLabelX);
 
@@ -805,7 +807,7 @@ export function placeExteriorWallDimensionAvoidingLabels({
     for (let bump = 0; bump <= maxBumps; bump++) {
         if (columnLocked) {
             const yTry = [0];
-            for (let s = rowStep; s <= rowStep * maxBumps; s += rowStep) {
+            for (let s = rowStep; s <= rowStep * Math.max(1, maxBumps); s += rowStep) {
                 yTry.push(s, -s);
             }
             for (const yBiasPx of yTry) {
@@ -820,14 +822,16 @@ export function placeExteriorWallDimensionAvoidingLabels({
                 return { ...placed, rowOffset, labelBounds };
             }
         }
+        if (lockRow) break;
         rowOffset += rowStep;
     }
 
-    const { placed, labelBounds } = tryOnce(rowOffset, 0);
+    // Same-row fallback: keep chain level even if text is a bit tight
+    const { placed, labelBounds } = tryOnce(rowOffsetPx, 0);
     if (!placed) {
         return null;
     }
-    return { ...placed, rowOffset, labelBounds };
+    return { ...placed, rowOffset: rowOffsetPx, labelBounds };
 }
 
 function exteriorSideName(nx, ny) {
@@ -1040,8 +1044,9 @@ export function drawRoomPreview(context, selectedRoomPoints, scaleFactor, offset
     context.fill();
 }
 
-// Draw wall endpoints
-export function drawEndpoints(context, x, y, scaleFactor, offsetX, offsetY, hoveredPoint, color = null, size = null) {
+// Draw wall endpoints. When initialScale is provided, size tracks canvas zoom
+// (bigger when zoomed in, smaller when zoomed out), clamped to a readable range.
+export function drawEndpoints(context, x, y, scaleFactor, offsetX, offsetY, hoveredPoint, color = null, size = null, initialScale = null) {
     // Use config defaults if not provided
     if (color === null) {
         color = DIMENSION_CONFIG.COLORS.ENDPOINT;
@@ -1049,10 +1054,16 @@ export function drawEndpoints(context, x, y, scaleFactor, offsetX, offsetY, hove
     if (size === null) {
         size = DIMENSION_CONFIG.ENDPOINT_SIZE;
     }
-    
+
+    if (initialScale != null && initialScale > 0) {
+        size *= scaleFactor / initialScale;
+    }
+    // Keep dots usable when zoomed out, and not overpowering when zoomed in
+    size = Math.max(1.5, Math.min(8, size));
+
     if (hoveredPoint && hoveredPoint.x === x && hoveredPoint.y === y) {
-        color = DIMENSION_CONFIG.COLORS.ENDPOINT_HOVER; // Highlight color for hovered endpoint
-        size = DIMENSION_CONFIG.ENDPOINT_SIZE_HOVER; // Slightly larger size for visual feedback
+        color = DIMENSION_CONFIG.COLORS.ENDPOINT_HOVER;
+        size = Math.min(10, size * 1.35);
     }
     context.beginPath();
     context.arc(
@@ -1603,16 +1614,33 @@ export function drawDimensions(
         const storedPlacement = dimensionPlacementMemory.get(dimensionKey);
         const lockedSide = storedPlacement ? storedPlacement.side : null;
         
-        // Smart placement: determine if dimension is "small" relative to project size
-        // Small dimensions can be placed near the wall, large ones go outside project area
+        // Smart placement: short dims can sit near the wall — but never for segments on
+        // (or flush with) the project exterior edge. Otherwise a short end piece like 1900
+        // leaves the shared exterior row used by longer neighbors (2290, 2660, …).
         const projectWidth = (maxX - minX) || 1;
         const projectHeight = (maxY - minY) || 1;
         const projectSize = Math.max(projectWidth, projectHeight);
         const isSmallDimension = length < (projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD);
         const wallData = findWallDataForSegment(wallLinesMap, startX, startY, endX, endY);
         const segmentWall = wallData?.wall ?? null;
+        const isHorizSegment = Math.abs(angle) < 45 || Math.abs(angle) > 135;
+        const wallThickness = Number(segmentWall?.thickness) || 100;
+        // Allow for centerline vs outer-face inset (about half thickness)
+        const exteriorEdgeTol = Math.max(
+            DIMENSION_CONFIG.SPAN_ENDPOINT_TOUCH_TOL_MM,
+            wallThickness * 0.75
+        );
+        const midSegX = (startX + endX) / 2;
+        const midSegY = (startY + endY) / 2;
+        const onExteriorEdge = isHorizSegment
+            ? (
+                Math.min(Math.abs(midSegY - minY), Math.abs(midSegY - maxY)) <= exteriorEdgeTol
+            )
+            : (
+                Math.min(Math.abs(midSegX - minX), Math.abs(midSegX - maxX)) <= exteriorEdgeTol
+            );
 
-        const isNearWallDimension = isSmallDimension;
+        const isNearWallDimension = isSmallDimension && !onExteriorEdge;
         const wallLaneSpacing = isNearWallDimension
             ? DIMENSION_CONFIG.LANE_SPACING
             : DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
@@ -1959,7 +1987,8 @@ export function drawDimensions(
                     offsetX,
                     offsetY,
                     textWidth,
-                    placedLabels
+                    placedLabels,
+                    lockRow: true
                 });
                 if (!placed) {
                     context.restore();
@@ -2169,7 +2198,8 @@ export function drawDimensions(
                     textWidth,
                     placedLabels,
                     fixedLabelX: fixedColumnX,
-                    fontSize
+                    fontSize,
+                    lockRow: true
                 });
                 if (!placed) {
                     context.restore();
@@ -4088,25 +4118,28 @@ export function drawWalls({
         }
         if (isEditingMode) {
             const endpointColor = selectedWall === wall.id ? 'red' : '#2196F3';
-            drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
-            drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor);
-        }
-        if (isEditingMode) {
-            intersections.forEach((inter) => {
-                drawEndpoints(
-                    context,
-                    inter.x,
-                    inter.y,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    hoveredPoint,
-                    '#FF9800',
-                    6
-                );
-            });
+            drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
+            drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
         }
     });
+
+    // Yellow snap points: draw once; size tracks canvas zoom
+    if (isEditingMode && Array.isArray(intersections)) {
+        intersections.forEach((inter) => {
+            drawEndpoints(
+                context,
+                inter.x,
+                inter.y,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                hoveredPoint,
+                '#FF9800',
+                2.25,
+                initialScale
+            );
+        });
+    }
 
     // Gap-fill indicators on top of wall geometry
     walls.forEach((wall) => {
@@ -4135,8 +4168,8 @@ export function drawWalls({
             tempOffsetOpts
         );
         drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, '#4CAF50', [5, 5]);
-        drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
-        drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50');
+        drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 2, initialScale);
+        drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 2, initialScale);
         const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
         if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
             context.beginPath();
@@ -4153,7 +4186,7 @@ export function drawWalls({
             context.setLineDash([3, 3]);
             context.stroke();
             context.setLineDash([]);
-            drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 6);
+            drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 2.25, initialScale);
         }
     }
     const { dimensionEdgeExtents } = drawWallPlanDimensionsLayer({

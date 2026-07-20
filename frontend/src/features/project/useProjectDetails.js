@@ -9,6 +9,8 @@ import {
   detectRoomWalls,
   getWallSegmentKey,
   getStoreyElevationMm,
+  validateWallsForMerge,
+  getWallMergePairIds,
 } from './projectUtils';
 import { normalizeWallCoordinates, clearDimensionPlacementMemory } from '../canvas/drawing';
 import { doPolygonsOverlap } from '../canvas/utils';
@@ -2688,202 +2690,93 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   };
 
-  // Add this function to handle manual wall merging
+  // Merge continuous identical chains within the selection; leave non-matching walls alone.
   const handleManualWallMerge = async (selectedWallIds) => {
-    const wall1 = walls.find(w => w.id === selectedWallIds[0]);
-    const wall2 = walls.find(w => w.id === selectedWallIds[1]);
-
-    if (!wall1 || !wall2) {
-      setWallMergeError("Invalid wall selection.");
+    const validation = validateWallsForMerge(selectedWallIds, walls, MERGE_POINT_TOLERANCE);
+    if (!validation.ok) {
+      setWallMergeError(validation.error);
       setSelectedWallsForRoom([]);
       setSelectedWallsForEdit([]);
       setTimeout(() => setWallMergeError(''), 5000);
       return;
     }
 
-    if (
-      wall1.application_type !== wall2.application_type ||
-      wall1.height !== wall2.height ||
-      wall1.thickness !== wall2.thickness
-    ) {
-      setWallMergeError("Walls must have the same type, height, and thickness.");
+    const mergeGroups = validation.groups || (validation.orderedWalls ? [validation.orderedWalls] : []);
+    if (mergeGroups.length === 0) {
+      setWallMergeError('No continuous identical walls to merge.');
       setSelectedWallsForRoom([]);
       setSelectedWallsForEdit([]);
       setTimeout(() => setWallMergeError(''), 5000);
       return;
     }
 
-    if (
-      (wall1.inner_face_material ?? '') !== (wall2.inner_face_material ?? '') ||
-      (wall1.outer_face_material ?? '') !== (wall2.outer_face_material ?? '') ||
-      Number(wall1.inner_face_thickness) !== Number(wall2.inner_face_thickness) ||
-      Number(wall1.outer_face_thickness) !== Number(wall2.outer_face_thickness)
-    ) {
-      setWallMergeError("Walls must have the same inner/outer face material and face thickness to merge.");
-      setSelectedWallsForRoom([]);
-      setSelectedWallsForEdit([]);
-      setTimeout(() => setWallMergeError(''), 5000);
-      return;
-    }
+    const resolveMergedWall = async (mergedWall, wallA, wallB) => {
+      if (
+        mergedWall?.start_x !== undefined &&
+        mergedWall?.start_y !== undefined &&
+        mergedWall?.end_x !== undefined &&
+        mergedWall?.end_y !== undefined
+      ) {
+        return mergedWall;
+      }
 
-    if (!gapFillSettingsMatch(wall1, wall2)) {
-      setWallMergeError("Walls must have the same gap-fill settings to merge.");
-      setSelectedWallsForRoom([]);
-      setSelectedWallsForEdit([]);
-      setTimeout(() => setWallMergeError(''), 5000);
-      return;
-    }
+      if (mergedWall?.id) {
+        try {
+          const wallResponse = await api.get(`/walls/${mergedWall.id}/`);
+          if (
+            wallResponse.status === 200 &&
+            wallResponse.data?.start_x !== undefined &&
+            wallResponse.data?.end_x !== undefined
+          ) {
+            return wallResponse.data;
+          }
+        } catch (fetchError) {
+          console.warn('Failed to fetch merged wall by ID:', fetchError);
+        }
+      }
 
-    if (!areCollinearWalls(wall1, wall2)) {
-      setWallMergeError("Walls must be collinear to merge (180° alignment required).");
-      setSelectedWallsForRoom([]);
-      setSelectedWallsForEdit([]);
-      setTimeout(() => setWallMergeError(''), 5000);
-      return;
-    }
+      return constructMergedWallCoordinates(mergedWall, wallA, wallB);
+    };
 
-    const connected =
-      arePointsEqual(
-        { x: wall1.start_x, y: wall1.start_y },
-        { x: wall2.end_x, y: wall2.end_y },
-        MERGE_POINT_TOLERANCE
-      ) ||
-      arePointsEqual(
-        { x: wall1.end_x, y: wall1.end_y },
-        { x: wall2.start_x, y: wall2.start_y },
-        MERGE_POINT_TOLERANCE
-      ) ||
-      arePointsEqual(
-        { x: wall1.start_x, y: wall1.start_y },
-        { x: wall2.start_x, y: wall2.start_y },
-        MERGE_POINT_TOLERANCE
-      ) ||
-      arePointsEqual(
-        { x: wall1.end_x, y: wall1.end_y },
-        { x: wall2.end_x, y: wall2.end_y },
-        MERGE_POINT_TOLERANCE
-      );
+    const mergeOrderedChain = async (orderedWalls) => {
+      let currentWall = orderedWalls[0];
 
-    if (!connected) {
-      setWallMergeError("Walls must be connected at one endpoint.");
-      setSelectedWallsForRoom([]);
-      setSelectedWallsForEdit([]);
-      setTimeout(() => setWallMergeError(''), 5000);
-      return;
-    }
+      for (let i = 1; i < orderedWalls.length; i += 1) {
+        const nextWall = orderedWalls[i];
+        const pairIds = getWallMergePairIds(currentWall, nextWall, MERGE_POINT_TOLERANCE);
+        if (!pairIds) {
+          throw new Error('Selected walls must connect end-to-end in a single chain.');
+        }
+
+        const response = await api.post('/walls/merge_walls/', {
+          wall_ids: pairIds,
+        });
+
+        if (response.status !== 201) {
+          throw new Error('Unable to merge walls.');
+        }
+
+        currentWall = await resolveMergedWall(
+          response.data,
+          pairIds[0] === currentWall.id ? currentWall : nextWall,
+          pairIds[1] === nextWall.id ? nextWall : currentWall
+        );
+      }
+
+      return currentWall;
+    };
 
     try {
       await commitHistoryAction('Merge walls', async () => {
-      const response = await api.post("/walls/merge_walls/", {
-        wall_ids: [wall1.id, wall2.id],
-      });
+        for (const group of mergeGroups) {
+          await mergeOrderedChain(group);
+        }
 
-      if (response.status === 201) {
-        let mergedWall = response.data;
-        console.log('Wall merge successful, API response:', mergedWall);
-        console.log('Response data type:', typeof mergedWall);
-        console.log('Response data keys:', Object.keys(mergedWall));
-        console.log('Previous walls count:', walls.length);
-        
-        // Check if the API response has the required properties
-        if (mergedWall.start_x === undefined || mergedWall.start_y === undefined || mergedWall.end_x === undefined || mergedWall.end_y === undefined) {
-          console.log('API response missing coordinates, attempting to construct merged wall...');
-          
-          // If we have the wall ID, try to fetch the complete wall data
-          if (mergedWall.id) {
-            console.log('Attempting to fetch complete merged wall data...');
-            
-            try {
-              // Try to fetch the specific merged wall by ID
-              const wallResponse = await api.get(`/walls/${mergedWall.id}/`);
-              if (wallResponse.status === 200 && wallResponse.data) {
-                const completeWall = wallResponse.data;
-                console.log('Successfully fetched complete merged wall:', completeWall);
-                
-                // Check if this wall has coordinates
-                if (completeWall.start_x && completeWall.start_y && completeWall.end_x && completeWall.end_y) {
-                  mergedWall = completeWall;
-                  console.log('Using complete wall data from API');
-                } else {
-                  console.log('Fetched wall still missing coordinates, attempting coordinate construction...');
-                  // Fall back to coordinate construction
-                  try {
-                    mergedWall = await constructMergedWallCoordinates(mergedWall, wall1, wall2);
-                  } catch (constructionError) {
-                    console.error('Coordinate construction failed:', constructionError);
-                    // Try to fetch all walls as fallback
-                    await fetchUpdatedWalls();
-                    return;
-                  }
-                }
-              } else {
-                console.log('Failed to fetch wall by ID, attempting coordinate construction...');
-                // Fall back to coordinate construction
-                try {
-                  mergedWall = await constructMergedWallCoordinates(mergedWall, wall1, wall2);
-                } catch (constructionError) {
-                  console.error('Coordinate construction failed:', constructionError);
-                  // Try to fetch all walls as fallback
-                  await fetchUpdatedWalls();
-                  return;
-                }
-              }
-            } catch (fetchError) {
-              console.log('Failed to fetch wall by ID, attempting coordinate construction...');
-              // Fall back to coordinate construction
-              try {
-                mergedWall = await constructMergedWallCoordinates(mergedWall, wall1, wall2);
-              } catch (constructionError) {
-                console.error('Coordinate construction failed:', constructionError);
-                // Try to fetch all walls as fallback
-                await fetchUpdatedWalls();
-                return;
-              }
-            }
-          } else {
-            console.log('No wall ID in response, attempting coordinate construction...');
-            try {
-              mergedWall = await constructMergedWallCoordinates(mergedWall, wall1, wall2);
-            } catch (constructionError) {
-              console.error('Coordinate construction failed:', constructionError);
-              // Try to fetch all walls as fallback
-              await fetchUpdatedWalls();
-              return;
-            }
-          }
-        }
-        
-        // Final validation that we have a complete wall
-        if (
-          mergedWall &&
-          mergedWall.start_x !== undefined &&
-          mergedWall.start_y !== undefined &&
-          mergedWall.end_x !== undefined &&
-          mergedWall.end_y !== undefined
-        ) {
-          console.log('Wall merge complete with valid coordinates, updating state...');
-          setWalls(prev => {
-            const filteredWalls = prev.filter(w => w.id !== wall1.id && w.id !== wall2.id);
-            const updatedWalls = [...filteredWalls, mergedWall];
-            console.log('Updated walls count:', updatedWalls.length);
-            console.log('New walls array:', updatedWalls);
-            return updatedWalls;
-          });
-          
-          setSelectedWallsForRoom([]);
-          setWallMergeSuccess(true);
-          setTimeout(() => setWallMergeSuccess(false), 3000);
-        } else {
-          console.error('Final validation failed, wall still missing coordinates:', mergedWall);
-          const refreshed = await fetchUpdatedWalls();
-          if (!refreshed) {
-            setWallMergeError('Unable to merge walls because merged geometry is incomplete.');
-            setSelectedWallsForRoom([]);
-            setSelectedWallsForEdit([]);
-            setTimeout(() => setWallMergeError(''), 5000);
-          }
-        }
-      }
+        await refreshWalls();
+        setSelectedWallsForRoom([]);
+        setSelectedWallsForEdit([]);
+        setWallMergeSuccess(true);
+        setTimeout(() => setWallMergeSuccess(false), 3000);
       });
     } catch (error) {
       setSelectedWallsForRoom([]);
@@ -2901,6 +2794,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         } else {
           setWallMergeError('Unable to merge walls. The walls may not be compatible for merging.');
         }
+      } else if (error.message) {
+        setWallMergeError(error.message);
       } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
         setWallMergeError('Network error. Please check your connection and try again.');
       } else {
