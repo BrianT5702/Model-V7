@@ -7,6 +7,9 @@ import LoginPage from './features/auth/LoginPage';
 import ProtectedRoute from './features/auth/ProtectedRoute';
 import { AuthProvider } from './features/auth/AuthContext';
 import { ThemeProvider } from './features/theme/ThemeContext';
+import { ShareProvider } from './features/share/ShareContext';
+import ShareProjectPage from './features/share/ShareProjectPage';
+import ShareSessionGuard from './features/share/ShareSessionGuard';
 
 // Ensure scroll position is reset on route changes and browser
 // doesn't try to "restore" scroll from the previous page.
@@ -30,9 +33,11 @@ const App = () => {
     return (
         <ThemeProvider>
         <AuthProvider>
+        <ShareProvider>
             <Router>
                 <div className="App min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors">
                     <ScrollToTop />
+                    <ShareSessionGuard>
                     <Routes>
                         <Route path="/" element={<HomePage />} />
                         <Route path="/login" element={<LoginPage />} />
@@ -46,9 +51,12 @@ const App = () => {
                             )}
                         />
                         <Route path="/projects/:projectId" element={<ProjectDetails />} />
+                        <Route path="/share/:shareToken" element={<ShareProjectPage />} />
                     </Routes>
+                    </ShareSessionGuard>
                 </div>
             </Router>
+        </ShareProvider>
         </AuthProvider>
         </ThemeProvider>
     );

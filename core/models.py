@@ -102,6 +102,43 @@ class Project(models.Model):
         return self.name
 
 
+class ProjectShareLink(models.Model):
+    """Tokenized share link for a project (view-only or editable)."""
+    MODE_VIEW = 'view'
+    MODE_EDIT = 'edit'
+    MODE_CHOICES = (
+        (MODE_VIEW, 'View only'),
+        (MODE_EDIT, 'Editable'),
+    )
+
+    project = models.ForeignKey(
+        Project,
+        related_name='share_links',
+        on_delete=models.CASCADE,
+    )
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    mode = models.CharField(max_length=10, choices=MODE_CHOICES, default=MODE_VIEW)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='project_share_links_created',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None
+
+    def __str__(self):
+        return f'{self.project_id}:{self.mode}:{self.token[:8]}'
+
+
 class ProjectComment(models.Model):
     """Customer feedback left by salesman on a project, optionally tied to walls."""
     STATUS_OPEN = 'open'

@@ -18,6 +18,17 @@ const readCsrfFromCookie = () => {
 };
 
 let cachedCsrfToken = null;
+let activeShareToken = null;
+
+export const setActiveShareToken = (token) => {
+    activeShareToken = token ? String(token) : null;
+};
+
+export const clearActiveShareToken = () => {
+    activeShareToken = null;
+};
+
+export const getActiveShareToken = () => activeShareToken;
 
 const api = axios.create({
     baseURL: getBaseURL(),
@@ -48,6 +59,10 @@ api.interceptors.request.use(
             if (token) {
                 config.headers['X-CSRFToken'] = token;
             }
+        }
+
+        if (activeShareToken) {
+            config.headers['X-Share-Token'] = activeShareToken;
         }
 
         if (isDevelopment) {

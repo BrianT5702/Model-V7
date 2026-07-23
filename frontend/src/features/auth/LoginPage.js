@@ -2,17 +2,22 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FaCube, FaSignInAlt } from 'react-icons/fa';
 import { useAuth } from './AuthContext';
+import { useShare } from '../share/ShareContext';
 import ThemeToggle from '../../components/ThemeToggle';
 
 const LoginPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { login, authError, setAuthError, isAuthenticated } = useAuth();
+    const { isEditShare, share } = useShare();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const redirectTo = location.state?.from?.pathname || '/';
+    const shareReturnPath = share?.token ? `/share/${share.token}` : null;
+    const redirectTo = location.state?.from?.pathname
+        || (isEditShare && shareReturnPath)
+        || '/';
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -46,7 +51,9 @@ const LoginPage = () => {
                     </div>
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">System V7.0</h1>
                     <p className="text-gray-600 dark:text-gray-400 mt-2">
-                        Sign in to create projects and make edits. Guests can still browse and view.
+                        {isEditShare
+                            ? 'Sign in with an editor account to edit the shared project.'
+                            : 'Sign in to create projects and make edits. Guests can still browse and view.'}
                     </p>
                 </div>
 
@@ -100,15 +107,26 @@ const LoginPage = () => {
                         </button>
                     </form>
 
-                    <p className="mt-6 text-sm text-gray-600 text-center">
+                    <p className="mt-6 text-sm text-gray-600 dark:text-gray-400 text-center">
                         Need an account? Contact your administrator to have one created.
                     </p>
 
-                    <div className="mt-4 text-center">
-                        <Link to="/" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                            Continue as guest (view only)
-                        </Link>
-                    </div>
+                    {isEditShare && shareReturnPath ? (
+                        <div className="mt-4 text-center">
+                            <Link
+                                to={shareReturnPath}
+                                className="text-sm text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 transition-colors"
+                            >
+                                Back to shared project (view only)
+                            </Link>
+                        </div>
+                    ) : (
+                        <div className="mt-4 text-center">
+                            <Link to="/" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                                Continue as guest (view only)
+                            </Link>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

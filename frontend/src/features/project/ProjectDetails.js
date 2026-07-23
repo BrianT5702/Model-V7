@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useProjectDetails from './useProjectDetails';
 import { useAuth } from '../auth/AuthContext';
+import { useShare } from '../share/ShareContext';
+import ShareProjectModal from '../share/ShareProjectModal';
 import AuthStatusBar from '../../components/AuthStatusBar';
 import { getWallSegmentKey } from './projectUtils';
 import {
@@ -47,16 +49,22 @@ import {
     FaUndo,
     FaRedo,
     FaStreetView,
+    FaShareAlt,
 } from 'react-icons/fa';
 
-const ProjectDetails = () => {
-    const { projectId } = useParams();
+const ProjectDetails = ({ shareProjectId = null } = {}) => {
+    const { projectId: routeProjectId } = useParams();
+    const projectId = shareProjectId || routeProjectId;
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { canEdit, canComment, isAuthenticated } = useAuth();
+    const { canEdit: authCanEdit, canComment, isAuthenticated } = useAuth();
+    const { isShareSession, isViewOnlyShare, isEditShare, share } = useShare();
+    // View-only share: never editable. Editable share: only after login as editor.
+    const canEdit = isViewOnlyShare ? false : authCanEdit;
     const projectDetails = useProjectDetails(projectId, { canEdit });
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
+    const [shareModalOpen, setShareModalOpen] = useState(false);
     const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
     const [commentWallSelectMode, setCommentWallSelectMode] = useState(false);
     const [selectedWallsForComment, setSelectedWallsForComment] = useState([]);
@@ -1166,17 +1174,23 @@ const ProjectDetails = () => {
                             )}
                             </>
                             )}
-                            <button
-                                onClick={() => navigate(getProjectsListPath())}
-                                className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-                            >
-                                <FaArrowLeft className="w-3.5 h-3.5 sm:mr-1.5" />
-                                <span className="hidden sm:inline">Back to Projects</span>
-                            </button>
-                            <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                            {!isShareSession && (
+                                <>
+                                    <button
+                                        onClick={() => navigate(getProjectsListPath())}
+                                        className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                                    >
+                                        <FaArrowLeft className="w-3.5 h-3.5 sm:mr-1.5" />
+                                        <span className="hidden sm:inline">Back to Projects</span>
+                                    </button>
+                                    <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                                </>
+                            )}
                             <div className="flex items-center text-sm text-gray-900 dark:text-gray-100">
                                 <FaCube className="w-3.5 h-3.5 mr-1.5 text-blue-600 dark:text-blue-400" />
-                                <span className="font-medium hidden sm:inline">Project View</span>
+                                <span className="font-medium hidden sm:inline">
+                                    {isShareSession ? 'Shared Project' : 'Project View'}
+                                </span>
                             </div>
                             <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
                             <button
@@ -1204,14 +1218,18 @@ const ProjectDetails = () => {
                         
                         <div className="flex items-center space-x-1.5 sm:space-x-2">
                             <AuthStatusBar />
-                            <button
-                                onClick={() => navigate(getProjectsListPath())}
-                                className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-                            >
-                                <FaHome className="w-3.5 h-3.5 sm:mr-1.5" />
-                                <span className="hidden sm:inline">Projects</span>
-                            </button>
-                            <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                            {!isShareSession && (
+                                <>
+                                    <button
+                                        onClick={() => navigate(getProjectsListPath())}
+                                        className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                                    >
+                                        <FaHome className="w-3.5 h-3.5 sm:mr-1.5" />
+                                        <span className="hidden sm:inline">Projects</span>
+                                    </button>
+                                    <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                                </>
+                            )}
                             <button
                                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                                 className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
@@ -1228,7 +1246,23 @@ const ProjectDetails = () => {
 
             {!canEdit && (
                 <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-sm text-amber-800">
-                    {isAuthenticated ? (
+                    {isViewOnlyShare ? (
+                        'View-only shared link. You can browse this project, but cannot edit it or open the project list.'
+                    ) : isEditShare && !isAuthenticated ? (
+                        <>
+                            Editable shared link — log in with an editor account to make changes.{' '}
+                            <Link
+                                to="/login"
+                                state={{ from: { pathname: `/share/${share?.token || ''}` } }}
+                                className="font-medium underline hover:text-amber-900"
+                            >
+                                Log in
+                            </Link>
+                            . Project list and registration are not available from this link.
+                        </>
+                    ) : isEditShare && isAuthenticated ? (
+                        'You are signed in, but this account cannot edit. Use an Admin or Drafter account. Project list and registration are not available from this link.'
+                    ) : isAuthenticated ? (
                         'View-only access (Salesman). You can navigate all tabs, view 3D, export, and leave customer feedback comments — but cannot edit walls, rooms, levels, or plans.'
                     ) : (
                         <>
@@ -1239,7 +1273,11 @@ const ProjectDetails = () => {
                     )}
                 </div>
             )}
-
+            {isEditShare && canEdit && (
+                <div className="shrink-0 bg-emerald-50 border-b border-emerald-200 px-4 sm:px-6 py-2 text-sm text-emerald-800">
+                    Editable shared link — you are signed in and can edit this project. Project list and registration are not available from this link.
+                </div>
+            )}
             {/* Header Section */}
             <div className="project-details-header shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
                 <div className="w-full px-3 sm:px-4 lg:px-6 py-2" style={{ width: '100%' }}>
@@ -1307,7 +1345,18 @@ const ProjectDetails = () => {
                                     </button>
                                 </>
                             )}
-                            {isAuthenticated && (
+                            {authCanEdit && !isShareSession && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShareModalOpen(true)}
+                                    className="flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary"
+                                    title="Share project"
+                                >
+                                    <FaShareAlt className="mr-1.5 text-xs" />
+                                    Share
+                                </button>
+                            )}
+                            {isAuthenticated && !isShareSession && (
                                 <button
                                     type="button"
                                     onClick={() => setCommentsPanelOpen((open) => !open)}
@@ -3924,6 +3973,14 @@ const ProjectDetails = () => {
                 onCommentStatusChanged={handleCommentStatusChanged}
                 highlightedWallCount={commentHighlightWallIds.length}
             />
+
+            {shareModalOpen && (
+                <ShareProjectModal
+                    projectId={projectId}
+                    projectName={projectDetails.project?.name}
+                    onClose={() => setShareModalOpen(false)}
+                />
+            )}
 
             </div>
         </div>

@@ -22,14 +22,15 @@ class PanelCalculator {
         ];
     }
 
-    // Add new method to clean up leftover panels
+    // Drop leftovers too small to keep (LF or SF below wall thickness).
     cleanupLeftovers() {
         this.leftovers = this.leftovers.filter((leftover) => {
             const wallThickness = Number(leftover.wallThickness) || 0;
             return (
                 leftover.longer_face > 0 &&
                 leftover.shorter_face > 0 &&
-                leftover.longer_face >= wallThickness
+                leftover.longer_face >= wallThickness &&
+                leftover.shorter_face >= wallThickness
             );
         });
     }

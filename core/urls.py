@@ -8,6 +8,11 @@ from .auth_views import (
     register_view,
     user_detail_view,
 )
+from .share_views import (
+    project_share_links_view,
+    resolve_share_link_view,
+    revoke_project_share_link_view,
+)
 from .views import (
     ProjectViewSet,
     ProjectFolderViewSet,
@@ -54,5 +59,12 @@ urlpatterns = [
     path('auth/register/', register_view, name='auth-register'),
     path('auth/users/', list_users_view, name='auth-users-list'),
     path('auth/users/<int:user_id>/', user_detail_view, name='auth-user-detail'),
+    path('projects/<int:project_id>/share-links/', project_share_links_view, name='project-share-links'),
+    path(
+        'projects/<int:project_id>/share-links/<int:link_id>/revoke/',
+        revoke_project_share_link_view,
+        name='project-share-link-revoke',
+    ),
+    path('share/<str:token>/', resolve_share_link_view, name='share-resolve'),
     path('', include(router.urls)),  # Include all routes defined by the router
 ]
