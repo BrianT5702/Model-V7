@@ -283,7 +283,8 @@ export function createWallMesh(instance, wall) {
         const thisCenterX = (finalStartX + finalEndX) / 2;
         if (otherX > thisCenterX) {
           // Vertical wall is on RIGHT - extend rightmost endpoint to rightmost surface
-          if (rightEndpointX < rightmostX) {
+          // Skip when already clear of the near (left) face — e.g. pre-inset partitions
+          if (rightEndpointX <= leftmostX + 1e-9 && rightEndpointX < rightmostX) {
             // Update whichever endpoint is the rightmost one
             if (finalEndX > finalStartX) {
               finalEndX = rightmostX;
@@ -293,7 +294,8 @@ export function createWallMesh(instance, wall) {
           }
         } else {
           // Vertical wall is on LEFT - extend leftmost endpoint to leftmost surface
-          if (leftEndpointX > leftmostX) {
+          // Skip when already clear of the near (right) face — e.g. pre-inset partitions
+          if (leftEndpointX >= rightmostX - 1e-9 && leftEndpointX > leftmostX) {
             // Update whichever endpoint is the leftmost one
             if (finalStartX < finalEndX) {
               finalStartX = leftmostX;
@@ -319,7 +321,8 @@ export function createWallMesh(instance, wall) {
         const thisCenterZ = (finalStartZ + finalEndZ) / 2;
         if (otherZ > thisCenterZ) {
           // Horizontal wall is on TOP - extend topmost endpoint to topmost surface
-          if (topEndpointZ < topmostZ) {
+          // Skip when already clear of the near (bottom) face — e.g. pre-inset partitions
+          if (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ) {
             // Update whichever endpoint is the topmost one
             if (finalEndZ > finalStartZ) {
               finalEndZ = topmostZ;
@@ -329,7 +332,8 @@ export function createWallMesh(instance, wall) {
           }
         } else {
           // Horizontal wall is on BOTTOM - extend bottommost endpoint to bottommost surface
-          if (bottomEndpointZ > bottommostZ) {
+          // Skip when already clear of the near (top) face — e.g. pre-inset partitions
+          if (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ) {
             // Update whichever endpoint is the bottommost one
             if (finalStartZ < finalEndZ) {
               finalStartZ = bottommostZ;
@@ -393,15 +397,16 @@ export function createWallMesh(instance, wall) {
       // Check if joint is at start or end
       const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
       const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
-      const tolerance = 0.1; // 10cm tolerance - more lenient for butt-in joints
-      // Mark which side needs shortening (can be both!)
+      // Only shorten when the endpoint still reaches into/near the joining wall centerline.
+      // Skip when geometry was already inset (e.g. partition create deducted joining thickness).
+      const alreadyInsetLimit = joiningWallThickness * 0.55 + 1e-6;
       const isCloserToStart = startDist < endDist;
-      if (isCloserToStart && (startDist < tolerance || startDist < endDist * 0.5)) {
+      if (isCloserToStart && startDist <= alreadyInsetLimit) {
         shouldShortenStart = true;
         // Use the maximum thickness if multiple joints at start
         startShorteningThickness = Math.max(startShorteningThickness, joiningWallThickness);
       }
-      if (!isCloserToStart && (endDist < tolerance || endDist < startDist * 0.5)) {
+      if (!isCloserToStart && endDist <= alreadyInsetLimit) {
         shouldShortenEnd = true;
         // Use the maximum thickness if multiple joints at end
         endShorteningThickness = Math.max(endShorteningThickness, joiningWallThickness);
@@ -415,7 +420,7 @@ export function createWallMesh(instance, wall) {
           thisWallEnd: { x: finalEndX, z: finalEndZ },
           startDist,
           endDist,
-          tolerance,
+          alreadyInsetLimit,
           isCloserToStart,
           shouldShortenStart,
           shouldShortenEnd,

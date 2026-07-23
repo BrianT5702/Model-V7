@@ -318,12 +318,29 @@ const PanelCalculationControls = ({
                 }
             }
 
+            const gongConsumed = leftover?.leftJointConsumed === true;
+            const muConsumed = leftover?.rightJointConsumed === true;
+            const hasGong = !gongConsumed;
+            const hasMu = !muConsumed;
+            const factoryJointsRemaining = [];
+            if (hasGong) factoryJointsRemaining.push('公');
+            if (hasMu) factoryJointsRemaining.push('母');
+            const status = (hasGong || hasMu) ? 'Reusable' : 'Scrap';
+            const usableFor = [];
+            if (hasGong) usableFor.push('Right SP');
+            if (hasMu) usableFor.push('Left SP');
+
             const grouped = {
                 ...leftover,
                 shorter_face: normalizeDimension(leftover?.shorter_face),
                 longer_face: normalizeDimension(leftover?.longer_face),
                 panelLength: normalizeDimension(panelLength),
                 wallThickness: normalizeDimension(leftover?.wallThickness),
+                leftJointConsumed: gongConsumed,
+                rightJointConsumed: muConsumed,
+                status,
+                factoryJointsRemaining,
+                usableFor,
             };
             const key = [
                 grouped.shorter_face,
@@ -332,10 +349,14 @@ const PanelCalculationControls = ({
                 grouped.wallThickness,
                 grouped.leftEdgeType || 'straight',
                 grouped.rightEdgeType || 'straight',
+                grouped.leftEdgeSlash || '',
+                grouped.rightEdgeSlash || '',
                 grouped.innerFaceMaterial || '',
                 grouped.innerFaceThickness ?? '',
                 grouped.outerFaceMaterial || '',
                 grouped.outerFaceThickness ?? '',
+                gongConsumed ? '1' : '0',
+                muConsumed ? '1' : '0',
             ].join('|');
 
             const existing = groups.get(key);
@@ -347,6 +368,11 @@ const PanelCalculationControls = ({
         });
 
         return [...groups.values()].sort((a, b) => {
+            // Reusable first, then scrap
+            if (a.status !== b.status) {
+                return a.status === 'Reusable' ? -1 : 1;
+            }
+
             const lengthA = Number(a?.panelLength) || 0;
             const lengthB = Number(b?.panelLength) || 0;
             if (lengthA !== lengthB) return lengthB - lengthA;
@@ -525,6 +551,13 @@ const PanelCalculationControls = ({
                             >
                                 <div className="text-sm text-gray-600">Leftover Panels</div>
                                 <div className="text-xl font-bold">{panelAnalysis.details.leftoverPanels}</div>
+                                {groupedLeftovers.length > 0 && (
+                                    <div className="text-[11px] text-gray-500 mt-0.5">
+                                        {groupedLeftovers.filter((l) => l.status === 'Reusable').reduce((s, l) => s + l.quantity, 0)} reusable
+                                        {' · '}
+                                        {groupedLeftovers.filter((l) => l.status === 'Scrap').reduce((s, l) => s + l.quantity, 0)} scrap
+                                    </div>
+                                )}
                             </div>
                             {calculatedPanels && (
                                 <div className="p-2 bg-white rounded shadow">
@@ -543,12 +576,16 @@ const PanelCalculationControls = ({
 
             {showLeftoverDetails && panelCalculator && (
                 <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-5 max-w-5xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel">
+                    <div className="bg-white rounded-lg p-5 max-w-6xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel">
                         <div className="flex justify-between items-center mb-4">
                             <div>
                                 <h3 className="text-lg font-semibold">Leftover Panels Details</h3>
                                 <p className="text-xs text-gray-500">
                                     {panelCalculator.leftovers.length} pieces grouped into {groupedLeftovers.length} rows
+                                    {' · '}
+                                    Reusable: {groupedLeftovers.filter((l) => l.status === 'Reusable').reduce((s, l) => s + l.quantity, 0)}
+                                    {' · '}
+                                    Scrap: {groupedLeftovers.filter((l) => l.status === 'Scrap').reduce((s, l) => s + l.quantity, 0)}
                                 </p>
                             </div>
                             <button
@@ -563,12 +600,16 @@ const PanelCalculationControls = ({
                                 <thead>
                                     <tr className="bg-gray-100">
                                         <th className="px-2 py-1.5 border">No.</th>
+                                        <th className="px-2 py-1.5 border">Status</th>
+                                        <th className="px-2 py-1.5 border">Factory Joint Remaining</th>
+                                        <th className="px-2 py-1.5 border">Usable For</th>
                                         <th className="px-2 py-1.5 border">Shorter Face (mm)</th>
                                         <th className="px-2 py-1.5 border">Longer Face (mm)</th>
                                         <th className="px-2 py-1.5 border">Panel Length (mm)</th>
                                         <th className="px-2 py-1.5 border">Wall Thickness (mm)</th>
                                         <th className="px-2 py-1.5 border">Qty</th>
                                         <th className="px-2 py-1.5 border">Edge Type</th>
+                                        <th className="px-2 py-1.5 border">Finishing</th>
                                         <th className="px-2 py-1.5 border">Project</th>
                                     </tr>
                                 </thead>
@@ -578,12 +619,45 @@ const PanelCalculationControls = ({
                                         const shorterFace = leftover.shorter_face || 0;
                                         const longerFace = leftover.longer_face || 0;
                                         const wallThickness = leftover.wallThickness || 'N/A';
-                                        const leftEdge = leftover.leftEdgeType === '45_cut' ? '45° Cut' : 'Straight';
-                                        const rightEdge = leftover.rightEdgeType === '45_cut' ? '45° Cut' : (leftover.rightEdgeType || 'Straight');
+                                        const leftEdge = leftover.leftEdgeType === '45_cut'
+                                            ? `45° Cut${leftover.leftEdgeSlash ? ` (${leftover.leftEdgeSlash})` : ''}`
+                                            : 'Straight';
+                                        const rightEdge = leftover.rightEdgeType === '45_cut'
+                                            ? `45° Cut${leftover.rightEdgeSlash ? ` (${leftover.rightEdgeSlash})` : ''}`
+                                            : (leftover.rightEdgeType || 'Straight');
+                                        const isReusable = leftover.status === 'Reusable';
+                                        const factoryJointLabel = leftover.factoryJointsRemaining?.length
+                                            ? leftover.factoryJointsRemaining.join(' + ')
+                                            : 'None';
+                                        const usableForLabel = leftover.usableFor?.length
+                                            ? leftover.usableFor.join(', ')
+                                            : '—';
+                                        const finishing = [
+                                            leftover.innerFaceMaterial || '—',
+                                            leftover.outerFaceMaterial || '—',
+                                        ].join(' / ');
 
                                         return (
-                                            <tr key={leftover.groupKey} className="hover:bg-gray-50">
+                                            <tr
+                                                key={leftover.groupKey}
+                                                className={isReusable ? 'hover:bg-green-50 bg-green-50/40' : 'hover:bg-gray-50 bg-red-50/30'}
+                                            >
                                                 <td className="px-2 py-1.5 border text-center">{index + 1}</td>
+                                                <td className="px-2 py-1.5 border text-center">
+                                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold ${
+                                                        isReusable
+                                                            ? 'bg-green-100 text-green-800'
+                                                            : 'bg-red-100 text-red-800'
+                                                    }`}>
+                                                        {leftover.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-2 py-1.5 border text-center font-medium whitespace-nowrap">
+                                                    {factoryJointLabel}
+                                                </td>
+                                                <td className="px-2 py-1.5 border text-center whitespace-nowrap">
+                                                    {usableForLabel}
+                                                </td>
                                                 <td className="px-2 py-1.5 border text-center">{shorterFace}</td>
                                                 <td className="px-2 py-1.5 border text-center">{longerFace}</td>
                                                 <td className="px-2 py-1.5 border text-center">{panelLength}</td>
@@ -592,6 +666,7 @@ const PanelCalculationControls = ({
                                                 <td className="px-2 py-1.5 border text-center whitespace-nowrap">
                                                     {`Left: ${leftEdge}, Right: ${rightEdge}`}
                                                 </td>
+                                                <td className="px-2 py-1.5 border text-center whitespace-nowrap">{finishing}</td>
                                                 <td className="px-2 py-1.5 border text-center whitespace-nowrap">
                                                     {project?.name || 'N/A'}
                                                 </td>

@@ -68,18 +68,18 @@ export function getWallJointTypes(wall, intersections = []) {
 
             if (isHorizontal) {
                 if (isLeftToRight) {
-                    if (inter.x === wall.start_x) leftEndIntersections.push(pair.joining_method);
-                    else if (inter.x === wall.end_x) rightEndIntersections.push(pair.joining_method);
+                    if (Math.abs(inter.x - wall.start_x) < 0.5) leftEndIntersections.push(pair.joining_method);
+                    else if (Math.abs(inter.x - wall.end_x) < 0.5) rightEndIntersections.push(pair.joining_method);
                 } else {
-                    if (inter.x === wall.start_x) rightEndIntersections.push(pair.joining_method);
-                    else if (inter.x === wall.end_x) leftEndIntersections.push(pair.joining_method);
+                    if (Math.abs(inter.x - wall.start_x) < 0.5) rightEndIntersections.push(pair.joining_method);
+                    else if (Math.abs(inter.x - wall.end_x) < 0.5) leftEndIntersections.push(pair.joining_method);
                 }
             } else if (isBottomToTop) {
-                if (inter.y === wall.start_y) leftEndIntersections.push(pair.joining_method);
-                else if (inter.y === wall.end_y) rightEndIntersections.push(pair.joining_method);
+                if (Math.abs(inter.y - wall.start_y) < 0.5) leftEndIntersections.push(pair.joining_method);
+                else if (Math.abs(inter.y - wall.end_y) < 0.5) rightEndIntersections.push(pair.joining_method);
             } else {
-                if (inter.y === wall.start_y) rightEndIntersections.push(pair.joining_method);
-                else if (inter.y === wall.end_y) leftEndIntersections.push(pair.joining_method);
+                if (Math.abs(inter.y - wall.start_y) < 0.5) rightEndIntersections.push(pair.joining_method);
+                else if (Math.abs(inter.y - wall.end_y) < 0.5) leftEndIntersections.push(pair.joining_method);
             }
         });
     });
@@ -98,6 +98,103 @@ export function count45CutEnds(wall, intersections = []) {
 export function hasMixedJoints(wall, intersections = []) {
     const joints = getWallJointTypes(wall, intersections);
     return joints.left !== joints.right;
+}
+
+/** Panel-left / panel-right endpoints (same convention as getWallJointTypes). */
+export function getWallPanelEndPoints(wall) {
+    const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
+    const start = { x: wall.start_x, y: wall.start_y };
+    const end = { x: wall.end_x, y: wall.end_y };
+    if (isHorizontal) {
+        return wall.end_x > wall.start_x
+            ? { left: start, right: end }
+            : { left: end, right: start };
+    }
+    return wall.end_y > wall.start_y
+        ? { left: start, right: end }
+        : { left: end, right: start };
+}
+
+/**
+ * Find the wall this end joins to (prefer a 45_cut partner when several exist).
+ */
+export function findJoiningWallAtEnd(wall, endPoint, walls = [], intersections = []) {
+    const byId = new Map((walls || []).map((w) => [w.id, w]));
+    let fallback = null;
+    let preferred = null;
+    const maxDist = Math.max(200, (Number(wall.thickness) || 0) * 2);
+
+    (intersections || []).forEach((inter) => {
+        if (!inter?.pairs) return;
+        const dist = Math.hypot(inter.x - endPoint.x, inter.y - endPoint.y);
+        if (dist > maxDist) return;
+
+        inter.pairs.forEach((pair) => {
+            if (!pair.wall1 || !pair.wall2) return;
+            const id1 = pair.wall1.id;
+            const id2 = pair.wall2.id;
+            if (id1 !== wall.id && id2 !== wall.id) return;
+            const otherId = id1 === wall.id ? id2 : id1;
+            const other = byId.get(otherId);
+            if (!other) return;
+            const method = pair.joining_method || 'butt_in';
+            if (method === '45_cut') preferred = other;
+            else if (!fallback) fallback = other;
+        });
+    });
+
+    return preferred || fallback;
+}
+
+/**
+ * Slash for a 45° end from joining-wall side.
+ * Plan coords are Y-down (drawing: larger y = visually below / top→bottom).
+ * Cross(alongIntoWall, towardJoining) > 0 → '\' else '/'.
+ * Both ends joining visually below a L→R wall → left '\', right '/'.
+ */
+export function getCutSlashForEnd(endPoint, otherEndPoint, joiningWall) {
+    if (!joiningWall) return '/';
+    const alongX = otherEndPoint.x - endPoint.x;
+    const alongY = otherEndPoint.y - endPoint.y;
+    const midJ = {
+        x: (joiningWall.start_x + joiningWall.end_x) / 2,
+        y: (joiningWall.start_y + joiningWall.end_y) / 2,
+    };
+    const toJx = midJ.x - endPoint.x;
+    const toJy = midJ.y - endPoint.y;
+    // Y-down plan: positive cross = joining on visual "below" when walking L→R
+    const cross = alongX * toJy - alongY * toJx;
+    if (Math.abs(cross) < 1e-9) {
+        // Degenerate: toJy > 0 = visually below
+        return toJy > 0 ? (alongX >= 0 ? '\\' : '/') : (alongX >= 0 ? '/' : '\\');
+    }
+    return cross > 0 ? '\\' : '/';
+}
+
+export function flipCutSlash(slash) {
+    if (slash === '/') return '\\';
+    if (slash === '\\') return '/';
+    return slash;
+}
+
+/**
+ * Required 45° cut slash at each panel end from joining-wall geometry.
+ * Returns { left: '/'|'\\'|null, right: '/'|'\\'|null } (null when end is not 45_cut).
+ */
+export function getWallEndCutSlashes(wall, walls = [], intersections = []) {
+    const joints = getWallJointTypes(wall, intersections);
+    const ends = getWallPanelEndPoints(wall);
+    const result = { left: null, right: null };
+
+    if (joints.left === '45_cut') {
+        const joining = findJoiningWallAtEnd(wall, ends.left, walls, intersections);
+        result.left = getCutSlashForEnd(ends.left, ends.right, joining);
+    }
+    if (joints.right === '45_cut') {
+        const joining = findJoiningWallAtEnd(wall, ends.right, walls, intersections);
+        result.right = getCutSlashForEnd(ends.right, ends.left, joining);
+    }
+    return result;
 }
 
 /**
@@ -119,6 +216,7 @@ export function calculateProjectWallPanels(walls = [], intersections = [], wallO
 
         const wallLength = getWallLength(wall);
         const jointType = getWallJointTypes(wall, intersections);
+        const cutSlashes = getWallEndCutSlashes(wall, walls, intersections);
         const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null)
             ? wall.gap_fill_height
             : wall.height;
@@ -135,7 +233,8 @@ export function calculateProjectWallPanels(walls = [], intersections = [], wallO
             wall.thickness,
             jointType,
             heightForCalc,
-            faceInfo
+            faceInfo,
+            cutSlashes
         );
 
         if (!panels || !Array.isArray(panels)) return;

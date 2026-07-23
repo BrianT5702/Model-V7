@@ -2847,6 +2847,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     
     // 1. Find all intersections between the new wall and existing walls on the same storey (not at endpoints)
     const intersections = [];
+    const isPartition = wallProps.application_type === 'partition';
     const isAtEndpoint = (pt, w) =>
       (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
       (Math.abs(w.end_x - pt.x) < 0.001 && Math.abs(w.end_y - pt.y) < 0.001);
@@ -2878,13 +2879,15 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
           intersections.push({ wall, intersection });
         }
       }
-      // 1b. Split if startPoint is on wall body (not at endpoint)
-      if (isOnWallBody(startPoint, wall)) {
-        intersections.push({ wall, intersection: { x: startPoint.x, y: startPoint.y } });
-      }
-      // 1c. Split if endPoint is on wall body (not at endpoint)
-      if (isOnWallBody(endPoint, wall)) {
-        intersections.push({ wall, intersection: { x: endPoint.x, y: endPoint.y } });
+      // 1b/1c. T-join onto wall body: split host wall for normal walls only.
+      // Partitions butt into the host without splitting it.
+      if (!isPartition) {
+        if (isOnWallBody(startPoint, wall)) {
+          intersections.push({ wall, intersection: { x: startPoint.x, y: startPoint.y } });
+        }
+        if (isOnWallBody(endPoint, wall)) {
+          intersections.push({ wall, intersection: { x: endPoint.x, y: endPoint.y } });
+        }
       }
     });
 
@@ -3031,6 +3034,80 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     wallsToAdd = wallsToAdd.filter(w => !isZeroLength(w));
     newWallSegments = newWallSegments.filter(w => !isZeroLength(w));
 
+    // Partition walls: inset start/end by the joining wall thickness so stored length
+    // matches butt-in panel length (does not run through the host wall body).
+    const findJoiningWallAtPoint = (pt, segment, candidateWalls) => {
+      let bodyHit = null;
+      let endpointHit = null;
+      for (const wall of candidateWalls) {
+        if (areCollinearWalls(segment, wall)) continue;
+        const dx = wall.end_x - wall.start_x;
+        const dy = wall.end_y - wall.start_y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.001) continue;
+        const ux = dx / length;
+        const uy = dy / length;
+        const nx = -uy;
+        const ny = ux;
+        const relX = pt.x - wall.start_x;
+        const relY = pt.y - wall.start_y;
+        const along = relX * ux + relY * uy;
+        const perp = relX * nx + relY * ny;
+        const thick = Number(wall.thickness) || 0;
+        if (along < -0.001 || along > length + 0.001 || Math.abs(perp) > thick + 0.001) {
+          continue;
+        }
+        const onBody = along > 0.001 && along < length - 0.001;
+        if (onBody) {
+          bodyHit = wall;
+          break;
+        }
+        endpointHit = wall;
+      }
+      return bodyHit || endpointHit;
+    };
+
+    const insetPartitionEndsByJoiningThickness = (segment, candidateWalls) => {
+      const start = { x: segment.start_x, y: segment.start_y };
+      const end = { x: segment.end_x, y: segment.end_y };
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 0.001) return segment;
+
+      const joinStart = findJoiningWallAtPoint(start, segment, candidateWalls);
+      const joinEnd = findJoiningWallAtPoint(end, segment, candidateWalls);
+      const ux = dx / len;
+      const uy = dy / len;
+      const startInset = joinStart ? (Number(joinStart.thickness) || 0) : 0;
+      const endInset = joinEnd ? (Number(joinEnd.thickness) || 0) : 0;
+      if (startInset + endInset <= 0) return segment;
+      if (startInset + endInset >= len - 0.001) return segment;
+
+      const nextStart = {
+        x: start.x + ux * startInset,
+        y: start.y + uy * startInset,
+      };
+      const nextEnd = {
+        x: end.x - ux * endInset,
+        y: end.y - uy * endInset,
+      };
+      const normalized = normalizeWallCoordinates(nextStart, nextEnd);
+      return {
+        ...segment,
+        start_x: normalized.startPoint.x,
+        start_y: normalized.startPoint.y,
+        end_x: normalized.endPoint.x,
+        end_y: normalized.endPoint.y,
+      };
+    };
+
+    if (isPartition) {
+      newWallSegments = newWallSegments.map((segment) =>
+        insetPartitionEndsByJoiningThickness(segment, wallsOnSameStorey)
+      ).filter((w) => !isZeroLength(w));
+    }
+
     // 4. Delete split walls, add new segments (API)
     return commitHistoryAction('Add wall', async () => {
       for (const wall of wallsToDelete) {
@@ -3041,11 +3118,52 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         const created = await api.post('/walls/create_wall/', wallData);
         createdWalls.push(created.data);
       }
+      const createdPartitions = [];
       for (const wallData of newWallSegments) {
         const created = await api.post('/walls/create_wall/', wallData);
         createdWalls.push(created.data);
+        if (isPartition) {
+          createdPartitions.push(created.data);
+        }
       }
-      await refreshWalls();
+
+      // Auto-set butt-in joints for new partition walls against walls they join.
+      if (isPartition && createdPartitions.length > 0) {
+        const wallsResponse = await api.get(`/projects/${projectId}/walls/`);
+        const latestWalls = wallsResponse.data || [];
+        setWalls(latestWalls);
+
+        const jointPairs = new Set();
+        for (const partition of createdPartitions) {
+          const others = latestWalls.filter((w) => w.id !== partition.id);
+          const ends = [
+            { x: partition.start_x, y: partition.start_y },
+            { x: partition.end_x, y: partition.end_y },
+          ];
+          for (const pt of ends) {
+            const joining = findJoiningWallAtPoint(pt, partition, others);
+            if (!joining) continue;
+            const key = [partition.id, joining.id].sort().join('-');
+            if (jointPairs.has(key)) continue;
+            jointPairs.add(key);
+            await api.post('/intersections/set_joint/', {
+              project: project.id,
+              wall_1: partition.id,
+              wall_2: joining.id,
+              joining_method: 'butt_in',
+            });
+          }
+        }
+
+        try {
+          const intersectionsResponse = await api.get(`/intersections/?project=${projectId}`);
+          setJoints(intersectionsResponse.data || []);
+        } catch (intersectionError) {
+          console.warn('Could not refresh intersections after partition create:', intersectionError);
+        }
+      } else {
+        await refreshWalls();
+      }
       return createdWalls;
     });
   };

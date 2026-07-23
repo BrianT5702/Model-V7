@@ -3667,6 +3667,26 @@ export function drawWalls({
                     // Now shorten wall1 to connect to wall2
                     // Only shorten wall1 if the intersection is at an actual endpoint of wall1
                     // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
+                    // Skip when wall1 was already inset by joining-wall thickness (partition create).
+                    const wall1AlreadyInsetFromHost = (wall1, hostWall, atStart) => {
+                        const pt = atStart
+                            ? { x: wall1.start_x, y: wall1.start_y }
+                            : { x: wall1.end_x, y: wall1.end_y };
+                        const dx = hostWall.end_x - hostWall.start_x;
+                        const dy = hostWall.end_y - hostWall.start_y;
+                        const length = Math.hypot(dx, dy);
+                        if (length < 0.001) return false;
+                        const ux = dx / length;
+                        const uy = dy / length;
+                        const nx = -uy;
+                        const ny = ux;
+                        const relX = pt.x - hostWall.start_x;
+                        const relY = pt.y - hostWall.start_y;
+                        const perp = Math.abs(relX * nx + relY * ny);
+                        const hostThick = Number(hostWall.thickness) || 0;
+                        return perp > hostThick * 0.5 + 0.1;
+                    };
+
                     // Case 1: Vertical is wall1, Horizontal is wall2
                     if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody) {
                         // Use geometry at the intersection (nearest endpoint) so stem direction — and thus
@@ -3674,6 +3694,7 @@ export function drawWalls({
                         const distJointToStart = Math.hypot(inter.x - vWall.start_x, inter.y - vWall.start_y);
                         const distJointToEnd = Math.hypot(inter.x - vWall.end_x, inter.y - vWall.end_y);
                         const jointAtVerticalStart = distJointToStart < distJointToEnd;
+                        if (!wall1AlreadyInsetFromHost(vWall, hWall, jointAtVerticalStart)) {
                         const jointY = jointAtVerticalStart ? vWall.start_y : vWall.end_y;
                         const otherVerticalY = jointAtVerticalStart ? vWall.end_y : vWall.start_y;
                         const horizontalOnTopAtButtIn = otherVerticalY > jointY;
@@ -3709,11 +3730,13 @@ export function drawWalls({
                         vLine2Endpoint.y = targetY;
                         
                         // Keep X coordinates unchanged to maintain wall thickness
+                        }
                     }
                     // Case 2: Horizontal is wall1, Vertical is wall2
                     // Only shorten wall1 if the intersection is at an actual endpoint of wall1
                     // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
                     else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody) {
+                        if (!wall1AlreadyInsetFromHost(hWall, vWall, hIsAtStart)) {
                         // Determine which line of vertical (wall2) to connect to
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -3773,6 +3796,7 @@ export function drawWalls({
                         hLine2Endpoint.x = targetX;
                         
                         // Keep Y coordinates unchanged to maintain wall thickness
+                        }
                     }
                     }
                 } else {

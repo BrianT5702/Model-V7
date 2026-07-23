@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { FaCube, FaPlus } from 'react-icons/fa';
 import CreateProject from '../features/project/CreateProject';
+import ChatbotFab from '../features/chatbot/ChatbotFab';
 import ProjectList from '../features/project/ProjectList';
 import AuthStatusBar from '../components/AuthStatusBar';
 import { useAuth } from '../features/auth/AuthContext';
@@ -236,6 +237,17 @@ const HomePage = () => {
                     )}
                 </div>
             </div>
+
+            {canEdit && (
+                <ChatbotFab
+                    projects={projects}
+                    setProjects={setProjects}
+                    folders={folders}
+                    setFolders={setFolders}
+                    foldersAvailable={foldersAvailable}
+                    onFolderAssigned={handleSelectedFolderKeyChange}
+                />
+            )}
         </div>
     );
 };

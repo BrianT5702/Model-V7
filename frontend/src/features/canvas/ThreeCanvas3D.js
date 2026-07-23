@@ -2569,7 +2569,7 @@ getModelBounds() {
               const leftEndpointX = Math.min(finalStartX, finalEndX);
               const thisCenterX = (finalStartX + finalEndX) / 2;
               if (otherX > thisCenterX) {
-                if (rightEndpointX < rightmostX) {
+                if (rightEndpointX <= leftmostX + 1e-9 && rightEndpointX < rightmostX) {
                   if (finalEndX > finalStartX) {
                     finalEndX = rightmostX;
                   } else {
@@ -2577,7 +2577,7 @@ getModelBounds() {
                   }
                 }
               } else {
-                if (leftEndpointX > leftmostX) {
+                if (leftEndpointX >= rightmostX - 1e-9 && leftEndpointX > leftmostX) {
                   if (finalStartX < finalEndX) {
                     finalStartX = leftmostX;
                   } else {
@@ -2598,7 +2598,7 @@ getModelBounds() {
               const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
               const thisCenterZ = (finalStartZ + finalEndZ) / 2;
               if (otherZ > thisCenterZ) {
-                if (topEndpointZ < topmostZ) {
+                if (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ) {
                   if (finalEndZ > finalStartZ) {
                     finalEndZ = topmostZ;
                   } else {
@@ -2606,7 +2606,7 @@ getModelBounds() {
                   }
                 }
               } else {
-                if (bottomEndpointZ > bottommostZ) {
+                if (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ) {
                   if (finalStartZ < finalEndZ) {
                     finalStartZ = bottommostZ;
                   } else {
@@ -2662,11 +2662,12 @@ getModelBounds() {
             const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
             const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
             const isCloserToStart = startDist < endDist;
+            const alreadyInsetLimit = joiningWallThickness * 0.55 + 1e-6;
             
-            if (isCloserToStart && startDist < 0.1) {
+            if (isCloserToStart && startDist <= alreadyInsetLimit) {
               shouldShortenStart = true;
               startShorteningThickness = Math.max(startShorteningThickness, joiningWallThickness);
-            } else if (!isCloserToStart && endDist < 0.1) {
+            } else if (!isCloserToStart && endDist <= alreadyInsetLimit) {
               shouldShortenEnd = true;
               endShorteningThickness = Math.max(endShorteningThickness, joiningWallThickness);
             }
@@ -3822,7 +3823,7 @@ getModelBounds() {
             const leftEndpointX = Math.min(finalStartX, finalEndX);
             const thisCenterX = (finalStartX + finalEndX) / 2;
             if (otherX > thisCenterX) {
-              if (rightEndpointX < rightmostX) {
+              if (rightEndpointX <= leftmostX + 1e-9 && rightEndpointX < rightmostX) {
                 if (finalEndX > finalStartX) {
                   finalEndX = rightmostX;
                 } else {
@@ -3830,7 +3831,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (leftEndpointX > leftmostX) {
+              if (leftEndpointX >= rightmostX - 1e-9 && leftEndpointX > leftmostX) {
                 if (finalStartX < finalEndX) {
                   finalStartX = leftmostX;
                 } else {
@@ -3853,7 +3854,7 @@ getModelBounds() {
             const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
             const thisCenterZ = (finalStartZ + finalEndZ) / 2;
             if (otherZ > thisCenterZ) {
-              if (topEndpointZ < topmostZ) {
+              if (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ) {
                 if (finalEndZ > finalStartZ) {
                   finalEndZ = topmostZ;
                 } else {
@@ -3861,7 +3862,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (bottomEndpointZ > bottommostZ) {
+              if (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ) {
                 if (finalStartZ < finalEndZ) {
                   finalStartZ = bottommostZ;
                 } else {
@@ -4134,7 +4135,7 @@ getModelBounds() {
             const leftEndpointX = Math.min(finalStartX, finalEndX);
             const thisCenterX = (finalStartX + finalEndX) / 2;
             if (otherX > thisCenterX) {
-              if (rightEndpointX < rightmostX) {
+              if (rightEndpointX <= leftmostX + 1e-9 && rightEndpointX < rightmostX) {
                 if (finalEndX > finalStartX) {
                   finalEndX = rightmostX;
                 } else {
@@ -4142,7 +4143,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (leftEndpointX > leftmostX) {
+              if (leftEndpointX >= rightmostX - 1e-9 && leftEndpointX > leftmostX) {
                 if (finalStartX < finalEndX) {
                   finalStartX = leftmostX;
                 } else {
@@ -4163,7 +4164,7 @@ getModelBounds() {
             const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
             const thisCenterZ = (finalStartZ + finalEndZ) / 2;
             if (otherZ > thisCenterZ) {
-              if (topEndpointZ < topmostZ) {
+              if (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ) {
                 if (finalEndZ > finalStartZ) {
                   finalEndZ = topmostZ;
                 } else {
@@ -4171,7 +4172,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (bottomEndpointZ > bottommostZ) {
+              if (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ) {
                 if (finalStartZ < finalEndZ) {
                   finalStartZ = bottommostZ;
                 } else {
@@ -4442,7 +4443,7 @@ getModelBounds() {
             const leftEndpointX = Math.min(finalStartX, finalEndX);
             const thisCenterX = (finalStartX + finalEndX) / 2;
             if (otherX > thisCenterX) {
-              if (rightEndpointX < rightmostX) {
+              if (rightEndpointX <= leftmostX + 1e-9 && rightEndpointX < rightmostX) {
                 if (finalEndX > finalStartX) {
                   finalEndX = rightmostX;
                 } else {
@@ -4450,7 +4451,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (leftEndpointX > leftmostX) {
+              if (leftEndpointX >= rightmostX - 1e-9 && leftEndpointX > leftmostX) {
                 if (finalStartX < finalEndX) {
                   finalStartX = leftmostX;
                 } else {
@@ -4471,7 +4472,7 @@ getModelBounds() {
             const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
             const thisCenterZ = (finalStartZ + finalEndZ) / 2;
             if (otherZ > thisCenterZ) {
-              if (topEndpointZ < topmostZ) {
+              if (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ) {
                 if (finalEndZ > finalStartZ) {
                   finalEndZ = topmostZ;
                 } else {
@@ -4479,7 +4480,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (bottomEndpointZ > bottommostZ) {
+              if (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ) {
                 if (finalStartZ < finalEndZ) {
                   finalStartZ = bottommostZ;
                 } else {
@@ -4530,14 +4531,16 @@ getModelBounds() {
             const jointZ = snap(intersection.z);
             const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
             const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
-            const tolerance = 0.1; // 10cm tolerance
+            // Only shorten when endpoint still reaches into/near the joining wall centerline.
+            // Skip when geometry was already inset (e.g. partition create deducted joining thickness).
+            const alreadyInsetLimit = joiningWallThickness * 0.55 + 1e-6;
             const isCloserToStart = startDist < endDist;
 
-            if (isCloserToStart && (startDist < tolerance || startDist < endDist * 0.5)) {
+            if (isCloserToStart && startDist <= alreadyInsetLimit) {
               shouldShortenStart = true;
               startShorteningThickness = Math.max(startShorteningThickness, joiningWallThickness);
             }
-            if (!isCloserToStart && (endDist < tolerance || endDist < startDist * 0.5)) {
+            if (!isCloserToStart && endDist <= alreadyInsetLimit) {
               shouldShortenEnd = true;
               endShorteningThickness = Math.max(endShorteningThickness, joiningWallThickness);
             }
@@ -5087,7 +5090,7 @@ getModelBounds() {
             const leftEndpointX = Math.min(finalStartX, finalEndX);
             const thisCenterX = (finalStartX + finalEndX) / 2;
             if (otherX > thisCenterX) {
-              if (rightEndpointX < rightmostX) {
+              if (rightEndpointX <= leftmostX + 1e-9 && rightEndpointX < rightmostX) {
                 if (finalEndX > finalStartX) {
                   finalEndX = rightmostX;
                 } else {
@@ -5095,7 +5098,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (leftEndpointX > leftmostX) {
+              if (leftEndpointX >= rightmostX - 1e-9 && leftEndpointX > leftmostX) {
                 if (finalStartX < finalEndX) {
                   finalStartX = leftmostX;
                 } else {
@@ -5116,7 +5119,7 @@ getModelBounds() {
             const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
             const thisCenterZ = (finalStartZ + finalEndZ) / 2;
             if (otherZ > thisCenterZ) {
-              if (topEndpointZ < topmostZ) {
+              if (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ) {
                 if (finalEndZ > finalStartZ) {
                   finalEndZ = topmostZ;
                 } else {
@@ -5124,7 +5127,7 @@ getModelBounds() {
                 }
               }
             } else {
-              if (bottomEndpointZ > bottommostZ) {
+              if (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ) {
                 if (finalStartZ < finalEndZ) {
                   finalStartZ = bottommostZ;
                 } else {
