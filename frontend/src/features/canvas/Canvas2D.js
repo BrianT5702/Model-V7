@@ -25,7 +25,7 @@ import {
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
-import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter, resolveOneFingerGestureLock } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { drawPlanAnnotationArrows, isPointNearPlanAnnotation } from './drawPlanAnnotations';
 import {
@@ -238,6 +238,8 @@ const Canvas2D = ({
     const lastMousePos = useRef({ x: 0, y: 0 });
     const lastTouchPos = useRef({ x: 0, y: 0 });
     const lastTwoFingerCenter = useRef(null);
+    const oneFingerStart = useRef(null);
+    const oneFingerGestureLock = useRef(null); // 'pan' | 'scroll' | null
     const isTouchDragging = useRef(false);
     const touchStartTime = useRef(0);
 
@@ -356,7 +358,7 @@ const Canvas2D = ({
         e.preventDefault();
     };
 
-    // Touch: on phones single-finger scrolls the page; two-finger drag pans the plan.
+    // Touch: vertical swipe scrolls the page; horizontal swipe pans the plan; two-finger pans freely.
     const handleTouchStart = (e) => {
         if (planAnnotateMode && planNoteAddMode && canAnnotate && !planAnnotationArrowPlacementId && e.touches.length === 1) {
             const touch = e.touches[0];
@@ -368,11 +370,21 @@ const Canvas2D = ({
 
         if (isCoarsePointerDevice()) {
             if (e.touches.length === 2) {
+                oneFingerStart.current = null;
+                oneFingerGestureLock.current = null;
                 lastTwoFingerCenter.current = getTouchCenter(e.touches);
                 isTouchDragging.current = true;
                 isDraggingCanvas.current = true;
                 isZoomed.current = true;
                 e.preventDefault();
+                return;
+            }
+            if (e.touches.length === 1) {
+                const touch = e.touches[0];
+                oneFingerStart.current = { x: touch.clientX, y: touch.clientY };
+                oneFingerGestureLock.current = null;
+                lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
+                isTouchDragging.current = false;
             }
             return;
         }
@@ -408,6 +420,30 @@ const Canvas2D = ({
                     lastTwoFingerCenter.current = center;
                     setForceRefresh((prev) => prev + 1);
                 }
+                e.preventDefault();
+                return;
+            }
+            if (e.touches.length === 1 && oneFingerStart.current && lastTouchPos.current) {
+                const touch = e.touches[0];
+                const current = { x: touch.clientX, y: touch.clientY };
+                const lock = resolveOneFingerGestureLock(
+                    oneFingerStart.current,
+                    current,
+                    oneFingerGestureLock.current,
+                );
+                oneFingerGestureLock.current = lock;
+                if (lock !== 'pan') {
+                    return;
+                }
+                const deltaX = current.x - lastTouchPos.current.x;
+                const deltaY = current.y - lastTouchPos.current.y;
+                offsetX.current += deltaX;
+                offsetY.current += deltaY;
+                lastTouchPos.current = current;
+                isTouchDragging.current = true;
+                isDraggingCanvas.current = true;
+                isZoomed.current = true;
+                setForceRefresh((prev) => prev + 1);
                 e.preventDefault();
             }
             return;
@@ -457,12 +493,14 @@ const Canvas2D = ({
         }
 
         if (isCoarsePointerDevice()) {
-            const wasTwoFingerPan = Boolean(lastTwoFingerCenter.current);
+            const wasPan = Boolean(lastTwoFingerCenter.current) || oneFingerGestureLock.current === 'pan';
             lastTwoFingerCenter.current = null;
+            oneFingerStart.current = null;
+            oneFingerGestureLock.current = null;
             isTouchDragging.current = false;
             isDraggingCanvas.current = false;
             lastTouchPos.current = null;
-            if (wasTwoFingerPan) {
+            if (wasPan) {
                 e.preventDefault();
             }
             return;
@@ -509,6 +547,8 @@ const Canvas2D = ({
             isTouchDragging.current = false;
             isDraggingCanvas.current = false;
             lastTwoFingerCenter.current = null;
+            oneFingerStart.current = null;
+            oneFingerGestureLock.current = null;
         };
         
         document.addEventListener('mouseup', handleGlobalMouseUp);
@@ -3020,7 +3060,7 @@ const Canvas2D = ({
                                     </div>
                                     <span className="text-[10px] text-gray-500 dark:text-gray-400">
                                         {isCoarsePointerDevice()
-                                            ? 'Swipe to scroll · Two fingers to pan · Zoom buttons to zoom'
+                                            ? 'Swipe up/down to scroll · Sideways to pan · Two fingers to pan · Zoom buttons to zoom'
                                             : 'Click and drag to navigate · Use zoom buttons'}
                                     </span>
                                 </div>

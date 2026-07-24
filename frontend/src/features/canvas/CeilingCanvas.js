@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter, resolveOneFingerGestureLock } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useAuth } from '../auth/AuthContext';
 import { useShare } from '../share/ShareContext';
@@ -1101,6 +1101,9 @@ const CeilingCanvas = ({
     const isDraggingCanvas = useRef(false);
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
     const lastTwoFingerCenter = useRef(null);
+    const oneFingerStart = useRef(null);
+    const oneFingerLast = useRef(null);
+    const oneFingerGestureLock = useRef(null); // 'pan' | 'scroll' | null
     const hasUserPositionedView = useRef(false); // Track if user has manually positioned the view
 
     // Canvas dimensions are derived from container size for responsiveness
@@ -4690,26 +4693,67 @@ const CeilingCanvas = ({
     };
 
     const handleTouchStart = (e) => {
-        if (!isCoarsePointerDevice() || e.touches.length !== 2) {
+        if (!isCoarsePointerDevice()) {
             return;
         }
-        lastTwoFingerCenter.current = getTouchCenter(e.touches);
-        isDraggingCanvas.current = true;
-        hasUserPositionedView.current = true;
-        e.preventDefault();
+        if (e.touches.length === 2) {
+            oneFingerStart.current = null;
+            oneFingerLast.current = null;
+            oneFingerGestureLock.current = null;
+            lastTwoFingerCenter.current = getTouchCenter(e.touches);
+            isDraggingCanvas.current = true;
+            hasUserPositionedView.current = true;
+            e.preventDefault();
+            return;
+        }
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            oneFingerStart.current = { x: touch.clientX, y: touch.clientY };
+            oneFingerLast.current = { x: touch.clientX, y: touch.clientY };
+            oneFingerGestureLock.current = null;
+        }
     };
 
     const handleTouchMove = (e) => {
-        if (!isCoarsePointerDevice() || e.touches.length !== 2 || !lastTwoFingerCenter.current) {
+        if (!isCoarsePointerDevice()) {
             return;
         }
-        const center = getTouchCenter(e.touches);
-        if (!center) {
+        if (e.touches.length === 2 && lastTwoFingerCenter.current) {
+            const center = getTouchCenter(e.touches);
+            if (!center) {
+                return;
+            }
+            offsetX.current += center.x - lastTwoFingerCenter.current.x;
+            offsetY.current += center.y - lastTwoFingerCenter.current.y;
+            lastTwoFingerCenter.current = center;
+            const ctx = canvasRef.current?.getContext('2d');
+            if (ctx) {
+                drawCanvas(ctx);
+            }
+            e.preventDefault();
             return;
         }
-        offsetX.current += center.x - lastTwoFingerCenter.current.x;
-        offsetY.current += center.y - lastTwoFingerCenter.current.y;
-        lastTwoFingerCenter.current = center;
+        if (e.touches.length !== 1 || !oneFingerStart.current || !oneFingerLast.current) {
+            return;
+        }
+        const touch = e.touches[0];
+        const current = { x: touch.clientX, y: touch.clientY };
+        const lock = resolveOneFingerGestureLock(
+            oneFingerStart.current,
+            current,
+            oneFingerGestureLock.current,
+        );
+        oneFingerGestureLock.current = lock;
+        if (lock !== 'pan') {
+            return;
+        }
+        const deltaX = current.x - oneFingerLast.current.x;
+        const deltaY = current.y - oneFingerLast.current.y;
+        offsetX.current += deltaX;
+        offsetY.current += deltaY;
+        oneFingerLast.current = current;
+        isDraggingCanvas.current = true;
+        hasUserPositionedView.current = true;
         const ctx = canvasRef.current?.getContext('2d');
         if (ctx) {
             drawCanvas(ctx);
@@ -4722,6 +4766,9 @@ const CeilingCanvas = ({
             return;
         }
         lastTwoFingerCenter.current = null;
+        oneFingerStart.current = null;
+        oneFingerLast.current = null;
+        oneFingerGestureLock.current = null;
         isDraggingCanvas.current = false;
     };
 
@@ -4733,6 +4780,9 @@ const CeilingCanvas = ({
 
         const handleGlobalTouchEnd = () => {
             lastTwoFingerCenter.current = null;
+            oneFingerStart.current = null;
+            oneFingerLast.current = null;
+            oneFingerGestureLock.current = null;
             isDraggingCanvas.current = false;
         };
         
@@ -6228,7 +6278,7 @@ const CeilingCanvas = ({
                                 ? 'Click room to select, then click panel to swap · '
                                 : 'Click room to view details · '}
                             {isCoarsePointerDevice()
-                                ? 'Swipe to scroll · Two fingers to pan · Zoom buttons to zoom'
+                                ? 'Swipe up/down to scroll · Sideways to pan · Two fingers to pan · Zoom buttons to zoom'
                                 : 'Drag to pan · Use zoom buttons'}
                         </p>
                     </div>

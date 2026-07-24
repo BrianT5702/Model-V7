@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { isCoarsePointerDevice, getTouchCenter, forwardWheelToScrollParent } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter, forwardWheelToScrollParent, resolveOneFingerGestureLock } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
@@ -127,6 +127,9 @@ const FloorCanvas = ({
     // Canvas dragging state (separate from other dragging)
     const isDraggingCanvas = useRef(false);
     const lastTwoFingerCenter = useRef(null);
+    const oneFingerStart = useRef(null);
+    const oneFingerLast = useRef(null);
+    const oneFingerGestureLock = useRef(null); // 'pan' | 'scroll' | null
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
     const hasUserPositionedView = useRef(false);
     
@@ -1721,26 +1724,68 @@ const FloorCanvas = ({
     };
 
     const handleTouchStart = (e) => {
-        if (!isCoarsePointerDevice() || e.touches.length !== 2) {
+        if (!isCoarsePointerDevice()) {
             return;
         }
-        lastTwoFingerCenter.current = getTouchCenter(e.touches);
-        isDraggingCanvas.current = true;
-        hasUserPositionedView.current = true;
-        e.preventDefault();
+        if (e.touches.length === 2) {
+            oneFingerStart.current = null;
+            oneFingerLast.current = null;
+            oneFingerGestureLock.current = null;
+            lastTwoFingerCenter.current = getTouchCenter(e.touches);
+            isDraggingCanvas.current = true;
+            hasUserPositionedView.current = true;
+            e.preventDefault();
+            return;
+        }
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            oneFingerStart.current = { x: touch.clientX, y: touch.clientY };
+            oneFingerLast.current = { x: touch.clientX, y: touch.clientY };
+            oneFingerGestureLock.current = null;
+        }
     };
 
     const handleTouchMove = (e) => {
-        if (!isCoarsePointerDevice() || e.touches.length !== 2 || !lastTwoFingerCenter.current) {
+        if (!isCoarsePointerDevice()) {
             return;
         }
-        const center = getTouchCenter(e.touches);
-        if (!center) {
+        if (e.touches.length === 2 && lastTwoFingerCenter.current) {
+            const center = getTouchCenter(e.touches);
+            if (!center) {
+                return;
+            }
+            offsetX.current += center.x - lastTwoFingerCenter.current.x;
+            offsetY.current += center.y - lastTwoFingerCenter.current.y;
+            lastTwoFingerCenter.current = center;
+            const ctx = canvasRef.current?.getContext('2d');
+            if (ctx) {
+                drawCanvas(ctx);
+            }
+            e.preventDefault();
             return;
         }
-        offsetX.current += center.x - lastTwoFingerCenter.current.x;
-        offsetY.current += center.y - lastTwoFingerCenter.current.y;
-        lastTwoFingerCenter.current = center;
+        if (e.touches.length !== 1 || !oneFingerStart.current || !oneFingerLast.current) {
+            return;
+        }
+        const touch = e.touches[0];
+        const current = { x: touch.clientX, y: touch.clientY };
+        const lock = resolveOneFingerGestureLock(
+            oneFingerStart.current,
+            current,
+            oneFingerGestureLock.current,
+        );
+        oneFingerGestureLock.current = lock;
+        if (lock !== 'pan') {
+            // Vertical (or undecided): let the page scroll
+            return;
+        }
+        const deltaX = current.x - oneFingerLast.current.x;
+        const deltaY = current.y - oneFingerLast.current.y;
+        offsetX.current += deltaX;
+        offsetY.current += deltaY;
+        oneFingerLast.current = current;
+        isDraggingCanvas.current = true;
+        hasUserPositionedView.current = true;
         const ctx = canvasRef.current?.getContext('2d');
         if (ctx) {
             drawCanvas(ctx);
@@ -1753,6 +1798,9 @@ const FloorCanvas = ({
             return;
         }
         lastTwoFingerCenter.current = null;
+        oneFingerStart.current = null;
+        oneFingerLast.current = null;
+        oneFingerGestureLock.current = null;
         isDraggingCanvas.current = false;
     };
 
@@ -1763,6 +1811,9 @@ const FloorCanvas = ({
 
         const handleGlobalTouchEnd = () => {
             lastTwoFingerCenter.current = null;
+            oneFingerStart.current = null;
+            oneFingerLast.current = null;
+            oneFingerGestureLock.current = null;
             isDraggingCanvas.current = false;
         };
         
@@ -1932,7 +1983,7 @@ const FloorCanvas = ({
                         </div>
                         <span className="text-[10px] text-gray-500 dark:text-gray-400">
                             {isCoarsePointerDevice()
-                                ? 'Swipe to scroll · Two fingers to pan · Zoom buttons to zoom'
+                                ? 'Swipe up/down to scroll · Sideways to pan · Two fingers to pan · Zoom buttons to zoom'
                                 : 'Click panels to select · Drag to pan · Use zoom buttons'}
                         </span>
                     </div>

@@ -22,6 +22,33 @@ export function getTouchCenter(touches) {
     return { x: x / count, y: y / count };
 }
 
+/** Pixels of movement before locking one-finger to page-scroll vs canvas-pan. */
+export const ONE_FINGER_GESTURE_THRESHOLD_PX = 8;
+
+/**
+ * On phones: vertical swipe scrolls the page; horizontal swipe pans the plan.
+ * Returns 'pan' | 'scroll' | null (not decided yet).
+ */
+export function resolveOneFingerGestureLock(
+    start,
+    current,
+    existingLock,
+    threshold = ONE_FINGER_GESTURE_THRESHOLD_PX,
+) {
+    if (existingLock) {
+        return existingLock;
+    }
+    if (!start || !current) {
+        return null;
+    }
+    const dx = current.x - start.x;
+    const dy = current.y - start.y;
+    if (Math.hypot(dx, dy) < threshold) {
+        return null;
+    }
+    return Math.abs(dx) > Math.abs(dy) ? 'pan' : 'scroll';
+}
+
 /**
  * Apply wheel delta to the nearest vertical scroll parent.
  * Use when a canvas/overlay would otherwise swallow wheel (preventDefault / non-scrollable).
