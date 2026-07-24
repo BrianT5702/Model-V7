@@ -270,17 +270,24 @@ export default class TourMobileControls {
   }
 
   handleLookTouchStart(event) {
-    if (!this.isActive() || !this.controller.active || event.touches.length !== 1) {
+    if (!this.isActive() || !this.controller.active) {
       return;
     }
-    const touch = event.touches[0];
-    if (!this.isInLookZone(touch.clientX) || this.isPointOnControls(touch.clientX, touch.clientY)) {
+    // Allow a second finger to look while the joystick is held (do not require touches.length === 1).
+    for (let i = 0; i < event.changedTouches.length; i += 1) {
+      const touch = event.changedTouches[i];
+      if (this.isPointOnControls(touch.clientX, touch.clientY)) {
+        continue;
+      }
+      if (!this.isInLookZone(touch.clientX)) {
+        continue;
+      }
+      this.lookTouchId = touch.identifier;
+      this.lastLookX = touch.clientX;
+      this.lastLookY = touch.clientY;
+      event.preventDefault();
       return;
     }
-    this.lookTouchId = touch.identifier;
-    this.lastLookX = touch.clientX;
-    this.lastLookY = touch.clientY;
-    event.preventDefault();
   }
 
   handleLookTouchMove(event) {
@@ -305,8 +312,9 @@ export default class TourMobileControls {
     if (this.lookTouchId == null) {
       return;
     }
+    const ended = Array.from(event.changedTouches).some((t) => t.identifier === this.lookTouchId);
     const stillActive = Array.from(event.touches).some((t) => t.identifier === this.lookTouchId);
-    if (!stillActive) {
+    if (ended && !stillActive) {
       this.lookTouchId = null;
     }
   }

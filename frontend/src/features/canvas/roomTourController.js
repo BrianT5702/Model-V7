@@ -1194,8 +1194,10 @@ export default class RoomTourController {
     if (this.mobileControls.isActive()) {
       const stick = this.mobileControls.getStick();
       if (stick.x !== 0 || stick.y !== 0) {
-        moveX += forward.x * (-stick.y) + right.x * stick.x;
-        moveZ += forward.z * (-stick.y) + right.z * stick.x;
+        // Match keyboard A/D: stick left = +right, stick right = -right (same as A/D keys).
+        // Forward uses -stick.y so stick up walks forward.
+        moveX += forward.x * (-stick.y) + right.x * (-stick.x);
+        moveZ += forward.z * (-stick.y) + right.z * (-stick.x);
       }
     }
 
