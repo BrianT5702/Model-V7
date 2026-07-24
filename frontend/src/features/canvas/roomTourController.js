@@ -79,6 +79,8 @@ export default class RoomTourController {
     this.facingDoor = null;
     this.doorPrompt = null;
     this.doorLookRaycaster = new THREE.Raycaster();
+    this._doorPromptWorld = new THREE.Vector3();
+    this._doorPromptBox = new THREE.Box3();
   }
 
   isPlacing() {
@@ -549,7 +551,7 @@ export default class RoomTourController {
 
   hudMessage(pointerLocked) {
     if (shouldUseTourMobileControls()) {
-      return '<strong>Tour</strong> — Left stick move (always run) · Right side look · FULL screen · USE door';
+      return '<strong>Tour</strong> — Left stick move (always run) · Right side look · FULL screen · Tap Open/Close door';
     }
     if (pointerLocked) {
       return '<strong>Tour</strong> — WASD move · Space up · Left Alt down · Shift sprint · E door · Mouse look · Scroll zoom · Esc exit';
@@ -660,6 +662,43 @@ export default class RoomTourController {
     return best;
   }
 
+  positionDoorPromptNearDoor() {
+    const prompt = this.doorPrompt;
+    const facing = this.facingDoor;
+    const { instance } = this;
+    if (!prompt || !facing?.container || !instance?.camera || !instance?.container) {
+      return;
+    }
+
+    const world = this._doorPromptWorld;
+    this._doorPromptBox.setFromObject(facing.container);
+    this._doorPromptBox.getCenter(world);
+    // Sit the label slightly above the door mid-point (PUBG-style world prompt)
+    world.y = this._doorPromptBox.min.y
+      + (this._doorPromptBox.max.y - this._doorPromptBox.min.y) * 0.62;
+
+    world.project(instance.camera);
+    const behind = world.z < -1 || world.z > 1;
+    if (behind) {
+      prompt.style.visibility = 'hidden';
+      return;
+    }
+
+    const width = instance.container.clientWidth || 1;
+    const height = instance.container.clientHeight || 1;
+    const x = (world.x * 0.5 + 0.5) * width;
+    const y = (-world.y * 0.5 + 0.5) * height;
+    const margin = 28;
+    const clampedX = Math.max(margin, Math.min(width - margin, x));
+    const clampedY = Math.max(margin, Math.min(height - margin, y));
+
+    prompt.style.visibility = 'visible';
+    prompt.style.left = `${clampedX}px`;
+    prompt.style.top = `${clampedY}px`;
+    prompt.style.bottom = 'auto';
+    prompt.style.transform = 'translate(-50%, -130%)';
+  }
+
   updateDoorPrompt() {
     if (!this.active) {
       return;
@@ -672,21 +711,28 @@ export default class RoomTourController {
 
     if (!this.facingDoor) {
       this.doorPrompt.style.display = 'none';
-      this.mobileControls?.setDoorInteractVisible?.(false);
+      this.doorPrompt.classList.remove('tour-door-prompt--world');
       return;
     }
 
     const open = isDoorOpen(this.instance, this.facingDoor.doorInfo);
     const label = open ? 'Close door' : 'Open door';
-    const keyHint = shouldUseTourMobileControls() ? '' : ' (E)';
-    if (shouldUseTourMobileControls()) {
-      this.doorPrompt.style.display = 'none';
-      this.mobileControls?.setDoorInteractVisible?.(true, label);
+    const mobile = shouldUseTourMobileControls();
+    const keyHint = mobile ? '' : ' (E)';
+    this.doorPrompt.textContent = `${label}${keyHint}`;
+    this.doorPrompt.setAttribute('aria-label', label);
+    this.doorPrompt.style.display = 'block';
+
+    if (mobile) {
+      this.doorPrompt.classList.add('tour-door-prompt--world');
+      this.positionDoorPromptNearDoor();
     } else {
-      this.doorPrompt.textContent = `${label}${keyHint}`;
-      this.doorPrompt.style.display = 'block';
-      this.doorPrompt.setAttribute('aria-label', label);
-      this.mobileControls?.setDoorInteractVisible?.(false);
+      this.doorPrompt.classList.remove('tour-door-prompt--world');
+      this.doorPrompt.style.visibility = 'visible';
+      this.doorPrompt.style.left = '50%';
+      this.doorPrompt.style.top = '';
+      this.doorPrompt.style.bottom = '88px';
+      this.doorPrompt.style.transform = 'translateX(-50%)';
     }
   }
 

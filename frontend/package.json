@@ -6,6 +6,7 @@
     "axios": "^1.7.9",
     "cra-template": "1.2.0",
     "earcut": "^3.0.1",
+    "exceljs": "^4.4.0",
     "fabric": "^6.5.4",
     "gsap": "^3.12.5",
     "html2canvas": "^1.4.1",

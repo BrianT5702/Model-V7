@@ -5,6 +5,10 @@ import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './t
 import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset } from './sceneUtils';
 import { createWallMesh, createDoorMesh } from './meshUtils';
 import PanelCalculator from '../panel/PanelCalculator';
+import {
+  buildIntersectionsFromJoints,
+  buildProjectWallPanelsMap,
+} from '../panel/wallPanelCalculationUtils';
 import { THREE_CONFIG } from './threeConfig';
 import {
   createFatLineSegmentsFromEdgesGeometry,
@@ -2201,80 +2205,14 @@ getModelBounds() {
     return null;
   }
 
-  // Calculate panels for each wall
+  // Shared leftover pool (+ saved optimized order) — matches 2D plan / panel calc.
   calculateWallPanels() {
-    const wallPanelsMap = {};
-    const calculator = new PanelCalculator();
-    
-    this.walls.forEach(wall => {
-      const jointTypes = this.getWallJointTypes(wall);
-      const wallLength = Math.sqrt(
-        Math.pow(wall.end_x - wall.start_x, 2) + 
-        Math.pow(wall.end_y - wall.start_y, 2)
-      );
-      
-      // Prepare face information for panel calculation
-      const faceInfo = {
-        innerFaceMaterial: wall.inner_face_material || null,
-        innerFaceThickness: wall.inner_face_thickness || null,
-        outerFaceMaterial: wall.outer_face_material || null,
-        outerFaceThickness: wall.outer_face_thickness || null
-      };
-      
-      let panels = calculator.calculatePanels(
-        wallLength,
-        wall.thickness,
-        jointTypes,
-        wall.height,
-        faceInfo
-      );
-      
-      // Check if wall should be flipped due to joint types
-      let shouldFlipWall = false;
-      
-      // Removed 45-degree joint logic - using simple butt-in joints only
-      
-      // Reorder: left side panel (if any), then full panels, then right side panel (if any)
-      const leftSide = panels.find(p => p.type === 'side' && p.position === 'left');
-      const rightSide = panels.find(p => p.type === 'side' && p.position === 'right');
-      const fullPanels = panels.filter(p => p.type === 'full');
-      const otherSides = panels.filter(p => p.type === 'side' && p.position !== 'left' && p.position !== 'right');
-      
-      let orderedPanels = [];
-      
-      // If wall is flipped, swap left and right side panel positions
-      if (shouldFlipWall) {
-        // Wall panels being flipped - swapping left/right positions
-        // Swap left and right side panels
-        if (rightSide) {
-          const flippedRightSide = { ...rightSide, position: 'left' };
-          debugLog(`  Right side panel (${rightSide.width}mm) -> Left side panel`);
-          orderedPanels.push(flippedRightSide);
-        }
-        if (otherSides.length > 0 && !rightSide) orderedPanels.push(otherSides[0]);
-        orderedPanels = orderedPanels.concat(fullPanels);
-        if (leftSide) {
-          const flippedLeftSide = { ...leftSide, position: 'right' };
-          debugLog(`  Left side panel (${leftSide.width}mm) -> Right side panel`);
-          orderedPanels.push(flippedLeftSide);
-        }
-        if (otherSides.length > 1 || (otherSides.length === 1 && rightSide)) orderedPanels.push(otherSides[otherSides.length - 1]);
-      } else {
-        // Normal ordering (not flipped)
-        if (leftSide) orderedPanels.push(leftSide);
-        if (otherSides.length > 0 && !leftSide) orderedPanels.push(otherSides[0]);
-        orderedPanels = orderedPanels.concat(fullPanels);
-        if (rightSide) orderedPanels.push(rightSide);
-        if (otherSides.length > 1 || (otherSides.length === 1 && leftSide)) orderedPanels.push(otherSides[otherSides.length - 1]);
-      }
-      
-      // If no side panels, just use the original order
-      if (orderedPanels.length === 0) orderedPanels = panels;
-      
-      wallPanelsMap[wall.id] = orderedPanels;
-    });
-    
-    return wallPanelsMap;
+    const intersections = buildIntersectionsFromJoints(this.walls, this.joints);
+    return buildProjectWallPanelsMap(
+      this.walls,
+      intersections,
+      this.project?.panel_optimization
+    );
   }
 
   // Calculate ceiling panels for each room based on ceiling plan data (including zone panels)
@@ -2873,7 +2811,7 @@ getModelBounds() {
         // so we need to convert panel widths to scaled space for positioning
         
         for (let i = 0; i < panels.length - 1; i++) {
-          accumulated += panels[i].width; // Accumulate in unscaled mm
+          accumulated += panels[i].actualWidth || panels[i].width || 0; // Accumulate in unscaled mm
           const t = accumulated / finalWallLengthUnscaled; // Position along wall (0-1) in unscaled space
           const divisionPosition = accumulated; // Position in wall units (mm, unscaled)
           

@@ -16,7 +16,8 @@ const PanelCalculationControls = ({
     doors, 
     project = null,
     updateSharedPanelData,
-    onRefreshWalls
+    onRefreshWalls,
+    onWallPanelsMapCalculated = null,
 }) => {
     const [calculatedPanels, setCalculatedPanels] = useState(null);
     const [showTable, setShowTable] = useState(false);
@@ -119,7 +120,7 @@ const PanelCalculationControls = ({
 
     // Apply a computed result to the visible UI state.
     const applyResult = useCallback((result, fingerprint) => {
-        const { allPanels, calculator, analysis, combinationsTested, optimizationMode, wallOrder, score } = result;
+        const { allPanels, calculator, analysis, combinationsTested, optimizationMode, wallOrder, score, wallPanelsMap } = result;
 
         if (!allPanels || allPanels.length === 0) {
             setCalculatedPanels(null);
@@ -134,6 +135,10 @@ const PanelCalculationControls = ({
         setOptimizationInfo({ combinationsTested, optimizationMode, wallOrder, score });
         setLastCalculatedFingerprint(fingerprint);
 
+        if (typeof onWallPanelsMapCalculated === 'function' && wallPanelsMap) {
+            onWallPanelsMapCalculated(wallPanelsMap, fingerprint);
+        }
+
         const sortedPanels = sortMaterialPanels(groupWallPanelsForDisplay(allPanels));
         if (updateSharedPanelData) {
             updateSharedPanelData('wall-plan', sortedPanels, analysis);
@@ -144,7 +149,7 @@ const PanelCalculationControls = ({
             .filter((panel) => panel.type === 'side')
             .reduce((sum, panel) => sum + panel.quantity, 0);
         setCutPanelsCount(sideCutCount);
-    }, [updateSharedPanelData]);
+    }, [updateSharedPanelData, onWallPanelsMapCalculated]);
 
     const calculateAllPanels = useCallback(async (method = calculationMethod) => {
         if (optimizationAbortRef.current) {

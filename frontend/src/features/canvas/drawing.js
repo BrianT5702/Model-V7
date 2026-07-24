@@ -4291,16 +4291,35 @@ export function drawPanelDivisions(
     dimensionLanes = null
 ) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
-    const line1 = wall._line1;
-    const line2 = wall._line2;
+    const line1Raw = wall._line1;
+    const line2Raw = wall._line2;
+    // Panel array is ordered panel-left → panel-right; walk the wall lines the same way
+    // even when the wall is stored right→left or bottom→top.
+    const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
+    const panelLeftAtLineStart = isHorizontal
+        ? wall.end_x >= wall.start_x
+        : wall.end_y >= wall.start_y;
+    const line1 = panelLeftAtLineStart ? line1Raw : [line1Raw[1], line1Raw[0]];
+    const line2 = panelLeftAtLineStart ? line2Raw : [line2Raw[1], line2Raw[0]];
     const wallLength = Math.sqrt(Math.pow(line1[1].x - line1[0].x, 2) + Math.pow(line1[1].y - line1[0].y, 2));
     if (wallLength === 0) return;
+
+    const getPanelDrawWidth = (panel) => {
+        const actual = Number(panel?.actualWidth);
+        if (Number.isFinite(actual) && actual > 0) return actual;
+        return Number(panel?.width) || 0;
+    };
+    const is1130OptimizedPanel = (panel) => {
+        const opt = panel?.optimizationType;
+        if (opt === 'LEFT_OPTIMIZED' || opt === 'RIGHT_OPTIMIZED') return true;
+        return Math.round(getPanelDrawWidth(panel)) === 1130;
+    };
     
     let accumulated = 0;
     
     // Draw panel division lines
     for (let i = 0; i < panels.length - 1; i++) {
-        accumulated += panels[i].width;
+        accumulated += getPanelDrawWidth(panels[i]);
         const t = accumulated / wallLength;
         // Center point along the wall (centerline)
         const cx = line1[0].x + (line1[1].x - line1[0].x) * t;
@@ -4337,10 +4356,10 @@ export function drawPanelDivisions(
     accumulated = 0;
     for (let i = 0; i < panels.length; i++) {
         const panel = panels[i];
-        const panelWidth = panel.actualWidth || panel.width;
+        const panelWidth = getPanelDrawWidth(panel);
         
-        // Check if this is a 1130mm panel
-        if (panelWidth === 1130 || panel.optimizationType === 'RIGHT_OPTIMIZED') {
+        // Highlight both left- and right-end 1130 optimizations
+        if (is1130OptimizedPanel(panel)) {
             const panelStart = accumulated;
             const panelEnd = accumulated + panelWidth;
             const tStart = panelStart / wallLength;
@@ -4415,24 +4434,17 @@ export function drawPanelDivisions(
     accumulated = 0;
     for (let i = 0; i < panels.length; i++) {
         const panel = panels[i];
-        const panelWidth = panel.width;
+        const panelWidth = getPanelDrawWidth(panel);
         
         // Show labels for side panels (first and last panels) and if this panel should show dimensions
-        if ((i === 0 || i === panels.length - 1) && 
+        // Skip 1130 optimized panels — red slash highlight is enough
+        if ((i === 0 || i === panels.length - 1) &&
+            !is1130OptimizedPanel(panel) &&
             (!filteredDimensions || shouldShowPanelDimension(panel, wall.thickness, filteredDimensions.panelDimensions, wall.id, wall))) {
             
-            // For 1130mm panels, show only the actual width, not the original 1150mm
             let displayWidth = panelWidth;
             let specialSymbol = '';
             let specialColor = '#FF6B35'; // Default panel color
-            
-            if (panel.actualWidth && panel.actualWidth === 1130) {
-                displayWidth = 1130; // Show only 1130mm
-                // No special symbol or color - appear as normal panels
-            } else if (panel.optimizationType === 'RIGHT_OPTIMIZED') {
-                displayWidth = 1130; // Show only 1130mm
-                // No special symbol or color - appear as normal panels
-            }
             
             const labelText = `${Math.round(displayWidth)}`;
             const fullLabelText = specialSymbol ? `${labelText} ${specialSymbol}` : labelText;

@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
-import PanelCalculator from '../panel/PanelCalculator';
+import {
+    buildProjectWallPanelsMap,
+    getWallCalculationFingerprint,
+} from '../panel/wallPanelCalculationUtils';
 import DoorTable from '../door/DoorTable';
 import WallElevationViews from '../panel/WallElevationViews';
 import { buildWallElevations } from '../panel/wallElevationUtils';
@@ -119,6 +122,8 @@ const Canvas2D = ({
     const [pendingWallData, setPendingWallData] = useState(null);
     const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
     const [intersections, setIntersections] = useState([]);
+    const [calculatedWallPanelsMap, setCalculatedWallPanelsMap] = useState(null);
+    const [calculatedWallPanelsFingerprint, setCalculatedWallPanelsFingerprint] = useState(null);
     const [selectedIntersection, setSelectedIntersection] = useState(null);
     const [highlightWalls, setHighlightWalls] = useState([]);
     const [selectedJointPair, setSelectedJointPair] = useState(null);
@@ -2124,110 +2129,31 @@ const Canvas2D = ({
         }
     }, [currentMode]);
 
-    // Helper to get joint types for a wall
-    const getWallJointTypes = (wall, intersections) => {
-        // Find all intersections for this wall
-        const wallIntersections = intersections.filter(inter => 
-            inter.pairs && inter.pairs.some(pair => 
-                pair.wall1.id === wall.id || pair.wall2.id === wall.id
-            )
-        );
-        let leftJointType = 'butt_in';
-        let rightJointType = 'butt_in';
-        // Determine wall orientation and which end is left/right
-        const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
-        const isLeftToRight = wall.end_x > wall.start_x;
-        const isBottomToTop = wall.end_y > wall.start_y;
-        // Track all intersections for each end
-        const leftEndIntersections = [];
-        const rightEndIntersections = [];
-        wallIntersections.forEach(inter => {
-            inter.pairs.forEach(pair => {
-                if (pair.wall1.id === wall.id || pair.wall2.id === wall.id) {
-                    if (isHorizontal) {
-                        if (isLeftToRight) {
-                            if (inter.x === wall.start_x) {
-                                leftEndIntersections.push(pair.joining_method);
-                            } else if (inter.x === wall.end_x) {
-                                rightEndIntersections.push(pair.joining_method);
-                            }
-                        } else {
-                            if (inter.x === wall.start_x) {
-                                rightEndIntersections.push(pair.joining_method);
-                            } else if (inter.x === wall.end_x) {
-                                leftEndIntersections.push(pair.joining_method);
-                            }
-                        }
-                    }
-                    if (isBottomToTop) {
-                        if (inter.y === wall.start_y) {
-                            leftEndIntersections.push(pair.joining_method);
-                        } else if (inter.y === wall.end_y) {
-                            rightEndIntersections.push(pair.joining_method);
-                        }
-                    } else {
-                        if (inter.y === wall.start_y) {
-                            rightEndIntersections.push(pair.joining_method);
-                        } else if (inter.y === wall.end_y) {
-                            leftEndIntersections.push(pair.joining_method);
-                        }
-                    }
-                }
-            });
-        });
-        leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
-        rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
-        return { left: leftJointType, right: rightJointType };
-    };
-
-    // Calculate panels for each wall
+    // Prefer the map from the latest panel calculation (shared leftovers + SP swaps).
+    // Fall back to rebuilding from saved optimized order / wall list.
     const wallPanelsMap = React.useMemo(() => {
-        const map = {};
-        walls.forEach(wall => {
-            const jointTypes = getWallJointTypes(wall, intersections);
-            const calculator = new PanelCalculator();
-            const wallLength = Math.sqrt(
-                Math.pow(wall.end_x - wall.start_x, 2) + 
-                Math.pow(wall.end_y - wall.start_y, 2)
-            );
-            // Use gap_fill_height for calculations if gap-fill mode is enabled
-            const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null) 
-                ? wall.gap_fill_height 
-                : wall.height;
-            
-            // Prepare face information for panel calculation
-            const faceInfo = {
-                innerFaceMaterial: wall.inner_face_material || null,
-                innerFaceThickness: wall.inner_face_thickness || null,
-                outerFaceMaterial: wall.outer_face_material || null,
-                outerFaceThickness: wall.outer_face_thickness || null
-            };
-            
-            let panels = calculator.calculatePanels(
-                wallLength,
-                wall.thickness,
-                jointTypes,
-                heightForCalc,
-                faceInfo
-            );
-            // Reorder: left side panel (if any), then full panels, then right side panel (if any)
-            const leftSide = panels.find(p => p.type === 'side' && p.position === 'left');
-            const rightSide = panels.find(p => p.type === 'side' && p.position === 'right');
-            const fullPanels = panels.filter(p => p.type === 'full');
-            // If there are leftover/cut panels that are not left/right, treat them as side panels (fallback)
-            const otherSides = panels.filter(p => p.type === 'side' && p.position !== 'left' && p.position !== 'right');
-            let orderedPanels = [];
-            if (leftSide) orderedPanels.push(leftSide);
-            if (otherSides.length > 0 && !leftSide) orderedPanels.push(otherSides[0]);
-            orderedPanels = orderedPanels.concat(fullPanels);
-            if (rightSide) orderedPanels.push(rightSide);
-            if (otherSides.length > 1 || (otherSides.length === 1 && leftSide)) orderedPanels.push(otherSides[otherSides.length - 1]);
-            // If no side panels, just use the original order
-            if (orderedPanels.length === 0) orderedPanels = panels;
-            map[wall.id] = orderedPanels;
-        });
-        return map;
-    }, [walls, intersections]);
+        const panelWalls = allWalls || walls;
+        const fingerprint = getWallCalculationFingerprint(panelWalls, intersections);
+        if (
+            calculatedWallPanelsMap &&
+            calculatedWallPanelsFingerprint === fingerprint
+        ) {
+            return calculatedWallPanelsMap;
+        }
+        return buildProjectWallPanelsMap(panelWalls, intersections, project?.panel_optimization);
+    }, [
+        walls,
+        allWalls,
+        intersections,
+        project?.panel_optimization,
+        calculatedWallPanelsMap,
+        calculatedWallPanelsFingerprint,
+    ]);
+
+    const handleWallPanelsMapCalculated = useCallback((map, fingerprint) => {
+        setCalculatedWallPanelsMap(map || null);
+        setCalculatedWallPanelsFingerprint(fingerprint || null);
+    }, []);
 
     // Filter dimensions to show only unique ones
     const filteredDimensions = React.useMemo(() => {
@@ -3367,6 +3293,7 @@ const Canvas2D = ({
                                     project={project}
                                     updateSharedPanelData={updateSharedPanelData}
                                     onRefreshWalls={onRefreshWalls}
+                                    onWallPanelsMapCalculated={handleWallPanelsMapCalculated}
                                 />
                                 
                                 {/* Door Table */}

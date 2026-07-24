@@ -252,7 +252,6 @@ class PanelCalculator {
 
                 // When both faces are the same material, we may flip the panel and place
                 // the single side panel on left (needs 母) OR right (needs 公) to reuse leftover.
-                // Decide side before 1130 optimization so the opposite end is shortened correctly.
                 const tentativeSideWidth = fullPanelsCount > 0 ? remainingLength + 20 : remainingLength;
                 sidePanelPosition = this.chooseSidePanelPosition(
                     tentativeSideWidth,
@@ -261,66 +260,56 @@ class PanelCalculator {
                     sidePanelPosition
                 );
 
-                // Apply 1130mm optimization to the OPPOSITE END of the side panel
+                // Mixed joints: prefer the 45° end when a leftover fits; otherwise the butt end.
+                // Resolve the FINAL side before shortening the opposite full to 1130.
+                let sideJointType = typeof jointType === 'object'
+                    ? jointType[sidePanelPosition]
+                    : jointType;
+                if (typeof jointType === 'object' && jointType.left !== jointType.right) {
+                    const sideNeeding45Cut = jointType.left === '45_cut' ? 'left' : 'right';
+                    const sideNeedingButtIn = jointType.left === 'butt_in' ? 'left' : 'right';
+                    const compatibleLeftover = this.findCompatibleLeftover(
+                        tentativeSideWidth,
+                        wallThickness,
+                        '45_cut',
+                        this.currentFaceInfo,
+                        0,
+                        this.leftovers.length,
+                        sideNeeding45Cut,
+                        this.currentCutSlashes?.[sideNeeding45Cut] || '/'
+                    );
+                    if (compatibleLeftover) {
+                        sidePanelPosition = sideNeeding45Cut;
+                        sideJointType = '45_cut';
+                    } else {
+                        sidePanelPosition = sideNeedingButtIn;
+                        sideJointType = 'butt_in';
+                    }
+                }
+
+                // Shorten the OPPOSITE end from where the SP will actually sit.
                 if (fullPanelsCount > 0) {
-                    const oppositeEndIndex = sidePanelPosition === 'left' ? 
-                        panels.length - 1 :
-                        0;
-                    
+                    const oppositeEndIndex = sidePanelPosition === 'left'
+                        ? panels.length - 1
+                        : 0;
+
                     const oppositePanel = panels[oppositeEndIndex];
                     oppositePanel.actualWidth = this.MAX_PANEL_WIDTH - 20; // 1130mm
                     oppositePanel.optimizationNote = `20mm deducted for ${sidePanelPosition} side panel fit`;
                     oppositePanel.optimizationSymbol = sidePanelPosition === 'left' ? '⬅️' : '➡️';
                     oppositePanel.optimizationType = `${sidePanelPosition.toUpperCase()}_OPTIMIZED`;
                     oppositePanel.placementNote = `${sidePanelPosition.toUpperCase()} END - 20mm deducted for ${sidePanelPosition} side panel fit`;
-                    
+
                     remainingLength += 20;
                 }
-                
-                // For mixed joint types, try to optimize leftover usage
-                if (typeof jointType === 'object' && jointType.left !== jointType.right) {
-                    const sideNeeding45Cut = jointType.left === '45_cut' ? 'left' : 'right';
-                    const compatibleLeftover = this.findCompatibleLeftover(
-                        remainingLength, wallThickness, '45_cut', this.currentFaceInfo, 0, this.leftovers.length, sideNeeding45Cut
-                    );
-                    
-                    if (compatibleLeftover) {
-                        const sidePanel = this.createSidePanelWithCut(
-                            remainingLength, 
-                            wallThickness, 
-                            sideNeeding45Cut,
-                            '45_cut'
-                        );
-                        panels.push(sidePanel);
-                    } else {
-                        const sideNeedingButtIn = jointType.left === 'butt_in' ? 'left' : 'right';
-                        const sidePanel = this.createSidePanelWithCut(
-                            remainingLength, 
-                            wallThickness, 
-                            sideNeedingButtIn,
-                            'butt_in'
-                        );
-                        panels.push(sidePanel);
-                    }
-                } else {
-                    if (typeof jointType === 'object') {
-                        const sidePanel = this.createSidePanelWithCut(
-                            remainingLength, 
-                            wallThickness, 
-                            sidePanelPosition,
-                            jointType[sidePanelPosition]
-                        );
-                        panels.push(sidePanel);
-                    } else {
-                        const sidePanel = this.createSidePanelWithCut(
-                            remainingLength, 
-                            wallThickness, 
-                            sidePanelPosition,
-                            jointType
-                        );
-                        panels.push(sidePanel);
-                    }
-                }
+
+                const sidePanel = this.createSidePanelWithCut(
+                    remainingLength,
+                    wallThickness,
+                    sidePanelPosition,
+                    sideJointType
+                );
+                panels.push(sidePanel);
             } else {
                 // rem > threshold: left SP needs 母, right SP needs 公.
                 // Cut left first; right should reuse the leftover's remaining 公 when possible.

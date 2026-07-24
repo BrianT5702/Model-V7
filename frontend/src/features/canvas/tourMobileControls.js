@@ -89,7 +89,6 @@ export default class TourMobileControls {
     this.handleLookTouchStart = this.handleLookTouchStart.bind(this);
     this.handleLookTouchMove = this.handleLookTouchMove.bind(this);
     this.handleLookTouchEnd = this.handleLookTouchEnd.bind(this);
-    this.handleDoorInteractClick = this.handleDoorInteractClick.bind(this);
     this.handleFullscreenClick = this.handleFullscreenClick.bind(this);
     this.handleFullscreenChange = this.handleFullscreenChange.bind(this);
   }
@@ -115,7 +114,6 @@ export default class TourMobileControls {
       <div class="tour-action-cluster" aria-hidden="true">
         <button type="button" class="tour-pad-btn tour-pad-btn--up" aria-label="Fly up">▲</button>
         <button type="button" class="tour-pad-btn tour-pad-btn--down" aria-label="Fly down">▼</button>
-        <button type="button" class="tour-pad-btn tour-pad-btn--door" aria-label="Use door" style="display:none;">USE</button>
       </div>
     `;
 
@@ -127,7 +125,6 @@ export default class TourMobileControls {
     this.fullscreenBtn = root.querySelector('.tour-pad-btn--fullscreen');
     const upBtn = root.querySelector('.tour-pad-btn--up');
     const downBtn = root.querySelector('.tour-pad-btn--down');
-    this.doorBtn = root.querySelector('.tour-pad-btn--door');
 
     this.joystickBase.addEventListener('pointerdown', this.handleJoystickPointerDown);
     this.fullscreenBtn.addEventListener('click', this.handleFullscreenClick);
@@ -139,7 +136,6 @@ export default class TourMobileControls {
     downBtn.addEventListener('pointercancel', this.handleUpDownPointerEnd);
     upBtn.addEventListener('pointerleave', this.handleUpDownPointerEnd);
     downBtn.addEventListener('pointerleave', this.handleUpDownPointerEnd);
-    this.doorBtn.addEventListener('click', this.handleDoorInteractClick);
     this.syncFullscreenButton();
   }
 
@@ -222,29 +218,6 @@ export default class TourMobileControls {
       };
     }
     this.controller?.instance?.handleResize?.();
-  }
-
-  handleDoorInteractClick(event) {
-    if (!this.isActive()) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    this.controller.interactWithFacingDoor();
-  }
-
-  setDoorInteractVisible(visible, label = 'USE') {
-    if (!this.doorBtn) {
-      return;
-    }
-    const shortLabel = label.toLowerCase().includes('close') ? 'CLOSE'
-      : label.toLowerCase().includes('open') ? 'OPEN'
-        : 'USE';
-    this.doorBtn.style.display = visible ? 'flex' : 'none';
-    if (visible) {
-      this.doorBtn.textContent = shortLabel;
-      this.doorBtn.setAttribute('aria-label', label);
-    }
   }
 
   attachLookListeners() {

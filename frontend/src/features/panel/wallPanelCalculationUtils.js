@@ -198,12 +198,113 @@ export function getWallEndCutSlashes(wall, walls = [], intersections = []) {
 }
 
 /**
+ * Left SP → fulls → right SP (matches canvas / PDF plan layout).
+ */
+export function orderWallPanelsLikeCanvas(panels) {
+    if (!Array.isArray(panels) || panels.length === 0) return panels;
+
+    const leftSide = panels.find((p) => p.type === 'side' && p.position === 'left');
+    const rightSide = panels.find((p) => p.type === 'side' && p.position === 'right');
+    const fullPanels = panels.filter((p) => p.type === 'full');
+    const otherSides = panels.filter(
+        (p) => p.type === 'side' && p.position !== 'left' && p.position !== 'right'
+    );
+
+    let orderedPanels = [];
+    if (leftSide) orderedPanels.push(leftSide);
+    if (otherSides.length > 0 && !leftSide) orderedPanels.push(otherSides[0]);
+    orderedPanels = orderedPanels.concat(fullPanels);
+    if (rightSide) orderedPanels.push(rightSide);
+    if (otherSides.length > 1 || (otherSides.length === 1 && leftSide)) {
+        orderedPanels.push(otherSides[otherSides.length - 1]);
+    }
+    if (orderedPanels.length === 0) orderedPanels = panels;
+    return orderedPanels;
+}
+
+/**
+ * Prefer saved optimized wall order when fingerprint still matches current walls/joints.
+ */
+export function resolveOrderedWallsForPanels(walls = [], intersections = [], panelOptimization = null) {
+    const list = Array.isArray(walls) ? walls : [];
+    if (!list.length) return [];
+
+    const saved = panelOptimization;
+    if (
+        saved &&
+        Array.isArray(saved.wallOrder) &&
+        saved.wallOrder.length === list.length &&
+        saved.fingerprint === getWallCalculationFingerprint(list, intersections)
+    ) {
+        const byId = new Map(list.map((wall) => [wall.id, wall]));
+        const ordered = saved.wallOrder.map((id) => byId.get(id)).filter(Boolean);
+        if (ordered.length === list.length) return ordered;
+    }
+    return list;
+}
+
+/**
+ * Convert DB-style joints ({ wall_1, wall_2, joining_method }) into intersection pairs
+ * used by getWallJointTypes / cut-slash helpers.
+ */
+export function buildIntersectionsFromJoints(walls = [], joints = []) {
+    const byId = new Map((walls || []).map((wall) => [wall.id, wall]));
+    const out = [];
+
+    (joints || []).forEach((joint) => {
+        const w1 = byId.get(joint.wall_1 ?? joint.wall1?.id);
+        const w2 = byId.get(joint.wall_2 ?? joint.wall2?.id);
+        if (!w1 || !w2) return;
+
+        let x = Number(joint.x);
+        let y = Number(joint.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            const pt = segmentIntersectionPoint(w1, w2);
+            if (!pt) return;
+            x = pt.x;
+            y = pt.y;
+        }
+
+        out.push({
+            x,
+            y,
+            pairs: [{
+                wall1: w1,
+                wall2: w2,
+                joining_method: joint.joining_method || 'butt_in',
+            }],
+        });
+    });
+
+    return out;
+}
+
+function segmentIntersectionPoint(wallA, wallB) {
+    const x1 = wallA.start_x;
+    const y1 = wallA.start_y;
+    const x2 = wallA.end_x;
+    const y2 = wallA.end_y;
+    const x3 = wallB.start_x;
+    const y3 = wallB.start_y;
+    const x4 = wallB.end_x;
+    const y4 = wallB.end_y;
+    const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(den) < 1e-9) return null;
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+    if (t < -0.01 || t > 1.01 || u < -0.01 || u > 1.01) return null;
+    return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+}
+
+/**
  * Run wall panel calculation for an ordered list of walls (shared leftover pool).
+ * Also returns wallPanelsMap ordered for plan/3D division lines (SP side + actualWidth).
  */
 export function calculateProjectWallPanels(walls = [], intersections = [], wallOrder = null) {
     const orderedWalls = wallOrder || walls;
     const calculator = new PanelCalculator();
     const allPanels = [];
+    const wallPanelsMap = {};
 
     orderedWalls.forEach((wall) => {
         if (!wall || typeof wall.start_x !== 'number' || typeof wall.start_y !== 'number' ||
@@ -239,6 +340,8 @@ export function calculateProjectWallPanels(walls = [], intersections = [], wallO
 
         if (!panels || !Array.isArray(panels)) return;
 
+        wallPanelsMap[wall.id] = orderWallPanelsLikeCanvas(panels);
+
         panels.forEach((panel) => {
             if (!panel || typeof panel.width !== 'number') return;
 
@@ -270,7 +373,17 @@ export function calculateProjectWallPanels(walls = [], intersections = [], wallO
         calculator,
         analysis: calculator.getPanelAnalysis(),
         score: calculator.getOptimizationScore(),
+        wallPanelsMap,
     };
+}
+
+/**
+ * Wall → ordered panels map using shared leftover pool (+ optional saved optimized order).
+ */
+export function buildProjectWallPanelsMap(walls = [], intersections = [], panelOptimization = null) {
+    const orderedWalls = resolveOrderedWallsForPanels(walls, intersections, panelOptimization);
+    const { wallPanelsMap } = calculateProjectWallPanels(walls, intersections, orderedWalls);
+    return wallPanelsMap || {};
 }
 
 export function groupWallPanelsForDisplay(allPanels = []) {

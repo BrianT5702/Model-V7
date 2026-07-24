@@ -562,27 +562,10 @@ code {
   font-size: 20px;
 }
 
-.tour-mobile-controls--pubg .tour-pad-btn--door {
-  right: 0;
-  bottom: 0;
-  width: 76px;
-  height: 76px;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  background: rgba(180, 130, 45, 0.72);
-  border-color: rgba(255, 220, 140, 0.45);
-  color: #fff8e7;
-}
-
 .tour-mobile-controls--pubg .tour-pad-btn.is-pressed {
   background: rgba(255, 255, 255, 0.22);
   border-color: rgba(255, 255, 255, 0.5);
   transform: scale(0.94);
-}
-
-.tour-mobile-controls--pubg .tour-pad-btn--door.is-pressed {
-  background: rgba(210, 155, 55, 0.92);
 }
 
 /* Phone tour: expand canvas to viewport when Fullscreen API is unavailable (e.g. iOS) */
@@ -621,11 +604,34 @@ body.tour-fullscreen-lock {
   z-index: 26;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   touch-action: manipulation;
+  white-space: nowrap;
 }
 
 .tour-door-prompt:hover {
   background: rgba(124, 58, 237, 0.9);
   border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* PUBG-style world interaction prompt (phone tour) */
+.tour-door-prompt--world {
+  bottom: auto;
+  padding: 8px 14px;
+  min-width: 118px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(12, 14, 18, 0.78);
+  color: #f5f5f5;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.tour-door-prompt--world:hover,
+.tour-door-prompt--world:active {
+  background: rgba(28, 32, 40, 0.92);
+  border-color: rgba(255, 255, 255, 0.75);
 }
 
 @media (max-width: 900px) and (pointer: coarse) {
@@ -2000,6 +2006,20 @@ html.dark .bg-gray-50:not(.explorer-chrome) {
 
 html.dark .bg-gray-100 {
   background-color: rgb(31 41 55);
+}
+
+/* Inactive / secondary buttons use bg-gray-200 + text-gray-700 in light mode.
+   text-gray-700 is remapped to light text below — bg must darken too or labels vanish. */
+html.dark .bg-gray-200 {
+  background-color: rgb(55 65 81);
+}
+
+html.dark .bg-gray-300 {
+  background-color: rgb(75 85 99);
+}
+
+html.dark .hover\:bg-gray-300:hover {
+  background-color: rgb(75 85 99);
 }
 
 html.dark .text-gray-900 {

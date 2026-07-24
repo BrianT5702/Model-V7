@@ -891,7 +891,13 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
             const panels = wallPanelsMap[wall.id];
             if (!panels || panels.length <= 1) return; // Need at least 2 panels to have divisions
             
-            const { line1, line2 } = calculateWallOffsetPoints(wall);
+            const { line1: line1Raw, line2: line2Raw } = calculateWallOffsetPoints(wall);
+            const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
+            const panelLeftAtLineStart = isHorizontal
+                ? wall.end_x >= wall.start_x
+                : wall.end_y >= wall.start_y;
+            const line1 = panelLeftAtLineStart ? line1Raw : [line1Raw[1], line1Raw[0]];
+            const line2 = panelLeftAtLineStart ? line2Raw : [line2Raw[1], line2Raw[0]];
             const wallLength = Math.sqrt(
                 Math.pow(line1[1].x - line1[0].x, 2) + 
                 Math.pow(line1[1].y - line1[0].y, 2)
@@ -903,7 +909,7 @@ export function exportCanvasAsSVG(canvasRef, walls, rooms, doors, intersections,
             
             // Draw panel division lines
             for (let i = 0; i < panels.length - 1; i++) {
-                accumulated += panels[i].width || 0;
+                accumulated += panels[i].actualWidth || panels[i].width || 0;
                 const t = accumulated / wallLength;
                 
                 // Center point along the wall (centerline)

@@ -22,6 +22,8 @@ import {
     fetchMergedWallIntersections,
     buildWallPlanPreviewPdfBlob
 } from './pdfVectorWallPlan';
+import { downloadProjectExcel } from './exportProjectExcel';
+import { calculateProjectWallPanels } from '../panel/wallPanelCalculationUtils';
 
 const InstallationTimeEstimator = ({ 
     projectId, 
@@ -67,6 +69,7 @@ const InstallationTimeEstimator = ({
     const [showExportPreview, setShowExportPreview] = useState(false);
     const [exportData, setExportData] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
+    const [isExportingExcel, setIsExportingExcel] = useState(false);
     
     // Expand/collapse states for panel tables in preview
     const [expandedTables, setExpandedTables] = useState({
@@ -1717,6 +1720,38 @@ const InstallationTimeEstimator = ({
             slabs: false,
             doors: false
         });
+    };
+
+    // Generate Excel export (project sheet + one sheet per room; no drawings)
+    const generateExcel = async () => {
+        if (!exportData) return;
+
+        setIsExportingExcel(true);
+        try {
+            const wallsForCalc = (allWalls && allWalls.length > 0) ? allWalls : walls;
+            const [intersections, layout] = await Promise.all([
+                fetchMergedWallIntersections(api, projectId, wallsForCalc),
+                fetchProjectPanelLayoutForPdf(api, projectId),
+            ]);
+            const { allPanels: rawWallPanels } = calculateProjectWallPanels(
+                wallsForCalc,
+                intersections
+            );
+
+            await downloadProjectExcel({
+                exportData,
+                rawWallPanels,
+                rawCeilingPanels: layout.ceilingPanels || [],
+                rawFloorPanels: layout.floorPanels || [],
+                slabWidth,
+                slabLength,
+            });
+        } catch (error) {
+            console.error('Error generating Excel export:', error);
+            alert('Failed to generate Excel export. Please try again.');
+        } finally {
+            setIsExportingExcel(false);
+        }
     };
 
     // Generate PDF export
@@ -4200,7 +4235,7 @@ const InstallationTimeEstimator = ({
                                                     className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
                                                         fitToPage
                                                             ? 'bg-orange-600 text-white'
-                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500'
                                                     }`}
                                                 >
                                                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4225,7 +4260,7 @@ const InstallationTimeEstimator = ({
                                                     className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
                                                         planPageOrientation === 'landscape'
                                                             ? 'bg-purple-600 text-white'
-                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500'
                                                     }`}
                                                 >
                                                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4250,7 +4285,7 @@ const InstallationTimeEstimator = ({
                                                     className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
                                                         singlePlanPerPage
                                                             ? 'bg-green-600 text-white'
-                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500'
                                                     }`}
                                                 >
                                                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4275,7 +4310,7 @@ const InstallationTimeEstimator = ({
                                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                                                         includeFrontElevation
                                                             ? 'bg-blue-600 text-white'
-                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500'
                                                     }`}
                                                 >
                                                     {includeFrontElevation ? 'Included' : 'Not included'}
@@ -4293,7 +4328,7 @@ const InstallationTimeEstimator = ({
                                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                                                         includeSideElevation
                                                             ? 'bg-blue-600 text-white'
-                                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500'
                                                     }`}
                                                 >
                                                     {includeSideElevation ? 'Included' : 'Not included'}
@@ -4307,27 +4342,46 @@ const InstallationTimeEstimator = ({
 
                         <div className="p-6 border-t border-gray-200 bg-gray-50">
                             
-                            <div className="flex justify-between items-center">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
                                 <p className="text-sm text-gray-600">
-                                    This preview shows the data that will be exported. Plan images (without grids) will be included at the end of the PDF.
+                                    PDF includes plan images. Excel exports panel lists only: one project sheet, then one sheet per room.
                                     {(includeFrontElevation || includeSideElevation) && (
                                         <span className="block mt-1 text-blue-700">
                                             Elevations:{' '}
                                             {[includeFrontElevation && 'Front', includeSideElevation && 'Side'].filter(Boolean).join(' + ')}
-                                            {' '}will be appended.
+                                            {' '}will be appended to the PDF.
                                         </span>
                                     )}
                                 </p>
-                                <div className="flex space-x-3">
+                                <div className="flex flex-wrap gap-2 sm:justify-end">
                                     <button
                                         onClick={() => setShowExportPreview(false)}
-                                        className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                                        className="px-4 py-2 text-gray-800 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500"
                                     >
                                         Cancel
                                     </button>
                                     <button
+                                        onClick={generateExcel}
+                                        disabled={isExporting || isExportingExcel || isCapturingImages}
+                                        className="px-5 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center"
+                                    >
+                                        {isExportingExcel ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                Generating Excel...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                Download Excel
+                                            </>
+                                        )}
+                                    </button>
+                                    <button
                                         onClick={generatePDF}
-                                        disabled={isExporting || isCapturingImages}
+                                        disabled={isExporting || isExportingExcel || isCapturingImages}
                                         className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center"
                                     >
                                         {isCapturingImages ? (

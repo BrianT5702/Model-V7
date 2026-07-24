@@ -1,4 +1,9 @@
-import PanelCalculator from './PanelCalculator';
+import {
+    buildProjectWallPanelsMap,
+    orderWallPanelsLikeCanvas,
+} from './wallPanelCalculationUtils';
+
+export { orderWallPanelsLikeCanvas };
 
 /**
  * Display label for panel face finishing (matches material tables / PDF export).
@@ -119,71 +124,8 @@ export function getWallJointTypes(wall, intersections) {
 }
 
 /**
- * Panel order for dimension labels (first/last) — same as Canvas2D wallPanelsMap useMemo.
+ * Build wall → panels map matching the wall plan canvas (shared leftover pool + saved order).
  */
-export function orderWallPanelsLikeCanvas(panels) {
-    if (!Array.isArray(panels) || panels.length === 0) return panels;
-
-    const leftSide = panels.find((p) => p.type === 'side' && p.position === 'left');
-    const rightSide = panels.find((p) => p.type === 'side' && p.position === 'right');
-    const fullPanels = panels.filter((p) => p.type === 'full');
-    const otherSides = panels.filter(
-        (p) => p.type === 'side' && p.position !== 'left' && p.position !== 'right'
-    );
-
-    let orderedPanels = [];
-    if (leftSide) orderedPanels.push(leftSide);
-    if (otherSides.length > 0 && !leftSide) orderedPanels.push(otherSides[0]);
-    orderedPanels = orderedPanels.concat(fullPanels);
-    if (rightSide) orderedPanels.push(rightSide);
-    if (otherSides.length > 1 || (otherSides.length === 1 && leftSide)) {
-        orderedPanels.push(otherSides[otherSides.length - 1]);
-    }
-    if (orderedPanels.length === 0) orderedPanels = panels;
-    return orderedPanels;
-}
-
-/**
- * Build wall → panels map matching the wall plan canvas (PanelCalculator + order + joints).
- */
-export function buildWallPanelsMapForWallPlan(walls, intersections) {
-    if (!walls?.length) return {};
-
-    const map = {};
-    const calculator = new PanelCalculator();
-
-    walls.forEach((wall) => {
-        if (!wall || typeof wall.start_x !== 'number' || typeof wall.end_x !== 'number') return;
-
-        const wallLength = Math.round(Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y));
-        const jointTypes = getWallJointTypes(wall, intersections);
-        const heightForCalc =
-            wall.fill_gap_mode && wall.gap_fill_height != null ? wall.gap_fill_height : wall.height;
-        const faceInfo = {
-            innerFaceMaterial: wall.inner_face_material || null,
-            innerFaceThickness: wall.inner_face_thickness || null,
-            outerFaceMaterial: wall.outer_face_material || null,
-            outerFaceThickness: wall.outer_face_thickness || null,
-        };
-
-        let panels = [];
-        try {
-            panels =
-                calculator.calculatePanels(
-                    wallLength,
-                    wall.thickness,
-                    jointTypes,
-                    heightForCalc,
-                    faceInfo
-                ) || [];
-        } catch (_) {
-            panels = [];
-        }
-
-        if (panels.length > 0) {
-            map[wall.id] = orderWallPanelsLikeCanvas(panels);
-        }
-    });
-
-    return map;
+export function buildWallPanelsMapForWallPlan(walls, intersections, panelOptimization = null) {
+    return buildProjectWallPanelsMap(walls, intersections, panelOptimization);
 }

@@ -134,8 +134,8 @@ function parseHslColor(hslString) {
     return rgb;
 }
 
-function buildWallPanelsMapForFilter(wallsToUse, intersectionsData) {
-    return buildWallPanelsMapForWallPlan(wallsToUse, intersectionsData);
+function buildWallPanelsMapForFilter(wallsToUse, intersectionsData, panelOptimization = null) {
+    return buildWallPanelsMapForWallPlan(wallsToUse, intersectionsData, panelOptimization);
 }
 
 export function calculateGhostDataForStorey(activeStoreyId, targetStorey, allStoreys, allWalls, filteredRooms, allProjectRooms) {
@@ -355,7 +355,8 @@ export function drawVectorWallPlan(
     planPageOrientation,
     fitToPage,
     /** When false, wall outline lines run continuously through door openings (doors still drawn on top). */
-    breakWallLinesAtDoors = true
+    breakWallLinesAtDoors = true,
+    panelOptimization = null
 ) {
                     // Add new page for vector plan
                     doc.addPage('a4', planPageOrientation);
@@ -1953,7 +1954,11 @@ export function drawVectorWallPlan(
                     
                     // ===== DRAW DIMENSIONS (same logic as wall plan canvas via drawing.js) =====
                     const PDF_DIM_RENDER_PX_PER_MM = 8;
-                    const wallPanelsMapForFilter = buildWallPanelsMapForFilter(wallsToDraw, intersections);
+                    const wallPanelsMapForFilter = buildWallPanelsMapForFilter(
+                        (allWalls && allWalls.length > 0) ? allWalls : wallsToDraw,
+                        intersections,
+                        panelOptimization
+                    );
                     const filteredDimensions = filterDimensions(wallsToDraw, intersections, wallPanelsMapForFilter);
 
                     if (wallsToDraw.length > 0 && wallLinesMap.size > 0 && typeof document !== 'undefined') {

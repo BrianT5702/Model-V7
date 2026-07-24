@@ -141,7 +141,9 @@ export default defineConfig(({ mode }) => {
         'jspdf',
         'html2canvas',
         'gsap',
+        'exceljs',
       ],
+      exclude: ['xlsx'],
     },
   };
 });
