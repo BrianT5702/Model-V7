@@ -549,7 +549,7 @@ export default class RoomTourController {
 
   hudMessage(pointerLocked) {
     if (shouldUseTourMobileControls()) {
-      return '<strong>Tour</strong> — Left stick move · Right side look · RUN sprint · USE door';
+      return '<strong>Tour</strong> — Left stick move (always run) · Right side look · FULL screen · USE door';
     }
     if (pointerLocked) {
       return '<strong>Tour</strong> — WASD move · Space up · Left Alt down · Shift sprint · E door · Mouse look · Scroll zoom · Esc exit';

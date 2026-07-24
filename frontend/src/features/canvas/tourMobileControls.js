@@ -1,6 +1,6 @@
 const JOYSTICK_RADIUS = 64;
 const DEAD_ZONE = 0.1;
-const TOUCH_LOOK_SCALE = 2.1;
+const TOUCH_LOOK_SCALE = 3.8;
 const LOOK_ZONE_WIDTH_RATIO = 0.52;
 
 export function shouldUseTourMobileControls() {
@@ -17,6 +17,51 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function getFullscreenElement() {
+  return (
+    document.fullscreenElement
+    || document.webkitFullscreenElement
+    || document.mozFullScreenElement
+    || document.msFullscreenElement
+    || null
+  );
+}
+
+function requestFullscreenElement(el) {
+  if (!el) {
+    return Promise.reject(new Error('No fullscreen target'));
+  }
+  if (el.requestFullscreen) {
+    return el.requestFullscreen();
+  }
+  if (el.webkitRequestFullscreen) {
+    return Promise.resolve(el.webkitRequestFullscreen());
+  }
+  if (el.mozRequestFullScreen) {
+    return Promise.resolve(el.mozRequestFullScreen());
+  }
+  if (el.msRequestFullscreen) {
+    return Promise.resolve(el.msRequestFullscreen());
+  }
+  return Promise.reject(new Error('Fullscreen API unavailable'));
+}
+
+function exitFullscreenDocument() {
+  if (document.exitFullscreen) {
+    return document.exitFullscreen();
+  }
+  if (document.webkitExitFullscreen) {
+    return Promise.resolve(document.webkitExitFullscreen());
+  }
+  if (document.mozCancelFullScreen) {
+    return Promise.resolve(document.mozCancelFullScreen());
+  }
+  if (document.msExitFullscreen) {
+    return Promise.resolve(document.msExitFullscreen());
+  }
+  return Promise.reject(new Error('Exit fullscreen unavailable'));
+}
+
 export default class TourMobileControls {
   constructor(controller) {
     this.controller = controller;
@@ -25,10 +70,11 @@ export default class TourMobileControls {
     this.lookZone = null;
     this.joystickBase = null;
     this.joystickStick = null;
+    this.fullscreenBtn = null;
     this.stick = { x: 0, y: 0 };
     this.upPressed = false;
     this.downPressed = false;
-    this.sprintPressed = false;
+    this.pseudoFullscreen = false;
     this.joystickPointerId = null;
     this.joystickCenter = { x: 0, y: 0 };
     this.lookTouchId = null;
@@ -40,12 +86,12 @@ export default class TourMobileControls {
     this.handleJoystickPointerEnd = this.handleJoystickPointerEnd.bind(this);
     this.handleUpDownPointerDown = this.handleUpDownPointerDown.bind(this);
     this.handleUpDownPointerEnd = this.handleUpDownPointerEnd.bind(this);
-    this.handleSprintPointerDown = this.handleSprintPointerDown.bind(this);
-    this.handleSprintPointerEnd = this.handleSprintPointerEnd.bind(this);
     this.handleLookTouchStart = this.handleLookTouchStart.bind(this);
     this.handleLookTouchMove = this.handleLookTouchMove.bind(this);
     this.handleLookTouchEnd = this.handleLookTouchEnd.bind(this);
     this.handleDoorInteractClick = this.handleDoorInteractClick.bind(this);
+    this.handleFullscreenClick = this.handleFullscreenClick.bind(this);
+    this.handleFullscreenChange = this.handleFullscreenChange.bind(this);
   }
 
   isActive() {
@@ -61,11 +107,11 @@ export default class TourMobileControls {
     root.className = 'tour-mobile-controls tour-mobile-controls--pubg';
     root.innerHTML = `
       <div class="tour-look-zone" aria-hidden="true"></div>
+      <button type="button" class="tour-pad-btn tour-pad-btn--fullscreen" aria-label="Enter fullscreen">FULL</button>
       <div class="tour-joystick" aria-hidden="true">
         <div class="tour-joystick__ring"></div>
         <div class="tour-joystick__stick"></div>
       </div>
-      <button type="button" class="tour-pad-btn tour-pad-btn--sprint" aria-label="Sprint">RUN</button>
       <div class="tour-action-cluster" aria-hidden="true">
         <button type="button" class="tour-pad-btn tour-pad-btn--up" aria-label="Fly up">▲</button>
         <button type="button" class="tour-pad-btn tour-pad-btn--down" aria-label="Fly down">▼</button>
@@ -78,16 +124,13 @@ export default class TourMobileControls {
     this.lookZone = root.querySelector('.tour-look-zone');
     this.joystickBase = root.querySelector('.tour-joystick');
     this.joystickStick = root.querySelector('.tour-joystick__stick');
+    this.fullscreenBtn = root.querySelector('.tour-pad-btn--fullscreen');
     const upBtn = root.querySelector('.tour-pad-btn--up');
     const downBtn = root.querySelector('.tour-pad-btn--down');
-    const sprintBtn = root.querySelector('.tour-pad-btn--sprint');
     this.doorBtn = root.querySelector('.tour-pad-btn--door');
 
     this.joystickBase.addEventListener('pointerdown', this.handleJoystickPointerDown);
-    sprintBtn.addEventListener('pointerdown', this.handleSprintPointerDown);
-    sprintBtn.addEventListener('pointerup', this.handleSprintPointerEnd);
-    sprintBtn.addEventListener('pointercancel', this.handleSprintPointerEnd);
-    sprintBtn.addEventListener('pointerleave', this.handleSprintPointerEnd);
+    this.fullscreenBtn.addEventListener('click', this.handleFullscreenClick);
     upBtn.addEventListener('pointerdown', this.handleUpDownPointerDown);
     downBtn.addEventListener('pointerdown', this.handleUpDownPointerDown);
     upBtn.addEventListener('pointerup', this.handleUpDownPointerEnd);
@@ -97,6 +140,88 @@ export default class TourMobileControls {
     upBtn.addEventListener('pointerleave', this.handleUpDownPointerEnd);
     downBtn.addEventListener('pointerleave', this.handleUpDownPointerEnd);
     this.doorBtn.addEventListener('click', this.handleDoorInteractClick);
+    this.syncFullscreenButton();
+  }
+
+  getFullscreenTarget() {
+    return (
+      this.controller?.instance?.container
+      || this.controller?.instance?.renderer?.domElement?.parentElement
+      || document.documentElement
+    );
+  }
+
+  isFullscreenActive() {
+    return this.pseudoFullscreen || Boolean(getFullscreenElement());
+  }
+
+  setPseudoFullscreen(active) {
+    const target = this.getFullscreenTarget();
+    this.pseudoFullscreen = Boolean(active);
+    if (target) {
+      target.classList.toggle('tour-canvas-fullscreen', this.pseudoFullscreen);
+    }
+    document.body.classList.toggle('tour-fullscreen-lock', this.pseudoFullscreen);
+    this.syncFullscreenButton();
+    this.controller?.instance?.handleResize?.();
+  }
+
+  syncFullscreenButton() {
+    if (!this.fullscreenBtn) {
+      return;
+    }
+    const active = this.isFullscreenActive();
+    this.fullscreenBtn.textContent = active ? 'EXIT' : 'FULL';
+    this.fullscreenBtn.setAttribute(
+      'aria-label',
+      active ? 'Exit fullscreen' : 'Enter fullscreen',
+    );
+    this.fullscreenBtn.classList.toggle('is-pressed', active);
+  }
+
+  async handleFullscreenClick(event) {
+    if (!this.isActive()) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      if (this.isFullscreenActive()) {
+        if (getFullscreenElement()) {
+          await exitFullscreenDocument();
+        }
+        this.setPseudoFullscreen(false);
+      } else {
+        try {
+          await requestFullscreenElement(this.getFullscreenTarget());
+          this.syncFullscreenButton();
+        } catch (_) {
+          // iOS / restricted browsers: CSS fixed overlay instead
+          this.setPseudoFullscreen(true);
+        }
+      }
+    } catch (_) {
+      this.setPseudoFullscreen(!this.pseudoFullscreen);
+    }
+  }
+
+  handleFullscreenChange() {
+    if (getFullscreenElement()) {
+      // Native fullscreen won — drop CSS fallback classes if any
+      this.pseudoFullscreen = false;
+      const target = this.getFullscreenTarget();
+      target?.classList.remove('tour-canvas-fullscreen');
+      document.body.classList.remove('tour-fullscreen-lock');
+    }
+    this.syncFullscreenButton();
+    if (this.joystickBase) {
+      const rect = this.joystickBase.getBoundingClientRect();
+      this.joystickCenter = {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }
+    this.controller?.instance?.handleResize?.();
   }
 
   handleDoorInteractClick(event) {
@@ -147,7 +272,7 @@ export default class TourMobileControls {
       return false;
     }
     const targets = this.root.querySelectorAll(
-      '.tour-joystick, .tour-action-cluster, .tour-pad-btn--sprint'
+      '.tour-joystick, .tour-action-cluster, .tour-pad-btn--fullscreen'
     );
     for (const el of targets) {
       const rect = el.getBoundingClientRect();
@@ -229,21 +354,6 @@ export default class TourMobileControls {
       this.joystickBase.releasePointerCapture(event.pointerId);
     }
     this.resetJoystick();
-  }
-
-  handleSprintPointerDown(event) {
-    if (!this.isActive()) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    this.sprintPressed = true;
-    event.currentTarget.classList.add('is-pressed');
-  }
-
-  handleSprintPointerEnd(event) {
-    this.sprintPressed = false;
-    event.currentTarget.classList.remove('is-pressed');
   }
 
   handleUpDownPointerDown(event) {
@@ -338,8 +448,9 @@ export default class TourMobileControls {
     return this.downPressed;
   }
 
+  /** Phone tour always sprints — no RUN button while holding the stick. */
   isSprintPressed() {
-    return this.sprintPressed;
+    return true;
   }
 
   enable() {
@@ -350,18 +461,24 @@ export default class TourMobileControls {
     this.enabled = true;
     this.root.style.display = 'block';
     this.attachLookListeners();
+    this.syncFullscreenButton();
     document.addEventListener('pointermove', this.handleJoystickPointerMove);
     document.addEventListener('pointerup', this.handleJoystickPointerEnd);
     document.addEventListener('pointercancel', this.handleJoystickPointerEnd);
+    document.addEventListener('fullscreenchange', this.handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', this.handleFullscreenChange);
   }
 
   disable() {
     this.enabled = false;
     this.upPressed = false;
     this.downPressed = false;
-    this.sprintPressed = false;
     this.lookTouchId = null;
     this.resetJoystick();
+    if (getFullscreenElement()) {
+      exitFullscreenDocument().catch(() => {});
+    }
+    this.setPseudoFullscreen(false);
     if (this.root) {
       this.root.style.display = 'none';
       this.root.querySelectorAll('.tour-pad-btn').forEach((btn) => {
@@ -372,6 +489,8 @@ export default class TourMobileControls {
     document.removeEventListener('pointermove', this.handleJoystickPointerMove);
     document.removeEventListener('pointerup', this.handleJoystickPointerEnd);
     document.removeEventListener('pointercancel', this.handleJoystickPointerEnd);
+    document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', this.handleFullscreenChange);
   }
 
   dispose() {
@@ -380,5 +499,6 @@ export default class TourMobileControls {
       this.root.parentNode.removeChild(this.root);
     }
     this.root = null;
+    this.fullscreenBtn = null;
   }
 }

@@ -495,15 +495,26 @@ code {
 }
 
 .tour-mobile-controls--pubg .tour-pad-btn--sprint {
+  display: none !important;
+}
+
+.tour-mobile-controls--pubg .tour-pad-btn--fullscreen {
   position: absolute;
-  left: 28px;
-  bottom: 200px;
-  width: 54px;
-  height: 54px;
-  z-index: 3;
+  top: 14px;
+  right: 14px;
+  width: 56px;
+  height: 56px;
+  z-index: 4;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.04em;
+  background: rgba(37, 99, 235, 0.55);
+  border-color: rgba(147, 197, 253, 0.5);
+}
+
+.tour-mobile-controls--pubg .tour-pad-btn--fullscreen.is-pressed {
+  background: rgba(220, 38, 38, 0.55);
+  border-color: rgba(252, 165, 165, 0.55);
 }
 
 .tour-mobile-controls--pubg .tour-action-cluster {
@@ -574,9 +585,22 @@ code {
   background: rgba(210, 155, 55, 0.92);
 }
 
-.tour-mobile-controls--pubg .tour-pad-btn--sprint.is-pressed {
-  background: rgba(70, 120, 200, 0.75);
-  border-color: rgba(160, 200, 255, 0.5);
+/* Phone tour: expand canvas to viewport when Fullscreen API is unavailable (e.g. iOS) */
+.tour-canvas-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 9999 !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+
+body.tour-fullscreen-lock {
+  overflow: hidden !important;
+  touch-action: none;
 }
 
 .tour-door-prompt {
