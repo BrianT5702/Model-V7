@@ -50,6 +50,156 @@ export function resolveOneFingerGestureLock(
 }
 
 /**
+ * Apply a vertical touch drag to the nearest scroll parent (finger down → content down).
+ */
+export function forwardTouchDeltaToScrollParent(deltaY, fromElement) {
+    if (!deltaY || !(fromElement instanceof Element)) {
+        return false;
+    }
+
+    let el = fromElement.parentElement;
+    while (el && el !== document.body && el !== document.documentElement) {
+        const style = window.getComputedStyle(el);
+        const overflowY = style.overflowY;
+        const canScrollY = (
+            overflowY === 'auto'
+            || overflowY === 'scroll'
+            || overflowY === 'overlay'
+        ) && el.scrollHeight > el.clientHeight + 1;
+
+        if (canScrollY) {
+            const prev = el.scrollTop;
+            el.scrollTop -= deltaY;
+            if (el.scrollTop !== prev) {
+                return true;
+            }
+        }
+        el = el.parentElement;
+    }
+
+    const scroller = document.scrollingElement || document.documentElement;
+    if (!scroller) {
+        return false;
+    }
+    const prev = scroller.scrollTop;
+    scroller.scrollTop -= deltaY;
+    return scroller.scrollTop !== prev;
+}
+
+/**
+ * Native non-passive phone touch for plan canvases.
+ * React onTouchMove is often passive (preventDefault is ignored), which locks horizontal pan.
+ * One-finger vertical → page scroll; one-finger horizontal → onOneFingerPan; two-finger → onTwoFingerPan.
+ * Returns cleanup.
+ */
+export function bindPlanCanvasMobileTouch(canvas, {
+    onOneFingerPan,
+    onTwoFingerPan,
+    shouldHandleOneFinger = () => true,
+} = {}) {
+    if (!canvas || typeof canvas.addEventListener !== 'function' || !isCoarsePointerDevice()) {
+        return () => {};
+    }
+
+    let oneFingerStart = null;
+    let oneFingerLast = null;
+    let oneFingerLock = null;
+    let twoFingerLast = null;
+
+    const resetOneFinger = () => {
+        oneFingerStart = null;
+        oneFingerLast = null;
+        oneFingerLock = null;
+    };
+
+    const onTouchStart = (event) => {
+        if (event.touches.length >= 2) {
+            resetOneFinger();
+            twoFingerLast = getTouchCenter(event.touches);
+            event.preventDefault();
+            return;
+        }
+        if (event.touches.length === 1 && shouldHandleOneFinger()) {
+            const touch = event.touches[0];
+            oneFingerStart = { x: touch.clientX, y: touch.clientY };
+            oneFingerLast = { x: touch.clientX, y: touch.clientY };
+            oneFingerLock = null;
+            twoFingerLast = null;
+        }
+    };
+
+    const onTouchMove = (event) => {
+        if (event.touches.length >= 2 && twoFingerLast) {
+            const center = getTouchCenter(event.touches);
+            if (center && typeof onTwoFingerPan === 'function') {
+                onTwoFingerPan(center.x - twoFingerLast.x, center.y - twoFingerLast.y);
+                twoFingerLast = center;
+            }
+            event.preventDefault();
+            return;
+        }
+
+        if (event.touches.length !== 1 || !oneFingerStart || !oneFingerLast) {
+            return;
+        }
+        if (!shouldHandleOneFinger()) {
+            return;
+        }
+
+        const touch = event.touches[0];
+        const current = { x: touch.clientX, y: touch.clientY };
+        oneFingerLock = resolveOneFingerGestureLock(oneFingerStart, current, oneFingerLock);
+        const deltaX = current.x - oneFingerLast.x;
+        const deltaY = current.y - oneFingerLast.y;
+        oneFingerLast = current;
+
+        if (oneFingerLock === 'pan') {
+            if (typeof onOneFingerPan === 'function') {
+                onOneFingerPan(deltaX, deltaY);
+            }
+            event.preventDefault();
+            return;
+        }
+
+        if (oneFingerLock === 'scroll') {
+            forwardTouchDeltaToScrollParent(deltaY, canvas);
+            event.preventDefault();
+        }
+    };
+
+    const onTouchEnd = (event) => {
+        if (event.touches.length >= 2) {
+            twoFingerLast = getTouchCenter(event.touches);
+            resetOneFinger();
+            return;
+        }
+        if (event.touches.length === 1) {
+            twoFingerLast = null;
+            const touch = event.touches[0];
+            oneFingerStart = { x: touch.clientX, y: touch.clientY };
+            oneFingerLast = { x: touch.clientX, y: touch.clientY };
+            oneFingerLock = null;
+            return;
+        }
+        twoFingerLast = null;
+        resetOneFinger();
+    };
+
+    canvas.style.touchAction = 'none';
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    return () => {
+        canvas.removeEventListener('touchstart', onTouchStart);
+        canvas.removeEventListener('touchmove', onTouchMove);
+        canvas.removeEventListener('touchend', onTouchEnd);
+        canvas.removeEventListener('touchcancel', onTouchEnd);
+    };
+}
+
+/**
  * Apply wheel delta to the nearest vertical scroll parent.
  * Use when a canvas/overlay would otherwise swallow wheel (preventDefault / non-scrollable).
  */

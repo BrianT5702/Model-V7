@@ -3,8 +3,8 @@
 export const PLAN_CANVAS_DEFAULT_WIDTH = 1000;
 export const PLAN_CANVAS_DEFAULT_HEIGHT = 720;
 export const PLAN_CANVAS_ASPECT_RATIO = PLAN_CANVAS_DEFAULT_HEIGHT / PLAN_CANVAS_DEFAULT_WIDTH;
-export const PLAN_CANVAS_MIN_WIDTH = 200;
-export const PLAN_CANVAS_MIN_HEIGHT = 200;
+export const PLAN_CANVAS_MIN_WIDTH = 320;
+export const PLAN_CANVAS_MIN_HEIGHT = 280;
 export const PLAN_CANVAS_PADDING = 50;
 export const PLAN_CANVAS_MAX_SCALE = 2.0;
 /** Same 90% tight-fit factor as Canvas2D wall plan initial zoom. */

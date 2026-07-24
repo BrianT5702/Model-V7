@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { isCoarsePointerDevice, getTouchCenter, forwardWheelToScrollParent, resolveOneFingerGestureLock } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter, forwardWheelToScrollParent, bindPlanCanvasMobileTouch } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
@@ -127,9 +127,6 @@ const FloorCanvas = ({
     // Canvas dragging state (separate from other dragging)
     const isDraggingCanvas = useRef(false);
     const lastTwoFingerCenter = useRef(null);
-    const oneFingerStart = useRef(null);
-    const oneFingerLast = useRef(null);
-    const oneFingerGestureLock = useRef(null); // 'pan' | 'scroll' | null
     const lastCanvasMousePos = useRef({ x: 0, y: 0 });
     const hasUserPositionedView = useRef(false);
     
@@ -156,8 +153,7 @@ const FloorCanvas = ({
         if (!container) return;
 
         const updateCanvasSize = (rawWidth) => {
-            // Use the real container width so phones are not forced to a desktop-sized canvas
-            const width = rawWidth > 0 ? rawWidth : MIN_CANVAS_WIDTH;
+            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
             const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
             const calculatedHeight = width * CANVAS_ASPECT_RATIO;
             const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
@@ -362,9 +358,9 @@ const FloorCanvas = ({
         
         ctx.scale(dpr, dpr);
         
+        // Fill the viewport — never set a fixed px width (that overflows phones and gets clipped)
         canvas.style.width = '100%';
         canvas.style.height = '100%';
-        canvas.style.maxWidth = '100%';
 
         if (!hasUserPositionedView.current) {
             calculateCanvasTransform();
@@ -1726,74 +1722,33 @@ const FloorCanvas = ({
     };
 
     const handleTouchStart = (e) => {
-        if (!isCoarsePointerDevice()) {
+        // Phone pan/scroll: bindPlanCanvasMobileTouch (native, non-passive)
+        if (isCoarsePointerDevice()) {
             return;
         }
-        if (e.touches.length === 2) {
-            oneFingerStart.current = null;
-            oneFingerLast.current = null;
-            oneFingerGestureLock.current = null;
-            lastTwoFingerCenter.current = getTouchCenter(e.touches);
-            isDraggingCanvas.current = true;
-            hasUserPositionedView.current = true;
-            e.preventDefault();
+        if (e.touches.length !== 2) {
             return;
         }
-        if (e.touches.length === 1) {
-            const touch = e.touches[0];
-            oneFingerStart.current = { x: touch.clientX, y: touch.clientY };
-            oneFingerLast.current = { x: touch.clientX, y: touch.clientY };
-            oneFingerGestureLock.current = null;
-        }
+        lastTwoFingerCenter.current = getTouchCenter(e.touches);
+        isDraggingCanvas.current = true;
+        hasUserPositionedView.current = true;
+        e.preventDefault();
     };
 
     const handleTouchMove = (e) => {
-        if (!isCoarsePointerDevice()) {
+        if (isCoarsePointerDevice()) {
             return;
         }
-        if (e.touches.length === 2 && lastTwoFingerCenter.current) {
-            const center = getTouchCenter(e.touches);
-            if (!center) {
-                return;
-            }
-            const rect = canvasRef.current?.getBoundingClientRect();
-            const scaleX = CANVAS_WIDTH / (rect?.width || 1);
-            const scaleY = CANVAS_HEIGHT / (rect?.height || 1);
-            offsetX.current += (center.x - lastTwoFingerCenter.current.x) * scaleX;
-            offsetY.current += (center.y - lastTwoFingerCenter.current.y) * scaleY;
-            lastTwoFingerCenter.current = center;
-            const ctx = canvasRef.current?.getContext('2d');
-            if (ctx) {
-                drawCanvas(ctx);
-            }
-            e.preventDefault();
+        if (e.touches.length !== 2 || !lastTwoFingerCenter.current) {
             return;
         }
-        if (e.touches.length !== 1 || !oneFingerStart.current || !oneFingerLast.current) {
+        const center = getTouchCenter(e.touches);
+        if (!center) {
             return;
         }
-        const touch = e.touches[0];
-        const current = { x: touch.clientX, y: touch.clientY };
-        const lock = resolveOneFingerGestureLock(
-            oneFingerStart.current,
-            current,
-            oneFingerGestureLock.current,
-        );
-        oneFingerGestureLock.current = lock;
-        if (lock !== 'pan') {
-            // Vertical (or undecided): let the page scroll
-            return;
-        }
-        const rect = canvasRef.current?.getBoundingClientRect();
-        const scaleX = CANVAS_WIDTH / (rect?.width || 1);
-        const scaleY = CANVAS_HEIGHT / (rect?.height || 1);
-        const deltaX = (current.x - oneFingerLast.current.x) * scaleX;
-        const deltaY = (current.y - oneFingerLast.current.y) * scaleY;
-        offsetX.current += deltaX;
-        offsetY.current += deltaY;
-        oneFingerLast.current = current;
-        isDraggingCanvas.current = true;
-        hasUserPositionedView.current = true;
+        offsetX.current += center.x - lastTwoFingerCenter.current.x;
+        offsetY.current += center.y - lastTwoFingerCenter.current.y;
+        lastTwoFingerCenter.current = center;
         const ctx = canvasRef.current?.getContext('2d');
         if (ctx) {
             drawCanvas(ctx);
@@ -1802,15 +1757,41 @@ const FloorCanvas = ({
     };
 
     const handleTouchEnd = () => {
-        if (!isCoarsePointerDevice()) {
-            return;
-        }
         lastTwoFingerCenter.current = null;
-        oneFingerStart.current = null;
-        oneFingerLast.current = null;
-        oneFingerGestureLock.current = null;
         isDraggingCanvas.current = false;
     };
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return undefined;
+        }
+        const redraw = () => {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                drawCanvas(ctx);
+            }
+        };
+        return bindPlanCanvasMobileTouch(canvas, {
+            onOneFingerPan: (dx, dy) => {
+                offsetX.current += dx;
+                offsetY.current += dy;
+                isDraggingCanvas.current = true;
+                hasUserPositionedView.current = true;
+                redraw();
+            },
+            onTwoFingerPan: (dx, dy) => {
+                offsetX.current += dx;
+                offsetY.current += dy;
+                isDraggingCanvas.current = true;
+                hasUserPositionedView.current = true;
+                lastTwoFingerCenter.current = null;
+                redraw();
+            },
+        });
+    // drawCanvas changes each render; bind once per mount is enough for pan deltas
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         const handleGlobalMouseUp = () => {
@@ -1819,9 +1800,6 @@ const FloorCanvas = ({
 
         const handleGlobalTouchEnd = () => {
             lastTwoFingerCenter.current = null;
-            oneFingerStart.current = null;
-            oneFingerLast.current = null;
-            oneFingerGestureLock.current = null;
             isDraggingCanvas.current = false;
         };
         
@@ -1957,11 +1935,12 @@ const FloorCanvas = ({
                             <canvas
                                 ref={canvasRef}
                                 data-plan-type="floor"
-                                className="floor-canvas cursor-grab active:cursor-grabbing block w-full"
+                                className="floor-canvas cursor-grab active:cursor-grabbing block w-full h-full max-w-full"
                                 style={{
                                     width: '100%',
                                     height: '100%',
-                                    touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
+                                    maxWidth: '100%',
+                                    touchAction: 'none',
                                 }}
                                 onWheel={handleWheel}
                                 onMouseDown={handleMouseDown}
@@ -1991,7 +1970,7 @@ const FloorCanvas = ({
                         </div>
                         <span className="text-[10px] text-gray-500 dark:text-gray-400">
                             {isCoarsePointerDevice()
-                                ? 'Swipe up/down to scroll · Sideways to pan · Two fingers to pan · Zoom buttons to zoom'
+                                ? 'Swipe sideways to pan · Up/down to scroll · Two fingers to pan · Zoom buttons to zoom'
                                 : 'Click panels to select · Drag to pan · Use zoom buttons'}
                         </span>
                     </div>

@@ -25,7 +25,7 @@ import {
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
-import { isCoarsePointerDevice, getTouchCenter, resolveOneFingerGestureLock } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, bindPlanCanvasMobileTouch } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { drawPlanAnnotationArrows, isPointNearPlanAnnotation } from './drawPlanAnnotations';
 import {
@@ -152,14 +152,14 @@ const Canvas2D = ({
     // Canvas size constants (matching CeilingCanvas)
     const DEFAULT_CANVAS_WIDTH = 1000;
     const DEFAULT_CANVAS_HEIGHT = 650;
-    // Soft floors only — never reject phone widths and stay stuck on the desktop default
-    const MIN_CANVAS_WIDTH = 200;
-    const MIN_CANVAS_HEIGHT = 200;
+    // Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
+    const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
+    const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
+    const CANVAS_HEIGHT = DEFAULT_CANVAS_HEIGHT; // For styling consistency with CeilingCanvas
     const [canvasSize, setCanvasSize] = useState({
         width: DEFAULT_CANVAS_WIDTH,
         height: DEFAULT_CANVAS_HEIGHT
     });
-    const CANVAS_HEIGHT = Math.round(canvasSize.height);
 
 
     const [dbConnectionError, setDbConnectionError] = useState(false);
@@ -238,8 +238,6 @@ const Canvas2D = ({
     const lastMousePos = useRef({ x: 0, y: 0 });
     const lastTouchPos = useRef({ x: 0, y: 0 });
     const lastTwoFingerCenter = useRef(null);
-    const oneFingerStart = useRef(null);
-    const oneFingerGestureLock = useRef(null); // 'pan' | 'scroll' | null
     const isTouchDragging = useRef(false);
     const touchStartTime = useRef(0);
 
@@ -358,7 +356,8 @@ const Canvas2D = ({
         e.preventDefault();
     };
 
-    // Touch: vertical swipe scrolls the page; horizontal swipe pans the plan; two-finger pans freely.
+    // Touch: React handlers cover annotate + non-phone. Phone pan/scroll uses native
+    // non-passive listeners (bindPlanCanvasMobileTouch) because React touchmove is often passive.
     const handleTouchStart = (e) => {
         if (planAnnotateMode && planNoteAddMode && canAnnotate && !planAnnotationArrowPlacementId && e.touches.length === 1) {
             const touch = e.touches[0];
@@ -369,23 +368,7 @@ const Canvas2D = ({
         }
 
         if (isCoarsePointerDevice()) {
-            if (e.touches.length === 2) {
-                oneFingerStart.current = null;
-                oneFingerGestureLock.current = null;
-                lastTwoFingerCenter.current = getTouchCenter(e.touches);
-                isTouchDragging.current = true;
-                isDraggingCanvas.current = true;
-                isZoomed.current = true;
-                e.preventDefault();
-                return;
-            }
-            if (e.touches.length === 1) {
-                const touch = e.touches[0];
-                oneFingerStart.current = { x: touch.clientX, y: touch.clientY };
-                oneFingerGestureLock.current = null;
-                lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
-                isTouchDragging.current = false;
-            }
+            // Pan / page-scroll handled by bindPlanCanvasMobileTouch
             return;
         }
 
@@ -412,46 +395,6 @@ const Canvas2D = ({
         }
 
         if (isCoarsePointerDevice()) {
-            if (e.touches.length === 2 && lastTwoFingerCenter.current) {
-                const center = getTouchCenter(e.touches);
-                if (center) {
-                    const rect = canvasRef.current?.getBoundingClientRect();
-                    const scaleX = canvasSize.width / (rect?.width || 1);
-                    const scaleY = canvasSize.height / (rect?.height || 1);
-                    offsetX.current += (center.x - lastTwoFingerCenter.current.x) * scaleX;
-                    offsetY.current += (center.y - lastTwoFingerCenter.current.y) * scaleY;
-                    lastTwoFingerCenter.current = center;
-                    setForceRefresh((prev) => prev + 1);
-                }
-                e.preventDefault();
-                return;
-            }
-            if (e.touches.length === 1 && oneFingerStart.current && lastTouchPos.current) {
-                const touch = e.touches[0];
-                const current = { x: touch.clientX, y: touch.clientY };
-                const lock = resolveOneFingerGestureLock(
-                    oneFingerStart.current,
-                    current,
-                    oneFingerGestureLock.current,
-                );
-                oneFingerGestureLock.current = lock;
-                if (lock !== 'pan') {
-                    return;
-                }
-                const rect = canvasRef.current?.getBoundingClientRect();
-                const scaleX = canvasSize.width / (rect?.width || 1);
-                const scaleY = canvasSize.height / (rect?.height || 1);
-                const deltaX = (current.x - lastTouchPos.current.x) * scaleX;
-                const deltaY = (current.y - lastTouchPos.current.y) * scaleY;
-                offsetX.current += deltaX;
-                offsetY.current += deltaY;
-                lastTouchPos.current = current;
-                isTouchDragging.current = true;
-                isDraggingCanvas.current = true;
-                isZoomed.current = true;
-                setForceRefresh((prev) => prev + 1);
-                e.preventDefault();
-            }
             return;
         }
 
@@ -499,16 +442,9 @@ const Canvas2D = ({
         }
 
         if (isCoarsePointerDevice()) {
-            const wasPan = Boolean(lastTwoFingerCenter.current) || oneFingerGestureLock.current === 'pan';
-            lastTwoFingerCenter.current = null;
-            oneFingerStart.current = null;
-            oneFingerGestureLock.current = null;
             isTouchDragging.current = false;
             isDraggingCanvas.current = false;
             lastTouchPos.current = null;
-            if (wasPan) {
-                e.preventDefault();
-            }
             return;
         }
 
@@ -523,6 +459,35 @@ const Canvas2D = ({
             e.preventDefault();
         }
     };
+
+    // Phone: native non-passive touch so horizontal pan is not locked by passive React listeners
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return undefined;
+        }
+        return bindPlanCanvasMobileTouch(canvas, {
+            shouldHandleOneFinger: () => !(
+                planAnnotateMode && planNoteAddMode && canAnnotate && !planAnnotationArrowPlacementId
+            ),
+            onOneFingerPan: (dx, dy) => {
+                offsetX.current += dx;
+                offsetY.current += dy;
+                isTouchDragging.current = true;
+                isDraggingCanvas.current = true;
+                isZoomed.current = true;
+                setForceRefresh((prev) => prev + 1);
+            },
+            onTwoFingerPan: (dx, dy) => {
+                offsetX.current += dx;
+                offsetY.current += dy;
+                isTouchDragging.current = true;
+                isDraggingCanvas.current = true;
+                isZoomed.current = true;
+                setForceRefresh((prev) => prev + 1);
+            },
+        });
+    }, [planAnnotateMode, planNoteAddMode, canAnnotate, planAnnotationArrowPlacementId]);
 
     // Handle right-click (context menu) for define-room mode and cancel add-wall mode
     const handleCanvasContextMenu = (event) => {
@@ -553,8 +518,6 @@ const Canvas2D = ({
             isTouchDragging.current = false;
             isDraggingCanvas.current = false;
             lastTwoFingerCenter.current = null;
-            oneFingerStart.current = null;
-            oneFingerGestureLock.current = null;
         };
         
         document.addEventListener('mouseup', handleGlobalMouseUp);
@@ -926,13 +889,11 @@ const Canvas2D = ({
         return false;
     };
 
-    // Use for getting correct mouse position (map CSS pixels → canvas buffer pixels)
+    // Use for getting correct mouse position
     const getPointerModelPos = (clientX, clientY) => {
         const rect = canvasRef.current.getBoundingClientRect();
-        const scaleX = canvasSize.width / (rect.width || 1);
-        const scaleY = canvasSize.height / (rect.height || 1);
-        const x = ((clientX - rect.left) * scaleX - offsetX.current) / scaleFactor.current;
-        const y = ((clientY - rect.top) * scaleY - offsetY.current) / scaleFactor.current;
+        const x = (clientX - rect.left - offsetX.current) / scaleFactor.current;
+        const y = (clientY - rect.top - offsetY.current) / scaleFactor.current;
         return { x, y };
     };
 
@@ -2301,13 +2262,12 @@ const Canvas2D = ({
         const updateCanvasSize = () => {
             const rawWidth = container.clientWidth;
             const rawHeight = container.clientHeight;
-            // Only skip when the container is truly unmeasurable (hidden tab / not laid out yet)
-            if (rawWidth <= 0 || rawHeight <= 0) {
+            // Don't apply when container is hidden (e.g. tab not visible)
+            if (rawWidth <= 0 || rawWidth < MIN_CANVAS_WIDTH || rawHeight <= 0 || rawHeight < MIN_CANVAS_HEIGHT) {
                 return;
             }
-            // Use the real container size so the plan fits the phone; do not force a desktop min width
-            const width = rawWidth > 0 ? rawWidth : MIN_CANVAS_WIDTH;
-            const height = rawHeight > 0 ? rawHeight : MIN_CANVAS_HEIGHT;
+            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
+            const height = Math.max(rawHeight, MIN_CANVAS_HEIGHT);
 
             setCanvasSize((prev) => {
                 if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
@@ -2322,7 +2282,7 @@ const Canvas2D = ({
 
         const measureAfterPaint = () => {
             requestAnimationFrame(() => {
-                if (container.isConnected && container.clientWidth > 0 && container.clientHeight > 0) {
+                if (container.isConnected && container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
                     updateCanvasSize();
                 }
             });
@@ -2335,7 +2295,7 @@ const Canvas2D = ({
                     if (entry.target === container) {
                         const entryWidth = entry.contentRect?.width ?? container.clientWidth;
                         const entryHeight = entry.contentRect?.height ?? container.clientHeight;
-                        if (entryWidth > 0 && entryHeight > 0) {
+                        if (entryWidth >= MIN_CANVAS_WIDTH && entryHeight >= MIN_CANVAS_HEIGHT) {
                             updateCanvasSize();
                         } else {
                             measureAfterPaint();
@@ -2347,7 +2307,7 @@ const Canvas2D = ({
             observer.observe(container);
         }
 
-        if (container.clientWidth > 0 && container.clientHeight > 0) {
+        if (container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
             updateCanvasSize();
         } else {
             measureAfterPaint();
@@ -2381,10 +2341,10 @@ const Canvas2D = ({
         // Scale the context to match device pixel ratio
         context.scale(dpr, dpr);
         
-        // Set the CSS size to the display size — never wider than the container
+        // Keep CSS size at 100% of the viewport so a default 1000px buffer cannot
+        // expand the layout and get clipped by overflow-x: hidden on phones.
         canvas.style.width = '100%';
         canvas.style.height = '100%';
-        canvas.style.maxWidth = '100%';
 
         // === Restore original scale/offset calculation ===
         // Find bounding box of all wall endpoints
@@ -2927,7 +2887,7 @@ const Canvas2D = ({
             )}
 
             {/* Main Content - Matching Ceiling Plan Structure */}
-            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4 w-full max-w-full min-w-0 overflow-x-hidden">
+            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4">
                 {/* Header */}
                 <div className="wall-canvas-header mb-3">
                     <div className="flex items-center justify-between gap-3">
@@ -2976,7 +2936,7 @@ const Canvas2D = ({
                                         onTouchMove={handleTouchMove}
                                         onTouchEnd={handleTouchEnd}
                                         tabIndex={0}
-                                        className={`wall-canvas block w-full max-w-full ${
+                                        className={`wall-canvas block w-full h-full max-w-full ${
                                             planAnnotateMode && planNoteAddMode && canAnnotate
                                                 ? 'cursor-crosshair'
                                                 : 'cursor-grab active:cursor-grabbing'
@@ -2985,7 +2945,7 @@ const Canvas2D = ({
                                             width: '100%',
                                             height: '100%',
                                             maxWidth: '100%',
-                                            touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
+                                            touchAction: 'none',
                                         }}
                                     />
 
@@ -3071,7 +3031,7 @@ const Canvas2D = ({
                                     </div>
                                     <span className="text-[10px] text-gray-500 dark:text-gray-400">
                                         {isCoarsePointerDevice()
-                                            ? 'Swipe up/down to scroll · Sideways to pan · Two fingers to pan · Zoom buttons to zoom'
+                                            ? 'Swipe sideways to pan · Up/down to scroll · Two fingers to pan · Zoom buttons to zoom'
                                             : 'Click and drag to navigate · Use zoom buttons'}
                                     </span>
                                 </div>

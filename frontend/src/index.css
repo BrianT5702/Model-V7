@@ -159,7 +159,7 @@ code {
   .wall-canvas,
   .ceiling-canvas,
   .floor-canvas {
-    touch-action: pan-y;
+    touch-action: none;
   }
 }
 
@@ -280,7 +280,7 @@ code {
 .wall-canvas,
 .ceiling-canvas,
 .floor-canvas {
-  touch-action: pan-y;
+  touch-action: none;
 }
 
 @media (min-width: 1024px) {
@@ -1585,6 +1585,14 @@ html.dark .summary-tab .text-orange-700 {
 .plan-canvas,
 .plan-canvas-viewport {
   transition: none !important;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.plan-canvas-viewport {
+  overflow: hidden;
 }
 
 .plan-canvas-viewport .room-label,
