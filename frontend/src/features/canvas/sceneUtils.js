@@ -146,12 +146,11 @@ export function addControls(instance) {
   instance.controls.enableZoom = true;
   instance.controls.enableRotate = true;
   
-  // Touch-specific settings for mobile (pinch-to-zoom support)
-  // ONE touch = rotate, TWO touches = zoom (dolly) and pan
+  // ONE touch = rotate/drag the model, TWO touches = zoom (dolly) and pan
   if (instance.THREE.TOUCH) {
     instance.controls.touches = {
       ONE: instance.THREE.TOUCH.ROTATE,
-      TWO: instance.THREE.TOUCH.DOLLY_PAN  // This enables pinch-to-zoom
+      TWO: instance.THREE.TOUCH.DOLLY_PAN,
     };
   }
   

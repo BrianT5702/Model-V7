@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter, forwardWheelToScrollParent } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
@@ -1666,7 +1666,8 @@ const FloorCanvas = ({
     };
 
     const handleWheel = (e) => {
-        e.preventDefault();
+        // Keep page/panel scrolling when the cursor is over the floor canvas.
+        forwardWheelToScrollParent(e);
     };
 
     const handleMouseDown = (e) => {

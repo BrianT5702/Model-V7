@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useProjectDetails from './useProjectDetails';
 import { useAuth } from '../auth/AuthContext';
@@ -76,10 +76,42 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const [selectedPlanAnnotationId, setSelectedPlanAnnotationId] = useState(null);
     const [planAnnotationArrowPlacementId, setPlanAnnotationArrowPlacementId] = useState(null);
     const [levelActionsMenuOpen, setLevelActionsMenuOpen] = useState(false);
+    const canvasPanelScrollRef = useRef(null);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
     const undoProjectAction = projectDetails.undoProjectAction;
     const redoProjectAction = projectDetails.redoProjectAction;
+
+    // Non-passive wheel listener so we can scroll the 2D panel even when a child
+    // canvas calls preventDefault (React's onWheel is often passive).
+    useEffect(() => {
+        if (projectDetails.is3DView) {
+            return undefined;
+        }
+        const el = canvasPanelScrollRef.current;
+        if (!el) {
+            return undefined;
+        }
+
+        const onWheel = (event) => {
+            if (event.ctrlKey || event.metaKey) {
+                return;
+            }
+            if (el.scrollHeight <= el.clientHeight + 1) {
+                return;
+            }
+            const prev = el.scrollTop;
+            el.scrollTop += event.deltaY;
+            if (el.scrollTop !== prev) {
+                event.preventDefault();
+            }
+        };
+
+        el.addEventListener('wheel', onWheel, { passive: false, capture: true });
+        return () => {
+            el.removeEventListener('wheel', onWheel, { capture: true });
+        };
+    }, [projectDetails.is3DView, projectDetails.currentView]);
 
     useEffect(() => {
         if (!canEdit) {
@@ -2339,13 +2371,13 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             <span className="ml-1">
                                                 {projectDetails.isTourMode
                                                     ? 'Click the floor to set start · Start tour or Enter · Esc cancel'
-                                                    : 'Use pinch-to-zoom on mobile'}
+                                                    : 'Drag to rotate · Pinch to zoom · Swipe outside canvas to scroll'}
                                             </span>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                {/* 3D Canvas Content — fills remaining height (no page scroll) */}
+                                {/* 3D Canvas Content — fixed stage height on phone so the page can scroll */}
                                 <div className="three-canvas-stage">
                                     <div
                                         id="three-canvas-container"
@@ -2448,7 +2480,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                 )}
                                     </div>
                                 )}
-                                <div className="canvas-panel-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain">
+                                <div
+                                    ref={canvasPanelScrollRef}
+                                    className="canvas-panel-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain"
+                                >
                                 <div className="relative">
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D

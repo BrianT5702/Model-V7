@@ -1575,40 +1575,26 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     prevIsEditingModeRef.current = isEditingMode;
   }, [isEditingMode]);
 
-  // Ensure proper canvas visibility
-  useEffect(() => {
-    const threeContainer = document.getElementById('three-canvas-container');
-    const canvas2D = document.querySelector('.canvas-container canvas');
-    
-    if (threeContainer) {
-      if (is3DView) {
-        threeContainer.style.display = 'block';
-        if (canvas2D) {
-          canvas2D.style.display = 'none';
-        }
-      } else {
-        threeContainer.style.display = 'none';
-        if (canvas2D) {
-          canvas2D.style.display = 'block';
-        }
-      }
-    }
-  }, [is3DView]);
+  // Ensure proper canvas visibility — 2D/3D are exclusive in React; no display toggling.
 
-  // Add a function to force cleanup of 3D canvas
+  // Fully dispose 3D resources (controls, tour listeners, rAF loop, renderer)
   const forceCleanup3D = () => {
     try {
       if (threeCanvasInstance.current) {
-        // Dispose of renderer
-        if (threeCanvasInstance.current.renderer) {
+        if (typeof threeCanvasInstance.current.dispose === 'function') {
+          threeCanvasInstance.current.dispose();
+        } else if (threeCanvasInstance.current.renderer) {
           threeCanvasInstance.current.renderer.dispose();
         }
-        // Clear the container
-        const container = document.getElementById('three-canvas-container');
-        if (container) {
-          container.innerHTML = '';
-        }
         threeCanvasInstance.current = null;
+      }
+      const container = document.getElementById('three-canvas-container');
+      if (container) {
+        container.innerHTML = '';
+      }
+      document.body.style.cursor = '';
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
       }
     } catch (error) {
       console.warn('Error during 3D cleanup:', error);

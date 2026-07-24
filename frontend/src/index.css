@@ -91,6 +91,27 @@ code {
   height: 100%;
 }
 
+@media (max-width: 1023px) {
+  /* Match 2D: let the page scroll; give the 3D stage a concrete height instead of locking the viewport */
+  .project-details-workspace .project-details-main > .canvas-container.canvas-container-3d {
+    overflow: visible;
+    flex: 1 0 auto;
+    min-height: auto;
+    overscroll-behavior: auto;
+  }
+
+  .canvas-container-3d .three-canvas-view {
+    flex: 1 0 auto;
+    min-height: auto;
+  }
+
+  .canvas-container-3d .three-canvas-stage {
+    flex: none;
+    height: min(70vh, 560px);
+    min-height: 280px;
+  }
+}
+
 @media (min-width: 640px) {
   .canvas-container {
     min-height: 600px;

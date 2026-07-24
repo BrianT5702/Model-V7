@@ -21,3 +21,56 @@ export function getTouchCenter(touches) {
     const count = touches.length;
     return { x: x / count, y: y / count };
 }
+
+/**
+ * Apply wheel delta to the nearest vertical scroll parent.
+ * Use when a canvas/overlay would otherwise swallow wheel (preventDefault / non-scrollable).
+ */
+export function forwardWheelToScrollParent(event, { ignoreSelector = '' } = {}) {
+    if (!event || event.ctrlKey || event.metaKey) {
+        return false;
+    }
+    const delta = event.deltaY;
+    if (!delta) {
+        return false;
+    }
+
+    const start = event.currentTarget instanceof Element
+        ? event.currentTarget
+        : (event.target instanceof Element ? event.target : null);
+    if (!start) {
+        return false;
+    }
+
+    if (ignoreSelector) {
+        const ignored = event.target instanceof Element
+            ? event.target.closest(ignoreSelector)
+            : null;
+        if (ignored) {
+            return false;
+        }
+    }
+
+    let el = start.parentElement;
+    while (el && el !== document.body && el !== document.documentElement) {
+        const style = window.getComputedStyle(el);
+        const overflowY = style.overflowY;
+        const canScrollY = (
+            overflowY === 'auto'
+            || overflowY === 'scroll'
+            || overflowY === 'overlay'
+        ) && el.scrollHeight > el.clientHeight + 1;
+
+        if (canScrollY) {
+            const prev = el.scrollTop;
+            el.scrollTop += delta;
+            if (el.scrollTop !== prev) {
+                event.preventDefault();
+                return true;
+            }
+            return false;
+        }
+        el = el.parentElement;
+    }
+    return false;
+}

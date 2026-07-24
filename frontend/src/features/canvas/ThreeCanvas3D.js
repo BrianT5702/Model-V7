@@ -16,6 +16,7 @@ import DoorRenderer from './components/DoorRenderer';
 import AnimationManager from './managers/AnimationManager';
 import RoomTourController from './roomTourController';
 import TourRoomLabelManager from './tourRoomLabels';
+import { forwardWheelToScrollParent } from '../../utils/pointerUtils';
 
 const isThreeDebugEnabled = process.env.REACT_APP_DEBUG_THREE === 'true';
 const debugLog = (...args) => {
@@ -38,6 +39,8 @@ export default class ThreeCanvas3D {
   constructor(containerId, walls, joints = [], doors = [], scalingFactor = 0.01, project = null) {
     this.container = document.getElementById(containerId);
     this.THREE = THREE;
+    this._disposed = false;
+    this._rafId = null;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(
       THREE_CONFIG.CAMERA.FOV,
@@ -159,17 +162,22 @@ export default class ThreeCanvas3D {
     this.renderer.outputEncoding = this.THREE.sRGBEncoding; // sRGB for better color accuracy
     
     this.container.appendChild(this.renderer.domElement);
-    
-    // Prevent default touch behaviors that might interfere with OrbitControls
-    // This allows pinch-to-zoom to work properly
+
+    // OrbitControls needs touch-action: none on the canvas so one-finger drag orbits the model.
+    // Page scrolling happens outside the canvas (header / margins) via the mobile layout.
     this.renderer.domElement.style.touchAction = 'none';
     this.renderer.domElement.style.userSelect = 'none';
     
     this.container.addEventListener('mousemove', (event) => onMouseMoveHandler(this, event));
     this.container.addEventListener('click', (event) => onCanvasClickHandler(this, event));
-    this.container.addEventListener('wheel', (event) => {
+    this._onContainerWheel = (event) => {
+      // Keep page scrolling when the wheel is over the 3D view (same idea as 2D).
+      if (forwardWheelToScrollParent(event)) {
+        return;
+      }
       event.preventDefault();
-    }, { passive: false });
+    };
+    this.container.addEventListener('wheel', this._onContainerWheel, { passive: false });
     this.doorButton.addEventListener('click', () => toggleDoorHandler(this));
     // Add double-click to animate door
     this.container.addEventListener('dblclick', (event) => {
@@ -179,25 +187,20 @@ export default class ThreeCanvas3D {
       }
     });
     
-    // Prevent default touch behaviors on container for better touch control
-    this.container.addEventListener('touchstart', (e) => {
-      // Allow OrbitControls to handle touch events
-      // Only prevent default if it's not a two-finger gesture
-      if (e.touches.length === 1) {
-        // Single touch - allow default for potential scrolling
-        // But OrbitControls will still handle rotation
-      } else if (e.touches.length === 2) {
-        // Two-finger gesture (pinch) - prevent default to allow zoom
+    // Prevent browser page gestures only for multi-touch (pinch/zoom on the model)
+    this._onContainerTouchStart = (e) => {
+      if (e.touches.length >= 2) {
         e.preventDefault();
       }
-    }, { passive: false });
+    };
+    this.container.addEventListener('touchstart', this._onContainerTouchStart, { passive: false });
     
-    this.container.addEventListener('touchmove', (e) => {
-      // Prevent default scrolling when using two fingers for zoom
-      if (e.touches.length === 2) {
+    this._onContainerTouchMove = (e) => {
+      if (e.touches.length >= 2) {
         e.preventDefault();
       }
-    }, { passive: false });
+    };
+    this.container.addEventListener('touchmove', this._onContainerTouchMove, { passive: false });
   
     // Adjust initial camera position for better view
     this.camera.position.set(
@@ -305,20 +308,45 @@ export default class ThreeCanvas3D {
     }
   }
 
-  // Cleanup resize handlers
+  // Cleanup resize handlers, controls, tour, and renderer
   dispose() {
+    if (this._disposed) {
+      return;
+    }
+    this._disposed = true;
+
+    if (this._rafId != null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = null;
+    }
+
+    if (this.container) {
+      if (this._onContainerWheel) {
+        this.container.removeEventListener('wheel', this._onContainerWheel);
+        this._onContainerWheel = null;
+      }
+      if (this._onContainerTouchStart) {
+        this.container.removeEventListener('touchstart', this._onContainerTouchStart);
+        this._onContainerTouchStart = null;
+      }
+      if (this._onContainerTouchMove) {
+        this.container.removeEventListener('touchmove', this._onContainerTouchMove);
+        this._onContainerTouchMove = null;
+      }
+    }
+
     // Remove window resize listener
     if (this.handleWindowResize && typeof window !== 'undefined') {
       window.removeEventListener('resize', this.handleWindowResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', this.handleWindowResize);
+      }
       this.handleWindowResize = null;
     }
 
     // Remove orientation change listener
     if (this.handleOrientationChange && typeof window !== 'undefined') {
       window.removeEventListener('orientationchange', this.handleOrientationChange);
-      if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', this.handleWindowResize);
-      }
       this.handleOrientationChange = null;
     }
 
@@ -331,6 +359,7 @@ export default class ThreeCanvas3D {
     // Dispose of controls if they exist
     if (this.controls) {
       this.controls.dispose();
+      this.controls = null;
     }
 
     if (this.roomTourController) {
@@ -346,7 +375,7 @@ export default class ThreeCanvas3D {
     if (this.studioGround) {
       if (this.studioGround.geometry) this.studioGround.geometry.dispose();
       if (this.studioGround.material) this.studioGround.material.dispose();
-      this.scene.remove(this.studioGround);
+      this.scene?.remove(this.studioGround);
       this.studioGround = null;
     }
 
@@ -357,11 +386,24 @@ export default class ThreeCanvas3D {
       if (this.renderer.domElement && this.renderer.domElement.parentNode) {
         this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
       }
+      this.renderer = null;
     }
 
     // Clean up UI container
     if (this.uiContainer && this.uiContainer.parentNode) {
       this.uiContainer.parentNode.removeChild(this.uiContainer);
+    }
+    this.uiContainer = null;
+
+    if (typeof document !== 'undefined') {
+      document.body.style.cursor = '';
+      if (document.pointerLockElement) {
+        try {
+          document.exitPointerLock();
+        } catch (_) {
+          // ignore
+        }
+      }
     }
   }
 
@@ -634,7 +676,13 @@ getModelBounds() {
 
   // Animation loop
   animate() {
-    requestAnimationFrame(() => this.animate());
+    if (this._disposed) {
+      return;
+    }
+    this._rafId = requestAnimationFrame(() => this.animate());
+    if (!this.renderer || !this.scene || !this.camera) {
+      return;
+    }
     if (this.roomTourController?.isWalking?.()) {
       this.roomTourController.update();
     } else if (this.controls) {
