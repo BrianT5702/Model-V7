@@ -156,8 +156,8 @@ const DEFAULT_CANVAS_HEIGHT = 720;
 const CANVAS_ASPECT_RATIO = DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH;
 const MAX_CANVAS_HEIGHT_RATIO = 0.82; // More vertical space so ceiling plan content isn't cut off
 // Mobile-friendly minimum sizes
-const MIN_CANVAS_WIDTH = 320;
-const MIN_CANVAS_HEIGHT = 280;
+const MIN_CANVAS_WIDTH = 200;
+const MIN_CANVAS_HEIGHT = 200;
 const PADDING = 50;
 /** Hangers along each drawn alu rail, in mm. */
 const ALU_RAIL_HANGER_SPACING_MM = 500;
@@ -1025,7 +1025,8 @@ const CeilingCanvas = ({
         if (!container) return;
 
         const updateCanvasSize = (rawWidth) => {
-            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
+            // Use the real container width so phones are not forced to a desktop-sized canvas
+            const width = rawWidth > 0 ? rawWidth : MIN_CANVAS_WIDTH;
             const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
             const calculatedHeight = width * CANVAS_ASPECT_RATIO;
             const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
@@ -1330,9 +1331,10 @@ const CeilingCanvas = ({
         // Scale the context to match device pixel ratio
         context.scale(dpr, dpr);
 
-        // Set the CSS size to the display size
-        canvas.style.width = displayWidth + 'px';
-        canvas.style.height = displayHeight + 'px';
+        // Set the CSS size to fill the viewport container
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        canvas.style.maxWidth = '100%';
 
         // Calculate optimal scale and offset for all rooms
         // Only recalculate if user hasn't manually positioned the view
@@ -4723,8 +4725,11 @@ const CeilingCanvas = ({
             if (!center) {
                 return;
             }
-            offsetX.current += center.x - lastTwoFingerCenter.current.x;
-            offsetY.current += center.y - lastTwoFingerCenter.current.y;
+            const rect = canvasRef.current?.getBoundingClientRect();
+            const scaleX = CANVAS_WIDTH / (rect?.width || 1);
+            const scaleY = CANVAS_HEIGHT / (rect?.height || 1);
+            offsetX.current += (center.x - lastTwoFingerCenter.current.x) * scaleX;
+            offsetY.current += (center.y - lastTwoFingerCenter.current.y) * scaleY;
             lastTwoFingerCenter.current = center;
             const ctx = canvasRef.current?.getContext('2d');
             if (ctx) {
@@ -4747,8 +4752,11 @@ const CeilingCanvas = ({
         if (lock !== 'pan') {
             return;
         }
-        const deltaX = current.x - oneFingerLast.current.x;
-        const deltaY = current.y - oneFingerLast.current.y;
+        const rect = canvasRef.current?.getBoundingClientRect();
+        const scaleX = CANVAS_WIDTH / (rect?.width || 1);
+        const scaleY = CANVAS_HEIGHT / (rect?.height || 1);
+        const deltaX = (current.x - oneFingerLast.current.x) * scaleX;
+        const deltaY = (current.y - oneFingerLast.current.y) * scaleY;
         offsetX.current += deltaX;
         offsetY.current += deltaY;
         oneFingerLast.current = current;
@@ -6192,7 +6200,7 @@ const CeilingCanvas = ({
                     <div className="plan-canvas-zoom-stack">
                         <div
                             ref={canvasContainerRef}
-                            className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
+                            className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative w-full max-w-full"
                             style={{
                                 height: `${CANVAS_HEIGHT}px`,
                                 minHeight: `${MIN_CANVAS_HEIGHT}px`

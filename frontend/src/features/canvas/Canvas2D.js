@@ -152,14 +152,14 @@ const Canvas2D = ({
     // Canvas size constants (matching CeilingCanvas)
     const DEFAULT_CANVAS_WIDTH = 1000;
     const DEFAULT_CANVAS_HEIGHT = 650;
-    // Mobile-friendly minimum sizes - smaller for phones, larger for tablets/desktop
-    const MIN_CANVAS_WIDTH = 320; // Reduced from 480 for better mobile support
-    const MIN_CANVAS_HEIGHT = 240; // Reduced from 320 for better mobile support
-    const CANVAS_HEIGHT = DEFAULT_CANVAS_HEIGHT; // For styling consistency with CeilingCanvas
+    // Soft floors only — never reject phone widths and stay stuck on the desktop default
+    const MIN_CANVAS_WIDTH = 200;
+    const MIN_CANVAS_HEIGHT = 200;
     const [canvasSize, setCanvasSize] = useState({
         width: DEFAULT_CANVAS_WIDTH,
         height: DEFAULT_CANVAS_HEIGHT
     });
+    const CANVAS_HEIGHT = Math.round(canvasSize.height);
 
 
     const [dbConnectionError, setDbConnectionError] = useState(false);
@@ -415,8 +415,11 @@ const Canvas2D = ({
             if (e.touches.length === 2 && lastTwoFingerCenter.current) {
                 const center = getTouchCenter(e.touches);
                 if (center) {
-                    offsetX.current += center.x - lastTwoFingerCenter.current.x;
-                    offsetY.current += center.y - lastTwoFingerCenter.current.y;
+                    const rect = canvasRef.current?.getBoundingClientRect();
+                    const scaleX = canvasSize.width / (rect?.width || 1);
+                    const scaleY = canvasSize.height / (rect?.height || 1);
+                    offsetX.current += (center.x - lastTwoFingerCenter.current.x) * scaleX;
+                    offsetY.current += (center.y - lastTwoFingerCenter.current.y) * scaleY;
                     lastTwoFingerCenter.current = center;
                     setForceRefresh((prev) => prev + 1);
                 }
@@ -435,8 +438,11 @@ const Canvas2D = ({
                 if (lock !== 'pan') {
                     return;
                 }
-                const deltaX = current.x - lastTouchPos.current.x;
-                const deltaY = current.y - lastTouchPos.current.y;
+                const rect = canvasRef.current?.getBoundingClientRect();
+                const scaleX = canvasSize.width / (rect?.width || 1);
+                const scaleY = canvasSize.height / (rect?.height || 1);
+                const deltaX = (current.x - lastTouchPos.current.x) * scaleX;
+                const deltaY = (current.y - lastTouchPos.current.y) * scaleY;
                 offsetX.current += deltaX;
                 offsetY.current += deltaY;
                 lastTouchPos.current = current;
@@ -920,11 +926,13 @@ const Canvas2D = ({
         return false;
     };
 
-    // Use for getting correct mouse position
+    // Use for getting correct mouse position (map CSS pixels → canvas buffer pixels)
     const getPointerModelPos = (clientX, clientY) => {
         const rect = canvasRef.current.getBoundingClientRect();
-        const x = (clientX - rect.left - offsetX.current) / scaleFactor.current;
-        const y = (clientY - rect.top - offsetY.current) / scaleFactor.current;
+        const scaleX = canvasSize.width / (rect.width || 1);
+        const scaleY = canvasSize.height / (rect.height || 1);
+        const x = ((clientX - rect.left) * scaleX - offsetX.current) / scaleFactor.current;
+        const y = ((clientY - rect.top) * scaleY - offsetY.current) / scaleFactor.current;
         return { x, y };
     };
 
@@ -2293,12 +2301,13 @@ const Canvas2D = ({
         const updateCanvasSize = () => {
             const rawWidth = container.clientWidth;
             const rawHeight = container.clientHeight;
-            // Don't apply when container is hidden (e.g. tab not visible)
-            if (rawWidth <= 0 || rawWidth < MIN_CANVAS_WIDTH || rawHeight <= 0 || rawHeight < MIN_CANVAS_HEIGHT) {
+            // Only skip when the container is truly unmeasurable (hidden tab / not laid out yet)
+            if (rawWidth <= 0 || rawHeight <= 0) {
                 return;
             }
-            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
-            const height = Math.max(rawHeight, MIN_CANVAS_HEIGHT);
+            // Use the real container size so the plan fits the phone; do not force a desktop min width
+            const width = rawWidth > 0 ? rawWidth : MIN_CANVAS_WIDTH;
+            const height = rawHeight > 0 ? rawHeight : MIN_CANVAS_HEIGHT;
 
             setCanvasSize((prev) => {
                 if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
@@ -2313,7 +2322,7 @@ const Canvas2D = ({
 
         const measureAfterPaint = () => {
             requestAnimationFrame(() => {
-                if (container.isConnected && container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
+                if (container.isConnected && container.clientWidth > 0 && container.clientHeight > 0) {
                     updateCanvasSize();
                 }
             });
@@ -2326,7 +2335,7 @@ const Canvas2D = ({
                     if (entry.target === container) {
                         const entryWidth = entry.contentRect?.width ?? container.clientWidth;
                         const entryHeight = entry.contentRect?.height ?? container.clientHeight;
-                        if (entryWidth >= MIN_CANVAS_WIDTH && entryHeight >= MIN_CANVAS_HEIGHT) {
+                        if (entryWidth > 0 && entryHeight > 0) {
                             updateCanvasSize();
                         } else {
                             measureAfterPaint();
@@ -2338,7 +2347,7 @@ const Canvas2D = ({
             observer.observe(container);
         }
 
-        if (container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
+        if (container.clientWidth > 0 && container.clientHeight > 0) {
             updateCanvasSize();
         } else {
             measureAfterPaint();
@@ -2372,9 +2381,10 @@ const Canvas2D = ({
         // Scale the context to match device pixel ratio
         context.scale(dpr, dpr);
         
-        // Set the CSS size to the display size
-        canvas.style.width = displayWidth + 'px';
-        canvas.style.height = displayHeight + 'px';
+        // Set the CSS size to the display size — never wider than the container
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        canvas.style.maxWidth = '100%';
 
         // === Restore original scale/offset calculation ===
         // Find bounding box of all wall endpoints
@@ -2917,7 +2927,7 @@ const Canvas2D = ({
             )}
 
             {/* Main Content - Matching Ceiling Plan Structure */}
-            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4">
+            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4 w-full max-w-full min-w-0 overflow-x-hidden">
                 {/* Header */}
                 <div className="wall-canvas-header mb-3">
                     <div className="flex items-center justify-between gap-3">
@@ -2949,7 +2959,7 @@ const Canvas2D = ({
                                 <div className="plan-canvas-zoom-stack">
                                 <div
                                     ref={canvasContainerRef}
-                                    className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative"
+                                    className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative w-full max-w-full"
                                     style={{
                                         height: `${CANVAS_HEIGHT}px`,
                                         minHeight: `${MIN_CANVAS_HEIGHT}px`
@@ -2966,7 +2976,7 @@ const Canvas2D = ({
                                         onTouchMove={handleTouchMove}
                                         onTouchEnd={handleTouchEnd}
                                         tabIndex={0}
-                                        className={`wall-canvas block w-full ${
+                                        className={`wall-canvas block w-full max-w-full ${
                                             planAnnotateMode && planNoteAddMode && canAnnotate
                                                 ? 'cursor-crosshair'
                                                 : 'cursor-grab active:cursor-grabbing'
@@ -2974,6 +2984,7 @@ const Canvas2D = ({
                                         style={{
                                             width: '100%',
                                             height: '100%',
+                                            maxWidth: '100%',
                                             touchAction: isCoarsePointerDevice() ? 'pan-y' : 'none',
                                         }}
                                     />
