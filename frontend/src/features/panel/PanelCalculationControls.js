@@ -575,8 +575,11 @@ const PanelCalculationControls = ({
             </div>
 
             {showLeftoverDetails && panelCalculator && (
-                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-5 max-w-6xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel">
+                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[12000]">
+                    <div
+                        className="bg-white rounded-lg p-5 max-w-6xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel overscroll-contain"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <div className="flex justify-between items-center mb-4">
                             <div>
                                 <h3 className="text-lg font-semibold">Leftover Panels Details</h3>

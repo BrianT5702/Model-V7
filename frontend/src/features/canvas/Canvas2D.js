@@ -1368,8 +1368,17 @@ const Canvas2D = ({
             setSelectedRoomId(null);
         }
     
-        // Intersection selection block (unchanged)
-        if (currentMode !== 'add-wall' && currentMode !== 'edit-wall' && currentMode !== 'define-room' && currentMode !== 'storey-area' && currentMode !== 'split-wall') {
+        // Intersection / joint selection — skip while drawing walls or working doors/merge/split
+        if (
+            currentMode !== 'add-wall'
+            && currentMode !== 'edit-wall'
+            && currentMode !== 'define-room'
+            && currentMode !== 'storey-area'
+            && currentMode !== 'split-wall'
+            && currentMode !== 'add-door'
+            && currentMode !== 'edit-door'
+            && currentMode !== 'merge-wall'
+        ) {
             for (const inter of intersections) {
                 const wall1 = walls.find(w => w.id === inter.wall_1);
                 const wall2 = walls.find(w => w.id === inter.wall_2);
@@ -2098,6 +2107,22 @@ const Canvas2D = ({
             }
         }
     }, [currentMode, isMultiWallEditMode, selectedWallsForEdit, selectedWall, commentWallSelectMode]);
+
+    // Close joint configure panel in modes where joints must not be selectable
+    useEffect(() => {
+        if (
+            currentMode === 'add-door'
+            || currentMode === 'edit-door'
+            || currentMode === 'merge-wall'
+            || currentMode === 'add-wall'
+            || currentMode === 'edit-wall'
+            || currentMode === 'split-wall'
+            || currentMode === 'define-room'
+            || currentMode === 'storey-area'
+        ) {
+            setSelectedIntersection(null);
+        }
+    }, [currentMode]);
 
     // Helper to get joint types for a wall
     const getWallJointTypes = (wall, intersections) => {
