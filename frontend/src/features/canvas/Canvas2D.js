@@ -25,7 +25,7 @@ import {
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
-import { isCoarsePointerDevice, bindPlanCanvasMobileTouch } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, bindPlanCanvasMobileTouch, measurePlanCanvasBox } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { drawPlanAnnotationArrows, isPointNearPlanAnnotation } from './drawPlanAnnotations';
 import {
@@ -2260,29 +2260,29 @@ const Canvas2D = ({
         if (!container) return;
 
         const updateCanvasSize = () => {
-            const rawWidth = container.clientWidth;
-            const rawHeight = container.clientHeight;
-            // Don't apply when container is hidden (e.g. tab not visible)
-            if (rawWidth <= 0 || rawWidth < MIN_CANVAS_WIDTH || rawHeight <= 0 || rawHeight < MIN_CANVAS_HEIGHT) {
+            // Do not require MIN_CANVAS_WIDTH here — on phones the content area is often
+            // < 320px after padding, which previously left the canvas stuck at 1000px wide.
+            const measured = measurePlanCanvasBox(container, { minWidth: 1, minHeight: 1 });
+            if (!measured) {
                 return;
             }
-            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
-            const height = Math.max(rawHeight, MIN_CANVAS_HEIGHT);
+            const { width, height } = measured;
 
             setCanvasSize((prev) => {
                 if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
                     return prev;
                 }
-                return {
-                    width,
-                    height
-                };
+                // Large size jumps (rotate / first real measure): re-fit so the plan isn't clipped
+                if (Math.abs(prev.width - width) > 48 || Math.abs(prev.height - height) > 48) {
+                    isZoomed.current = false;
+                }
+                return { width, height };
             });
         };
 
         const measureAfterPaint = () => {
             requestAnimationFrame(() => {
-                if (container.isConnected && container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
+                if (container.isConnected && container.clientWidth >= 40 && container.clientHeight >= 40) {
                     updateCanvasSize();
                 }
             });
@@ -2295,7 +2295,7 @@ const Canvas2D = ({
                     if (entry.target === container) {
                         const entryWidth = entry.contentRect?.width ?? container.clientWidth;
                         const entryHeight = entry.contentRect?.height ?? container.clientHeight;
-                        if (entryWidth >= MIN_CANVAS_WIDTH && entryHeight >= MIN_CANVAS_HEIGHT) {
+                        if (entryWidth >= 40 && entryHeight >= 40) {
                             updateCanvasSize();
                         } else {
                             measureAfterPaint();
@@ -2307,7 +2307,7 @@ const Canvas2D = ({
             observer.observe(container);
         }
 
-        if (container.clientWidth >= MIN_CANVAS_WIDTH && container.clientHeight >= MIN_CANVAS_HEIGHT) {
+        if (container.clientWidth >= 40 && container.clientHeight >= 40) {
             updateCanvasSize();
         } else {
             measureAfterPaint();
@@ -2343,8 +2343,9 @@ const Canvas2D = ({
         
         // Keep CSS size at 100% of the viewport so a default 1000px buffer cannot
         // expand the layout and get clipped by overflow-x: hidden on phones.
-        canvas.style.width = '100%';
-        canvas.style.height = '100%';
+        canvas.style.setProperty('width', '100%', 'important');
+        canvas.style.setProperty('height', '100%', 'important');
+        canvas.style.setProperty('max-width', '100%', 'important');
 
         // === Restore original scale/offset calculation ===
         // Find bounding box of all wall endpoints
@@ -2913,9 +2914,9 @@ const Canvas2D = ({
                 <div className="space-y-6">
                     <div className="space-y-4">
                         {/* Canvas */}
-                        <div className="flex gap-6 min-w-0 w-full max-w-full">
+                        <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 min-w-0 w-full max-w-full">
                             {/* Canvas Container */}
-                            <div className="wall-canvas-wrapper flex-1 min-w-0">
+                            <div className="wall-canvas-wrapper flex-1 min-w-0 w-full max-w-full">
                                 <div className="plan-canvas-zoom-stack">
                                 <div
                                     ref={canvasContainerRef}
@@ -3039,7 +3040,7 @@ const Canvas2D = ({
 
                             {/* Plan Details Sidebar - Matching Ceiling Plan Structure */}
                             {isDetailsPanelOpen && (
-                                <div className="wall-summary-sidebar flex-shrink min-w-0 max-w-64">
+                                <div className="wall-summary-sidebar flex-shrink-0 min-w-0 w-full lg:w-auto lg:max-w-64">
                                     <div className="plan-details-panel bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-6 w-full max-w-64 shadow-lg">
                                         <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-6 flex items-center">
                                             <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

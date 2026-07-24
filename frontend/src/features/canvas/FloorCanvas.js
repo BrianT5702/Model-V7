@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { isCoarsePointerDevice, getTouchCenter, forwardWheelToScrollParent, bindPlanCanvasMobileTouch } from '../../utils/pointerUtils';
+import { isCoarsePointerDevice, getTouchCenter, forwardWheelToScrollParent, bindPlanCanvasMobileTouch, measurePlanCanvasBox } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
@@ -152,8 +152,12 @@ const FloorCanvas = ({
         const container = canvasContainerRef.current;
         if (!container) return;
 
-        const updateCanvasSize = (rawWidth) => {
-            const width = Math.max(rawWidth, MIN_CANVAS_WIDTH);
+        const updateCanvasSize = () => {
+            const measured = measurePlanCanvasBox(container, { minWidth: 1, minHeight: 1 });
+            if (!measured) {
+                return;
+            }
+            const width = measured.width;
             const maxHeight = typeof window !== 'undefined' ? window.innerHeight * MAX_CANVAS_HEIGHT_RATIO : DEFAULT_CANVAS_HEIGHT;
             const calculatedHeight = width * CANVAS_ASPECT_RATIO;
             const preferredHeight = Math.max(calculatedHeight, MIN_CANVAS_HEIGHT);
@@ -164,30 +168,23 @@ const FloorCanvas = ({
                 if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
                     return prev;
                 }
-                return {
-                    width,
-                    height
-                };
+                if (Math.abs(prev.width - width) > 48 || Math.abs(prev.height - height) > 48) {
+                    isZoomed.current = false;
+                    hasUserPositionedView.current = false;
+                }
+                return { width, height };
             });
         };
 
         let observer = null;
         if (typeof ResizeObserver !== 'undefined') {
-            observer = new ResizeObserver((entries) => {
-                entries.forEach((entry) => {
-                    if (entry.target === container) {
-                        const entryWidth = entry.contentRect?.width ?? container.clientWidth;
-                        updateCanvasSize(entryWidth);
-                    }
-                });
-            });
-
+            observer = new ResizeObserver(() => updateCanvasSize());
             observer.observe(container);
         }
 
-        updateCanvasSize(container.clientWidth);
+        updateCanvasSize();
 
-        const handleWindowResize = () => updateCanvasSize(container.clientWidth);
+        const handleWindowResize = () => updateCanvasSize();
         if (typeof window !== 'undefined') {
             window.addEventListener('resize', handleWindowResize);
         }
@@ -359,8 +356,9 @@ const FloorCanvas = ({
         ctx.scale(dpr, dpr);
         
         // Fill the viewport — never set a fixed px width (that overflows phones and gets clipped)
-        canvas.style.width = '100%';
-        canvas.style.height = '100%';
+        canvas.style.setProperty('width', '100%', 'important');
+        canvas.style.setProperty('height', '100%', 'important');
+        canvas.style.setProperty('max-width', '100%', 'important');
 
         if (!hasUserPositionedView.current) {
             calculateCanvasTransform();

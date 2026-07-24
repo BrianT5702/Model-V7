@@ -1189,10 +1189,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             {/* Sticky top chrome: nav, project toolbar, and plan-note banners stay visible while scrolling */}
             <div className="project-details-sticky-chrome sticky top-0 z-50 shrink-0 w-full bg-gray-50 dark:bg-gray-950">
             {/* Navigation Bar */}
-            <div className="project-details-nav shrink-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors" style={{ width: '100%', minWidth: '100%' }}>
-                <div className="w-full px-3 sm:px-4 py-2" style={{ width: '100%' }}>
-                    <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center space-x-1.5 sm:space-x-2">
+            <div className="project-details-nav shrink-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors w-full max-w-full min-w-0">
+                <div className="w-full max-w-full min-w-0 px-3 sm:px-4 py-2">
+                    <div className="flex items-center justify-between w-full max-w-full min-w-0 gap-1">
+                        <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1 overflow-x-auto">
                             {!projectDetails.is3DView && isWallPlanView && (
                             <>
                             <button
@@ -1256,7 +1256,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                             </button>
                         </div>
                         
-                        <div className="flex items-center space-x-1.5 sm:space-x-2">
+                        <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
                             <AuthStatusBar />
                             {!isShareSession && (
                                 <>

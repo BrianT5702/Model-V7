@@ -8,6 +8,39 @@ export function isMobileProjectLayout() {
     return window.matchMedia('(max-width: 1023px)').matches;
 }
 
+/** Phones/tablets that need plan touch gestures (includes Desktop-site / fine-pointer phones). */
+export function shouldUseMobilePlanGestures() {
+    if (typeof window === 'undefined') return false;
+    if (isCoarsePointerDevice()) return true;
+    const touchPoints = typeof navigator !== 'undefined' ? (navigator.maxTouchPoints || 0) : 0;
+    return touchPoints > 0 && isMobileProjectLayout();
+}
+
+/**
+ * Measure plan canvas box. On phone layouts, hard-cap to the visual viewport so a
+ * stuck desktop-sized parent cannot keep a ~1000px clipped canvas.
+ */
+export function measurePlanCanvasBox(container, { minWidth = 1, minHeight = 1 } = {}) {
+    if (!container || typeof window === 'undefined') {
+        return null;
+    }
+    let width = container.clientWidth;
+    let height = container.clientHeight;
+    // Hidden / not laid out yet
+    if (width < 40 || height < 40) {
+        return null;
+    }
+    if (isMobileProjectLayout()) {
+        const vw = Math.floor(window.visualViewport?.width ?? window.innerWidth);
+        // Leave a little room for page margins/borders; never keep a desktop canvas width
+        width = Math.min(width, Math.max(vw - 8, 40));
+    }
+    return {
+        width: Math.max(width, minWidth),
+        height: Math.max(height, minHeight),
+    };
+}
+
 export function getTouchCenter(touches) {
     if (!touches || touches.length === 0) {
         return null;
@@ -97,7 +130,7 @@ export function bindPlanCanvasMobileTouch(canvas, {
     onTwoFingerPan,
     shouldHandleOneFinger = () => true,
 } = {}) {
-    if (!canvas || typeof canvas.addEventListener !== 'function' || !isCoarsePointerDevice()) {
+    if (!canvas || typeof canvas.addEventListener !== 'function' || !shouldUseMobilePlanGestures()) {
         return () => {};
     }
 

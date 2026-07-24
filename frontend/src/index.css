@@ -719,6 +719,62 @@ html.dark #three-canvas-container .button-container button:hover {
   flex-shrink: 0;
 }
 
+/* Phone only: never let nav/chrome force a wider-than-screen layout (desktop unchanged) */
+@media (max-width: 1023px) {
+  .project-details-container {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .project-details-nav {
+    min-width: 0 !important;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .project-details-sticky-chrome,
+  .project-details-workspace,
+  .project-details-main,
+  .canvas-container,
+  .canvas-panel,
+  .canvas-panel-scroll,
+  .plan-canvas,
+  .wall-canvas-container,
+  .ceiling-canvas-container,
+  .floor-canvas-container,
+  .wall-canvas-wrapper,
+  .ceiling-canvas-wrapper,
+  .floor-canvas-wrapper,
+  .plan-canvas-zoom-stack,
+  .plan-canvas-viewport {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  .plan-canvas-viewport {
+    width: 100% !important;
+  }
+
+  .plan-canvas-viewport canvas.wall-canvas,
+  .plan-canvas-viewport canvas.floor-canvas,
+  .plan-canvas-viewport canvas.ceiling-canvas {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+
+  /* Touch targets: don't force every control to 44px wide (that overflows toolbars) */
+  .project-details-nav button,
+  .project-details-nav a,
+  .project-details-header button,
+  .project-details-header a {
+    min-width: 0;
+  }
+}
+
 html.dark .project-details-nav {
   background-color: rgba(17, 24, 39, 0.95);
 }
