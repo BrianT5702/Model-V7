@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useAuth } from '../auth/AuthContext';
+import { useShare } from '../share/ShareContext';
 import {
     getPlanCanvasBackground,
     getPlanCanvasGridColor,
@@ -220,6 +221,7 @@ const CeilingCanvas = ({
     ghostAreas = []
 }) => {
     const { isAuthenticated } = useAuth();
+    const { isViewOnlyShare } = useShare();
     const { resolvedTheme } = useTheme();
     const canEditSupports = canEditSupportsProp ?? Boolean(onCustomSupportsChange);
     const canEditPanels = canEditPanelsProp ?? Boolean(onPanelSelect);
@@ -6507,7 +6509,8 @@ const CeilingCanvas = ({
 
             </div>
 
-            {/* Materials Table Section */}
+            {/* Materials Table Section — hidden for view-only share links */}
+            {!isViewOnlyShare && (
             <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600 mt-3">
                 <div className="plan-material-card-header">
                     <h3 className="plan-material-card-title dark:text-gray-100">Ceiling Materials</h3>
@@ -6696,6 +6699,7 @@ const CeilingCanvas = ({
                     );
                 })()}
             </div>
+            )}
         </div>
     );
 };

@@ -199,6 +199,12 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     }, [planAnnotateMode, isWallPlanView, projectDetails]);
 
     useEffect(() => {
+        if (isViewOnlyShare && projectDetails.currentView === 'installation-estimator') {
+            projectDetails.setCurrentView('wall-plan');
+        }
+    }, [isViewOnlyShare, projectDetails.currentView, projectDetails.setCurrentView]);
+
+    useEffect(() => {
         if (!projectDetails.annotationIdRemap) {
             return;
         }
@@ -1059,6 +1065,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     <span className="ml-1 opacity-80">({panelRoomCount})</span>
                 )}
             </button>
+            {!isViewOnlyShare && (
             <button
                 type="button"
                 onClick={() => handlePlanViewChange('installation-estimator')}
@@ -1074,6 +1081,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                 <span className="hidden md:inline">Summary &amp; Install Time</span>
                 <span className="md:hidden">Summary</span>
             </button>
+            )}
         </nav>
     );
 
@@ -2534,7 +2542,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             }}
                                             updateSharedPanelData={projectDetails.updateSharedPanelData}
                                         />
-                                    ) : projectDetails.currentView === 'installation-estimator' ? (
+                                    ) : projectDetails.currentView === 'installation-estimator' && !isViewOnlyShare ? (
                                         <InstallationTimeEstimator
                                             projectId={projectId}
                                             sharedPanelData={projectDetails.getAllPanelData()}

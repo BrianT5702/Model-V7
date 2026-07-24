@@ -34,6 +34,7 @@ import {
 } from './planAnnotationUtils';
 import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightColor } from './planCanvasTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { useShare } from '../share/ShareContext';
 import { drawDoors } from './utils';
 import { detectClickedDoor, detectHoveredDoor } from './utils';
 import { filterDimensions } from './dimensionFilter.js';
@@ -108,6 +109,7 @@ const Canvas2D = ({
 
     const canvasRef = useRef(null);
     const canvasContainerRef = useRef(null);
+    const { isViewOnlyShare } = useShare();
     const [selectedWall, setSelectedWall] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [tempWall, setTempWall] = useState(null);
@@ -3306,7 +3308,8 @@ const Canvas2D = ({
                         </div>
                     </div>
 
-                    {/* View Material Needed Section */}
+                    {/* View Material Needed Section — hidden for view-only share links */}
+                    {!isViewOnlyShare && (
                     <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600">
                         <div className="plan-material-card-header">
                             <h3 className="plan-material-card-title dark:text-gray-100">View Material Needed</h3>
@@ -3336,6 +3339,7 @@ const Canvas2D = ({
                             </div>
                         )}
                     </div>
+                    )}
 
                     {/* Front View & Side View elevations */}
                     <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600">

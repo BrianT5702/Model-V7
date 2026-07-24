@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 're
 import { isCoarsePointerDevice, getTouchCenter } from '../../utils/pointerUtils';
 import PlanCanvasZoomControls from './PlanCanvasZoomControls';
 import { useTheme } from '../theme/ThemeContext';
+import { useShare } from '../share/ShareContext';
 import {
     getPlanCanvasBackground,
     getPlanCanvasGridColor,
@@ -89,6 +90,7 @@ const FloorCanvas = ({
     ghostAreas = []
 }) => {
     const { resolvedTheme } = useTheme();
+    const { isViewOnlyShare } = useShare();
     const canvasRef = useRef(null);
     const canvasContainerRef = useRef(null);
     const [canvasSize, setCanvasSize] = useState({
@@ -2203,7 +2205,8 @@ const FloorCanvas = ({
 
             </div>
 
-            {/* Panel List Table */}
+            {/* Panel List Table — hidden for view-only share links */}
+            {!isViewOnlyShare && (
             <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600 mt-3">
                 <div className="plan-material-card-header">
                     <h3 className="plan-material-card-title dark:text-gray-100">Floor Panel List</h3>
@@ -2346,6 +2349,7 @@ const FloorCanvas = ({
                     </div>
                 )}
             </div>
+            )}
         </div>
     );
 };
