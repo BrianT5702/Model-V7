@@ -46,10 +46,11 @@ function getWallVerticalRangeMm(wall, project = null) {
 }
 
 /**
- * Local-Y band (mesh coords, Y=0 at this wall base) where a 45° cut should apply —
- * only the vertical overlap with the joining wall.
+ * Local-Y band (mesh coords, Y=0 at this wall base) where a joint should apply —
+ * only the vertical overlap with the joining wall. Used by both 45° cuts and butt-in
+ * setbacks, since neither should shape the part of the wall the joining wall never reaches.
  */
-function get45CutLocalYBand(thisWall, joiningWall, scale, project, thisBaseMm, thisHeightScaled) {
+function getJointOverlapLocalYBand(thisWall, joiningWall, scale, project, thisBaseMm, thisHeightScaled) {
   const a = getWallVerticalRangeMm(thisWall, project);
   const b = getWallVerticalRangeMm(joiningWall, project);
   const overlapBottom = Math.max(a.bottom, b.bottom);
@@ -469,6 +470,13 @@ export function createWallMesh(instance, wall) {
       });
     }
   }
+  // Remember the un-extended tips. A 45_cut only consumes the extension inside the
+  // height band it shares with the joining wall, so the part of the end outside that
+  // band has to be pulled back here or it protrudes past the mitred corner.
+  const preExtStartX = finalStartX;
+  const preExtStartZ = finalStartZ;
+  const preExtEndX = finalEndX;
+  const preExtEndZ = finalEndZ;
   // STEP 1: Extend perpendicular walls to surfaces BEFORE applying joint cuts
   // Simple logic: only extend if walls are perpendicular and not already touching
   if (instance.joints && instance.joints.length > 0) {
@@ -620,6 +628,20 @@ export function createWallMesh(instance, wall) {
   let shouldShortenEnd = false;
   let startShorteningThickness = 0;
   let endShorteningThickness = 0;
+  // Heights over which the joining wall is actually present. The setback below shortens the
+  // whole wall, so anywhere outside these bands has to be pushed back out to full length —
+  // otherwise a wall butting into a shorter one is left hanging in mid-air above it.
+  let startButtBand = null;
+  let endButtBand = null;
+  const mergeButtBand = (atStart, band) => {
+    if (!band?.valid) return;
+    const current = atStart ? startButtBand : endButtBand;
+    const merged = current
+      ? { min: Math.min(current.min, band.min), max: Math.max(current.max, band.max) }
+      : { min: band.min, max: band.max };
+    if (atStart) startButtBand = merged;
+    else endButtBand = merged;
+  };
   if (buttInJoints.length > 0) {
     buttInJoints.forEach(j => {
       // Find the other wall in this joint
@@ -628,7 +650,6 @@ export function createWallMesh(instance, wall) {
       if (!otherWall) return;
       // Check if THIS wall is wall_1 (the one that should be shortened)
       const isWall1 = String(j.wall_1) === String(id);
-      if (!isWall1) return; // Only shorten wall_1
       // Get the joining wall's thickness
       const joiningWallThickness = (otherWall.thickness || wallThickness) * scale;
       // Get other wall coordinates to find intersection
@@ -645,12 +666,54 @@ export function createWallMesh(instance, wall) {
       if (!intersection) return;
       const jointX = snap(intersection.x);
       const jointZ = snap(intersection.z);
+      // In a T the joint lands mid-span on the through wall and on a tip of the wall that
+      // butts into it, so the tip owner is the one to shorten no matter which slot it holds
+      // in the joint record. Corners have a tip on both walls and stay on the wall_1 rule,
+      // otherwise both sides would pull back and open a gap.
+      const otherTipTol = Math.max(joiningWallThickness, wallThickness) * 1.5;
+      const otherPassesThrough =
+        Math.hypot(jointX - oSX, jointZ - oSZ) > otherTipTol &&
+        Math.hypot(jointX - oEX, jointZ - oEZ) > otherTipTol;
+      if (!isWall1 && !otherPassesThrough) return;
       // Check if joint is at start or end
       const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
       const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
-      // Only shorten when the endpoint still reaches into/near the joining wall centerline.
-      // Skip when geometry was already inset (e.g. partition create deducted joining thickness).
-      const alreadyInsetLimit = joiningWallThickness * 0.55 + 1e-6;
+      // Solve for where the tip has to land instead of subtracting a fixed thickness.
+      // Wall coordinates describe the OUTER FACE, not the centerline, so the joining wall
+      // occupies the band between its stored line and that line offset by its thickness
+      // toward the model center. The tip must stop on whichever of those two faces is
+      // nearer this wall's body. Deriving it this way also covers non-perpendicular
+      // meetings, pulls back a tip drawn deep inside, and leaves a flush tip alone.
+      const otherLen = Math.hypot(oEX - oSX, oEZ - oSZ) || 1;
+      const oux = (oEX - oSX) / otherLen;
+      const ouz = (oEZ - oSZ) / otherLen;
+      const sinBetween = Math.abs(wallDirX * ouz - wallDirZ * oux);
+      if (sinBetween < 0.1) return; // near-colinear: no face to stop against
+      let onx = -ouz;
+      let onz = oux;
+      if (onx * (modelCenter.x - (oSX + oEX) / 2) + onz * (modelCenter.z - (oSZ + oEZ) / 2) < 0) {
+        onx = -onx;
+        onz = -onz;
+      }
+      // Where this wall's line crosses the joining wall's far face, relative to the joint.
+      const farFaceHit = calculateLineIntersection(
+        finalStartX, finalStartZ, finalEndX, finalEndZ,
+        oSX + onx * joiningWallThickness, oSZ + onz * joiningWallThickness,
+        oEX + onx * joiningWallThickness, oEZ + onz * joiningWallThickness,
+        true
+      );
+      if (!farFaceHit) return;
+      // Project both face crossings onto the wall; the larger one lies toward the end tip.
+      const alongJoint = jointX * wallDirX + jointZ * wallDirZ;
+      const alongFar = farFaceHit.x * wallDirX + farFaceHit.z * wallDirZ;
+      const nearFaceForStart = Math.max(alongJoint, alongFar);
+      const nearFaceForEnd = Math.min(alongJoint, alongFar);
+      const startInset = nearFaceForStart - (finalStartX * wallDirX + finalStartZ * wallDirZ);
+      const endInset = (finalEndX * wallDirX + finalEndZ * wallDirZ) - nearFaceForEnd;
+      // The joint must belong to this tip, otherwise the through wall of a T would be cut.
+      // Scaled by 1/sin because an oblique meeting puts the faces further apart.
+      const tipJointLimit = (joiningWallThickness * 3) / sinBetween + 1e-6;
+      const insetEps = Math.max(1e-6, wallThickness * 1e-3);
       const isCloserToStart = startDist < endDist;
 
       // Split-host T: same tip may also be 45° to the colinear partner (e.g. 8709↔8715
@@ -674,15 +737,27 @@ export function createWallMesh(instance, wall) {
       });
       if (has45CutAtSameEnd) return;
 
-      if (isCloserToStart && startDist <= alreadyInsetLimit) {
+      const overlapBand = getJointOverlapLocalYBand(
+        wall,
+        otherWall,
+        scale,
+        instance.project,
+        thisWallBaseMm,
+        wallHeight
+      );
+      // The two walls never share a height, so there is no face to butt against anywhere.
+      // Setting the tip back here would just open a gap along the whole wall.
+      if (!overlapBand.valid) return;
+      if (isCloserToStart && startDist <= tipJointLimit && startInset > insetEps) {
         shouldShortenStart = true;
-        // Use the maximum thickness if multiple joints at start
-        startShorteningThickness = Math.max(startShorteningThickness, joiningWallThickness);
+        // Several butt-ins can share a tip: obey the one demanding the deepest setback
+        startShorteningThickness = Math.max(startShorteningThickness, startInset);
+        mergeButtBand(true, overlapBand);
       }
-      if (!isCloserToStart && endDist <= alreadyInsetLimit) {
+      if (!isCloserToStart && endDist <= tipJointLimit && endInset > insetEps) {
         shouldShortenEnd = true;
-        // Use the maximum thickness if multiple joints at end
-        endShorteningThickness = Math.max(endShorteningThickness, joiningWallThickness);
+        endShorteningThickness = Math.max(endShorteningThickness, endInset);
+        mergeButtBand(false, overlapBand);
       }
       // Debug logging for wall 7185
       if (id === 7185) {
@@ -693,7 +768,10 @@ export function createWallMesh(instance, wall) {
           thisWallEnd: { x: finalEndX, z: finalEndZ },
           startDist,
           endDist,
-          alreadyInsetLimit,
+          startInset,
+          endInset,
+          tipJointLimit,
+          otherPassesThrough,
           isCloserToStart,
           shouldShortenStart,
           shouldShortenEnd,
@@ -733,6 +811,15 @@ export function createWallMesh(instance, wall) {
       });
     }
   }
+  // The setback above moved the whole tip. Where the joining wall only covers part of this
+  // wall's height, the rest must be handed back its length in the mesh below.
+  const buttBandEps = Math.max(wallHeight * 1e-4, 1e-3);
+  const isPartialBand = (band) =>
+    !!band && (band.min > buttBandEps || band.max < wallHeight - buttBandEps);
+  const startButtPushOut =
+    shouldShortenStart && isPartialBand(startButtBand) ? startShorteningThickness : 0;
+  const endButtPushOut =
+    shouldShortenEnd && isPartialBand(endButtBand) ? endShorteningThickness : 0;
   // STEP 1b: For slant / non-ortho 45_cut joints, snap this wall's nearer tip to the
   // centerline intersection (STEP 1 only extends axis-aligned H↔V pairs).
   if (instance.joints && instance.joints.length > 0) {
@@ -778,6 +865,21 @@ export function createWallMesh(instance, wall) {
       }
     });
   }
+  // How far each tip travelled outward during extension, measured along the wall.
+  // Negative means the tip moved inward (butt-in shortening), which needs no pull-back.
+  const extDx = finalEndX - finalStartX;
+  const extDz = finalEndZ - finalStartZ;
+  const extLen = Math.hypot(extDx, extDz) || 1;
+  const extUx = extDx / extLen;
+  const extUz = extDz / extLen;
+  const startExtensionDist = Math.max(
+    0,
+    -((finalStartX - preExtStartX) * extUx + (finalStartZ - preExtStartZ) * extUz)
+  );
+  const endExtensionDist = Math.max(
+    0,
+    (finalEndX - preExtEndX) * extUx + (finalEndZ - preExtEndZ) * extUz
+  );
   // STEP 2: Now detect 45° cut joints using extended coordinates
   // After extension, walls meet at exact intersection points, so we can detect joints accurately
   let hasStart45 = false;
@@ -853,7 +955,7 @@ export function createWallMesh(instance, wall) {
           const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
           // Determine which endpoint is closer to the intersection
           const isCloserToStart = startDist < endDist;
-          const cutYBand = get45CutLocalYBand(
+          const cutYBand = getJointOverlapLocalYBand(
             wall,
             otherWall,
             scale,
@@ -1011,12 +1113,46 @@ export function createWallMesh(instance, wall) {
     halfThickness: wallThickness / 2,
     fullThickness: wallThickness,
   };
+  // A miter is applied later by pulling the end-face vertices through the thickness, so a
+  // partial-height band needs real vertices at its boundaries. A plain rectangle only has
+  // corners at y=0 and y=wallHeight, so a band such as [0, shorterWallTop] moved the bottom
+  // corner and left the top one, and the quad between them interpolated into a tapered blade
+  // instead of a miter that stops at the joining wall's top.
+  // Two points a hair apart give the miter a square step to end on.
+  // A butt-in setback needs the same treatment for the same reason, so both share this.
+  const cutStepEps = Math.max(wallHeight * 1e-4, 1e-3);
+  const buildMiterEdgeYs = (active, cutMin, cutMax) => {
+    if (!active) return [];
+    const ys = [];
+    if (cutMin > 0) ys.push(cutMin - cutStepEps, cutMin);
+    if (cutMax < wallHeight) ys.push(cutMax, cutMax + cutStepEps);
+    return ys
+      .filter((y) => y > cutStepEps && y < wallHeight - cutStepEps)
+      .sort((a, b) => a - b)
+      .filter((y, i, list) => i === 0 || y > list[i - 1] + cutStepEps * 0.5);
+  };
+  // A tip is never both mitred and butted: the butt-in pass skips a tip that has a 45° cut.
+  const startBandYs = hasStart45
+    ? buildMiterEdgeYs(true, startCutYMin, startCutYMax)
+    : buildMiterEdgeYs(startButtPushOut > 0, startButtBand?.min ?? 0, startButtBand?.max ?? wallHeight);
+  const endBandYs = hasEnd45
+    ? buildMiterEdgeYs(true, endCutYMin, endCutYMax)
+    : buildMiterEdgeYs(endButtPushOut > 0, endButtBand?.min ?? 0, endButtBand?.max ?? wallHeight);
+  const startMiterEdgeYs = startBandYs;
+  const endMiterEdgeYs = endBandYs;
+
   const wallShape = new instance.THREE.Shape();
   // console.log('[45° Cut Debug] Creating wall shape for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
-  // Always create a pure rectangular face (length X, height Y). Miter is applied in geometry later.
+  // Face is otherwise a pure rectangle (length X, height Y). Miter is applied in geometry later.
   wallShape.moveTo(0, 0);
+  for (const y of startMiterEdgeYs) {
+    wallShape.lineTo(0, y);
+  }
   wallShape.lineTo(0, wallHeight);
   wallShape.lineTo(finalWallLength, wallHeight);
+  for (let i = endMiterEdgeYs.length - 1; i >= 0; i -= 1) {
+    wallShape.lineTo(finalWallLength, endMiterEdgeYs[i]);
+  }
   wallShape.lineTo(finalWallLength, 0);
   wallShape.lineTo(0, 0);
   // Add door cutouts
@@ -1183,8 +1319,16 @@ export function createWallMesh(instance, wall) {
     emissiveIntensity: THREE_CONFIG.MATERIALS.WALL.emissiveIntensity
   });
   let wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
+  // A butt-in that only covers part of the height needs the same vertex pass, to hand the
+  // uncovered part of the tip its length back.
+  const startOutOfBandShift = hasStart45
+    ? (startMiterEdgeYs.length > 0 ? startExtensionDist : 0)
+    : -startButtPushOut;
+  const endOutOfBandShift = hasEnd45
+    ? (endMiterEdgeYs.length > 0 ? -endExtensionDist : 0)
+    : endButtPushOut;
   // Apply 45° cuts using boolean operations if needed
-  if (hasStart45 || hasEnd45) {
+  if (hasStart45 || hasEnd45 || startOutOfBandShift !== 0 || endOutOfBandShift !== 0) {
     console.log(`[45° Cut Debug] Wall ${id} - Applying 45° cuts:`, {
       hasStart45,
       hasEnd45,
@@ -1192,7 +1336,22 @@ export function createWallMesh(instance, wall) {
       endCutOnInner,
       finalWallLength,
       wallHeight,
-      wallThickness
+      wallThickness,
+      startBand: [startCutYMin, startCutYMax],
+      endBand: [endCutYMin, endCutYMax],
+      startBandMm: [startCutYMin / scale, startCutYMax / scale],
+      endBandMm: [endCutYMin / scale, endCutYMax / scale],
+      wallHeightMm: wallHeight / scale,
+      startStepYs: startMiterEdgeYs,
+      endStepYs: endMiterEdgeYs,
+      startPartial: startMiterEdgeYs.length > 0,
+      endPartial: endMiterEdgeYs.length > 0,
+      startButtBand,
+      endButtBand,
+      startButtPushOut,
+      endButtPushOut,
+      startOutOfBandShift,
+      endOutOfBandShift
     });
     wallMesh = apply45DegreeCuts(
       instance,
@@ -1204,12 +1363,16 @@ export function createWallMesh(instance, wall) {
       wallThickness,
       startCutOnInner,
       endCutOnInner,
-      startCutYMin,
-      startCutYMax,
-      endCutYMin,
-      endCutYMax,
+      // Band of the joint that owns each tip, so the out-of-band shift is measured against
+      // the right heights whether the tip is mitred or butted.
+      hasStart45 ? startCutYMin : (startButtBand?.min ?? 0),
+      hasStart45 ? startCutYMax : (startButtBand?.max ?? wallHeight),
+      hasEnd45 ? endCutYMin : (endButtBand?.min ?? 0),
+      hasEnd45 ? endCutYMax : (endButtBand?.max ?? wallHeight),
       startMiterXs,
-      endMiterXs
+      endMiterXs,
+      startOutOfBandShift,
+      endOutOfBandShift
     );
     console.log(`[45° Cut Debug] Wall ${id} - 45° cuts applied successfully`);
     // IMPORTANT: After applying cuts, we need to update the geometry
@@ -1501,7 +1664,12 @@ function apply45DegreeCuts(
   endCutYMin = 0,
   endCutYMax = Infinity,
   startMiterXs = null,
-  endMiterXs = null
+  endMiterXs = null,
+  // Signed local-X shift for end-face vertices OUTSIDE the joint's height band. A 45° cut
+  // shifts them inward to undo its extension; a butt-in shifts them outward to undo its
+  // setback. Either way the joint only shapes the height the joining wall actually reaches.
+  startOutOfBandShift = 0,
+  endOutOfBandShift = 0
 ) {
   console.log(`[apply45DegreeCuts] Called with:`, {
     hasStart45,
@@ -1567,6 +1735,8 @@ function apply45DegreeCuts(
 
   let startCutCount = 0;
   let endCutCount = 0;
+  let startPullBackCount = 0;
+  let endPullBackCount = 0;
 
   for (let i = 0; i < vcount; i++) {
     const ix = i * 3;
@@ -1582,42 +1752,56 @@ function apply45DegreeCuts(
     const wEnd = endCutOnInner ? t : (1 - t);
 
     // End cut
-    if (hasEnd45 && Math.abs(x - maxX) < epsEndX) {
+    if ((hasEnd45 || endOutOfBandShift !== 0) && Math.abs(x - maxX) < epsEndX) {
       if (y >= endYLo - yEps && y <= endYHi + yEps) {
-        const oldX = arr[ix];
-        if (hasEndSlantMiter) {
-          arr[ix] = endMiterXs.xOuter * (1 - t) + endMiterXs.xInner * t;
-        } else {
-          // Original normal-wall path: pull by up to one thickness
-          arr[ix] = x - wEnd * thickness;
+        if (hasEnd45) {
+          const oldX = arr[ix];
+          if (hasEndSlantMiter) {
+            arr[ix] = endMiterXs.xOuter * (1 - t) + endMiterXs.xInner * t;
+          } else {
+            // Original normal-wall path: pull by up to one thickness
+            arr[ix] = x - wEnd * thickness;
+          }
+          endCutCount++;
+          if (endCutCount <= 5) {
+            console.log(`[apply45DegreeCuts] End cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasEndSlantMiter}`);
+          }
         }
-        endCutCount++;
-        if (endCutCount <= 5) {
-          console.log(`[apply45DegreeCuts] End cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasEndSlantMiter}`);
-        }
+      } else if (endOutOfBandShift !== 0) {
+        arr[ix] = x + endOutOfBandShift;
+        endPullBackCount++;
       }
     }
 
     // Start cut
-    if (hasStart45 && Math.abs(x - minX) < epsEndX) {
+    if ((hasStart45 || startOutOfBandShift !== 0) && Math.abs(x - minX) < epsEndX) {
       if (y >= startYLo - yEps && y <= startYHi + yEps) {
-        const oldX = arr[ix];
-        if (hasStartSlantMiter) {
-          arr[ix] = startMiterXs.xOuter * (1 - t) + startMiterXs.xInner * t;
-        } else {
-          // Original normal-wall path: push by up to one thickness
-          arr[ix] = x + wStart * thickness;
+        if (hasStart45) {
+          const oldX = arr[ix];
+          if (hasStartSlantMiter) {
+            arr[ix] = startMiterXs.xOuter * (1 - t) + startMiterXs.xInner * t;
+          } else {
+            // Original normal-wall path: push by up to one thickness
+            arr[ix] = x + wStart * thickness;
+          }
+          startCutCount++;
+          if (startCutCount <= 5) {
+            console.log(`[apply45DegreeCuts] Start cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasStartSlantMiter}`);
+          }
         }
-        startCutCount++;
-        if (startCutCount <= 5) {
-          console.log(`[apply45DegreeCuts] Start cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasStartSlantMiter}`);
-        }
+      } else if (startOutOfBandShift !== 0) {
+        arr[ix] = x + startOutOfBandShift;
+        startPullBackCount++;
       }
     }
   }
   console.log(`[apply45DegreeCuts] Applied cuts:`, {
     startCutCount,
     endCutCount,
+    startPullBackCount,
+    endPullBackCount,
+    startOutOfBandShift,
+    endOutOfBandShift,
     totalVertices: vcount
   });
 
