@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 /**
  * useDoorForm - Custom hook for managing door form state and logic
@@ -34,7 +34,9 @@ export default function useDoorForm({
   const [swingDirection, setSwingDirection] = useState(initialDoor?.swing_direction || 'right');
   const [slideDirection, setSlideDirection] = useState(initialDoor?.slide_direction || 'right');
   const [localPosition, setLocalPosition] = useState(
-    initialDoor?.position_x !== undefined ? initialDoor.position_x : 0.5
+    initialDoor?.position_x !== undefined && initialDoor?.position_x !== null
+      ? initialDoor.position_x
+      : 0.5
   );
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [dbConnectionError, setDbConnectionError] = useState(false);
@@ -50,7 +52,7 @@ export default function useDoorForm({
 
   const wallLength = getWallLength();
 
-  // Sync state when editing a different door
+  // Sync state when editing a different door (depend on id, not object identity)
   useEffect(() => {
     if (initialDoor) {
       setDoorType(initialDoor.door_type);
@@ -61,9 +63,13 @@ export default function useDoorForm({
       setSide(initialDoor.side || 'interior');
       setSwingDirection(initialDoor.swing_direction || 'right');
       setSlideDirection(initialDoor.slide_direction || 'right');
-      setLocalPosition(initialDoor.position_x || 0.5);
+      setLocalPosition(
+        initialDoor.position_x !== undefined && initialDoor.position_x !== null
+          ? initialDoor.position_x
+          : 0.5
+      );
     }
-  }, [initialDoor]);
+  }, [initialDoor?.id]);
 
   // Reset height/thickness when switching wall in add mode
   useEffect(() => {
@@ -125,21 +131,42 @@ export default function useDoorForm({
     setLocalPosition(parseFloat(e.target.value));
   };
 
-  // Bi-directional controls for left/right distances (to door center)
-  const leftDistance = Math.max(0, Math.min(wallLength, (localPosition || 0) * wallLength));
-  const rightDistance = Math.max(0, wallLength - leftDistance);
+  // Left/right distances = clear gap from wall end to the near door edge (not center)
+  const doorWidthMm = Math.max(0, parseFloat(width) || 0);
+  const halfDoor = doorWidthMm / 2;
+  const centerMm = (localPosition || 0) * wallLength;
+  const leftDistance = Math.max(0, centerMm - halfDoor);
+  const rightDistance = Math.max(0, wallLength - (centerMm + halfDoor));
+  const maxEdgeClearance = Math.max(0, wallLength - doorWidthMm);
+
+  // Keep the left-edge clearance stable when the user changes door width after setting position
+  const prevHalfDoorRef = useRef(halfDoor);
+  useEffect(() => {
+    const prevHalf = prevHalfDoorRef.current;
+    prevHalfDoorRef.current = halfDoor;
+    if (wallLength <= 0 || prevHalf === halfDoor) return;
+    const currentLeft = Math.max(0, (localPosition || 0) * wallLength - prevHalf);
+    const maxClear = Math.max(0, wallLength - doorWidthMm);
+    const left = Math.min(currentLeft, maxClear);
+    const newCenter = left + halfDoor;
+    const newPos = newCenter / wallLength;
+    if (Number.isFinite(newPos)) {
+      setLocalPosition(Math.min(1, Math.max(0, newPos)));
+    }
+  }, [halfDoor, doorWidthMm, wallLength]);
 
   const setLeftDistance = (value) => {
-    const v = Math.max(0, Math.min(wallLength, Number(value) || 0));
-    const newPos = wallLength > 0 ? v / wallLength : 0;
-    setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
+    const v = Math.max(0, Math.min(maxEdgeClearance, Number(value) || 0));
+    const center = v + halfDoor;
+    const newPos = wallLength > 0 ? center / wallLength : 0;
+    setLocalPosition(Number.isFinite(newPos) ? Math.min(1, Math.max(0, newPos)) : 0);
   };
 
   const setRightDistance = (value) => {
-    const v = Math.max(0, Math.min(wallLength, Number(value) || 0));
-    const left = Math.max(0, wallLength - v);
-    const newPos = wallLength > 0 ? left / wallLength : 0;
-    setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
+    const v = Math.max(0, Math.min(maxEdgeClearance, Number(value) || 0));
+    const center = wallLength - v - halfDoor;
+    const newPos = wallLength > 0 ? center / wallLength : 0;
+    setLocalPosition(Number.isFinite(newPos) ? Math.min(1, Math.max(0, newPos)) : 0);
   };
 
   // Add these handlers for height and thickness changes
@@ -273,6 +300,7 @@ export default function useDoorForm({
     wallLength,
     leftDistance,
     rightDistance,
+    maxEdgeClearance,
     setLeftDistance,
     setRightDistance,
     handleSave,

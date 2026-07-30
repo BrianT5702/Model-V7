@@ -50,7 +50,9 @@ import {
     FaRedo,
     FaStreetView,
     FaShareAlt,
+    FaFilePdf,
 } from 'react-icons/fa';
+import ImportPdfWallsModal from './ImportPdfWallsModal';
 
 const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const { projectId: routeProjectId } = useParams();
@@ -73,6 +75,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const [unreadCommentCount, setUnreadCommentCount] = useState(0);
     const [planAnnotateMode, setPlanAnnotateMode] = useState(false);
     const [planNoteAddMode, setPlanNoteAddMode] = useState(false);
+    const [showImportPdfWallsModal, setShowImportPdfWallsModal] = useState(false);
     const [selectedPlanAnnotationId, setSelectedPlanAnnotationId] = useState(null);
     const [planAnnotationArrowPlacementId, setPlanAnnotationArrowPlacementId] = useState(null);
     const [levelActionsMenuOpen, setLevelActionsMenuOpen] = useState(false);
@@ -96,6 +99,29 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
         const onWheel = (event) => {
             if (event.ctrlKey || event.metaKey) {
                 return;
+            }
+            // This runs in the capture phase, so nested scrollable panels (Configure
+            // Joints, sidebars) would never see the wheel. Yield to them until they
+            // reach the edge they are being scrolled toward.
+            const scrollingUp = event.deltaY < 0;
+            for (
+                let node = event.target instanceof Element ? event.target : null;
+                node && node !== el;
+                node = node.parentElement
+            ) {
+                const overflowY = window.getComputedStyle(node).overflowY;
+                const scrollable =
+                    (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
+                    && node.scrollHeight > node.clientHeight + 1;
+                if (!scrollable) {
+                    continue;
+                }
+                const atEdge = scrollingUp
+                    ? node.scrollTop <= 0
+                    : node.scrollTop >= node.scrollHeight - node.clientHeight - 1;
+                if (!atEdge) {
+                    return;
+                }
             }
             if (el.scrollHeight <= el.clientHeight + 1) {
                 return;
@@ -456,6 +482,39 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const [editedWall, setEditedWall] = useState(null);
     const [gapFillError, setGapFillError] = useState('');
     const [isLengthLocked, setIsLengthLocked] = useState(false);
+    const [lockedWallCoords, setLockedWallCoords] = useState({
+        start_x: false,
+        start_y: false,
+        end_x: false,
+        end_y: false,
+    });
+
+    const resetWallEditLocks = () => {
+        setIsLengthLocked(false);
+        setLockedWallCoords({
+            start_x: false,
+            start_y: false,
+            end_x: false,
+            end_y: false,
+        });
+    };
+
+    const toggleWallCoordLock = (key) => {
+        setLockedWallCoords((prev) => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    /** Apply wall field updates, skipping any individually locked coordinates. */
+    const patchEditedWall = (updates) => {
+        setEditedWall((prev) => {
+            if (!prev) return prev;
+            const next = { ...prev };
+            Object.entries(updates).forEach(([key, value]) => {
+                if (lockedWallCoords[key]) return;
+                next[key] = value;
+            });
+            return next;
+        });
+    };
     
     // Window management state for walls
     const [wallWindows, setWallWindows] = useState([]);
@@ -897,17 +956,17 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
         if (projectDetails.selectedWall !== null) {
             const wall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWall);
             setEditedWall(wall ? { ...wall } : null);
-            setIsLengthLocked(false); // Reset lock when opening modal
+            resetWallEditLocks();
         } else if (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor) {
             // For multi-wall editing, use the first wall as a template
             const firstWall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWallsForEdit[0]);
             if (firstWall) {
                 setEditedWall({ ...firstWall });
             }
-            setIsLengthLocked(false);
+            resetWallEditLocks();
         } else {
             setEditedWall(null);
-            setIsLengthLocked(false);
+            resetWallEditLocks();
         }
     }, [projectDetails.selectedWall, projectDetails.selectedWallsForEdit, projectDetails.showWallEditor, projectDetails.filteredWalls]);
     
@@ -1432,6 +1491,17 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     Plan notes
                                 </button>
                             )}
+                            {canEdit && projectDetails.currentView === 'wall-plan' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowImportPdfWallsModal(true)}
+                                    className="flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary"
+                                    title="Import walls from a United Panel PDF"
+                                >
+                                    <FaFilePdf className="mr-1.5 text-xs" />
+                                    Import PDF
+                                </button>
+                            )}
                             {projectDetails.currentView === 'wall-plan' && (
                                 <>
                             <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
@@ -1790,7 +1860,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     {/* Room Creation Interface */}
                     {projectDetails.showRoomManagerModal && !projectDetails.isRoomManagerMinimized && (
                         <ModalOverlay className="bg-black/50 flex items-center justify-center z-[11000] p-3 sm:p-4">
-                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl max-h-[92vh] flex flex-col modal-scroll-panel">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl max-h-[92vh] flex flex-col overflow-hidden">
                                 <div className="form-modal-header shrink-0 rounded-t-xl">
                                     <div className="flex-1 min-w-0 pr-2">
                                         <h2 className="form-modal-title">
@@ -1829,6 +1899,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         </button>
                                     </div>
                                 </div>
+                                <div
+                                    className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain modal-scroll-panel"
+                                    data-modal-scroll
+                                >
                                     <RoomManager
                                         projectId={projectId}
                                         walls={projectDetails.filteredWalls}
@@ -1842,6 +1916,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         editingRoom={projectDetails.editingRoom}
                                         selectedPolygonPoints={projectDetails.selectedRoomPoints}
                                     />
+                                </div>
                             </div>
                         </ModalOverlay>
                     )}
@@ -2152,6 +2227,34 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     />
                                                 </div>
                                             </div>
+                                            <label className="flex items-start gap-2 mt-2 text-sm text-gray-700 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-1"
+                                                    checked={Boolean(projectDetails.deductCornerThickness)}
+                                                    onChange={(e) => projectDetails.setDeductCornerThickness(e.target.checked)}
+                                                />
+                                                <span>
+                                                    Deduct new wall thickness from host at free corners
+                                                    <span className="block text-xs text-gray-500 font-normal">
+                                                        On: PDF overall includes this wall’s thickness. Off: PDF already excludes thickness (centerline / clear opening).
+                                                    </span>
+                                                </span>
+                                            </label>
+                                            <label className="flex items-start gap-2 mt-2 text-sm text-gray-700 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-1"
+                                                    checked={projectDetails.autoSplitOnIntersect !== false}
+                                                    onChange={(e) => projectDetails.setAutoSplitOnIntersect(e.target.checked)}
+                                                />
+                                                <span>
+                                                    Auto-split walls at intersections
+                                                    <span className="block text-xs text-gray-500 font-normal">
+                                                        On: crossing or T-joining walls are split. Off: keep one continuous wall (no auto split).
+                                                    </span>
+                                                </span>
+                                            </label>
                                         </div>
 
                                         <div className="pt-2 border-t border-gray-100">
@@ -2495,6 +2598,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             projectId={projectId}
                                             onWallTypeSelect={projectDetails.selectedWallType}
                                             wallThickness={projectDetails.wallThickness}
+                                            deductCornerThickness={projectDetails.deductCornerThickness}
+                                            onDeductCornerThicknessChange={projectDetails.setDeductCornerThickness}
+                                            autoSplitOnIntersect={projectDetails.autoSplitOnIntersect}
                                             wallHeight={projectDetails.wallHeight}
                                             innerFaceMaterial={projectDetails.innerFaceMaterial}
                                             innerFaceThickness={projectDetails.innerFaceThickness}
@@ -2688,7 +2794,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 <span className="text-sm font-semibold text-gray-700">Rooms to Copy Walls From</span>
                                                 <span className="text-xs text-gray-500">{selectedRoomsSet.size} selected</span>
                                             </div>
-                                            <div className="max-h-56 overflow-y-auto">
+                                            <div className="max-h-56 overflow-y-auto overscroll-y-contain scroll-contain-panel">
                                                 {sourceRooms.length === 0 ? (
                                                     <div className="p-4 text-sm text-gray-500">
                                                         No rooms available on the selected storey.
@@ -2737,7 +2843,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     {isDrawingStoreyArea ? 'Drawing...' : 'Draw Area'}
                                                 </button>
                                             </div>
-                                            <div className="max-h-56 overflow-y-auto p-4 space-y-2">
+                                            <div className="max-h-56 overflow-y-auto overscroll-y-contain scroll-contain-panel p-4 space-y-2">
                                                 {isDrawingStoreyArea && (
                                                     <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-3 py-2 rounded-lg flex items-center justify-between">
                                                         <span>Click on the canvas to define the area. Close the loop by clicking the starting point.</span>
@@ -3050,217 +3156,149 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Position & Dimensions</h4>
                                         <div className="form-grid mt-2">
                                             <div className="space-y-3">
-                                                <label className="block">
+                                                <div>
                                                     <span className="form-label">Start Point</span>
                                                     <div className="grid grid-cols-2 gap-2 mt-1">
-                                                        <div>
-                                                            <span className="text-xs text-gray-500">X:</span>
-                                                            <input
-                                                                type="number"
-                                                                value={editedWall?.start_x || ''}
-                                                                onChange={(e) => {
-                                                                    const newStartX = parseFloat(e.target.value);
-                                                                    if (isNaN(newStartX) || !editedWall) return;
-                                                                    
-                                                                    if (isLengthLocked) {
-                                                                        // Calculate current direction vector and length
-                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
-                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
-                                                                        const length = Math.hypot(dx, dy);
-                                                                        
-                                                                        if (length === 0) {
-                                                                            setEditedWall({ ...editedWall, start_x: newStartX });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        // Calculate unit direction vector (normalized)
-                                                                        const unitX = dx / length;
-                                                                        const unitY = dy / length;
-                                                                        
-                                                                        // Apply the same direction from new start point with locked length
-                                                                        const newEndX = newStartX + unitX * length;
-                                                                        const newEndY = (editedWall.start_y || 0) + unitY * length;
-                                                                        
-                                                                        setEditedWall({ 
-                                                                            ...editedWall, 
-                                                                            start_x: newStartX,
-                                                                            end_x: newEndX,
-                                                                            end_y: newEndY
-                                                                        });
-                                                                    } else {
-                                                                        setEditedWall({ ...editedWall, start_x: newStartX });
-                                                                    }
-                                                                }}
-                                                                className="form-control mt-1"
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-xs text-gray-500">Y:</span>
-                                                            <input
-                                                                type="number"
-                                                                value={editedWall?.start_y || ''}
-                                                                onChange={(e) => {
-                                                                    const newStartY = parseFloat(e.target.value);
-                                                                    if (isNaN(newStartY) || !editedWall) return;
-                                                                    
-                                                                    if (isLengthLocked) {
-                                                                        // Calculate current direction vector and length
-                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
-                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
-                                                                        const length = Math.hypot(dx, dy);
-                                                                        
-                                                                        if (length === 0) {
-                                                                            setEditedWall({ ...editedWall, start_y: newStartY });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        // Calculate unit direction vector (normalized)
-                                                                        const unitX = dx / length;
-                                                                        const unitY = dy / length;
-                                                                        
-                                                                        // Apply the same direction from new start point with locked length
-                                                                        const newEndX = (editedWall.start_x || 0) + unitX * length;
-                                                                        const newEndY = newStartY + unitY * length;
-                                                                        
-                                                                        setEditedWall({ 
-                                                                            ...editedWall, 
-                                                                            start_y: newStartY,
-                                                                            end_x: newEndX,
-                                                                            end_y: newEndY
-                                                                        });
-                                                                    } else {
-                                                                        setEditedWall({ ...editedWall, start_y: newStartY });
-                                                                    }
-                                                                }}
-                                                                className="form-control mt-1"
-                                                            />
-                                                        </div>
+                                                        {['start_x', 'start_y'].map((coordKey) => {
+                                                            const isY = coordKey === 'start_y';
+                                                            const locked = !!lockedWallCoords[coordKey];
+                                                            return (
+                                                                <div key={coordKey}>
+                                                                    <div className="flex items-center justify-between gap-1">
+                                                                        <span className="text-xs text-gray-500">{isY ? 'Y:' : 'X:'}</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleWallCoordLock(coordKey)}
+                                                                            className={`p-1 rounded transition-colors ${
+                                                                                locked
+                                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                                                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                                            }`}
+                                                                            title={locked ? `Unlock Start ${isY ? 'Y' : 'X'}` : `Lock Start ${isY ? 'Y' : 'X'}`}
+                                                                        >
+                                                                            {locked ? <FaLock className="w-3 h-3" /> : <FaUnlock className="w-3 h-3" />}
+                                                                        </button>
+                                                                    </div>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editedWall?.[coordKey] ?? ''}
+                                                                        disabled={locked}
+                                                                        onChange={(e) => {
+                                                                            if (locked || !editedWall) return;
+                                                                            const newVal = parseFloat(e.target.value);
+                                                                            if (isNaN(newVal)) return;
+
+                                                                            if (isLengthLocked) {
+                                                                                const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                                                const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                                                const length = Math.hypot(dx, dy);
+                                                                                if (length === 0) {
+                                                                                    patchEditedWall({ [coordKey]: newVal });
+                                                                                    return;
+                                                                                }
+                                                                                const unitX = dx / length;
+                                                                                const unitY = dy / length;
+                                                                                const nextStartX = isY ? (editedWall.start_x || 0) : newVal;
+                                                                                const nextStartY = isY ? newVal : (editedWall.start_y || 0);
+                                                                                patchEditedWall({
+                                                                                    [coordKey]: newVal,
+                                                                                    end_x: nextStartX + unitX * length,
+                                                                                    end_y: nextStartY + unitY * length,
+                                                                                });
+                                                                            } else {
+                                                                                patchEditedWall({ [coordKey]: newVal });
+                                                                            }
+                                                                        }}
+                                                                        className={`form-control mt-1 ${locked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
-                                                </label>
+                                                </div>
                                             </div>
 
                                             <div className="space-y-3">
-                                                <label className="block">
+                                                <div>
                                                     <span className="form-label">End Point</span>
                                                     <div className="grid grid-cols-2 gap-2 mt-1">
-                                                        <div>
-                                                            <span className="text-xs text-gray-500">X:</span>
-                                                            <input
-                                                                type="number"
-                                                                value={editedWall?.end_x || ''}
-                                                                onChange={(e) => {
-                                                                    const newEndX = parseFloat(e.target.value);
-                                                                    if (isNaN(newEndX) || !editedWall) return;
-                                                                    
-                                                                    if (isLengthLocked) {
-                                                                        // Calculate locked length
-                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
-                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
-                                                                        const length = Math.hypot(dx, dy);
-                                                                        
-                                                                        if (length === 0) {
-                                                                            setEditedWall({ ...editedWall, end_x: newEndX });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        // Calculate new direction from start to new end X
-                                                                        const newDx = newEndX - (editedWall.start_x || 0);
-                                                                        const newDy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
-                                                                        const newLength = Math.hypot(newDx, newDy);
-                                                                        
-                                                                        if (newLength === 0) {
-                                                                            // If new length is 0, keep Y the same
-                                                                            setEditedWall({ ...editedWall, end_x: newEndX });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        // Adjust end Y to maintain locked length
-                                                                        // We have: length^2 = newDx^2 + newDy^2
-                                                                        // So: newDy = ±sqrt(length^2 - newDx^2)
-                                                                        // We'll use the sign of the original dy to maintain direction
-                                                                        const sign = dy >= 0 ? 1 : -1;
-                                                                        const newDySquared = length * length - newDx * newDx;
-                                                                        
-                                                                        if (newDySquared < 0) {
-                                                                            // Can't maintain length with this X change, just update X
-                                                                            setEditedWall({ ...editedWall, end_x: newEndX });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        const newEndY = (editedWall.start_y || 0) + sign * Math.sqrt(newDySquared);
-                                                                        
-                                                                        setEditedWall({ 
-                                                                            ...editedWall, 
-                                                                            end_x: newEndX,
-                                                                            end_y: newEndY
-                                                                        });
-                                                                    } else {
-                                                                        setEditedWall({ ...editedWall, end_x: newEndX });
-                                                                    }
-                                                                }}
-                                                                className="form-control mt-1"
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-xs text-gray-500">Y:</span>
-                                                            <input
-                                                                type="number"
-                                                                value={editedWall?.end_y || ''}
-                                                                onChange={(e) => {
-                                                                    const newEndY = parseFloat(e.target.value);
-                                                                    if (isNaN(newEndY) || !editedWall) return;
-                                                                    
-                                                                    if (isLengthLocked) {
-                                                                        // Calculate locked length
-                                                                        const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
-                                                                        const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
-                                                                        const length = Math.hypot(dx, dy);
-                                                                        
-                                                                        if (length === 0) {
-                                                                            setEditedWall({ ...editedWall, end_y: newEndY });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        // Calculate new direction from start to new end Y
-                                                                        const newDx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
-                                                                        const newDy = newEndY - (editedWall.start_y || 0);
-                                                                        const newLength = Math.hypot(newDx, newDy);
-                                                                        
-                                                                        if (newLength === 0) {
-                                                                            // If new length is 0, keep X the same
-                                                                            setEditedWall({ ...editedWall, end_y: newEndY });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        // Adjust end X to maintain locked length
-                                                                        // We have: length^2 = newDx^2 + newDy^2
-                                                                        // So: newDx = ±sqrt(length^2 - newDy^2)
-                                                                        // We'll use the sign of the original dx to maintain direction
-                                                                        const sign = dx >= 0 ? 1 : -1;
-                                                                        const newDxSquared = length * length - newDy * newDy;
-                                                                        
-                                                                        if (newDxSquared < 0) {
-                                                                            // Can't maintain length with this Y change, just update Y
-                                                                            setEditedWall({ ...editedWall, end_y: newEndY });
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        const newEndX = (editedWall.start_x || 0) + sign * Math.sqrt(newDxSquared);
-                                                                        
-                                                                        setEditedWall({ 
-                                                                            ...editedWall, 
-                                                                            end_x: newEndX,
-                                                                            end_y: newEndY
-                                                                        });
-                                                                    } else {
-                                                                        setEditedWall({ ...editedWall, end_y: newEndY });
-                                                                    }
-                                                                }}
-                                                                className="form-control mt-1"
-                                                            />
-                                                        </div>
+                                                        {['end_x', 'end_y'].map((coordKey) => {
+                                                            const isY = coordKey === 'end_y';
+                                                            const locked = !!lockedWallCoords[coordKey];
+                                                            return (
+                                                                <div key={coordKey}>
+                                                                    <div className="flex items-center justify-between gap-1">
+                                                                        <span className="text-xs text-gray-500">{isY ? 'Y:' : 'X:'}</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleWallCoordLock(coordKey)}
+                                                                            className={`p-1 rounded transition-colors ${
+                                                                                locked
+                                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                                                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                                            }`}
+                                                                            title={locked ? `Unlock End ${isY ? 'Y' : 'X'}` : `Lock End ${isY ? 'Y' : 'X'}`}
+                                                                        >
+                                                                            {locked ? <FaLock className="w-3 h-3" /> : <FaUnlock className="w-3 h-3" />}
+                                                                        </button>
+                                                                    </div>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editedWall?.[coordKey] ?? ''}
+                                                                        disabled={locked}
+                                                                        onChange={(e) => {
+                                                                            if (locked || !editedWall) return;
+                                                                            const newVal = parseFloat(e.target.value);
+                                                                            if (isNaN(newVal)) return;
+
+                                                                            if (isLengthLocked) {
+                                                                                const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
+                                                                                const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
+                                                                                const length = Math.hypot(dx, dy);
+                                                                                const startX = editedWall.start_x || 0;
+                                                                                const startY = editedWall.start_y || 0;
+
+                                                                                if (length === 0) {
+                                                                                    patchEditedWall({ [coordKey]: newVal });
+                                                                                    return;
+                                                                                }
+
+                                                                                if (!isY) {
+                                                                                    const newDx = newVal - startX;
+                                                                                    const newDySquared = length * length - newDx * newDx;
+                                                                                    if (newDySquared < 0) {
+                                                                                        patchEditedWall({ end_x: newVal });
+                                                                                        return;
+                                                                                    }
+                                                                                    const sign = dy >= 0 ? 1 : -1;
+                                                                                    patchEditedWall({
+                                                                                        end_x: newVal,
+                                                                                        end_y: startY + sign * Math.sqrt(newDySquared),
+                                                                                    });
+                                                                                } else {
+                                                                                    const newDy = newVal - startY;
+                                                                                    const newDxSquared = length * length - newDy * newDy;
+                                                                                    if (newDxSquared < 0) {
+                                                                                        patchEditedWall({ end_y: newVal });
+                                                                                        return;
+                                                                                    }
+                                                                                    const sign = dx >= 0 ? 1 : -1;
+                                                                                    patchEditedWall({
+                                                                                        end_x: startX + sign * Math.sqrt(newDxSquared),
+                                                                                        end_y: newVal,
+                                                                                    });
+                                                                                }
+                                                                            } else {
+                                                                                patchEditedWall({ [coordKey]: newVal });
+                                                                            }
+                                                                        }}
+                                                                        className={`form-control mt-1 ${locked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
-                                                </label>
+                                                </div>
                                             </div>
 
                                             <div className="md:col-span-2">
@@ -3291,40 +3329,83 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                             (editedWall.end_y || 0) - (editedWall.start_y || 0)
                                                         ) * 100) / 100 : ''} 
                                                         onChange={(e) => {
-                                                            if (isLengthLocked) return; // Ignore changes when locked
+                                                            if (isLengthLocked) return;
                                                             
                                                             const newLength = parseFloat(e.target.value);
                                                             if (isNaN(newLength) || newLength <= 0 || !editedWall) return;
                                                             
-                                                            // Calculate current direction vector
                                                             const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
                                                             const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
                                                             const currentLength = Math.hypot(dx, dy);
+                                                            if (currentLength === 0) return;
                                                             
-                                                            if (currentLength === 0) return; // Can't determine direction
-                                                            
-                                                            // Calculate unit direction vector
                                                             const unitX = dx / currentLength;
                                                             const unitY = dy / currentLength;
-                                                            
-                                                            // Calculate new end point keeping start point fixed
-                                                            const newEndX = (editedWall.start_x || 0) + unitX * newLength;
-                                                            const newEndY = (editedWall.start_y || 0) + unitY * newLength;
-                                                            
-                                                            setEditedWall({ 
-                                                                ...editedWall, 
-                                                                end_x: newEndX,
-                                                                end_y: newEndY
-                                                            });
+                                                            const startX = editedWall.start_x || 0;
+                                                            const startY = editedWall.start_y || 0;
+                                                            const endX = editedWall.end_x || 0;
+                                                            const endY = editedWall.end_y || 0;
+
+                                                            const endFree = !lockedWallCoords.end_x && !lockedWallCoords.end_y;
+                                                            const startFree = !lockedWallCoords.start_x && !lockedWallCoords.start_y;
+
+                                                            if (endFree) {
+                                                                patchEditedWall({
+                                                                    end_x: startX + unitX * newLength,
+                                                                    end_y: startY + unitY * newLength,
+                                                                });
+                                                            } else if (startFree) {
+                                                                patchEditedWall({
+                                                                    start_x: endX - unitX * newLength,
+                                                                    start_y: endY - unitY * newLength,
+                                                                });
+                                                            } else {
+                                                                // Partial locks: update only unlocked coords that can still satisfy length
+                                                                const updates = {};
+                                                                if (!lockedWallCoords.end_x && lockedWallCoords.end_y) {
+                                                                    const fixedDy = endY - startY;
+                                                                    const dxSq = newLength * newLength - fixedDy * fixedDy;
+                                                                    if (dxSq >= 0) {
+                                                                        const sign = dx >= 0 ? 1 : -1;
+                                                                        updates.end_x = startX + sign * Math.sqrt(dxSq);
+                                                                    }
+                                                                } else if (lockedWallCoords.end_x && !lockedWallCoords.end_y) {
+                                                                    const fixedDx = endX - startX;
+                                                                    const dySq = newLength * newLength - fixedDx * fixedDx;
+                                                                    if (dySq >= 0) {
+                                                                        const sign = dy >= 0 ? 1 : -1;
+                                                                        updates.end_y = startY + sign * Math.sqrt(dySq);
+                                                                    }
+                                                                } else if (!lockedWallCoords.start_x && lockedWallCoords.start_y) {
+                                                                    const fixedDy = endY - startY;
+                                                                    const dxSq = newLength * newLength - fixedDy * fixedDy;
+                                                                    if (dxSq >= 0) {
+                                                                        const sign = dx >= 0 ? 1 : -1;
+                                                                        updates.start_x = endX - sign * Math.sqrt(dxSq);
+                                                                    }
+                                                                } else if (lockedWallCoords.start_x && !lockedWallCoords.start_y) {
+                                                                    const fixedDx = endX - startX;
+                                                                    const dySq = newLength * newLength - fixedDx * fixedDx;
+                                                                    if (dySq >= 0) {
+                                                                        const sign = dy >= 0 ? 1 : -1;
+                                                                        updates.start_y = endY - sign * Math.sqrt(dySq);
+                                                                    }
+                                                                }
+                                                                if (Object.keys(updates).length > 0) {
+                                                                    patchEditedWall(updates);
+                                                                }
+                                                            }
                                                         }}
                                                         min="0"
                                                         step="1"
                                                         disabled={isLengthLocked}
                                                         className={`form-control mt-1 ${isLengthLocked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
                                                     />
-                                                    {isLengthLocked && (
+                                                    {(isLengthLocked || Object.values(lockedWallCoords).some(Boolean)) && (
                                                         <p className="mt-1 text-xs text-blue-600">
-                                                            Length is locked. Changing start/end coordinates will adjust the other point to maintain this length.
+                                                            {isLengthLocked
+                                                                ? 'Length is locked. Changing unlocked start/end coordinates will adjust the other point to maintain this length.'
+                                                                : 'Locked coordinates stay fixed while you edit other fields.'}
                                                         </p>
                                                     )}
                                                 </label>
@@ -3575,8 +3656,15 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         {projectDetails.selectedWall !== null && (
                                         <button
                                             onClick={() => {
-                                                projectDetails.setWallToDelete(projectDetails.selectedWall);
+                                                const wallId = projectDetails.selectedWall;
+                                                projectDetails.setWallToDelete(wallId);
                                                 projectDetails.setShowWallDeleteConfirm(true);
+                                                // Close editor so the confirm dialog is immediately usable
+                                                projectDetails.setSelectedWall(null);
+                                                projectDetails.setSelectedWallsForEdit([]);
+                                                projectDetails.setShowWallEditor(false);
+                                                projectDetails.setIsMultiWallEditMode(false);
+                                                setEditedWall(null);
                                             }}
                                             className="form-btn-danger w-full sm:w-auto 
                                                 transition-colors text-sm font-medium"
@@ -3635,11 +3723,22 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                             });
                                                         }
                                                     }
-                                                    // 2. For each changed endpoint, update all other walls sharing that endpoint
+                                                    // 2. For each changed endpoint, update other walls on the
+                                                    // SAME storey that share that endpoint. Never touch other levels
+                                                    // (copied layouts share XY but must stay independent).
+                                                    const editedStoreyId = edited.storey ?? edited.storey_id ?? null;
+                                                    const sameStoreyAsEdited = (wall) => {
+                                                        const wallStoreyId = wall.storey ?? wall.storey_id ?? null;
+                                                        if (editedStoreyId === null || editedStoreyId === undefined) {
+                                                            return wallStoreyId === null || wallStoreyId === undefined;
+                                                        }
+                                                        return String(wallStoreyId) === String(editedStoreyId);
+                                                    };
                                                     const updates = [];
                                                     for (const endpoint of changedEndpoints) {
                                                         for (const wall of projectDetails.walls) {
                                                             if (wall.id === edited.id) continue;
+                                                            if (!sameStoreyAsEdited(wall)) continue;
                                                             // Check start
                                                             if (Math.abs(endpoint.old.x - wall.start_x) < 0.001 && Math.abs(endpoint.old.y - wall.start_y) < 0.001) {
                                                                 const updatedWall = { ...wall, start_x: endpoint.new.x, start_y: endpoint.new.y };
@@ -3895,7 +3994,13 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                 {projectDetails.showDoorEditor && projectDetails.editingDoor && (
                     <DoorEditorModal
                         door={projectDetails.editingDoor}
-                        wall={projectDetails.walls.find(w => w.id === (projectDetails.editingDoor.linked_wall || projectDetails.editingDoor.wall_id))}
+                        wall={(() => {
+                            const wallId = projectDetails.editingDoor.linked_wall || projectDetails.editingDoor.wall_id;
+                            const id = wallId && typeof wallId === 'object' ? wallId.id : wallId;
+                            return (projectDetails.filteredWalls || projectDetails.walls).find(
+                                (w) => String(w.id) === String(id)
+                            );
+                        })()}
                         onUpdate={projectDetails.handleUpdateDoor}
                         onDelete={async (doorId) => {
                             await projectDetails.handleDeleteDoor(doorId);
@@ -3922,28 +4027,28 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
             {/* Wall Delete Confirmation */}
             {projectDetails.showWallDeleteConfirm && (
-                <div className="notification-banner-warning top-20 px-6 py-4">
-                    <div className="flex items-center gap-4">
-                        <svg className="w-6 h-6 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        <span className="font-medium">Are you sure you want to delete this wall?</span>
-                        <div className="flex gap-2 shrink-0">
-                            <button
-                                onClick={projectDetails.handleConfirmWallDelete}
-                                className="form-btn-danger px-4 py-2 text-sm"
-                            >
-                                Delete
-                            </button>
+                <ModalOverlay className="bg-black/50 flex items-center justify-center z-[12000] p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete wall?</h3>
+                        <p className="text-sm text-gray-600 mb-6">
+                            Are you sure you want to delete this wall? This cannot be undone from this dialog.
+                        </p>
+                        <div className="flex justify-end gap-2">
                             <button
                                 onClick={projectDetails.handleCancelWallDelete}
                                 className="form-btn-secondary px-4 py-2 text-sm"
                             >
                                 Cancel
                             </button>
+                            <button
+                                onClick={projectDetails.handleConfirmWallDelete}
+                                className="form-btn-danger px-4 py-2 text-sm"
+                            >
+                                Delete
+                            </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             {/* Success Messages */}
@@ -4024,6 +4129,18 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     onClose={() => setShareModalOpen(false)}
                 />
             )}
+
+            <ImportPdfWallsModal
+                open={showImportPdfWallsModal}
+                projectId={projectId}
+                storeyId={projectDetails.activeStoreyId}
+                onClose={() => setShowImportPdfWallsModal(false)}
+                onImported={async () => {
+                    if (typeof projectDetails.refreshWalls === 'function') {
+                        await projectDetails.refreshWalls();
+                    }
+                }}
+            />
 
             </div>
         </div>

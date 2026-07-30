@@ -4497,7 +4497,7 @@ getModelBounds() {
             const otherWall = this.walls.find(w => String(w.id) === String(otherWallId));
             if (!otherWall) return;
 
-            const isWall1 = j.wall_1 === wall.id;
+            const isWall1 = String(j.wall_1) === String(wall.id);
             if (!isWall1) return; // Only shorten wall_1
 
             const joiningWallThickness = (otherWall.thickness || wall.thickness) * scale;
@@ -4521,6 +4521,26 @@ getModelBounds() {
             // Skip when geometry was already inset (e.g. partition create deducted joining thickness).
             const alreadyInsetLimit = joiningWallThickness * 0.55 + 1e-6;
             const isCloserToStart = startDist < endDist;
+
+            // Same tip also has 45° (split-host T) — don't pull tip back and reopen the gap.
+            const has45CutAtSameEnd = (this.joints || []).some((j45) => {
+              if (j45.joining_method !== '45_cut') return false;
+              if (String(j45.wall_1) !== String(wall.id) && String(j45.wall_2) !== String(wall.id)) return false;
+              const other45Id = String(j45.wall_1) === String(wall.id) ? j45.wall_2 : j45.wall_1;
+              const other45 = this.walls.find((w) => String(w.id) === String(other45Id));
+              if (!other45) return false;
+              const hit45 = calculateLineIntersection(
+                finalStartX, finalStartZ, finalEndX, finalEndZ,
+                snap(other45.start_x * scale), snap(other45.start_y * scale),
+                snap(other45.end_x * scale), snap(other45.end_y * scale),
+                true
+              );
+              if (!hit45) return false;
+              const dStart45 = Math.hypot(hit45.x - finalStartX, hit45.z - finalStartZ);
+              const dEnd45 = Math.hypot(hit45.x - finalEndX, hit45.z - finalEndZ);
+              return isCloserToStart ? dStart45 < dEnd45 : dEnd45 < dStart45;
+            });
+            if (has45CutAtSameEnd) return;
 
             if (isCloserToStart && startDist <= alreadyInsetLimit) {
               shouldShortenStart = true;

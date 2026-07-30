@@ -5,6 +5,8 @@ import CeilingCanvas from '../canvas/CeilingCanvas';
 import api from '../../api/api';
 import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
 import { calculateGhostDataForStorey } from '../estimation/pdfVectorWallPlan';
+import { panelNeedsNylonSupport } from './nylonHangerUtils';
+import useScrollContainment from '../../utils/useScrollContainment';
 
 const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
     const { isAuthenticated } = useAuth();
@@ -34,6 +36,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
     const [mergeSelection, setMergeSelection] = useState([]);
     const [mergeError, setMergeError] = useState(null);
     const [isMerging, setIsMerging] = useState(false);
+    const mergeRoomsScrollRef = useRef(null);
+    useScrollContainment(mergeRoomsScrollRef, isMergeMode);
     const [dissolvingZoneId, setDissolvingZoneId] = useState(null);
     const [selectedPanelIds, setSelectedPanelIds] = useState([]);
     const [panelSwapError, setPanelSwapError] = useState(null);
@@ -176,30 +180,13 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
     const [zoneRegenerationSuccess, setZoneRegenerationSuccess] = useState(false);
     const [isRegeneratingZone, setIsRegeneratingZone] = useState(false);
 
-    // Check if any panels need support (over 6000mm) - matches CeilingCanvas logic
+    // Check if any panels need nylon support — matches CeilingCanvas / nylonHangerUtils
     // MUST be defined before useEffects that use it
     const panelsNeedSupport = useMemo(() => {
         if (!ceilingPanels || ceilingPanels.length === 0) return false;
-
-        // Determine panel orientation from the first available panel
-        let isHorizontalOrientation = false;
-        if (ceilingPanels.length > 0) {
-            isHorizontalOrientation = ceilingPanels[0].width > ceilingPanels[0].length;
-        }
-
-        // Check if any panels need support based on orientation
-        for (const panel of ceilingPanels) {
-            const needsSupport = isHorizontalOrientation ? 
-                panel.width > 6000 :  // Horizontal: check width
-                panel.length > 6000;  // Vertical: check length
-            
-            if (needsSupport) {
-                return true;
-            }
-        }
-        
-        return false;
-    }, [ceilingPanels]);
+        const thickness = Number(ceilingPlan?.ceiling_thickness ?? 150);
+        return ceilingPanels.some((panel) => panelNeedsNylonSupport(panel, thickness));
+    }, [ceilingPanels, ceilingPlan?.ceiling_thickness]);
 
     const activeZone = useMemo(() => {
         if (activeZoneId === null) return null;
@@ -1640,7 +1627,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         updateSharedPanelData
     ]);
 
-    const loadExistingCeilingPlan = useCallback(async () => {
+    const loadExistingCeilingPlan = useCallback(async (options = {}) => {
+        const { applyUiParams = false } = options;
         try {
             const [planResponse, panelsResponse, zonesResponse] = await Promise.all([
                 api.get(`/ceiling-plans/?project=${parseInt(projectId)}`),
@@ -1670,28 +1658,31 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 
                 setCeilingPlan(enhancedPlan);
                 
-                // CRITICAL: Load saved generation parameters to restore UI state
-                if (existingPlan.ceiling_thickness) {
-                    setCeilingThickness(existingPlan.ceiling_thickness);
-                }
-                if (existingPlan.orientation_strategy) {
-                    setSelectedOrientationStrategy(existingPlan.orientation_strategy);
-                }
-                if (existingPlan.panel_width) {
-                    setPanelWidth(existingPlan.panel_width);
-                }
-                if (existingPlan.panel_length) {
-                    // Check if panel_length is 'auto' or a numeric value
-                    if (existingPlan.panel_length === 'auto') {
-                        setPanelLength('auto');
-                    } else {
-                        // It's a custom value, set dropdown to 'custom' and use the value
-                        setPanelLength('custom');
-                        setCustomPanelLength(existingPlan.panel_length);
+                // Only hydrate generation controls from the saved plan on initial project load.
+                // Re-applying on every reload was resetting Thickness while the user typed.
+                if (applyUiParams) {
+                    if (existingPlan.ceiling_thickness) {
+                        setCeilingThickness(existingPlan.ceiling_thickness);
                     }
-                }
-                if (existingPlan.custom_panel_length) {
-                    setCustomPanelLength(existingPlan.custom_panel_length);
+                    if (existingPlan.orientation_strategy) {
+                        setSelectedOrientationStrategy(existingPlan.orientation_strategy);
+                    }
+                    if (existingPlan.panel_width) {
+                        setPanelWidth(existingPlan.panel_width);
+                    }
+                    if (existingPlan.panel_length) {
+                        // Check if panel_length is 'auto' or a numeric value
+                        if (existingPlan.panel_length === 'auto') {
+                            setPanelLength('auto');
+                        } else {
+                            // It's a custom value, set dropdown to 'custom' and use the value
+                            setPanelLength('custom');
+                            setCustomPanelLength(existingPlan.panel_length);
+                        }
+                    }
+                    if (existingPlan.custom_panel_length) {
+                        setCustomPanelLength(existingPlan.custom_panel_length);
+                    }
                 }
                 if (existingPlan.support_config) {
                     // Handle backward compatibility: if only support_type exists, use it
@@ -1847,7 +1838,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             setAllWalls(wallsResponse.data || []);
             setAllIntersections(intersectionsResponse.data || []);
             
-            await loadExistingCeilingPlan();
+            await loadExistingCeilingPlan({ applyUiParams: true });
             await loadCeilingZones();
             
             try {
@@ -1891,13 +1882,10 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         } catch (error) {
             console.error('Error loading project data:', error);
         }
-    }, [
-        projectId,
-        selectedStoreyId,
-        loadCeilingZones,
-        loadExistingCeilingPlan,
-        loadOrientationAnalysis,
-    ]);
+    // Do NOT depend on loadOrientationAnalysis / ceilingThickness — that recreated this
+    // callback on every Thickness keystroke, reloaded the plan, and snapped the field back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [projectId, loadCeilingZones, loadExistingCeilingPlan]);
 
     useEffect(() => {
         if (projectId) {
@@ -2240,7 +2228,14 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         }
     };
     
-    const handleCeilingThicknessChange = (newThickness) => {
+    const handleCeilingThicknessChange = (rawValue) => {
+        // Allow clearing / partial typing; only commit numeric values.
+        if (rawValue === '' || rawValue == null) {
+            setCeilingThickness('');
+            return;
+        }
+        const newThickness = typeof rawValue === 'number' ? rawValue : parseInt(rawValue, 10);
+        if (Number.isNaN(newThickness)) return;
         setCeilingThickness(newThickness);
         if (ceilingPlan) {
             setPlanNeedsRegeneration(true);
@@ -2614,8 +2609,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                     min="50"
                                     max="500"
                                     step="10"
-                                    value={ceilingThickness}
-                                    onChange={(e) => handleCeilingThicknessChange(parseInt(e.target.value))}
+                                    value={ceilingThickness === '' || ceilingThickness == null ? '' : ceilingThickness}
+                                    onChange={(e) => handleCeilingThicknessChange(e.target.value)}
                                     className="w-16 min-w-0"
                                     placeholder="150"
                                 />
@@ -2815,7 +2810,10 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                 {roomsAvailableForMerge.length === 0 ? (
                                     <p className="text-sm text-gray-600">All rooms are already part of merged zones.</p>
                                 ) : (
-                                    <div className="space-y-2 max-h-56 overflow-y-auto pr-2">
+                                    <div
+                                        ref={mergeRoomsScrollRef}
+                                        className="space-y-2 max-h-56 overflow-y-auto overscroll-contain pr-2"
+                                    >
                                         {roomsAvailableForMerge.map(room => (
                                             <label key={room.id} className="flex items-center justify-between border border-orange-100 rounded-lg px-3 py-2 hover:bg-orange-100 transition-colors cursor-pointer">
                                                 <div className="flex items-center space-x-3">

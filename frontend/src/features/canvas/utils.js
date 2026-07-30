@@ -426,7 +426,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         // === SLIDE DOOR DRAWING ===
         if (door.door_type === 'slide') {
-            const halfLength = doorWidth * 1.1;
+            const halfLength = doorWidth;
             const thickness = wallThickness;
             const panelYOffset = getSlidePanelYOffset(placement, thickness);
 
@@ -531,6 +531,404 @@ export function calculateIntersection(wall1Start, wall1End, wall2Start, wall2End
     return null;
 }
 
+/**
+ * Intersection of two lines. Optionally treat either side as infinite
+ * (needed when a shortened partition must extend to the host centerline).
+ */
+export function calculateLineIntersection(
+    wall1Start,
+    wall1End,
+    wall2Start,
+    wall2End,
+    { extendFirst = false, extendSecond = false, paramTolerance = 0.05 } = {}
+) {
+    const denominator = ((wall2End.y - wall2Start.y) * (wall1End.x - wall1Start.x)) -
+                    ((wall2End.x - wall2Start.x) * (wall1End.y - wall1Start.y));
+    if (Math.abs(denominator) < 1e-12) return null;
+    const ua = (((wall2End.x - wall2Start.x) * (wall1Start.y - wall2Start.y)) -
+            ((wall2End.y - wall2Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
+    const ub = (((wall1End.x - wall1Start.x) * (wall1Start.y - wall2Start.y)) -
+            ((wall1End.y - wall1Start.y) * (wall1Start.x - wall2Start.x))) / denominator;
+    const firstOk = extendFirst
+        ? true
+        : ua >= -paramTolerance && ua <= 1 + paramTolerance;
+    const secondOk = extendSecond
+        ? true
+        : ub >= -paramTolerance && ub <= 1 + paramTolerance;
+    if (!firstOk || !secondOk) return null;
+    return {
+        x: wall1Start.x + (ua * (wall1End.x - wall1Start.x)),
+        y: wall1Start.y + (ua * (wall1End.y - wall1Start.y))
+    };
+}
+
+function wallsAreNearlyCollinear(wallA, wallB, angleTolDeg = 5) {
+    const ax = wallA.end_x - wallA.start_x;
+    const ay = wallA.end_y - wallA.start_y;
+    const bx = wallB.end_x - wallB.start_x;
+    const by = wallB.end_y - wallB.start_y;
+    const lenA = Math.hypot(ax, ay);
+    const lenB = Math.hypot(bx, by);
+    if (lenA < 0.001 || lenB < 0.001) return false;
+    const dot = Math.abs((ax * bx + ay * by) / (lenA * lenB));
+    return dot >= Math.cos((angleTolDeg * Math.PI) / 180);
+}
+
+export function isPartitionWall(wall) {
+    return wall && String(wall.application_type || '').toLowerCase() === 'partition';
+}
+
+/** Host wall that a shortened partition end butts into (within host thickness). */
+export function findJoiningWallForPartitionEnd(partition, endPoint, candidateWalls) {
+    let bodyHit = null;
+    let endpointHit = null;
+    let bodyHitDist = Infinity;
+    let endpointHitDist = Infinity;
+    for (const wall of candidateWalls) {
+        if (!wall || wall.id === partition.id) continue;
+        if (wallsAreNearlyCollinear(partition, wall)) continue;
+        const dx = wall.end_x - wall.start_x;
+        const dy = wall.end_y - wall.start_y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.001) continue;
+        const ux = dx / length;
+        const uy = dy / length;
+        const nx = -uy;
+        const ny = ux;
+        const relX = endPoint.x - wall.start_x;
+        const relY = endPoint.y - wall.start_y;
+        const along = relX * ux + relY * uy;
+        const perp = relX * nx + relY * ny;
+        const thick = Number(wall.thickness) || 0;
+        // Partition ends are inset by up to full host thickness (plus float error).
+        const perpLimit = Math.max(thick * 2, thick + 1) + 1;
+        if (along < -1 || along > length + 1 || Math.abs(perp) > perpLimit) {
+            continue;
+        }
+        const onBody = along > 0.001 && along < length - 0.001;
+        const dist = Math.abs(perp);
+        if (onBody) {
+            if (dist < bodyHitDist) {
+                bodyHit = wall;
+                bodyHitDist = dist;
+            }
+        } else if (dist < endpointHitDist) {
+            endpointHit = wall;
+            endpointHitDist = dist;
+        }
+    }
+    return bodyHit || endpointHit;
+}
+
+/**
+ * Shoot past a shortened partition end along the wall axis and find the nearest
+ * non-collinear host segment (more reliable than thickness-band only).
+ */
+export function findHostWallByPartitionRay(partition, atStart, candidateWalls) {
+    const dx = partition.end_x - partition.start_x;
+    const dy = partition.end_y - partition.start_y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.001) return null;
+    const ux = dx / len;
+    const uy = dy / len;
+    // Ray continues past the chosen end (outward beyond the shortened tip).
+    const origin = atStart
+        ? { x: partition.start_x, y: partition.start_y }
+        : { x: partition.end_x, y: partition.end_y };
+    const rayDx = atStart ? -ux : ux;
+    const rayDy = atStart ? -uy : uy;
+
+    let bestWall = null;
+    let bestT = Infinity;
+    const maxReach = candidateWalls.reduce(
+        (m, w) => Math.max(m, (Number(w.thickness) || 0) * 3),
+        300
+    ) + 50;
+
+    for (const wall of candidateWalls) {
+        if (!wall || wall.id === partition.id) continue;
+        if (wallsAreNearlyCollinear(partition, wall)) continue;
+        const hit = calculateLineIntersection(
+            origin,
+            { x: origin.x + rayDx, y: origin.y + rayDy },
+            { x: wall.start_x, y: wall.start_y },
+            { x: wall.end_x, y: wall.end_y },
+            { extendFirst: true, extendSecond: false, paramTolerance: 0.02 }
+        );
+        if (!hit) continue;
+        const t = (hit.x - origin.x) * rayDx + (hit.y - origin.y) * rayDy;
+        if (t <= 0.001 || t > maxReach || t >= bestT) continue;
+        bestT = t;
+        bestWall = wall;
+    }
+    return bestWall;
+}
+
+/**
+ * True corner where a partition would meet a host if treated like a normal wall
+ * (partition reference line extended to host reference line).
+ * Note: wall DB coords are the reference face (line1), not geometric centerline.
+ */
+export function getExtendedPartitionCorner(partition, hostWall) {
+    if (!partition || !hostWall) return null;
+    const raw = calculateLineIntersection(
+        { x: partition.start_x, y: partition.start_y },
+        { x: partition.end_x, y: partition.end_y },
+        { x: hostWall.start_x, y: hostWall.start_y },
+        { x: hostWall.end_x, y: hostWall.end_y },
+        { extendFirst: true, extendSecond: true }
+    );
+    if (!raw) return null;
+
+    const dx = hostWall.end_x - hostWall.start_x;
+    const dy = hostWall.end_y - hostWall.start_y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-6) return raw;
+    const t = ((raw.x - hostWall.start_x) * dx + (raw.y - hostWall.start_y) * dy) / lenSq;
+    const tc = Math.max(0, Math.min(1, t));
+    return {
+        x: hostWall.start_x + tc * dx,
+        y: hostWall.start_y + tc * dy,
+    };
+}
+
+/**
+ * Resolve both partition ends to normal-wall junction points (extended to hosts).
+ * Returns { start, end } in model space.
+ */
+export function getPartitionExtendedEndpoints(partition, walls) {
+    if (!partition) return null;
+    const others = (walls || []).filter((w) => w && w.id !== partition.id);
+    const resolveEnd = (endPt, atStart) => {
+        const host =
+            findJoiningWallForPartitionEnd(partition, endPt, others)
+            || findHostWallByPartitionRay(partition, atStart, others);
+        if (!host) return { ...endPt };
+        return getExtendedPartitionCorner(partition, host) || { ...endPt };
+    };
+    return {
+        start: resolveEnd({ x: partition.start_x, y: partition.start_y }, true),
+        end: resolveEnd({ x: partition.end_x, y: partition.end_y }, false),
+    };
+}
+
+/**
+ * Host whose body this tip sits inside (butt-in thickness deduct), or null if on centerline.
+ */
+export function findInsetHostForWallTip(wall, endPt, candidateWalls) {
+    if (!wall || !endPt) return null;
+    let best = null;
+    let bestPerp = Infinity;
+    for (const host of candidateWalls || []) {
+        if (!host || host.id === wall.id) continue;
+        const dx = host.end_x - host.start_x;
+        const dy = host.end_y - host.start_y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.001) continue;
+        const ux = dx / length;
+        const uy = dy / length;
+        const nx = -uy;
+        const ny = ux;
+        const relX = endPt.x - host.start_x;
+        const relY = endPt.y - host.start_y;
+        const along = relX * ux + relY * uy;
+        const perp = Math.abs(relX * nx + relY * ny);
+        const hostThk = Number(host.thickness) || 0;
+        if (along < -1 || along > length + 1 || perp <= 0.75 || perp > hostThk + 1) {
+            continue;
+        }
+        if (perp < bestPerp) {
+            bestPerp = perp;
+            best = host;
+        }
+    }
+    return best;
+}
+
+/**
+ * Room-polygon match ends: extend partition + thickness-deducted tips to host
+ * centerline junctions so detectRoomWalls / define-room pick the wall.
+ */
+export function getWallExtendedEndpointsForMatching(wall, walls) {
+    if (!wall) return null;
+    const list = Array.isArray(walls) ? walls : [];
+    if (isPartitionWall(wall)) {
+        return getPartitionExtendedEndpoints(wall, list) || {
+            start: { x: wall.start_x, y: wall.start_y },
+            end: { x: wall.end_x, y: wall.end_y },
+        };
+    }
+    const others = list.filter((w) => w && w.id !== wall.id);
+    const resolveEnd = (endPt) => {
+        const host = findInsetHostForWallTip(wall, endPt, others);
+        if (!host) return { x: endPt.x, y: endPt.y };
+        return getExtendedPartitionCorner(wall, host) || { x: endPt.x, y: endPt.y };
+    };
+    return {
+        start: resolveEnd({ x: wall.start_x, y: wall.start_y }),
+        end: resolveEnd({ x: wall.end_x, y: wall.end_y }),
+    };
+}
+
+/**
+ * Display / click position for an intersection. Partition butt-ins use the
+ * extended host junction (same as orange handles), not the shortened tip.
+ */
+export function getIntersectionDisplayPoint(inter, walls) {
+    if (!inter) return null;
+    const list = Array.isArray(walls) ? walls : [];
+    const byId = new Map(list.map((w) => [String(w.id), w]));
+    const wallIdOf = (ref) => {
+        if (ref == null) return null;
+        if (typeof ref === 'object') return ref.id != null ? String(ref.id) : null;
+        return String(ref);
+    };
+
+    const geo = (Number.isFinite(inter.x) && Number.isFinite(inter.y))
+        ? { x: inter.x, y: inter.y }
+        : null;
+
+    const resolvePartitionDisplay = (partition, preferredHost = null) => {
+        // Prefer the extended end nearest the geometric tip (handles top vs bottom).
+        const extendedEnds = getPartitionExtendedEndpoints(partition, list);
+        if (extendedEnds && geo) {
+            const dStart = Math.hypot(extendedEnds.start.x - geo.x, extendedEnds.start.y - geo.y);
+            const dEnd = Math.hypot(extendedEnds.end.x - geo.x, extendedEnds.end.y - geo.y);
+            return dStart <= dEnd ? extendedEnds.start : extendedEnds.end;
+        }
+        if (extendedEnds) {
+            return extendedEnds.start;
+        }
+        if (preferredHost) {
+            return getExtendedPartitionCorner(partition, preferredHost);
+        }
+        return null;
+    };
+
+    const pairs = Array.isArray(inter.pairs) ? inter.pairs : [];
+    if (pairs.length > 0) {
+        for (const pair of pairs) {
+            const w1 = byId.get(wallIdOf(pair.wall1));
+            const w2 = byId.get(wallIdOf(pair.wall2));
+            if (!w1 || !w2) continue;
+            const partition = isPartitionWall(w1) ? w1 : (isPartitionWall(w2) ? w2 : null);
+            if (!partition) continue;
+            const host = partition === w1 ? w2 : w1;
+            const extended = resolvePartitionDisplay(partition, host);
+            if (extended) return extended;
+        }
+    }
+
+    const j1 = byId.get(wallIdOf(inter.wall_1));
+    const j2 = byId.get(wallIdOf(inter.wall_2));
+    if (j1 && j2) {
+        const partition = isPartitionWall(j1) ? j1 : (isPartitionWall(j2) ? j2 : null);
+        if (partition) {
+            const host = partition === j1 ? j2 : j1;
+            const extended = resolvePartitionDisplay(partition, host);
+            if (extended) return extended;
+        }
+    }
+
+    return geo;
+}
+
+/**
+ * Snap / orange-handle targets: partition + butt-in-deduct tips are extended to
+ * host centerline junctions so room polygons match normal walls (never expose
+ * shortened tips — otherwise define-room shows two dots and needs both).
+ */
+export function getRoomSelectionSnapPoints(walls, intersections = []) {
+    const list = Array.isArray(walls) ? walls : [];
+    const byId = new Map(list.map((w) => [String(w.id), w]));
+    const points = [];
+    const seen = new Set();
+    // Shortened tips (partition or deduct) — never offer these as room corners.
+    const suppressed = new Set();
+
+    const pointKey = (pt) => `${Math.round(pt.x)},${Math.round(pt.y)}`;
+
+    const addPoint = (pt) => {
+        if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
+        const key = pointKey(pt);
+        if (seen.has(key) || suppressed.has(key)) return;
+        seen.add(key);
+        points.push({ x: pt.x, y: pt.y });
+    };
+
+    const wallIdOf = (ref) => {
+        if (ref == null) return null;
+        if (typeof ref === 'object') return ref.id != null ? String(ref.id) : null;
+        return String(ref);
+    };
+
+    /** Host whose body this tip sits inside (inset by thickness), or null if on-centerline. */
+    const findInsetHostForTip = (wall, endPt) => findInsetHostForWallTip(wall, endPt, list);
+
+    // 1) Partition ends → extended host junctions only
+    list.forEach((wall) => {
+        if (!isPartitionWall(wall)) return;
+        suppressed.add(pointKey({ x: wall.start_x, y: wall.start_y }));
+        suppressed.add(pointKey({ x: wall.end_x, y: wall.end_y }));
+        const extended = getPartitionExtendedEndpoints(wall, list);
+        if (extended) {
+            addPoint(extended.start);
+            addPoint(extended.end);
+        }
+    });
+
+    // 1b) Normal walls with butt-in thickness deduct (tip inside host) → same treatment
+    list.forEach((wall) => {
+        if (isPartitionWall(wall)) return;
+        const ends = [
+            { x: wall.start_x, y: wall.start_y },
+            { x: wall.end_x, y: wall.end_y },
+        ];
+        ends.forEach((endPt) => {
+            const host = findInsetHostForTip(wall, endPt);
+            if (!host) return;
+            suppressed.add(pointKey(endPt));
+            const extended = getExtendedPartitionCorner(wall, host);
+            if (extended) addPoint(extended);
+        });
+    });
+
+    // 2) Intersection records: extend any pair that includes a partition
+    (intersections || []).forEach((inter) => {
+        let point = { x: inter.x, y: inter.y };
+        const pairs = Array.isArray(inter.pairs) ? inter.pairs : [];
+        let isPartitionJoint = false;
+        for (const pair of pairs) {
+            const w1 = byId.get(wallIdOf(pair.wall1));
+            const w2 = byId.get(wallIdOf(pair.wall2));
+            if (!w1 || !w2) continue;
+            const partition = isPartitionWall(w1) ? w1 : (isPartitionWall(w2) ? w2 : null);
+            if (!partition) continue;
+            isPartitionJoint = true;
+            const host = partition === w1 ? w2 : w1;
+            const extended = getExtendedPartitionCorner(partition, host);
+            if (extended) {
+                point = extended;
+                break;
+            }
+        }
+        // Drop raw shortened partition tips even if extension failed.
+        if (isPartitionJoint && suppressed.has(pointKey(point))) return;
+        // Also drop if this geometric tip was suppressed as a deducted inset.
+        if (suppressed.has(pointKey(point))) return;
+        addPoint(point);
+    });
+
+    // 3) Normal wall endpoints (skip suppressed inset tips)
+    list.forEach((wall) => {
+        if (isPartitionWall(wall)) return;
+        addPoint({ x: wall.start_x, y: wall.start_y });
+        addPoint({ x: wall.end_x, y: wall.end_y });
+    });
+
+    return points;
+}
+
 // Find all intersection points between walls (including shared endpoints, collinear, endpoint-in-body)
 export function findIntersectionPointsBetweenWalls(walls) {
     const map = new Map();
@@ -549,7 +947,12 @@ export function findIntersectionPointsBetweenWalls(walls) {
             const along = relX * ux + relY * uy;
             const perp = relX * nx + relY * ny;
             if (along >= 0 && along <= length && Math.abs(perp) <= hostWall.thickness) {
-                return { x: pt.x, y: pt.y };
+                // Joint lives on the host centerline — not the inset tip — so draw/butt-in
+                // can still pair stem + host after thickness deduct.
+                return {
+                    x: hostWall.start_x + along * ux,
+                    y: hostWall.start_y + along * uy,
+                };
             }
         }
         return null;
@@ -596,19 +999,29 @@ export function findIntersectionPointsBetweenWalls(walls) {
                 map.get(key).pairs.push({ wall1: wallA, wall2: wallB });
                 continue;
             }
-            // A endpoint in body of B
+            // A endpoint in body of B (includes partition tips inset by host thickness)
             const touchAinB = wallTouchesWallBody(aEndpoints, wallB);
             if (touchAinB) {
-                const key = `${Math.round(touchAinB.x)}-${Math.round(touchAinB.y)}`;
-                if (!map.has(key)) map.set(key, { x: touchAinB.x, y: touchAinB.y, pairs: [] });
+                let point = touchAinB;
+                if (isPartitionWall(wallA)) {
+                    const ext = getExtendedPartitionCorner(wallA, wallB);
+                    if (ext && Number.isFinite(ext.x) && Number.isFinite(ext.y)) point = ext;
+                }
+                const key = `${Math.round(point.x)}-${Math.round(point.y)}`;
+                if (!map.has(key)) map.set(key, { x: point.x, y: point.y, pairs: [] });
                 map.get(key).pairs.push({ wall1: wallA, wall2: wallB });
                 continue;
             }
             // B endpoint in body of A
             const touchBinA = wallTouchesWallBody(bEndpoints, wallA);
             if (touchBinA) {
-                const key = `${Math.round(touchBinA.x)}-${Math.round(touchBinA.y)}`;
-                if (!map.has(key)) map.set(key, { x: touchBinA.x, y: touchBinA.y, pairs: [] });
+                let point = touchBinA;
+                if (isPartitionWall(wallB)) {
+                    const ext = getExtendedPartitionCorner(wallB, wallA);
+                    if (ext && Number.isFinite(ext.x) && Number.isFinite(ext.y)) point = ext;
+                }
+                const key = `${Math.round(point.x)}-${Math.round(point.y)}`;
+                if (!map.has(key)) map.set(key, { x: point.x, y: point.y, pairs: [] });
                 map.get(key).pairs.push({ wall1: wallB, wall2: wallA });
                 continue;
             }

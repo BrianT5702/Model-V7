@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import secrets
 
+from django.db.models import Q
+
 from .models import ProjectShareLink
 
 SHARE_TOKEN_HEADER = 'HTTP_X_SHARE_TOKEN'
@@ -118,3 +120,38 @@ def extract_project_id_from_request(request, view=None):
     if share is not None:
         return share.project_id
     return None
+
+
+def scope_queryset_for_anonymous_share(request, queryset):
+    """Limit anonymous share sessions to the shared project only."""
+    user = getattr(request, 'user', None)
+    if user is not None and getattr(user, 'is_authenticated', False):
+        return queryset
+
+    share = get_share_link_from_request(request)
+    if share is None:
+        return queryset
+
+    model = queryset.model
+    name = model.__name__
+    project_id = share.project_id
+
+    if name == 'Project':
+        return queryset.filter(pk=project_id)
+    if name == 'ProjectFolder':
+        return queryset.none()
+    if name in ('CeilingPanel', 'CeilingPlan'):
+        return queryset.filter(Q(room__project_id=project_id) | Q(zone__project_id=project_id))
+    if name in ('FloorPanel', 'FloorPlan'):
+        return queryset.filter(room__project_id=project_id)
+    if name == 'Window':
+        return queryset.filter(door__project_id=project_id)
+    if name == 'WallWindow':
+        return queryset.filter(wall__project_id=project_id)
+
+    field_names = {f.name for f in model._meta.get_fields()}
+    if 'project' in field_names:
+        return queryset.filter(project_id=project_id)
+
+    # Fail closed for unexpected models under anonymous share.
+    return queryset.none()

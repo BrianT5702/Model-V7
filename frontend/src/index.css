@@ -2062,6 +2062,30 @@ html.dark .hover\:bg-gray-100:hover {
   background-color: rgb(31 41 55);
 }
 
+/* Light pastel row hovers stay pale in dark mode and wash out light text */
+html.dark .hover\:bg-green-50:hover,
+html.dark .hover\:bg-green-100:hover {
+  background-color: rgb(6 78 59 / 0.55) !important;
+  color: rgb(243 244 246);
+}
+
+html.dark .bg-green-50,
+html.dark [class*="bg-green-50/"] {
+  background-color: rgb(6 78 59 / 0.4) !important;
+  color: rgb(243 244 246);
+}
+
+html.dark .bg-red-50,
+html.dark [class*="bg-red-50/"] {
+  background-color: rgb(127 29 29 / 0.35) !important;
+  color: rgb(243 244 246);
+}
+
+html.dark .hover\:bg-red-50:hover {
+  background-color: rgb(127 29 29 / 0.5) !important;
+  color: rgb(243 244 246);
+}
+
 /* Customer feedback / comments panel */
 html.dark .project-comments-panel {
   background-color: rgb(17 24 39) !important;

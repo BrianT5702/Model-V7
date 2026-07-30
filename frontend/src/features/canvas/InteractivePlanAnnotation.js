@@ -36,13 +36,14 @@ const InteractivePlanAnnotation = ({
     const lastDragPositionRef = useRef(null);
     const dragStartRef = useRef(null);
     const didDragRef = useRef(false);
-    const wasSelectedOnMouseDownRef = useRef(false);
     const resizeStartRef = useRef(null);
     const textareaRef = useRef(null);
     const annotationRootRef = useRef(null);
     const { isDark } = useTheme();
-    const editControlsEnabled = canEdit || (canDirectEdit && isDirectEditActive);
-    const dragEnabled = canDrag || (canDirectEdit && isDirectEditActive);
+    // When selected, annotators get resize/delete/arrow controls (not only in annotate mode).
+    const editControlsEnabled = canEdit || canDirectEdit;
+    // Allow reposition whenever the user can annotate; text edit stays on double-click.
+    const dragEnabled = canDrag || canDirectEdit;
 
     const canvasX = annotation.position_x * scaleFactor + offsetX;
     const canvasY = annotation.position_y * scaleFactor + offsetY;
@@ -59,11 +60,12 @@ const InteractivePlanAnnotation = ({
     }, [isSelected]);
 
     useEffect(() => {
-        if (autoEdit && canEdit) {
+        if (autoEdit && (canEdit || canDirectEdit)) {
             setIsEditing(true);
+            setIsDirectEditActive(true);
             onAutoEditConsumed?.();
         }
-    }, [autoEdit, canEdit, annotation.id, onAutoEditConsumed]);
+    }, [autoEdit, canEdit, canDirectEdit, annotation.id, onAutoEditConsumed]);
 
     useEffect(() => {
         if (isEditing && textareaRef.current) {
@@ -104,7 +106,7 @@ const InteractivePlanAnnotation = ({
     };
 
     useEffect(() => {
-        if (!isSelected || !isDirectEditActive) {
+        if (!isSelected || !editControlsEnabled) {
             return undefined;
         }
 
@@ -123,7 +125,7 @@ const InteractivePlanAnnotation = ({
         return () => document.removeEventListener('mousedown', handleOutsideMouseDown, true);
     }, [
         isSelected,
-        isDirectEditActive,
+        editControlsEnabled,
         isEditing,
         draftText,
         annotation.id,
@@ -143,7 +145,7 @@ const InteractivePlanAnnotation = ({
     };
 
     const handleMouseDown = (event) => {
-        if ((!dragEnabled && !editControlsEnabled && !canDirectEdit) || isEditing || isResizing) {
+        if ((!dragEnabled && !editControlsEnabled) || isEditing || isResizing) {
             return;
         }
         if (event.button !== 0) {
@@ -155,8 +157,8 @@ const InteractivePlanAnnotation = ({
         event.stopPropagation();
         event.preventDefault();
         onInteractionStart?.();
-        wasSelectedOnMouseDownRef.current = isSelected;
         onSelect?.(annotation.id);
+        setIsDirectEditActive(true);
         if (!dragEnabled) {
             return;
         }
@@ -217,10 +219,7 @@ const InteractivePlanAnnotation = ({
             }
             lastDragPositionRef.current = null;
             dragStartRef.current = null;
-
-            if (!didDragRef.current && editControlsEnabled && wasSelectedOnMouseDownRef.current) {
-                setIsEditing(true);
-            }
+            // Edit only via double-click / Edit button — not a second single click
         };
 
         window.addEventListener('mousemove', handleMouseMove);
@@ -229,7 +228,7 @@ const InteractivePlanAnnotation = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, dragOffset, offsetX, offsetY, scaleFactor, annotation.id, onUpdate, editControlsEnabled]);
+    }, [isDragging, dragOffset, offsetX, offsetY, scaleFactor, annotation.id, onUpdate]);
 
     useEffect(() => {
         if (!isResizing) {
@@ -320,7 +319,7 @@ const InteractivePlanAnnotation = ({
                 ) : (
                     <div
                         className={`flex-1 min-h-0 overflow-auto px-2.5 py-2 text-sm whitespace-pre-wrap break-words ${
-                            editControlsEnabled || canDirectEdit ? 'cursor-text' : ''
+                            isMovable ? 'cursor-grab' : (editControlsEnabled || canDirectEdit ? 'cursor-text' : '')
                         } ${!(annotation.text || '').trim() ? 'italic opacity-70' : ''}`}
                         onDoubleClick={startEditing}
                     >

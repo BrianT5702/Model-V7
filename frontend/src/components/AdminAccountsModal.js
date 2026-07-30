@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FaPencilAlt, FaTimes, FaTrash, FaUserPlus, FaUsers } from 'react-icons/fa';
 import ModalOverlay from './ModalOverlay';
 import { useAuth } from '../features/auth/AuthContext';
@@ -8,6 +8,9 @@ const ROLE_OPTIONS = [
     { value: ROLES.DRAFTER, label: ROLE_LABELS[ROLES.DRAFTER] },
     { value: ROLES.SALESMAN, label: ROLE_LABELS[ROLES.SALESMAN] },
 ];
+
+const ROLE_GROUP_ORDER = [ROLES.ADMIN, ROLES.DRAFTER, ROLES.SALESMAN];
+const ACCOUNTS_ROLE_TABS = ['all', ...ROLE_GROUP_ORDER];
 
 const formatDate = (value) => {
     if (!value) return '—';
@@ -19,6 +22,7 @@ const formatDate = (value) => {
 const AdminAccountsModal = ({ onClose }) => {
     const { registerUser, listUsers, updateUser, deleteUser } = useAuth();
     const [activeTab, setActiveTab] = useState('accounts');
+    const [activeAccountsRoleTab, setActiveAccountsRoleTab] = useState('all');
     const [users, setUsers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [feedback, setFeedback] = useState({ type: '', message: '' });
@@ -45,6 +49,11 @@ const AdminAccountsModal = ({ onClose }) => {
     useEffect(() => {
         loadUsers();
     }, [loadUsers]);
+
+    const visibleUsers = useMemo(() => {
+        if (activeAccountsRoleTab === 'all') return users;
+        return users.filter((account) => account.role === activeAccountsRoleTab);
+    }, [activeAccountsRoleTab, users]);
 
     const handleCreate = async (event) => {
         event.preventDefault();
@@ -200,9 +209,38 @@ const AdminAccountsModal = ({ onClose }) => {
 
                     {activeTab === 'accounts' && (
                         <>
+                            <div className="mb-4 flex flex-wrap items-center gap-2">
+                                {ACCOUNTS_ROLE_TABS.map((role) => {
+                                    const isAll = role === 'all';
+                                    const label = isAll ? 'All' : (ROLE_LABELS[role] || role);
+                                    const count = isAll
+                                        ? users.length
+                                        : users.filter((account) => account.role === role).length;
+                                    const isActive = activeAccountsRoleTab === role;
+
+                                    return (
+                                        <button
+                                            key={role}
+                                            type="button"
+                                            onClick={() => {
+                                                setActiveAccountsRoleTab(role);
+                                                if (editingId !== null) cancelEdit();
+                                            }}
+                                            className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                                                isActive
+                                                    ? `${ROLE_BADGE_CLASSES[role] || 'text-indigo-700 bg-indigo-50 border-indigo-200'} font-semibold`
+                                                    : 'text-gray-600 bg-white border-gray-300 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {label} ({count})
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
                             {isLoading ? (
                                 <p className="text-sm text-gray-500 text-center py-8">Loading accounts...</p>
-                            ) : users.length === 0 ? (
+                            ) : visibleUsers.length === 0 ? (
                                 <p className="text-sm text-gray-500 text-center py-8">No accounts found.</p>
                             ) : (
                                 <div className="overflow-x-auto border border-gray-200 rounded-xl">
@@ -217,7 +255,7 @@ const AdminAccountsModal = ({ onClose }) => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {users.map((account) => {
+                                            {visibleUsers.map((account) => {
                                                 const isEditing = editingId === account.id;
                                                 const roleBadge = ROLE_BADGE_CLASSES[account.role] || 'text-gray-700 bg-gray-50 border-gray-200';
                                                 const canManage = Boolean(account.can_manage);

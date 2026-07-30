@@ -1,12 +1,5 @@
 // Door anchor geometry: exterior installs on outer face (line1), interior on inner face (line2).
 
-function pointOnLine(line, t) {
-    return {
-        x: line[0].x + (line[1].x - line[0].x) * t,
-        y: line[0].y + (line[1].y - line[0].y) * t,
-    };
-}
-
 function getWallLines(wall) {
     const line1 = wall._line1 || [
         { x: wall.start_x, y: wall.start_y },
@@ -19,28 +12,43 @@ function getWallLines(wall) {
 export function resolveDoorPlacement(wall, door) {
     const { line1, line2 } = getWallLines(wall);
 
-    const wallLength = Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y) || 1;
+    const wallDx = (wall.end_x || 0) - (wall.start_x || 0);
+    const wallDy = (wall.end_y || 0) - (wall.start_y || 0);
+    const wallLength = Math.hypot(wallDx, wallDy) || 1;
+    const doorWidth = Number(door.width) || 0;
     const slashLength =
         door.door_type === 'swing'
-            ? door.width
+            ? doorWidth
             : door.door_type === 'dock'
-              ? door.width
-              : door.width * 0.85;
-    const halfSlashRatio = slashLength / wallLength / 2;
-    const gapRatio = 200 / wallLength;
+              ? doorWidth
+              : doorWidth * 0.85;
+
+    // Keep the full door opening on the wall (half opening width + small end gap)
+    const halfWidthRatio = doorWidth > 0 ? doorWidth / 2 / wallLength : 0;
+    const gapRatio = Math.min(200 / wallLength, Math.max(0, 0.5 - halfWidthRatio));
+    const rawPos = Number(door.position_x);
+    const position = Number.isFinite(rawPos) ? rawPos : 0.5;
     const clampedPosition = Math.min(
-        Math.max(door.position_x, halfSlashRatio + gapRatio),
-        1 - halfSlashRatio - gapRatio
+        Math.max(position, halfWidthRatio + gapRatio),
+        1 - halfWidthRatio - gapRatio
     );
+
+    // Position along the geometric wall centerline (not shortened/extended face lines)
+    const centerX = (wall.start_x || 0) + wallDx * clampedPosition;
+    const centerY = (wall.start_y || 0) + wallDy * clampedPosition;
 
     const isInterior = door.side === 'interior';
     const attachLine = isInterior ? line2 : line1;
-    const anchor = pointOnLine(attachLine, clampedPosition);
 
-    const angle = Math.atan2(
-        attachLine[1].y - attachLine[0].y,
-        attachLine[1].x - attachLine[0].x
-    );
+    // Offset from centerline onto the attach face (interior/exterior)
+    const wallMidX = ((wall.start_x || 0) + (wall.end_x || 0)) / 2;
+    const wallMidY = ((wall.start_y || 0) + (wall.end_y || 0)) / 2;
+    const attachMidX = (attachLine[0].x + attachLine[1].x) / 2;
+    const attachMidY = (attachLine[0].y + attachLine[1].y) / 2;
+    const doorCenterX = centerX + (attachMidX - wallMidX);
+    const doorCenterY = centerY + (attachMidY - wallMidY);
+
+    const angle = Math.atan2(wallDy, wallDx);
 
     const m1x = (line1[0].x + line1[1].x) / 2;
     const m1y = (line1[0].y + line1[1].y) / 2;
@@ -63,8 +71,8 @@ export function resolveDoorPlacement(wall, door) {
     const ySign = dot >= 0 ? 1 : -1;
 
     return {
-        doorCenterX: anchor.x,
-        doorCenterY: anchor.y,
+        doorCenterX,
+        doorCenterY,
         angle,
         ySign,
         clampedPosition,
@@ -122,8 +130,8 @@ function boundsFromModelPoints(points, scaleFactor, offsetX, offsetY, paddingPx 
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
-    for (const point of points) {
-        const screen = modelPointToScreen(point.x, point.y, scaleFactor, offsetX, offsetY);
+    for (const p of points) {
+        const screen = modelPointToScreen(p.x, p.y, scaleFactor, offsetX, offsetY);
         minX = Math.min(minX, screen.x);
         minY = Math.min(minY, screen.y);
         maxX = Math.max(maxX, screen.x);
@@ -168,7 +176,7 @@ function collectDoorSymbolPoints(door, wall, placement) {
     }
 
     if (door.door_type === 'slide') {
-        const halfLength = door.width * 1.1;
+        const halfLength = door.width;
         const panelYOffset = getSlidePanelYOffset(placement, wallThickness);
         const offsets =
             door.configuration === 'double_sided' ? [-slashHalf / 2, slashHalf / 2] : [0];

@@ -4,17 +4,43 @@ import { useLockBodyScroll } from '../utils/useLockBodyScroll';
 
 function findScrollableModalPanel(start, root) {
     let el = start instanceof Element ? start : null;
+    let deepestMarked = null;
+    let deepestScrollable = null;
+
     while (el && el !== root) {
-        if (
+        const marked =
             el.classList?.contains('modal-scroll-panel')
             || el.classList?.contains('scroll-contain-panel')
-            || el.hasAttribute?.('data-modal-scroll')
-        ) {
-            return el;
+            || el.hasAttribute?.('data-modal-scroll');
+
+        // Walking upward: first marked hit is the innermost nested panel.
+        if (marked && !deepestMarked) {
+            deepestMarked = el;
         }
+
+        const style = typeof window !== 'undefined' ? window.getComputedStyle(el) : null;
+        const overflowY = style?.overflowY || '';
+        const canOverflow =
+            overflowY === 'auto'
+            || overflowY === 'scroll'
+            || overflowY === 'overlay';
+        if (
+            canOverflow
+            && el.scrollHeight > el.clientHeight + 1
+            && !deepestScrollable
+        ) {
+            deepestScrollable = el;
+        }
+
         el = el.parentElement;
     }
-    return null;
+
+    // Prefer the nested list/panel that can actually scroll (e.g. max-h-56 list
+    // inside a modal-scroll-panel that itself does not need to scroll).
+    if (deepestScrollable) {
+        return deepestScrollable;
+    }
+    return deepestMarked;
 }
 
 /**
@@ -44,9 +70,15 @@ const ModalOverlay = ({ children, className = '', onWheel, ...rest }) => {
                 if (!canScroll) {
                     event.preventDefault();
                 } else {
-                    const atTop = scrollTop <= 0;
-                    const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
-                    if ((delta < 0 && atTop) || (delta > 0 && atBottom)) {
+                    // Manually scroll the nested panel. Capture-phase stopPropagation
+                    // otherwise leaves some browsers with nowhere to apply the default.
+                    const maxScroll = scrollHeight - clientHeight;
+                    const next = Math.min(maxScroll, Math.max(0, scrollTop + delta));
+                    if (next !== scrollTop) {
+                        panel.scrollTop = next;
+                        event.preventDefault();
+                    } else {
+                        // At edge of this panel — block so the page behind does not move.
                         event.preventDefault();
                     }
                 }

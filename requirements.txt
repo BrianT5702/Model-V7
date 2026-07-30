@@ -7,3 +7,6 @@ gunicorn==21.2.0
 python-dotenv==1.0.0
 dj-database-url==2.1.0
 shapely==2.0.3
+pymupdf>=1.24.0
+pytesseract>=0.3.10
+Pillow>=10.0.0

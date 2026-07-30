@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
-import PanelCalculator from '../panel/PanelCalculator';
 import { getPanelFinishingLabel, sortMaterialPanels } from '../panel/wallPlanPanelUtils';
 import { sortDoorsForMaterialList } from '../door/doorSortUtils';
 import jsPDF from 'jspdf';
@@ -23,7 +22,10 @@ import {
     buildWallPlanPreviewPdfBlob
 } from './pdfVectorWallPlan';
 import { downloadProjectExcel } from './exportProjectExcel';
-import { calculateProjectWallPanels } from '../panel/wallPanelCalculationUtils';
+import {
+    calculateProjectWallPanels,
+    groupWallPanelsForDisplay,
+} from '../panel/wallPanelCalculationUtils';
 
 const InstallationTimeEstimator = ({ 
     projectId, 
@@ -88,6 +90,8 @@ const InstallationTimeEstimator = ({
     const [fitToPage, setFitToPage] = useState(false); // Fit plan to fill entire page without boundary
     const [includeFrontElevation, setIncludeFrontElevation] = useState(false);
     const [includeSideElevation, setIncludeSideElevation] = useState(false);
+    /** Fallback wall panel count when shared Wall Plan data is not loaded yet. */
+    const [fallbackWallPanelCount, setFallbackWallPanelCount] = useState(0);
 
     /** Embedded PDF viewer: fit page width so the plan is readable in the preview box (not tiny "whole page" fit). */
     const planPdfPreviewHash = 'toolbar=0&navpanes=0&scrollbar=0&view=FitH';
@@ -287,6 +291,7 @@ const InstallationTimeEstimator = ({
                 setError(null);
 
                 let roomsList = [];
+                let wallsList = [];
 
                 if (hasParentCoreData) {
                     setProjectData(projectDataFromParent);
@@ -295,6 +300,7 @@ const InstallationTimeEstimator = ({
                     setWalls(wallsFromParent || []);
                     setDoors(doorsFromParent || []);
                     roomsList = roomsFromParent || [];
+                    wallsList = wallsFromParent || [];
                 } else {
                     const [
                         projectResponse,
@@ -315,6 +321,7 @@ const InstallationTimeEstimator = ({
                     setWalls(wallsResponse.data);
                     setDoors(doorsResponse.data);
                     roomsList = roomsResponse.data;
+                    wallsList = wallsResponse.data;
                 }
 
                 const [ceilingPlansResponse, floorPlansResponse] = await Promise.all([
@@ -324,7 +331,7 @@ const InstallationTimeEstimator = ({
                 setCeilingPlans(ceilingPlansResponse.data);
                 setFloorPlans(floorPlansResponse.data);
 
-                await autoFetchExistingPanelData(projectId, roomsList);
+                await autoFetchExistingPanelData(projectId, roomsList, wallsList);
             } catch (err) {
                 console.error('Error fetching project data:', err);
                 setError('Failed to load project data. Please try again.');
@@ -340,12 +347,12 @@ const InstallationTimeEstimator = ({
     }, [projectId, hasParentCoreData]);
 
     // Auto-fetch existing panel data from all tabs
-    const autoFetchExistingPanelData = async (projectId, rooms) => {
+    const autoFetchExistingPanelData = async (projectId, rooms, wallsOverride = null) => {
         if (!updateSharedPanelData) return;
         
         try {
             // 1. Auto-fetch existing wall panel data
-            await autoFetchWallPanelData(projectId);
+            await autoFetchWallPanelData(projectId, wallsOverride);
             
             // 2. Auto-fetch existing ceiling panel data
             await autoFetchCeilingPanelData(projectId, rooms);
@@ -404,7 +411,7 @@ const InstallationTimeEstimator = ({
             } catch (_) { /* ignore */ }
 
             // Auto-fetch existing panel data if available
-            await autoFetchExistingPanelData(projectId, roomsResponse.data);
+            await autoFetchExistingPanelData(projectId, roomsResponse.data, wallsResponse.data);
 
             console.log('✅ Manual refresh completed successfully');
             
@@ -947,7 +954,8 @@ const InstallationTimeEstimator = ({
     };
 
     // Manual trigger for auto-fetch (for refresh scenarios)
-    const triggerAutoFetch = async () => {
+    // captureImages: optional raster fallback for PDF when vector ceiling/floor layout is unavailable
+    const triggerAutoFetch = async ({ captureImages = false } = {}) => {
         if (!projectId || !updateSharedPanelData) return;
         
         try {
@@ -988,10 +996,15 @@ const InstallationTimeEstimator = ({
             } catch (_) { /* ignore */ }
 
             // Now trigger auto-fetch with fresh data
-            await autoFetchExistingPanelData(projectId, rooms);
+            await autoFetchExistingPanelData(projectId, rooms, wallsResponse.data);
             
-            // Also capture canvas images automatically
-            if (setCurrentView && setIsCapturingImages && setCaptureSuccess) {
+            // Optional: capture canvas images as raster fallback (vector PDF is preferred)
+            if (
+                captureImages &&
+                setCurrentView &&
+                setIsCapturingImages &&
+                setCaptureSuccess
+            ) {
                 console.log('🖼️ Auto-capturing canvas images...');
                 setIsCapturingImages(true);
                 setCaptureSuccess(false);
@@ -1019,42 +1032,40 @@ const InstallationTimeEstimator = ({
         }
     };
 
-    // Auto-fetch existing wall panel data
-    const autoFetchWallPanelData = async (projectId) => {
+    // Auto-fetch existing wall panel data using the same joint-aware calc as Wall Plan / Excel
+    const autoFetchWallPanelData = async (projectId, wallsOverride = null) => {
         try {
-            // Check if walls exist and calculate panels
-            if (walls.length > 0) {
-                console.log('🏗️ Auto-calculating wall panels from existing walls...');
-                
-                // Fetch intersections data needed for proper panel calculation
-                let intersections = [];
-                try {
-                    const intersectionsResponse = await api.get(`/intersections/?project=${projectId}`);
-                    intersections = intersectionsResponse.data || [];
-                } catch (intersectionErr) {
-                    console.log('Intersections not available, using default joint types');
-                }
-                
-                // Use proper PanelCalculator to get actual panel data
-                const wallPanelData = await calculateActualWallPanels(walls, intersections);
-                
-                if (wallPanelData && wallPanelData.length > 0) {
-                    console.log('📊 Wall panel calculation results:', {
-                        totalWalls: walls.length,
-                        totalPanels: wallPanelData.reduce((sum, panel) => sum + panel.quantity, 0),
-                        panelTypes: wallPanelData.map(p => ({ width: p.width, length: p.length, quantity: p.quantity, type: p.type }))
-                    });
-                    
-                    // Share the auto-fetched wall panel data
-                    updateSharedPanelData('wall-plan', wallPanelData, {
-                        totalPanels: wallPanelData.reduce((sum, panel) => sum + panel.quantity, 0),
-                        autoFetched: true
-                    });
-                    
-                    console.log('✅ Wall panels auto-fetched:', wallPanelData);
-                } else {
-                    console.log('⚠️ No wall panels calculated from', walls.length, 'walls');
-                }
+            const wallsForCalc = wallsOverride
+                || ((allWalls && allWalls.length > 0) ? allWalls : walls);
+            if (wallsForCalc.length === 0) return;
+
+            console.log('🏗️ Auto-calculating wall panels from existing walls (real joints)...');
+            const intersections = await fetchMergedWallIntersections(api, projectId, wallsForCalc);
+            const { allPanels } = calculateProjectWallPanels(wallsForCalc, intersections);
+            const wallPanelData = sortMaterialPanels(groupWallPanelsForDisplay(allPanels));
+
+            if (wallPanelData && wallPanelData.length > 0) {
+                const totalPanels = wallPanelData.reduce((sum, panel) => sum + (panel.quantity || 0), 0);
+                console.log('📊 Wall panel calculation results:', {
+                    totalWalls: wallsForCalc.length,
+                    totalPanels,
+                    panelTypes: wallPanelData.map(p => ({
+                        width: p.width,
+                        length: p.length,
+                        quantity: p.quantity,
+                        type: p.type,
+                    })),
+                });
+
+                updateSharedPanelData('wall-plan', wallPanelData, {
+                    totalPanels,
+                    autoFetched: true,
+                });
+                setFallbackWallPanelCount(allPanels.length);
+                console.log('✅ Wall panels auto-fetched:', wallPanelData);
+            } else {
+                setFallbackWallPanelCount(0);
+                console.log('⚠️ No wall panels calculated from', wallsForCalc.length, 'walls');
             }
         } catch (error) {
             console.error('Error auto-fetching wall panel data:', error);
@@ -1081,7 +1092,10 @@ const InstallationTimeEstimator = ({
                         includeAccessories: false,
                         includeCable: false,
                         aluSuspensionCustomDrawing: false,
-                        panelsNeedSupport: processedPanels.some(panel => panel.length > 6000),
+                        panelsNeedSupport: processedPanels.some(panel => {
+                            const span = Math.max(Number(panel.length ?? 0), Number(panel.width ?? 0));
+                            return span >= 6000;
+                        }),
                         autoFetched: true
                     });
                     
@@ -1090,180 +1104,6 @@ const InstallationTimeEstimator = ({
             }
         } catch (error) {
             console.error('Error auto-fetching ceiling panel data:', error);
-        }
-    };
-
-    // Calculate actual wall panels using proper PanelCalculator logic (mirrors PanelCalculationControls)
-    const calculateActualWallPanels = async (walls, intersections) => {
-        if (!walls || walls.length === 0) return [];
-        
-        try {
-            const calculator = new PanelCalculator();
-            const allPanels = [];
-
-            walls.forEach(wall => {
-                // Validate wall object structure
-                if (!wall || typeof wall.start_x !== 'number' || typeof wall.start_y !== 'number' || 
-                    typeof wall.end_x !== 'number' || typeof wall.end_y !== 'number') {
-                    console.warn('Invalid wall data structure:', wall);
-                    return;
-                }
-                
-                const wallLength = Math.sqrt(
-                    Math.pow(wall.end_x - wall.start_x, 2) + 
-                    Math.pow(wall.end_y - wall.start_y, 2)
-                );
-
-                // Find all intersections for this wall
-                const wallIntersections = intersections.filter(inter => 
-                    inter.pairs && inter.pairs.some(pair => 
-                        pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)
-                    )
-                );
-
-                // Determine joint types for both ends
-                let leftJointType = 'butt_in';
-                let rightJointType = 'butt_in';
-
-                // Determine wall orientation and which end is left/right
-                const isHorizontal = Math.abs(wall.end_y - wall.start_y) < Math.abs(wall.end_x - wall.start_x);
-                const isLeftToRight = wall.end_x > wall.start_x;
-                const isBottomToTop = wall.end_y > wall.start_y;
-
-                // Track all intersections for each end
-                const leftEndIntersections = [];
-                const rightEndIntersections = [];
-
-                wallIntersections.forEach(inter => {
-                    if (!inter.pairs) return;
-                    inter.pairs.forEach(pair => {
-                        if (pair.wall1 && pair.wall2 && (pair.wall1.id === wall.id || pair.wall2.id === wall.id)) {
-                            // For horizontal walls
-                            if (isHorizontal) {
-                                if (isLeftToRight) {
-                                    // Wall goes left to right
-                                    if (inter.x === wall.start_x) {
-                                        leftEndIntersections.push(pair.joining_method);
-                                    } else if (inter.x === wall.end_x) {
-                                        rightEndIntersections.push(pair.joining_method);
-                                    }
-                                } else {
-                                    // Wall goes right to left
-                                    if (inter.x === wall.start_x) {
-                                        rightEndIntersections.push(pair.joining_method);
-                                    } else if (inter.x === wall.end_x) {
-                                        leftEndIntersections.push(pair.joining_method);
-                                    }
-                                }
-                            }
-                            // For vertical walls
-                            if (isBottomToTop) {
-                                // Wall goes bottom to top
-                                if (inter.y === wall.start_y) {
-                                    leftEndIntersections.push(pair.joining_method);
-                                } else if (inter.y === wall.end_y) {
-                                    rightEndIntersections.push(pair.joining_method);
-                                }
-                            } else {
-                                // Wall goes top to bottom
-                                if (inter.y === wall.start_y) {
-                                    rightEndIntersections.push(pair.joining_method);
-                                } else if (inter.y === wall.end_y) {
-                                    leftEndIntersections.push(pair.joining_method);
-                                }
-                            }
-                        }
-                    });
-                });
-
-                // Set joint types, prioritizing 45_cut
-                leftJointType = leftEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
-                rightJointType = rightEndIntersections.includes('45_cut') ? '45_cut' : 'butt_in';
-
-                // Validate wall height and thickness
-                if (typeof wall.height !== 'number' || typeof wall.thickness !== 'number') {
-                    console.warn('Invalid wall height or thickness:', { height: wall.height, thickness: wall.thickness });
-                    return;
-                }
-                
-                // Prepare face information for panel calculation
-                const faceInfo = {
-                    innerFaceMaterial: wall.inner_face_material || null,
-                    innerFaceThickness: wall.inner_face_thickness || null,
-                    outerFaceMaterial: wall.outer_face_material || null,
-                    outerFaceThickness: wall.outer_face_thickness || null
-                };
-                
-                const panels = calculator.calculatePanels(
-                    wallLength,
-                    wall.thickness,
-                    { left: leftJointType, right: rightJointType },
-                    wall.height,
-                    faceInfo
-                );
-
-                // Validate panels array
-                if (!panels || !Array.isArray(panels)) {
-                    console.warn('No panels returned for wall:', wall.id);
-                    return;
-                }
-                
-                // Add wall-specific information to each panel
-                panels.forEach(panel => {
-                    if (!panel || typeof panel.width !== 'number') {
-                        console.warn('Invalid panel data:', panel);
-                        return;
-                    }
-                    
-                    let panelType = panel.type;
-                    if (panelType === 'leftover' && panel.width < 200 && !panel.isLeftover) {
-                        panelType = 'side';
-                    }
-                    allPanels.push({
-                        ...panel,
-                        type: panelType,
-                        length: wall.height,
-                        application: wall.application_type || 'standard',
-                        wallId: wall.id,
-                        wallLength: wallLength,
-                        wallStart: `(${Math.round(wall.start_x)}, ${Math.round(wall.start_y)})`,
-                        wallEnd: `(${Math.round(wall.end_x)}, ${Math.round(wall.end_y)})`,
-                        thickness: wall.thickness,
-                        inner_face_material: wall.inner_face_material || 'PPGI',
-                        inner_face_thickness: wall.inner_face_thickness ?? 0.5,
-                        outer_face_material: wall.outer_face_material || 'PPGI',
-                        outer_face_thickness: wall.outer_face_thickness ?? 0.5
-                    });
-                });
-            });
-
-            // Group panels by type, dimensions, application, panel thickness, and surface types
-            const groupedPanelsForSharing = allPanels.reduce((acc, panel) => {
-                const key = `${panel.type}-${panel.width}-${panel.length}-${panel.thickness || 'NA'}-${panel.application}-${panel.inner_face_material || 'PPGI'}-${panel.inner_face_thickness ?? 0.5}-${panel.outer_face_material || 'PPGI'}-${panel.outer_face_thickness ?? 0.5}`;
-                if (!acc[key]) {
-                    acc[key] = {
-                        width: panel.width,
-                        length: panel.length,
-                        thickness: panel.thickness,
-                        application: panel.application,
-                        quantity: 0,
-                        type: panel.type,
-                        inner_face_material: panel.inner_face_material || 'PPGI',
-                        inner_face_thickness: panel.inner_face_thickness ?? 0.5,
-                        outer_face_material: panel.outer_face_material || 'PPGI',
-                        outer_face_thickness: panel.outer_face_thickness ?? 0.5,
-                        anyWallId: panel.wallId
-                    };
-                }
-                acc[key].quantity += 1;
-                return acc;
-            }, {});
-
-            return sortMaterialPanels(Object.values(groupedPanelsForSharing));
-            
-        } catch (error) {
-            console.error('Error calculating actual wall panels:', error);
-            return [];
         }
     };
 
@@ -1392,44 +1232,33 @@ const InstallationTimeEstimator = ({
         return Math.abs(area) / 2;
     };
 
-    // Calculate wall panels using PanelCalculator
-    const calculateWallPanels = (walls) => {
-        if (!walls || walls.length === 0) return 0;
-        
-        const calculator = new PanelCalculator();
-        let totalPanels = 0;
-        
-        walls.forEach(wall => {
-            if (wall.start_x !== undefined && wall.start_y !== undefined && 
-                wall.end_x !== undefined && wall.end_y !== undefined &&
-                wall.height && wall.thickness) {
-                
-                const wallLength = Math.sqrt(
-                    Math.pow(wall.end_x - wall.start_x, 2) + 
-                    Math.pow(wall.end_y - wall.start_y, 2)
-                );
-                
-                // Use gap_fill_height for calculations if gap-fill mode is enabled
-                const heightForCalc = (wall.fill_gap_mode && wall.gap_fill_height !== null) 
-                    ? wall.gap_fill_height 
-                    : wall.height;
-                
-                // Prepare face information for panel calculation
-                const faceInfo = {
-                    innerFaceMaterial: wall.inner_face_material || null,
-                    innerFaceThickness: wall.inner_face_thickness || null,
-                    outerFaceMaterial: wall.outer_face_material || null,
-                    outerFaceThickness: wall.outer_face_thickness || null
-                };
-                
-                // Calculate panels for this wall (assuming butt_in joints for simplicity)
-                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' }, heightForCalc, faceInfo);
-                totalPanels += panels.length;
+    // Fallback wall panel count when shared Wall Plan data is missing (uses real joints)
+    useEffect(() => {
+        let cancelled = false;
+
+        const computeFallback = async () => {
+            if (sharedPanelData?.wallPanels?.length > 0) {
+                return;
             }
-        });
-        
-        return totalPanels;
-    };
+            const wallsForCalc = (allWalls && allWalls.length > 0) ? allWalls : walls;
+            if (!projectId || !wallsForCalc.length) {
+                if (!cancelled) setFallbackWallPanelCount(0);
+                return;
+            }
+            try {
+                const intersections = await fetchMergedWallIntersections(api, projectId, wallsForCalc);
+                if (cancelled) return;
+                const { allPanels } = calculateProjectWallPanels(wallsForCalc, intersections);
+                if (!cancelled) setFallbackWallPanelCount(allPanels.length);
+            } catch (error) {
+                console.error('Error computing fallback wall panel count:', error);
+                if (!cancelled) setFallbackWallPanelCount(0);
+            }
+        };
+
+        computeFallback();
+        return () => { cancelled = true; };
+    }, [projectId, walls, allWalls, sharedPanelData?.wallPanels]);
 
     // Calculate total quantities: prefer shared panel data (from Wall/Ceiling/Floor plans) when available so counts match what the user sees on those tabs
     const totalQuantities = useMemo(() => {
@@ -1443,10 +1272,10 @@ const InstallationTimeEstimator = ({
             ? sharedPanelData.floorPanels.reduce((total, p) => total + (p.quantity ?? 1), 0)
             : (rooms.length > 0 ? floorPlans.reduce((total, plan) => total + (plan.total_panels || 0), 0) : 0);
 
-        // Wall: use shared data sum when available (matches Wall Plan "Full Panels" + cut total), else fallback to recalc
+        // Wall: use shared data sum when available (matches Wall Plan), else joint-aware fallback
         const wallPanelsCount = (sharedPanelData?.wallPanels?.length > 0)
             ? sharedPanelData.wallPanels.reduce((total, p) => total + (p.quantity ?? 1), 0)
-            : calculateWallPanels(walls);
+            : fallbackWallPanelCount;
 
         const totalDoors = doors.length;
 
@@ -1469,7 +1298,7 @@ const InstallationTimeEstimator = ({
             floorPanels,
             wallPanelsCount
         };
-    }, [rooms, ceilingPlans, floorPlans, walls, doors, sharedPanelData, slabWidth, slabLength]);
+    }, [rooms, ceilingPlans, floorPlans, walls, doors, sharedPanelData, slabWidth, slabLength, fallbackWallPanelCount]);
 
     // Calculate installation time estimates
     const installationEstimates = useMemo(() => {
@@ -1629,7 +1458,7 @@ const InstallationTimeEstimator = ({
                 setIsLoading(true);
                 
                 // Trigger auto-fetch
-                await triggerAutoFetch();
+                await triggerAutoFetch({ captureImages: false });
                 
                 // Wait a moment for the data to be processed
                 await new Promise(resolve => setTimeout(resolve, 500));
@@ -3004,15 +2833,13 @@ const InstallationTimeEstimator = ({
                             <h4 className="text-xs font-semibold text-blue-800 dark:text-blue-200">Materials & Data Management</h4>
                             <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5 leading-snug">
                                 {sharedPanelData && (sharedPanelData.wallPanels || sharedPanelData.ceilingPanels || sharedPanelData.floorPanels) 
-                                    ? 'Project data is loaded and ready for export'
-                                    : 'No project data found — click Refresh Data or Fetch Data & Images'
+                                    ? 'Project data is loaded and ready for export (vector PDF plans)'
+                                    : 'No project data found — click Refresh Data to load panel counts'
                                 }
                             </p>
-                            {(!sharedPanelData?.wallPlanImage || !sharedPanelData?.ceilingPlanImage || !sharedPanelData?.floorPlanImage) && (
-                                <p className="text-[10px] text-orange-700 dark:text-orange-300 mt-1 leading-snug">
-                                    Tip: Use Fetch Data & Images to capture plan images for the PDF
-                                </p>
-                            )}
+                            <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-1 leading-snug">
+                                PDF wall/ceiling/floor plans are drawn from project geometry. Optional: Fetch Data & Images for raster fallback only.
+                            </p>
                         </div>
                     </div>
                     
@@ -3040,9 +2867,10 @@ const InstallationTimeEstimator = ({
                         </button>
 
                         <button
-                            onClick={() => triggerAutoFetch()}
+                            onClick={() => triggerAutoFetch({ captureImages: true })}
                             disabled={isLoading || isCapturingImages}
                             className="summary-tab-btn-info"
+                            title="Refresh panel data and optionally capture canvas images as PDF raster fallback"
                         >
                             {isCapturingImages ? (
                                 <>

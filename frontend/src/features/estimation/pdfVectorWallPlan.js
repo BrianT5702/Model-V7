@@ -11,7 +11,9 @@ import {
     buildWallOffsetOptions,
     resolve45CutForceShouldFlip,
     drawWallPlanDimensionsLayer,
-    drawOverallProjectDimensions
+    drawOverallProjectDimensions,
+    applyAngledWallMitersAtIntersection,
+    isAxisAlignedWall
 } from '../canvas/drawing';
 import { planCeilingValueDedupKey, DIMENSION_CONFIG } from '../canvas/DimensionConfig';
 import { filterDimensions } from '../canvas/dimensionFilter';
@@ -760,6 +762,8 @@ export function drawVectorWallPlan(
                     const MODEL_SNAP_TOLERANCE_MM = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
 
                     wallsToDraw.forEach((wall) => {
+                        wall._miteredStart = false;
+                        wall._miteredEnd = false;
                         const wallThickness = wall.thickness || 100;
                         // Use scale = 1 for model space calculations (we'll transform to PDF space later)
                         const gapPixels = wallThickness; // In model space, gap = thickness
@@ -846,7 +850,9 @@ export function drawVectorWallPlan(
                                     const wall2Dy = wall2.end_y - wall2.start_y;
                                     const wall1IsVertical = Math.abs(wall1Dx) < Math.abs(wall1Dy);
                                     const wall2IsVertical = Math.abs(wall2Dx) < Math.abs(wall2Dy);
-                                    if (wall1IsVertical !== wall2IsVertical) {
+                                    const wall1Axis = isAxisAlignedWall(wall1);
+                                    const wall2Axis = isAxisAlignedWall(wall2);
+                                    if (wall1Axis && wall2Axis && wall1IsVertical !== wall2IsVertical) {
                                         const verticalWall = wall1IsVertical ? wall1Data : wall2Data;
                                         const horizontalWall = wall1IsVertical ? wall2Data : wall1Data;
                                         let joiningMethod = null;
@@ -1143,6 +1149,7 @@ export function drawVectorWallPlan(
                             };
                             runVhPairPhase('extend');
                             runVhPairPhase('shorten');
+                            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
                         }
                     });
                     
@@ -1324,12 +1331,17 @@ export function drawVectorWallPlan(
                             }
                         });
                         
-                        // Apply 45Â° cut shortening at each end independently (match canvas drawing.js)
+                        // Apply 45° cut shortening at each end independently (match canvas drawing.js)
+                        // Ortho fallback only — 45_cut uses applyAngledWallMitersAtIntersection.
                         const wallThickness = wall.thickness || 100;
                         const finalAdjust = wallThickness; // Shorten by wall thickness to match visual gap
+                        const allowOrtho45Shorten =
+                            isAxisAlignedWall(wall)
+                            && !wall._miteredStart
+                            && !wall._miteredEnd;
                         
                         // Shorten at START end
-                        if (startHas45) {
+                        if (allowOrtho45Shorten && startHas45 && !wall._miteredStart) {
                             if (startIsOnLeftSide) {
                                 if (line1IsLeft) {
                                     line1[0].x += wallDirX * finalAdjust;
@@ -1350,7 +1362,7 @@ export function drawVectorWallPlan(
                         }
                         
                         // Shorten at END end
-                        if (endHas45) {
+                        if (allowOrtho45Shorten && endHas45 && !wall._miteredEnd) {
                             if (endIsOnLeftSide) {
                                 if (line1IsLeft) {
                                     line1[1].x -= wallDirX * finalAdjust;

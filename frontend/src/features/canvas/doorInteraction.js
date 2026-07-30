@@ -120,10 +120,9 @@ export function animateDoorToState(instance, doorContainer, doorInfo, open) {
       doorPanel.userData.origPosition = { ...origPos };
     }
     const adjustedSlideDirection = doorInfo.adjustedSlideDirection || doorInfo.slide_direction;
-    const adjustedSide = doorInfo.adjustedSide || doorInfo.side;
-    const slideDirection = adjustedSlideDirection === 'right' ? -1 : 1;
-    const sideCoefficient = adjustedSide === 'exterior' ? -1 : 1;
-    const effectiveDirection = slideDirection * sideCoefficient;
+    // Must match createDoorMesh: local +X is the wall's start→end (already mirrored for a
+    // reversed wall via adjustedSlideDirection), and the mounting face does not mirror it.
+    const effectiveDirection = adjustedSlideDirection === 'right' ? 1 : -1;
     const slideDistance = doorInfo.width * instance.scalingFactor * 0.9;
     if (window.gsap) {
       window.gsap.to(doorPanel.position, {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../api/api';
-import PanelCalculator from '../panel/PanelCalculator';
+import { fetchMergedWallIntersections } from '../estimation/pdfVectorWallPlan';
+import { calculateProjectWallPanels } from '../panel/wallPanelCalculationUtils';
 
 const ProjectSummary = ({ projectId }) => {
     const [projectData, setProjectData] = useState(null);
@@ -8,7 +9,7 @@ const ProjectSummary = ({ projectId }) => {
     const [ceilingPlans, setCeilingPlans] = useState([]);
     const [floorPlans, setFloorPlans] = useState([]);
     const [walls, setWalls] = useState([]);
-    const [wallPanelList, setWallPanelList] = useState([]);
+    const [wallPanelCount, setWallPanelCount] = useState(0);
     const [doors, setDoors] = useState([]);
     
     // Loading states
@@ -38,13 +39,22 @@ const ProjectSummary = ({ projectId }) => {
                     api.get(`/doors/?project=${projectId}`),
                 ]);
 
+                const wallsData = wallsResponse.data || [];
                 setProjectData(projectResponse.data);
                 setRooms(roomsResponse.data);
                 setCeilingPlans(ceilingPlansResponse.data);
                 setFloorPlans(floorPlansResponse.data);
-                setWalls(wallsResponse.data);
+                setWalls(wallsData);
                 setDoors(doorsResponse.data);
-                setWallPanelList([]);
+
+                try {
+                    const intersections = await fetchMergedWallIntersections(api, projectId, wallsData);
+                    const { allPanels } = calculateProjectWallPanels(wallsData, intersections);
+                    setWallPanelCount(allPanels.length);
+                } catch (jointErr) {
+                    console.error('Error calculating wall panels with joints:', jointErr);
+                    setWallPanelCount(0);
+                }
             } catch (err) {
                 console.error('Error fetching project data:', err);
                 setError('Failed to load project data. Please try again.');
@@ -71,40 +81,6 @@ const ProjectSummary = ({ projectId }) => {
         return Math.abs(area) / 2;
     };
 
-    // Calculate wall panels using PanelCalculator
-    const calculateWallPanels = (walls) => {
-        if (!walls || walls.length === 0) return 0;
-        
-        const calculator = new PanelCalculator();
-        let totalPanels = 0;
-        
-        walls.forEach(wall => {
-            if (wall.start_x !== undefined && wall.start_y !== undefined && 
-                wall.end_x !== undefined && wall.end_y !== undefined &&
-                wall.height && wall.thickness) {
-                
-                const wallLength = Math.sqrt(
-                    Math.pow(wall.end_x - wall.start_x, 2) + 
-                    Math.pow(wall.end_y - wall.start_y, 2)
-                );
-                
-                // Prepare face information for panel calculation
-                const faceInfo = {
-                    innerFaceMaterial: wall.inner_face_material || null,
-                    innerFaceThickness: wall.inner_face_thickness || null,
-                    outerFaceMaterial: wall.outer_face_material || null,
-                    outerFaceThickness: wall.outer_face_thickness || null
-                };
-                
-                // Calculate panels for this wall (assuming butt_in joints for simplicity)
-                const panels = calculator.calculatePanels(wallLength, wall.thickness, { left: 'butt_in', right: 'butt_in' }, wall.height, faceInfo);
-                totalPanels += panels.length;
-            }
-        });
-        
-        return totalPanels;
-    };
-
     // Calculate aggregated panel information
     const panelSummary = useMemo(() => {
         if (!rooms.length) return null;
@@ -119,8 +95,8 @@ const ProjectSummary = ({ projectId }) => {
             return total + (plan.total_panels || 0);
         }, 0);
 
-        // Calculate wall panels using PanelCalculator
-        const wallPanels = calculateWallPanels(walls);
+        // Wall panels from joint-aware calculation
+        const wallPanels = wallPanelCount;
 
         // Calculate total area
         const totalArea = rooms.reduce((total, room) => {
@@ -137,7 +113,7 @@ const ProjectSummary = ({ projectId }) => {
             total: ceilingPanels + floorPanels + wallPanels,
             area: totalArea
         };
-    }, [rooms, ceilingPlans, floorPlans, walls]);
+    }, [rooms, ceilingPlans, floorPlans, wallPanelCount]);
 
     if (isLoading) {
         return (

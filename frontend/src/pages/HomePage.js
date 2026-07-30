@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { FaCube, FaPlus } from 'react-icons/fa';
 import CreateProject from '../features/project/CreateProject';
 import ChatbotFab from '../features/chatbot/ChatbotFab';
@@ -15,7 +15,7 @@ import {
 import api from '../api/api';
 
 const HomePage = () => {
-    const { canEdit, isAuthenticated } = useAuth();
+    const { canEdit, isAuthenticated, isLoading: authLoading } = useAuth();
     const [projects, setProjects] = useState([]);
     const [folders, setFolders] = useState([]);
     const [foldersAvailable, setFoldersAvailable] = useState(true);
@@ -80,6 +80,13 @@ const HomePage = () => {
 
     // Fetch projects first; folders are optional (older backends return 404)
     useEffect(() => {
+        if (authLoading || !isAuthenticated) {
+            if (!authLoading && !isAuthenticated) {
+                setIsLoading(false);
+            }
+            return;
+        }
+
         setIsLoading(true);
 
         api.get('projects/')
@@ -115,7 +122,7 @@ const HomePage = () => {
                 console.warn('Could not load project folders:', error);
                 setFoldersAvailable(false);
             });
-    }, []);
+    }, [authLoading, isAuthenticated]);
 
     useEffect(() => {
         const handleCommentsRead = (event) => {
@@ -203,17 +210,9 @@ const HomePage = () => {
 
                 {/* Projects Section */}
                 <div id="projects-section" className="flex flex-col min-h-[480px]">
-                    {!canEdit && (
+                    {!canEdit && isAuthenticated && (
                         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            {isAuthenticated ? (
-                                'View-only access (Salesman). You can browse projects, open plans, use 3D, and export — but cannot create or edit.'
-                            ) : (
-                                <>
-                                    You are browsing in view-only mode.{' '}
-                                    <Link to="/login" className="font-medium underline hover:text-amber-900">Log in</Link>{' '}
-                                    to create, edit, or delete projects.
-                                </>
-                            )}
+                            View-only access (Salesman). You can browse projects, open plans, use 3D, and export — but cannot create or edit.
                         </div>
                     )}
 

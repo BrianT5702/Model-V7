@@ -41,8 +41,624 @@ import {
     pickExteriorDimensionSide,
     exteriorVerticalLabelBounds
 } from './collisionDetection.js';
-import { isPointInPolygon } from './utils.js';
+import { isPointInPolygon, isPartitionWall, calculateLineIntersection } from './utils.js';
 import { buildDoorLabelObstacles } from './doorPlacement.js';
+
+/** Axis-aligned if nearly horizontal or vertical (model mm). */
+const WALL_AXIS_ALIGN_TOL_MM = 1;
+
+export function isAxisAlignedWall(wall, tolMm = WALL_AXIS_ALIGN_TOL_MM) {
+    if (!wall) return true;
+    const dx = Math.abs(Number(wall.end_x) - Number(wall.start_x));
+    const dy = Math.abs(Number(wall.end_y) - Number(wall.start_y));
+    return dx <= tolMm || dy <= tolMm;
+}
+
+/** Dynamic angle threshold (degrees) used while drawing walls. */
+export function getWallAngleSnapThresholdDeg(wallLengthMm) {
+    if (wallLengthMm < 500) return 10;
+    if (wallLengthMm < 2000) return 5;
+    return 2;
+}
+
+function _projectPointToWallSegment(x, y, wall) {
+    const wx = wall.end_x - wall.start_x;
+    const wy = wall.end_y - wall.start_y;
+    const lenSq = wx * wx + wy * wy;
+    if (lenSq < 1e-9) return { x: wall.start_x, y: wall.start_y, dist: Math.hypot(x - wall.start_x, y - wall.start_y) };
+    const t = Math.max(0, Math.min(1, ((x - wall.start_x) * wx + (y - wall.start_y) * wy) / lenSq));
+    const px = wall.start_x + t * wx;
+    const py = wall.start_y + t * wy;
+    return { x: px, y: py, dist: Math.hypot(x - px, y - py) };
+}
+
+/**
+ * Closest existing wall to a point (endpoint or body). When tied, prefer a slanted wall.
+ */
+export function findHostWallNearPoint(point, walls, maxDistMm = 25) {
+    if (!point || !walls?.length) return null;
+    let best = null;
+    let bestDist = maxDistMm;
+    for (const wall of walls) {
+        const proj = _projectPointToWallSegment(point.x, point.y, wall);
+        if (proj.dist < bestDist - 0.5) {
+            best = wall;
+            bestDist = proj.dist;
+        } else if (Math.abs(proj.dist - bestDist) <= 0.5 && best) {
+            if (isAxisAlignedWall(best) && !isAxisAlignedWall(wall)) {
+                best = wall;
+                bestDist = proj.dist;
+            }
+        }
+    }
+    return best;
+}
+
+function _normalizeAngleDiffRad(a, b) {
+    let d = a - b;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return Math.abs(d);
+}
+
+/**
+ * Snap a drawn wall end to world H/V, and (when starting from a real slant host) also to
+ * directions parallel or perpendicular to that host. Keeps length; picks nearest candidate.
+ *
+ * World H/V uses a tight ~2° threshold so intentional shallow "horizontal slants"
+ * (e.g. niche back ~3°) are not flattened to true horizontal. ∥ / ⊥ to a slant host
+ * keep the wider dynamic threshold.
+ *
+ * @returns {{ end: {x,y}, snapType: 'vertical'|'horizontal'|'perpendicular'|'parallel'|null, direction: {x,y} }}
+ */
+export function snapWallEndToPreferredAngles(start, end, hostWall = null, angleThresholdDeg = null) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) {
+        return { end: { ...end }, snapType: null, direction: { x: 1, y: 0 } };
+    }
+
+    const slantThreshDeg = angleThresholdDeg ?? getWallAngleSnapThresholdDeg(len);
+    const axisThreshDeg = Math.min(2, slantThreshDeg);
+    const slantThreshRad = (slantThreshDeg * Math.PI) / 180;
+    const axisThreshRad = (axisThreshDeg * Math.PI) / 180;
+    const currentAngle = Math.atan2(dy, dx);
+
+    const candidates = [
+        { type: 'horizontal', angle: 0, maxErr: axisThreshRad },
+        { type: 'horizontal', angle: Math.PI, maxErr: axisThreshRad },
+        { type: 'vertical', angle: Math.PI / 2, maxErr: axisThreshRad },
+        { type: 'vertical', angle: -Math.PI / 2, maxErr: axisThreshRad },
+    ];
+
+    // Only treat as a slant host when it is clearly off-axis (not a 1° wobble).
+    const SLANT_HOST_MIN_DEG = 2.5;
+    if (hostWall) {
+        const hx = Number(hostWall.end_x) - Number(hostWall.start_x);
+        const hy = Number(hostWall.end_y) - Number(hostWall.start_y);
+        const hLen = Math.hypot(hx, hy);
+        if (hLen > 1e-6) {
+            const hostAngle = Math.atan2(hy, hx);
+            const hostOffAxis = Math.min(
+                _normalizeAngleDiffRad(hostAngle, 0),
+                _normalizeAngleDiffRad(hostAngle, Math.PI),
+                _normalizeAngleDiffRad(hostAngle, Math.PI / 2),
+                _normalizeAngleDiffRad(hostAngle, -Math.PI / 2)
+            );
+            if (hostOffAxis >= (SLANT_HOST_MIN_DEG * Math.PI) / 180) {
+                candidates.push({ type: 'parallel', angle: hostAngle, maxErr: slantThreshRad });
+                candidates.push({ type: 'parallel', angle: hostAngle + Math.PI, maxErr: slantThreshRad });
+                candidates.push({ type: 'perpendicular', angle: hostAngle + Math.PI / 2, maxErr: slantThreshRad });
+                candidates.push({ type: 'perpendicular', angle: hostAngle - Math.PI / 2, maxErr: slantThreshRad });
+            }
+        }
+    }
+
+    let best = null;
+    for (const c of candidates) {
+        const err = _normalizeAngleDiffRad(currentAngle, c.angle);
+        if (err <= c.maxErr && (!best || err < best.err)) {
+            best = { ...c, err };
+        }
+    }
+
+    if (!best) {
+        // Free angle — keep the drawn slant (including shallow "horizontal slants")
+        return {
+            end: { x: end.x, y: end.y },
+            snapType: null,
+            direction: { x: dx / len, y: dy / len },
+        };
+    }
+
+    let ux = Math.cos(best.angle);
+    let uy = Math.sin(best.angle);
+    if (ux * dx + uy * dy < 0) {
+        ux = -ux;
+        uy = -uy;
+    }
+
+    // World H/V: lock the free axis to the drag/snap coordinate (CAD ortho),
+    // do NOT preserve hypotenuse length. Length-preserve turns a tiny Y (or X)
+    // error at zoomed-out scale into a few-mm overshoot past the target wall,
+    // which then splits off a 1–2mm stub.
+    if (best.type === 'horizontal') {
+        const signedDx = end.x - start.x;
+        ux = Math.abs(signedDx) > 1e-6 ? (signedDx >= 0 ? 1 : -1) : (ux >= 0 ? 1 : -1);
+        uy = 0;
+        return {
+            end: { x: end.x, y: start.y },
+            snapType: 'horizontal',
+            direction: { x: ux, y: 0 },
+        };
+    }
+    if (best.type === 'vertical') {
+        const signedDy = end.y - start.y;
+        uy = Math.abs(signedDy) > 1e-6 ? (signedDy >= 0 ? 1 : -1) : (uy >= 0 ? 1 : -1);
+        ux = 0;
+        return {
+            end: { x: start.x, y: end.y },
+            snapType: 'vertical',
+            direction: { x: 0, y: uy },
+        };
+    }
+
+    // ∥ / ⊥ to slant: keep drawn length along the snapped direction
+    return {
+        end: { x: start.x + ux * len, y: start.y + uy * len },
+        snapType: best.type,
+        direction: { x: ux, y: uy },
+    };
+}
+
+function setWallFaceEndpoint(line, atStart, point) {
+    if (!line || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    const idx = atStart ? 0 : 1;
+    line[idx].x = point.x;
+    line[idx].y = point.y;
+}
+
+function markWallMiteredEnd(wall, atStart) {
+    if (!wall) return;
+    if (atStart) wall._miteredStart = true;
+    else wall._miteredEnd = true;
+}
+
+/**
+ * Butt-in on slant / non-ortho hosts: trim the stem (wall_1) face ends to the
+ * near face of the host so a 90° V into a slant does not draw through the host.
+ * Ortho V–H butt-in stays on the specialized path.
+ *
+ * Uses fresh ±half-thickness faces from the stem centerline (not the possibly
+ * already-edited drawn faces) so left/right identity cannot flip into an hourglass X.
+ */
+export function applyAngledButtInAtIntersection(wallsAtIntersection, inter) {
+    if (!inter || !Array.isArray(wallsAtIntersection) || wallsAtIntersection.length < 2) return;
+
+    const resolvePair = (wallA, wallB) => {
+        let joiningMethod = 'none';
+        let wall1Id = null;
+        let wall2Id = null;
+        if (inter.pairs && Array.isArray(inter.pairs)) {
+            inter.pairs.forEach((pair) => {
+                const pairWall1Id = typeof pair.wall1 === 'object' ? (pair.wall1?.id ?? pair.wall1) : pair.wall1;
+                const pairWall2Id = typeof pair.wall2 === 'object' ? (pair.wall2?.id ?? pair.wall2) : pair.wall2;
+                const aStr = String(wallA.id);
+                const bStr = String(wallB.id);
+                const p1 = String(pairWall1Id);
+                const p2 = String(pairWall2Id);
+                if ((p1 === aStr && p2 === bStr) || (p1 === bStr && p2 === aStr)) {
+                    joiningMethod = pair.joining_method || 'none';
+                    wall1Id = pairWall1Id;
+                    wall2Id = pairWall2Id;
+                }
+            });
+        }
+        return { joiningMethod, wall1Id, wall2Id };
+    };
+
+    const endAtJoint = (entry) => {
+        if (entry.isOnBody) {
+            const w = entry.wall;
+            const dStart = Math.hypot(inter.x - w.start_x, inter.y - w.start_y);
+            const dEnd = Math.hypot(inter.x - w.end_x, inter.y - w.end_y);
+            return dStart <= dEnd;
+        }
+        return !!entry.isAtStart;
+    };
+
+    const cleanStemFaces = (stem) => {
+        const dx = stem.end_x - stem.start_x;
+        const dy = stem.end_y - stem.start_y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.001) return null;
+        const half = (Number(stem.thickness) || 0) / 2;
+        if (half <= 0) return null;
+        const nx = -dy / len;
+        const ny = dx / len;
+        return {
+            faceA: [
+                { x: stem.start_x + nx * half, y: stem.start_y + ny * half },
+                { x: stem.end_x + nx * half, y: stem.end_y + ny * half },
+            ],
+            faceB: [
+                { x: stem.start_x - nx * half, y: stem.start_y - ny * half },
+                { x: stem.end_x - nx * half, y: stem.end_y - ny * half },
+            ],
+        };
+    };
+
+    for (let i = 0; i < wallsAtIntersection.length; i++) {
+        for (let j = i + 1; j < wallsAtIntersection.length; j++) {
+            const aEntry = wallsAtIntersection[i];
+            const bEntry = wallsAtIntersection[j];
+            const wallA = aEntry.wall;
+            const wallB = bEntry.wall;
+            const aAxis = isAxisAlignedWall(wallA);
+            const bAxis = isAxisAlignedWall(wallB);
+            const aDx = wallA.end_x - wallA.start_x;
+            const aDy = wallA.end_y - wallA.start_y;
+            const bDx = wallB.end_x - wallB.start_x;
+            const bDy = wallB.end_y - wallB.start_y;
+            const aIsVertical = Math.abs(aDx) < Math.abs(aDy);
+            const bIsVertical = Math.abs(bDx) < Math.abs(bDy);
+
+            // True ortho V–H is handled by the specialized butt-in path.
+            if (aAxis && bAxis && aIsVertical !== bIsVertical) continue;
+
+            const { joiningMethod, wall1Id } = resolvePair(wallA, wallB);
+            if (joiningMethod !== 'butt_in') continue;
+
+            const linesA = aEntry.wallData;
+            const linesB = bEntry.wallData;
+            if (!linesA?.line1 || !linesA?.line2 || !linesB?.line1 || !linesB?.line2) continue;
+
+            // Stem = wall_1 (shortened). Host = wall_2.
+            let stemEntry = null;
+            let hostEntry = null;
+            if (wall1Id != null && String(wall1Id) === String(wallA.id)) {
+                stemEntry = aEntry;
+                hostEntry = bEntry;
+            } else if (wall1Id != null && String(wall1Id) === String(wallB.id)) {
+                stemEntry = bEntry;
+                hostEntry = aEntry;
+            } else if (aEntry.isOnBody && !bEntry.isOnBody) {
+                hostEntry = aEntry;
+                stemEntry = bEntry;
+            } else if (bEntry.isOnBody && !aEntry.isOnBody) {
+                hostEntry = bEntry;
+                stemEntry = aEntry;
+            } else {
+                continue;
+            }
+
+            if (stemEntry.isOnBody && !stemEntry.isAtStart && !stemEntry.isAtEnd) continue;
+
+            const stem = stemEntry.wall;
+            const stemLines = stemEntry.wallData;
+            const hostLines = hostEntry.wallData;
+            const atStart = endAtJoint(stemEntry);
+            const jointIdx = atStart ? 0 : 1;
+            const freeIdx = atStart ? 1 : 0;
+
+            const freePt = atStart
+                ? { x: stem.end_x, y: stem.end_y }
+                : { x: stem.start_x, y: stem.start_y };
+            const jointPt = { x: inter.x, y: inter.y };
+
+            // Ray from free end through the joint (into / past the host)
+            const stemRay = [
+                freePt,
+                {
+                    x: jointPt.x + (jointPt.x - freePt.x),
+                    y: jointPt.y + (jointPt.y - freePt.y),
+                },
+            ];
+
+            const hitFace = (face) => calculateLineIntersection(
+                stemRay[0], stemRay[1], face[0], face[1],
+                { extendFirst: true, extendSecond: true }
+            );
+
+            const h1 = hitFace(hostLines.line1);
+            const h2 = hitFace(hostLines.line2);
+            const distFromFree = (p) => (p ? Math.hypot(p.x - freePt.x, p.y - freePt.y) : Infinity);
+
+            let nearFace = null;
+            let nearHit = null;
+            if (h1 && h2) {
+                if (distFromFree(h1) <= distFromFree(h2)) {
+                    nearFace = hostLines.line1;
+                    nearHit = h1;
+                } else {
+                    nearFace = hostLines.line2;
+                    nearHit = h2;
+                }
+            } else if (h1) {
+                nearFace = hostLines.line1;
+                nearHit = h1;
+            } else if (h2) {
+                nearFace = hostLines.line2;
+                nearHit = h2;
+            }
+            if (!nearFace || !nearHit) continue;
+
+            const maxReach = Math.hypot(stem.end_x - stem.start_x, stem.end_y - stem.start_y)
+                + (Number(hostEntry.wall.thickness) || 100) * 2
+                + 50;
+            if (distFromFree(nearHit) > maxReach) continue;
+
+            const clean = cleanStemFaces(stem);
+            if (!clean) continue;
+
+            const hitA = calculateLineIntersection(
+                clean.faceA[0], clean.faceA[1], nearFace[0], nearFace[1],
+                { extendFirst: true, extendSecond: true }
+            );
+            const hitB = calculateLineIntersection(
+                clean.faceB[0], clean.faceB[1], nearFace[0], nearFace[1],
+                { extendFirst: true, extendSecond: true }
+            );
+            if (!hitA || !hitB) continue;
+
+            // Map clean hits onto drawn faces using the free end (stable left/right).
+            const free1 = stemLines.line1[freeIdx];
+            const free2 = stemLines.line2[freeIdx];
+            const freeA = clean.faceA[freeIdx];
+            const freeB = clean.faceB[freeIdx];
+            const d1A = Math.hypot(free1.x - freeA.x, free1.y - freeA.y);
+            const d1B = Math.hypot(free1.x - freeB.x, free1.y - freeB.y);
+            const d2A = Math.hypot(free2.x - freeA.x, free2.y - freeA.y);
+            const d2B = Math.hypot(free2.x - freeB.x, free2.y - freeB.y);
+
+            let joint1;
+            let joint2;
+            if (d1A + d2B <= d1B + d2A) {
+                joint1 = hitA;
+                joint2 = hitB;
+            } else {
+                joint1 = hitB;
+                joint2 = hitA;
+            }
+
+            setWallFaceEndpoint(stemLines.line1, atStart, joint1);
+            setWallFaceEndpoint(stemLines.line2, atStart, joint2);
+
+            // Guard: if joint ends flipped relative to free ends, swap to avoid hourglass X.
+            const j1 = stemLines.line1[jointIdx];
+            const j2 = stemLines.line2[jointIdx];
+            const freeSepX = free1.x - free2.x;
+            const freeSepY = free1.y - free2.y;
+            const jointSepX = j1.x - j2.x;
+            const jointSepY = j1.y - j2.y;
+            if (freeSepX * jointSepX + freeSepY * jointSepY < 0) {
+                setWallFaceEndpoint(stemLines.line1, atStart, joint2);
+                setWallFaceEndpoint(stemLines.line2, atStart, joint1);
+            }
+
+            markWallMiteredEnd(stem, atStart);
+        }
+    }
+}
+
+/**
+ * True miter for non-ortho / slanted wall pairs: intersect offset faces and
+ * snap both walls' face endpoints (x and y) to those corners.
+ * Ortho V–H pairs stay on the existing specialized path.
+ *
+ * Uses each wall's drawn faces (line1/line2) plus the reflection of line2 across
+ * the centerline, then picks the face-intersection pair whose separation best
+ * matches a true thickness miter — avoids crossed pink “X” corners on slants.
+ */
+export function applyAngledWallMitersAtIntersection(wallsAtIntersection, inter) {
+    if (!inter || !Array.isArray(wallsAtIntersection) || wallsAtIntersection.length < 2) return;
+
+    const resolveJoiningMethod = (wallA, wallB) => {
+        let joiningMethod = 'none';
+        if (inter.pairs && Array.isArray(inter.pairs)) {
+            inter.pairs.forEach((pair) => {
+                const pairWall1Id = typeof pair.wall1 === 'object' ? (pair.wall1?.id ?? pair.wall1) : pair.wall1;
+                const pairWall2Id = typeof pair.wall2 === 'object' ? (pair.wall2?.id ?? pair.wall2) : pair.wall2;
+                const aStr = String(wallA.id);
+                const bStr = String(wallB.id);
+                const p1 = String(pairWall1Id);
+                const p2 = String(pairWall2Id);
+                if ((p1 === aStr && p2 === bStr) || (p1 === bStr && p2 === aStr)) {
+                    joiningMethod = pair.joining_method || 'none';
+                }
+            });
+        }
+        return joiningMethod;
+    };
+
+    const endAtJoint = (entry) => {
+        if (entry.isOnBody) {
+            const w = entry.wall;
+            const dStart = Math.hypot(inter.x - w.start_x, inter.y - w.start_y);
+            const dEnd = Math.hypot(inter.x - w.end_x, inter.y - w.end_y);
+            return dStart <= dEnd;
+        }
+        return !!entry.isAtStart;
+    };
+
+    const reflectFaceAcrossCenterline = (wall, face) => {
+        const dx = Number(wall.end_x) - Number(wall.start_x);
+        const dy = Number(wall.end_y) - Number(wall.start_y);
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-6 || !face?.[0] || !face?.[1]) return null;
+        const ux = dx / len;
+        const uy = dy / len;
+        const reflectPoint = (p) => {
+            const wx = p.x - Number(wall.start_x);
+            const wy = p.y - Number(wall.start_y);
+            const along = wx * ux + wy * uy;
+            const cx = Number(wall.start_x) + ux * along;
+            const cy = Number(wall.start_y) + uy * along;
+            return { x: 2 * cx - p.x, y: 2 * cy - p.y };
+        };
+        return [reflectPoint(face[0]), reflectPoint(face[1])];
+    };
+
+    const facesForWall = (wall, lines) => {
+        const faces = [];
+        if (lines?.line1) faces.push({ line: lines.line1, kind: 'line1' });
+        if (lines?.line2) faces.push({ line: lines.line2, kind: 'line2' });
+        const reflected = reflectFaceAcrossCenterline(wall, lines?.line2);
+        if (reflected) faces.push({ line: reflected, kind: 'reflect2' });
+        return faces;
+    };
+
+    for (let i = 0; i < wallsAtIntersection.length; i++) {
+        for (let j = i + 1; j < wallsAtIntersection.length; j++) {
+            const aEntry = wallsAtIntersection[i];
+            const bEntry = wallsAtIntersection[j];
+            const wallA = aEntry.wall;
+            const wallB = bEntry.wall;
+            const aAxis = isAxisAlignedWall(wallA);
+            const bAxis = isAxisAlignedWall(wallB);
+            const aDx = wallA.end_x - wallA.start_x;
+            const aDy = wallA.end_y - wallA.start_y;
+            const bDx = wallB.end_x - wallB.start_x;
+            const bDy = wallB.end_y - wallB.start_y;
+            const aIsVertical = Math.abs(aDx) < Math.abs(aDy);
+            const bIsVertical = Math.abs(bDx) < Math.abs(bDy);
+
+            // Keep classic V–H path for true axis-aligned orthogonal corners.
+            if (aAxis && bAxis && aIsVertical !== bIsVertical) continue;
+
+            const joiningMethod = resolveJoiningMethod(wallA, wallB);
+            // Only true 45° corners get face miters. butt_in uses applyAngledButtIn;
+            // 'none' must keep square ends (do not miter).
+            if (joiningMethod !== '45_cut') continue;
+
+            const linesA = aEntry.wallData;
+            const linesB = bEntry.wallData;
+            if (!linesA?.line1 || !linesA?.line2 || !linesB?.line1 || !linesB?.line2) continue;
+
+            // Don't reshape mid-body T hits — only endpoint miters.
+            if (aEntry.isOnBody || bEntry.isOnBody) continue;
+
+            const atStartA = endAtJoint(aEntry);
+            const atStartB = endAtJoint(bEntry);
+
+            const tA = Math.max(1, Number(wallA.thickness) || 100);
+            const tB = Math.max(1, Number(wallB.thickness) || 100);
+            const tAvg = (tA + tB) / 2;
+            const maxDist = tAvg * 4 + 80;
+
+            const aLen = Math.hypot(aDx, aDy) || 1;
+            const bLen = Math.hypot(bDx, bDy) || 1;
+            const aUx = aDx / aLen;
+            const aUy = aDy / aLen;
+            const bUx = bDx / bLen;
+            const bUy = bDy / bLen;
+            // Directions pointing away from the joint along each wall
+            const aAway = atStartA ? { x: aUx, y: aUy } : { x: -aUx, y: -aUy };
+            const bAway = atStartB ? { x: bUx, y: bUy } : { x: -bUx, y: -bUy };
+            const cosAng = Math.max(-1, Math.min(1, aAway.x * bAway.x + aAway.y * bAway.y));
+            const meetAng = Math.acos(cosAng); // 0 = continuation, π = fold back
+            const half = meetAng / 2;
+            const sinHalf = Math.sin(half);
+            // Expected inner↔outer corner separation for equal-thickness miter
+            const expectedSep = sinHalf > 0.08 ? tAvg / sinHalf : tAvg * Math.SQRT2;
+
+            const nearJoint = (p) =>
+                p
+                && Number.isFinite(p.x)
+                && Number.isFinite(p.y)
+                && Math.hypot(p.x - inter.x, p.y - inter.y) <= maxDist;
+
+            const facesA = facesForWall(wallA, linesA);
+            const facesB = facesForWall(wallB, linesB);
+            const hitPairs = [];
+            for (const fa of facesA) {
+                for (const fb of facesB) {
+                    const hit = calculateLineIntersection(
+                        fa.line[0], fa.line[1], fb.line[0], fb.line[1],
+                        { extendFirst: true, extendSecond: true }
+                    );
+                    if (nearJoint(hit)) {
+                        hitPairs.push({ hit, kindA: fa.kind, kindB: fb.kind });
+                    }
+                }
+            }
+            if (hitPairs.length < 2) continue;
+
+            // Prefer two hits that look like the inner + outer miter corners.
+            let best = null;
+            for (let p = 0; p < hitPairs.length; p++) {
+                for (let q = p + 1; q < hitPairs.length; q++) {
+                    const h1 = hitPairs[p].hit;
+                    const h2 = hitPairs[q].hit;
+                    const sep = Math.hypot(h1.x - h2.x, h1.y - h2.y);
+                    if (sep < tAvg * 0.25 || sep > tAvg * 4.5) continue;
+                    const midDist = Math.hypot(
+                        (h1.x + h2.x) / 2 - inter.x,
+                        (h1.y + h2.y) / 2 - inter.y
+                    );
+                    const sepErr = Math.abs(sep - expectedSep);
+                    const score = sepErr + midDist * 0.35;
+                    if (!best || score < best.score) {
+                        best = { h1, h2, score, sep };
+                    }
+                }
+            }
+            if (!best) {
+                // Fallback: classic same-role pairing (line1↔line1, line2↔line2)
+                const i11 = calculateLineIntersection(
+                    linesA.line1[0], linesA.line1[1], linesB.line1[0], linesB.line1[1],
+                    { extendFirst: true, extendSecond: true }
+                );
+                const i22 = calculateLineIntersection(
+                    linesA.line2[0], linesA.line2[1], linesB.line2[0], linesB.line2[1],
+                    { extendFirst: true, extendSecond: true }
+                );
+                const i12 = calculateLineIntersection(
+                    linesA.line1[0], linesA.line1[1], linesB.line2[0], linesB.line2[1],
+                    { extendFirst: true, extendSecond: true }
+                );
+                const i21 = calculateLineIntersection(
+                    linesA.line2[0], linesA.line2[1], linesB.line1[0], linesB.line1[1],
+                    { extendFirst: true, extendSecond: true }
+                );
+                if (nearJoint(i11) && nearJoint(i22)) {
+                    best = { h1: i11, h2: i22, score: 0, sep: Math.hypot(i11.x - i22.x, i11.y - i22.y) };
+                } else if (nearJoint(i12) && nearJoint(i21)) {
+                    best = { h1: i12, h2: i21, score: 0, sep: Math.hypot(i12.x - i21.x, i12.y - i21.y) };
+                } else {
+                    continue;
+                }
+            }
+
+            // Assign corners to each wall's drawn faces by proximity at that end
+            const cornerPts = [best.h1, best.h2];
+            const assignWallFaces = (lines, atStart) => {
+                const idx = atStart ? 0 : 1;
+                const p1 = lines.line1[idx];
+                const p2 = lines.line2[idx];
+                // Match current face ends to nearest corners (stable 1–1)
+                const d00 = Math.hypot(p1.x - cornerPts[0].x, p1.y - cornerPts[0].y);
+                const d01 = Math.hypot(p1.x - cornerPts[1].x, p1.y - cornerPts[1].y);
+                const d10 = Math.hypot(p2.x - cornerPts[0].x, p2.y - cornerPts[0].y);
+                const d11 = Math.hypot(p2.x - cornerPts[1].x, p2.y - cornerPts[1].y);
+                if (d00 + d11 <= d01 + d10) {
+                    setWallFaceEndpoint(lines.line1, atStart, cornerPts[0]);
+                    setWallFaceEndpoint(lines.line2, atStart, cornerPts[1]);
+                } else {
+                    setWallFaceEndpoint(lines.line1, atStart, cornerPts[1]);
+                    setWallFaceEndpoint(lines.line2, atStart, cornerPts[0]);
+                }
+            };
+
+            assignWallFaces(linesA, atStartA);
+            assignWallFaces(linesB, atStartB);
+
+            markWallMiteredEnd(wallA, atStartA);
+            markWallMiteredEnd(wallB, atStartB);
+        }
+    }
+}
 
 // Store placement decisions for dimensions to prevent position changes on zoom
 // Module-level Map that persists across renders
@@ -450,7 +1066,47 @@ function placeNearWallWallDimension({
         rotatedVerticalText
     });
     if (!near) return null;
-    const positioned = applyNearWallSharedOffset(
+
+    const hostWallData = findWallLineDataForWall(wallLinesMap, wallForNear);
+    const laneSpacing = DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
+    const maxSteps = Math.max(
+        DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS,
+        8
+    );
+
+    const tryOffset = (off) => {
+        const nx = near.ext?.nx ?? 0;
+        const ny = near.ext?.ny ?? 0;
+        const labelX = wallMidX * scaleFactor + offsetX + nx * off;
+        const labelY = wallMidY * scaleFactor + offsetY + ny * off;
+        const bounds = calculateBounds(labelX, labelY, textWidth);
+        if (
+            !isLabelAcceptableForNearWallPlacement(
+                labelX,
+                labelY,
+                bounds,
+                placedLabels,
+                hostWallData,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                initialScale,
+                wallLinesMap
+            )
+        ) {
+            return null;
+        }
+        return {
+            ...near,
+            labelX,
+            labelY,
+            off,
+            bounds,
+        };
+    };
+
+    // Prefer a shared edge offset (aligned chains), but never accept a colliding snap.
+    let positioned = applyNearWallSharedOffset(
         dimensionLanes,
         near,
         wallMidX,
@@ -461,10 +1117,9 @@ function placeNearWallWallDimension({
         calculateBounds,
         textWidth
     );
-    if (!positioned) return null;
-    const hostWallData = findWallLineDataForWall(wallLinesMap, wallForNear);
     if (
-        !isLabelAcceptableForNearWallPlacement(
+        positioned
+        && !isLabelAcceptableForNearWallPlacement(
             positioned.labelX,
             positioned.labelY,
             positioned.bounds,
@@ -477,8 +1132,36 @@ function placeNearWallWallDimension({
             wallLinesMap
         )
     ) {
-        return null;
+        positioned = null;
     }
+
+    if (!positioned) {
+        const startOff = near.off ?? 0;
+        for (let step = 0; step < maxSteps; step++) {
+            const candidate = tryOffset(startOff + step * laneSpacing);
+            if (candidate) {
+                positioned = candidate;
+                break;
+            }
+        }
+    }
+
+    if (!positioned) return null;
+
+    // Keep later labels on this edge at least this far out (collision-aware).
+    if (dimensionLanes) {
+        if (!dimensionLanes._nearWallShared) dimensionLanes._nearWallShared = {};
+        const edgeKey = positioned.side || near.side || 'top';
+        const shared = dimensionLanes._nearWallShared[edgeKey];
+        if (!shared || (positioned.off ?? 0) > (shared.off ?? 0)) {
+            dimensionLanes._nearWallShared[edgeKey] = {
+                nx: positioned.ext?.nx ?? near.ext?.nx ?? 0,
+                ny: positioned.ext?.ny ?? near.ext?.ny ?? 0,
+                off: positioned.off,
+            };
+        }
+    }
+
     return positioned;
 }
 
@@ -1604,8 +2287,10 @@ export function drawDimensions(
         const tickPx = 4;
         const adx = Math.abs(dx);
         const ady = Math.abs(dy);
+        // Any non-axis-aligned wall gets a parallel (oblique) dimension — including
+        // shallow slants that used to be forced onto H/V rows (wrong span + unclear labels).
         const useObliqueWallDim =
-            adx > 1e-9 && ady > 1e-9 && Math.min(adx, ady) / Math.max(adx, ady) >= 0.3;
+            adx > WALL_AXIS_ALIGN_TOL_MM && ady > WALL_AXIS_ALIGN_TOL_MM;
         
         // Create unique key for this dimension to remember placement decision
         const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_wall`;
@@ -1614,15 +2299,15 @@ export function drawDimensions(
         const storedPlacement = dimensionPlacementMemory.get(dimensionKey);
         const lockedSide = storedPlacement ? storedPlacement.side : null;
         
-        // Smart placement: short dims can sit near the wall — but never for segments on
-        // (or flush with) the project exterior edge. Otherwise a short end piece like 1900
-        // leaves the shared exterior row used by longer neighbors (2290, 2660, …).
+        // Exterior-edge walls share the outer dimension frame. Interior walls (including
+        // long partitions to a slant) sit beside their own wall so each length is readable
+        // and clearly tied to that segment — never dumped onto one exterior column.
         const projectWidth = (maxX - minX) || 1;
         const projectHeight = (maxY - minY) || 1;
         const projectSize = Math.max(projectWidth, projectHeight);
-        const isSmallDimension = length < (projectSize * DIMENSION_CONFIG.SMALL_DIMENSION_THRESHOLD);
         const wallData = findWallDataForSegment(wallLinesMap, startX, startY, endX, endY);
         const segmentWall = wallData?.wall ?? null;
+        const hostForNear = segmentWall || wallData?.wall || null;
         const isHorizSegment = Math.abs(angle) < 45 || Math.abs(angle) > 135;
         const wallThickness = Number(segmentWall?.thickness) || 100;
         // Allow for centerline vs outer-face inset (about half thickness)
@@ -1640,17 +2325,17 @@ export function drawDimensions(
                 Math.min(Math.abs(midSegX - minX), Math.abs(midSegX - maxX)) <= exteriorEdgeTol
             );
 
-        const isNearWallDimension = isSmallDimension && !onExteriorEdge;
-        const wallLaneSpacing = isNearWallDimension
+        let isNearWallDimension = !onExteriorEdge && !!hostForNear;
+        let wallLaneSpacing = isNearWallDimension
             ? DIMENSION_CONFIG.LANE_SPACING
             : DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
         const wallDimRotatedVertical =
             !useObliqueWallDim &&
             !(Math.abs(angle) < 45 || Math.abs(angle) > 135);
         let baseOffset = isNearWallDimension
-            ? (segmentWall
+            ? (hostForNear
                 ? computeNearWallLabelOffsetPx(
-                      segmentWall,
+                      hostForNear,
                       scaleFactor,
                       fontSize,
                       textWidth,
@@ -1687,11 +2372,7 @@ export function drawDimensions(
             let obliqueBase = 0;
 
             if (isNearWallDimension) {
-                const wallForNear = segmentWall || wallData?.wall;
-                if (!wallForNear) {
-                    context.restore();
-                    return;
-                }
+                const wallForNear = hostForNear;
                 const near = tryPlaceNearWallLabel({
                     wall: wallForNear,
                     anchorXModel: wallMidX,
@@ -1710,14 +2391,17 @@ export function drawDimensions(
                     initialScale,
                     rotatedVerticalText: false
                 });
-                if (!near) {
-                    context.restore();
-                    return;
+                if (near) {
+                    labelX = near.labelX;
+                    labelY = near.labelY;
+                    placement = { side: 'side1' };
+                } else {
+                    isNearWallDimension = false;
+                    wallLaneSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
+                    baseOffset = DIMENSION_CONFIG.BASE_OFFSET;
                 }
-                labelX = near.labelX;
-                labelY = near.labelY;
-                placement = { side: 'side1' };
-            } else {
+            }
+            if (!placement) {
                 obliqueBase = consumeDimensionLane(
                     dimensionLanes,
                     false,
@@ -1875,13 +2559,10 @@ export function drawDimensions(
             let labelX;
             let labelY;
             let side;
+            let nearPlaced = false;
 
             if (isNearWallDimension) {
-                const wallForNear = segmentWall || wallData?.wall;
-                if (!wallForNear) {
-                    context.restore();
-                    return;
-                }
+                const wallForNear = hostForNear;
                 const spanLo = Math.min(startX, endX);
                 const spanHi = Math.max(startX, endX);
                 const trialOffset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
@@ -1925,19 +2606,23 @@ export function drawDimensions(
                     spanLo,
                     spanHi
                 });
-                if (!near) {
-                    context.restore();
-                    return;
+                if (near) {
+                    labelX = near.labelX;
+                    labelY = near.labelY;
+                    side = near.side;
+                    nearPlaced = true;
+                    if (!storedPlacement) {
+                        dimensionPlacementMemory.set(dimensionKey, {
+                            side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
+                        });
+                    }
+                } else {
+                    isNearWallDimension = false;
+                    wallLaneSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
+                    baseOffset = DIMENSION_CONFIG.BASE_OFFSET;
                 }
-                labelX = near.labelX;
-                labelY = near.labelY;
-                side = near.side;
-                if (!storedPlacement) {
-                    dimensionPlacementMemory.set(dimensionKey, {
-                        side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
-                    });
-                }
-            } else {
+            }
+            if (!nearPlaced) {
                 const spanLo = Math.min(startX, endX);
                 const spanHi = Math.max(startX, endX);
                 const trialOffset = Math.max(baseOffset, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
@@ -1988,7 +2673,8 @@ export function drawDimensions(
                     offsetY,
                     textWidth,
                     placedLabels,
-                    lockRow: true
+                    // Keep chained exterior top/bottom rows level; allow bump when this is a fallback
+                    lockRow: onExteriorEdge
                 });
                 if (!placed) {
                     context.restore();
@@ -2080,13 +2766,10 @@ export function drawDimensions(
             let labelX;
             let labelY;
             let side;
+            let nearPlaced = false;
 
             if (isNearWallDimension) {
-                const wallForNear = segmentWall || wallData?.wall;
-                if (!wallForNear) {
-                    context.restore();
-                    return;
-                }
+                const wallForNear = hostForNear;
                 const spanLo = Math.min(startY, endY);
                 const spanHi = Math.max(startY, endY);
                 const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
@@ -2131,19 +2814,23 @@ export function drawDimensions(
                     spanLo,
                     spanHi
                 });
-                if (!near) {
-                    context.restore();
-                    return;
+                if (near) {
+                    labelX = near.labelX;
+                    labelY = near.labelY;
+                    side = near.side;
+                    nearPlaced = true;
+                    if (!storedPlacement) {
+                        dimensionPlacementMemory.set(dimensionKey, {
+                            side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
+                        });
+                    }
+                } else {
+                    isNearWallDimension = false;
+                    wallLaneSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
+                    baseOffset = DIMENSION_CONFIG.BASE_OFFSET;
                 }
-                labelX = near.labelX;
-                labelY = near.labelY;
-                side = near.side;
-                if (!storedPlacement) {
-                    dimensionPlacementMemory.set(dimensionKey, {
-                        side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
-                    });
-                }
-            } else {
+            }
+            if (!nearPlaced) {
                 const spanLo = Math.min(startY, endY);
                 const spanHi = Math.max(startY, endY);
                 const minVerticalOffset = DIMENSION_CONFIG.MIN_VERTICAL_OFFSET;
@@ -2182,7 +2869,11 @@ export function drawDimensions(
                     spanHi
                 );
                 const vEdge = getDimensionEdge(false, placementSide);
-                const fixedColumnX = dimensionLanes?._wallExteriorLabelX?.[vEdge] ?? null;
+                // Only lock one shared column for true exterior-edge walls. Interior
+                // fallbacks must be free to stack outward so labels stay readable.
+                const fixedColumnX = onExteriorEdge
+                    ? (dimensionLanes?._wallExteriorLabelX?.[vEdge] ?? null)
+                    : null;
                 const placed = placeExteriorWallDimensionAvoidingLabels({
                     isHorizontal: false,
                     side: placementSide,
@@ -2199,7 +2890,7 @@ export function drawDimensions(
                     placedLabels,
                     fixedLabelX: fixedColumnX,
                     fontSize,
-                    lockRow: true
+                    lockRow: onExteriorEdge
                 });
                 if (!placed) {
                     context.restore();
@@ -2207,7 +2898,7 @@ export function drawDimensions(
                 }
                 labelX = placed.labelX;
                 labelY = placed.labelY;
-                if (dimensionLanes) {
+                if (dimensionLanes && onExteriorEdge) {
                     if (!dimensionLanes._wallExteriorLabelX) {
                         dimensionLanes._wallExteriorLabelX = {};
                     }
@@ -2563,11 +3254,36 @@ function getNearestRoomCentroidToWallSegment(wall, rooms) {
 /**
  * Options for `calculateOffsetPoints`: prefer room-weighted scoring, else nearest-room reference,
  * else undefined (caller uses plain `center` in calculateOffsetPoints).
+ *
+ * Partitions / multi-room walls skip room-mass scoring so defining a second room cannot
+ * flip the thickness side (which looks like the partition "moved").
  */
 export function buildWallOffsetOptions(wall, rooms) {
     if (!wall) return undefined;
     const roomsList = Array.isArray(rooms) ? rooms : [];
     const base = { wall, rooms: roomsList };
+    const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
+    const linked = getRoomsLinkedToWall(wall, roomsList);
+    const sharedOrPartition = isPartition || linked.length >= 2;
+
+    if (sharedOrPartition) {
+        // Stable reference: do not use area-weighted samples (they change when rooms are added).
+        if (linked.length > 0) {
+            // Prefer the lowest room id so the flip stays stable as more rooms link.
+            const stable = [...linked].sort((a, b) => Number(a.id) - Number(b.id))[0];
+            const c = getRoomPolygonCentroidAndArea(stable.room_points);
+            if (c && c.centroid) {
+                base.innerReferencePoint = c.centroid;
+                return base;
+            }
+        }
+        const nearest = getNearestRoomCentroidToWallSegment(wall, roomsList);
+        if (nearest) {
+            base.innerReferencePoint = nearest;
+        }
+        return base;
+    }
+
     const scoringSamples = getWallOffsetScoringSamples(wall, roomsList);
     if (scoringSamples.length > 0) {
         base.scoringSamples = scoringSamples;
@@ -2699,7 +3415,9 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
         offsetOptions && typeof offsetOptions.forceShouldFlip === 'boolean'
             ? offsetOptions.forceShouldFlip
             : null;
+    const skipPolygonProbe = Boolean(offsetOptions && offsetOptions.skipPolygonProbe);
     const polygonResolved =
+        !skipPolygonProbe &&
         offsetOptions &&
         offsetOptions.wall &&
         Array.isArray(offsetOptions.rooms) &&
@@ -2750,14 +3468,19 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
 
     const finalOffsetX = shouldFlip ? -offsetX : offsetX;
     const finalOffsetY = shouldFlip ? -offsetY : offsetY;
+    // Both faces at ± half thickness from centerline (gapPixels = full thickness in px).
+    // line2 is the inward/inner face; line1 is the opposite (outer) face.
+    // One-sided centerline+offset made slant 45_cut miters look like crossed pink X's.
+    const halfX = finalOffsetX / 2;
+    const halfY = finalOffsetY / 2;
     return {
         line1: [
-            { x: x1, y: y1 },
-            { x: x2, y: y2 },
+            { x: x1 + halfX, y: y1 + halfY },
+            { x: x2 + halfX, y: y2 + halfY },
         ],
         line2: [
-            { x: x1 - finalOffsetX, y: y1 - finalOffsetY },
-            { x: x2 - finalOffsetX, y: y2 - finalOffsetY },
+            { x: x1 - halfX, y: y1 - halfY },
+            { x: x2 - halfX, y: y2 - halfY },
         ],
     };
 }
@@ -2930,87 +3653,22 @@ export function drawWallCaps(context, wall, joints, center, intersections, SNAP_
         { label: 'end', x: wall.end_x, y: wall.end_y }
     ];
     endpoints.forEach((pt) => {
-        // Find intersections involving this wall (by wall ID)
-        const relevantIntersections = intersections.filter(inter => 
-            inter.wall_1 === wall.id || inter.wall_2 === wall.id
-        );
-
-        let joiningMethod = 'butt_in';
-        let isPrimaryWall = true;
-        let joiningWall = null;
-        relevantIntersections.forEach(inter => {
-            if (inter.wall_1 === wall.id || inter.wall_2 === wall.id) {
-                joiningMethod = inter.joining_method;
-                if (inter.wall_2 === wall.id) {
-                        isPrimaryWall = false;
-                    joiningWall = { id: inter.wall_1 };
-                    } else {
-                    joiningWall = { id: inter.wall_2 };
-                }
-            }
-        });
-
-        if (joiningMethod === '45_cut' && !isPrimaryWall) {
-            return; // Avoid drawing duplicate cap from other wall
-        }
         const cap1 = pt.label === 'start' ? wall._line1[0] : wall._line1[1];
         const cap2 = pt.label === 'start' ? wall._line2[0] : wall._line2[1];
-        if (joiningMethod === '45_cut' && joiningWall) {
-            // Draw mitered cap at 45°
-            const wallVec = pt.label === 'start'
-                ? { x: wall.end_x - wall.start_x, y: wall.end_y - wall.start_y }
-                : { x: wall.start_x - wall.end_x, y: wall.start_y - wall.end_y };
-            let joinVec = null;
-            if (Math.abs(joiningWall.start_x - pt.x) < 1e-3 && Math.abs(joiningWall.start_y - pt.y) < 1e-3) {
-                joinVec = { x: joiningWall.end_x - joiningWall.start_x, y: joiningWall.end_y - joiningWall.start_y };
-            } else {
-                joinVec = { x: joiningWall.start_x - joiningWall.end_x, y: joiningWall.start_y - joiningWall.end_y };
-            }
-            const norm = v => {
-                const len = Math.hypot(v.x, v.y);
-                return len ? { x: v.x / len, y: v.y / len } : { x: 0, y: 0 };
-            };
-            const v1 = norm(wallVec);
-            const v2 = norm(joinVec);
-            const bisector = norm({ x: v1.x + v2.x, y: v1.y + v2.y });
-            const capLength = wall.thickness * 1.5;
-            context.beginPath();
-            context.moveTo(
-                cap1.x * scaleFactor + offsetX,
-                cap1.y * scaleFactor + offsetY
-            );
-            context.lineTo(
-                (cap1.x + bisector.x * capLength) * scaleFactor + offsetX,
-                (cap1.y + bisector.y * capLength) * scaleFactor + offsetY
-            );
-            context.moveTo(
-                cap2.x * scaleFactor + offsetX,
-                cap2.y * scaleFactor + offsetY
-            );
-            context.lineTo(
-                (cap2.x + bisector.x * capLength) * scaleFactor + offsetX,
-                (cap2.y + bisector.y * capLength) * scaleFactor + offsetY
-            );
-            context.strokeStyle = 'red'; // For debugging 45_cut
-            context.setLineDash([]);
-            context.lineWidth = DIMENSION_CONFIG.WALL_CAP_LINE_WIDTH;
-            context.stroke();
-        } else {
-            // Default: perpendicular cap (butt_in)
-            context.beginPath();
-            context.moveTo(
-                cap1.x * scaleFactor + offsetX,
-                cap1.y * scaleFactor + offsetY
-            );
-            context.lineTo(
-                cap2.x * scaleFactor + offsetX,
-                cap2.y * scaleFactor + offsetY
-            );
-            context.strokeStyle = adjustPlanStrokeColor('black');
-            context.setLineDash([]);
-            context.lineWidth = DIMENSION_CONFIG.WALL_CAP_LINE_WIDTH;
-            context.stroke();
-        }
+        // Face miters already place endpoints; connecting them draws the end/miter edge.
+        context.beginPath();
+        context.moveTo(
+            cap1.x * scaleFactor + offsetX,
+            cap1.y * scaleFactor + offsetY
+        );
+        context.lineTo(
+            cap2.x * scaleFactor + offsetX,
+            cap2.y * scaleFactor + offsetY
+        );
+        context.strokeStyle = adjustPlanStrokeColor('black');
+        context.setLineDash([]);
+        context.lineWidth = DIMENSION_CONFIG.WALL_CAP_LINE_WIDTH;
+        context.stroke();
     });
 }
 
@@ -3175,7 +3833,10 @@ export function drawWallPlanDimensionsLayer({
             wall._line2 = wallData.line2;
         }
 
-        if (showPanelLines && wallPanelsMap && showPanelDimensions) {
+        // Draw panel division lines first (no side-panel labels yet).
+        // Wall dimensions must place before panel labels, otherwise panel near-wall
+        // lanes fill placedLabels/dimensionLanes and wall dims get skipped.
+        if (showPanelLines && wallPanelsMap) {
             const panels = wallPanelsMap[wall.id];
             if (panels?.length > 0) {
                 const wallThickness = wall.thickness || 100;
@@ -3194,11 +3855,12 @@ export function drawWallPlanDimensionsLayer({
                     allPanelLabels,
                     true,
                     fd,
-                    showPanelDimensions,
+                    false, // labels later
                     initialScale,
                     rooms,
                     wallLinesMap,
-                    dimensionLanes
+                    dimensionLanes,
+                    true
                 );
             }
         }
@@ -3275,6 +3937,45 @@ export function drawWallPlanDimensionsLayer({
         );
     });
 
+    // Side-panel dimension labels after wall dims so both can coexist.
+    // Use the same dimensionLanes + placedLabels so panel text respects wall-dim collisions.
+    if (showPanelDimensions && wallPanelsMap) {
+        walls.forEach((wall) => {
+            const panels = wallPanelsMap[wall.id];
+            if (!panels?.length) return;
+            if (!wall._line1 || !wall._line2) {
+                const wallData = wallLinesMap.get(wall.id);
+                if (wallData) {
+                    wall._line1 = wallData.line1;
+                    wall._line2 = wallData.line2;
+                }
+            }
+            const wallThickness = wall.thickness || 100;
+            const gapPixels = wallThickness * scaleFactor;
+            drawPanelDivisions(
+                context,
+                wall,
+                panels,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                undefined,
+                gapPixels,
+                modelBounds,
+                placedLabels,
+                allPanelLabels,
+                true,
+                fd,
+                true,
+                initialScale,
+                rooms,
+                wallLinesMap,
+                dimensionLanes,
+                false // lines already drawn above when showPanelLines
+            );
+        });
+    }
+
     const allCombinedLabels = [...allLabels, ...allPanelLabels];
     allCombinedLabels.forEach((label) => {
         label.draw = makeLabelDrawFn(label, scaleFactor, initialScale);
@@ -3337,6 +4038,9 @@ export function drawWalls({
     dimensionValuesSeen = null, // <-- shared Set: skip drawing if value already shown (match floor/ceiling dedup)
     rooms = [], // room list for inner-face offset (wall.rooms / room.walls)
     doors = [],
+    // Define-room / storey-area: hide shortened partition tips; caller draws extended snaps.
+    polygonSelectMode = false,
+    selectedIntersectionKeys = null,
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
@@ -3347,6 +4051,9 @@ export function drawWalls({
     const wallLinesMap = new Map(); // Store line1 and line2 for each wall
 
     walls.forEach((wall) => {
+        // Reset per-draw miter flags from angled joint pass
+        wall._miteredStart = false;
+        wall._miteredEnd = false;
         // Calculate gap in pixels based on wall thickness
         // Gap should represent half the wall thickness on each side
         // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
@@ -3356,6 +4063,13 @@ export function drawWalls({
         const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
         if (typeof forcedFlip === 'boolean') {
             offsetOpts.forceShouldFlip = forcedFlip;
+        }
+        // Shared/partition walls: skip polygon probe (both sides "inside" → unstable null,
+        // then scoring can flip when a second room is defined).
+        const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
+        const linkedRooms = getRoomsLinkedToWall(wall, rooms);
+        if (isPartition || linkedRooms.length >= 2) {
+            offsetOpts.skipPolygonProbe = true;
         }
 
         let { line1, line2 } = calculateOffsetPoints(
@@ -3380,8 +4094,16 @@ export function drawWalls({
         const wallsAtIntersection = [];
         
         walls.forEach(wall => {
-            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
-            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
+            // Partition ends are stored inset by host thickness (~150mm), so they sit
+            // outside the normal joint tolerance of the host corner. Widen end matching
+            // so 45° / butt-in extension can still reach the host face.
+            // Same for butt-in "deduct joining thickness" tips (inset by one host thickness).
+            const wallThk = Number(wall.thickness) || 0;
+            const endTol = isPartitionWall(wall)
+                ? Math.max(tolerance, wallThk * 2 + 1)
+                : Math.max(tolerance, wallThk + 1);
+            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < endTol;
+            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < endTol;
             
             // Check if intersection point lies on the wall body (not just at endpoints)
             // Only mark as isOnBody if it's clearly in the middle, not near endpoints
@@ -3453,9 +4175,12 @@ export function drawWalls({
                     
                     const wall1IsVertical = Math.abs(wall1Dx) < Math.abs(wall1Dy);
                     const wall2IsVertical = Math.abs(wall2Dx) < Math.abs(wall2Dy);
+                    const wall1Axis = isAxisAlignedWall(wall1);
+                    const wall2Axis = isAxisAlignedWall(wall2);
                     
-                    // Only process if one is vertical and one is horizontal
-                    if (wall1IsVertical !== wall2IsVertical) {
+                    // Ortho V–H only when both walls are truly axis-aligned.
+                    // Slanted walls use applyAngledWallMitersAtIntersection instead.
+                    if (wall1Axis && wall2Axis && wall1IsVertical !== wall2IsVertical) {
                         const verticalWall = wall1IsVertical ? wall1Data : wall2Data;
                         const horizontalWall = wall1IsVertical ? wall2Data : wall1Data;
                         
@@ -3549,19 +4274,71 @@ export function drawWalls({
                 const isTopEnd = vEndpointY < vOtherY;
                 
                 if (hasButtIn) {
-                    // BUTT-IN JOINT: First extend wall2, then shorten wall1
-                    // wall1 is the one that should be shortened visually (first wall in the joint pair)
-                    // wall2 should be extended (remains extended)
-                    // Determine which wall is wall1 and which is wall2 based on joint definition
-                    // Use string comparison to handle number/string ID mismatches
-                    const isVerticalWall1 = String(jointWall1Id) === String(vWall.id);
-                    const isHorizontalWall1 = String(jointWall1Id) === String(hWall.id);
+                    // BUTT-IN JOINT: First extend host (wall2), then shorten stem (wall1) to the
+                    // near face of the host — not through to the far face.
+                    //
+                    // Always respect joint wall_1 (stem) / wall_2 (host) so Flip Wall Order works.
+                    // Only fall back to geometry when labels do not identify a clear V/H stem.
+                    const isVerticalWall1Label = String(jointWall1Id) === String(vWall.id);
+                    const isHorizontalWall1Label = String(jointWall1Id) === String(hWall.id);
+
+                    const wallsColinearHorizontal = (a, b) => {
+                        const aDx = a.end_x - a.start_x;
+                        const aDy = a.end_y - a.start_y;
+                        const bDx = b.end_x - b.start_x;
+                        const bDy = b.end_y - b.start_y;
+                        const aLen = Math.hypot(aDx, aDy);
+                        const bLen = Math.hypot(bDx, bDy);
+                        if (aLen < 0.001 || bLen < 0.001) return false;
+                        const cross = Math.abs(aDx * bDy - aDy * bDx) / (aLen * bLen);
+                        if (cross > 0.08) return false;
+                        const nx = -aDy / aLen;
+                        const ny = aDx / aLen;
+                        const midX = (b.start_x + b.end_x) / 2;
+                        const midY = (b.start_y + b.end_y) / 2;
+                        const perp = Math.abs((midX - a.start_x) * nx + (midY - a.start_y) * ny);
+                        return perp < Math.max(1, ((Number(a.thickness) || 0) + (Number(b.thickness) || 0)) * 0.35);
+                    };
+
+                    const hHasColinearPartner = wallsAtIntersection.some((other) => (
+                        other.wall.id !== hWall.id
+                        && Math.abs(other.wall.end_x - other.wall.start_x) >= Math.abs(other.wall.end_y - other.wall.start_y)
+                        && wallsColinearHorizontal(hWall, other.wall)
+                    ));
+                    const vHasColinearPartner = wallsAtIntersection.some((other) => (
+                        other.wall.id !== vWall.id
+                        && Math.abs(other.wall.end_x - other.wall.start_x) < Math.abs(other.wall.end_y - other.wall.start_y)
+                        && wallsColinearHorizontal(vWall, other.wall)
+                    ));
+
+                    // Stem = wall_1 (shortened). Host = wall_2 (may extend).
+                    let shortenVertical = isVerticalWall1Label && !isHorizontalWall1Label;
+                    let shortenHorizontal = isHorizontalWall1Label && !isVerticalWall1Label;
+                    if (!shortenVertical && !shortenHorizontal) {
+                        // Labels missing/ambiguous — use T-junction geometry.
+                        if (horizontalWall.isOnBody && !verticalWall.isOnBody) {
+                            shortenVertical = true;
+                            shortenHorizontal = false;
+                        } else if (verticalWall.isOnBody && !horizontalWall.isOnBody) {
+                            shortenVertical = false;
+                            shortenHorizontal = true;
+                        } else if (hHasColinearPartner && !verticalWall.isOnBody && !vHasColinearPartner) {
+                            shortenVertical = true;
+                            shortenHorizontal = false;
+                        } else if (vHasColinearPartner && !horizontalWall.isOnBody && !hHasColinearPartner) {
+                            shortenVertical = false;
+                            shortenHorizontal = true;
+                        }
+                    }
+
+                    const isVerticalWall1 = shortenVertical;
+                    const isHorizontalWall1 = shortenHorizontal;
 
                     if (phase === 'extend') {
                     // First, extend wall2 (the one that should remain extended)
-                    // Case A: Vertical is wall2, Horizontal is wall1
-                    // Only extend wall2 if the intersection is at an actual endpoint of wall2
-                    // If wall2 is intersected in the middle (isOnBody), skip extension (it should remain full length)
+                    // Case A: Vertical is wall2 (host), Horizontal is wall1 (stem)
+                    // Only extend host if the intersection is at an actual endpoint of the host.
+                    // If host is intersected in the middle (isOnBody), skip extension (full length).
                     if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody) {
                         // Extend vertical wall (wall2) to horizontal wall's line
                         const vEndpointYCaseA = vIsAtStart ? vWall.start_y : vWall.end_y;
@@ -3610,7 +4387,7 @@ export function drawWalls({
                     // Case B: Horizontal is wall2, Vertical is wall1
                     // Only extend wall2 if the intersection is at an actual endpoint of wall2
                     // If wall2 is intersected in the middle (isOnBody), skip extension (it should remain full length)
-                    else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody) {
+                    else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && !vHasColinearPartner && !hHasColinearPartner) {
                         // Extend horizontal wall (wall2) to vertical wall's line
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -3667,62 +4444,39 @@ export function drawWalls({
                     // Now shorten wall1 to connect to wall2
                     // Only shorten wall1 if the intersection is at an actual endpoint of wall1
                     // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
-                    // Skip when wall1 was already inset by joining-wall thickness (partition create).
-                    const wall1AlreadyInsetFromHost = (wall1, hostWall, atStart) => {
-                        const pt = atStart
-                            ? { x: wall1.start_x, y: wall1.start_y }
-                            : { x: wall1.end_x, y: wall1.end_y };
-                        const dx = hostWall.end_x - hostWall.start_x;
-                        const dy = hostWall.end_y - hostWall.start_y;
-                        const length = Math.hypot(dx, dy);
-                        if (length < 0.001) return false;
-                        const ux = dx / length;
-                        const uy = dy / length;
-                        const nx = -uy;
-                        const ny = ux;
-                        const relX = pt.x - hostWall.start_x;
-                        const relY = pt.y - hostWall.start_y;
-                        const perp = Math.abs(relX * nx + relY * ny);
-                        const hostThick = Number(hostWall.thickness) || 0;
-                        return perp > hostThick * 0.5 + 0.1;
-                    };
+                    //
+                    // Always snap stem faces to the host near face — including when the stem
+                    // centerline was already inset by joining thickness (deduct / partition).
+                    // Skipping that case left a thickness-sized gap between tip and host.
 
-                    // Case 1: Vertical is wall1, Horizontal is wall2
+                    // Case 1: Vertical is stem (wall1), Horizontal is host (wall2)
+                    // At T-junctions always allow shortening the stem even if isOnBody flags disagree.
                     if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody) {
                         // Use geometry at the intersection (nearest endpoint) so stem direction — and thus
-                        // which horizontal edge is the inner face — is not flipped when wall1/2 flags disagree.
+                        // which horizontal edge is the near face — is not flipped when wall1/2 flags disagree.
                         const distJointToStart = Math.hypot(inter.x - vWall.start_x, inter.y - vWall.start_y);
                         const distJointToEnd = Math.hypot(inter.x - vWall.end_x, inter.y - vWall.end_y);
                         const jointAtVerticalStart = distJointToStart < distJointToEnd;
-                        if (!wall1AlreadyInsetFromHost(vWall, hWall, jointAtVerticalStart)) {
                         const jointY = jointAtVerticalStart ? vWall.start_y : vWall.end_y;
                         const otherVerticalY = jointAtVerticalStart ? vWall.end_y : vWall.start_y;
                         const horizontalOnTopAtButtIn = otherVerticalY > jointY;
 
-                        // Determine target line based on horizontal wall (wall2) position relative to intersection
-                        // If horizontal (wall2) is on top → vertical (wall1) should connect to bottom line of wall2
-                        // If horizontal (wall2) is at bottom → vertical (wall1) should connect to upper line of wall2
+                        // Near face of host: stop at the face the stem approaches, not the far face.
+                        // If horizontal is above the stem → connect to bottom (lower) line
+                        // If horizontal is below the stem → connect to top (upper) line
                         let targetLine;
                         let targetY;
                         
                         if (horizontalOnTopAtButtIn) {
-                            // Horizontal wall2 is on top, vertical wall1 should connect to bottom line of wall2
                             targetLine = hLowerLine;
                         } else {
-                            // Horizontal wall2 is at bottom, vertical wall1 should connect to upper line of wall2
                             targetLine = hUpperLine;
                         }
                         
                         // Get Y from target line (horizontal wall, so Y is constant)
-                        // For butt-in joint: wall1 should connect to wall2's inner face
-                        // The targetLine (hLowerLine or hUpperLine) is already the inner face of wall2
-                        // So we just connect to that line directly - no additional shortening needed
-                        targetY = targetLine[0].y; // Y coordinate is constant for horizontal wall
+                        targetY = targetLine[0].y;
                         
-                        // Shorten vertical wall (wall1) visually by moving both lines to target line
-                        // This creates the visual effect of the wall being shortened to connect to wall2
-                        // For vertical walls, we only modify Y coordinate, keeping X coordinates to maintain vertical orientation
-                        // Ensure both lines are modified by directly accessing the arrays
+                        // Shorten/extend vertical wall (stem) faces to near face
                         const vLine1Endpoint = jointAtVerticalStart ? vLines.line1[0] : vLines.line1[1];
                         const vLine2Endpoint = jointAtVerticalStart ? vLines.line2[0] : vLines.line2[1];
                         
@@ -3730,13 +4484,11 @@ export function drawWalls({
                         vLine2Endpoint.y = targetY;
                         
                         // Keep X coordinates unchanged to maintain wall thickness
-                        }
                     }
-                    // Case 2: Horizontal is wall1, Vertical is wall2
+                    // Case 2: Horizontal is stem (wall1), Vertical is host (wall2)
                     // Only shorten wall1 if the intersection is at an actual endpoint of wall1
                     // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
                     else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody) {
-                        if (!wall1AlreadyInsetFromHost(hWall, vWall, hIsAtStart)) {
                         // Determine which line of vertical (wall2) to connect to
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -3751,9 +4503,7 @@ export function drawWalls({
                         const isVerticalOnLeft = vIntersectionX < hMidX; // Vertical wall2 is on left side of horizontal
                         const isVerticalOnRight = vIntersectionX > hMidX; // Vertical wall2 is on right side of horizontal
                         
-                        // Determine target line based on vertical wall position relative to horizontal
-                        // If vertical is on LEFT of horizontal → horizontal should connect to RIGHT line of vertical
-                        // If vertical is on RIGHT of horizontal → horizontal should connect to LEFT line of vertical
+                        // Near face of vertical host relative to horizontal stem approach
                         let targetVLine;
                         
                         if (isVerticalOnLeft) {
@@ -3796,7 +4546,6 @@ export function drawWalls({
                         hLine2Endpoint.x = targetX;
                         
                         // Keep Y coordinates unchanged to maintain wall thickness
-                        }
                     }
                     }
                 } else {
@@ -3915,6 +4664,11 @@ export function drawWalls({
             };
             runVhPairPhase('extend');
             runVhPairPhase('shorten');
+
+            // Slanted / non-ortho corners: true face-line miters
+            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
+            // Slant / non-ortho butt-in: trim stem faces to host near face
+            applyAngledButtInAtIntersection(wallsAtIntersection, inter);
         }
     });
     
@@ -4000,8 +4754,11 @@ export function drawWalls({
         // Check each intersection to find 45° cuts at each endpoint
         intersections.forEach(inter => {
             const tolerance = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
-            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < tolerance;
-            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < tolerance;
+            const endTol = wall.application_type && String(wall.application_type).toLowerCase() === 'partition'
+                ? Math.max(tolerance, (Number(wall.thickness) || 0) * 2 + 1)
+                : tolerance;
+            const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < endTol;
+            const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < endTol;
             
             if (isAtStart || isAtEnd) {
                 // Check if this intersection has a 45_cut
@@ -4055,15 +4812,18 @@ export function drawWalls({
         
         // Apply 45° cut shortening at each end independently
         // Shorten by wall thickness to match the visual gap
+        // ONLY for true axis-aligned walls — slant corners use applyAngledWallMitersAtIntersection.
+        // The one-face ortho shorten creates crossed pink “X” artifacts on slant 45_cut joints.
         const wallThickness = wall.thickness || 100; // Default to 100mm if not set
         const finalAdjust = wallThickness; // Shorten by wall thickness
-        
+        const allowOrtho45Shorten = isAxisAlignedWall(wall);
+
         // Make copies of lines for modification
         line1 = [...line1.map(p => ({ ...p }))];
         line2 = [...line2.map(p => ({ ...p }))];
         
-        // Shorten at START end
-        if (startHas45) {
+        // Shorten at START end (skip when angled face-miter already placed the corner)
+        if (allowOrtho45Shorten && startHas45 && !wall._miteredStart) {
             // If joining wall is on LEFT side, shorten the LEFT line
             // If joining wall is on RIGHT side, shorten the RIGHT line
             if (startIsOnLeftSide) {
@@ -4088,7 +4848,7 @@ export function drawWalls({
         }
         
         // Shorten at END end
-        if (endHas45) {
+        if (allowOrtho45Shorten && endHas45 && !wall._miteredEnd) {
             // If joining wall is on LEFT side, shorten the LEFT line
             // If joining wall is on RIGHT side, shorten the RIGHT line
             if (endIsOnLeftSide) {
@@ -4142,14 +4902,27 @@ export function drawWalls({
         }
         if (isEditingMode) {
             const endpointColor = selectedWall === wall.id ? 'red' : '#2196F3';
-            drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
-            drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
+            // Define-room / storey-area: only orange room-selection snaps are shown
+            // (extended host junctions). Hide blue tips so deducted butt-ins don't
+            // appear as two selectable dots on the same corner.
+            if (!polygonSelectMode) {
+                drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
+                drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
+            }
         }
     });
 
-    // Yellow snap points: draw once; size tracks canvas zoom
-    if (isEditingMode && Array.isArray(intersections)) {
+    // Orange joint / intersection points at geometric positions (butt-in tip, not extended)
+    // Define-room: skip these so only extended snap points are shown.
+    if (isEditingMode && !polygonSelectMode && Array.isArray(intersections)) {
+        const selectedKeys = selectedIntersectionKeys instanceof Set
+            ? selectedIntersectionKeys
+            : new Set(selectedIntersectionKeys || []);
         intersections.forEach((inter) => {
+            const key = inter?.id != null
+                ? `id:${inter.id}`
+                : `${Math.round(Number(inter.x) || 0)},${Math.round(Number(inter.y) || 0)}`;
+            const isSelected = selectedKeys.has(key);
             drawEndpoints(
                 context,
                 inter.x,
@@ -4158,8 +4931,8 @@ export function drawWalls({
                 offsetX,
                 offsetY,
                 hoveredPoint,
-                '#FF9800',
-                2.25,
+                isSelected ? '#22C55E' : '#FF9800',
+                isSelected ? 3.5 : 2.25,
                 initialScale
             );
         });
@@ -4191,9 +4964,43 @@ export function drawWalls({
             scaleFactor,
             tempOffsetOpts
         );
-        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, '#4CAF50', [5, 5]);
-        drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 2, initialScale);
-        drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 2, initialScale);
+        // Preview color by angle snap:
+        // blue = world 90°, orange = ⊥ to slant, purple = ∥ along slant, green = free
+        const snapType = tempWall.angleSnapType;
+        const previewColor =
+            snapType === 'horizontal' || snapType === 'vertical' ? '#2196F3' :
+            snapType === 'perpendicular' ? '#FF9800' :
+            snapType === 'parallel' ? '#9C27B0' :
+            '#4CAF50';
+        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, previewColor, [5, 5]);
+        drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+        drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+
+        // Snap mode tag near the free end
+        if (snapType) {
+            const tag =
+                snapType === 'horizontal' ? '90° H' :
+                snapType === 'vertical' ? '90° V' :
+                snapType === 'perpendicular' ? '⊥ to slant' :
+                snapType === 'parallel' ? '∥ along slant' :
+                '';
+            if (tag) {
+                const tx = tempWall.end_x * scaleFactor + offsetX + 10;
+                const ty = tempWall.end_y * scaleFactor + offsetY - 10;
+                context.save();
+                context.font = 'bold 11px Segoe UI, Arial, sans-serif';
+                const tw = context.measureText(tag).width;
+                context.fillStyle = 'rgba(255,255,255,0.92)';
+                context.fillRect(tx - 4, ty - 12, tw + 8, 16);
+                context.strokeStyle = previewColor;
+                context.lineWidth = 1;
+                context.strokeRect(tx - 4, ty - 12, tw + 8, 16);
+                context.fillStyle = previewColor;
+                context.fillText(tag, tx, ty);
+                context.restore();
+            }
+        }
+
         const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
         if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
             context.beginPath();
@@ -4205,12 +5012,14 @@ export function drawWalls({
                 snapPoint.x * scaleFactor + offsetX,
                 snapPoint.y * scaleFactor + offsetY
             );
-            context.strokeStyle = 'rgba(76, 175, 80, 0.5)';
+            context.strokeStyle = previewColor;
+            context.globalAlpha = 0.45;
             context.lineWidth = 1;
             context.setLineDash([3, 3]);
             context.stroke();
             context.setLineDash([]);
-            drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, '#4CAF50', 2.25, initialScale);
+            context.globalAlpha = 1;
+            drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2.25, initialScale);
         }
     }
     const { dimensionEdgeExtents } = drawWallPlanDimensionsLayer({
@@ -4288,7 +5097,8 @@ export function drawPanelDivisions(
     initialScale = 1,
     rooms = [],
     wallLinesMap = null,
-    dimensionLanes = null
+    dimensionLanes = null,
+    showPanelLines = true
 ) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
     const line1Raw = wall._line1;
@@ -4317,7 +5127,8 @@ export function drawPanelDivisions(
     
     let accumulated = 0;
     
-    // Draw panel division lines
+    // Draw panel division lines (independent of side-panel dimension labels)
+    if (showPanelLines) {
     for (let i = 0; i < panels.length - 1; i++) {
         accumulated += getPanelDrawWidth(panels[i]);
         const t = accumulated / wallLength;
@@ -4425,6 +5236,7 @@ export function drawPanelDivisions(
         
         accumulated += panelWidth;
     }
+    } // end showPanelLines
     
     if (!showPanelDimensions) {
         return;
@@ -4436,11 +5248,11 @@ export function drawPanelDivisions(
         const panel = panels[i];
         const panelWidth = getPanelDrawWidth(panel);
         
-        // Show labels for side panels (first and last panels) and if this panel should show dimensions
+        // Show labels for side panels (first and last panels)
         // Skip 1130 optimized panels — red slash highlight is enough
+        // No dedup filtering — side panel dimensions should appear on every wall
         if ((i === 0 || i === panels.length - 1) &&
-            !is1130OptimizedPanel(panel) &&
-            (!filteredDimensions || shouldShowPanelDimension(panel, wall.thickness, filteredDimensions.panelDimensions, wall.id, wall))) {
+            !is1130OptimizedPanel(panel)) {
             
             let displayWidth = panelWidth;
             let specialSymbol = '';

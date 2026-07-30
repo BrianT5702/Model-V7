@@ -47,7 +47,7 @@ const RoomManager = ({
     });
 
     const [pointsExpanded, setPointsExpanded] = useState(false);
-    const showGeometry = !isEditMode && (selectedPolygonPoints.length > 0 || selectedWallIds.length > 0);
+    const showGeometry = selectedPolygonPoints.length > 0 || selectedWallIds.length > 0;
     const minWallHeight = selectedWallIds.length > 0
         ? Math.min(...walls.filter(w => selectedWallIds.includes(w.id)).map(w => w.height))
         : null;
@@ -58,6 +58,11 @@ const RoomManager = ({
                 {showGeometry && (
                     <div className="room-form-card">
                         <h3 className="room-form-card-title">Room outline</h3>
+                        {isEditMode && (
+                            <p className="room-form-hint mb-2">
+                                Click canvas corners in order around the perimeter, then save — your point order is kept.
+                            </p>
+                        )}
                         {selectedPolygonPoints.length > 0 && (
                             <div className="mb-3">
                                 <button

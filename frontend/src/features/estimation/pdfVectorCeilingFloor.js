@@ -23,6 +23,10 @@ import {
 } from '../canvas/collisionDetection';
 import { calculatePolygonVisualCenter, calculateIntersection, isPointInPolygon } from '../canvas/utils';
 import { calculateGhostDataForStorey } from './pdfVectorWallPlan';
+import {
+    panelNeedsNylonSupport,
+    getAutoNylonHangerOffsets
+} from '../ceiling/nylonHangerUtils';
 
 /** Align with wall-plan PDF snapping for intersection vs wall endpoints (merged / rounded coords). */
 const CEILING_FLOOR_INTERSECTION_TOL_MM = 35;
@@ -683,18 +687,29 @@ function minDistanceToPolygonEdgesModel(x, y, polygon) {
     return minDist;
 }
 
-/** Same length thresholds as CeilingCanvas.drawPanelSupports */
+/** Same length thresholds as CeilingCanvas / nylonHangerUtils */
 function panelNeedsNylonSupportModel(panel, ceilingThicknessMm) {
-    const bb = panelBBoxForDims(panel);
-    const physicalLength = Math.max(bb.maxX - bb.minX, bb.maxY - bb.minY);
-    const thk = num(panel.thickness, ceilingThicknessMm);
-    const threshold = thk <= 100 ? 3000 : 6000;
-    return physicalLength > threshold;
+    return panelNeedsNylonSupport(panel, ceilingThicknessMm);
 }
 
-function panelCenterModelMm(panel) {
-    const bb = panelBBoxForDims(panel);
-    return { cx: (bb.minX + bb.maxX) / 2, cy: (bb.minY + bb.maxY) / 2 };
+function panelAutoNylonPositionsModelMm(panel, ceilingThicknessMm) {
+    const width = Number(panel?.width ?? 0);
+    const length = Number(panel?.length ?? 0);
+    const startX = Number(panel?.start_x ?? panel?.x ?? 0);
+    const startY = Number(panel?.start_y ?? panel?.y ?? 0);
+    if (!(width > 0) || !(length > 0)) return [];
+
+    return getAutoNylonHangerOffsets(panel, ceilingThicknessMm).map((placement) => {
+        const offLen = Number(placement.offsetLength);
+        const offWid =
+            placement.offsetWidth == null || placement.offsetWidth === ''
+                ? width / 2
+                : Number(placement.offsetWidth);
+        return {
+            cx: startX + offWid,
+            cy: startY + offLen
+        };
+    });
 }
 
 function ceilingPlanAllowsAutoNylon(plan) {
@@ -835,17 +850,19 @@ function drawNylonHangersOnCeilingPdf(
             return;
         }
 
-        const { cx, cy } = panelCenterModelMm(panel);
-        if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
-
-        if (boundaryPoly && boundaryPoly.length >= 3) {
-            if (!isPointInPolygon({ x: cx, y: cy }, boundaryPoly)) return;
-            if (minDistanceToPolygonEdgesModel(cx, cy, boundaryPoly) <= WALL_SUPPORT_THRESHOLD_MM) return;
-        }
-
         const opts = nylonHangerPdfOptionsFromPlan(plan);
-        if (!markPlaced(cx, cy)) return;
-        drawNylonHangerSymbolAtModelMm(doc, cx, cy, transformX, transformY, scale, opts);
+        const positions = panelAutoNylonPositionsModelMm(panel, defaultThk);
+        positions.forEach(({ cx, cy }) => {
+            if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+
+            if (boundaryPoly && boundaryPoly.length >= 3) {
+                if (!isPointInPolygon({ x: cx, y: cy }, boundaryPoly)) return;
+                if (minDistanceToPolygonEdgesModel(cx, cy, boundaryPoly) <= WALL_SUPPORT_THRESHOLD_MM) return;
+            }
+
+            if (!markPlaced(cx, cy)) return;
+            drawNylonHangerSymbolAtModelMm(doc, cx, cy, transformX, transformY, scale, opts);
+        });
     });
 
     const storeyRoomIdSet = new Set((storeyRooms || []).map((r) => Number(r.id)).filter(Number.isFinite));

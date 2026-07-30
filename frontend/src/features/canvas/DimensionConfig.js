@@ -11,7 +11,7 @@ export const DIMENSION_CONFIG = {
     NEAR_WALL_FONT_SCALE: 0.68,    // Legacy panel path fallback
     NEAR_WALL_LANE_SPACING: 4,     // Extra step only when exterior/interior side is blocked (px)
     NEAR_WALL_LOCAL_LABEL_RADIUS_PX: 90, // Legacy — near-wall overlap uses full placedLabels now
-    NEAR_WALL_MAX_PLACEMENT_STEPS: 4,
+    NEAR_WALL_MAX_PLACEMENT_STEPS: 8,
     NEAR_WALL_NUDGE_MM: 30,        // Used only for non-near-wall fallback nudging (mm)
     PROJECT_BASE_OFFSET: 14,      // Minimum distance for project dimensions when no wall dims on edge (px)
     PROJECT_OUTER_GAP_AFTER_WALLS: 8, // Project row sits outside outermost wall row by at least this (px)

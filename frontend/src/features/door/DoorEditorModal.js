@@ -259,30 +259,33 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
               </div>
               <div className="form-grid">
                 <div>
-                  <label className="form-label">Distance from Left (mm)</label>
+                  <label className="form-label">From Left to Door Edge (mm)</label>
                   <input
                     type="number"
                     value={Math.round(form.leftDistance) || 0}
                     onChange={(e) => form.setLeftDistance(e.target.value)}
                     min="0"
-                    max={Math.max(0, Math.round(form.wallLength))}
+                    max={Math.max(0, Math.round(form.maxEdgeClearance))}
                     step="1"
                     className="form-control mt-1"
                   />
                 </div>
                 <div>
-                  <label className="form-label">Distance from Right (mm)</label>
+                  <label className="form-label">From Right to Door Edge (mm)</label>
                   <input
                     type="number"
                     value={Math.round(form.rightDistance) || 0}
                     onChange={(e) => form.setRightDistance(e.target.value)}
                     min="0"
-                    max={Math.max(0, Math.round(form.wallLength))}
+                    max={Math.max(0, Math.round(form.maxEdgeClearance))}
                     step="1"
                     className="form-control mt-1"
                   />
                 </div>
               </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Clear gap from wall end to the near edge of the door opening.
+              </p>
             </div>
           </div>
 

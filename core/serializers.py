@@ -369,7 +369,7 @@ class DoorSerializer(serializers.ModelSerializer):
 class IntersectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Intersection
-        fields = ['id', 'project', 'wall_1', 'wall_2', 'joining_method']
+        fields = ['id', 'project', 'wall_1', 'wall_2', 'joining_method', 'deduct_joining_thickness']
 
 
 class RoomSerializer(serializers.ModelSerializer):

@@ -39,7 +39,14 @@ const App = () => {
                     <ScrollToTop />
                     <ShareSessionGuard>
                     <Routes>
-                        <Route path="/" element={<HomePage />} />
+                        <Route
+                            path="/"
+                            element={(
+                                <ProtectedRoute>
+                                    <HomePage />
+                                </ProtectedRoute>
+                            )}
+                        />
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/projects" element={<Navigate to="/" replace />} />
                         <Route
@@ -50,7 +57,14 @@ const App = () => {
                                 </ProtectedRoute>
                             )}
                         />
-                        <Route path="/projects/:projectId" element={<ProjectDetails />} />
+                        <Route
+                            path="/projects/:projectId"
+                            element={(
+                                <ProtectedRoute>
+                                    <ProjectDetails />
+                                </ProtectedRoute>
+                            )}
+                        />
                         <Route path="/share/:shareToken" element={<ShareProjectPage />} />
                     </Routes>
                     </ShareSessionGuard>

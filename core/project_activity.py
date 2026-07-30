@@ -68,41 +68,48 @@ def resolve_project_id(instance) -> int | None:
     if project_id is not None:
         return project_id
 
-    project = getattr(instance, 'project', None)
+    def _safe_related(obj, field_name):
+        """Read FK without raising DoesNotExist when the related row was already cascade-deleted."""
+        try:
+            return getattr(obj, field_name, None)
+        except Exception:
+            return None
+
+    project = _safe_related(instance, 'project')
     if project is not None:
         return getattr(project, 'pk', None)
 
-    # Nested relations
+    # Nested relations — prefer raw *_id so we never hit a deleted parent row.
     wall_id = getattr(instance, 'wall_id', None)
-    if wall_id is not None or getattr(instance, 'wall', None) is not None:
-        wall = getattr(instance, 'wall', None)
-        if wall is not None:
-            return getattr(wall, 'project_id', None) or getattr(getattr(wall, 'project', None), 'pk', None)
+    if wall_id is not None:
         from .models import Wall
         return Wall.objects.filter(pk=wall_id).values_list('project_id', flat=True).first()
+    wall = _safe_related(instance, 'wall')
+    if wall is not None:
+        return getattr(wall, 'project_id', None) or getattr(_safe_related(wall, 'project'), 'pk', None)
 
     door_id = getattr(instance, 'door_id', None)
-    if door_id is not None or getattr(instance, 'door', None) is not None:
-        door = getattr(instance, 'door', None)
-        if door is not None:
-            return getattr(door, 'project_id', None) or getattr(getattr(door, 'project', None), 'pk', None)
+    if door_id is not None:
         from .models import Door
         return Door.objects.filter(pk=door_id).values_list('project_id', flat=True).first()
+    door = _safe_related(instance, 'door')
+    if door is not None:
+        return getattr(door, 'project_id', None) or getattr(_safe_related(door, 'project'), 'pk', None)
 
     room_id = getattr(instance, 'room_id', None)
-    if room_id is not None or getattr(instance, 'room', None) is not None:
-        room = getattr(instance, 'room', None)
-        if room is not None:
-            return getattr(room, 'project_id', None) or getattr(getattr(room, 'project', None), 'pk', None)
+    if room_id is not None:
         from .models import Room
         return Room.objects.filter(pk=room_id).values_list('project_id', flat=True).first()
+    room = _safe_related(instance, 'room')
+    if room is not None:
+        return getattr(room, 'project_id', None) or getattr(_safe_related(room, 'project'), 'pk', None)
 
     zone_id = getattr(instance, 'zone_id', None)
-    if zone_id is not None or getattr(instance, 'zone', None) is not None:
-        zone = getattr(instance, 'zone', None)
-        if zone is not None:
-            return getattr(zone, 'project_id', None) or getattr(getattr(zone, 'project', None), 'pk', None)
+    if zone_id is not None:
         from .models import CeilingZone
         return CeilingZone.objects.filter(pk=zone_id).values_list('project_id', flat=True).first()
+    zone = _safe_related(instance, 'zone')
+    if zone is not None:
+        return getattr(zone, 'project_id', None) or getattr(_safe_related(zone, 'project'), 'pk', None)
 
     return None

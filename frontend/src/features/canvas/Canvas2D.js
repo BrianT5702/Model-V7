@@ -9,7 +9,12 @@ import {
 import DoorTable from '../door/DoorTable';
 import WallElevationViews from '../panel/WallElevationViews';
 import { buildWallElevations } from '../panel/wallElevationUtils';
-import { calculatePolygonArea, findIntersectionPointsBetweenWalls } from './utils';
+import {
+    calculatePolygonArea,
+    findIntersectionPointsBetweenWalls,
+    getRoomSelectionSnapPoints,
+    calculateLineIntersection,
+} from './utils';
 import {
   drawGrid,
   drawRoomPreview,
@@ -24,7 +29,10 @@ import {
   getRoomLabelPositions,
   drawOverallProjectDimensions,
   calculateActualProjectDimensions,
-  compareDimensions
+  compareDimensions,
+  findHostWallNearPoint,
+  getWallAngleSnapThresholdDeg,
+  snapWallEndToPreferredAngles,
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
@@ -52,6 +60,9 @@ const Canvas2D = ({
     onNewWall, 
     onWallTypeSelect,
     wallThickness = 200,
+    deductCornerThickness = false,
+    onDeductCornerThicknessChange = null,
+    autoSplitOnIntersect = true,
     wallHeight = 2800,
     innerFaceMaterial = 'PPGI',
     innerFaceThickness = 0.5,
@@ -122,9 +133,19 @@ const Canvas2D = ({
     const [pendingWallData, setPendingWallData] = useState(null);
     const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
     const [intersections, setIntersections] = useState([]);
+    // Define-room snap targets: partition butt-ins extended to centerline corners
+    const roomSelectionSnapPoints = React.useMemo(
+        () => getRoomSelectionSnapPoints(walls, intersections),
+        [walls, intersections]
+    );
     const [calculatedWallPanelsMap, setCalculatedWallPanelsMap] = useState(null);
     const [calculatedWallPanelsFingerprint, setCalculatedWallPanelsFingerprint] = useState(null);
     const [selectedIntersection, setSelectedIntersection] = useState(null);
+    // Multi-select joint intersections (Ctrl/Cmd/Shift+click). Primary panel still
+    // mirrors selectedIntersection as the "focused" one when only one is picked.
+    const [selectedIntersections, setSelectedIntersections] = useState([]);
+    const [bulkJointMethod, setBulkJointMethod] = useState('butt_in');
+    const [bulkDeductThickness, setBulkDeductThickness] = useState(false);
     const [highlightWalls, setHighlightWalls] = useState([]);
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
@@ -133,6 +154,28 @@ const Canvas2D = ({
     const [showElevations, setShowElevations] = useState(false);
     const [wallElevations, setWallElevations] = useState(null);
     const [isGeneratingElevations, setIsGeneratingElevations] = useState(false);
+
+    const getIntersectionKey = (inter) => {
+        if (!inter) return '';
+        if (inter.id != null) return `id:${inter.id}`;
+        return `${Math.round(Number(inter.x) || 0)},${Math.round(Number(inter.y) || 0)}`;
+    };
+
+    const clearJointSelection = () => {
+        setSelectedIntersection(null);
+        setSelectedIntersections([]);
+        setHighlightWalls([]);
+        setSelectedJointPair(null);
+    };
+
+    const syncFocusedIntersection = (list) => {
+        setSelectedIntersections(list);
+        setSelectedIntersection(list.length > 0 ? list[list.length - 1] : null);
+        if (list.length === 0) {
+            setHighlightWalls([]);
+            setSelectedJointPair(null);
+        }
+    };
 
     const handleGenerateElevations = useCallback(() => {
         if (showElevations && wallElevations) {
@@ -175,6 +218,13 @@ const Canvas2D = ({
     const { resolvedTheme } = useTheme();
 
     const lastRoomDataRef = useRef({ rooms: [], walls: [] });
+    // Skip O(n²) intersection rematch when wall geometry + joint methods are unchanged
+    // (e.g. material/face edits still replace the walls array).
+    const intersectionFingerprintRef = useRef('');
+    // When the canvas is resized, we recalc offsetX/offsetY via refs in a layout effect.
+    // Room labels depend on those refs, but refs don't trigger rerenders, so we guard
+    // a single "force rerender" per canvas-size change to keep overlays aligned.
+    const lastOffsetRecalcSizeRef = useRef({ width: -1, height: -1 });
     const thicknessColorMapRef = useRef(new Map());
     const [thicknessColorMap, setThicknessColorMap] = useState(new Map());
     const [dimensionVisibility, setDimensionVisibility] = useState({
@@ -951,22 +1001,22 @@ const Canvas2D = ({
     const snapToClosestPoint = (x, y) => {
         let closestPoint = { x, y }; // Default to the provided point
         let minDistance = SNAP_THRESHOLD / scaleFactor.current;
-    
+
         // Check snapping to wall endpoints (start and end points)
         walls.forEach((wall) => {
             ['start', 'end'].forEach((point) => {
                 const px = wall[`${point}_x`];
                 const py = wall[`${point}_y`];
                 const distance = Math.hypot(px - x, py - y);
-    
+
                 if (distance < minDistance) {
                     closestPoint = { x: px, y: py };
                     minDistance = distance;
                 }
             });
         });
-    
-        // Check snapping to wall segments (for existing intersections)
+
+        // Check snapping to wall segments
         walls.forEach((wall) => {
             const segmentPoint = snapToWallSegment(x, y, wall);
             if (segmentPoint) {
@@ -977,7 +1027,7 @@ const Canvas2D = ({
                 }
             }
         });
-    
+
         return closestPoint;
     };
 
@@ -992,6 +1042,16 @@ const Canvas2D = ({
         const epsilon = 0.001; // Minimum distance to consider it actually snapped
         // Point snapped if it moved more than epsilon and is within threshold
         return distance > epsilon && distance < threshold;
+    };
+
+    /** True when pt is on a wall endpoint (geometry lock — skip ortho angle snap). */
+    const isPointOnWallEndpoint = (pt, tolMm = 0.75) => {
+        if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return false;
+        for (const wall of walls) {
+            if (Math.hypot(pt.x - wall.start_x, pt.y - wall.start_y) <= tolMm) return true;
+            if (Math.hypot(pt.x - wall.end_x, pt.y - wall.end_y) <= tolMm) return true;
+        }
+        return false;
     };                   
 
     const snapToWallSegment = (x, y, wall) => {
@@ -1017,21 +1077,36 @@ const Canvas2D = ({
         };
     };
 
-    // Helper: snap to intersections, then wall segments, then endpoints, then raw click
-    function snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor) {
+    // Helper: snap for define-room. When selectionSnapPoints provided, use those
+    // (partition corners extended). Otherwise geometric intersections + endpoints.
+    function snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor, selectionSnapPoints = null) {
         let closestPoint = { x, y };
-        // Make intersection snapping more sensitive (3x normal threshold)
-        let intersectionThreshold = SNAP_THRESHOLD * 2 / scaleFactor;
-        let minDistance = intersectionThreshold;
-        // 1. Intersections (high sensitivity)
-        intersections.forEach(inter => {
+        const maxWallThick = (walls || []).reduce(
+            (max, wall) => Math.max(max, Number(wall.thickness) || 0),
+            0
+        );
+
+        if (Array.isArray(selectionSnapPoints) && selectionSnapPoints.length > 0) {
+            // Reach extended partition corners from shortened tips (~host thickness away).
+            let minDistance = Math.max(SNAP_THRESHOLD * 2 / scaleFactor, maxWallThick + 25);
+            selectionSnapPoints.forEach((pt) => {
+                const distance = Math.hypot(pt.x - x, pt.y - y);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestPoint = { x: pt.x, y: pt.y };
+                }
+            });
+            return closestPoint;
+        }
+
+        let minDistance = SNAP_THRESHOLD * 2 / scaleFactor;
+        (intersections || []).forEach(inter => {
             const distance = Math.hypot(inter.x - x, inter.y - y);
             if (distance < minDistance) {
                 minDistance = distance;
                 closestPoint = { x: inter.x, y: inter.y };
             }
         });
-        // 3. Endpoints (normal threshold)
         let segmentThreshold = SNAP_THRESHOLD / scaleFactor;
         walls.forEach(wall => {
             ['start', 'end'].forEach(point => {
@@ -1082,6 +1157,7 @@ const Canvas2D = ({
         const intersectionThreshold = (SNAP_THRESHOLD * 2) / scaleFactor.current;
         const endpointThreshold = SNAP_THRESHOLD / scaleFactor.current;
         const segmentThreshold = (SNAP_THRESHOLD * 1.5) / scaleFactor.current;
+        const wallThick = Number(wall.thickness) || 0;
 
         let bestPoint = null;
         let bestDistance = Infinity;
@@ -1094,10 +1170,16 @@ const Canvas2D = ({
             }
         };
 
-        // Intersections associated with this wall
-        getIntersectionsForWall(wall.id).forEach((pt) =>
-            considerPoint(pt, intersectionThreshold)
-        );
+        // Intersections associated with this wall — always project onto the wall
+        // segment. Partition butt-in tips are offset from the host centerline and
+        // would otherwise block splits ("point must lie on the selected wall").
+        getIntersectionsForWall(wall.id).forEach((pt) => {
+            const onWall = snapToWallSegment(pt.x, pt.y, wall);
+            if (!onWall) return;
+            const projDist = Math.hypot(onWall.x - pt.x, onWall.y - pt.y);
+            if (projDist > wallThick * 2 + 50) return;
+            considerPoint(onWall, intersectionThreshold + wallThick);
+        });
 
         // Endpoints
         considerPoint({ x: wall.start_x, y: wall.start_y }, endpointThreshold);
@@ -1132,7 +1214,7 @@ const Canvas2D = ({
             if (!snapped) return null;
 
             const distance = Math.hypot(snapped.x - x, snapped.y - y);
-            if (distance > selectionThreshold) {
+            if (distance > selectionThreshold + (Number(targetWall.thickness) || 0)) {
                 return null;
             }
 
@@ -1140,6 +1222,7 @@ const Canvas2D = ({
         }
 
         let bestResult = null;
+        let bestPerp = Infinity;
         let bestDistance = Infinity;
 
         walls.forEach((wall) => {
@@ -1147,7 +1230,22 @@ const Canvas2D = ({
             if (!snapped) return;
 
             const distance = Math.hypot(snapped.x - x, snapped.y - y);
-            if (distance < bestDistance && distance <= selectionThreshold) {
+            const thick = Number(wall.thickness) || 0;
+            if (distance > selectionThreshold + thick) return;
+
+            // Prefer the wall whose body is nearest the click (host over partition tip).
+            const onSeg = snapToWallSegment(x, y, wall);
+            const perp = onSeg
+                ? Math.hypot(onSeg.x - x, onSeg.y - y)
+                : distance;
+            const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
+            const scorePerp = perp + (isPartition ? thick * 0.35 : 0);
+
+            if (
+                scorePerp < bestPerp - 0.5
+                || (Math.abs(scorePerp - bestPerp) <= 0.5 && distance < bestDistance)
+            ) {
+                bestPerp = scorePerp;
                 bestDistance = distance;
                 bestResult = { wall, point: snapped };
             }
@@ -1373,7 +1471,9 @@ const Canvas2D = ({
             setSelectedRoomId(null);
         }
     
-        // Intersection / joint selection — skip while drawing walls or working doors/merge/split
+        // Intersection / joint selection — geometric positions only (butt-in tip),
+        // closest wins. Do NOT use extended display points: those sit on the host
+        // line and collide with collinear wall endpoint joints (e.g. 8706↔8707).
         if (
             currentMode !== 'add-wall'
             && currentMode !== 'edit-wall'
@@ -1384,17 +1484,79 @@ const Canvas2D = ({
             && currentMode !== 'edit-door'
             && currentMode !== 'merge-wall'
         ) {
-            for (const inter of intersections) {
-                const wall1 = walls.find(w => w.id === inter.wall_1);
-                const wall2 = walls.find(w => w.id === inter.wall_2);
-                const maxThickness = Math.max(wall1?.thickness || 0, wall2?.thickness || 0);
-                const dynamicThreshold = (SNAP_THRESHOLD + maxThickness) / scaleFactor.current;
-                const distance = Math.hypot(inter.x - x, inter.y - y);
-                if (distance < dynamicThreshold) {
-                    setSelectedIntersection(inter);
-                    // setJoiningMethod(inter.joining_method || "butt_in"); // Unused variable
-                    return;
+            const hitThreshold = (SNAP_THRESHOLD * 2.5) / scaleFactor.current;
+            let bestInter = null;
+            let bestDistance = Infinity;
+            let bestIsPartition = false;
+
+            const interInvolvesPartition = (inter) => {
+                const ids = [];
+                if (inter.wall_1 != null) ids.push(inter.wall_1);
+                if (inter.wall_2 != null) ids.push(inter.wall_2);
+                if (Array.isArray(inter.pairs)) {
+                    inter.pairs.forEach((pair) => {
+                        ids.push(pair.wall1?.id ?? pair.wall1);
+                        ids.push(pair.wall2?.id ?? pair.wall2);
+                    });
                 }
+                return ids.some((id) => {
+                    const wall = walls.find((w) => String(w.id) === String(id));
+                    return wall && String(wall.application_type || '').toLowerCase() === 'partition';
+                });
+            };
+
+            for (const inter of intersections) {
+                if (!Number.isFinite(inter.x) || !Number.isFinite(inter.y)) continue;
+                const distance = Math.hypot(inter.x - x, inter.y - y);
+                if (distance >= hitThreshold) continue;
+                const isPartitionJoint = interInvolvesPartition(inter);
+                // Prefer partition butt-in when distances are effectively tied
+                // (extended host junction sits on collinear wall splits).
+                const better =
+                    distance < bestDistance - 0.5
+                    || (Math.abs(distance - bestDistance) <= 0.5 && isPartitionJoint && !bestIsPartition);
+                if (better) {
+                    bestDistance = distance;
+                    bestInter = inter;
+                    bestIsPartition = isPartitionJoint;
+                }
+            }
+
+            if (bestInter) {
+                const key = getIntersectionKey(bestInter);
+                const multiToggle = Boolean(event.ctrlKey || event.metaKey);
+                setSelectedIntersections((prev) => {
+                    const existsIdx = prev.findIndex((i) => getIntersectionKey(i) === key);
+                    let next;
+                    if (multiToggle) {
+                        // Ctrl/Cmd+click: toggle membership
+                        next = existsIdx >= 0
+                            ? prev.filter((_, idx) => idx !== existsIdx)
+                            : [...prev, bestInter];
+                    } else if (prev.length > 0) {
+                        // Panel already open: keep adding joints with plain clicks
+                        if (existsIdx >= 0) {
+                            // Re-clicking a selected joint only refocuses it. Substituting the
+                            // freshly derived `bestInter` here would throw away unsaved edits
+                            // such as a flipped wall order.
+                            next = [
+                                ...prev.filter((_, idx) => idx !== existsIdx),
+                                prev[existsIdx],
+                            ];
+                        } else {
+                            next = [...prev, bestInter];
+                        }
+                    } else {
+                        next = [bestInter];
+                    }
+                    setSelectedIntersection(next.length > 0 ? next[next.length - 1] : null);
+                    if (next.length === 0) {
+                        setHighlightWalls([]);
+                        setSelectedJointPair(null);
+                    }
+                    return next;
+                });
+                return;
             }
         }
     
@@ -1417,50 +1579,72 @@ const Canvas2D = ({
                     // Check if end point snapped (before any angle snapping)
                     const originalEndPoint = { x, y };
                     let endPoint = hoveredPoint || snapToClosestPoint(x, y);
-                    const endPointSnapped = hoveredPoint ? true : didPointSnap(originalEndPoint, endPoint);
+                    const endPointSnapped = hoveredPoint
+                        ? true
+                        : (didPointSnap(originalEndPoint, endPoint) || isPointOnWallEndpoint(endPoint));
 
                     // Store original end point before angle snapping for modal
                     const endPointBeforeAngleSnap = { ...endPoint };
 
-                    // --- Calculate angle and check for 90-degree snapping with dynamic threshold ---
-                    let dx = endPoint.x - startPoint.x;
-                    let dy = endPoint.y - startPoint.y;
-                    const wallLength = Math.hypot(dx, dy);
-                    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                    
-                    // Dynamic angle threshold: more sensitive for shorter walls
-                    // For very short walls (< 500mm), use 10 degrees threshold
-                    // For medium walls (500-2000mm), use 5 degrees
-                    // For long walls (> 2000mm), use 2 degrees
-                    let angleThreshold = 2; // Default for long walls
-                    if (wallLength < 500) {
-                        angleThreshold = 10; // Very sensitive for short walls
-                    } else if (wallLength < 2000) {
-                        angleThreshold = 5; // Medium sensitivity
+                    // World H/V snap, plus perpendicular-to-host when starting from a slant.
+                    // Only skip ortho when locked to a wall endpoint — segment snaps still get 90°.
+                    const endOnEndpoint = isPointOnWallEndpoint(endPoint) || Boolean(hoveredPoint);
+                    const hostWall =
+                        (tempWall.hostWallId != null && walls.find((w) => w.id === tempWall.hostWallId)) ||
+                        findHostWallNearPoint(startPoint, walls, 30);
+                    const wallLengthForSnap = Math.hypot(
+                        endPoint.x - startPoint.x,
+                        endPoint.y - startPoint.y
+                    );
+                    const angleThreshold = getWallAngleSnapThresholdDeg(wallLengthForSnap);
+                    let angleSnap = { end: endPoint, snapType: null, direction: null };
+                    if (!endOnEndpoint) {
+                        angleSnap = snapWallEndToPreferredAngles(
+                            startPoint,
+                            endPoint,
+                            hostWall,
+                            angleThreshold
+                        );
+                        endPoint = angleSnap.end;
                     }
-                    
-                    const isNearVertical = Math.abs(angle - 90) <= angleThreshold || Math.abs(angle + 90) <= angleThreshold;
-                    const isNearHorizontal = Math.abs(angle) <= angleThreshold || Math.abs(angle - 180) <= angleThreshold || Math.abs(angle + 180) <= angleThreshold;
-                    
-                    // Apply 90-degree snapping
-                    if (isNearVertical) {
-                        endPoint.x = startPoint.x; // Snap vertically
-                    } else if (isNearHorizontal) {
-                        endPoint.y = startPoint.y; // Snap horizontally
+                    const isNearVertical = angleSnap.snapType === 'vertical';
+                    const isNearHorizontal = angleSnap.snapType === 'horizontal';
+                    const isNearPerpendicular = angleSnap.snapType === 'perpendicular';
+
+                    // If the end hit geometry and we locked to world H/V, keep the snap's
+                    // join coordinate (X for horizontal, Y for vertical). Ortho must not
+                    // stretch past the target — that creates 1–2mm overload stubs.
+                    if (endPointSnapped && isNearHorizontal) {
+                        endPoint = { x: endPointBeforeAngleSnap.x, y: startPoint.y };
+                    } else if (endPointSnapped && isNearVertical) {
+                        endPoint = { x: startPoint.x, y: endPointBeforeAngleSnap.y };
                     }
 
                     // Round both points before saving
                     startPoint = roundPoint(startPoint);
                     endPoint = roundPoint(endPoint);
+                    // After rounding, keep near-plumb walls on one X so T-joins don't create 1mm stubs.
+                    // Skip when end is locked to an endpoint — a slight slant to a corner must stay.
+                    if (!endOnEndpoint) {
+                        if (isNearVertical || (Math.abs(endPoint.x - startPoint.x) <= 2 && Math.abs(endPoint.y - startPoint.y) > 2)) {
+                            endPoint = { ...endPoint, x: startPoint.x };
+                        } else if (isNearHorizontal || (Math.abs(endPoint.y - startPoint.y) <= 2 && Math.abs(endPoint.x - startPoint.x) > 2)) {
+                            endPoint = { ...endPoint, y: startPoint.y };
+                        }
+                    }
+                    if (endPointSnapped && isNearHorizontal) {
+                        endPoint = { x: Math.round(endPointBeforeAngleSnap.x), y: startPoint.y };
+                    } else if (endPointSnapped && isNearVertical) {
+                        endPoint = { x: startPoint.x, y: Math.round(endPointBeforeAngleSnap.y) };
+                    }
 
-                    // Check if start or end point is in a ghosted area
+                    // Ghost areas mark taller lower-level rooms. Allow drawing on top of them
+                    // (room/wall base elevation is raised when saving).
                     if (isPointInGhostedArea(startPoint) || isPointInGhostedArea(endPoint)) {
                         if (setWallSplitError) {
-                            setWallSplitError('Cannot create walls in ghosted areas (double-height spaces from lower levels).');
+                            setWallSplitError('Building over a taller lower-level room — base elevation will sit on top of it.');
                             setTimeout(() => setWallSplitError(''), 4000);
                         }
-                        setTempWall(null);
-                        return;
                     }
 
                     // Check if either point didn't snap - show length input modal
@@ -1471,31 +1655,23 @@ const Canvas2D = ({
                         const dirStartPoint = startPoint;
                         const dirEndPoint = endPointBeforeAngleSnap;
                         
-                        // Calculate current length and direction
-                        const currentLength = Math.hypot(dirEndPoint.x - dirStartPoint.x, dirEndPoint.y - dirStartPoint.y);
-                        const direction = currentLength > 0 ? {
-                            x: (dirEndPoint.x - dirStartPoint.x) / currentLength,
-                            y: (dirEndPoint.y - dirStartPoint.y) / currentLength
-                        } : { x: 1, y: 0 }; // Default direction if length is 0
+                        // Prefer snapped direction (world H/V or perpendicular to slant)
+                        const currentLength = Math.hypot(
+                            angleSnap.end.x - startPoint.x,
+                            angleSnap.end.y - startPoint.y
+                        ) || Math.hypot(dirEndPoint.x - dirStartPoint.x, dirEndPoint.y - dirStartPoint.y);
+                        const direction = angleSnap.direction || (currentLength > 0 ? {
+                            x: (angleSnap.end.x - startPoint.x) / currentLength,
+                            y: (angleSnap.end.y - startPoint.y) / currentLength
+                        } : { x: 1, y: 0 });
+
+                        // Default: typed mm = exact centerline length along the wall.
+                        // PDF horizontal/vertical span is opt-in in the modal (avoids 750 → 759).
                         
                         // If start didn't snap but end did, we'll use end as reference point
                         // Otherwise, use start as reference point
                         const referencePoint = (!startPointSnapped && endPointSnapped) ? endPointBeforeAngleSnap : startPoint;
                         const useEndAsReference = !startPointSnapped && endPointSnapped;
-                        
-                        // Calculate angle threshold based on current wall length for modal
-                        const wallLengthForThreshold = currentLength || 1000;
-                        let angleThreshold = 2; // Default for long walls
-                        if (wallLengthForThreshold < 500) {
-                            angleThreshold = 10; // Very sensitive for short walls
-                        } else if (wallLengthForThreshold < 2000) {
-                            angleThreshold = 5; // Medium sensitivity
-                        }
-                        
-                        // Recalculate isNearVertical and isNearHorizontal with the dynamic threshold
-                        const recalculatedAngle = Math.atan2(dirEndPoint.y - dirStartPoint.y, dirEndPoint.x - dirStartPoint.x) * (180 / Math.PI);
-                        const recalculatedIsNearVertical = Math.abs(recalculatedAngle - 90) <= angleThreshold || Math.abs(recalculatedAngle + 90) <= angleThreshold;
-                        const recalculatedIsNearHorizontal = Math.abs(recalculatedAngle) <= angleThreshold || Math.abs(recalculatedAngle - 180) <= angleThreshold || Math.abs(recalculatedAngle + 180) <= angleThreshold;
                         
                         // Store pending wall data for the modal
                         setPendingWallData({
@@ -1505,9 +1681,13 @@ const Canvas2D = ({
                             startPointSnapped,
                             endPointSnapped,
                             useEndAsReference,
-                            isNearVertical: recalculatedIsNearVertical,
-                            isNearHorizontal: recalculatedIsNearHorizontal,
-                            angleThreshold // Store the threshold used for reference
+                            isNearVertical,
+                            isNearHorizontal,
+                            isNearPerpendicular,
+                            angleSnapType: angleSnap.snapType,
+                            axisSpanMode: null,
+                            deductCornerThickness: Boolean(deductCornerThickness),
+                            angleThreshold
                         });
                         setShowLengthInput(true);
                         setTempWall(null);
@@ -1527,7 +1707,9 @@ const Canvas2D = ({
                         inner_face_material: innerFaceMaterial,
                         inner_face_thickness: innerFaceThickness,
                         outer_face_material: outerFaceMaterial,
-                        outer_face_thickness: outerFaceThickness
+                        outer_face_thickness: outerFaceThickness,
+                        deduct_corner_thickness: Boolean(deductCornerThickness),
+                        auto_split: autoSplitOnIntersect !== false,
                     };
                     try {
                         if (typeof onNewWall !== 'function') {
@@ -1563,6 +1745,7 @@ const Canvas2D = ({
                 let snappedStart = hoveredPoint || snapToClosestPoint(x, y);
                 // Round the start point before showing temp wall
                 snappedStart = roundPoint(snappedStart);
+                const hostWall = findHostWallNearPoint(snappedStart, walls, 30);
                 setIsDrawing(true);
                 setTempWall({
                     start_x: snappedStart.x,
@@ -1571,6 +1754,7 @@ const Canvas2D = ({
                     end_y: snappedStart.y,
                     originalStart_x: originalClickPoint.x, // Store original for snap detection
                     originalStart_y: originalClickPoint.y,
+                    hostWallId: hostWall?.id ?? null,
                     thickness: wallThickness, // So preview line width matches selected thickness
                 });
             }
@@ -1695,13 +1879,12 @@ const Canvas2D = ({
         // === Add-Door Mode ===
         if (currentMode === 'add-door') {
             const clickPoint = { x, y };
-            // Check if click point is in a ghosted area
+            // Allow doors over ghost zones (taller rooms below); user may be detailing the upper room.
             if (isPointInGhostedArea(clickPoint)) {
                 if (setWallSplitError) {
-                    setWallSplitError('Cannot create doors in ghosted areas (double-height spaces from lower levels).');
-                    setTimeout(() => setWallSplitError(''), 4000);
+                    setWallSplitError('This area sits over a taller lower-level room.');
+                    setTimeout(() => setWallSplitError(''), 3000);
                 }
-                return;
             }
             
             let closestWallId = null;
@@ -1713,10 +1896,6 @@ const Canvas2D = ({
                 }
                 const segmentPoint = snapToWallSegment(x, y, wall);
                 if (segmentPoint) {
-                    // Also check if the segment point is in a ghosted area
-                    if (isPointInGhostedArea(segmentPoint)) {
-                        return;
-                    }
                     const distance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
                     if (distance < minDistance) {
                         minDistance = distance;
@@ -1751,16 +1930,20 @@ const Canvas2D = ({
                     }
                 }
             }
-            // 2. Snap to intersections, wall segments, endpoints
-            const snapped = snapToClosestPointWithIntersections(x, y, intersections, walls, scaleFactor.current);
+            // 2. Snap to room corners (partition butt-ins extended like normal walls)
+            const snapped = snapToClosestPointWithIntersections(
+                x,
+                y,
+                intersections,
+                walls,
+                scaleFactor.current,
+                roomSelectionSnapPoints
+            );
             
-            // Check if the snapped point is in a ghosted area
-            if (isPointInGhostedArea(snapped)) {
-                if (setWallSplitError) {
-                    setWallSplitError('Cannot create rooms in ghosted areas (double-height spaces from lower levels).');
-                    setTimeout(() => setWallSplitError(''), 4000);
-                }
-                return;
+            // Ghost = taller room below. Still allow defining a room on top of it.
+            if (isPointInGhostedArea(snapped) && setWallSplitError) {
+                setWallSplitError('Over a taller lower-level room — new room base will sit on top of it.');
+                setTimeout(() => setWallSplitError(''), 4000);
             }
             
             let points = [...selectedRoomPoints];
@@ -1880,7 +2063,18 @@ const Canvas2D = ({
         }
 
         if (currentMode === 'define-room' || currentMode === 'storey-area') {
-            setHoveredPoint(null); // Disable endpoint hover effect
+            // Preview the same extended host-junction snap used on click — never
+            // the shortened butt-in tip (those are suppressed from roomSelectionSnapPoints).
+            const snapped = snapToClosestPointWithIntersections(
+                x,
+                y,
+                intersections,
+                walls,
+                scaleFactor.current,
+                roomSelectionSnapPoints
+            );
+            const moved = Math.hypot(snapped.x - x, snapped.y - y) > 0.001;
+            setHoveredPoint(moved ? snapped : null);
             return;
         }
 
@@ -1935,36 +2129,30 @@ const Canvas2D = ({
         // --- Update tempWall while drawing (snapping logic) ---
         if (isDrawing && tempWall && currentMode === 'add-wall') {
             let snapped = snapToClosestPoint(x, y);
-            // Snap to 90/180 degrees with dynamic threshold (more sensitive for short walls)
-            let dx = snapped.x - tempWall.start_x;
-            let dy = snapped.y - tempWall.start_y;
-            const wallLength = Math.hypot(dx, dy);
-            let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-            
-            // Dynamic angle threshold: more sensitive for shorter walls
-            // For very short walls (< 500mm), use 10 degrees threshold
-            // For medium walls (500-2000mm), use 5 degrees
-            // For long walls (> 2000mm), use 2 degrees
-            let angleThreshold = 2; // Default for long walls
-            if (wallLength < 500) {
-                angleThreshold = 10; // Very sensitive for short walls
-            } else if (wallLength < 2000) {
-                angleThreshold = 5; // Medium sensitivity
-            }
-            
-            const isNearVertical = Math.abs(angle - 90) <= angleThreshold || Math.abs(angle + 90) <= angleThreshold;
-            const isNearHorizontal = Math.abs(angle) <= angleThreshold || Math.abs(angle - 180) <= angleThreshold || Math.abs(angle + 180) <= angleThreshold;
-            
-            if (isNearVertical) {
-                snapped.x = tempWall.start_x;
-            } else if (isNearHorizontal) {
-                snapped.y = tempWall.start_y;
+            const startPt = { x: tempWall.start_x, y: tempWall.start_y };
+            const onEndpoint = isPointOnWallEndpoint(snapped);
+            let angleSnapType = null;
+            // Endpoint snap wins over ortho; free drag / segment snaps still get 90°.
+            if (!onEndpoint) {
+                const hostWall =
+                    (tempWall.hostWallId != null && walls.find((w) => w.id === tempWall.hostWallId)) ||
+                    findHostWallNearPoint(startPt, walls, 30);
+                const wallLength = Math.hypot(snapped.x - startPt.x, snapped.y - startPt.y);
+                const angleSnap = snapWallEndToPreferredAngles(
+                    startPt,
+                    snapped,
+                    hostWall,
+                    getWallAngleSnapThresholdDeg(wallLength)
+                );
+                snapped = angleSnap.end;
+                angleSnapType = angleSnap.snapType;
             }
             setTempWall({
                 ...tempWall,
                 end_x: snapped.x,
                 end_y: snapped.y,
                 thickness: tempWall.thickness ?? wallThickness,
+                angleSnapType, // 'vertical' | 'horizontal' | 'perpendicular' | null
             });
         }
     };
@@ -1993,6 +2181,50 @@ const Canvas2D = ({
     // Add adjustWallForJointType and dependencies from old code
     const originalWallEndpoints = new Map();
 
+    /** Move stem (wall_1) tip back from host centerline by host thickness. */
+    const resolveButtInStemTip = (stem, host, deduct) => {
+        const centerHit = calculateLineIntersection(
+            { x: stem.start_x, y: stem.start_y },
+            { x: stem.end_x, y: stem.end_y },
+            { x: host.start_x, y: host.start_y },
+            { x: host.end_x, y: host.end_y },
+            { extendFirst: true, extendSecond: true }
+        );
+        if (!centerHit) return null;
+
+        const dStart = Math.hypot(centerHit.x - stem.start_x, centerHit.y - stem.start_y);
+        const dEnd = Math.hypot(centerHit.x - stem.end_x, centerHit.y - stem.end_y);
+        const atStart = dStart <= dEnd;
+        const freePt = atStart
+            ? { x: stem.end_x, y: stem.end_y }
+            : { x: stem.start_x, y: stem.start_y };
+
+        if (!deduct) {
+            return { atStart, point: centerHit };
+        }
+
+        const towardFreeX = freePt.x - centerHit.x;
+        const towardFreeY = freePt.y - centerHit.y;
+        const towardLen = Math.hypot(towardFreeX, towardFreeY);
+        if (towardLen < 0.001) {
+            return { atStart, point: centerHit };
+        }
+        const thick = Number(host.thickness) || 0;
+        if (thick <= 0) {
+            return { atStart, point: centerHit };
+        }
+        const ux = towardFreeX / towardLen;
+        const uy = towardFreeY / towardLen;
+        // Full joining-wall thickness, matching partition butt-in inset.
+        return {
+            atStart,
+            point: {
+                x: centerHit.x + ux * thick,
+                y: centerHit.y + uy * thick,
+            },
+        };
+    };
+
     const adjustWallForJointType = async (joint, walls, setWalls, projectId, intersection) => {
         const wall1 = walls.find(w => w.id === joint.wall_1);
         const wall2 = walls.find(w => w.id === joint.wall_2);
@@ -2005,38 +2237,43 @@ const Canvas2D = ({
             if (joint.joining_method === 'none') {
                 return; // Do not adjust walls when joint type is "none"
             }
-    
-            // COMMENTED OUT: Actual wall geometry shortening - now handled visually in rendering
-            // const shouldShorten = joint.joining_method === 'butt_in' && (onlyOneJoint || (allAreButtIn && !anyIs45));
-            // 
-            // if (shouldShorten) {
-            //     const len1 = getWallLength(wall1);
-            //     const len2 = getWallLength(wall2);
-            //     const shorter = onlyOneJoint ? wall1 : (len1 <= len2 ? wall1 : wall2);
-            //     const longer = onlyOneJoint ? wall2 : (len1 > len2 ? wall1 : wall2);
-            //     const delta = onlyOneJoint ? wall2.thickness : longer.thickness / 2;
-            // 
-            //     if (!originalWallEndpoints.has(wall1.id)) {
-            //         originalWallEndpoints.set(wall1.id, {
-            //             start_x: wall1.start_x,
-            //             start_y: wall1.start_y,
-            //             end_x: wall1.end_x,
-            //             end_y: wall1.end_y
-            //         });
-            //     }
-            // 
-            //     if (wall1.id === shorter.id) {
-            //         // Shorten the end that's closer to the intersection point
-            //         if (isStartEnd) {
-            //             updatedWall.start_x += ux * delta;
-            //             updatedWall.start_y += uy * delta;
-            //         } else {
-            //             updatedWall.end_x -= ux * delta;
-            //             updatedWall.end_y -= uy * delta;
-            //         }
-            //     }
-            // } else 
-            if (joint.joining_method === '45_cut') {
+
+            if (joint.joining_method === 'butt_in') {
+                const deduct = Boolean(joint.deduct_joining_thickness);
+                if (!deduct) {
+                    return;
+                }
+                const tip = resolveButtInStemTip(wall1, wall2, true);
+                if (tip?.point && Number.isFinite(tip.point.x) && Number.isFinite(tip.point.y)) {
+                    const current = tip.atStart
+                        ? { x: wall1.start_x, y: wall1.start_y }
+                        : { x: wall1.end_x, y: wall1.end_y };
+                    const alreadyNear = Math.hypot(
+                        tip.point.x - current.x,
+                        tip.point.y - current.y
+                    ) <= 0.75;
+                    if (alreadyNear) {
+                        return;
+                    }
+                    if (!originalWallEndpoints.has(wall1.id)) {
+                        originalWallEndpoints.set(wall1.id, {
+                            start_x: wall1.start_x,
+                            start_y: wall1.start_y,
+                            end_x: wall1.end_x,
+                            end_y: wall1.end_y,
+                        });
+                    }
+                    if (tip.atStart) {
+                        updatedWall.start_x = tip.point.x;
+                        updatedWall.start_y = tip.point.y;
+                    } else {
+                        updatedWall.end_x = tip.point.x;
+                        updatedWall.end_y = tip.point.y;
+                    }
+                } else {
+                    return;
+                }
+            } else if (joint.joining_method === '45_cut') {
                 if (originalWallEndpoints.has(wall1.id)) {
                     const original = originalWallEndpoints.get(wall1.id);
                     updatedWall.start_x = original.start_x;
@@ -2044,7 +2281,11 @@ const Canvas2D = ({
                     updatedWall.end_x = original.end_x;
                     updatedWall.end_y = original.end_y;
                     originalWallEndpoints.delete(wall1.id);
+                } else {
+                    return;
                 }
+            } else {
+                return;
             }
     
             const res = await api.put(`/walls/${updatedWall.id}/`, updatedWall);
@@ -2059,40 +2300,81 @@ const Canvas2D = ({
     }
     };
     
-    // Sync joints prop to local intersections state
+    // Sync joints prop to local intersections state (skip when geometry + joints unchanged)
     useEffect(() => {
-        console.log('Canvas2D: Walls changed, recalculating intersections. Wall count:', walls.length);
-        // Calculate all geometric intersections between walls
+        const geometryKey = (walls || [])
+            .map((w) => `${w.id}:${w.start_x},${w.start_y},${w.end_x},${w.end_y},${w.thickness ?? ''}`)
+            .join('|');
+        const jointsKey = (joints || [])
+            .map((j) => `${j.wall_1}-${j.wall_2}:${j.joining_method || 'none'}:d${j.deduct_joining_thickness ? 1 : 0}`)
+            .join('|');
+        const fingerprint = `${geometryKey}::${jointsKey}`;
+        if (fingerprint === intersectionFingerprintRef.current) {
+            return;
+        }
+        intersectionFingerprintRef.current = fingerprint;
+
+        console.log('Canvas2D: Recalculating intersections. Wall count:', walls.length);
         const allIntersections = findIntersectionPointsBetweenWalls(walls);
-        // Merge with saved joints data from backend
         const mergedIntersections = allIntersections.map(inter => ({
             ...inter,
             pairs: inter.pairs.map(pair => {
                 const w1 = pair.wall1.id;
                 const w2 = pair.wall2.id;
-                // Find matching joint (check both wall orders)
-                const joint = joints.find(j => 
-                    (j.wall_1 === w1 && j.wall_2 === w2) || 
-                    (j.wall_1 === w2 && j.wall_2 === w1)
+                const joint = joints.find(j =>
+                    (String(j.wall_1) === String(w1) && String(j.wall_2) === String(w2)) ||
+                    (String(j.wall_1) === String(w2) && String(j.wall_2) === String(w1))
                 );
                 return {
                     ...pair,
                     wall1: joint ? { id: joint.wall_1 } : pair.wall1,
                     wall2: joint ? { id: joint.wall_2 } : pair.wall2,
-                    joining_method: joint?.joining_method || 'none'
+                    joining_method: joint?.joining_method || 'none',
+                    deduct_joining_thickness: Boolean(joint?.deduct_joining_thickness),
                 };
             })
         }));
         setIntersections(mergedIntersections);
     }, [walls, joints]);
 
-    // Force canvas re-render when walls change
+    // Keep multi-selected joints in sync when intersection pairs refresh from the server
     useEffect(() => {
-        console.log('Canvas2D: Walls prop changed, triggering canvas redraw. Wall count:', walls.length);
-        // Force a canvas redraw by incrementing the refresh counter
-        setForceRefresh(prev => prev + 1);
-        
-        // Clear any invalid wall selections (walls that no longer exist)
+        if (selectedIntersections.length === 0) return;
+        const byKey = new Map(
+            (intersections || []).map((inter) => [getIntersectionKey(inter), inter])
+        );
+        const refreshed = selectedIntersections
+            .map((sel) => {
+                const key = getIntersectionKey(sel);
+                const live = byKey.get(key);
+                if (!live) return sel;
+                // Preserve in-progress joining_method edits from the panel
+                const selPairs = sel.pairs || [];
+                const livePairs = (live.pairs || []).map((livePair, idx) => {
+                    const edited = selPairs[idx];
+                    if (!edited) return livePair;
+                    return {
+                        ...livePair,
+                        joining_method: edited.joining_method ?? livePair.joining_method,
+                        deduct_joining_thickness: edited.deduct_joining_thickness,
+                        wall1: edited.wall1 || livePair.wall1,
+                        wall2: edited.wall2 || livePair.wall2,
+                    };
+                });
+                return { ...live, pairs: livePairs };
+            })
+            .filter(Boolean);
+        const changed =
+            refreshed.length !== selectedIntersections.length
+            || refreshed.some((r, i) => getIntersectionKey(r) !== getIntersectionKey(selectedIntersections[i]));
+        if (changed) {
+            setSelectedIntersections(refreshed);
+            setSelectedIntersection(refreshed.length > 0 ? refreshed[refreshed.length - 1] : null);
+        }
+    }, [intersections]);
+
+    // Clear stale wall selection when walls change (draw effect already depends on walls)
+    useEffect(() => {
         if (selectedWall && !walls.find(w => w.id === selectedWall.id)) {
             console.log('Canvas2D: Selected wall no longer exists, clearing selection');
             setSelectedWall(null);
@@ -2106,12 +2388,65 @@ const Canvas2D = ({
         } else if (currentMode === 'edit-wall' && !isMultiWallEditMode && selectedWall) {
             setHighlightWalls([{ id: selectedWall, color: getPlanWallHighlightColor('selection') }]);
         } else if (currentMode !== 'edit-wall') {
-            // Clear highlights when exiting edit mode
-            if (currentMode !== 'split-wall' && currentMode !== 'merge-wall' && !commentWallSelectMode) {
+            // Clear highlights when exiting edit mode, but never stomp on the joint colours
+            // the Configure Joints panel is showing.
+            if (
+                currentMode !== 'split-wall'
+                && currentMode !== 'merge-wall'
+                && !commentWallSelectMode
+                && selectedIntersections.length === 0
+            ) {
                 setHighlightWalls([]);
             }
         }
-    }, [currentMode, isMultiWallEditMode, selectedWallsForEdit, selectedWall, commentWallSelectMode]);
+    }, [
+        currentMode,
+        isMultiWallEditMode,
+        selectedWallsForEdit,
+        selectedWall,
+        commentWallSelectMode,
+        selectedIntersections,
+    ]);
+
+    // Plan colours for the focused joint are derived from the selection rather than set at
+    // each click site. Flipping wall order (or a re-sync from the server) rewrites
+    // selectedIntersections, and the old imperative setHighlightWalls calls could not keep up
+    // — the canvas kept the previous wall1/wall2 colours.
+    useEffect(() => {
+        if (selectedIntersections.length === 0) {
+            return;
+        }
+        let pair = null;
+        if (selectedJointPair) {
+            const sep = selectedJointPair.lastIndexOf(':');
+            const interKey = selectedJointPair.slice(0, sep);
+            const pairIdx = Number(selectedJointPair.slice(sep + 1));
+            const inter = selectedIntersections.find(
+                (item) => getIntersectionKey(item) === interKey
+            );
+            pair = inter?.pairs?.[pairIdx] || null;
+        }
+        if (!pair) {
+            // No pair picked yet: colour the focused joint so selecting a point on the plan
+            // already shows which wall is wall1 and which is wall2.
+            const focused = selectedIntersections[selectedIntersections.length - 1];
+            pair = focused?.pairs?.[0] || null;
+        }
+        if (!pair || !pair.wall1 || !pair.wall2) {
+            return;
+        }
+        // Joint records carry bare { id } stubs whose ids may not be the same type as
+        // wall.id, and drawWalls matches highlights with ===.
+        const resolveWallId = (ref) => {
+            const raw = ref?.id ?? ref;
+            const match = walls.find((w) => String(w.id) === String(raw));
+            return match ? match.id : raw;
+        };
+        setHighlightWalls([
+            { id: resolveWallId(pair.wall1), color: getPlanWallHighlightColor('jointWall1') },
+            { id: resolveWallId(pair.wall2), color: getPlanWallHighlightColor('jointWall2') },
+        ]);
+    }, [selectedIntersections, selectedJointPair, walls]);
 
     // Close joint configure panel in modes where joints must not be selectable
     useEffect(() => {
@@ -2126,6 +2461,7 @@ const Canvas2D = ({
             || currentMode === 'storey-area'
         ) {
             setSelectedIntersection(null);
+            setSelectedIntersections([]);
         }
     }, [currentMode]);
 
@@ -2328,6 +2664,16 @@ const Canvas2D = ({
         if (!isDraggingCanvas.current && !isZoomed.current) {
             offsetX.current = (displayWidth - wallWidth * sf) / 2 - minX * sf;
             offsetY.current = (displayHeight - wallHeight * sf) / 2 - minY * sf;
+
+            // Ensure the overlay labels pick up the updated ref offsets.
+            // This prevents a mismatch where canvas redraw shifts but HTML overlay stays.
+            if (
+                lastOffsetRecalcSizeRef.current.width !== canvasSize.width ||
+                lastOffsetRecalcSizeRef.current.height !== canvasSize.height
+            ) {
+                lastOffsetRecalcSizeRef.current = { width: canvasSize.width, height: canvasSize.height };
+                setForceRefresh((prev) => prev + 1);
+            }
         }
         // === End scale/offset calculation ===
 
@@ -2394,6 +2740,8 @@ const Canvas2D = ({
             dimensionValuesSeen,
             rooms,
             doors,
+            polygonSelectMode: currentMode === 'define-room' || currentMode === 'storey-area',
+            selectedIntersectionKeys: new Set(selectedIntersections.map(getIntersectionKey)),
         });
         const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
         const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;
@@ -2492,7 +2840,10 @@ const Canvas2D = ({
                 const originLabel = ghostArea.source_storey_name
                     ? ` (${ghostArea.source_storey_name})`
                     : ' (Below)';
-                const label = `${areaName}${originLabel}`;
+                const topLabel = Number.isFinite(Number(ghostArea.room_top_mm))
+                    ? ` · top ${Math.round(Number(ghostArea.room_top_mm))}mm`
+                    : '';
+                const label = `${areaName}${originLabel}${topLabel}`;
                 context.fillText(label, centroid.x, centroid.y);
                 context.restore();
             });
@@ -2544,6 +2895,28 @@ const Canvas2D = ({
         // Draw rooms
         // Draw room preview
         drawRoomPreview(context, selectedRoomPoints, scaleFactor.current, offsetX.current, offsetY.current);
+
+        // Define-room only: show extended partition corners as extra snap targets
+        // (edit mode keeps geometric butt-in oranges so joints stay distinct).
+        if (
+            (currentMode === 'define-room' || currentMode === 'storey-area')
+            && Array.isArray(roomSelectionSnapPoints)
+        ) {
+            roomSelectionSnapPoints.forEach((pt) => {
+                drawEndpoints(
+                    context,
+                    pt.x,
+                    pt.y,
+                    scaleFactor.current,
+                    offsetX.current,
+                    offsetY.current,
+                    hoveredPoint,
+                    '#FF9800',
+                    2.25,
+                    initialScale.current
+                );
+            });
+        }
         
         const previewWall =
             splitTargetWall ||
@@ -2623,6 +2996,8 @@ const Canvas2D = ({
         dimensionVisibility,
         showPanelLines,
         currentMode,
+        roomSelectionSnapPoints,
+        selectedIntersections,
         splitPreviewPoint,
         splitTargetWallId,
         ghostWalls,
@@ -2701,57 +3076,92 @@ const Canvas2D = ({
         const roundToInt = (v) => Math.round(v);
         const intPoint = (pt) => ({ x: roundToInt(pt.x), y: roundToInt(pt.y) });
 
-        const { referencePoint, direction, useEndAsReference, isNearVertical, isNearHorizontal } = pendingWallData;
+        const {
+            referencePoint,
+            direction,
+            useEndAsReference,
+            isNearVertical,
+            isNearHorizontal,
+            axisSpanMode,
+        } = pendingWallData;
 
         let roundedStartPoint, roundedEndPoint;
 
-        if (useEndAsReference) {
-            // End snapped: keep end exactly, calculate start from length
-            roundedEndPoint = intPoint(referencePoint);
-            let calculatedStart;
+        const applyLengthFromStart = (origin, lengthMm) => {
             if (isNearVertical) {
-                // Exact length: start.y = end.y ± lengthMm (no floating point)
-                const sign = direction.y >= 0 ? -1 : 1;
-                calculatedStart = { x: roundedEndPoint.x, y: roundedEndPoint.y + sign * lengthMm };
-            } else if (isNearHorizontal) {
-                const sign = direction.x >= 0 ? -1 : 1;
-                calculatedStart = { x: roundedEndPoint.x + sign * lengthMm, y: roundedEndPoint.y };
-            } else {
-                calculatedStart = {
-                    x: referencePoint.x - direction.x * lengthMm,
-                    y: referencePoint.y - direction.y * lengthMm
+                const sign = direction.y >= 0 ? 1 : -1;
+                return { x: origin.x, y: origin.y + sign * lengthMm };
+            }
+            if (isNearHorizontal) {
+                const sign = direction.x >= 0 ? 1 : -1;
+                return { x: origin.x + sign * lengthMm, y: origin.y };
+            }
+            // Optional PDF-style axis span (checkbox): typed value is ΔX or ΔY
+            if (axisSpanMode === 'horizontal' && Math.abs(direction.x) > 1e-6) {
+                const scale = lengthMm / Math.abs(direction.x);
+                return {
+                    x: origin.x + direction.x * scale,
+                    y: origin.y + direction.y * scale,
                 };
             }
+            if (axisSpanMode === 'vertical' && Math.abs(direction.y) > 1e-6) {
+                const scale = lengthMm / Math.abs(direction.y);
+                return {
+                    x: origin.x + direction.x * scale,
+                    y: origin.y + direction.y * scale,
+                };
+            }
+            // Default: exact centerline length along the wall direction
+            return {
+                x: origin.x + direction.x * lengthMm,
+                y: origin.y + direction.y * lengthMm,
+            };
+        };
+
+        if (useEndAsReference) {
+            // End snapped: keep end exactly, calculate start from length (opposite direction)
+            roundedEndPoint = intPoint(referencePoint);
+            const forward = applyLengthFromStart(referencePoint, lengthMm);
+            const calculatedStart = {
+                x: referencePoint.x - (forward.x - referencePoint.x),
+                y: referencePoint.y - (forward.y - referencePoint.y),
+            };
             roundedStartPoint = intPoint(calculatedStart);
         } else {
-            // Start snapped: keep start exactly, calculate end from length (your case)
+            // Start snapped: keep start exactly, calculate end from length
             roundedStartPoint = intPoint(referencePoint);
-            let calculatedEnd;
-            if (isNearVertical) {
-                // Exact length: end.y = start.y ± lengthMm (no floating point)
-                const sign = direction.y >= 0 ? 1 : -1;
-                calculatedEnd = { x: roundedStartPoint.x, y: roundedStartPoint.y + sign * lengthMm };
-            } else if (isNearHorizontal) {
-                const sign = direction.x >= 0 ? 1 : -1;
-                calculatedEnd = { x: roundedStartPoint.x + sign * lengthMm, y: roundedStartPoint.y };
-            } else {
-                calculatedEnd = {
-                    x: referencePoint.x + direction.x * lengthMm,
-                    y: referencePoint.y + direction.y * lengthMm
-                };
-            }
-            roundedEndPoint = intPoint(calculatedEnd);
+            roundedEndPoint = intPoint(applyLengthFromStart(referencePoint, lengthMm));
         }
 
-        // Check if start or end point is in a ghosted area
-        if (isPointInGhostedArea(roundedStartPoint) || isPointInGhostedArea(roundedEndPoint)) {
-            if (setWallSplitError) {
-                setWallSplitError('Cannot create walls in ghosted areas (double-height spaces from lower levels).');
-                setTimeout(() => setWallSplitError(''), 4000);
+        // After integer rounding, re-fit exact typed length along the segment (slant walls)
+        if (!isNearVertical && !isNearHorizontal && !axisSpanMode) {
+            const fixExactLength = (fixed, other, towardOther) => {
+                const dx = other.x - fixed.x;
+                const dy = other.y - fixed.y;
+                const len = Math.hypot(dx, dy);
+                if (len < 1e-6) return other;
+                const ux = dx / len;
+                const uy = dy / len;
+                const target = {
+                    x: fixed.x + ux * lengthMm * towardOther,
+                    y: fixed.y + uy * lengthMm * towardOther,
+                };
+                return intPoint(target);
+            };
+            if (useEndAsReference) {
+                roundedStartPoint = fixExactLength(roundedEndPoint, roundedStartPoint, 1);
+            } else {
+                roundedEndPoint = fixExactLength(roundedStartPoint, roundedEndPoint, 1);
             }
-            setShowLengthInput(false);
-            setPendingWallData(null);
-            return;
+        }
+
+        // Ghost areas are taller rooms below — allow walls; base elev is raised on save.
+        if (
+            (isPointInGhostedArea(roundedStartPoint) || isPointInGhostedArea(roundedEndPoint))
+            && setWallSplitError
+        ) {
+            setWallSplitError('Building over a taller lower-level room — base elevation will sit on top of it.');
+            setTimeout(() => setWallSplitError(''), 4000);
         }
 
         // Normalize wall coordinates to ensure proper direction
@@ -2767,7 +3177,11 @@ const Canvas2D = ({
             inner_face_material: innerFaceMaterial,
             inner_face_thickness: innerFaceThickness,
             outer_face_material: outerFaceMaterial,
-            outer_face_thickness: outerFaceThickness
+            outer_face_thickness: outerFaceThickness,
+            deduct_corner_thickness: Boolean(
+                pendingWallData?.deductCornerThickness ?? deductCornerThickness
+            ),
+            auto_split: autoSplitOnIntersect !== false,
         };
 
         try {
@@ -2842,8 +3256,8 @@ const Canvas2D = ({
             <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4">
                 {/* Header */}
                 <div className="wall-canvas-header mb-3">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <div className="shrink-0">
                             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight">
                                 Wall Plan
                             </h3>
@@ -2851,10 +3265,56 @@ const Canvas2D = ({
                                 Professional Layout
                             </p>
                         </div>
+
+                        <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0 text-xs text-gray-700 dark:text-gray-300">
+                            <span className="font-semibold text-gray-900 dark:text-gray-100 shrink-0 inline-flex items-center">
+                                <svg className="w-3.5 h-3.5 mr-1 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
+                                </svg>
+                                Dimension Labels
+                            </span>
+                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.project}
+                                    onChange={() => handleDimensionVisibilityChange('project')}
+                                />
+                                <span>Overall project dimensions</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.wall}
+                                    onChange={() => handleDimensionVisibilityChange('wall')}
+                                />
+                                <span>Wall dimensions</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.panel}
+                                    onChange={() => handleDimensionVisibilityChange('panel')}
+                                />
+                                <span>Side Panel dimensions</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={showPanelLines}
+                                    onChange={onTogglePanelLines}
+                                />
+                                <span>Panel division lines</span>
+                            </label>
+                        </div>
+
                         {!isDetailsPanelOpen && (
                             <button
                                 onClick={() => setIsDetailsPanelOpen(true)}
-                                className="px-2 py-1 text-xs rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0"
+                                className="px-2 py-1 text-xs rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0 ml-auto"
                             >
                                 Show Plan Details
                             </button>
@@ -2941,6 +3401,8 @@ const Canvas2D = ({
                                             onSelect={handleRoomSelect}
                                             currentMode={currentMode}
                                             selectedRoomPoints={selectedRoomPoints}
+                                            canvasWidth={canvasSize.width}
+                                            canvasHeight={canvasSize.height}
                                         />
                                     ))}
 
@@ -2959,7 +3421,7 @@ const Canvas2D = ({
                                             isPlacingArrow={planAnnotationArrowPlacementId === annotation.id}
                                             canEdit={canAnnotate && planAnnotateMode}
                                             canDirectEdit={canAnnotate}
-                                            canDrag={canAnnotate && planAnnotateMode}
+                                            canDrag={canAnnotate}
                                             autoEdit={autoEditPlanAnnotationId === annotation.id}
                                             onAutoEditConsumed={() => setAutoEditPlanAnnotationId(null)}
                                             onInteractionStart={cancelPlanNotePlacement}
@@ -3216,54 +3678,6 @@ const Canvas2D = ({
                                                 </div>
                                             )}
 
-                                            {/* Dimension Labels */}
-                                            <div className="plan-details-card bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-                                                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
-                                                    <svg className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
-                                                    </svg>
-                                                    Dimension Labels
-                                                </h5>
-                                                <div className="space-y-3 text-sm text-gray-700">
-                                                    <label className="flex items-center gap-3">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                            checked={dimensionVisibility.project}
-                                                            onChange={() => handleDimensionVisibilityChange('project')}
-                                                        />
-                                                        <span>Overall project dimensions</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-3">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                            checked={dimensionVisibility.wall}
-                                                            onChange={() => handleDimensionVisibilityChange('wall')}
-                                                        />
-                                                        <span>Wall dimensions</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-3">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                            checked={dimensionVisibility.panel}
-                                                            onChange={() => handleDimensionVisibilityChange('panel')}
-                                                        />
-                                                        <span>Side Panel dimensions</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-3">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                            checked={showPanelLines}
-                                                            onChange={onTogglePanelLines}
-                                                        />
-                                                        <span>Panel division lines</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-
                                         </div>
                                     </div>
                                 </div>
@@ -3336,36 +3750,117 @@ const Canvas2D = ({
                 </div>
             </div>
             
-            {selectedIntersection && (
-            <div className="fixed inset-0 bg-black/10 dark:bg-black/50 flex justify-end items-start z-50">
-                <div className="configure-joints-panel bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-lg shadow-lg m-4 max-w-md w-full">
+            {selectedIntersections.length > 0 && (
+            <div className="fixed inset-0 bg-transparent pointer-events-none flex justify-end items-start z-50">
+                <div className="configure-joints-panel pointer-events-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-lg shadow-lg m-4 max-w-md w-full max-h-[90vh] flex flex-col">
                 <div className="flex justify-between items-center mb-3">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Configure Joints</h2>
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Configure Joints</h2>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {selectedIntersections.length} joint{selectedIntersections.length === 1 ? '' : 's'} selected
+                            {' · '}click more on plan to add · Ctrl+click to remove
+                        </p>
+                    </div>
                     <button 
-                    onClick={() => {
-                        setSelectedIntersection(null);
-                        setHighlightWalls([]);
-                        setSelectedJointPair(null);
-                    }}
+                    onClick={clearJointSelection}
                     className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                     >
                     ×
                     </button>
                 </div>
-                <div className="overflow-y-auto max-h-[70vh]">
-                    {selectedIntersection.pairs.map((pair, index) => (
-                    <div
-                        key={index}
+
+                {selectedIntersections.length > 1 && (
+                <div className="mb-4 p-3 rounded-lg border border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/40 space-y-2">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        Apply to all selected joints
+                    </div>
+                    <select
+                        value={bulkJointMethod}
+                        onChange={(e) => {
+                            const method = e.target.value;
+                            setBulkJointMethod(method);
+                            if (method !== 'butt_in') setBulkDeductThickness(false);
+                        }}
+                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    >
+                        <option value="none">None</option>
+                        <option value="butt_in">Butt-in</option>
+                        <option value="45_cut">45° Cut</option>
+                    </select>
+                    {bulkJointMethod === 'butt_in' && (
+                    <label className="flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={bulkDeductThickness}
+                            onChange={(e) => setBulkDeductThickness(e.target.checked)}
+                        />
+                        <span>Deduct joining wall thickness</span>
+                    </label>
+                    )}
+                    <button
+                        type="button"
+                        className="w-full px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                         onClick={() => {
-                        setSelectedJointPair(index);
-                        setHighlightWalls([
-                            { id: pair.wall1.id, color: getPlanWallHighlightColor('jointWall1') },
-                            { id: pair.wall2.id, color: getPlanWallHighlightColor('jointWall2') },
-                          ]);
-                          
+                            const method = bulkJointMethod;
+                            const deduct = method === 'butt_in' ? bulkDeductThickness : false;
+                            const next = selectedIntersections.map((inter) => ({
+                                ...inter,
+                                pairs: (inter.pairs || []).map((pair) => ({
+                                    ...pair,
+                                    joining_method: method,
+                                    deduct_joining_thickness: deduct,
+                                })),
+                            }));
+                            syncFocusedIntersection(next);
+                        }}
+                    >
+                        Apply type to all {selectedIntersections.length} joints
+                    </button>
+                </div>
+                )}
+
+                <div className="overflow-y-auto max-h-[70vh] min-h-0 flex-1 space-y-4 scroll-contain-panel">
+                    {selectedIntersections.map((inter, interIdx) => (
+                    <div
+                        key={getIntersectionKey(inter) || interIdx}
+                        className={`rounded-lg border p-2 ${
+                            selectedIntersection && getIntersectionKey(selectedIntersection) === getIntersectionKey(inter)
+                                ? 'border-blue-300 dark:border-blue-600 bg-blue-50/50 dark:bg-blue-950/20'
+                                : 'border-gray-200 dark:border-gray-700'
+                        }`}
+                    >
+                    <div className="flex items-center justify-between mb-2 px-1">
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Joint {interIdx + 1}
+                            {Number.isFinite(inter.x) && Number.isFinite(inter.y)
+                                ? ` · (${Math.round(inter.x)}, ${Math.round(inter.y)})`
+                                : ''}
+                        </span>
+                        {selectedIntersections.length > 1 && (
+                            <button
+                                type="button"
+                                className="text-xs text-red-600 hover:underline dark:text-red-400"
+                                onClick={() => {
+                                    const key = getIntersectionKey(inter);
+                                    syncFocusedIntersection(
+                                        selectedIntersections.filter((i) => getIntersectionKey(i) !== key)
+                                    );
+                                }}
+                            >
+                                Remove
+                            </button>
+                        )}
+                    </div>
+                    {(inter.pairs || []).map((pair, index) => (
+                    <div
+                        key={`${getIntersectionKey(inter)}-${index}`}
+                        onClick={() => {
+                        setSelectedIntersection(inter);
+                        setSelectedJointPair(`${getIntersectionKey(inter)}:${index}`);
                         }}
                         className={`mb-2 p-2 rounded cursor-pointer transition-colors border ${
-                        selectedJointPair === index 
+                        selectedJointPair === `${getIntersectionKey(inter)}:${index}`
                             ? 'bg-blue-50 border-blue-200 dark:bg-blue-950/50 dark:border-blue-600' 
                             : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
                         }`}
@@ -3380,10 +3875,22 @@ const Canvas2D = ({
                     <select
                     value={pair.joining_method || 'none'}
                     onChange={(e) => {
-                        const updated = [...selectedIntersection.pairs];
-                        updated[index].joining_method = e.target.value;
-                        setSelectedIntersection({ ...selectedIntersection, pairs: updated });
+                        const method = e.target.value;
+                        const next = selectedIntersections.map((item, i) => {
+                            if (i !== interIdx) return item;
+                            const pairs = [...(item.pairs || [])];
+                            pairs[index] = {
+                                ...pairs[index],
+                                joining_method: method,
+                                deduct_joining_thickness: method === 'butt_in'
+                                    ? Boolean(pairs[index].deduct_joining_thickness)
+                                    : false,
+                            };
+                            return { ...item, pairs };
+                        });
+                        syncFocusedIntersection(next);
                     }}
+                    onClick={(e) => e.stopPropagation()}
                     className="w-full mt-2 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                     >
                     <option value="none">None</option>
@@ -3391,14 +3898,55 @@ const Canvas2D = ({
                     <option value="45_cut">45° Cut</option>
                     </select>
 
+                    {(pair.joining_method || 'none') === 'butt_in' && (
+                    <label className="mt-2 flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={Boolean(pair.deduct_joining_thickness)}
+                            onChange={(e) => {
+                                const next = selectedIntersections.map((item, i) => {
+                                    if (i !== interIdx) return item;
+                                    const pairs = [...(item.pairs || [])];
+                                    pairs[index] = {
+                                        ...pairs[index],
+                                        deduct_joining_thickness: e.target.checked,
+                                    };
+                                    return { ...item, pairs };
+                                });
+                                syncFocusedIntersection(next);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                        <span>
+                            Deduct joining wall thickness
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">
+                                Shortens Wall {pair.wall1.id} by Wall {pair.wall2.id}&apos;s thickness
+                            </span>
+                        </span>
+                    </label>
+                    )}
+
                     <div className="flex justify-end">
                     <button
-                        onClick={() => {
-                        const updated = [...selectedIntersection.pairs];
-                        const temp = updated[index].wall1;
-                        updated[index].wall1 = updated[index].wall2;
-                        updated[index].wall2 = temp;
-                        setSelectedIntersection({ ...selectedIntersection, pairs: updated });
+                        onClick={(e) => {
+                        e.stopPropagation();
+                        const next = selectedIntersections.map((item, i) => {
+                            if (i !== interIdx) return item;
+                            const pairs = [...(item.pairs || [])];
+                            const temp = pairs[index].wall1;
+                            pairs[index] = {
+                                ...pairs[index],
+                                wall1: pairs[index].wall2,
+                                wall2: temp,
+                            };
+                            return { ...item, pairs };
+                        });
+                        syncFocusedIntersection(next);
+                        // Keep focus on the joint that was flipped; the plan colours follow
+                        // selectedIntersections on their own.
+                        setSelectedIntersection(next[interIdx]);
+                        setSelectedJointPair(`${getIntersectionKey(inter)}:${index}`);
                         }}
                         className="text-sm text-blue-500 hover:underline mt-1 dark:text-blue-400"
                     >
@@ -3408,14 +3956,12 @@ const Canvas2D = ({
 
                 </div>
                 ))}
+                    </div>
+                    ))}
                 <div className="flex justify-end gap-2 mt-4">
                 <button
                     className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-400 dark:hover:bg-gray-600"
-                    onClick={() => {
-                        setSelectedIntersection(null);
-                        setHighlightWalls([]);
-                        setSelectedJointPair(null);
-                    }}
+                    onClick={clearJointSelection}
                     >
                     Cancel
                     </button>
@@ -3423,35 +3969,44 @@ const Canvas2D = ({
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                     onClick={async () => {
                         try {
-                            for (const pair of selectedIntersection.pairs) {
-                                await api.post('/intersections/set_joint/', {
-                                    project: projectId,
-                                    wall_1: pair.wall1.id,
-                                    wall_2: pair.wall2.id,
-                                    joining_method: pair.joining_method
-                                });
-                            
-                                adjustWallForJointType(
-                                    {
+                            for (const inter of selectedIntersections) {
+                                for (const pair of (inter.pairs || [])) {
+                                    await api.post('/intersections/set_joint/', {
+                                        project: projectId,
                                         wall_1: pair.wall1.id,
                                         wall_2: pair.wall2.id,
-                                        joining_method: pair.joining_method
-                                    },
-                                    walls,
-                                    setWalls,
-                                    projectId,
-                                    selectedIntersection // Pass the entire intersection data
-                                );
+                                        joining_method: pair.joining_method,
+                                        deduct_joining_thickness: pair.joining_method === 'butt_in'
+                                            ? Boolean(pair.deduct_joining_thickness)
+                                            : false,
+                                    });
+                            
+                                    await adjustWallForJointType(
+                                        {
+                                            wall_1: pair.wall1.id,
+                                            wall_2: pair.wall2.id,
+                                            joining_method: pair.joining_method,
+                                            deduct_joining_thickness: pair.joining_method === 'butt_in'
+                                                ? Boolean(pair.deduct_joining_thickness)
+                                                : false,
+                                        },
+                                        walls,
+                                        setWalls,
+                                        projectId,
+                                        inter
+                                    );
+                                }
                             }
                           // Refresh joints
                           const response = await api.get(`/intersections/?project=${projectId}`);
                           onJointsUpdate(response.data);
-                          alert("Joint types updated!");
+                          alert(
+                            selectedIntersections.length > 1
+                                ? `Updated ${selectedIntersections.length} joints.`
+                                : 'Joint types updated!'
+                          );
                           
-                          // Close the modal automatically after saving
-                          setSelectedIntersection(null);
-                          setHighlightWalls([]);
-                          setSelectedJointPair(null);
+                          clearJointSelection();
                         } catch (error) {
                           if (isDatabaseConnectionError(error)) {
                             showDatabaseError();
@@ -3485,6 +4040,37 @@ const Canvas2D = ({
                 <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
                         <h3 className="text-lg font-semibold text-gray-900 mb-4">Enter Wall Length</h3>
+                        {(() => {
+                            const snapType = pendingWallData.angleSnapType;
+                            const snapLabel =
+                                snapType === 'horizontal' ? 'World horizontal (90°)' :
+                                snapType === 'vertical' ? 'World vertical (90°)' :
+                                snapType === 'perpendicular' ? 'Perpendicular to slant (⊥)' :
+                                snapType === 'parallel' ? 'Along slant (∥)' :
+                                'Free angle';
+                            const snapColor =
+                                snapType === 'horizontal' || snapType === 'vertical' ? '#2196F3' :
+                                snapType === 'perpendicular' ? '#FF9800' :
+                                snapType === 'parallel' ? '#9C27B0' :
+                                '#4CAF50';
+                            return (
+                                <div
+                                    className="mb-3 px-3 py-2 rounded-md text-sm flex items-start gap-2"
+                                    style={{ backgroundColor: `${snapColor}22`, border: `1px solid ${snapColor}` }}
+                                >
+                                    <span
+                                        className="inline-block w-3 h-3 rounded-full flex-shrink-0 mt-1"
+                                        style={{ backgroundColor: snapColor }}
+                                    />
+                                    <span className="text-gray-800">
+                                        <strong>Snap:</strong> {snapLabel}
+                                        <span className="block text-xs text-gray-600 mt-0.5">
+                                            Typed value = wall centerline length (exact), unless you enable PDF span below.
+                                        </span>
+                                    </span>
+                                </div>
+                            );
+                        })()}
                         <p className="text-sm text-gray-600 mb-4">
                             {pendingWallData.startPointSnapped && !pendingWallData.endPointSnapped && 
                                 "The end point didn't snap to any existing walls or points. Please specify the desired wall length."}
@@ -3498,9 +4084,63 @@ const Canvas2D = ({
                                 Note: The end point snapped, so the wall will be positioned from the end point backwards.
                             </p>
                         )}
+                        {!pendingWallData.isNearVertical && !pendingWallData.isNearHorizontal && (
+                            <label className="flex items-start gap-2 mb-3 text-sm text-gray-700 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1"
+                                    checked={Boolean(pendingWallData.axisSpanMode)}
+                                    onChange={(e) => {
+                                        if (!e.target.checked) {
+                                            setPendingWallData({ ...pendingWallData, axisSpanMode: null });
+                                            return;
+                                        }
+                                        const ux = Math.abs(pendingWallData.direction?.x || 0);
+                                        const uy = Math.abs(pendingWallData.direction?.y || 0);
+                                        setPendingWallData({
+                                            ...pendingWallData,
+                                            axisSpanMode: ux >= uy ? 'horizontal' : 'vertical',
+                                        });
+                                    }}
+                                />
+                                <span>
+                                    Typed value is PDF <strong>horizontal/vertical span</strong> (not wall length).
+                                    <span className="block text-xs text-gray-500">
+                                        Use for dims like the niche “750” on a slight slant — wall length may then show ~759.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
+                        <label className="flex items-start gap-2 mb-3 text-sm text-gray-700 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={Boolean(pendingWallData.deductCornerThickness)}
+                                onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setPendingWallData({
+                                        ...pendingWallData,
+                                        deductCornerThickness: checked,
+                                    });
+                                    if (typeof onDeductCornerThicknessChange === 'function') {
+                                        onDeductCornerThicknessChange(checked);
+                                    }
+                                }}
+                            />
+                            <span>
+                                Deduct new wall thickness from host at free corners
+                                <span className="block text-xs text-gray-500">
+                                    On when the PDF overall already includes this wall’s thickness. Leave off if the PDF excludes thickness.
+                                </span>
+                            </span>
+                        </label>
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Wall Length (mm):
+                                {pendingWallData.axisSpanMode === 'horizontal'
+                                    ? 'Horizontal span (mm) — as on PDF:'
+                                    : pendingWallData.axisSpanMode === 'vertical'
+                                        ? 'Vertical span (mm) — as on PDF:'
+                                        : 'Wall Length (mm):'}
                             </label>
                             <input
                                 type="number"

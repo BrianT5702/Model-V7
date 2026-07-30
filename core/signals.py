@@ -9,9 +9,14 @@ from .project_activity import mark_project_edited, resolve_project_id
 def _touch_related_project(instance, **kwargs):
     if kwargs.get('raw'):
         return
-    project_id = resolve_project_id(instance)
-    if project_id is not None:
-        mark_project_edited(project_id)
+    try:
+        project_id = resolve_project_id(instance)
+        if project_id is not None:
+            mark_project_edited(project_id)
+    except Exception:
+        # Cascade deletes can leave FKs pointing at rows already removed.
+        # Never block the originating save/delete.
+        return
 
 
 def connect_project_activity_signals():

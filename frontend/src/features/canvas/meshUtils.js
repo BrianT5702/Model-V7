@@ -7,6 +7,60 @@ import {
   createFatLineSegmentsFromPositions,
 } from './wideLineUtils';
 import { resolveWallBaseElevationMm } from '../project/projectUtils';
+import { getWallInteriorNormalModel } from './wallInteriorSide';
+import { buildIntersectionsFromJoints } from '../panel/wallPanelCalculationUtils';
+
+/**
+ * Joint context for the interior-face rule, in the shape the 2D plan uses. Memoised on the
+ * identity of the wall/joint arrays so a rebuild recomputes it but each door in a build does
+ * not.
+ */
+function getDoorSideJointContext(instance) {
+  const walls = instance.walls || [];
+  const joints = instance.joints || [];
+  const cached = instance._doorSideJointContext;
+  if (cached && cached.wallsRef === walls && cached.jointsRef === joints) {
+    return cached.context;
+  }
+  const context = {
+    intersections: buildIntersectionsFromJoints(walls, joints),
+    allWalls: walls,
+  };
+  instance._doorSideJointContext = { wallsRef: walls, jointsRef: joints, context };
+  return context;
+}
+
+/** World-mm vertical span of a wall (supports gap-fill). */
+function getWallVerticalRangeMm(wall, project = null) {
+  if (!wall) return { bottom: 0, top: 0 };
+  if (
+    wall.fill_gap_mode &&
+    wall.gap_fill_height != null &&
+    wall.gap_base_position != null
+  ) {
+    const bottom = Number(wall.gap_base_position) || 0;
+    return { bottom, top: bottom + (Number(wall.gap_fill_height) || 0) };
+  }
+  const bottom = resolveWallBaseElevationMm(wall, project);
+  return { bottom, top: bottom + (Number(wall.height) || 0) };
+}
+
+/**
+ * Local-Y band (mesh coords, Y=0 at this wall base) where a 45° cut should apply —
+ * only the vertical overlap with the joining wall.
+ */
+function get45CutLocalYBand(thisWall, joiningWall, scale, project, thisBaseMm, thisHeightScaled) {
+  const a = getWallVerticalRangeMm(thisWall, project);
+  const b = getWallVerticalRangeMm(joiningWall, project);
+  const overlapBottom = Math.max(a.bottom, b.bottom);
+  const overlapTop = Math.min(a.top, b.top);
+  if (!(overlapTop > overlapBottom + 0.5)) {
+    return { min: 0, max: 0, valid: false };
+  }
+  const min = Math.max(0, (overlapBottom - thisBaseMm) * scale);
+  const max = Math.min(thisHeightScaled, (overlapTop - thisBaseMm) * scale);
+  return { min, max, valid: max > min + 1e-6 };
+}
 
 // Calculate intersection point between two line segments
 // If allowExtended is true, returns intersection even if outside segments (for extension)
@@ -40,6 +94,177 @@ function calculateLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4, allowExtended
     };
   }
   return null;
+}
+
+/** Inward unit normal (toward model center) for a plan segment in XZ. */
+function getWallInwardNormalXZ(startX, startZ, endX, endZ, modelCenter) {
+  const dirX = endX - startX;
+  const dirZ = endZ - startZ;
+  const len = Math.hypot(dirX, dirZ) || 1;
+  const ux = dirX / len;
+  const uz = dirZ / len;
+  let nx = -uz;
+  let nz = ux;
+  const midX = (startX + endX) / 2;
+  const midZ = (startZ + endZ) / 2;
+  const toCenterX = (modelCenter?.x ?? midX) - midX;
+  const toCenterZ = (modelCenter?.z ?? midZ) - midZ;
+  if (nx * toCenterX + nz * toCenterZ < 0) {
+    nx = -nx;
+    nz = -nz;
+  }
+  return { x: nx, z: nz };
+}
+
+/** Local-X along wall run (0 at start → length at end). */
+function projectLocalXAlongWall(px, pz, startX, startZ, endX, endZ) {
+  const dx = endX - startX;
+  const dz = endZ - startZ;
+  const len = Math.hypot(dx, dz) || 1;
+  return ((px - startX) * dx + (pz - startZ) * dz) / len;
+}
+
+/**
+ * True thickness miter in local wall X for a 45_cut joint.
+ * Intersect outer/inner faces (same as 2D slant miters); fall back to
+ * inset = T / tan(meetAng/2) which equals T for 90° joints.
+ *
+ * Returns { xOuter, xInner } in mesh local X (along the wall).
+ */
+function compute45MiterLocalXs({
+  finalStartX,
+  finalStartZ,
+  finalEndX,
+  finalEndZ,
+  finalNormX,
+  finalNormZ,
+  thisThickness,
+  oSX,
+  oSZ,
+  oEX,
+  oEZ,
+  otherNormX,
+  otherNormZ,
+  otherThickness,
+  atStart,
+  cutOnInner = true
+}) {
+  const wallLen = Math.hypot(finalEndX - finalStartX, finalEndZ - finalStartZ) || 1;
+  const jointLocalX = atStart ? 0 : wallLen;
+
+  const thisOuter0 = { x: finalStartX, z: finalStartZ };
+  const thisOuter1 = { x: finalEndX, z: finalEndZ };
+  const thisInner0 = {
+    x: finalStartX + finalNormX * thisThickness,
+    z: finalStartZ + finalNormZ * thisThickness
+  };
+  const thisInner1 = {
+    x: finalEndX + finalNormX * thisThickness,
+    z: finalEndZ + finalNormZ * thisThickness
+  };
+  const otherOuter0 = { x: oSX, z: oSZ };
+  const otherOuter1 = { x: oEX, z: oEZ };
+  const otherInner0 = {
+    x: oSX + otherNormX * otherThickness,
+    z: oSZ + otherNormZ * otherThickness
+  };
+  const otherInner1 = {
+    x: oEX + otherNormX * otherThickness,
+    z: oEZ + otherNormZ * otherThickness
+  };
+
+  const hit = (a0, a1, b0, b1) =>
+    calculateLineIntersection(a0.x, a0.z, a1.x, a1.z, b0.x, b0.z, b1.x, b1.z, true);
+
+  const hitOO = hit(thisOuter0, thisOuter1, otherOuter0, otherOuter1);
+  const hitII = hit(thisInner0, thisInner1, otherInner0, otherInner1);
+  const hitOI = hit(thisOuter0, thisOuter1, otherInner0, otherInner1);
+  const hitIO = hit(thisInner0, thisInner1, otherOuter0, otherOuter1);
+
+  const jointX = atStart ? finalStartX : finalEndX;
+  const jointZ = atStart ? finalStartZ : finalEndZ;
+  const tAvg = (thisThickness + otherThickness) / 2;
+  const maxDist = tAvg * 4 + 0.08;
+
+  const nearJoint = (p) =>
+    p && Number.isFinite(p.x) && Number.isFinite(p.z) && Math.hypot(p.x - jointX, p.z - jointZ) <= maxDist;
+
+  const wallUx = (finalEndX - finalStartX) / wallLen;
+  const wallUz = (finalEndZ - finalStartZ) / wallLen;
+  const away = atStart ? { x: wallUx, z: wallUz } : { x: -wallUx, z: -wallUz };
+  const oLen = Math.hypot(oEX - oSX, oEZ - oSZ) || 1;
+  const oUx = (oEX - oSX) / oLen;
+  const oUz = (oEZ - oSZ) / oLen;
+  const dOtherStart = Math.hypot(jointX - oSX, jointZ - oSZ);
+  const dOtherEnd = Math.hypot(jointX - oEX, jointZ - oEZ);
+  const otherAway =
+    dOtherStart <= dOtherEnd ? { x: oUx, z: oUz } : { x: -oUx, z: -oUz };
+  const cosAng = Math.max(-1, Math.min(1, away.x * otherAway.x + away.z * otherAway.z));
+  const meetAng = Math.acos(cosAng);
+  const half = meetAng / 2;
+  const sinHalf = Math.sin(half);
+  const expectedSep = sinHalf > 0.08 ? tAvg / sinHalf : tAvg * Math.SQRT2;
+
+  const pairCandidates = [];
+  if (nearJoint(hitOO) && nearJoint(hitII)) pairCandidates.push([hitOO, hitII]);
+  if (nearJoint(hitOI) && nearJoint(hitIO)) pairCandidates.push([hitOI, hitIO]);
+
+  let bestPair = null;
+  for (const [h1, h2] of pairCandidates) {
+    const sep = Math.hypot(h1.x - h2.x, h1.z - h2.z);
+    if (sep < tAvg * 0.2 || sep > tAvg * 5) continue;
+    const midDist = Math.hypot((h1.x + h2.x) / 2 - jointX, (h1.z + h2.z) / 2 - jointZ);
+    const score = Math.abs(sep - expectedSep) + midDist * 0.35;
+    if (!bestPair || score < bestPair.score) {
+      bestPair = { h1, h2, score };
+    }
+  }
+
+  if (bestPair) {
+    const alongN = (p) =>
+      (p.x - finalStartX) * finalNormX + (p.z - finalStartZ) * finalNormZ;
+    const n1 = alongN(bestPair.h1);
+    const n2 = alongN(bestPair.h2);
+    const outerHit = n1 <= n2 ? bestPair.h1 : bestPair.h2;
+    const innerHit = n1 <= n2 ? bestPair.h2 : bestPair.h1;
+    return {
+      xOuter: projectLocalXAlongWall(
+        outerHit.x,
+        outerHit.z,
+        finalStartX,
+        finalStartZ,
+        finalEndX,
+        finalEndZ
+      ),
+      xInner: projectLocalXAlongWall(
+        innerHit.x,
+        innerHit.z,
+        finalStartX,
+        finalStartZ,
+        finalEndX,
+        finalEndZ
+      )
+    };
+  }
+
+  // Fallback: angle-aware inset (90° → inset = thickness)
+  const safeHalf = Math.max(half, 1e-3);
+  const inset = thisThickness / Math.tan(safeHalf);
+  if (!Number.isFinite(inset) || inset < 0) {
+    return cutOnInner
+      ? { xOuter: jointLocalX, xInner: atStart ? inset : jointLocalX - inset }
+      : { xOuter: atStart ? inset : jointLocalX - inset, xInner: jointLocalX };
+  }
+  if (cutOnInner) {
+    return {
+      xOuter: jointLocalX,
+      xInner: atStart ? jointLocalX + inset : jointLocalX - inset
+    };
+  }
+  return {
+    xOuter: atStart ? jointLocalX + inset : jointLocalX - inset,
+    xInner: jointLocalX
+  };
 }
 
 export function createWallMesh(instance, wall) {
@@ -123,9 +348,11 @@ export function createWallMesh(instance, wall) {
   // Determine wall height and base position based on gap-fill mode
   let basePositionY = 0;  // Default: floor level
   let wallHeight;
+  let thisWallBaseMm = 0;
   if (fill_gap_mode && gap_fill_height !== null && gap_base_position !== null) {
     // Gap-fill mode: position wall at gap base, use gap height
-    basePositionY = gap_base_position * scale;
+    thisWallBaseMm = Number(gap_base_position) || 0;
+    basePositionY = thisWallBaseMm * scale;
     wallHeight = gap_fill_height * scale;
   } else {
     const wallBaseElevation = resolveWallBaseElevationMm(wall, instance.project);
@@ -133,6 +360,7 @@ export function createWallMesh(instance, wall) {
     // basePositionY is the Y position for the bottom of the wall in 3D space
     // The wall shape is bottom-aligned (Y=0 to Y=wallHeight in local coords)
     // Door holes are created as part of the wall mesh, so they automatically follow the wall's base position
+    thisWallBaseMm = wallBaseElevation;
     basePositionY = wallBaseElevation * scale;
     wallHeight = height * scale;
   }
@@ -140,44 +368,59 @@ export function createWallMesh(instance, wall) {
   // ============================================================================
   // WALL FLIPPING: Based ONLY on model center position
   // ============================================================================
-  // IMPORTANT: Flipping is determined ONLY by model center position.
+  // Reverse start/end when the right-hand normal (from start→end) points AWAY from
+  // the model center. After that, local +Z extrude matches the inward normal.
+  //
+  // This is required for ALL walls — including slant/diagonal. The old H/V-only
+  // flip left slant walls unflipped, so thickness extruded outward while 45° miters
+  // were computed as if inward → broken slant corners.
+  //
+  // Equivalent to the legacy rules:
+  //   horizontal: flip when modelCenter.z < wall.z
+  //   vertical:   flip when modelCenter.x > wall.x
+  // ============================================================================
   // Joints do NOT affect flipping decisions. Joints only affect:
   // - Wall extension (after flipping)
   // - Wall shortening (butt_in joints, after extension)
   // - 45° cut detection (after extension)
   // ============================================================================
-  // Flip start/end coordinates based on model center position
   let finalStartX = startX;
   let finalStartZ = startZ;
   let finalEndX = endX;
   let finalEndZ = endZ;
-  // Apply model center logic for wall orientation
-  // Model center is already in scaled coordinates, don't scale again
-  if (isHorizontal) {
-    // For horizontal walls: if model center is at < Z position, flip start X with end X
-    if (id === 7255) {
-      console.log(`[Flip Debug] Wall ${id} - Horizontal wall flip check:`, {
-        modelCenterZ: modelCenter.z,
-        startZ,
-        willFlip: modelCenter.z < startZ,
-        originalCoords: { start: { x: startX, z: startZ }, end: { x: endX, z: endZ } }
-      });
-    }
-    if (modelCenter.z < startZ) {
+  // Recorded here rather than inferred later from coordinates: joint extension and
+  // butt-in shortening also move finalStart, so comparing it to startX would report a
+  // swap that never happened and mirror door positions/hinges.
+  let wallEndpointsSwapped = false;
+  {
+    const dirX0 = endX - startX;
+    const dirZ0 = endZ - startZ;
+    const len0 = Math.hypot(dirX0, dirZ0) || 1;
+    const ux0 = dirX0 / len0;
+    const uz0 = dirZ0 / len0;
+    // Right-hand perpendicular of start→end
+    const rhx = -uz0;
+    const rhz = ux0;
+    const midX0 = (startX + endX) / 2;
+    const midZ0 = (startZ + endZ) / 2;
+    const toCenterX0 = modelCenter.x - midX0;
+    const toCenterZ0 = modelCenter.z - midZ0;
+    const rhDotCenter = rhx * toCenterX0 + rhz * toCenterZ0;
+    if (rhDotCenter < 0) {
       finalStartX = endX;
-      finalEndX = startX;
-      if (id === 7255) {
-        console.log(`[Flip Debug] Wall ${id} - FLIPPED! New coords:`, {
-          start: { x: finalStartX, z: finalStartZ },
-          end: { x: finalEndX, z: finalEndZ }
-        });
-      }
-    }
-  } else if (isVertical) {
-    // For vertical walls: if model center is at > X position, flip start Y with end Y
-    if (modelCenter.x > startX) {
       finalStartZ = endZ;
+      finalEndX = startX;
       finalEndZ = startZ;
+      wallEndpointsSwapped = true;
+    }
+    if (id === 7255) {
+      console.log(`[Flip Debug] Wall ${id} - unified flip:`, {
+        isSlant: !isHorizontal && !isVertical,
+        rhDotCenter,
+        willFlip: rhDotCenter < 0,
+        original: { start: { x: startX, z: startZ }, end: { x: endX, z: endZ } },
+        final: { start: { x: finalStartX, z: finalStartZ }, end: { x: finalEndX, z: finalEndZ } }
+      });
     }
   }
   // Recompute inward normal using final coordinates and final midpoint
@@ -233,8 +476,8 @@ export function createWallMesh(instance, wall) {
       if (String(otherWall.id) === String(id)) return;
       // Check if there's a joint between these walls
       const joint = instance.joints.find(j => 
-        (j.wall_1 === id && j.wall_2 === otherWall.id) ||
-        (j.wall_2 === id && j.wall_1 === otherWall.id)
+        (String(j.wall_1) === String(id) && String(j.wall_2) === String(otherWall.id)) ||
+        (String(j.wall_2) === String(id) && String(j.wall_1) === String(otherWall.id))
       );
       if (!joint) return; // No joint, skip
       // Get other wall coordinates
@@ -274,9 +517,11 @@ export function createWallMesh(instance, wall) {
         const rightmostX = Math.max(otherOuterX, otherInnerX);
         const leftmostX = Math.min(otherOuterX, otherInnerX);
         // Check if vertical wall's Z range overlaps with horizontal wall's Z
+        // Partition tips are often inset by host thickness, so allow a thickness of slack.
         const otherMinZ = Math.min(oSZ, oEZ);
         const otherMaxZ = Math.max(oSZ, oEZ);
-        if (thisZ < otherMinZ || thisZ > otherMaxZ) return; // No overlap
+        const zSlop = otherThickness + 1e-6;
+        if (thisZ < otherMinZ - zSlop || thisZ > otherMaxZ + zSlop) return;
         // Determine which endpoint to extend - find which is rightmost and leftmost
         const rightEndpointX = Math.max(finalStartX, finalEndX);
         const leftEndpointX = Math.min(finalStartX, finalEndX);
@@ -312,18 +557,22 @@ export function createWallMesh(instance, wall) {
         const topmostZ = Math.max(otherOuterZ, otherInnerZ);
         const bottommostZ = Math.min(otherOuterZ, otherInnerZ);
         // Check if horizontal wall's X range overlaps with vertical wall's X
+        // Allow endpoint touch (partition tips sit on host end).
         const otherMinX = Math.min(oSX, oEX);
         const otherMaxX = Math.max(oSX, oEX);
-        if (thisX < otherMinX || thisX > otherMaxX) return; // No overlap
+        const xSlop = otherThickness + 1e-6;
+        if (thisX < otherMinX - xSlop || thisX > otherMaxX + xSlop) return;
         // Determine which endpoint to extend - find which is topmost and bottommost
         const topEndpointZ = Math.max(finalStartZ, finalEndZ);
         const bottomEndpointZ = Math.min(finalStartZ, finalEndZ);
         const thisCenterZ = (finalStartZ + finalEndZ) / 2;
         if (otherZ > thisCenterZ) {
           // Horizontal wall is on TOP - extend topmost endpoint to topmost surface
-          // Skip when already clear of the near (bottom) face — e.g. pre-inset partitions
-          if (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ) {
-            // Update whichever endpoint is the topmost one
+          // Also allow pre-inset tips that sit outside the host face slab (partition create).
+          if (
+            (topEndpointZ >= bottommostZ - 1e-9 && topEndpointZ < topmostZ)
+            || (topEndpointZ < bottommostZ - 1e-9 && topEndpointZ >= bottommostZ - otherThickness - 1e-9)
+          ) {
             if (finalEndZ > finalStartZ) {
               finalEndZ = topmostZ;
             } else {
@@ -332,9 +581,11 @@ export function createWallMesh(instance, wall) {
           }
         } else {
           // Horizontal wall is on BOTTOM - extend bottommost endpoint to bottommost surface
-          // Skip when already clear of the near (top) face — e.g. pre-inset partitions
-          if (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ) {
-            // Update whichever endpoint is the bottommost one
+          // Also allow pre-inset tips that sit outside the host face slab (partition create).
+          if (
+            (bottomEndpointZ <= topmostZ + 1e-9 && bottomEndpointZ > bottommostZ)
+            || (bottomEndpointZ > topmostZ + 1e-9 && bottomEndpointZ <= topmostZ + otherThickness + 1e-9)
+          ) {
             if (finalStartZ < finalEndZ) {
               finalStartZ = bottommostZ;
             } else {
@@ -362,7 +613,7 @@ export function createWallMesh(instance, wall) {
   // CRITICAL: We need to check ALL butt_in joints and shorten BOTH sides if needed
   // A wall can have multiple butt_in joints - one at start and one at end
   const buttInJoints = instance.joints ? instance.joints.filter(j => 
-    j.joining_method === 'butt_in' && (j.wall_1 === id || j.wall_2 === id)
+    j.joining_method === 'butt_in' && (String(j.wall_1) === String(id) || String(j.wall_2) === String(id))
   ) : [];
   // Track which sides need to be shortened
   let shouldShortenStart = false;
@@ -376,7 +627,7 @@ export function createWallMesh(instance, wall) {
       const otherWall = instance.walls.find(w => String(w.id) === String(otherWallId));
       if (!otherWall) return;
       // Check if THIS wall is wall_1 (the one that should be shortened)
-      const isWall1 = j.wall_1 === id;
+      const isWall1 = String(j.wall_1) === String(id);
       if (!isWall1) return; // Only shorten wall_1
       // Get the joining wall's thickness
       const joiningWallThickness = (otherWall.thickness || wallThickness) * scale;
@@ -401,6 +652,28 @@ export function createWallMesh(instance, wall) {
       // Skip when geometry was already inset (e.g. partition create deducted joining thickness).
       const alreadyInsetLimit = joiningWallThickness * 0.55 + 1e-6;
       const isCloserToStart = startDist < endDist;
+
+      // Split-host T: same tip may also be 45° to the colinear partner (e.g. 8709↔8715
+      // 45° + 8709↔8716 butt-in). Do not pull the tip back — that reopens the corner gap.
+      const has45CutAtSameEnd = (instance.joints || []).some((j45) => {
+        if (j45.joining_method !== '45_cut') return false;
+        if (String(j45.wall_1) !== String(id) && String(j45.wall_2) !== String(id)) return false;
+        const other45Id = String(j45.wall_1) === String(id) ? j45.wall_2 : j45.wall_1;
+        const other45 = instance.walls.find((w) => String(w.id) === String(other45Id));
+        if (!other45) return false;
+        const hit45 = calculateLineIntersection(
+          finalStartX, finalStartZ, finalEndX, finalEndZ,
+          snap(other45.start_x * scale), snap(other45.start_y * scale),
+          snap(other45.end_x * scale), snap(other45.end_y * scale),
+          true
+        );
+        if (!hit45) return false;
+        const dStart45 = Math.hypot(hit45.x - finalStartX, hit45.z - finalStartZ);
+        const dEnd45 = Math.hypot(hit45.x - finalEndX, hit45.z - finalEndZ);
+        return isCloserToStart ? dStart45 < dEnd45 : dEnd45 < dStart45;
+      });
+      if (has45CutAtSameEnd) return;
+
       if (isCloserToStart && startDist <= alreadyInsetLimit) {
         shouldShortenStart = true;
         // Use the maximum thickness if multiple joints at start
@@ -460,15 +733,89 @@ export function createWallMesh(instance, wall) {
       });
     }
   }
+  // STEP 1b: For slant / non-ortho 45_cut joints, snap this wall's nearer tip to the
+  // centerline intersection (STEP 1 only extends axis-aligned H↔V pairs).
+  if (instance.joints && instance.joints.length > 0) {
+    instance.joints.forEach((j) => {
+      if (j.joining_method !== '45_cut') return;
+      if (String(j.wall_1) !== String(id) && String(j.wall_2) !== String(id)) return;
+      const otherWallId = String(j.wall_1) === String(id) ? j.wall_2 : j.wall_1;
+      const otherWall = instance.walls.find((w) => String(w.id) === String(otherWallId));
+      if (!otherWall) return;
+      const otherIsH = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+      const otherIsV = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+      const thisAxis = isHorizontal || isVertical;
+      const otherAxis = otherIsH || otherIsV;
+      if (thisAxis && otherAxis) return;
+
+      const oSX = snap(otherWall.start_x * scale);
+      const oSZ = snap(otherWall.start_y * scale);
+      const oEX = snap(otherWall.end_x * scale);
+      const oEZ = snap(otherWall.end_y * scale);
+      const intersection = calculateLineIntersection(
+        finalStartX,
+        finalStartZ,
+        finalEndX,
+        finalEndZ,
+        oSX,
+        oSZ,
+        oEX,
+        oEZ,
+        true
+      );
+      if (!intersection) return;
+      const jx = snap(intersection.x);
+      const jz = snap(intersection.z);
+      const startDist = Math.hypot(jx - finalStartX, jz - finalStartZ);
+      const endDist = Math.hypot(jx - finalEndX, jz - finalEndZ);
+      const snapTol = Math.max(0.2, wallThickness * 3);
+      if (startDist <= endDist && startDist < snapTol) {
+        finalStartX = jx;
+        finalStartZ = jz;
+      } else if (endDist < startDist && endDist < snapTol) {
+        finalEndX = jx;
+        finalEndZ = jz;
+      }
+    });
+  }
   // STEP 2: Now detect 45° cut joints using extended coordinates
   // After extension, walls meet at exact intersection points, so we can detect joints accurately
   let hasStart45 = false;
   let hasEnd45 = false;
   let startJointInfo = null;
   let endJointInfo = null;
+  let startMiterXs = null;
+  let endMiterXs = null;
   // Determine which face to cut from (inner vs outer) at start/end based on joining wall side
   let startCutOnInner = false;
   let endCutOnInner = false;
+  // Height band for partial miters (taller wall joining shorter wall)
+  let startCutYMin = 0;
+  let startCutYMax = wallHeight;
+  let endCutYMin = 0;
+  let endCutYMax = wallHeight;
+  let startCutYInitialized = false;
+  let endCutYInitialized = false;
+  const mergeCutYBand = (atStart, band) => {
+    if (!band?.valid) return;
+    if (atStart) {
+      if (!startCutYInitialized) {
+        startCutYMin = band.min;
+        startCutYMax = band.max;
+        startCutYInitialized = true;
+      } else {
+        startCutYMin = Math.min(startCutYMin, band.min);
+        startCutYMax = Math.max(startCutYMax, band.max);
+      }
+    } else if (!endCutYInitialized) {
+      endCutYMin = band.min;
+      endCutYMax = band.max;
+      endCutYInitialized = true;
+    } else {
+      endCutYMin = Math.min(endCutYMin, band.min);
+      endCutYMax = Math.max(endCutYMax, band.max);
+    }
+  };
   // CRITICAL: Use more lenient tolerance for 45_cut joints (10cm instead of 1cm)
   // After extension, walls should meet, but floating point precision might cause slight differences
   const jointTolerance = 0.1; // 10cm tolerance - more lenient for 45_cut joints
@@ -476,9 +823,9 @@ export function createWallMesh(instance, wall) {
   // Use the intersection points that were already calculated during extension
   if (instance.joints && instance.joints.length) {
     instance.joints.forEach(j => {
-      if (j.joining_method === '45_cut' && (j.wall_1 === id || j.wall_2 === id)) {
+      if (j.joining_method === '45_cut' && (String(j.wall_1) === String(id) || String(j.wall_2) === String(id))) {
         // Find the other wall in this joint
-        const otherWallId = j.wall_1 === id ? j.wall_2 : j.wall_1;
+        const otherWallId = String(j.wall_1) === String(id) ? j.wall_2 : j.wall_1;
         const otherWall = instance.walls.find(w => String(w.id) === String(otherWallId));
         if (otherWall) {
           // Get other wall coordinates
@@ -506,47 +853,62 @@ export function createWallMesh(instance, wall) {
           const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
           // Determine which endpoint is closer to the intersection
           const isCloserToStart = startDist < endDist;
+          const cutYBand = get45CutLocalYBand(
+            wall,
+            otherWall,
+            scale,
+            instance.project,
+            thisWallBaseMm,
+            wallHeight
+          );
+          // No vertical overlap with joining wall — nothing to miter on this wall.
+          if (!cutYBand.valid) {
+            return;
+          }
           // Check if joint is at start endpoint (after extension)
           // Use the closer endpoint if within tolerance, or if significantly closer than the other
           if (isCloserToStart && (startDist < jointTolerance || startDist < endDist * 0.5)) {
             hasStart45 = true;
-            startJointInfo = {
-              otherWall,
-              bisector: null,
-              jointPoint: { x: finalStartX, z: finalStartZ }
-            };
-            // Calculate wall vectors for miter calculation
-            const wallVec = {
-              x: finalEndX - finalStartX,
-              z: finalEndZ - finalStartZ
-            };
-            const joinVec = {
-              x: oEX - oSX,
-              z: oEZ - oSZ
-            };
-            // Normalize vectors
-            const wallLen = Math.hypot(wallVec.x, wallVec.z);
-            const joinLen = Math.hypot(joinVec.x, joinVec.z);
-            if (wallLen > 0 && joinLen > 0) {
-              const wallNorm = { x: wallVec.x / wallLen, z: wallVec.z / wallLen };
-              const joinNorm = { x: joinVec.x / joinLen, z: joinVec.z / joinLen };
-              // Calculate bisector (average of the two vectors)
-              const bisector = {
-                x: (wallNorm.x + joinNorm.x) / 2,
-                z: (wallNorm.z + joinNorm.z) / 2
-              };
-              // Normalize bisector
-              const bisectorLen = Math.hypot(bisector.x, bisector.z);
-              if (bisectorLen > 0) {
-                startJointInfo.bisector = { x: bisector.x / bisectorLen, z: bisector.z / bisectorLen };
-              }
-            }
+            mergeCutYBand(true, cutYBand);
             // Determine if the joining wall lies on the inner side (along inward normal) or outer side
             const joinMidX = (oSX + oEX) / 2;
             const joinMidZ = (oSZ + oEZ) / 2;
             const toJoinX = joinMidX - finalStartX;
             const toJoinZ = joinMidZ - finalStartZ;
             startCutOnInner = (toJoinX * finalNormX + toJoinZ * finalNormZ) > 0;
+            // Slant-aware face miter whenever THIS or the OTHER wall is slant.
+            // Ortho↔ortho stays on the original ±thickness path (do not set miterXs).
+            const otherIsH = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+            const otherIsV = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+            const thisIsSlant = !isHorizontal && !isVertical;
+            const otherIsSlant = !otherIsH && !otherIsV;
+            if (thisIsSlant || otherIsSlant) {
+              const otherNorm = getWallInwardNormalXZ(oSX, oSZ, oEX, oEZ, modelCenter);
+              const otherThk = (Number(otherWall.thickness) || 0) * scale;
+              startMiterXs = compute45MiterLocalXs({
+                finalStartX,
+                finalStartZ,
+                finalEndX,
+                finalEndZ,
+                finalNormX,
+                finalNormZ,
+                thisThickness: wallThickness,
+                oSX,
+                oSZ,
+                oEX,
+                oEZ,
+                otherNormX: otherNorm.x,
+                otherNormZ: otherNorm.z,
+                otherThickness: otherThk,
+                atStart: true,
+                cutOnInner: startCutOnInner
+              });
+            }
+            startJointInfo = {
+              otherWall,
+              jointPoint: { x: finalStartX, z: finalStartZ },
+              miterXs: startMiterXs
+            };
             console.log(`[45° Cut Debug] Wall ${id} - START 45_cut detected:`, {
               wallId: id,
               otherWallId: otherWall.id,
@@ -556,49 +918,54 @@ export function createWallMesh(instance, wall) {
               finalStartZ,
               jointX,
               jointZ,
-              startCutOnInner
+              startCutOnInner,
+              thisIsSlant,
+              otherIsSlant,
+              startMiterXs,
+              cutYBand: { min: startCutYMin, max: startCutYMax }
             });
           }
           // Check if joint is at end endpoint (after extension)
           // Use the closer endpoint if within tolerance, or if significantly closer than the other
           if (!isCloserToStart && (endDist < jointTolerance || endDist < startDist * 0.5)) {
             hasEnd45 = true;
-            endJointInfo = {
-              otherWall,
-              bisector: null,
-              jointPoint: { x: finalEndX, z: finalEndZ }
-            };
-            // Calculate wall vectors for miter calculation
-            const wallVec = {
-              x: finalEndX - finalStartX,
-              z: finalEndZ - finalStartZ
-            };
-            const joinVec = {
-              x: oEX - oSX,
-              z: oEZ - oSZ
-            };
-            // Normalize vectors
-            const wallLen = Math.hypot(wallVec.x, wallVec.z);
-            const joinLen = Math.hypot(joinVec.x, joinVec.z);
-            if (wallLen > 0 && joinLen > 0) {
-              const wallNorm = { x: wallVec.x / wallLen, z: wallVec.z / wallLen };
-              const joinNorm = { x: joinVec.x / joinLen, z: joinVec.z / joinLen };
-              // Calculate bisector (average of the two vectors)
-              const bisector = {
-                x: (wallNorm.x + joinNorm.x) / 2,
-                z: (wallNorm.z + joinNorm.z) / 2
-              };
-              // Normalize bisector
-              const bisectorLen = Math.hypot(bisector.x, bisector.z);
-              if (bisectorLen > 0) {
-                endJointInfo.bisector = { x: bisector.x / bisectorLen, z: bisector.z / bisectorLen };
-              }
-            }
+            mergeCutYBand(false, cutYBand);
             const joinMidX = (oSX + oEX) / 2;
             const joinMidZ = (oSZ + oEZ) / 2;
             const toJoinX = joinMidX - finalEndX;
             const toJoinZ = joinMidZ - finalEndZ;
             endCutOnInner = (toJoinX * finalNormX + toJoinZ * finalNormZ) > 0;
+            const otherIsH = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
+            const otherIsV = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
+            const thisIsSlant = !isHorizontal && !isVertical;
+            const otherIsSlant = !otherIsH && !otherIsV;
+            if (thisIsSlant || otherIsSlant) {
+              const otherNorm = getWallInwardNormalXZ(oSX, oSZ, oEX, oEZ, modelCenter);
+              const otherThk = (Number(otherWall.thickness) || 0) * scale;
+              endMiterXs = compute45MiterLocalXs({
+                finalStartX,
+                finalStartZ,
+                finalEndX,
+                finalEndZ,
+                finalNormX,
+                finalNormZ,
+                thisThickness: wallThickness,
+                oSX,
+                oSZ,
+                oEX,
+                oEZ,
+                otherNormX: otherNorm.x,
+                otherNormZ: otherNorm.z,
+                otherThickness: otherThk,
+                atStart: false,
+                cutOnInner: endCutOnInner
+              });
+            }
+            endJointInfo = {
+              otherWall,
+              jointPoint: { x: finalEndX, z: finalEndZ },
+              miterXs: endMiterXs
+            };
             console.log(`[45° Cut Debug] Wall ${id} - END 45_cut detected:`, {
               wallId: id,
               otherWallId: otherWall.id,
@@ -608,7 +975,10 @@ export function createWallMesh(instance, wall) {
               finalEndZ,
               jointX,
               jointZ,
-              endCutOnInner
+              endCutOnInner,
+              thisIsSlant,
+              otherIsSlant,
+              endMiterXs
             });
           }
         }
@@ -654,7 +1024,7 @@ export function createWallMesh(instance, wall) {
   // door positions must also be flipped to maintain correct visual placement.
   // A door at position 0.3 on the original wall should appear at position 0.7 on the flipped wall.
   // NOTE: Flipping is ONLY based on model center, NOT on joints.
-  const wasWallFlipped = (finalStartX !== startX) || (finalStartZ !== startZ);
+  const wasWallFlipped = wallEndpointsSwapped;
   if (wasWallFlipped && wallDoors.length > 0) {
     // Wall was flipped, door positions will be adjusted
   }
@@ -824,7 +1194,23 @@ export function createWallMesh(instance, wall) {
       wallHeight,
       wallThickness
     });
-    wallMesh = apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, finalWallLength, wallHeight, wallThickness, startCutOnInner, endCutOnInner);
+    wallMesh = apply45DegreeCuts(
+      instance,
+      wallMesh,
+      hasStart45,
+      hasEnd45,
+      finalWallLength,
+      wallHeight,
+      wallThickness,
+      startCutOnInner,
+      endCutOnInner,
+      startCutYMin,
+      startCutYMax,
+      endCutYMin,
+      endCutYMax,
+      startMiterXs,
+      endMiterXs
+    );
     console.log(`[45° Cut Debug] Wall ${id} - 45° cuts applied successfully`);
     // IMPORTANT: After applying cuts, we need to update the geometry
     // The geometry was modified, so we need to ensure it's properly updated
@@ -1100,7 +1486,23 @@ export function createWallMesh(instance, wall) {
   return wallMesh;
 }
 
-function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength, wallHeight, wallThickness, startCutOnInner = true, endCutOnInner = true) {
+function apply45DegreeCuts(
+  instance,
+  wallMesh,
+  hasStart45,
+  hasEnd45,
+  wallLength,
+  wallHeight,
+  wallThickness,
+  startCutOnInner = true,
+  endCutOnInner = true,
+  startCutYMin = 0,
+  startCutYMax = Infinity,
+  endCutYMin = 0,
+  endCutYMax = Infinity,
+  startMiterXs = null,
+  endMiterXs = null
+) {
   console.log(`[apply45DegreeCuts] Called with:`, {
     hasStart45,
     hasEnd45,
@@ -1108,7 +1510,13 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
     endCutOnInner,
     wallLength,
     wallHeight,
-    wallThickness
+    wallThickness,
+    startCutYMin,
+    startCutYMax,
+    endCutYMin,
+    endCutYMax,
+    startMiterXs,
+    endMiterXs
   });
   const pos = wallMesh.geometry.attributes.position;
   const arr = pos.array;
@@ -1125,6 +1533,23 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
   // CRITICAL: Use more lenient tolerance for vertex detection (at least 1cm or 0.1% of wall length)
   // This ensures vertices are detected correctly for extended walls with floating-point inaccuracies
   const epsEndX = Math.max(0.001 * lenX, 0.01);
+  const yEps = Math.max(1e-4, (Number.isFinite(wallHeight) ? wallHeight : 1) * 1e-6);
+  const startYLo = Number.isFinite(startCutYMin) ? startCutYMin : 0;
+  const startYHi = Number.isFinite(startCutYMax) ? startCutYMax : Infinity;
+  const endYLo = Number.isFinite(endCutYMin) ? endCutYMin : 0;
+  const endYHi = Number.isFinite(endCutYMax) ? endCutYMax : Infinity;
+
+  // Resolve slant miter line in local X (only when startMiterXs / endMiterXs provided).
+  // Ortho walls keep the original ±thickness cut below — do not rewrite that path.
+  const hasStartSlantMiter =
+    startMiterXs &&
+    Number.isFinite(startMiterXs.xOuter) &&
+    Number.isFinite(startMiterXs.xInner);
+  const hasEndSlantMiter =
+    endMiterXs &&
+    Number.isFinite(endMiterXs.xOuter) &&
+    Number.isFinite(endMiterXs.xInner);
+
   console.log(`[apply45DegreeCuts] Geometry bounds:`, {
     minX,
     maxX,
@@ -1133,7 +1558,11 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
     lenX,
     thickness,
     epsEndX,
-    vcount
+    vcount,
+    hasStartSlantMiter,
+    hasEndSlantMiter,
+    startMiterXs,
+    endMiterXs
   });
 
   let startCutCount = 0;
@@ -1142,32 +1571,47 @@ function apply45DegreeCuts(instance, wallMesh, hasStart45, hasEnd45, wallLength,
   for (let i = 0; i < vcount; i++) {
     const ix = i * 3;
     const x = arr[ix];
+    const y = arr[ix + 1];
     const z = arr[ix + 2];
 
     // t=0 at OUTER face (z≈minZ), t=1 at INNER face (z≈maxZ)
     let t = (z - minZ) / thickness;
     if (t < 0) t = 0; else if (t > 1) t = 1;
-    // Choose which face is primarily affected based on which side the joining wall is on
+    // Original ortho weighting (unchanged for normal walls)
     const wStart = startCutOnInner ? t : (1 - t);
     const wEnd = endCutOnInner ? t : (1 - t);
 
-    // End cut: pull inner back along X up to thickness
+    // End cut
     if (hasEnd45 && Math.abs(x - maxX) < epsEndX) {
-      const oldX = arr[ix];
-      arr[ix] = x - wEnd * thickness;
-      endCutCount++;
-      if (endCutCount <= 5) {
-        console.log(`[apply45DegreeCuts] End cut vertex ${i}: x=${oldX} -> ${arr[ix]}, t=${t}, wEnd=${wEnd}, thickness=${thickness}`);
+      if (y >= endYLo - yEps && y <= endYHi + yEps) {
+        const oldX = arr[ix];
+        if (hasEndSlantMiter) {
+          arr[ix] = endMiterXs.xOuter * (1 - t) + endMiterXs.xInner * t;
+        } else {
+          // Original normal-wall path: pull by up to one thickness
+          arr[ix] = x - wEnd * thickness;
+        }
+        endCutCount++;
+        if (endCutCount <= 5) {
+          console.log(`[apply45DegreeCuts] End cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasEndSlantMiter}`);
+        }
       }
     }
 
-    // Start cut: push inner forward along X up to thickness
+    // Start cut
     if (hasStart45 && Math.abs(x - minX) < epsEndX) {
-      const oldX = arr[ix];
-      arr[ix] = x + wStart * thickness;
-      startCutCount++;
-      if (startCutCount <= 5) {
-        console.log(`[apply45DegreeCuts] Start cut vertex ${i}: x=${oldX} -> ${arr[ix]}, t=${t}, wStart=${wStart}, thickness=${thickness}`);
+      if (y >= startYLo - yEps && y <= startYHi + yEps) {
+        const oldX = arr[ix];
+        if (hasStartSlantMiter) {
+          arr[ix] = startMiterXs.xOuter * (1 - t) + startMiterXs.xInner * t;
+        } else {
+          // Original normal-wall path: push by up to one thickness
+          arr[ix] = x + wStart * thickness;
+        }
+        startCutCount++;
+        if (startCutCount <= 5) {
+          console.log(`[apply45DegreeCuts] Start cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasStartSlantMiter}`);
+        }
       }
     }
   }
@@ -1687,12 +2131,39 @@ export function createDoorMesh(instance, door, wall) {
   // IMPORTANT: When wall start/end points are flipped, door properties must be adjusted:
   // 1. Swing doors: flip swing direction to maintain correct visual behavior
   // 2. Slide doors: flip side (interior/exterior) to maintain correct visual behavior
+  // Local +X runs start→end of the *final* wall, so a reversed wall mirrors left/right.
   const adjustedSwingDirection = wasWallFlipped ? (swing_direction === 'right' ? 'left' : 'right') : swing_direction;
-  const adjustedSlideDirection = slide_direction; // Keep original slide direction
-  const adjustedSide = wasWallFlipped ? (side === 'interior' ? 'exterior' : 'interior') : side;
-  if (wasWallFlipped) {
-    // Door properties adjusted for flipped wall
+  const adjustedSlideDirection = wasWallFlipped
+    ? (slide_direction === 'right' ? 'left' : 'right')
+    : slide_direction;
+
+  // Resolve the authored side against the wall's real interior face (same rule as the 2D
+  // plan) and re-express it in this door's local space, where +Z is the extrusion
+  // direction. Downstream code can then treat 'interior' as "+Z" unconditionally.
+  // Previously the side was flipped on any reversed wall and the interior was assumed to be
+  // whichever face pointed at the model center, so doors on partitions and concave plans
+  // opened on the wrong face.
+  const interiorNormal = wallData
+    ? getWallInteriorNormalModel(
+        wallData,
+        instance.project?.rooms || [],
+        (() => {
+          const center = instance.calculateModelCenter?.();
+          if (!center || !scale) return null;
+          return { x: center.x / scale, y: center.z / scale };
+        })(),
+        getDoorSideJointContext(instance)
+      )
+    : null;
+  let localPlusZIsInterior = true;
+  if (interiorNormal) {
+    const localZx = -Math.sin(wallAngle);
+    const localZy = Math.cos(wallAngle);
+    localPlusZIsInterior = localZx * interiorNormal.x + localZy * interiorNormal.y > 0;
   }
+  const adjustedSide = localPlusZIsInterior
+    ? side
+    : (side === 'interior' ? 'exterior' : 'interior');
   // Calculate door width to match cutout width calculation in createWallMesh
   // For double-sided slide doors: use 100% (1.0) to match cutout
   // For single slide doors: use 95% (0.95) to match cutout
@@ -1826,14 +2297,15 @@ export function createDoorMesh(instance, door, wall) {
       // - Left door: center at -halfWidth/2, extends from -halfWidth to 0
       // - Right door: center at +halfWidth/2, extends from 0 to +halfWidth
       // They touch perfectly at x=0 (right edge of left door touches left edge of right door)
-      // For interior doors: position on inner face (Z = wallThickness, toward model center)
-      // For exterior doors: position on outer face (Z = 0, database line face)
+      // The wall extrudes from local z=0 (database line / outer face) to z=wallDepth (inner
+      // face), so the interior panel sits past +wallDepth and the exterior panel below 0.
+      // These two were swapped, which mounted every sliding door on the opposite face.
       if (adjustedSide === 'interior') {
-        leftDoor.position.set(-halfWidth/2, 0, -wallDepth/2);
-        rightDoor.position.set(halfWidth/2, 0, -wallDepth/2);
-      } else {
         leftDoor.position.set(-halfWidth/2, 0, wallDepth * 1.2);
         rightDoor.position.set(halfWidth/2, 0, wallDepth * 1.2);
+      } else {
+        leftDoor.position.set(-halfWidth/2, 0, -wallDepth/2);
+        rightDoor.position.set(halfWidth/2, 0, -wallDepth/2);
       }
       // Store original positions
       leftDoor.userData.origPosition = { x: leftDoor.position.x, z: leftDoor.position.z };
@@ -1899,13 +2371,13 @@ export function createDoorMesh(instance, door, wall) {
         0
       );
       
-      // Position door at wall face
-      // For interior doors: position on inner face (Z = wallThickness, toward model center)
-      // For exterior doors: position on outer face (Z = 0, database line face)
+      // Position door at wall face. The wall extrudes from local z=0 (database line / outer
+      // face) to z=wallDepth (inner face), so interior mounts past +wallDepth and exterior
+      // below 0. These were swapped, mounting sliding doors on the opposite face.
       if (adjustedSide === 'exterior') {
-        doorMesh.position.z = wallDepth * 1.2;
-      } else {
         doorMesh.position.z = -wallDepth/2;
+      } else {
+        doorMesh.position.z = wallDepth * 1.2;
       }
       doorContainer.add(doorMesh);
       // Store original position
@@ -1927,9 +2399,9 @@ export function createDoorMesh(instance, door, wall) {
         addWindowGlass(instance, doorMesh, door.windows, doorWidth, doorHeight, doorThickness, scale, 0, 0);
       }
       
-      // Sliding direction
-      const rawDirection = adjustedSlideDirection === 'right' ? -1 : 1;
-      const slideDirectionSign = adjustedSide === 'exterior' ? -rawDirection : rawDirection;
+      // Sliding direction: local +X is the wall's start→end, matching the 2D arrow, and the
+      // mounting face must not mirror it (the plan arrow does not change with side).
+      const slideDirectionSign = adjustedSlideDirection === 'right' ? 1 : -1;
       const slideDistance = doorWidth * 0.9;
       // Animate door sliding
       if (typeof window !== 'undefined' && window.gsap) {
@@ -2076,14 +2548,11 @@ export function createDoorMesh(instance, door, wall) {
       // Position door centered vertically on wall opening (consistent for all door types)
       doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
       doorContainer.rotation.y = -wallAngle;
-      // IMPORTANT: When wall is flipped, the hinge position should also be flipped
-      // to maintain correct visual behavior. The hinge should stay on the same relative side
-      // of the door opening, regardless of wall flipping.
-      let effectiveHingeOnRight = mountedInside ? !hingeOnRight : hingeOnRight;
-      if (wasWallFlipped) {
-        effectiveHingeOnRight = !effectiveHingeOnRight;
-        // Hinge position flipped for wall flip
-      }
+      // The hinge sits at the same physical end of the opening as the 2D plan symbol.
+      // `adjustedSwingDirection` already accounts for a reversed wall, so it must not be
+      // re-flipped here, and the mounting side only decides which way the leaf swings
+      // (see baseDir below) — never which end it is hinged on.
+      const effectiveHingeOnRight = hingeOnRight;
       const pivotX = effectiveHingeOnRight ? cutoutWidth/2 - 0.1 : -cutoutWidth/2 + 0.1;
       const pivot = new instance.THREE.Object3D();
       pivot.position.set(pivotX, 0, 0);

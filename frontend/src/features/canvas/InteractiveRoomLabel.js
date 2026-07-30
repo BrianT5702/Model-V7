@@ -20,7 +20,10 @@ const InteractiveRoomLabel = ({
     isSelected = false,
     onSelect,
     currentMode,
-    selectedRoomPoints = []
+    selectedRoomPoints = [],
+    /** Actual plan viewport size — must match Canvas2D canvasSize (not hardcoded 1000×600). */
+    canvasWidth = 1000,
+    canvasHeight = 650,
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState('');
@@ -38,6 +41,18 @@ const InteractiveRoomLabel = ({
     const labelTextColor = isDark ? '#e5e7eb' : '#1f2937';
 
     const getDisplayText = () => buildRoomLabelHtml(room);
+
+    /**
+     * Room footprint in screen pixels. `initialScale` is the fit-to-view scale, so a plan
+     * viewed at fit always reports zoom ratio 1 no matter how large it is — on a big plan
+     * that leaves tiny rooms wearing a full-size label.
+     */
+    const roomScreenWidth = React.useMemo(() => {
+        const points = Array.isArray(room.room_points) ? room.room_points : [];
+        if (points.length < 3) return null;
+        const xs = points.map((pt) => Number(pt.x) || 0);
+        return (Math.max(...xs) - Math.min(...xs)) * scaleFactor;
+    }, [room.room_points, scaleFactor]);
 
     // Helper function to find the closest point on a line segment to a given point
     const closestPointOnSegment = (px, py, x1, y1, x2, y2) => {
@@ -360,9 +375,10 @@ const InteractiveRoomLabel = ({
     // This ensures labels always scale when user zooms, regardless of project size
     const zoomRatio = initialScale > 0 ? scaleFactor / initialScale : 1; // Ratio of current zoom to initial zoom
     
-    // Use square root scaling to make zoom less aggressive (smoother scaling curve)
-    // This means 2x zoom only results in ~1.41x label size, not 2x
-    const smoothZoomRatio = Math.sqrt(zoomRatio);
+    // Zooming in: damp with a square root so 2x zoom only grows the label ~1.41x.
+    // Zooming out: track the zoom linearly, otherwise the damped curve keeps labels
+    // near full size while the rooms shrink and they swamp the plan.
+    const smoothZoomRatio = zoomRatio >= 1 ? Math.sqrt(zoomRatio) : zoomRatio;
     
     // Base dimensions at 1x zoom (initial scale) - made smaller
     const BASE_FONT_SIZE = 8; // Reduced from 12
@@ -375,30 +391,41 @@ const InteractiveRoomLabel = ({
     const BASE_BORDER_RADIUS = 3;
     const BASE_GAP = 3;
     
+    // Keep the label inside the room's own screen footprint. Without this a fit-to-view
+    // plan (zoom ratio 1) draws every label at full base size, so on a large project the
+    // boxes are wider than the rooms they belong to and cover the drawing.
+    const roomFitRatio =
+        !isEditing && roomScreenWidth != null
+            ? Math.min(1, Math.max(0.3, roomScreenWidth / BASE_MAX_WIDTH))
+            : 1;
+    const labelScale = smoothZoomRatio * roomFitRatio;
+
     // Scale dimensions with smooth zoom ratio (less aggressive scaling)
     // This ensures labels scale immediately when zooming, but not too dramatically
-    const scaledFontSize = Math.max(BASE_FONT_SIZE * smoothZoomRatio, 6); // Minimum 6px for readability
-    const scaledPaddingV = Math.max(BASE_PADDING_V * smoothZoomRatio, 2);
-    const scaledPaddingH = Math.max(BASE_PADDING_H * smoothZoomRatio, 4);
-    const scaledMinWidth = Math.max(BASE_MIN_WIDTH * smoothZoomRatio, 60);
-    const scaledMaxWidth = Math.max(BASE_MAX_WIDTH * smoothZoomRatio, 90);
-    const scaledBorderWidth = Math.max(BASE_BORDER_WIDTH * smoothZoomRatio, 0.5);
-    const scaledBorderWidthSelected = Math.max(BASE_BORDER_WIDTH_SELECTED * smoothZoomRatio, 1);
-    const scaledBorderRadius = Math.max(BASE_BORDER_RADIUS * smoothZoomRatio, 2);
-    const scaledGap = Math.max(BASE_GAP * smoothZoomRatio, 2);
+    // Floors are kept low so a zoomed-out plan is not covered by label boxes.
+    // Editing needs legible inputs, so that case keeps the old readable minimum.
+    const scaledFontSize = Math.max(BASE_FONT_SIZE * labelScale, isEditing ? 6 : 3.5);
+    const scaledPaddingV = Math.max(BASE_PADDING_V * labelScale, 1);
+    const scaledPaddingH = Math.max(BASE_PADDING_H * labelScale, 1.5);
+    const scaledMinWidth = Math.max(BASE_MIN_WIDTH * labelScale, isEditing ? 60 : 20);
+    const scaledMaxWidth = Math.max(BASE_MAX_WIDTH * labelScale, isEditing ? 90 : 32);
+    const scaledBorderWidth = Math.max(BASE_BORDER_WIDTH * labelScale, 0.5);
+    const scaledBorderWidthSelected = Math.max(BASE_BORDER_WIDTH_SELECTED * labelScale, 1);
+    const scaledBorderRadius = Math.max(BASE_BORDER_RADIUS * labelScale, 2);
+    const scaledGap = Math.max(BASE_GAP * labelScale, 1);
     
-    // Check if label is out of bounds (assuming canvas dimensions)
-    const canvasWidth = 1000; // Match the canvas width from Canvas2D
-    const canvasHeight = 600; // Match the canvas height from Canvas2D
-    const labelWidth = scaledMaxWidth; // Use scaled max width for bounds check
-    const labelHeight = 50 * smoothZoomRatio; // Approximate scaled label height (base 50px * smoothZoomRatio)
-    
-    const isOutOfBounds = canvasX < -labelWidth/2 || 
-                         canvasX > canvasWidth + labelWidth/2 || 
-                         canvasY < -labelHeight/2 || 
-                         canvasY > canvasHeight + labelHeight/2;
-    
-    // Don't render if out of bounds
+    // Hide only when fully off the real viewport. A hardcoded 1000×600 check used to
+    // drop rightmost-room labels on wide canvases (label center still on-screen).
+    const labelWidth = scaledMaxWidth;
+    const labelHeight = 50 * labelScale;
+    const viewW = Number(canvasWidth) > 0 ? Number(canvasWidth) : 1000;
+    const viewH = Number(canvasHeight) > 0 ? Number(canvasHeight) : 650;
+    const isOutOfBounds =
+        canvasX < -labelWidth ||
+        canvasX > viewW + labelWidth ||
+        canvasY < -labelHeight ||
+        canvasY > viewH + labelHeight;
+
     if (isOutOfBounds) {
         return null;
     }

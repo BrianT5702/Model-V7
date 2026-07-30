@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 
 /**
- * Stops wheel scroll from chaining to the page when a scrollable panel
- * is already at its top or bottom edge.
+ * Keeps wheel scrolling inside a scrollable panel so the page/body does not
+ * scroll instead (or in addition) while the pointer is over the panel.
  */
 export default function useScrollContainment(ref, enabled = true) {
     useEffect(() => {
@@ -13,14 +13,16 @@ export default function useScrollContainment(ref, enabled = true) {
 
         const onWheel = (e) => {
             const { scrollTop, scrollHeight, clientHeight } = el;
-            if (scrollHeight <= clientHeight) return;
+            if (scrollHeight <= clientHeight + 1) return;
 
-            const delta = e.deltaY;
-            const atTop = scrollTop <= 0;
-            const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+            // Always keep this gesture on the panel — do not let the page scroll.
+            e.preventDefault();
+            e.stopPropagation();
 
-            if ((delta < 0 && atTop) || (delta > 0 && atBottom)) {
-                e.preventDefault();
+            const maxScroll = scrollHeight - clientHeight;
+            const next = Math.min(maxScroll, Math.max(0, scrollTop + e.deltaY));
+            if (next !== scrollTop) {
+                el.scrollTop = next;
             }
         };
 

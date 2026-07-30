@@ -30,6 +30,10 @@ import {
 import { calculatePolygonVisualCenter } from './utils.js';
 import { computePlanFitTransform } from './planCanvasUtils.js';
 import {
+    panelNeedsNylonSupport as panelNeedsNylonSupportUtil,
+    getAutoNylonHangerOffsets
+} from '../ceiling/nylonHangerUtils.js';
+import {
     DIMENSION_CONFIG,
     formatPlanDimensionLabel,
     planCeilingValueDedupKey,
@@ -1740,7 +1744,18 @@ const CeilingCanvas = ({
         return { meta: metaEntry, nylon, rest };
     }, []);
 
-    const autoNylonSlotKey = useCallback((roomId, panelId) => `${roomId}:${panelId}`, []);
+    /** Slot id for one auto hanger position (panel + offset). Legacy panel-only keys still suppress all. */
+    const autoNylonSlotKey = useCallback((roomId, panelId, offsetLengthMm = null, offsetWidthMm = null) => {
+        if (offsetLengthMm == null && offsetWidthMm == null) {
+            return `${roomId}:${panelId}`;
+        }
+        const ol = Math.round(Number(offsetLengthMm ?? 0));
+        const ow =
+            offsetWidthMm == null || offsetWidthMm === '' || offsetWidthMm === 'center'
+                ? 'center'
+                : Math.round(Number(offsetWidthMm));
+        return `${roomId}:${panelId}:${ol}:${ow}`;
+    }, []);
 
     const nylonHangerKey = useCallback((support) => {
         if (!support) return '';
@@ -1808,13 +1823,7 @@ const CeilingCanvas = ({
     }, []);
 
     const panelNeedsNylonSupport = useCallback(
-        (panel) => {
-            if (!panel) return false;
-            const physicalLength = Math.max(Number(panel.width ?? 0), Number(panel.length ?? 0));
-            const panelThickness = panel.thickness || ceilingThickness;
-            const threshold = panelThickness <= 100 ? 3000 : 6000;
-            return physicalLength > threshold;
-        },
+        (panel) => panelNeedsNylonSupportUtil(panel, ceilingThickness),
         [ceilingThickness]
     );
 
@@ -1833,6 +1842,23 @@ const CeilingCanvas = ({
             return allCeilingPanelsForAluPlacement.find(match) || allCeilingPanels.find(match) || null;
         },
         [allCeilingPanelsForAluPlacement, allCeilingPanels, getPanelKey]
+    );
+
+    const nylonAutoSlotFromSupport = useCallback(
+        (support) => {
+            if (!support) return '';
+            const panel = findPanelById(support.panel_id, support.room_id);
+            const w = Number(panel?.width ?? 0);
+            const ow = Number(support.offset_width ?? 0);
+            const isCenterWidth = w > 0 && Math.abs(ow - w / 2) < 2;
+            return autoNylonSlotKey(
+                support.room_id,
+                support.panel_id,
+                support.offset_length,
+                isCenterWidth ? 'center' : support.offset_width
+            );
+        },
+        [autoNylonSlotKey, findPanelById]
     );
 
     /** Hangers on one "line" share the same length offset; width matches or both centered on panel. */
@@ -1968,7 +1994,7 @@ const CeilingCanvas = ({
         nylon
             .filter((s) => s.isAuto && !s.isManual)
             .forEach((s) => {
-                autoBySlot.set(autoNylonSlotKey(s.room_id, s.panel_id), ensureStableNylonKey(s));
+                autoBySlot.set(nylonAutoSlotFromSupport(s), ensureStableNylonKey(s));
             });
 
         const nextAuto = [];
@@ -1980,14 +2006,31 @@ const CeilingCanvas = ({
                 const room = effectiveRooms.find((r) => Number(r.id) === Number(roomId));
                 if (!room || room.exclude_from_ceiling) return;
                 if (!panelNeedsNylonSupport(panel)) return;
-                const slot = autoNylonSlotKey(roomId, panelId);
-                if (suppressed.has(slot)) return;
-                if (autoBySlot.has(slot)) {
-                    nextAuto.push(autoBySlot.get(slot));
-                } else {
-                    const entry = buildNylonEntryForPanel(room, panel, panel.length / 2, null, true);
-                    if (entry) nextAuto.push(entry);
-                }
+                // Legacy suppressions used room:panel (all positions).
+                if (suppressed.has(autoNylonSlotKey(roomId, panelId))) return;
+
+                const placements = getAutoNylonHangerOffsets(panel, ceilingThickness);
+                placements.forEach((placement) => {
+                    const slot = autoNylonSlotKey(
+                        roomId,
+                        panelId,
+                        placement.offsetLength,
+                        placement.offsetWidth == null ? 'center' : placement.offsetWidth
+                    );
+                    if (suppressed.has(slot)) return;
+                    if (autoBySlot.has(slot)) {
+                        nextAuto.push(autoBySlot.get(slot));
+                    } else {
+                        const entry = buildNylonEntryForPanel(
+                            room,
+                            panel,
+                            placement.offsetLength,
+                            placement.offsetWidth,
+                            true
+                        );
+                        if (entry) nextAuto.push(entry);
+                    }
+                });
             });
         }
 
@@ -2028,8 +2071,10 @@ const CeilingCanvas = ({
         effectiveCustomSupports,
         partitionCustomSupports,
         autoNylonSlotKey,
+        nylonAutoSlotFromSupport,
         getPanelKey,
         panelNeedsNylonSupport,
+        ceilingThickness,
         buildNylonEntryForPanel,
         ensureStableNylonKey,
         nylonHangerKey,
@@ -2197,7 +2242,7 @@ const CeilingCanvas = ({
             const { meta, nylon, rest } = partitionCustomSupports(effectiveCustomSupports);
             let nextMeta = meta;
             if (hanger.isAuto && !hanger.isManual) {
-                const slot = autoNylonSlotKey(hanger.room_id, hanger.panel_id);
+                const slot = nylonAutoSlotFromSupport(hanger);
                 nextMeta = {
                     ...meta,
                     suppressedAutoPanelKeys: [...new Set([...(meta.suppressedAutoPanelKeys || []), slot])]
@@ -2221,6 +2266,7 @@ const CeilingCanvas = ({
             partitionCustomSupports,
             effectiveCustomSupports,
             autoNylonSlotKey,
+            nylonAutoSlotFromSupport,
             nylonHangerKey,
             mergeSupportsWithNylon,
             updateCustomSupports
@@ -4653,34 +4699,19 @@ const CeilingCanvas = ({
             return false;
         }
 
-        // Determine panel orientation from ceiling plan (use first room's orientation)
-        let isHorizontalOrientation = false;
-        for (const roomId in effectiveCeilingPanelsMap) {
-            const roomPanels = effectiveCeilingPanelsMap[roomId];
-            if (roomPanels && roomPanels.length > 0) {
-                isHorizontalOrientation = getRoomOrientation(parseInt(roomId));
-                break;
-            }
-        }
-
-        // Check if any panels need support
         for (const roomId in effectiveCeilingPanelsMap) {
             const roomPanels = effectiveCeilingPanelsMap[roomId];
             if (roomPanels) {
                 for (const panel of roomPanels) {
-                    const needsSupport = isHorizontalOrientation ? 
-                        panel.width > 6000 :  // Horizontal: check width
-                        panel.length > 6000;  // Vertical: check length
-                    
-                    if (needsSupport) {
+                    if (panelNeedsNylonSupport(panel)) {
                         return true;
                     }
                 }
             }
         }
-        
+
         return false;
-    }, [effectiveCeilingPanelsMap, getRoomOrientation]);
+    }, [effectiveCeilingPanelsMap, panelNeedsNylonSupport]);
 
     const handleMouseUp = () => {
         isDragging.current = false;
@@ -5889,7 +5920,7 @@ const CeilingCanvas = ({
                 ) : null}
                 {!panelsNeedSupport ? (
                     <p className="support-info-green text-[11px] text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-2">
-                        No extra support needed — all panels are under 6000&nbsp;mm in their critical dimension.
+                        No extra support needed — all panels are under the nylon threshold (6000&nbsp;mm, or 3000&nbsp;mm for ≤100&nbsp;mm thick panels) in their critical dimension.
                     </p>
                 ) : (
                     <div className="space-y-3">
@@ -6389,12 +6420,14 @@ const CeilingCanvas = ({
                                             <div className="plan-details-stat-label">Panels Needing Support</div>
                                             <div className="plan-details-stat-value-sm text-amber-600 tabular-nums">
                                                 {(() => {
-                                                    const isHorizontalOrientation = effectiveRooms.length > 0 && effectiveRooms[0] ? getRoomOrientation(effectiveRooms[0].id) : false;
                                                     if (ceilingPlan?.enhanced_panels && Array.isArray(ceilingPlan.enhanced_panels)) {
-                                                        return ceilingPlan.enhanced_panels.filter(p => isHorizontalOrientation ? p.width > 6000 : p.length > 6000).length;
+                                                        return ceilingPlan.enhanced_panels.filter((p) => panelNeedsNylonSupport(p)).length;
                                                     }
-                                                    return Object.values(effectiveCeilingPanelsMap).reduce((sum, panels) =>
-                                                        sum + (panels ? panels.filter(p => isHorizontalOrientation ? p.width > 6000 : p.length > 6000).length : 0), 0);
+                                                    return Object.values(effectiveCeilingPanelsMap).reduce(
+                                                        (sum, panels) =>
+                                                            sum + (panels ? panels.filter((p) => panelNeedsNylonSupport(p)).length : 0),
+                                                        0
+                                                    );
                                                 })()}
                                             </div>
                                         </div>

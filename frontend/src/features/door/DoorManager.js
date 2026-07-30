@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 
@@ -48,6 +48,25 @@ const DoorManager = ({
     return Math.hypot(dx, dy);
   };
   const wallLength = getWallLength();
+  const doorWidthMm = Math.max(0, parseFloat(width) || 0);
+  const halfDoor = doorWidthMm / 2;
+  const maxEdgeClearance = Math.max(0, wallLength - doorWidthMm);
+  const leftDistance = Math.max(0, (localPosition || 0) * wallLength - halfDoor);
+  const rightDistance = Math.max(0, wallLength - ((localPosition || 0) * wallLength + halfDoor));
+
+  // Keep left-edge clearance when door width changes after position was set
+  const prevHalfDoorRef = useRef(halfDoor);
+  useEffect(() => {
+    const prevHalf = prevHalfDoorRef.current;
+    prevHalfDoorRef.current = halfDoor;
+    if (wallLength <= 0 || prevHalf === halfDoor) return;
+    const currentLeft = Math.max(0, (localPosition || 0) * wallLength - prevHalf);
+    const left = Math.min(currentLeft, maxEdgeClearance);
+    const newPos = (left + halfDoor) / wallLength;
+    if (Number.isFinite(newPos)) {
+      setLocalPosition(Math.min(1, Math.max(0, newPos)));
+    }
+  }, [halfDoor, maxEdgeClearance, wallLength]);
 
   // Pre-fill in edit mode, reset in add mode
   useEffect(() => {
@@ -60,15 +79,16 @@ const DoorManager = ({
       setSide(editingDoor.side || 'interior');
       setSwingDirection(editingDoor.swing_direction || 'right');
       setSlideDirection(editingDoor.slide_direction || 'right');
-      setLocalPosition(editingDoor.position_x || 0.5);
+      setLocalPosition(
+        editingDoor.position_x !== undefined && editingDoor.position_x !== null
+          ? editingDoor.position_x
+          : 0.5
+      );
       
       // Load windows for this door
       const doorId = editingDoor.id;
       if (doorId) {
-        console.log('Loading windows for door:', doorId);
         loadWindows(doorId);
-      } else {
-        console.log('Door has no ID yet:', editingDoor);
       }
     } else if (!isEditMode && wall) {
       setDoorType('swing');
@@ -82,7 +102,7 @@ const DoorManager = ({
       setLocalPosition(0.5);
       setWindows([]);
     }
-  }, [editingDoor, isEditMode, wall]);
+  }, [editingDoor?.id, isEditMode, wall?.id]);
 
   // Load windows for a door
   const loadWindows = async (doorId) => {
@@ -436,34 +456,33 @@ const DoorManager = ({
               </div>
               <div className="form-grid">
                 <div>
-                  <label className="form-label">Distance from Left (mm)</label>
+                  <label className="form-label">From Left to Door Edge (mm)</label>
                   <input
                     type="number"
-                    value={Math.round((localPosition || 0) * wallLength) || 0}
+                    value={Math.round(leftDistance) || 0}
                     onChange={(e) => {
-                      const v = Math.max(0, Math.min(wallLength, Number(e.target.value) || 0));
-                      const newPos = wallLength > 0 ? v / wallLength : 0;
-                      setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
+                      const v = Math.max(0, Math.min(maxEdgeClearance, Number(e.target.value) || 0));
+                      const newPos = wallLength > 0 ? (v + halfDoor) / wallLength : 0;
+                      setLocalPosition(Number.isFinite(newPos) ? Math.min(1, Math.max(0, newPos)) : 0);
                     }}
                     min="0"
-                    max={Math.max(0, Math.round(wallLength))}
+                    max={Math.max(0, Math.round(maxEdgeClearance))}
                     step="1"
                     className="form-control mt-1"
                   />
                 </div>
                 <div>
-                  <label className="form-label">Distance from Right (mm)</label>
+                  <label className="form-label">From Right to Door Edge (mm)</label>
                   <input
                     type="number"
-                    value={Math.max(0, Math.round(wallLength - (localPosition || 0) * wallLength)) || 0}
+                    value={Math.round(rightDistance) || 0}
                     onChange={(e) => {
-                      const v = Math.max(0, Math.min(wallLength, Number(e.target.value) || 0));
-                      const left = Math.max(0, wallLength - v);
-                      const newPos = wallLength > 0 ? left / wallLength : 0;
-                      setLocalPosition(Number.isFinite(newPos) ? newPos : 0);
+                      const v = Math.max(0, Math.min(maxEdgeClearance, Number(e.target.value) || 0));
+                      const newPos = wallLength > 0 ? (wallLength - v - halfDoor) / wallLength : 0;
+                      setLocalPosition(Number.isFinite(newPos) ? Math.min(1, Math.max(0, newPos)) : 0);
                     }}
                     min="0"
-                    max={Math.max(0, Math.round(wallLength))}
+                    max={Math.max(0, Math.round(maxEdgeClearance))}
                     step="1"
                     className="form-control mt-1"
                   />
@@ -471,7 +490,7 @@ const DoorManager = ({
               </div>
               {wallLength > 0 && (
                 <p className="text-xs text-gray-500 mt-2">
-                  Wall length: {Math.round(wallLength)} mm
+                  Wall length: {Math.round(wallLength)} mm. Clear gap from wall end to the near door edge.
                 </p>
               )}
             </div>

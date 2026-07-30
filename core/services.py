@@ -6,10 +6,12 @@ import logging
 import time
 
 try:
-    from shapely.geometry import Polygon
+    from shapely.geometry import Polygon, Point, LineString
     from shapely.ops import unary_union
 except ImportError:  # pragma: no cover - Shapely should be available via requirements
     Polygon = None
+    Point = None
+    LineString = None
     unary_union = None
 
 logger = logging.getLogger(__name__)
@@ -298,8 +300,11 @@ class WallService:
                 logger.debug(f"Wall {wall.id}: skipping auto-update (base_elevation_manual=True)")
                 continue
             
-            # Get all rooms that contain this wall
-            rooms_containing_wall = wall.rooms.all()
+            # Get rooms on the same storey as this wall (never pull elevations from other levels)
+            if wall.storey_id:
+                rooms_containing_wall = wall.rooms.filter(storey_id=wall.storey_id)
+            else:
+                rooms_containing_wall = wall.rooms.filter(storey__isnull=True)
             
             if rooms_containing_wall.exists():
                 # Use the minimum base elevation of all rooms containing this wall
@@ -465,6 +470,11 @@ class WallService:
     @staticmethod
     def merge_walls(wall_1, wall_2):
         """Merge two walls if they share endpoints and have matching properties."""
+        storey_1 = getattr(wall_1, 'storey_id', None)
+        storey_2 = getattr(wall_2, 'storey_id', None)
+        if storey_1 != storey_2:
+            raise ValueError('Walls on different storeys cannot be merged.')
+
         if (
             wall_1.application_type != wall_2.application_type or
             wall_1.height != wall_2.height or
@@ -492,21 +502,31 @@ class WallService:
                 'Walls must have the same gap-fill height and base position to merge.'
             )
 
-        # Check if walls share endpoints
-        if wall_1.end_x == wall_2.start_x and wall_1.end_y == wall_2.start_y:
-            # wall1's end connects to wall2's start
-            new_start_x = wall_1.start_x
-            new_start_y = wall_1.start_y
-            new_end_x = wall_2.end_x
-            new_end_y = wall_2.end_y
-        elif wall_2.end_x == wall_1.start_x and wall_2.end_y == wall_1.start_y:
-            # wall2's end connects to wall1's start
-            new_start_x = wall_2.start_x
-            new_start_y = wall_2.start_y
-            new_end_x = wall_1.end_x
-            new_end_y = wall_1.end_y
-        else:
+        # Check if walls share an endpoint (mm tolerance — slant joins may be 1mm off)
+        from math import hypot
+
+        JOIN_TOL_MM = 2.0
+        w1_pts = [(wall_1.start_x, wall_1.start_y), (wall_1.end_x, wall_1.end_y)]
+        w2_pts = [(wall_2.start_x, wall_2.start_y), (wall_2.end_x, wall_2.end_y)]
+
+        shared = None
+        free_1 = None
+        free_2 = None
+        for i, p1 in enumerate(w1_pts):
+            for j, p2 in enumerate(w2_pts):
+                if hypot(p1[0] - p2[0], p1[1] - p2[1]) <= JOIN_TOL_MM:
+                    shared = p1
+                    free_1 = w1_pts[1 - i]
+                    free_2 = w2_pts[1 - j]
+                    break
+            if shared is not None:
+                break
+
+        if shared is None or free_1 is None or free_2 is None:
             raise ValueError('Walls do not share endpoints')
+
+        new_start_x, new_start_y = free_1
+        new_end_x, new_end_y = free_2
 
         # Normalize the merged wall coordinates
         norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(
@@ -767,92 +787,193 @@ class RoomService:
         return True
 
     @staticmethod
+    def _project_point_onto_wall(px, py, wall, along_pad=1.0):
+        """Project (px,py) onto wall reference line if near the segment; else None."""
+        from math import hypot
+        x0, y0 = float(wall.start_x), float(wall.start_y)
+        x1, y1 = float(wall.end_x), float(wall.end_y)
+        dx, dy = x1 - x0, y1 - y0
+        length = hypot(dx, dy)
+        if length < 0.001:
+            return None
+        ux, uy = dx / length, dy / length
+        along = (px - x0) * ux + (py - y0) * uy
+        perp = abs((px - x0) * (-uy) + (py - y0) * ux)
+        if along < -along_pad or along > length + along_pad:
+            return None
+        return {
+            'along': along,
+            'perp': perp,
+            'length': length,
+            'x': x0 + along * ux,
+            'y': y0 + along * uy,
+        }
+
+    @staticmethod
+    def _line_intersection_extended(a0, a1, b0, b1):
+        """Infinite-line intersection of segments a and b, or None if parallel."""
+        ax, ay = a1[0] - a0[0], a1[1] - a0[1]
+        bx, by = b1[0] - b0[0], b1[1] - b0[1]
+        denom = ax * by - ay * bx
+        if abs(denom) < 1e-9:
+            return None
+        t = ((b0[0] - a0[0]) * by - (b0[1] - a0[1]) * bx) / denom
+        return (a0[0] + t * ax, a0[1] + t * ay)
+
+    @staticmethod
+    def _extended_corner_for_inset_tip(wall, end_pt, candidate_walls):
+        """
+        If end_pt is a thickness-deducted butt-in tip inside a host wall, return the
+        extended wall×host junction (host segment clamped). Matches frontend
+        getExtendedPartitionCorner / findInsetHostForWallTip.
+        """
+        from math import hypot
+        ex, ey = float(end_pt[0]), float(end_pt[1])
+        best_host = None
+        best_perp = float('inf')
+        for host in candidate_walls:
+            if not host or host.id == wall.id:
+                continue
+            x0, y0 = float(host.start_x), float(host.start_y)
+            x1, y1 = float(host.end_x), float(host.end_y)
+            dx, dy = x1 - x0, y1 - y0
+            length = hypot(dx, dy)
+            if length < 0.001:
+                continue
+            ux, uy = dx / length, dy / length
+            relx, rely = ex - x0, ey - y0
+            along = relx * ux + rely * uy
+            perp = abs(relx * (-uy) + rely * ux)
+            host_thk = float(host.thickness or 0)
+            # Tip sits off centerline, inside the host thickness band.
+            if along < -1 or along > length + 1 or perp <= 0.75 or perp > host_thk + 1:
+                continue
+            if perp < best_perp:
+                best_perp = perp
+                best_host = host
+        if not best_host:
+            return None
+        raw = RoomService._line_intersection_extended(
+            (float(wall.start_x), float(wall.start_y)),
+            (float(wall.end_x), float(wall.end_y)),
+            (float(best_host.start_x), float(best_host.start_y)),
+            (float(best_host.end_x), float(best_host.end_y)),
+        )
+        if not raw:
+            return None
+        # Clamp onto host segment (same as frontend getExtendedPartitionCorner).
+        hx0, hy0 = float(best_host.start_x), float(best_host.start_y)
+        hx1, hy1 = float(best_host.end_x), float(best_host.end_y)
+        hdx, hdy = hx1 - hx0, hy1 - hy0
+        len_sq = hdx * hdx + hdy * hdy
+        if len_sq < 1e-6:
+            return raw
+        t = ((raw[0] - hx0) * hdx + (raw[1] - hy0) * hdy) / len_sq
+        t = max(0.0, min(1.0, t))
+        return (hx0 + t * hdx, hy0 + t * hdy)
+
+    @staticmethod
+    def _collect_room_boundary_snap_targets(walls):
+        """Wall endpoints plus extended host junctions for butt-in tips."""
+        walls = list(walls)
+        targets = set()
+        for wall in walls:
+            start = (float(wall.start_x), float(wall.start_y))
+            end = (float(wall.end_x), float(wall.end_y))
+            targets.add(start)
+            targets.add(end)
+            for tip in (start, end):
+                extended = RoomService._extended_corner_for_inset_tip(wall, tip, walls)
+                if extended:
+                    targets.add((float(extended[0]), float(extended[1])))
+        return list(targets)
+
+    @staticmethod
     def recalculate_room_boundary_from_walls(room_id):
         """Recalculate room boundary points from the current walls.
-        This ensures room_points are always in sync with the actual wall positions.
-        IMPORTANT: This function preserves the original polygon point order to maintain
-        proper clockwise/counterclockwise arrangement."""
+        This ensures room_points stay aligned with wall positions while preserving
+        the user's polygon order and vertex count (critical for L-shapes).
+
+        Extended define-room corners (butt-in tips projected to host centerline)
+        must be preserved — never pulled back onto shortened wall endpoints.
+        """
         from .models import Room
-        import logging
+        from math import sqrt
         
-        logger = logging.getLogger(__name__)
         logger.info(f"Recalculating room boundary for room {room_id}")
         
         try:
             room = Room.objects.get(id=room_id)
-            walls = room.walls.all()
+            walls = list(room.walls.all())
             
-            if not walls.exists():
+            if not walls:
                 logger.warning(f"No walls found for room {room_id}")
                 return False
             
             # Get the original room_points to preserve order
             original_points = RoomService.normalize_room_points(room.room_points if room.room_points else [])
             
-            # Collect all unique endpoints from walls
-            endpoints = set()
-            for wall in walls:
-                endpoints.add((wall.start_x, wall.start_y))
-                endpoints.add((wall.end_x, wall.end_y))
-            
-            # Convert to list
-            current_endpoints = list(endpoints)
-            
-            # If we have original points, try to match them to current endpoints
-            # This preserves the polygon order while updating coordinates
-            if original_points and len(original_points) == len(current_endpoints):
-                # Create a mapping from original points to current endpoints
-                # We'll find the closest matching endpoint for each original point
-                from math import sqrt
-                
-                def distance(p1, p2):
-                    return sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
-                
-                # For each original point, find the closest current endpoint
-                new_room_points = []
-                used_endpoints = set()
-                
-                for orig_point in original_points:
-                    orig_coords = (orig_point['x'], orig_point['y'])
-                    closest_endpoint = None
-                    min_distance = float('inf')
-                    
-                    for endpoint in current_endpoints:
-                        if endpoint not in used_endpoints:
-                            dist = distance(orig_coords, endpoint)
-                            if dist < min_distance:
-                                min_distance = dist
-                                closest_endpoint = endpoint
-                    
-                    if closest_endpoint:
-                        new_room_points.append({'x': closest_endpoint[0], 'y': closest_endpoint[1]})
-                        used_endpoints.add(closest_endpoint)
-                    else:
-                        # Fallback: use original point if no match found
-                        new_room_points.append(orig_point)
-                
-                room_points = new_room_points
+            max_thickness = max((float(w.thickness or 0) for w in walls), default=0.0)
+            # Endpoints + extended host junctions (define-room snap targets).
+            current_endpoints = RoomService._collect_room_boundary_snap_targets(walls)
+            # Allow snapping across shortened partition tips (≈ host thickness).
+            snap_tol = max(max_thickness * 2.0 + 25.0, 250.0)
+            # Vertices already on a wall reference line stay on that line (do not
+            # jump to a nearby shortened tip within snap_tol).
+            on_line_perp_tol = max(1.0, min(5.0, max_thickness * 0.05 + 1.0))
+
+            def distance(p1, p2):
+                return sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+
+            def resolve_vertex(orig_coords):
+                # 1) Prefer projecting onto a wall centerline the vertex already sits on.
+                best_proj = None
+                for wall in walls:
+                    proj = RoomService._project_point_onto_wall(
+                        orig_coords[0], orig_coords[1], wall, along_pad=1.0
+                    )
+                    if not proj or proj['perp'] > on_line_perp_tol:
+                        continue
+                    if best_proj is None or proj['perp'] < best_proj['perp']:
+                        best_proj = proj
+                if best_proj is not None:
+                    return {'x': best_proj['x'], 'y': best_proj['y']}
+
+                # 2) Otherwise snap to nearest endpoint / extended junction.
+                if not current_endpoints:
+                    return {'x': orig_coords[0], 'y': orig_coords[1]}
+                closest = min(
+                    current_endpoints,
+                    key=lambda endpoint: distance(orig_coords, endpoint),
+                )
+                if distance(orig_coords, closest) <= snap_tol:
+                    return {'x': closest[0], 'y': closest[1]}
+                return {'x': orig_coords[0], 'y': orig_coords[1]}
+
+            if original_points:
+                # Preserve count + order. Never angle-sort or append leftover
+                # endpoints — that creates diagonal / self-intersecting L outlines.
+                room_points = [
+                    resolve_vertex((float(p['x']), float(p['y'])))
+                    for p in original_points
+                ]
+            elif current_endpoints:
+                # No original points — last-resort convex-ish order by angle
+                import math
+                center_x = sum(p[0] for p in current_endpoints) / len(current_endpoints)
+                center_y = sum(p[1] for p in current_endpoints) / len(current_endpoints)
+
+                def angle_from_center(point):
+                    return math.atan2(point[1] - center_y, point[0] - center_x)
+
+                ordered = sorted(current_endpoints, key=angle_from_center)
+                room_points = [{'x': x, 'y': y} for x, y in ordered]
             else:
-                # Fallback: if no original points or count mismatch, align endpoints using manual order
-                if original_points:
-                    room_points = RoomService._map_points_to_endpoints(original_points, current_endpoints)
-                elif current_endpoints:
-                    # No original points to reference - best effort by angle sort
-                    center_x = sum(p[0] for p in current_endpoints) / len(current_endpoints)
-                    center_y = sum(p[1] for p in current_endpoints) / len(current_endpoints)
-
-                    def angle_from_center(point):
-                        import math
-                        return math.atan2(point[1] - center_y, point[0] - center_x)
-
-                    current_endpoints.sort(key=angle_from_center)
-                    room_points = [{'x': x, 'y': y} for x, y in current_endpoints]
-                else:
-                    room_points = []
+                room_points = []
             
             # Update the room's room_points
             room.room_points = RoomService.normalize_room_points(room_points)
-            room.save()
+            room.save(update_fields=['room_points'])
             
             logger.info(f"Updated room {room_id} boundary with {len(room_points)} points (order preserved)")
             return True
@@ -3445,18 +3566,38 @@ class CeilingService:
         if clearance_limit <= 0:
             raise ValueError('Ceiling thickness is greater than or equal to room height; cannot merge rooms.')
 
-        # Validate shared walls meet clearance requirement
+        # Validate interior shared walls meet clearance (room height - ceiling thickness).
+        # Only walls that sit UNDER the merged ceiling need this — perimeter walls that
+        # form the outer outline of the selection (e.g. a long back wall shared by several
+        # adjacent rooms) are not "between" rooms and must not block the merge.
         shared_walls = (Wall.objects
                         .filter(rooms__in=rooms)
                         .annotate(shared_count=Count('rooms'))
                         .filter(shared_count__gte=2)
                         .distinct())
 
+        merged_for_clearance = unary_union(room_polygons)
+        merged_boundary = getattr(merged_for_clearance, 'boundary', None)
+
         for wall in shared_walls:
-            if wall.height and wall.height > clearance_limit:
-                raise ValueError(
-                    f'Wall {wall.id} between selected rooms exceeds the clearance limit ({wall.height}mm > {clearance_limit}mm).'
-                )
+            if not wall.height or wall.height <= clearance_limit:
+                continue
+            # Skip walls that lie on/near the merged outline (perimeter), not under the span.
+            if merged_boundary is not None and LineString is not None:
+                try:
+                    wall_line = LineString([
+                        (float(wall.start_x), float(wall.start_y)),
+                        (float(wall.end_x), float(wall.end_y)),
+                    ])
+                except Exception:
+                    wall_line = None
+                edge_tol = max(80.0, (float(wall.thickness) or 0.0) + 20.0)
+                if wall_line is not None and merged_boundary.distance(wall_line) <= edge_tol:
+                    continue
+            raise ValueError(
+                f'Wall {wall.id} between selected rooms exceeds the clearance limit '
+                f'({wall.height}mm > {clearance_limit}mm).'
+            )
 
         # Ensure selected rooms form a contiguous area
         if not CeilingService._rooms_form_contiguous_area(rooms):

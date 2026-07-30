@@ -11,6 +11,8 @@ import {
   getStoreyElevationMm,
   validateWallsForMerge,
   getWallMergePairIds,
+  compensateExteriorCornerThickness,
+  estimateWallsPlanCenter,
 } from './projectUtils';
 import { normalizeWallCoordinates, clearDimensionPlacementMemory } from '../canvas/drawing';
 import { doPolygonsOverlap } from '../canvas/utils';
@@ -45,6 +47,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const [projectCalculatedHeight, setProjectCalculatedHeight] = useState(0);
   const [selectedWallType, setSelectedWallType] = useState('wall');
   const [wallThickness, setWallThickness] = useState(200);
+  // When true: at free exterior corners, shorten the host by the new wall's thickness
+  // (PDF outer/overall dims that include this wall). Off when PDF already excludes thickness.
+  const [deductCornerThickness, setDeductCornerThickness] = useState(false);
+  // When false, crossing walls are left intact (no mid-body / crossing splits).
+  const [autoSplitOnIntersect, setAutoSplitOnIntersect] = useState(true);
   const [wallHeight, setWallHeight] = useState(2800);
   const [innerFaceMaterial, setInnerFaceMaterial] = useState('PPGI');
   const [innerFaceThickness, setInnerFaceThickness] = useState(0.5);
@@ -181,18 +188,28 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     });
   }, [storeyWizardRoomSelections, rooms, initializeRoomOverride]);
 
-  // Initialize wall properties from existing walls when entering add-wall mode
+  // Seed wall form from existing walls only the first time add-wall is entered.
+  // Re-running on every `walls` update was resetting thickness after each draw.
+  const wallFormSeededRef = useRef(false);
+  const prevModeForWallDefaultsRef = useRef(null);
   useEffect(() => {
-    if (currentMode === 'add-wall' && walls.length > 0) {
-      const firstWall = walls[0];
-      if (firstWall) {
-        if (firstWall.height) setWallHeight(firstWall.height);
-        if (firstWall.thickness) setWallThickness(firstWall.thickness);
-        if (firstWall.inner_face_material) setInnerFaceMaterial(firstWall.inner_face_material);
-        if (firstWall.inner_face_thickness !== undefined) setInnerFaceThickness(firstWall.inner_face_thickness);
-        if (firstWall.outer_face_material) setOuterFaceMaterial(firstWall.outer_face_material);
-        if (firstWall.outer_face_thickness !== undefined) setOuterFaceThickness(firstWall.outer_face_thickness);
-      }
+    const enteringAddWall =
+      currentMode === 'add-wall' && prevModeForWallDefaultsRef.current !== 'add-wall';
+    prevModeForWallDefaultsRef.current = currentMode;
+    if (!enteringAddWall || wallFormSeededRef.current || walls.length === 0) return;
+
+    const firstWall = walls[0];
+    if (!firstWall) return;
+    wallFormSeededRef.current = true;
+    if (firstWall.height) setWallHeight(firstWall.height);
+    if (firstWall.thickness) setWallThickness(firstWall.thickness);
+    if (firstWall.inner_face_material) setInnerFaceMaterial(firstWall.inner_face_material);
+    if (firstWall.inner_face_thickness !== undefined) {
+      setInnerFaceThickness(firstWall.inner_face_thickness);
+    }
+    if (firstWall.outer_face_material) setOuterFaceMaterial(firstWall.outer_face_material);
+    if (firstWall.outer_face_thickness !== undefined) {
+      setOuterFaceThickness(firstWall.outer_face_thickness);
     }
   }, [currentMode, walls]);
 
@@ -805,6 +822,10 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
             room_points: room.room_points,
             storey: room.storey,
             source_storey_name: storey.name,
+            // Ceiling of the lower room — used to perch new rooms/walls on top.
+            room_top_mm: roomTop,
+            room_base_mm: baseElevation,
+            room_height_mm: roomHeight,
           });
         });
       });
@@ -812,6 +833,62 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       setFilteredGhostAreas(ghostAreas);
     }
   }, [walls, rooms, filteredRooms, storeys, activeStoreyId]);
+
+  /** Lowest base elevation that clears any overlapping lower-level (ghost) rooms. */
+  const getBaseElevationClearingGhosts = useCallback((points, fallbackElevation = 0) => {
+    let required = Number(fallbackElevation) || 0;
+    if (!Array.isArray(points) || points.length === 0) {
+      return required;
+    }
+    if (!Array.isArray(filteredGhostAreas) || filteredGhostAreas.length === 0) {
+      return required;
+    }
+
+    const normalized = points.map((pt) => ({
+      x: Number(pt.x) || 0,
+      y: Number(pt.y) || 0,
+    }));
+
+    const pointInPolygon = (point, polygon) => {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x;
+        const yi = polygon[i].y;
+        const xj = polygon[j].x;
+        const yj = polygon[j].y;
+        const intersect =
+          ((yi > point.y) !== (yj > point.y))
+          && (point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    };
+
+    filteredGhostAreas.forEach((ghostArea) => {
+      const ghostPoints = Array.isArray(ghostArea.room_points)
+        ? ghostArea.room_points
+        : Array.isArray(ghostArea.points)
+          ? ghostArea.points
+          : [];
+      if (ghostPoints.length < 3) return;
+      const ghostPoly = ghostPoints.map((pt) => ({
+        x: Number(pt.x) || 0,
+        y: Number(pt.y) || 0,
+      }));
+
+      const overlaps =
+        (normalized.length >= 3 && doPolygonsOverlap(normalized, ghostPoly))
+        || normalized.some((pt) => pointInPolygon(pt, ghostPoly));
+      if (!overlaps) return;
+
+      const top = Number(ghostArea.room_top_mm);
+      if (Number.isFinite(top) && top > required) {
+        required = top;
+      }
+    });
+
+    return required;
+  }, [filteredGhostAreas]);
 
   useEffect(() => {
     if (!levelEditSuccess) {
@@ -1605,46 +1682,27 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   // Room handlers
   const handleCreateRoom = async (roomData) => {
     try {
-      // Check if any point is in a ghosted area
-      if (Array.isArray(filteredGhostAreas) && filteredGhostAreas.length > 0 && Array.isArray(selectedRoomPoints) && selectedRoomPoints.length >= 3) {
-        const isPointInPolygon = (point, polygon) => {
-          let inside = false;
-          for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-            const xi = polygon[i].x, yi = polygon[i].y;
-            const xj = polygon[j].x, yj = polygon[j].y;
-            const intersect = ((yi > point.y) !== (yj > point.y))
-              && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
-            if (intersect) inside = !inside;
-          }
-          return inside;
-        };
-
-        for (const point of selectedRoomPoints) {
-          for (const ghostArea of filteredGhostAreas) {
-            const ghostPoints = Array.isArray(ghostArea.room_points)
-              ? ghostArea.room_points
-              : Array.isArray(ghostArea.points)
-                ? ghostArea.points
-                : [];
-            if (ghostPoints.length >= 3) {
-              const normalizedPolygon = ghostPoints.map((pt) => ({
-                x: Number(pt.x) || 0,
-                y: Number(pt.y) || 0,
-              }));
-              if (isPointInPolygon(point, normalizedPolygon)) {
-                setRoomError('Cannot create rooms in ghosted areas (double-height spaces from lower levels).');
-                setTimeout(() => setRoomError(''), 5000);
-                return;
-              }
-            }
-          }
-        }
+      const storeyElev = getStoreyElevationMm(storeys, activeStoreyId ?? defaultStoreyId);
+      const requestedBase =
+        roomData.base_elevation_mm !== undefined && roomData.base_elevation_mm !== null
+          ? Number(roomData.base_elevation_mm)
+          : storeyElev;
+      // Sit on top of any taller lower-level rooms under this polygon (ghost areas).
+      const clearedBase = getBaseElevationClearingGhosts(
+        selectedRoomPoints,
+        Number.isFinite(requestedBase) ? requestedBase : storeyElev
+      );
+      if (clearedBase > (Number.isFinite(requestedBase) ? requestedBase : storeyElev) + 1e-3) {
+        console.info(
+          `Raising new room base elevation to ${clearedBase}mm to clear lower-level room(s).`
+        );
       }
 
       await commitHistoryAction('Create room', async () => {
         const completeRoomData = {
           ...roomData,
           room_points: selectedRoomPoints,
+          base_elevation_mm: clearedBase,
         };
         const response = await api.post('/rooms/', completeRoomData);
         if (response.status === 201) {
@@ -1788,50 +1846,32 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   };
 
-  const duplicateRoomToStorey = useCallback(async (roomId, targetStoreyId, overrides = {}) => {
+  /**
+   * Clone a room's walls onto another storey.
+   * Pass the same `batch` object when copying multiple rooms so shared source
+   * walls are only cloned once for that target level.
+   */
+  const duplicateRoomToStorey = useCallback(async (roomId, targetStoreyId, overrides = {}, batch = null) => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) {
       console.warn('Room not found for duplication:', roomId);
       return null;
     }
 
-    const targetStorey =
-      storeys.find(storey => String(storey.id) === String(targetStoreyId)) || null;
-    // Prioritize overrides parameter (from edit level mode) over storeyWizardRoomOverrides
-    const targetElevation = overrides.base_elevation_mm !== undefined && overrides.base_elevation_mm !== null
-      ? Number(overrides.base_elevation_mm) || 0
-      : (() => {
-          const wizardOverride = storeyWizardRoomOverrides[String(room.id)];
-          if (wizardOverride?.baseElevation !== undefined) {
-            return Number(wizardOverride.baseElevation) || 0;
-          }
-          return targetStorey && targetStorey.elevation_mm !== undefined
-            ? Number(targetStorey.elevation_mm) || 0
-            : 0;
-        })();
-    const roomHeight = overrides.height !== undefined && overrides.height !== null
-      ? Number(overrides.height) || 0
-      : (() => {
-          const wizardOverride = storeyWizardRoomOverrides[String(room.id)];
-          if (wizardOverride?.height !== undefined) {
-            return Number(wizardOverride.height) || 0;
-          }
-          if (room.height !== undefined && room.height !== null) {
-            return Number(room.height) || 0;
-          }
-          return targetStorey && targetStorey.default_room_height_mm !== undefined
-            ? Number(targetStorey.default_room_height_mm) || 0
-            : 0;
-        })();
-
     const wallIds = Array.isArray(room.walls) ? room.walls : [];
     const createdWalls = [];
-    const reusedWallIds = [];
-    const existingTargetWallKeys = new Set(
+
+    // Shared across a multi-room copy so partition/shared walls are not re-created.
+    const existingSegmentKeys = batch?.existingSegmentKeys || new Set(
       walls
         .filter((w) => String(w.storey) === String(targetStoreyId))
         .map((w) => getWallSegmentKey(w))
     );
+    const clonedSourceWallIds = batch?.clonedSourceWallIds || new Set();
+    if (batch) {
+      batch.existingSegmentKeys = existingSegmentKeys;
+      batch.clonedSourceWallIds = clonedSourceWallIds;
+    }
 
     for (const wallId of wallIds) {
       const wall = walls.find(w => w.id === wallId);
@@ -1839,28 +1879,17 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         continue;
       }
 
-       const wallStorey =
-         storeys.find(storey => String(storey.id) === String(wall.storey)) || null;
-       const wallBaseElevation = wallStorey && wallStorey.elevation_mm !== undefined
-         ? Number(wallStorey.elevation_mm) || 0
-         : 0;
-       const wallHeight = wall.height !== undefined && wall.height !== null
-         ? Number(wall.height) || 0
-         : 0;
-       const wallTop = wallBaseElevation + wallHeight;
-       const requiredTop = targetElevation + roomHeight;
-       const sharedCount = Array.isArray(wall.rooms) ? wall.rooms.length : 0;
-       const shouldReuse =
-         sharedCount > 1 &&
-         wallTop + 1e-3 >= requiredTop;
+      const sourceId = String(wall.id);
+      // Same source wall already cloned in this batch (shared by another room).
+      if (clonedSourceWallIds.has(sourceId)) {
+        continue;
+      }
 
-       if (shouldReuse) {
-         reusedWallIds.push(wall.id);
-         continue;
-       }
-
+      // Always clone onto the target storey. Never reuse a lower-level wall —
+      // shared XY copies must stay independently editable per level.
       const segmentKey = getWallSegmentKey(wall);
-      if (existingTargetWallKeys.has(segmentKey)) {
+      if (existingSegmentKeys.has(segmentKey)) {
+        clonedSourceWallIds.add(sourceId);
         continue;
       }
 
@@ -1871,7 +1900,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         start_y: wall.start_y,
         end_x: wall.end_x,
         end_y: wall.end_y,
-        height: wall.height,
+        // Prefer override height when copying for a specific level stack.
+        height:
+          overrides.height !== undefined && overrides.height !== null
+            ? Number(overrides.height) || wall.height
+            : wall.height,
         thickness: wall.thickness,
         application_type: wall.application_type,
         inner_face_material: wall.inner_face_material,
@@ -1884,19 +1917,26 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         fill_gap_mode: false,
         gap_fill_height: null,
         gap_base_position: null,
+        base_elevation_mm:
+          overrides.base_elevation_mm !== undefined && overrides.base_elevation_mm !== null
+            ? Number(overrides.base_elevation_mm)
+            : (wall.base_elevation_mm ?? undefined),
       };
 
       const wallResponse = await api.post('/walls/', wallPayload);
       createdWalls.push(wallResponse.data);
-      existingTargetWallKeys.add(segmentKey);
+      existingSegmentKeys.add(segmentKey);
+      // Also key the created wall so later rooms in the same batch skip it.
+      existingSegmentKeys.add(getWallSegmentKey(wallResponse.data));
+      clonedSourceWallIds.add(sourceId);
     }
 
     if (createdWalls.length > 0) {
       setWalls(prev => [...prev, ...createdWalls]);
     }
 
-    return { createdWalls, reusedWallIds };
-  }, [rooms, storeys, storeyWizardRoomOverrides, walls, projectId]);
+    return { createdWalls, reusedWallIds: [], batch: { existingSegmentKeys, clonedSourceWallIds } };
+  }, [rooms, walls, projectId]);
 
   const addRoomsToActiveStorey = useCallback(async () => {
     if (!isLevelEditMode) {
@@ -1925,6 +1965,15 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
     try {
       let wallsAdded = 0;
+      // One batch for the whole copy — shared walls between selected rooms clone once.
+      const copyBatch = {
+        existingSegmentKeys: new Set(
+          walls
+            .filter((w) => String(w.storey) === String(activeStoreyId))
+            .map((w) => getWallSegmentKey(w))
+        ),
+        clonedSourceWallIds: new Set(),
+      };
 
       for (const roomId of levelEditSelections) {
         const sourceRoom = rooms.find((room) => String(room.id) === String(roomId));
@@ -1970,7 +2019,12 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
           height: desiredHeight,
         };
 
-        const result = await duplicateRoomToStorey(sourceRoom.id, activeStoreyId, payloadOverrides);
+        const result = await duplicateRoomToStorey(
+          sourceRoom.id,
+          activeStoreyId,
+          payloadOverrides,
+          copyBatch
+        );
         wallsAdded += result?.createdWalls?.length || 0;
       }
 
@@ -1991,46 +2045,22 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     } finally {
       setIsLevelEditApplying(false);
     }
-  }, [isLevelEditMode, activeStoreyId, levelEditSelections, levelEditOverrides, rooms, storeys, duplicateRoomToStorey]);
+  }, [isLevelEditMode, activeStoreyId, levelEditSelections, levelEditOverrides, rooms, storeys, walls, duplicateRoomToStorey]);
 
   const createRoomFromPolygon = async (points, targetStoreyId, options = {}) => {
     if (!Array.isArray(points) || points.length < 3) {
       return null;
     }
 
-    // Check if any point is in a ghosted area (only if we're on an upper level)
-    if (Array.isArray(filteredGhostAreas) && filteredGhostAreas.length > 0) {
-      const isPointInPolygon = (point, polygon) => {
-        let inside = false;
-        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-          const xi = polygon[i].x, yi = polygon[i].y;
-          const xj = polygon[j].x, yj = polygon[j].y;
-          const intersect = ((yi > point.y) !== (yj > point.y))
-            && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
-          if (intersect) inside = !inside;
-        }
-        return inside;
-      };
-
-      for (const point of points) {
-        for (const ghostArea of filteredGhostAreas) {
-          const ghostPoints = Array.isArray(ghostArea.room_points)
-            ? ghostArea.room_points
-            : Array.isArray(ghostArea.points)
-              ? ghostArea.points
-              : [];
-          if (ghostPoints.length >= 3) {
-            const normalizedPolygon = ghostPoints.map((pt) => ({
-              x: Number(pt.x) || 0,
-              y: Number(pt.y) || 0,
-            }));
-            if (isPointInPolygon(point, normalizedPolygon)) {
-              throw new Error('Cannot create rooms in ghosted areas (double-height spaces from lower levels).');
-            }
-          }
-        }
-      }
-    }
+    const storeyElev =
+      options.base_elevation_mm !== undefined && options.base_elevation_mm !== null
+        ? Number(options.base_elevation_mm)
+        : getStoreyElevationMm(storeys, targetStoreyId);
+    // Perch above any taller lower-level rooms under this outline.
+    const clearedBase = getBaseElevationClearingGhosts(
+      points,
+      Number.isFinite(storeyElev) ? storeyElev : 0
+    );
 
     const wallHeight = options.height ?? storeyWizardDefaultHeight;
     const wallThickness = options.thickness ?? project?.wall_thickness ?? 200;
@@ -2060,6 +2090,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         fill_gap_mode: false,
         gap_fill_height: null,
         gap_base_position: null,
+        base_elevation_mm: clearedBase,
       };
 
       const wallResponse = await api.post('/walls/', wallPayload);
@@ -2079,7 +2110,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       floor_layers: options.floor_layers ?? 1,
       temperature: options.temperature ?? 0,
       height: wallHeight,
-      base_elevation_mm: options.base_elevation_mm ?? getStoreyElevationMm(storeys, targetStoreyId),
+      base_elevation_mm: clearedBase,
       remarks: options.remarks ?? '',
       walls: createdWalls.map(w => w.id),
       room_points: points,
@@ -2118,10 +2149,19 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       setActiveStoreyId(newStorey.id);
       const storeyElevation = newStorey.elevation_mm ?? storeyWizardElevation ?? 0;
 
+      // Shared batch so walls shared by multiple source rooms are only cloned once.
+      const copyBatch = {
+        existingSegmentKeys: new Set(),
+        clonedSourceWallIds: new Set(),
+      };
+
       for (const roomId of storeyWizardRoomSelections) {
-        await duplicateRoomToStorey(roomId, newStorey.id, {
-          base_elevation_mm: storeyElevation,
-        });
+        await duplicateRoomToStorey(
+          roomId,
+          newStorey.id,
+          { base_elevation_mm: storeyElevation },
+          copyBatch
+        );
       }
 
       for (let index = 0; index < storeyWizardAreas.length; index += 1) {
@@ -2298,14 +2338,24 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       const wallToDelete = walls.find(w => w.id === wallId);
       if (!wallToDelete) return;
 
+      const deletedStoreyId = wallToDelete.storey ?? wallToDelete.storey_id ?? null;
+      const sameStoreyAsDeleted = (wall) => {
+        const wallStoreyId = wall.storey ?? wall.storey_id ?? null;
+        if (deletedStoreyId === null || deletedStoreyId === undefined) {
+          return wallStoreyId === null || wallStoreyId === undefined;
+        }
+        return String(wallStoreyId) === String(deletedStoreyId);
+      };
+
       // Collect all intersection points (endpoints and mid-wall intersections)
       const pointsToCheck = [
         { x: wallToDelete.start_x, y: wallToDelete.start_y },
         { x: wallToDelete.end_x, y: wallToDelete.end_y }
       ];
-      // Find all walls that intersect wallToDelete (not at endpoints)
+      // Find same-storey walls that intersect wallToDelete (not at endpoints)
       walls.forEach(wall => {
         if (wall.id === wallToDelete.id) return;
+        if (!sameStoreyAsDeleted(wall)) return;
         const intersection = calculateIntersection(
           { x: wallToDelete.start_x, y: wallToDelete.start_y },
           { x: wallToDelete.end_x, y: wallToDelete.end_y },
@@ -2330,11 +2380,13 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       await api.delete(`/walls/${wallId}/`);
       let updatedWalls = walls.filter(w => w.id !== wallId);
 
-      // Helper to find walls sharing a point
+      // Helper to find walls sharing a point (same storey only)
       const findWallsAtPoint = (pt, wallList) =>
         wallList.filter(w =>
-          (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
-          (Math.abs(w.end_x - pt.x) < 0.001 && Math.abs(w.end_y - pt.y) < 0.001)
+          sameStoreyAsDeleted(w) && (
+            (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
+            (Math.abs(w.end_x - pt.x) < 0.001 && Math.abs(w.end_y - pt.y) < 0.001)
+          )
         );
       // Helper to check if two walls can be merged (type, height, thickness, face materials/thicknesses)
       const canMerge = (w1, w2) => {
@@ -2814,8 +2866,55 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
   // Advanced modular wall adding with splitting (splits both existing and new wall at intersections)
   const handleAddWallWithSplitting = async (startPoint, endPoint, wallProps) => {
+    // Tiny leftovers (e.g. 1mm) appear when a join lands 1mm off an existing vertex.
+    const MIN_SEGMENT_MM = 2;
+    const AXIS_ALIGN_TOL_MM = 2;
+    const JOIN_SNAP_TOL_MM = 2;
+
+    const straightenNearAxisWall = (start, end) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      if (Math.abs(dx) <= AXIS_ALIGN_TOL_MM && Math.abs(dy) >= Math.abs(dx)) {
+        return { start: { ...start }, end: { x: start.x, y: end.y } };
+      }
+      if (Math.abs(dy) <= AXIS_ALIGN_TOL_MM && Math.abs(dx) >= Math.abs(dy)) {
+        return { start: { ...start }, end: { x: end.x, y: start.y } };
+      }
+      return { start, end };
+    };
+
+    const snapToNearbyEndpoint = (pt, wallList, tol = JOIN_SNAP_TOL_MM) => {
+      let best = pt;
+      let bestD = tol;
+      for (const wall of wallList) {
+        for (const ep of [
+          { x: wall.start_x, y: wall.start_y },
+          { x: wall.end_x, y: wall.end_y },
+        ]) {
+          const d = Math.hypot(ep.x - pt.x, ep.y - pt.y);
+          if (d <= bestD) {
+            bestD = d;
+            best = { x: ep.x, y: ep.y };
+          }
+        }
+      }
+      return best;
+    };
+
+    const projectPointToWall = (pt, wall) => {
+      const dx = wall.end_x - wall.start_x;
+      const dy = wall.end_y - wall.start_y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1e-9) return { x: wall.start_x, y: wall.start_y };
+      const t = Math.max(
+        0,
+        Math.min(1, ((pt.x - wall.start_x) * dx + (pt.y - wall.start_y) * dy) / lenSq)
+      );
+      return { x: wall.start_x + t * dx, y: wall.start_y + t * dy };
+    };
+
     // Normalize wall coordinates to ensure proper direction
-    const normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
+    let normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
     startPoint = normalizedCoords.startPoint;
     endPoint = normalizedCoords.endPoint;
     
@@ -2830,13 +2929,51 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       }
       return String(wallStoreyId) === String(targetStoreyId);
     });
+
+    // Keep near-plumb / near-level walls exact, then snap joins to existing corners
+    // within a couple mm so we don't split off 1mm stubs (e.g. 2000 vs 2001).
+    ({ start: startPoint, end: endPoint } = straightenNearAxisWall(startPoint, endPoint));
+    startPoint = snapToNearbyEndpoint(startPoint, wallsOnSameStorey);
+    endPoint = snapToNearbyEndpoint(endPoint, wallsOnSameStorey);
+    ({ start: startPoint, end: endPoint } = straightenNearAxisWall(startPoint, endPoint));
+    normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
+    startPoint = normalizedCoords.startPoint;
+    endPoint = normalizedCoords.endPoint;
+
+    // Optional corner compensation: shorten free host by new wall thickness so PDF
+    // outer/overall dims stay correct. Off by default — many PDFs already exclude thickness.
+    // When enabled, preserves the new wall's direction + length (no H/V tilt).
+    const cornerCompensation =
+      wallProps.deduct_corner_thickness === true
+        ? compensateExteriorCornerThickness({
+            startPoint,
+            endPoint,
+            newThickness: wallProps.thickness,
+            walls: wallsOnSameStorey,
+            center: estimateWallsPlanCenter(wallsOnSameStorey),
+          })
+        : { startPoint, endPoint, hostUpdates: [] };
+    startPoint = cornerCompensation.startPoint;
+    endPoint = cornerCompensation.endPoint;
+
+    const hostCornerUpdates = cornerCompensation.hostUpdates || [];
+    const hostCornerById = new Map(
+      hostCornerUpdates.map((u) => [u.wall.id, u])
+    );
+    const wallsForGeometry = wallsOnSameStorey.map((w) => {
+      const u = hostCornerById.get(w.id);
+      return u
+        ? { ...w, start_x: u.start_x, start_y: u.start_y, end_x: u.end_x, end_y: u.end_y }
+        : w;
+    });
     
-    // 1. Find all intersections between the new wall and existing walls on the same storey (not at endpoints)
+    // 1. Find intersections (optional — can leave crossing walls unsplit)
+    const autoSplit = wallProps.auto_split !== false;
     const intersections = [];
     const isPartition = wallProps.application_type === 'partition';
-    const isAtEndpoint = (pt, w) =>
-      (Math.abs(w.start_x - pt.x) < 0.001 && Math.abs(w.start_y - pt.y) < 0.001) ||
-      (Math.abs(w.end_x - pt.x) < 0.001 && Math.abs(w.end_y - pt.y) < 0.001);
+    const isAtEndpoint = (pt, w, tol = JOIN_SNAP_TOL_MM) =>
+      (Math.abs(w.start_x - pt.x) <= tol && Math.abs(w.start_y - pt.y) <= tol) ||
+      (Math.abs(w.end_x - pt.x) <= tol && Math.abs(w.end_y - pt.y) <= tol);
     // Helper: check if a point is on the body of a wall (not at endpoint)
     const isOnWallBody = (pt, wall) => {
       // Vector math: check if pt is on the segment
@@ -2850,37 +2987,74 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       const closest = { x: wall.start_x + t * dx, y: wall.start_y + t * dy };
       return Math.abs(closest.x - pt.x) < 0.001 && Math.abs(closest.y - pt.y) < 0.001;
     };
-    wallsOnSameStorey.forEach(wall => {
-      // 1a. Standard intersection
-      const intersection = calculateIntersection(
-        { x: startPoint.x, y: startPoint.y },
-        { x: endPoint.x, y: endPoint.y },
-        { x: wall.start_x, y: wall.start_y },
-        { x: wall.end_x, y: wall.end_y }
-      );
-      if (intersection) {
-        if (!isAtEndpoint(intersection, wall) &&
-            !(Math.abs(intersection.x - startPoint.x) < 0.001 && Math.abs(intersection.y - startPoint.y) < 0.001) &&
-            !(Math.abs(intersection.x - endPoint.x) < 0.001 && Math.abs(intersection.y - endPoint.y) < 0.001)) {
-          intersections.push({ wall, intersection });
+    if (autoSplit) {
+      wallsForGeometry.forEach(wall => {
+        // 1a. Standard intersection
+        const intersection = calculateIntersection(
+          { x: startPoint.x, y: startPoint.y },
+          { x: endPoint.x, y: endPoint.y },
+          { x: wall.start_x, y: wall.start_y },
+          { x: wall.end_x, y: wall.end_y }
+        );
+        if (intersection) {
+          if (!isAtEndpoint(intersection, wall) &&
+              !(Math.abs(intersection.x - startPoint.x) < 0.001 && Math.abs(intersection.y - startPoint.y) < 0.001) &&
+              !(Math.abs(intersection.x - endPoint.x) < 0.001 && Math.abs(intersection.y - endPoint.y) < 0.001)) {
+            intersections.push({ wall, intersection });
+          }
         }
+        // 1b/1c. T-join onto wall body: split host wall for normal walls only.
+        // Partitions butt into the host without splitting it.
+        if (!isPartition) {
+          if (isOnWallBody(startPoint, wall)) {
+            intersections.push({ wall, intersection: { x: startPoint.x, y: startPoint.y } });
+          }
+          if (isOnWallBody(endPoint, wall)) {
+            intersections.push({ wall, intersection: { x: endPoint.x, y: endPoint.y } });
+          }
+        }
+      });
+    }
+
+    // Prefer existing corners over mid-body splits when the hit is only ~1mm away
+    const refinedIntersections = [];
+    for (const item of intersections) {
+      const { wall } = item;
+      let intersection = { ...item.intersection };
+      const dStart = Math.hypot(intersection.x - wall.start_x, intersection.y - wall.start_y);
+      const dEnd = Math.hypot(intersection.x - wall.end_x, intersection.y - wall.end_y);
+      if (dStart <= MIN_SEGMENT_MM) {
+        intersection = { x: wall.start_x, y: wall.start_y };
+        if (
+          Math.hypot(startPoint.x - intersection.x, startPoint.y - intersection.y) <=
+          Math.hypot(endPoint.x - intersection.x, endPoint.y - intersection.y)
+        ) {
+          startPoint = { ...intersection };
+        } else {
+          endPoint = { ...intersection };
+        }
+        continue; // join at existing endpoint — no split
       }
-      // 1b/1c. T-join onto wall body: split host wall for normal walls only.
-      // Partitions butt into the host without splitting it.
-      if (!isPartition) {
-        if (isOnWallBody(startPoint, wall)) {
-          intersections.push({ wall, intersection: { x: startPoint.x, y: startPoint.y } });
+      if (dEnd <= MIN_SEGMENT_MM) {
+        intersection = { x: wall.end_x, y: wall.end_y };
+        if (
+          Math.hypot(startPoint.x - intersection.x, startPoint.y - intersection.y) <=
+          Math.hypot(endPoint.x - intersection.x, endPoint.y - intersection.y)
+        ) {
+          startPoint = { ...intersection };
+        } else {
+          endPoint = { ...intersection };
         }
-        if (isOnWallBody(endPoint, wall)) {
-          intersections.push({ wall, intersection: { x: endPoint.x, y: endPoint.y } });
-        }
+        continue;
       }
-    });
+      intersection = projectPointToWall(intersection, wall);
+      refinedIntersections.push({ wall, intersection });
+    }
 
     // 2. Split existing walls at intersections
     const wallsToDelete = [];
     let wallsToAdd = [];
-    intersections.forEach(({ wall, intersection }) => {
+    refinedIntersections.forEach(({ wall, intersection }) => {
       wallsToDelete.push(wall);
       
       // Normalize first segment
@@ -2960,10 +3134,10 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     });
 
     // 2.5. Inherit base_elevation_mm from touching walls on the same storey only
-    const ENDPOINT_TOLERANCE = 0.001; // 1mm tolerance for endpoint matching
+    const ENDPOINT_TOLERANCE = JOIN_SNAP_TOL_MM;
     let baseElevationToUse = defaultBaseElevation;
 
-    const findTouchingWallOnStorey = (point) => wallsOnSameStorey.find(wall => {
+    const findTouchingWallOnStorey = (point) => wallsForGeometry.find(wall => {
       const distToStart = Math.hypot(wall.start_x - point.x, wall.start_y - point.y);
       const distToEnd = Math.hypot(wall.end_x - point.x, wall.end_y - point.y);
       return distToStart < ENDPOINT_TOLERANCE || distToEnd < ENDPOINT_TOLERANCE;
@@ -2978,8 +3152,14 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       baseElevationToUse = Number(endTouchingWall.base_elevation_mm);
     }
 
+    // If this wall sits over a taller lower-level room, perch on that room's top.
+    baseElevationToUse = getBaseElevationClearingGhosts(
+      [startPoint, endPoint, startPoint],
+      baseElevationToUse
+    );
+
     // 3. Split the new wall at intersection points (sort by distance from start)
-    let splitPoints = [startPoint, ...intersections.map(i => i.intersection), endPoint];
+    let splitPoints = [startPoint, ...refinedIntersections.map(i => i.intersection), endPoint];
     splitPoints = splitPoints.sort((a, b) => {
       const da = Math.hypot(a.x - startPoint.x, a.y - startPoint.y);
       const db = Math.hypot(b.x - startPoint.x, b.y - startPoint.y);
@@ -3015,10 +3195,10 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       newWallSegments.push(wallData);
     }
 
-    // --- Filter out zero-length segments ---
-    const isZeroLength = (w) => Math.hypot(w.start_x - w.end_x, w.start_y - w.end_y) < 0.001;
-    wallsToAdd = wallsToAdd.filter(w => !isZeroLength(w));
-    newWallSegments = newWallSegments.filter(w => !isZeroLength(w));
+    // --- Filter out zero / tiny segments (prevents 1mm walls from bad joins) ---
+    const isTooShort = (w) => Math.hypot(w.start_x - w.end_x, w.start_y - w.end_y) < MIN_SEGMENT_MM;
+    wallsToAdd = wallsToAdd.filter(w => !isTooShort(w));
+    newWallSegments = newWallSegments.filter(w => !isTooShort(w));
 
     // Partition walls: inset start/end by the joining wall thickness so stored length
     // matches butt-in panel length (does not run through the host wall body).
@@ -3090,12 +3270,23 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
     if (isPartition) {
       newWallSegments = newWallSegments.map((segment) =>
-        insetPartitionEndsByJoiningThickness(segment, wallsOnSameStorey)
-      ).filter((w) => !isZeroLength(w));
+        insetPartitionEndsByJoiningThickness(segment, wallsForGeometry)
+      ).filter((w) => !isTooShort(w));
     }
 
     // 4. Delete split walls, add new segments (API)
     return commitHistoryAction('Add wall', async () => {
+      // Apply corner host shortenings before creating the new wall
+      for (const update of hostCornerUpdates) {
+        const payload = prepareWallPayloadForSave({
+          ...update.wall,
+          start_x: update.start_x,
+          start_y: update.start_y,
+          end_x: update.end_x,
+          end_y: update.end_y,
+        });
+        await api.put(`/walls/${update.wall.id}/`, payload);
+      }
       for (const wall of wallsToDelete) {
         await api.delete(`/walls/${wall.id}/`);
       }
@@ -3445,6 +3636,10 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     setSelectedWallType,
     wallThickness,
     setWallThickness,
+    deductCornerThickness,
+    setDeductCornerThickness,
+    autoSplitOnIntersect,
+    setAutoSplitOnIntersect,
     wallHeight,
     setWallHeight,
     innerFaceMaterial,

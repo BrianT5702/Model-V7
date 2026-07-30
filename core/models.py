@@ -1067,6 +1067,10 @@ class Intersection(models.Model):
     wall_1 = models.ForeignKey(Wall, on_delete=models.CASCADE, related_name='intersections_as_wall1')
     wall_2 = models.ForeignKey(Wall, on_delete=models.CASCADE, related_name='intersections_as_wall2')
     joining_method = models.CharField(max_length=20, choices=WALL_JOINING_METHODS)
+    deduct_joining_thickness = models.BooleanField(
+        default=False,
+        help_text='When True and joining_method is butt_in, shorten wall_1 by the joining (wall_2) thickness.',
+    )
 
     class Meta:
         unique_together = ('wall_1', 'wall_2')

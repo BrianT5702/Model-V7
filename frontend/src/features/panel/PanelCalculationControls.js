@@ -582,13 +582,13 @@ const PanelCalculationControls = ({
             {showLeftoverDetails && panelCalculator && (
                 <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[12000]">
                     <div
-                        className="bg-white rounded-lg p-5 max-w-6xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel overscroll-contain"
+                        className="bg-white dark:bg-gray-900 rounded-lg p-5 max-w-6xl w-full max-h-[80vh] overflow-y-auto modal-scroll-panel overscroll-contain text-gray-900 dark:text-gray-100"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex justify-between items-center mb-4">
                             <div>
-                                <h3 className="text-lg font-semibold">Leftover Panels Details</h3>
-                                <p className="text-xs text-gray-500">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Leftover Panels Details</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
                                     {panelCalculator.leftovers.length} pieces grouped into {groupedLeftovers.length} rows
                                     {' · '}
                                     Reusable: {groupedLeftovers.filter((l) => l.status === 'Reusable').reduce((s, l) => s + l.quantity, 0)}
@@ -598,27 +598,27 @@ const PanelCalculationControls = ({
                             </div>
                             <button
                                 onClick={() => setShowLeftoverDetails(false)}
-                                className="text-gray-500 hover:text-gray-700"
+                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                             >
                                 ×
                             </button>
                         </div>
                         <div className="overflow-x-auto">
-                            <table className="min-w-full bg-white border border-gray-300 text-xs">
+                            <table className="min-w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-xs text-gray-900 dark:text-gray-100">
                                 <thead>
-                                    <tr className="bg-gray-100">
-                                        <th className="px-2 py-1.5 border">No.</th>
-                                        <th className="px-2 py-1.5 border">Status</th>
-                                        <th className="px-2 py-1.5 border">Factory Joint Remaining</th>
-                                        <th className="px-2 py-1.5 border">Usable For</th>
-                                        <th className="px-2 py-1.5 border">Shorter Face (mm)</th>
-                                        <th className="px-2 py-1.5 border">Longer Face (mm)</th>
-                                        <th className="px-2 py-1.5 border">Panel Length (mm)</th>
-                                        <th className="px-2 py-1.5 border">Wall Thickness (mm)</th>
-                                        <th className="px-2 py-1.5 border">Qty</th>
-                                        <th className="px-2 py-1.5 border">Edge Type</th>
-                                        <th className="px-2 py-1.5 border">Finishing</th>
-                                        <th className="px-2 py-1.5 border">Project</th>
+                                    <tr className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">No.</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Status</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Factory Joint Remaining</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Usable For</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Shorter Face (mm)</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Longer Face (mm)</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Panel Length (mm)</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Wall Thickness (mm)</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Qty</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Edge Type</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Finishing</th>
+                                        <th className="px-2 py-1.5 border dark:border-gray-600">Project</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -648,34 +648,38 @@ const PanelCalculationControls = ({
                                         return (
                                             <tr
                                                 key={leftover.groupKey}
-                                                className={isReusable ? 'hover:bg-green-50 bg-green-50/40' : 'hover:bg-gray-50 bg-red-50/30'}
+                                                className={
+                                                    isReusable
+                                                        ? 'bg-green-50/40 text-gray-900 hover:bg-green-100 dark:bg-emerald-950/50 dark:text-gray-100 dark:hover:bg-emerald-900/60'
+                                                        : 'bg-red-50/30 text-gray-900 hover:bg-gray-50 dark:bg-red-950/40 dark:text-gray-100 dark:hover:bg-gray-800'
+                                                }
                                             >
-                                                <td className="px-2 py-1.5 border text-center">{index + 1}</td>
-                                                <td className="px-2 py-1.5 border text-center">
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center">{index + 1}</td>
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center">
                                                     <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold ${
                                                         isReusable
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : 'bg-red-100 text-red-800'
+                                                            ? 'bg-green-100 text-green-800 dark:bg-emerald-900 dark:text-emerald-200'
+                                                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                                                     }`}>
                                                         {leftover.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-2 py-1.5 border text-center font-medium whitespace-nowrap">
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center font-medium whitespace-nowrap">
                                                     {factoryJointLabel}
                                                 </td>
-                                                <td className="px-2 py-1.5 border text-center whitespace-nowrap">
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center whitespace-nowrap">
                                                     {usableForLabel}
                                                 </td>
-                                                <td className="px-2 py-1.5 border text-center">{shorterFace}</td>
-                                                <td className="px-2 py-1.5 border text-center">{longerFace}</td>
-                                                <td className="px-2 py-1.5 border text-center">{panelLength}</td>
-                                                <td className="px-2 py-1.5 border text-center">{wallThickness}</td>
-                                                <td className="px-2 py-1.5 border text-center font-semibold">{leftover.quantity}</td>
-                                                <td className="px-2 py-1.5 border text-center whitespace-nowrap">
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center">{shorterFace}</td>
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center">{longerFace}</td>
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center">{panelLength}</td>
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center">{wallThickness}</td>
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center font-semibold">{leftover.quantity}</td>
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center whitespace-nowrap">
                                                     {`Left: ${leftEdge}, Right: ${rightEdge}`}
                                                 </td>
-                                                <td className="px-2 py-1.5 border text-center whitespace-nowrap">{finishing}</td>
-                                                <td className="px-2 py-1.5 border text-center whitespace-nowrap">
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center whitespace-nowrap">{finishing}</td>
+                                                <td className="px-2 py-1.5 border dark:border-gray-600 text-center whitespace-nowrap">
                                                     {project?.name || 'N/A'}
                                                 </td>
                                             </tr>

@@ -17,12 +17,21 @@ from .comment_utils import get_unread_comment_counts, mark_project_comments_read
 from .permissions import CanAddProjectComment, PlanAnnotationPermission
 from .role_utils import user_can_edit
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
+from .share_utils import scope_queryset_for_anonymous_share
 
 
 logger = logging.getLogger(__name__)
 
 
-class ProjectViewSet(viewsets.ModelViewSet):
+class ShareScopedModelViewSet(viewsets.ModelViewSet):
+    """ModelViewSet that scopes anonymous share sessions to one project."""
+
+    def filter_queryset(self, queryset):
+        queryset = super().filter_queryset(queryset)
+        return scope_queryset_for_anonymous_share(self.request, queryset)
+
+
+class ProjectViewSet(ShareScopedModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
 
@@ -139,21 +148,243 @@ class ProjectViewSet(viewsets.ModelViewSet):
         WallService.create_default_walls(project, storey=default_storey)
         return self._list_project_response(project, status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['post'], url_path='import-from-pdf')
+    def import_from_pdf(self, request):
+        """
+        Create a new project from a PDF floor plan.
+
+        multipart:
+          - name: required project name (user-entered)
+          - file: PDF
+          - page_index: optional
+        """
+        if not user_can_edit(request.user):
+            return Response({'error': 'Edit permission required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response({'error': 'Project name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        upload = request.FILES.get('file')
+        if not upload:
+            return Response({'error': 'PDF file is required (field name: file).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        filename = (upload.name or '').lower()
+        if not filename.endswith('.pdf'):
+            return Response({'error': 'Only PDF files are supported.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            page_index = int(request.data.get('page_index', 0))
+        except (TypeError, ValueError):
+            return Response({'error': 'page_index must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from .pdf_wall_import import extract_walls_from_pdf_bytes
+            preview = extract_walls_from_pdf_bytes(upload.read(), page_index=page_index)
+        except RuntimeError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            logger.exception('PDF create-from-import failed')
+            return Response({'error': f'Failed to parse PDF: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        walls_data = preview.get('walls') or []
+        if not walls_data:
+            return Response({'error': 'No walls found in the PDF.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_x = max(max(w['start_x'], w['end_x']) for w in walls_data)
+        max_y = max(max(w['start_y'], w['end_y']) for w in walls_data)
+        width = float(preview.get('overall_width_mm') or max_x or 1000)
+        length = float(max_y or 1000)
+        height = float(preview.get('height_mm') or 2500)
+        thickness = float(preview.get('thickness_mm') or 100)
+
+        serializer = self.get_serializer(data={
+            'name': name,
+            'width': max(width, 100),
+            'length': max(length, 100),
+            'height': max(height, 100),
+            'wall_thickness': max(thickness, 25),
+        })
+        serializer.is_valid(raise_exception=True)
+        user = request.user if request.user.is_authenticated else None
+        project = serializer.save(created_by=user, last_edited_by=user)
+
+        default_storey, _ = Storey.objects.get_or_create(
+            project=project,
+            order=0,
+            defaults={
+                'name': 'Ground Floor',
+                'elevation_mm': 0.0,
+                'default_room_height_mm': project.height if project.height else 3000.0,
+            },
+        )
+
+        # Replace auto boundary walls with PDF walls
+        Wall.objects.filter(project=project).delete()
+        created = []
+        for segment in walls_data:
+            sx, sy, ex, ey = normalize_wall_coordinates(
+                float(segment['start_x']),
+                float(segment['start_y']),
+                float(segment['end_x']),
+                float(segment['end_y']),
+            )
+            created.append(
+                Wall(
+                    project=project,
+                    storey=default_storey,
+                    start_x=sx,
+                    start_y=sy,
+                    end_x=ex,
+                    end_y=ey,
+                    height=project.height,
+                    thickness=project.wall_thickness,
+                    application_type='wall',
+                    is_default=False,
+                    inner_face_material='PPGI',
+                    outer_face_material='PPGI',
+                    inner_face_thickness=0.5,
+                    outer_face_thickness=0.5,
+                )
+            )
+        Wall.objects.bulk_create(created)
+        created_ids = list(Wall.objects.filter(project=project).values_list('id', flat=True))
+        if created_ids:
+            WallService.update_wall_base_elevations(created_ids)
+
+        refreshed = self._refresh_project_for_list(project)
+        payload = ProjectListSerializer(refreshed).data
+        payload['import_meta'] = {
+            'created_count': len(created_ids),
+            'cluster': preview.get('cluster'),
+            'dimensions': preview.get('dimensions'),
+            'notes': preview.get('notes'),
+        }
+        return Response(payload, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['get'])
     def walls(self, request, pk=None):
         """Retrieve walls associated with a specific project"""
+        project = self.get_object()
+        walls = (
+            Wall.objects
+            .filter(project_id=project.pk)
+            .prefetch_related('windows', 'rooms')
+        )
+        serializer = WallSerializer(walls, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='import-pdf-walls',
+    )
+    def import_pdf_walls(self, request, pk=None):
+        """
+        Preview or create walls from a United Panel PDF floor plan.
+
+        multipart form:
+          - file: PDF
+          - confirm: 'true' to create walls (default preview only)
+          - storey: optional storey id
+          - replace_existing: 'true' to delete existing walls first
+          - page_index: optional page number (default 0)
+        """
+        if not user_can_edit(request.user):
+            return Response({'error': 'Edit permission required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        project = self.get_object()
+        upload = request.FILES.get('file')
+        if not upload:
+            return Response({'error': 'PDF file is required (field name: file).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        filename = (upload.name or '').lower()
+        if not filename.endswith('.pdf'):
+            return Response({'error': 'Only PDF files are supported.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            if not Project.objects.filter(pk=pk).exists():
-                return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
-            walls = (
-                Wall.objects
-                .filter(project_id=pk)
-                .prefetch_related('windows', 'rooms')
+            page_index = int(request.data.get('page_index', 0))
+        except (TypeError, ValueError):
+            return Response({'error': 'page_index must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        confirm = str(request.data.get('confirm', 'false')).lower() in ('1', 'true', 'yes')
+        replace_existing = str(request.data.get('replace_existing', 'false')).lower() in ('1', 'true', 'yes')
+
+        try:
+            from .pdf_wall_import import extract_walls_from_pdf_bytes
+            preview = extract_walls_from_pdf_bytes(upload.read(), page_index=page_index)
+        except RuntimeError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            logger.exception('PDF wall import failed')
+            return Response({'error': f'Failed to parse PDF: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not confirm:
+            return Response({'preview': True, **preview}, status=status.HTTP_200_OK)
+
+        storey = None
+        storey_id = request.data.get('storey')
+        if storey_id not in (None, ''):
+            try:
+                storey = Storey.objects.get(id=int(storey_id), project=project)
+            except (TypeError, ValueError, Storey.DoesNotExist):
+                return Response({'error': 'Invalid storey for this project.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            storey = project.storeys.order_by('id').first()
+
+        height = float(preview.get('height_mm') or project.height or 2500)
+        thickness = float(preview.get('thickness_mm') or project.wall_thickness or 100)
+
+        if replace_existing:
+            Wall.objects.filter(project=project).delete()
+
+        created = []
+        for segment in preview.get('walls') or []:
+            sx, sy = float(segment['start_x']), float(segment['start_y'])
+            ex, ey = float(segment['end_x']), float(segment['end_y'])
+            sx, sy, ex, ey = normalize_wall_coordinates(sx, sy, ex, ey)
+            wall = Wall.objects.create(
+                project=project,
+                storey=storey,
+                start_x=sx,
+                start_y=sy,
+                end_x=ex,
+                end_y=ey,
+                height=height,
+                thickness=thickness,
+                application_type='wall',
+                is_default=False,
+                inner_face_material='PPGI',
+                outer_face_material='PPGI',
+                inner_face_thickness=0.5,
+                outer_face_thickness=0.5,
             )
-            serializer = WallSerializer(walls, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Project.DoesNotExist:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+            created.append(wall)
+
+        if created:
+            WallService.update_wall_base_elevations([w.id for w in created])
+
+        return Response(
+            {
+                'preview': False,
+                'created_count': len(created),
+                'walls': WallSerializer(created, many=True).data,
+                'import_meta': {
+                    'cluster': preview.get('cluster'),
+                    'scale_mm_per_pt': preview.get('scale_mm_per_pt'),
+                    'overall_width_mm': preview.get('overall_width_mm'),
+                    'height_mm': height,
+                    'thickness_mm': thickness,
+                    'dimensions': preview.get('dimensions'),
+                    'notes': preview.get('notes'),
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(
         detail=True,
@@ -268,7 +499,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return Response({'message': 'Comments marked as read.'}, status=status.HTTP_200_OK)
 
 
-class ProjectFolderViewSet(viewsets.ModelViewSet):
+class ProjectFolderViewSet(ShareScopedModelViewSet):
     queryset = ProjectFolder.objects.all()
     serializer_class = ProjectFolderSerializer
 
@@ -285,7 +516,7 @@ class ProjectFolderViewSet(viewsets.ModelViewSet):
         serializer.save(order=order)
 
 
-class StoreyViewSet(viewsets.ModelViewSet):
+class StoreyViewSet(ShareScopedModelViewSet):
     queryset = Storey.objects.all()
     serializer_class = StoreySerializer
 
@@ -334,7 +565,7 @@ class StoreyViewSet(viewsets.ModelViewSet):
 def csrf_token_view(request):
     return Response({'csrfToken': get_token(request)})
 
-class WallViewSet(viewsets.ModelViewSet):
+class WallViewSet(ShareScopedModelViewSet):
     queryset = Wall.objects.all().prefetch_related('windows')
     serializer_class = WallSerializer
 
@@ -539,7 +770,7 @@ class WallViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-class RoomViewSet(viewsets.ModelViewSet):
+class RoomViewSet(ShareScopedModelViewSet):
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
 
@@ -625,7 +856,9 @@ class RoomViewSet(viewsets.ModelViewSet):
             elif updated_room.allow_variable_wall_heights and 'height' in request.data:
                 logger.info(f"Skipping wall height update for room {updated_room.id} because allow_variable_wall_heights=True (for sloped roof)")
             
-            # Recalculate boundaries when geometry may have changed (skip metadata-only PATCHes)
+            # Recalculate boundaries when geometry may have changed (skip metadata-only PATCHes).
+            # If the client sent room_points explicitly, keep that outline/order — do NOT
+            # overwrite with wall-endpoint recalculation (breaks L-shapes / partition corners).
             metadata_only_fields = {
                 'exclude_from_ceiling',
                 'label_position',
@@ -634,8 +867,15 @@ class RoomViewSet(viewsets.ModelViewSet):
                 'temperature_min',
                 'temperature_max',
             }
-            if not set(request.data.keys()).issubset(metadata_only_fields):
+            room_points_provided = 'room_points' in request.data
+            if room_points_provided:
+                logger.info(
+                    f"Skipping boundary recalculation for room {updated_room.id}: "
+                    "client supplied room_points"
+                )
+            elif not set(request.data.keys()).issubset(metadata_only_fields):
                 RoomService.recalculate_room_boundary_from_walls(updated_room.id)
+                updated_room.refresh_from_db()
             
             # Update wall base elevations if room base elevation changed
             if 'base_elevation_mm' in request.data:
@@ -645,7 +885,10 @@ class RoomViewSet(viewsets.ModelViewSet):
                     WallService.update_wall_base_elevations(wall_ids)
                     logger.info(f"Updated base elevations for {len(wall_ids)} walls after room base elevation change")
             
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(
+                self.get_serializer(updated_room).data,
+                status=status.HTTP_200_OK,
+            )
         except ValueError as e:
             logger.error(f"Validation error updating room: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -694,7 +937,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class FloorPanelViewSet(viewsets.ModelViewSet):
+class FloorPanelViewSet(ShareScopedModelViewSet):
     queryset = FloorPanel.objects.all()
     serializer_class = FloorPanelSerializer
 
@@ -710,7 +953,7 @@ class FloorPanelViewSet(viewsets.ModelViewSet):
 
         return super().get_queryset()
 
-class FloorPlanViewSet(viewsets.ModelViewSet):
+class FloorPlanViewSet(ShareScopedModelViewSet):
     queryset = FloorPlan.objects.all()
     serializer_class = FloorPlanSerializer
 
@@ -799,7 +1042,7 @@ class FloorPlanViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class CeilingPanelViewSet(viewsets.ModelViewSet):
+class CeilingPanelViewSet(ShareScopedModelViewSet):
     queryset = CeilingPanel.objects.all()
     serializer_class = CeilingPanelSerializer
 
@@ -822,7 +1065,7 @@ class CeilingPanelViewSet(viewsets.ModelViewSet):
         
         return super().get_queryset()
 
-class CeilingPlanViewSet(viewsets.ModelViewSet):
+class CeilingPlanViewSet(ShareScopedModelViewSet):
     queryset = CeilingPlan.objects.all()
     serializer_class = CeilingPlanSerializer
 
@@ -1035,7 +1278,7 @@ class CeilingPlanViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class CeilingZoneViewSet(viewsets.ModelViewSet):
+class CeilingZoneViewSet(ShareScopedModelViewSet):
     queryset = CeilingZone.objects.all().prefetch_related('rooms', 'ceiling_panels')
     serializer_class = CeilingZoneSerializer
 
@@ -1095,7 +1338,7 @@ class CeilingZoneViewSet(viewsets.ModelViewSet):
             return Response({'error': f'Failed to regenerate ceiling zone: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class DoorViewSet(viewsets.ModelViewSet):
+class DoorViewSet(ShareScopedModelViewSet):
     queryset = Door.objects.prefetch_related('windows').all()
     serializer_class = DoorSerializer
 
@@ -1128,7 +1371,7 @@ class DoorViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class WindowViewSet(viewsets.ModelViewSet):
+class WindowViewSet(ShareScopedModelViewSet):
     queryset = Window.objects.all()
     serializer_class = WindowSerializer
 
@@ -1164,7 +1407,7 @@ class WindowViewSet(viewsets.ModelViewSet):
         
         serializer.save()
 
-class WallWindowViewSet(viewsets.ModelViewSet):
+class WallWindowViewSet(ShareScopedModelViewSet):
     queryset = WallWindow.objects.all()
     serializer_class = WallWindowSerializer
 
@@ -1200,7 +1443,7 @@ class WallWindowViewSet(viewsets.ModelViewSet):
         
         serializer.save()
 
-class IntersectionViewSet(viewsets.ModelViewSet):
+class IntersectionViewSet(ShareScopedModelViewSet):
     queryset = Intersection.objects.all()
     serializer_class = IntersectionSerializer
 
@@ -1217,12 +1460,20 @@ class IntersectionViewSet(viewsets.ModelViewSet):
         wall_1_id = request.data.get('wall_1')
         wall_2_id = request.data.get('wall_2')
         joining_method = request.data.get('joining_method')
+        deduct_joining_thickness = request.data.get('deduct_joining_thickness', False)
 
         if not all([wall_1_id, wall_2_id, joining_method]):
             return Response(
                 {'error': 'wall_1, wall_2, and joining_method are required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        if isinstance(deduct_joining_thickness, str):
+            deduct_joining_thickness = deduct_joining_thickness.strip().lower() in ('1', 'true', 'yes', 'on')
+        else:
+            deduct_joining_thickness = bool(deduct_joining_thickness)
+        if joining_method != 'butt_in':
+            deduct_joining_thickness = False
 
         try:
             wall_1 = Wall.objects.get(pk=wall_1_id)
@@ -1243,6 +1494,7 @@ class IntersectionViewSet(viewsets.ModelViewSet):
                 intersection.wall_1 = wall_1
                 intersection.wall_2 = wall_2
                 intersection.joining_method = joining_method
+                intersection.deduct_joining_thickness = deduct_joining_thickness
                 intersection.save()
             else:
                 # Create new intersection with the provided wall order
@@ -1250,7 +1502,8 @@ class IntersectionViewSet(viewsets.ModelViewSet):
                 project=wall_1.project,
                 wall_1=wall_1,
                 wall_2=wall_2,
-                    joining_method=joining_method
+                    joining_method=joining_method,
+                    deduct_joining_thickness=deduct_joining_thickness,
             )
 
             return Response(IntersectionSerializer(intersection).data, status=status.HTTP_200_OK)
@@ -1258,7 +1511,7 @@ class IntersectionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'One or more walls not found'}, status=status.HTTP_404_NOT_FOUND)
 
 
-class PlanAnnotationViewSet(viewsets.ModelViewSet):
+class PlanAnnotationViewSet(ShareScopedModelViewSet):
     queryset = PlanAnnotation.objects.select_related('project', 'storey', 'created_by').all()
     serializer_class = PlanAnnotationSerializer
     permission_classes = [PlanAnnotationPermission]
