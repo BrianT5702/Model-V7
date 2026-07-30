@@ -33,6 +33,7 @@ import {
   findHostWallNearPoint,
   getWallAngleSnapThresholdDeg,
   snapWallEndToPreferredAngles,
+  clearDimensionPlacementMemory,
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
@@ -286,6 +287,11 @@ const Canvas2D = ({
     const scaleFactor = useRef(1);
     const initialScale = useRef(1); // Track the initial scale
     const isZoomed = useRef(false); // Track if user has manually zoomed
+    // Mirrors the applied canvasSize so the resize observer can compare without stale state
+    const appliedCanvasSize = useRef({
+        width: DEFAULT_CANVAS_WIDTH,
+        height: DEFAULT_CANVAS_HEIGHT
+    });
     
     // Canvas dragging state
     const isDraggingCanvas = useRef(false);
@@ -350,9 +356,16 @@ const Canvas2D = ({
     const handleResetZoom = () => {
         console.log('Reset Zoom clicked, resetting zoom flag');
         isZoomed.current = false; // Reset zoom flag so scale calculation can set optimal scale
+        // Re-fit changes the pixel layout; drop locked sides so collision runs against the new fit.
+        clearDimensionPlacementMemory();
         // Trigger a re-render to recalculate scale
         setForceRefresh(prev => prev + 1);
     };
+
+    // Fresh project / import must not inherit placement sides from the previous plan.
+    useEffect(() => {
+        clearDimensionPlacementMemory();
+    }, [projectId]);
 
     // Zoom at current view position (better UX)
     const zoomAtCurrentView = (newScale) => {
@@ -2555,16 +2568,21 @@ const Canvas2D = ({
             }
             const { width, height } = measured;
 
-            setCanvasSize((prev) => {
-                if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
-                    return prev;
-                }
-                // Large size jumps (rotate / first real measure): re-fit so the plan isn't clipped
-                if (Math.abs(prev.width - width) > 48 || Math.abs(prev.height - height) > 48) {
-                    isZoomed.current = false;
-                }
-                return { width, height };
-            });
+            const prev = appliedCanvasSize.current;
+            if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
+                return;
+            }
+            // Large size jumps (rotate / first real measure): re-fit so the plan isn't clipped
+            if (Math.abs(prev.width - width) > 48 || Math.abs(prev.height - height) > 48) {
+                isZoomed.current = false;
+                // Which side of the plan a dimension lands on is decided by pixel collision and
+                // then locked for the rest of the session. A decision made against the old box —
+                // most often a first paint measured before the stylesheet applied — would stay
+                // wrong forever, so drop it and let the new box decide.
+                clearDimensionPlacementMemory();
+            }
+            appliedCanvasSize.current = { width, height };
+            setCanvasSize({ width, height });
         };
 
         const measureAfterPaint = () => {

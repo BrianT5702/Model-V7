@@ -12,6 +12,15 @@ export const DIMENSION_CONFIG = {
     NEAR_WALL_LANE_SPACING: 4,     // Extra step only when exterior/interior side is blocked (px)
     NEAR_WALL_LOCAL_LABEL_RADIUS_PX: 90, // Legacy — near-wall overlap uses full placedLabels now
     NEAR_WALL_MAX_PLACEMENT_STEPS: 8,
+    // Walls whose lines fall within this distance count as one straight run for dimensioning,
+    // so their labels share a side and an offset instead of splitting across the run.
+    NEAR_WALL_RUN_TOLERANCE_MM: 200,
+    // An interior wall's dimension belongs beside that wall. When there is no clear space
+    // there, the old behaviour moved the label out to the project's exterior dimension
+    // frame, which reads as if it measures a different wall and crowds that row. Drafted
+    // layouts instead omit the dimension, so prefer hiding it. Set false to restore the
+    // fallback.
+    HIDE_CROWDED_NEAR_WALL_DIMS: true,
     NEAR_WALL_NUDGE_MM: 30,        // Used only for non-near-wall fallback nudging (mm)
     PROJECT_BASE_OFFSET: 14,      // Minimum distance for project dimensions when no wall dims on edge (px)
     PROJECT_OUTER_GAP_AFTER_WALLS: 8, // Project row sits outside outermost wall row by at least this (px)
@@ -44,9 +53,9 @@ export const DIMENSION_CONFIG = {
     SMALL_DIMENSION_THRESHOLD: 0.15, // Dimension is "small" if < 5% of project size
     
     // Appearance - Dimensions
-    FONT_SIZE: 200,               // Dimension text scaling multiplier - matches wall plan
-    FONT_SIZE_MIN: 12,             // Minimum font size when scaled down
-    FONT_SIZE_MAX: 18,             // Maximum font size — prevents huge labels on small/zoomed-in projects
+    FONT_SIZE: 180,               // Dimension text scaling multiplier - matches wall plan
+    FONT_SIZE_MIN: 10,             // Minimum font size when scaled down
+    FONT_SIZE_MAX: 16,             // Maximum font size — prevents huge labels on small/zoomed-in projects
     FONT_FAMILY: "'Segoe UI', Arial, sans-serif",  // Modern font with fallbacks
     FONT_WEIGHT: 'normal',          // Font weight for dimensions
     LINE_WIDTH: 1,              // Extension line width (px)

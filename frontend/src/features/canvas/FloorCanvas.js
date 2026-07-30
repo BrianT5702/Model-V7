@@ -171,6 +171,8 @@ const FloorCanvas = ({
                 if (Math.abs(prev.width - width) > 48 || Math.abs(prev.height - height) > 48) {
                     isZoomed.current = false;
                     hasUserPositionedView.current = false;
+                    // Locked label sides were decided against the old box; recompute for the new one.
+                    dimensionPlacementMemory.current.clear();
                 }
                 return { width, height };
             });

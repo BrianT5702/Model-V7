@@ -995,6 +995,7 @@ function buildNearWallPlacementCandidates(wall, rooms, modelBounds) {
 function applyNearWallSharedOffset(
     dimensionLanes,
     near,
+    sharedKey,
     anchorXModel,
     anchorYModel,
     scaleFactor,
@@ -1006,7 +1007,7 @@ function applyNearWallSharedOffset(
     if (!near) return null;
     const nx = near.ext?.nx ?? 0;
     const ny = near.ext?.ny ?? 0;
-    const edgeKey = near.side || 'top';
+    const edgeKey = `${near.side || 'top'}:${sharedKey || 'unscoped'}`;
     let off = near.off;
     if (dimensionLanes) {
         if (!dimensionLanes._nearWallShared) dimensionLanes._nearWallShared = {};
@@ -1046,7 +1047,31 @@ function placeNearWallWallDimension({
     initialScale,
     rotatedVerticalText,
     calculateBounds,
+    spanLo,
+    spanHi,
 }) {
+    const spanPx = Number.isFinite(spanLo) && Number.isFinite(spanHi)
+        ? Math.abs(spanHi - spanLo) * scaleFactor
+        : 0;
+    // The text may slide along its dimension line to find clear space, but never past the
+    // ends of the run it measures, or it would read as belonging to the neighbouring wall.
+    const maxAlongShiftPx = Math.max(0, (spanPx - textWidth) / 2 - 2);
+    const alongShiftsPx = [0];
+    if (maxAlongShiftPx >= DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING) {
+        for (const magnitude of [maxAlongShiftPx / 2, maxAlongShiftPx]) {
+            alongShiftsPx.push(magnitude, -magnitude);
+        }
+    }
+
+    // Walls lying on one straight line form a single dimension run. Identify the run by the
+    // line it sits on, so chained lengths share a side and an offset while walls on other
+    // lines stay independent.
+    const runCoordModel = isHorizontal ? wallMidY : wallMidX;
+    const runKey = Number.isFinite(runCoordModel)
+        ? `${isHorizontal ? 'h' : 'v'}:${Math.round(runCoordModel / DIMENSION_CONFIG.NEAR_WALL_RUN_TOLERANCE_MM)}`
+        : 'unscoped';
+    const preferredSide = dimensionLanes?._nearWallRunSides?.[runKey] ?? null;
+
     const near = tryPlaceNearWallLabel({
         wall: wallForNear,
         anchorXModel: wallMidX,
@@ -1063,11 +1088,22 @@ function placeNearWallWallDimension({
         rooms,
         dimensionLanes,
         initialScale,
-        rotatedVerticalText
+        rotatedVerticalText,
+        alongShiftsPx,
+        preferredSide
     });
     if (!near) return null;
 
+    // Anchor everything that follows to the spot the search settled on, including any slide
+    // along the wall, so the shared-lane and step-out retries below don't undo it.
+    const alongShiftModel = (near.alongShiftPx ?? 0) / (scaleFactor || 1);
+    const anchorXModel = wallMidX + (near.along?.nx ?? 0) * alongShiftModel;
+    const anchorYModel = wallMidY + (near.along?.ny ?? 0) * alongShiftModel;
+
     const hostWallData = findWallLineDataForWall(wallLinesMap, wallForNear);
+    // Share the offset across the run so chained lengths line up, but no wider than that:
+    // sharing across a whole plan edge let one collision push every label into a distant row.
+    const sharedKey = runKey;
     const laneSpacing = DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
     const maxSteps = Math.max(
         DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS,
@@ -1077,8 +1113,8 @@ function placeNearWallWallDimension({
     const tryOffset = (off) => {
         const nx = near.ext?.nx ?? 0;
         const ny = near.ext?.ny ?? 0;
-        const labelX = wallMidX * scaleFactor + offsetX + nx * off;
-        const labelY = wallMidY * scaleFactor + offsetY + ny * off;
+        const labelX = anchorXModel * scaleFactor + offsetX + nx * off;
+        const labelY = anchorYModel * scaleFactor + offsetY + ny * off;
         const bounds = calculateBounds(labelX, labelY, textWidth);
         if (
             !isLabelAcceptableForNearWallPlacement(
@@ -1109,8 +1145,9 @@ function placeNearWallWallDimension({
     let positioned = applyNearWallSharedOffset(
         dimensionLanes,
         near,
-        wallMidX,
-        wallMidY,
+        sharedKey,
+        anchorXModel,
+        anchorYModel,
         scaleFactor,
         offsetX,
         offsetY,
@@ -1150,8 +1187,13 @@ function placeNearWallWallDimension({
 
     // Keep later labels on this edge at least this far out (collision-aware).
     if (dimensionLanes) {
+        if (!dimensionLanes._nearWallRunSides) dimensionLanes._nearWallRunSides = {};
+        const runSide = positioned.side || near.side;
+        if (runSide && !dimensionLanes._nearWallRunSides[runKey]) {
+            dimensionLanes._nearWallRunSides[runKey] = runSide;
+        }
         if (!dimensionLanes._nearWallShared) dimensionLanes._nearWallShared = {};
-        const edgeKey = positioned.side || near.side || 'top';
+        const edgeKey = `${positioned.side || near.side || 'top'}:${sharedKey}`;
         const shared = dimensionLanes._nearWallShared[edgeKey];
         if (!shared || (positioned.off ?? 0) > (shared.off ?? 0)) {
             dimensionLanes._nearWallShared[edgeKey] = {
@@ -1226,7 +1268,9 @@ function tryPlaceNearWallLabel({
     rooms,
     dimensionLanes = null,
     initialScale = 1,
-    rotatedVerticalText = false
+    rotatedVerticalText = false,
+    alongShiftsPx = [0],
+    preferredSide = null
 }) {
     if (!wall) return null;
     const hostWallData = findWallLineDataForWall(wallLinesMap, wall);
@@ -1242,6 +1286,11 @@ function tryPlaceNearWallLabel({
     const ext = getExteriorNormalUnit(wall, rooms, modelBounds);
     const extEdge = exteriorSideName(ext.nx, ext.ny);
     const sorted = [...candidates].sort((a, b) => {
+        // The exterior normal is guessed per wall, so two walls forming one straight run can
+        // disagree and send their labels to opposite faces of the same run. Once a run has a
+        // side, later dimensions on it follow, which keeps a chain readable as one row.
+        if (a.edge === preferredSide && b.edge !== preferredSide) return -1;
+        if (b.edge === preferredSide && a.edge !== preferredSide) return 1;
         if (a.edge === extEdge && b.edge !== extEdge) return -1;
         if (b.edge === extEdge && a.edge !== extEdge) return 1;
         const la = dimensionLanes?.[a.edge] ?? 0;
@@ -1250,37 +1299,46 @@ function tryPlaceNearWallLabel({
     });
 
     const maxSteps = DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS;
-    for (let step = 0; step < maxSteps; step++) {
-        const off = baseOff + step * laneSpacing;
-        for (const cand of sorted) {
-            const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off;
-            const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off;
-            const bounds = calculateBounds(labelX, labelY, textWidth);
-            if (
-                isLabelAcceptableForNearWallPlacement(
-                    labelX,
-                    labelY,
-                    bounds,
-                    placedLabels,
-                    hostWallData,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    initialScale,
-                    wallLinesMap
-                )
-            ) {
-                if (dimensionLanes && cand.edge) {
-                    dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
+    // Shifting the text along its own dimension line is cheaper than giving up on the wall,
+    // so only reach for it once the whole unshifted search has failed. The first entry is
+    // always 0, which keeps placement identical for labels that already fit.
+    for (const alongShift of alongShiftsPx) {
+        for (let step = 0; step < maxSteps; step++) {
+            const off = baseOff + step * laneSpacing;
+            for (const cand of sorted) {
+                const alongX = -cand.ny;
+                const alongY = cand.nx;
+                const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off + alongX * alongShift;
+                const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off + alongY * alongShift;
+                const bounds = calculateBounds(labelX, labelY, textWidth);
+                if (
+                    isLabelAcceptableForNearWallPlacement(
+                        labelX,
+                        labelY,
+                        bounds,
+                        placedLabels,
+                        hostWallData,
+                        scaleFactor,
+                        offsetX,
+                        offsetY,
+                        initialScale,
+                        wallLinesMap
+                    )
+                ) {
+                    if (dimensionLanes && cand.edge) {
+                        dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
+                    }
+                    return {
+                        labelX,
+                        labelY,
+                        bounds,
+                        ext: { nx: cand.nx, ny: cand.ny },
+                        along: { nx: alongX, ny: alongY },
+                        alongShiftPx: alongShift,
+                        side: cand.edge,
+                        off
+                    };
                 }
-                return {
-                    labelX,
-                    labelY,
-                    bounds,
-                    ext: { nx: cand.nx, ny: cand.ny },
-                    side: cand.edge,
-                    off
-                };
             }
         }
     }
@@ -2395,6 +2453,9 @@ export function drawDimensions(
                     labelX = near.labelX;
                     labelY = near.labelY;
                     placement = { side: 'side1' };
+                } else if (DIMENSION_CONFIG.HIDE_CROWDED_NEAR_WALL_DIMS) {
+                    context.restore();
+                    return;
                 } else {
                     isNearWallDimension = false;
                     wallLaneSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
@@ -2616,6 +2677,9 @@ export function drawDimensions(
                             side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
                         });
                     }
+                } else if (DIMENSION_CONFIG.HIDE_CROWDED_NEAR_WALL_DIMS) {
+                    context.restore();
+                    return;
                 } else {
                     isNearWallDimension = false;
                     wallLaneSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
@@ -2824,6 +2888,9 @@ export function drawDimensions(
                             side: near.side === 'bottom' || near.side === 'right' ? 'side2' : 'side1'
                         });
                     }
+                } else if (DIMENSION_CONFIG.HIDE_CROWDED_NEAR_WALL_DIMS) {
+                    context.restore();
+                    return;
                 } else {
                     isNearWallDimension = false;
                     wallLaneSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
