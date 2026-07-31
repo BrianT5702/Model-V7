@@ -1514,7 +1514,7 @@ html.dark .summary-tab [class*="bg-gradient-to-br"][class*="from-teal"] {
 }
 
 html.dark .summary-tab .bg-blue-50 {
-  background-color: rgb(30 58 138 / 0.22) !important;
+  background-color: rgb(30 58 138 / 0.35) !important;
 }
 
 html.dark .summary-tab .bg-green-50 {
@@ -1665,6 +1665,148 @@ html.dark .summary-tab .bg-gray-200 {
 
 html.dark .summary-tab .text-orange-700 {
   color: rgb(253 186 116) !important;
+}
+
+/* Export Preview modal — same dim tinted blocks as the summary tab in dark mode */
+html.dark .export-preview-panel {
+  background-color: rgb(17 24 39) !important;
+  color: rgb(229 231 235);
+}
+
+html.dark .export-preview-panel .bg-gray-50,
+html.dark .export-preview-panel [class*="bg-gray-50"] {
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .export-preview-panel .bg-white,
+html.dark .export-preview-panel tbody.bg-white,
+html.dark .export-preview-panel tr.bg-white,
+html.dark .export-preview-panel [class*="bg-white"]:not([class*="text-white"]) {
+  background-color: rgb(31 41 55) !important;
+}
+
+/* Keep all section tints at similar strength so Wall is not brighter than Ceiling */
+html.dark .export-preview-panel .bg-blue-50 {
+  background-color: rgb(30 58 138 / 0.35) !important;
+}
+
+html.dark .export-preview-panel .bg-green-50 {
+  background-color: rgb(20 83 45 / 0.35) !important;
+}
+
+html.dark .export-preview-panel .bg-purple-50 {
+  background-color: rgb(88 28 135 / 0.35) !important;
+}
+
+html.dark .export-preview-panel .bg-yellow-50 {
+  background-color: rgb(113 63 18 / 0.35) !important;
+}
+
+html.dark .export-preview-panel .bg-indigo-50 {
+  background-color: rgb(49 46 129 / 0.35) !important;
+}
+
+html.dark .export-preview-panel .bg-orange-50 {
+  background-color: rgb(124 45 18 / 0.35) !important;
+}
+
+html.dark .export-preview-panel .bg-indigo-100,
+html.dark .export-preview-panel .bg-blue-100,
+html.dark .export-preview-panel .bg-green-100,
+html.dark .export-preview-panel .bg-yellow-100,
+html.dark .export-preview-panel .bg-purple-100,
+html.dark .export-preview-panel .bg-red-100,
+html.dark .export-preview-panel .bg-orange-100 {
+  background-color: rgb(55 65 81) !important;
+}
+
+html.dark .export-preview-panel .border,
+html.dark .export-preview-panel [class*="border-gray-200"],
+html.dark .export-preview-panel [class*="border-gray-300"] {
+  border-color: rgb(75 85 99) !important;
+}
+
+html.dark .export-preview-panel [class*="border-blue-200"],
+html.dark .export-preview-panel [class*="border-blue-300"] {
+  border-color: rgb(59 130 246 / 0.35) !important;
+}
+
+html.dark .export-preview-panel [class*="border-green-200"],
+html.dark .export-preview-panel [class*="border-indigo-200"],
+html.dark .export-preview-panel [class*="border-orange-200"],
+html.dark .export-preview-panel [class*="border-yellow-200"],
+html.dark .export-preview-panel [class*="border-purple-200"] {
+  border-color: rgb(75 85 99) !important;
+}
+
+html.dark .export-preview-panel [class*="text-blue-800"],
+html.dark .export-preview-panel [class*="text-blue-700"] {
+  color: rgb(147 197 253) !important;
+}
+
+html.dark .export-preview-panel [class*="text-green-800"],
+html.dark .export-preview-panel [class*="text-green-700"],
+html.dark .export-preview-panel [class*="text-green-900"] {
+  color: rgb(134 239 172) !important;
+}
+
+html.dark .export-preview-panel [class*="text-purple-800"],
+html.dark .export-preview-panel [class*="text-purple-700"],
+html.dark .export-preview-panel [class*="text-purple-900"] {
+  color: rgb(216 180 254) !important;
+}
+
+html.dark .export-preview-panel [class*="text-yellow-800"],
+html.dark .export-preview-panel [class*="text-yellow-700"] {
+  color: rgb(253 224 71) !important;
+}
+
+html.dark .export-preview-panel [class*="text-orange-800"],
+html.dark .export-preview-panel [class*="text-orange-700"] {
+  color: rgb(253 186 116) !important;
+}
+
+html.dark .export-preview-panel [class*="text-indigo-800"],
+html.dark .export-preview-panel [class*="text-indigo-700"] {
+  color: rgb(165 180 252) !important;
+}
+
+html.dark .export-preview-panel [class*="text-red-800"],
+html.dark .export-preview-panel [class*="text-red-700"] {
+  color: rgb(252 165 165) !important;
+}
+
+html.dark .export-preview-panel [class*="text-blue-600"],
+html.dark .export-preview-panel [class*="text-blue-500"] {
+  color: rgb(96 165 250) !important;
+}
+
+html.dark .export-preview-panel [class*="text-gray-800"],
+html.dark .export-preview-panel [class*="text-gray-900"],
+html.dark .export-preview-panel [class*="text-gray-700"] {
+  color: rgb(229 231 235) !important;
+}
+
+html.dark .export-preview-panel [class*="text-gray-600"],
+html.dark .export-preview-panel [class*="text-gray-500"] {
+  color: rgb(156 163 175) !important;
+}
+
+html.dark .export-preview-panel thead[class*="bg-gray-50"],
+html.dark .export-preview-panel thead.bg-gray-50 {
+  background-color: rgb(31 41 55) !important;
+}
+
+html.dark .export-preview-panel tbody [class*="hover:bg-blue-50"]:hover,
+html.dark .export-preview-panel tr[class*="hover:bg-blue-50"]:hover,
+html.dark .export-preview-panel tr[class*="hover:bg-gray-50"]:hover {
+  background-color: rgb(55 65 81) !important;
+}
+
+html.dark .export-preview-panel img,
+html.dark .export-preview-panel canvas {
+  background-color: rgb(31 41 55);
+  border-color: rgb(75 85 99);
 }
 
 /* Plan canvas — wall / ceiling / floor tabs (no color transition: avoids label/chrome blink on theme toggle) */

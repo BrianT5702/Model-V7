@@ -19,6 +19,7 @@ import { planCeilingValueDedupKey, DIMENSION_CONFIG } from '../canvas/DimensionC
 import { filterDimensions } from '../canvas/dimensionFilter';
 import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset } from '../canvas/doorPlacement';
 import { withPlanCanvasLightTheme } from '../canvas/planCanvasTheme';
+import { fitPdfRoomLabelText } from './pdfRoomLabelFit';
 
 // Copy color mapping functions from drawing.js
 function getWallFinishKey(wall) {
@@ -599,9 +600,20 @@ export function drawVectorWallPlan(
                             if (room.room_points && room.room_points.length >= 3 && labelX != null && labelY != null) {
                                 const labelPos = { x: labelX, y: labelY };
                                 const isLabelOutsideRoom = !isPointInPolygon(labelPos, normalizedPolygon);
-                                
-                                // Draw L-shaped arrow only when label is outside room (match InteractiveRoomLabel: shouldShowArrow)
-                                if (isLabelOutsideRoom) {
+                                const roomName = room.room_name || 'Room';
+                                const {
+                                    fontPt,
+                                    labelScale,
+                                    canContain,
+                                    lines,
+                                    lineGapMm,
+                                    textBlockWidthMm,
+                                } = fitPdfRoomLabelText(doc, roomName, room, scale, isLabelOutsideRoom);
+
+                                const startOffset = Math.max(textBlockWidthMm / 2 + 0.4, 1.2 * labelScale);
+
+                                // L-arrow only when outside and room too small (match InteractiveRoomLabel)
+                                if (isLabelOutsideRoom && !canContain) {
                                     // Calculate direction from label to room center (arrow points to centroid)
                                     const dx = roomCenterX - labelX;
                                     const dy = roomCenterY - labelY;
@@ -614,10 +626,6 @@ export function drawVectorWallPlan(
                                         const labelPdfY = transformY(labelY);
                                         const centerPdfX = transformX(roomCenterX);
                                         const centerPdfY = transformY(roomCenterY);
-                                        
-                                        // Approximate label size in PDF space (for arrow start offset)
-                                        const labelSize = 30 * scale; // Approximate label size
-                                        const startOffset = labelSize / 2;
                                         
                                         let startX, startY, midX, midY, endX, endY;
                                         
@@ -654,9 +662,11 @@ export function drawVectorWallPlan(
                                             endY = centerPdfY;
                                         }
                                         
-                                        // Draw L-shaped arrow (red, matching canvas)
-                                        doc.setDrawColor(255, 0, 0); // Red arrow like in canvas
-                                        doc.setLineWidth(0.3);
+                                        // Stroke / head scale with label (canvas marker is ~8px → shrink on dense plans)
+                                        const arrowStroke = Math.max(0.12, 0.35 * labelScale);
+                                        const arrowLength = Math.max(0.35, Math.min(1.1, 1.8 * labelScale));
+                                        doc.setDrawColor(255, 0, 0);
+                                        doc.setLineWidth(arrowStroke);
                                         
                                         // First segment (horizontal or vertical)
                                         doc.line(startX, startY, midX, midY);
@@ -665,7 +675,6 @@ export function drawVectorWallPlan(
                                         doc.line(midX, midY, endX, endY);
                                         
                                         // Draw arrowhead at room center
-                                        const arrowLength = 2; // 2mm arrowhead in PDF space
                                         const angle = Math.atan2(endY - midY, endX - midX);
                                         const arrowX1 = endX - arrowLength * Math.cos(angle - Math.PI / 6);
                                         const arrowY1 = endY - arrowLength * Math.sin(angle - Math.PI / 6);
@@ -677,10 +686,19 @@ export function drawVectorWallPlan(
                                     }
                                 }
                                 
-                                // Draw room label text (always when we have a valid position)
-                                doc.setFontSize(8);
+                                // Room label — shrink/wrap to room width so long names don't spill over walls
+                                doc.setFontSize(fontPt);
                                 doc.setTextColor(100, 100, 100);
-                                doc.text(room.room_name || 'Room', transformX(labelX), transformY(labelY), { align: 'center' });
+                                const tx = transformX(labelX);
+                                const ty = transformY(labelY);
+                                const totalH = lines.length * lineGapMm;
+                                const startY = ty - totalH / 2 + lineGapMm / 2;
+                                lines.forEach((line, idx) => {
+                                    doc.text(line, tx, startY + idx * lineGapMm, {
+                                        align: 'center',
+                                        baseline: 'middle',
+                                    });
+                                });
                                 doc.setTextColor(0, 0, 0);
                             }
                         }
@@ -724,17 +742,32 @@ export function drawVectorWallPlan(
                             // Reset line dash
                             doc.setLineDashPattern([]);
                             
-                            // Draw ghost area label at centroid
+                            // Draw ghost area label at centroid (same scale logic as room labels)
                             const centroidX = transformedPoints.reduce((sum, p) => sum + p.x, 0) / transformedPoints.length;
                             const centroidY = transformedPoints.reduce((sum, p) => sum + p.y, 0) / transformedPoints.length;
-                            
-                            doc.setFontSize(8);
-                            doc.setTextColor(29, 78, 216); // #1D4ED8 (blue-800)
                             const areaName = ghostArea.room_name || 'Area';
                             const originLabel = ghostArea.source_storey_name
                                 ? ` (${ghostArea.source_storey_name})`
                                 : ' (Below)';
-                            doc.text(`${areaName}${originLabel}`, centroidX, centroidY, { align: 'center' });
+                            
+                            const { fontPt: ghostFontPt, lines: ghostLines, lineGapMm: ghostGap } =
+                                fitPdfRoomLabelText(
+                                    doc,
+                                    `${areaName}${originLabel}`,
+                                    ghostArea,
+                                    scale,
+                                    false
+                                );
+                            doc.setFontSize(ghostFontPt);
+                            doc.setTextColor(29, 78, 216); // #1D4ED8 (blue-800)
+                            const totalH = ghostLines.length * ghostGap;
+                            const startY = centroidY - totalH / 2 + ghostGap / 2;
+                            ghostLines.forEach((line, idx) => {
+                                doc.text(line, centroidX, startY + idx * ghostGap, {
+                                    align: 'center',
+                                    baseline: 'middle',
+                                });
+                            });
                         }
                     });
                     
@@ -1887,72 +1920,64 @@ export function drawVectorWallPlan(
                         }
 
                         // === SLIDE DOOR DRAWING ===
+                        // Match canvas drawDoors(): orange outline panel + black chevron arrow (no hatch fill).
                         if (door.door_type === 'slide') {
-                            const halfLength = (doorWidth) * 1.1;
-                            const thickness = doorThickness * 0.8;
+                            const halfLength = doorWidth;
+                            const thickness = doorThickness;
                             const panelYOffset = getSlidePanelYOffset(placement, thickness);
+                            const panelLineW = Math.max(0.35, lineWidth * 1.75);
 
                             const drawSlidePanel = (offsetX, direction) => {
                                 const panelLocalX = offsetX;
                                 const panelLocalY = panelYOffset;
-                                
-                                // Calculate rectangle corners in local space
+
                                 const corners = [
                                     { x: -halfLength / 2, y: -thickness / 2 },
                                     { x: halfLength / 2, y: -thickness / 2 },
                                     { x: halfLength / 2, y: thickness / 2 },
                                     { x: -halfLength / 2, y: thickness / 2 }
-                                ].map(corner => transformDoorPoint(
+                                ].map((corner) => transformDoorPoint(
                                     panelLocalX + corner.x,
                                     panelLocalY + corner.y
                                 ));
-                                
-                                doc.setFillColor(doorColor[0], doorColor[1], doorColor[2]);
-                                doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
-                                doc.setLineWidth(lineWidth);
-                                
-                                // Draw rectangle outline
+
+                                // Outline only — canvas uses strokeRect, not a filled block
+                                doc.setDrawColor(doorColor[0], doorColor[1], doorColor[2]);
+                                doc.setLineWidth(panelLineW);
                                 for (let i = 0; i < corners.length; i++) {
                                     const next = corners[(i + 1) % corners.length];
                                     doc.line(corners[i].x, corners[i].y, next.x, next.y);
                                 }
-                                
-                                // Fill rectangle
-                                const fillSteps = 5;
-                                for (let i = 0; i < fillSteps; i++) {
-                                    const t = i / fillSteps;
-                                    const x1 = corners[0].x + (corners[1].x - corners[0].x) * t;
-                                    const y1 = corners[0].y + (corners[1].y - corners[0].y) * t;
-                                    const x2 = corners[3].x + (corners[2].x - corners[3].x) * t;
-                                    const y2 = corners[3].y + (corners[2].y - corners[3].y) * t;
-                                    doc.line(x1, y1, x2, y2);
-                                }
 
-                                // Draw arrow - in local space: arrow is at y = thickness * 2
+                                // Chevron arrow beside the panel (same layout as canvas)
                                 const arrowLocalY = panelYOffset * 2;
-                                const arrowHeadSize = 4;
                                 const arrowDir = direction === 'right' ? 1 : -1;
-                                const arrowStartLocalX = -halfLength / 2;
-                                const arrowEndLocalX = halfLength / 2;
-                                
-                                const arrowStart = transformDoorPoint(arrowStartLocalX, arrowLocalY);
-                                const arrowEnd = transformDoorPoint(arrowEndLocalX, arrowLocalY);
+                                const arrowStart = transformDoorPoint(-halfLength / 2, arrowLocalY);
+                                const arrowEnd = transformDoorPoint(halfLength / 2, arrowLocalY);
+                                const shaftDx = arrowEnd.x - arrowStart.x;
+                                const shaftDy = arrowEnd.y - arrowStart.y;
+                                const shaftLen = Math.hypot(shaftDx, shaftDy) || 1;
+                                const ux = shaftDx / shaftLen;
+                                const uy = shaftDy / shaftLen;
+                                const px = -uy;
+                                const py = ux;
+                                // Small head — ~4 screen px on canvas; keep modest on PDF
+                                const head = Math.max(0.55, Math.min(0.95, shaftLen * 0.06));
+                                const tip = arrowDir === 1 ? arrowEnd : arrowStart;
+                                const along = arrowDir === 1 ? -1 : 1;
+                                const wingBaseX = tip.x + ux * along * head;
+                                const wingBaseY = tip.y + uy * along * head;
+                                const wing1 = { x: wingBaseX + px * head, y: wingBaseY + py * head };
+                                const wing2 = { x: wingBaseX - px * head, y: wingBaseY - py * head };
 
+                                doc.setDrawColor(0, 0, 0);
+                                doc.setLineWidth(Math.max(0.3, lineWidth * 1.5));
+                                doc.line(arrowStart.x, arrowStart.y, arrowEnd.x, arrowEnd.y);
+                                // Open V from tip (canvas path tip→wing1→wing2; PDF uses tip→each wing so no thick base blob)
+                                doc.line(tip.x, tip.y, wing1.x, wing1.y);
+                                doc.line(tip.x, tip.y, wing2.x, wing2.y);
                                 doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
                                 doc.setLineWidth(lineWidth);
-                                doc.line(arrowStart.x, arrowStart.y, arrowEnd.x, arrowEnd.y);
-                                
-                                if (arrowDir === 1) {
-                                    const arrowHead1 = transformDoorPoint(arrowEndLocalX - arrowHeadSize, arrowLocalY - arrowHeadSize);
-                                    const arrowHead2 = transformDoorPoint(arrowEndLocalX - arrowHeadSize, arrowLocalY + arrowHeadSize);
-                                    doc.line(arrowEnd.x, arrowEnd.y, arrowHead1.x, arrowHead1.y);
-                                    doc.line(arrowEnd.x, arrowEnd.y, arrowHead2.x, arrowHead2.y);
-                                } else {
-                                    const arrowHead1 = transformDoorPoint(arrowStartLocalX + arrowHeadSize, arrowLocalY - arrowHeadSize);
-                                    const arrowHead2 = transformDoorPoint(arrowStartLocalX + arrowHeadSize, arrowLocalY + arrowHeadSize);
-                                    doc.line(arrowStart.x, arrowStart.y, arrowHead1.x, arrowHead1.y);
-                                    doc.line(arrowStart.x, arrowStart.y, arrowHead2.x, arrowHead2.y);
-                                }
                             };
 
                             if (door.configuration === 'single_sided') {

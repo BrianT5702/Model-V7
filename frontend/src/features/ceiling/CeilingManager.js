@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import CeilingCanvas from '../canvas/CeilingCanvas';
 import api from '../../api/api';
-import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { sortMaterialPanels, roundPanelSizeMmUp } from '../panel/wallPlanPanelUtils';
 import { calculateGhostDataForStorey } from '../estimation/pdfVectorWallPlan';
 import { panelNeedsNylonSupport } from './nylonHangerUtils';
 import useScrollContainment from '../../utils/useScrollContainment';
@@ -371,6 +371,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+            displayWidth = roundPanelSizeMmUp(displayWidth);
+            displayLength = roundPanelSizeMmUp(displayLength);
             const intMat = panel.inner_face_material ?? 'PPGI';
             const intThk = panel.inner_face_thickness ?? 0.5;
             const extMat = panel.outer_face_material ?? 'PPGI';
@@ -423,6 +425,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+            displayWidth = roundPanelSizeMmUp(displayWidth);
+            displayLength = roundPanelSizeMmUp(displayLength);
             const intMat = panel.inner_face_material ?? 'PPGI';
             const intThk = panel.inner_face_thickness ?? 0.5;
             const extMat = panel.outer_face_material ?? 'PPGI';
@@ -1342,6 +1346,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+            displayWidth = roundPanelSizeMmUp(displayWidth);
+            displayLength = roundPanelSizeMmUp(displayLength);
 
             const intMat = panel.inner_face_material ?? 'PPGI';
             const intThk = panel.inner_face_thickness ?? 0.5;

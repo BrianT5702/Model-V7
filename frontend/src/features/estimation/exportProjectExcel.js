@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { getPanelFinishingLabel, sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { getPanelFinishingLabel, sortMaterialPanels, roundPanelSizeMmUp } from '../panel/wallPlanPanelUtils';
 import { groupWallPanelsForDisplay } from '../panel/wallPanelCalculationUtils';
 
 const COLORS = {
@@ -95,6 +95,8 @@ function groupCeilingPanels(panels = []) {
             displayWidth = panel.length;
             displayLength = panel.width;
         }
+        displayWidth = roundPanelSizeMmUp(displayWidth);
+        displayLength = roundPanelSizeMmUp(displayLength);
         const intMat = panel.inner_face_material ?? 'PPGI';
         const intThk = panel.inner_face_thickness ?? 0.5;
         const extMat = panel.outer_face_material ?? 'PPGI';
@@ -135,6 +137,8 @@ function groupFloorPanels(panels = [], rooms = []) {
             displayWidth = panel.length;
             displayLength = panel.width;
         }
+        displayWidth = roundPanelSizeMmUp(displayWidth);
+        displayLength = roundPanelSizeMmUp(displayLength);
         const key = `${displayWidth}_${displayLength}_${floorThickness}_${panelType}`;
         if (!panelsByKey.has(key)) {
             panelsByKey.set(key, {

@@ -109,8 +109,11 @@ export function calculateVerticalLabelBounds(labelX, labelY, textWidth, paddingH
  * calculateVerticalLabelBounds is pre-rotation layout and misses wall overlap.
  */
 export function calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize, pad = 2) {
-    const tw = textWidth + pad * 2;
-    const th = Math.max(fontSize * 0.75, 8) + pad * 2;
+    // The rotation transposes the footprint: the glyph run reaches along Y by the measured
+    // text width, and only the line height reaches across X. Reporting these the other way
+    // round let stacked vertical labels sit inside each other undetected.
+    const tw = Math.max(fontSize * 0.75, 8) + pad * 2;
+    const th = textWidth + pad * 2;
     return {
         x: labelX - tw / 2,
         y: labelY - th / 2,
@@ -587,9 +590,18 @@ export function tryPlaceExteriorDimensionLabel({
             for (let d = step; d <= usable / 2 + step; d += step) {
                 out.push(xCenter + d, xCenter - d);
             }
+            // A span narrower than the text inverts these limits, and clamping to an
+            // inverted range lands past the far end — the label then reads as belonging to
+            // whatever sits beyond it. Centre on the span instead.
+            const xEndLo = xLo + halfW;
+            const xEndHi = xHi - halfW;
+            const clampX = (x) =>
+                xEndHi < xEndLo
+                    ? (xLo + xHi) / 2
+                    : Math.max(xEndLo, Math.min(xEndHi, x));
             const clamped = [];
             for (const x of out) {
-                const cx = Math.max(xLo + halfW, Math.min(xHi - halfW, x));
+                const cx = clampX(x);
                 if (!clamped.some((p) => Math.abs(p - cx) < 2)) clamped.push(cx);
             }
             return clamped.map((labelX) => ({ labelX, labelY: y }));
@@ -613,9 +625,15 @@ export function tryPlaceExteriorDimensionLabel({
         for (let d = step; d <= usable / 2 + step; d += step) {
             ys.push(yCenter + d, yCenter - d);
         }
+        // Rotated text is as tall as the number is long, so a short wall inverts these
+        // limits; clamping to an inverted range drops the label below the wall it measures.
+        const clampY = (y) =>
+            yEndHi < yEndLo
+                ? (yLo + yHi) / 2
+                : Math.max(yEndLo, Math.min(yEndHi, y));
         const clamped = [];
         for (const y of ys) {
-            const cy = Math.max(yEndLo, Math.min(yEndHi, y));
+            const cy = clampY(y);
             if (!clamped.some((p) => Math.abs(p - cy) < 2)) clamped.push(cy);
         }
         return clamped.map((labelY) => ({ labelX: x, labelY }));

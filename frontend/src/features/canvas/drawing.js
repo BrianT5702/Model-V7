@@ -800,13 +800,28 @@ function pointToSegmentDistanceMm(px, py, ax, ay, bx, by) {
     return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
 }
 
+/** sin(5°) — a dimension's host wall must run within this of the segment's direction. */
+const SEGMENT_HOST_PARALLEL_SIN_TOL = 0.0872;
+
 function findWallDataForSegment(wallLinesMap, startX, startY, endX, endY, tolerance = 15) {
     if (!wallLinesMap) return null;
     const midX = (startX + endX) / 2;
     const midY = (startY + endY) / 2;
+    const segLen = Math.hypot(endX - startX, endY - startY) || 1;
+    const segUx = (endX - startX) / segLen;
+    const segUy = (endY - startY) / segLen;
     for (const [, data] of wallLinesMap) {
         const w = data?.wall;
         if (!w) continue;
+        // The host supplies the direction the label is offset in, so it has to run the same
+        // way as the segment. A wall merely crossing the segment — a partition ending on its
+        // midpoint, say — would otherwise offset the label along the dimension's own length
+        // and push it past the wall it measures.
+        const wLen = Math.hypot(w.end_x - w.start_x, w.end_y - w.start_y) || 1;
+        const cross = Math.abs(
+            segUx * ((w.end_y - w.start_y) / wLen) - segUy * ((w.end_x - w.start_x) / wLen)
+        );
+        if (cross > SEGMENT_HOST_PARALLEL_SIN_TOL) continue;
         const d0 = Math.hypot(w.start_x - startX, w.start_y - startY);
         const d1 = Math.hypot(w.end_x - endX, w.end_y - endY);
         if (d0 <= tolerance && d1 <= tolerance) return data;
@@ -982,6 +997,69 @@ export function resolveWallExteriorPlacementSide({
 }
 
 /** Perpendicular to wall only (exterior + interior) — never offset along the wall axis. */
+/**
+ * TEMPORARY diagnostic. A dimension's text belongs between its own extension lines; anything
+ * else reads as measuring a different wall. Reports offenders once per value per draw.
+ */
+const reportedOutsideSpan = new Set();
+function reportDimensionOutsideSpan({
+    text,
+    axis,
+    isNearWallDimension,
+    side,
+    labelCenterPx,
+    spanLoPx,
+    spanHiPx,
+    textExtentPx
+}) {
+    if (!Number.isFinite(labelCenterPx) || !Number.isFinite(spanLoPx) || !Number.isFinite(spanHiPx)) return;
+    const overhang = labelCenterPx < spanLoPx
+        ? spanLoPx - labelCenterPx
+        : labelCenterPx > spanHiPx
+            ? labelCenterPx - spanHiPx
+            : 0;
+    const spanCenter = (spanLoPx + spanHiPx) / 2;
+    const offCenter = labelCenterPx - spanCenter;
+    if (overhang <= 2 && Math.abs(offCenter) <= Math.max(6, (spanHiPx - spanLoPx) * 0.25)) return;
+    const key = `${text}|${axis}`;
+    if (reportedOutsideSpan.has(key)) return;
+    reportedOutsideSpan.add(key);
+    console.warn('[dim placement]', text, {
+        axis,
+        nearWall: isNearWallDimension,
+        side,
+        spanPx: [Math.round(spanLoPx), Math.round(spanHiPx)],
+        spanLenPx: Math.round(spanHiPx - spanLoPx),
+        labelPx: Math.round(labelCenterPx),
+        offCenterPx: Math.round(offCenter),
+        overhangPx: Math.round(overhang),
+        textExtentPx: Math.round(textExtentPx)
+    });
+}
+
+/** TEMPORARY diagnostic: report a label drawn on top of one already placed. */
+function reportDimensionOverlap({ text, axis, isNearWallDimension, side, bounds, placedLabels }) {
+    if (!bounds || !Array.isArray(placedLabels)) return;
+    const hit = placedLabels.find((existing) => checkBoxOverlap(bounds, existing, 0));
+    if (!hit) return;
+    const key = `overlap|${text}|${axis}`;
+    if (reportedOutsideSpan.has(key)) return;
+    reportedOutsideSpan.add(key);
+    console.warn('[dim overlap]', text, {
+        axis,
+        nearWall: isNearWallDimension,
+        side,
+        box: [Math.round(bounds.x), Math.round(bounds.y), Math.round(bounds.width), Math.round(bounds.height)],
+        hitText: hit.text ?? '(no text)',
+        hitType: hit.type ?? '(no type)',
+        hitBox: [Math.round(hit.x), Math.round(hit.y), Math.round(hit.width), Math.round(hit.height)]
+    });
+}
+
+export function clearDimensionPlacementDebug() {
+    reportedOutsideSpan.clear();
+}
+
 function buildNearWallPlacementCandidates(wall, rooms, modelBounds) {
     const ext = getExteriorNormalUnit(wall, rooms, modelBounds);
     const edge = exteriorSideName(ext.nx, ext.ny);
@@ -1047,22 +1125,9 @@ function placeNearWallWallDimension({
     initialScale,
     rotatedVerticalText,
     calculateBounds,
-    spanLo,
-    spanHi,
+    spanLo: _spanLo,
+    spanHi: _spanHi,
 }) {
-    const spanPx = Number.isFinite(spanLo) && Number.isFinite(spanHi)
-        ? Math.abs(spanHi - spanLo) * scaleFactor
-        : 0;
-    // The text may slide along its dimension line to find clear space, but never past the
-    // ends of the run it measures, or it would read as belonging to the neighbouring wall.
-    const maxAlongShiftPx = Math.max(0, (spanPx - textWidth) / 2 - 2);
-    const alongShiftsPx = [0];
-    if (maxAlongShiftPx >= DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING) {
-        for (const magnitude of [maxAlongShiftPx / 2, maxAlongShiftPx]) {
-            alongShiftsPx.push(magnitude, -magnitude);
-        }
-    }
-
     // Walls lying on one straight line form a single dimension run. Identify the run by the
     // line it sits on, so chained lengths share a side and an offset while walls on other
     // lines stay independent.
@@ -1072,6 +1137,8 @@ function placeNearWallWallDimension({
         : 'unscoped';
     const preferredSide = dimensionLanes?._nearWallRunSides?.[runKey] ?? null;
 
+    // No along-wall sliding: if the mid-wall near position (with small outward steps) is
+    // blocked, return null so the caller hides the dimension instead of relocating it.
     const near = tryPlaceNearWallLabel({
         wall: wallForNear,
         anchorXModel: wallMidX,
@@ -1089,16 +1156,12 @@ function placeNearWallWallDimension({
         dimensionLanes,
         initialScale,
         rotatedVerticalText,
-        alongShiftsPx,
         preferredSide
     });
     if (!near) return null;
 
-    // Anchor everything that follows to the spot the search settled on, including any slide
-    // along the wall, so the shared-lane and step-out retries below don't undo it.
-    const alongShiftModel = (near.alongShiftPx ?? 0) / (scaleFactor || 1);
-    const anchorXModel = wallMidX + (near.along?.nx ?? 0) * alongShiftModel;
-    const anchorYModel = wallMidY + (near.along?.ny ?? 0) * alongShiftModel;
+    const anchorXModel = wallMidX;
+    const anchorYModel = wallMidY;
 
     const hostWallData = findWallLineDataForWall(wallLinesMap, wallForNear);
     // Share the offset across the run so chained lengths line up, but no wider than that:
@@ -1269,7 +1332,6 @@ function tryPlaceNearWallLabel({
     dimensionLanes = null,
     initialScale = 1,
     rotatedVerticalText = false,
-    alongShiftsPx = [0],
     preferredSide = null
 }) {
     if (!wall) return null;
@@ -1299,46 +1361,39 @@ function tryPlaceNearWallLabel({
     });
 
     const maxSteps = DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS;
-    // Shifting the text along its own dimension line is cheaper than giving up on the wall,
-    // so only reach for it once the whole unshifted search has failed. The first entry is
-    // always 0, which keeps placement identical for labels that already fit.
-    for (const alongShift of alongShiftsPx) {
-        for (let step = 0; step < maxSteps; step++) {
-            const off = baseOff + step * laneSpacing;
-            for (const cand of sorted) {
-                const alongX = -cand.ny;
-                const alongY = cand.nx;
-                const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off + alongX * alongShift;
-                const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off + alongY * alongShift;
-                const bounds = calculateBounds(labelX, labelY, textWidth);
-                if (
-                    isLabelAcceptableForNearWallPlacement(
-                        labelX,
-                        labelY,
-                        bounds,
-                        placedLabels,
-                        hostWallData,
-                        scaleFactor,
-                        offsetX,
-                        offsetY,
-                        initialScale,
-                        wallLinesMap
-                    )
-                ) {
-                    if (dimensionLanes && cand.edge) {
-                        dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
-                    }
-                    return {
-                        labelX,
-                        labelY,
-                        bounds,
-                        ext: { nx: cand.nx, ny: cand.ny },
-                        along: { nx: alongX, ny: alongY },
-                        alongShiftPx: alongShift,
-                        side: cand.edge,
-                        off
-                    };
+    // Stay at the wall midpoint — never slide along the run. If no clear near-wall slot
+    // exists after a few outward steps, the caller hides the dimension.
+    for (let step = 0; step < maxSteps; step++) {
+        const off = baseOff + step * laneSpacing;
+        for (const cand of sorted) {
+            const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off;
+            const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off;
+            const bounds = calculateBounds(labelX, labelY, textWidth);
+            if (
+                isLabelAcceptableForNearWallPlacement(
+                    labelX,
+                    labelY,
+                    bounds,
+                    placedLabels,
+                    hostWallData,
+                    scaleFactor,
+                    offsetX,
+                    offsetY,
+                    initialScale,
+                    wallLinesMap
+                )
+            ) {
+                if (dimensionLanes && cand.edge) {
+                    dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
                 }
+                return {
+                    labelX,
+                    labelY,
+                    bounds,
+                    ext: { nx: cand.nx, ny: cand.ny },
+                    side: cand.edge,
+                    off
+                };
             }
         }
     }
@@ -1567,6 +1622,11 @@ export function placeExteriorWallDimensionAvoidingLabels({
         rowOffset += rowStep;
     }
 
+    // Every candidate row collided. Placing one anyway stacks this text on a neighbouring
+    // dimension or a door marker, which is worse than the number being absent.
+    if (DIMENSION_CONFIG.HIDE_OVERLAPPING_EXTERIOR_DIMS) {
+        return null;
+    }
     // Same-row fallback: keep chain level even if text is a bit tight
     const { placed, labelBounds } = tryOnce(rowOffsetPx, 0);
     if (!placed) {
@@ -2809,6 +2869,18 @@ export function drawDimensions(
             strokeHorizontalDimLineAtY(context, labelY, startXScreen, endXScreen, labelX, textWidth, textPadding);
             canvasHorizontalDimArrows(context, startXScreen, endXScreen, labelY, color, tickPx);
 
+            if (DIMENSION_CONFIG.DEBUG_DIMENSION_PLACEMENT) {
+                reportDimensionOutsideSpan({
+                    text,
+                    axis: 'horizontal',
+                    isNearWallDimension,
+                    side,
+                    labelCenterPx: labelX,
+                    spanLoPx: Math.min(startX, endX) * scaleFactor + offsetX,
+                    spanHiPx: Math.max(startX, endX) * scaleFactor + offsetX,
+                    textExtentPx: textWidth
+                });
+            }
             const hBounds = isNearWallDimension
                 ? calculateNearWallHorizontalDimBounds(labelX, labelY, textWidth, fontSize)
                 : calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
@@ -2822,6 +2894,16 @@ export function drawDimensions(
                 angle: angle,
                 type: 'wall'
             };
+            if (DIMENSION_CONFIG.DEBUG_DIMENSION_PLACEMENT) {
+                reportDimensionOverlap({
+                    text,
+                    axis: 'horizontal',
+                    isNearWallDimension,
+                    side,
+                    bounds: hBounds,
+                    placedLabels
+                });
+            }
             placedLabels.push(hLabel);
             if (collectOnly) {
                 allLabels.push({ ...hLabel });
@@ -3037,6 +3119,18 @@ export function drawDimensions(
             strokeVerticalDimLineAtX(context, labelX, startYScreen, endYScreen, labelY, textWidth, textPadding);
             canvasVerticalDimArrows(context, labelX, startYScreen, endYScreen, color, tickPx);
 
+            if (DIMENSION_CONFIG.DEBUG_DIMENSION_PLACEMENT) {
+                reportDimensionOutsideSpan({
+                    text,
+                    axis: 'vertical',
+                    isNearWallDimension,
+                    side,
+                    labelCenterPx: labelY,
+                    spanLoPx: Math.min(startY, endY) * scaleFactor + offsetY,
+                    spanHiPx: Math.max(startY, endY) * scaleFactor + offsetY,
+                    textExtentPx: textWidth
+                });
+            }
             const vBounds = isNearWallDimension
                 ? calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize)
                 : exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, 2, 8);
@@ -3050,6 +3144,16 @@ export function drawDimensions(
                 angle: angle,
                 type: 'wall'
             };
+            if (DIMENSION_CONFIG.DEBUG_DIMENSION_PLACEMENT) {
+                reportDimensionOverlap({
+                    text,
+                    axis: 'vertical',
+                    isNearWallDimension,
+                    side,
+                    bounds: vBounds,
+                    placedLabels
+                });
+            }
             placedLabels.push(vLabel);
             if (collectOnly) {
                 allLabels.push({ ...vLabel });

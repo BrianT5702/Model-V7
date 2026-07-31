@@ -23,6 +23,7 @@ import {
 } from '../canvas/collisionDetection';
 import { calculatePolygonVisualCenter, calculateIntersection, isPointInPolygon } from '../canvas/utils';
 import { calculateGhostDataForStorey } from './pdfVectorWallPlan';
+import { fitPdfRoomLabelText } from './pdfRoomLabelFit';
 import {
     panelNeedsNylonSupport,
     getAutoNylonHangerOffsets
@@ -2060,7 +2061,7 @@ function roomBBoxModel(room) {
 
 /**
  * Room names on the plan (vector PDF). Drawn after dimensions so labels stay readable.
- * `scale` is PDF mm per model mm (same as drawPlanPage local `scale`).
+ * Uses same shrink/wrap-to-room fit as wall plan export.
  */
 function drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale, options = {}) {
     const { kind, slabWidth = 1210, slabLength = 3000 } = options;
@@ -2083,12 +2084,28 @@ function drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale
         const pos = roomLabelPositionModel(room);
         if (!pos) return;
 
+        const isOutside = Array.isArray(room.room_points) && room.room_points.length >= 3
+            ? !isPointInPolygon(pos, room.room_points.map((p) => ({
+                x: num(p?.x ?? (Array.isArray(p) ? p[0] : null)),
+                y: num(p?.y ?? (Array.isArray(p) ? p[1] : null)),
+            })))
+            : false;
+
+        const { fontPt, lines, lineGapMm } = fitPdfRoomLabelText(doc, name, room, scale, isOutside);
         const tx = transformX(pos.x);
         const ty = transformY(pos.y);
-        const fontPt = Math.max(8, Math.min(11, Math.min(wPdf, hPdf) * 0.22));
+
+        doc.setFont('helvetica', 'bold');
         doc.setFontSize(fontPt);
         doc.setTextColor(107, 114, 128);
-        doc.text(name, tx, ty, { align: 'center', baseline: 'middle' });
+        const totalH = lines.length * lineGapMm;
+        const startY = ty - totalH / 2 + lineGapMm / 2;
+        lines.forEach((line, idx) => {
+            doc.text(line, tx, startY + idx * lineGapMm, {
+                align: 'center',
+                baseline: 'middle',
+            });
+        });
 
         if (kind === 'floor' && isSlabRoom && hPdf >= minH * 1.5) {
             const roomArea = calculateRoomAreaModel(room);
@@ -2096,12 +2113,23 @@ function drawRoomNameLabelsOnPdf(doc, storeyRooms, transformX, transformY, scale
             if (roomArea > 0 && slabArea > 0) {
                 const slabsNeeded = Math.ceil(roomArea / slabArea);
                 const slabText = `${slabsNeeded} slab${slabsNeeded === 1 ? '' : 's'} · ${Math.round(slabWidth)}×${Math.round(slabLength)}`;
-                const slabFontPt = Math.max(7, fontPt * 0.82);
-                const lineGapPdf = Math.max(2.5, fontPt * 0.38);
+                const slabFontPt = Math.max(2.2, fontPt * 0.82);
+                const nameBlockBottom = startY + (lines.length - 1) * lineGapMm;
+                const slabGap = Math.max(lineGapMm * 0.95, fontPt * 0.28);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(slabFontPt);
+                // Shrink slab subtitle if wider than room
+                let slabPt = slabFontPt;
+                doc.setFontSize(slabPt);
+                while (doc.getTextWidth(slabText) > wPdf * 0.9 && slabPt > 2.0) {
+                    slabPt -= 0.15;
+                    doc.setFontSize(slabPt);
+                }
                 doc.setTextColor(75, 85, 99);
-                doc.text(slabText, tx, ty + lineGapPdf, { align: 'center', baseline: 'middle' });
+                doc.text(slabText, tx, nameBlockBottom + slabGap, {
+                    align: 'center',
+                    baseline: 'middle',
+                });
                 doc.setFont('helvetica', 'bold');
             }
         }
@@ -2900,7 +2928,7 @@ export function appendVectorCeilingAndFloorPlans(doc, {
     const allCeilingPlans = ceilingPlans || [];
     const allFloorPlans = floorPlans || [];
 
-    const drawPairForStorey = (activeStoreyId, storeyLabel, targetStorey = null) => {
+    const drawPlansForStorey = (activeStoreyId, storeyLabel, targetStorey = null, kinds = ['ceiling', 'floor']) => {
         const storeyRooms = activeStoreyId == null
             ? allRooms
             : allRooms.filter((r) => matchesActiveStorey(r.storey, activeStoreyId, defaultStoreyId));
@@ -2952,8 +2980,8 @@ export function appendVectorCeilingAndFloorPlans(doc, {
         const hasCeilingOutline = storeyZones.some(
             (z) => Array.isArray(z.outline_points) && z.outline_points.length >= 3
         );
-        const shouldCeiling = cPanels.length > 0 || hasCeilingOutline;
-        const shouldFloor = shouldDrawVectorFloorPage(fPanels, storeyRooms);
+        const shouldCeiling = kinds.includes('ceiling') && (cPanels.length > 0 || hasCeilingOutline);
+        const shouldFloor = kinds.includes('floor') && shouldDrawVectorFloorPage(fPanels, storeyRooms);
 
         if (shouldCeiling) {
             const ok = drawPlanPage(doc, {
@@ -2998,18 +3026,26 @@ export function appendVectorCeilingAndFloorPlans(doc, {
         }
     };
 
-    if (storeys && storeys.length > 0) {
-        const sorted = [...storeys].sort((a, b) => {
+    const sortedStoreys = storeys && storeys.length > 0
+        ? [...storeys].sort((a, b) => {
             const od = (a.order ?? 0) - (b.order ?? 0);
             if (od !== 0) return od;
             const ed = num(a.elevation_mm) - num(b.elevation_mm);
             if (Math.abs(ed) > 1e-6) return ed;
             return (a.id ?? 0) - (b.id ?? 0);
-        });
-        sorted.forEach((st) => drawPairForStorey(st.id, st.name || `Storey ${st.id}`, st));
-    } else {
-        drawPairForStorey(null, null, null);
-    }
+        })
+        : null;
+
+    // Match wall plans: all ceilings (by storey), then all floors (by storey)
+    const runKind = (kind) => {
+        if (sortedStoreys) {
+            sortedStoreys.forEach((st) => drawPlansForStorey(st.id, st.name || `Storey ${st.id}`, st, [kind]));
+        } else {
+            drawPlansForStorey(null, null, null, [kind]);
+        }
+    };
+    runKind('ceiling');
+    runKind('floor');
 
     return { usedVectorCeiling, usedVectorFloor };
 }

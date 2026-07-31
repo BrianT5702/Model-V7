@@ -12,6 +12,9 @@ export const DIMENSION_CONFIG = {
     NEAR_WALL_LANE_SPACING: 4,     // Extra step only when exterior/interior side is blocked (px)
     NEAR_WALL_LOCAL_LABEL_RADIUS_PX: 90, // Legacy — near-wall overlap uses full placedLabels now
     NEAR_WALL_MAX_PLACEMENT_STEPS: 8,
+    // TEMPORARY diagnostic: warn when a dimension's text is drawn outside the span it
+    // measures. Remove once the misplaced labels in BPL V07 are traced.
+    DEBUG_DIMENSION_PLACEMENT: true,
     // Walls whose lines fall within this distance count as one straight run for dimensioning,
     // so their labels share a side and an offset instead of splitting across the run.
     NEAR_WALL_RUN_TOLERANCE_MM: 200,
@@ -21,6 +24,9 @@ export const DIMENSION_CONFIG = {
     // layouts instead omit the dimension, so prefer hiding it. Set false to restore the
     // fallback.
     HIDE_CROWDED_NEAR_WALL_DIMS: true,
+    // Same rule for the exterior dimension frame: when no row is free, the old behaviour drew
+    // the label anyway, landing it on top of a neighbouring dimension or a door marker.
+    HIDE_OVERLAPPING_EXTERIOR_DIMS: true,
     NEAR_WALL_NUDGE_MM: 30,        // Used only for non-near-wall fallback nudging (mm)
     PROJECT_BASE_OFFSET: 14,      // Minimum distance for project dimensions when no wall dims on edge (px)
     PROJECT_OUTER_GAP_AFTER_WALLS: 8, // Project row sits outside outermost wall row by at least this (px)
@@ -54,7 +60,7 @@ export const DIMENSION_CONFIG = {
     
     // Appearance - Dimensions
     FONT_SIZE: 180,               // Dimension text scaling multiplier - matches wall plan
-    FONT_SIZE_MIN: 10,             // Minimum font size when scaled down
+    FONT_SIZE_MIN: 8,             // Minimum font size when scaled down
     FONT_SIZE_MAX: 16,             // Maximum font size — prevents huge labels on small/zoomed-in projects
     FONT_FAMILY: "'Segoe UI', Arial, sans-serif",  // Modern font with fallbacks
     FONT_WEIGHT: 'normal',          // Font weight for dimensions
@@ -158,7 +164,9 @@ export function applyNearWallFontSize(standardFontSize) {
 }
 
 /**
- * Looser label gap when zoomed out (smaller on screen); full separation when zoomed in.
+ * Gap between near-wall label boxes. Text keeps its pixel size as you zoom out, so the gap
+ * must not shrink with the drawing: at 2px the grey backgrounds of two labels read as one
+ * merged blob even though they never technically overlap.
  */
 export function nearWallLabelSeparationPx(scaleFactor, initialScale) {
     const sf = Number(scaleFactor);
@@ -167,8 +175,10 @@ export function nearWallLabelSeparationPx(scaleFactor, initialScale) {
         return DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
     }
     const zoomRatio = Math.min(1.25, Math.max(0.15, sf / is0));
-    // Slightly looser when zoomed out, but always enforce a visible gap so overlaps hide
-    return Math.max(2, DIMENSION_CONFIG.LABEL_MIN_SEPARATION * zoomRatio * 0.75);
+    return Math.max(
+        DIMENSION_CONFIG.LABEL_MIN_SEPARATION,
+        DIMENSION_CONFIG.LABEL_MIN_SEPARATION * zoomRatio * 0.75
+    );
 }
 
 /** Screen radius for near-wall overlap checks — scales with zoom. */

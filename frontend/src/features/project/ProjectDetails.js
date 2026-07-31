@@ -474,9 +474,11 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
         projectDetails.closeStoreyWizard();
     };
     
-    // Modal state for image capture
+    // Modal state for data/image fetch overlay (shown during Export and Fetch Data & Images)
     const [isCapturingImages, setIsCapturingImages] = useState(false);
     const [captureSuccess, setCaptureSuccess] = useState(false);
+    // 'data' = panel refetch only; 'images' = includes tab capture (legacy raster fallback)
+    const [fetchOverlayMode, setFetchOverlayMode] = useState('data');
     
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
@@ -1180,23 +1182,25 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
         <div className="min-h-screen lg:h-screen lg:max-h-screen flex flex-col overflow-y-auto lg:overflow-hidden bg-gray-50 dark:bg-gray-950 project-details-container transition-colors">
             {/* Wrapper to contain header and content for full-width header */}
             <div className="flex flex-col flex-1 min-h-0 lg:overflow-hidden overflow-visible w-full" style={{ minWidth: 0, maxWidth: '100%' }}>
-            {/* Full-Screen Loading Modal for Image Capture */}
+            {/* Full-screen loading modal for Export / Fetch Data (and optional image capture) */}
             {isCapturingImages && (
                 <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md mx-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl p-8 max-w-md mx-4 border border-gray-200 dark:border-gray-700">
                         <div className="text-center">
                             {captureSuccess ? (
                                 <>
-                                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div className="w-16 h-16 bg-green-100 dark:bg-green-900/40 rounded-full flex items-center justify-center mx-auto mb-6">
+                                        <svg className="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                         </svg>
                                     </div>
-                                    <h3 className="text-xl font-bold text-gray-800 mb-3">Success!</h3>
-                                    <p className="text-gray-600 mb-4">
-                                        All plan images have been captured successfully.
+                                    <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-3">Success!</h3>
+                                    <p className="text-gray-600 dark:text-gray-300 mb-4">
+                                        {fetchOverlayMode === 'images'
+                                            ? 'All plan images have been captured successfully.'
+                                            : 'Project panel data has been refreshed successfully.'}
                                     </p>
-                                    <div className="space-y-2 text-sm text-green-600">
+                                    <div className="space-y-2 text-sm text-green-600 dark:text-green-400">
                                         <div className="flex items-center justify-center">
                                             <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
                                             <span>Wall Plan ✓</span>
@@ -1211,32 +1215,38 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         </div>
                                     </div>
                                     <p className="text-xs text-gray-400 mt-4">
-                                        You can now export your project report with images.
+                                        {fetchOverlayMode === 'images'
+                                            ? 'You can now export your project report with images.'
+                                            : 'You can now export your project report.'}
                                     </p>
                                 </>
                             ) : (
                                 <>
                                     <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
-                                    <h3 className="text-xl font-bold text-gray-800 mb-3">Auto-Fetching Data & Images</h3>
-                                    <p className="text-gray-600 mb-4">
-                                        Capturing plan images from all tabs...
+                                    <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-3">Auto-Fetching Data & Images</h3>
+                                    <p className="text-gray-600 dark:text-gray-300 mb-4">
+                                        {fetchOverlayMode === 'images'
+                                            ? 'Capturing plan images from all tabs...'
+                                            : 'Refreshing wall, ceiling and floor panel data...'}
                                     </p>
-                                    <div className="space-y-2 text-sm text-gray-500">
+                                    <div className="space-y-2 text-sm text-gray-500 dark:text-gray-400">
                                         <div className="flex items-center justify-center">
                                             <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
-                                            <span>Switching to Wall Plan...</span>
+                                            <span>{fetchOverlayMode === 'images' ? 'Switching to Wall Plan...' : 'Loading Wall Plan data...'}</span>
                                         </div>
                                         <div className="flex items-center justify-center">
                                             <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
-                                            <span>Switching to Ceiling Plan...</span>
+                                            <span>{fetchOverlayMode === 'images' ? 'Switching to Ceiling Plan...' : 'Loading Ceiling Plan data...'}</span>
                                         </div>
                                         <div className="flex items-center justify-center">
                                             <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
-                                            <span>Switching to Floor Plan...</span>
+                                            <span>{fetchOverlayMode === 'images' ? 'Switching to Floor Plan...' : 'Loading Floor Plan data...'}</span>
                                         </div>
                                     </div>
                                     <p className="text-xs text-gray-400 mt-4">
-                                        Please wait while we capture all plan images...
+                                        {fetchOverlayMode === 'images'
+                                            ? 'Please wait while we capture all plan images...'
+                                            : 'Please wait while we refresh project data...'}
                                     </p>
                                 </>
                             )}
@@ -2694,6 +2704,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             setIsCapturingImages={setIsCapturingImages}
                                             captureSuccess={captureSuccess}
                                             setCaptureSuccess={setCaptureSuccess}
+                                            setFetchOverlayMode={setFetchOverlayMode}
                                             activeStoreyId={projectDetails.activeStoreyId}
                                             setActiveStoreyId={projectDetails.setActiveStoreyId}
                                             allWalls={projectDetails.walls}

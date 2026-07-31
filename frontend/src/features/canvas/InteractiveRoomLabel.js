@@ -394,9 +394,10 @@ const InteractiveRoomLabel = ({
     // Keep the label inside the room's own screen footprint. Without this a fit-to-view
     // plan (zoom ratio 1) draws every label at full base size, so on a large project the
     // boxes are wider than the rooms they belong to and cover the drawing.
+    // Cap by room width so long names (e.g. "BILIK SALIN LELAKI") cannot spill past walls.
     const roomFitRatio =
         !isEditing && roomScreenWidth != null
-            ? Math.min(1, Math.max(0.3, roomScreenWidth / BASE_MAX_WIDTH))
+            ? Math.min(1, Math.max(0.18, (roomScreenWidth * 0.92) / BASE_MAX_WIDTH))
             : 1;
     const labelScale = smoothZoomRatio * roomFitRatio;
 
@@ -404,11 +405,14 @@ const InteractiveRoomLabel = ({
     // This ensures labels scale immediately when zooming, but not too dramatically
     // Floors are kept low so a zoomed-out plan is not covered by label boxes.
     // Editing needs legible inputs, so that case keeps the old readable minimum.
-    const scaledFontSize = Math.max(BASE_FONT_SIZE * labelScale, isEditing ? 6 : 3.5);
-    const scaledPaddingV = Math.max(BASE_PADDING_V * labelScale, 1);
-    const scaledPaddingH = Math.max(BASE_PADDING_H * labelScale, 1.5);
-    const scaledMinWidth = Math.max(BASE_MIN_WIDTH * labelScale, isEditing ? 60 : 20);
-    const scaledMaxWidth = Math.max(BASE_MAX_WIDTH * labelScale, isEditing ? 90 : 32);
+    const scaledFontSize = Math.max(BASE_FONT_SIZE * labelScale, isEditing ? 6 : 2.5);
+    const scaledPaddingV = Math.max(BASE_PADDING_V * labelScale, 0.5);
+    const scaledPaddingH = Math.max(BASE_PADDING_H * labelScale, 0.75);
+    const scaledMinWidthRaw = Math.max(BASE_MIN_WIDTH * labelScale, isEditing ? 60 : 14);
+    const scaledMaxWidth = !isEditing && roomScreenWidth != null
+        ? Math.max(Math.min(BASE_MAX_WIDTH * labelScale, roomScreenWidth * 0.92), 18)
+        : Math.max(BASE_MAX_WIDTH * labelScale, isEditing ? 90 : 32);
+    const scaledMinWidth = Math.min(scaledMinWidthRaw, scaledMaxWidth);
     const scaledBorderWidth = Math.max(BASE_BORDER_WIDTH * labelScale, 0.5);
     const scaledBorderWidthSelected = Math.max(BASE_BORDER_WIDTH_SELECTED * labelScale, 1);
     const scaledBorderRadius = Math.max(BASE_BORDER_RADIUS * labelScale, 2);

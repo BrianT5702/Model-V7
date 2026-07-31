@@ -206,6 +206,9 @@ export function drawCeilingPlanDimensionOnContext(
             fixedLabelX: fixedColumnX,
             fontSize
         });
+        if (!placed) {
+            return;
+        }
         labelX = placed.labelX;
         labelY = placed.labelY;
         offsetPx = placed.rowOffset;

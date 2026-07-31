@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
-import { getPanelFinishingLabel, sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { getPanelFinishingLabel, sortMaterialPanels, roundPanelSizeMmUp } from '../panel/wallPlanPanelUtils';
 import { sortDoorsForMaterialList } from '../door/doorSortUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -37,6 +37,7 @@ const InstallationTimeEstimator = ({
     setIsCapturingImages = null,
     captureSuccess = false,
     setCaptureSuccess = null,
+    setFetchOverlayMode = null,
     activeStoreyId = null,
     setActiveStoreyId = null,
     allWalls = [],
@@ -66,6 +67,9 @@ const InstallationTimeEstimator = ({
     // Loading states
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    // Export prepare uses its own flag so the summary UI stays mounted (button spinner),
+    // instead of swapping the whole tab for the anonymous isLoading skeleton.
+    const [isPreparingExport, setIsPreparingExport] = useState(false);
     
     // Export states
     const [showExportPreview, setShowExportPreview] = useState(false);
@@ -83,11 +87,12 @@ const InstallationTimeEstimator = ({
         doors: false
     });
     
-    // PDF export settings
+    // PDF export settings — plans always fit the page, one plan per page.
+    // Landscape orientation packs summary tables in two columns (left/right).
     const [planRotation] = useState(0); // Rotation angle in degrees (0, 90, 180, 270); setter unused — UI rotation disabled
-    const [planPageOrientation, setPlanPageOrientation] = useState('portrait'); // 'portrait' or 'landscape' for plan pages
-    const [singlePlanPerPage, setSinglePlanPerPage] = useState(true); // Each plan takes a full page
-    const [fitToPage, setFitToPage] = useState(false); // Fit plan to fill entire page without boundary
+    const [planPageOrientation, setPlanPageOrientation] = useState('portrait'); // 'portrait' or 'landscape' for whole PDF
+    const fitToPage = true;
+    const singlePlanPerPage = true;
     const [includeFrontElevation, setIncludeFrontElevation] = useState(false);
     const [includeSideElevation, setIncludeSideElevation] = useState(false);
     /** Fallback wall panel count when shared Wall Plan data is not loaded yet. */
@@ -98,8 +103,8 @@ const InstallationTimeEstimator = ({
     const planPdfPreviewBoxStyle = {
         width: '100%',
         aspectRatio: planPageOrientation === 'landscape' ? '297 / 210' : '210 / 297',
-        maxHeight: singlePlanPerPage ? 'min(72vh, 760px)' : 'min(40vh, 360px)',
-        minHeight: singlePlanPerPage ? 360 : 220,
+        maxHeight: 'min(72vh, 760px)',
+        minHeight: 360,
         backgroundColor: '#f9fafb'
     };
 
@@ -267,15 +272,14 @@ const InstallationTimeEstimator = ({
         if (projectDataFromParent && typeof projectDataFromParent === 'object') setProjectData(projectDataFromParent);
     }, [projectDataFromParent]);
 
-    // Set plan export defaults from project dimensions: width > length → landscape; else portrait. Always fit to page, one per page.
+    // Set plan export defaults from project dimensions: width > length → landscape; else portrait.
+    // Plans always fit to page / one per page; landscape packs summary tables in two columns.
     useEffect(() => {
         const proj = projectData;
         const w = proj?.width;
         const l = proj?.length;
         if (typeof w === 'number' && typeof l === 'number') {
             setPlanPageOrientation(w > l ? 'landscape' : 'portrait');
-            setFitToPage(true);
-            setSinglePlanPerPage(true);
         }
         // Intentionally depend only on width/length so we don't reset when other project fields change
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -331,7 +335,13 @@ const InstallationTimeEstimator = ({
                 setCeilingPlans(ceilingPlansResponse.data);
                 setFloorPlans(floorPlansResponse.data);
 
-                await autoFetchExistingPanelData(projectId, roomsList, wallsList);
+                await autoFetchExistingPanelData(
+                    projectId,
+                    roomsList,
+                    wallsList,
+                    ceilingPlansResponse.data,
+                    floorPlansResponse.data
+                );
             } catch (err) {
                 console.error('Error fetching project data:', err);
                 setError('Failed to load project data. Please try again.');
@@ -346,8 +356,16 @@ const InstallationTimeEstimator = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectId, hasParentCoreData]);
 
-    // Auto-fetch existing panel data from all tabs
-    const autoFetchExistingPanelData = async (projectId, rooms, wallsOverride = null) => {
+    // Auto-fetch existing panel data from all tabs.
+    // Pass freshly fetched plan lists — reading ceilingPlans/floorPlans from state here is
+    // stale (setState has not re-rendered yet), which used to skip ceiling/floor on first load.
+    const autoFetchExistingPanelData = async (
+        projectId,
+        rooms,
+        wallsOverride = null,
+        ceilingPlansOverride = null,
+        floorPlansOverride = null
+    ) => {
         if (!updateSharedPanelData) return;
         
         try {
@@ -355,10 +373,10 @@ const InstallationTimeEstimator = ({
             await autoFetchWallPanelData(projectId, wallsOverride);
             
             // 2. Auto-fetch existing ceiling panel data
-            await autoFetchCeilingPanelData(projectId, rooms);
+            await autoFetchCeilingPanelData(projectId, rooms, ceilingPlansOverride);
             
             // 3. Auto-fetch existing floor panel data
-            await autoFetchFloorPanelData(projectId, rooms);
+            await autoFetchFloorPanelData(projectId, rooms, floorPlansOverride);
             
             console.log('✅ Auto-fetch completed');
         } catch (error) {
@@ -411,7 +429,13 @@ const InstallationTimeEstimator = ({
             } catch (_) { /* ignore */ }
 
             // Auto-fetch existing panel data if available
-            await autoFetchExistingPanelData(projectId, roomsResponse.data, wallsResponse.data);
+            await autoFetchExistingPanelData(
+                projectId,
+                roomsResponse.data,
+                wallsResponse.data,
+                ceilingPlansResponse.data,
+                floorPlansResponse.data
+            );
 
             console.log('✅ Manual refresh completed successfully');
             
@@ -955,13 +979,41 @@ const InstallationTimeEstimator = ({
 
     // Manual trigger for auto-fetch (for refresh scenarios)
     // captureImages: optional raster fallback for PDF when vector ceiling/floor layout is unavailable
-    const triggerAutoFetch = async ({ captureImages = false } = {}) => {
+    // showOverlay: full-screen "Auto-Fetching Data & Images" modal (even when not capturing)
+    const triggerAutoFetch = async ({
+        captureImages = false,
+        showFullPageLoading = true,
+        showOverlay = true,
+        minOverlayMs = 2500,
+    } = {}) => {
         if (!projectId || !updateSharedPanelData) return;
-        
+
+        const overlayStartedAt = Date.now();
+        const finishOverlay = async ({ success = true } = {}) => {
+            if (!showOverlay || !setIsCapturingImages) return;
+            const elapsed = Date.now() - overlayStartedAt;
+            if (elapsed < minOverlayMs) {
+                await new Promise((resolve) => setTimeout(resolve, minOverlayMs - elapsed));
+            }
+            if (success && setCaptureSuccess) {
+                setCaptureSuccess(true);
+                await new Promise((resolve) => setTimeout(resolve, 900));
+                setCaptureSuccess(false);
+            }
+            setIsCapturingImages(false);
+        };
+
         try {
-            setIsLoading(true);
+            if (showFullPageLoading) setIsLoading(true);
+            if (showOverlay && setIsCapturingImages) {
+                if (setFetchOverlayMode) {
+                    setFetchOverlayMode(captureImages ? 'images' : 'data');
+                }
+                if (setCaptureSuccess) setCaptureSuccess(false);
+                setIsCapturingImages(true);
+            }
             console.log('🔄 Manual auto-fetch triggered...');
-            
+
             const [
                 projectResponse,
                 roomsResponse,
@@ -985,7 +1037,6 @@ const InstallationTimeEstimator = ({
             setWalls(wallsResponse.data);
             setDoors(doorsResponse.data);
 
-            // Re-read slab dimensions from localStorage (synced with Floor Plan tab)
             try {
                 const raw = projectId ? localStorage.getItem(`floor_plan_slab_${projectId}`) : null;
                 if (raw) {
@@ -995,10 +1046,14 @@ const InstallationTimeEstimator = ({
                 }
             } catch (_) { /* ignore */ }
 
-            // Now trigger auto-fetch with fresh data
-            await autoFetchExistingPanelData(projectId, rooms, wallsResponse.data);
-            
-            // Optional: capture canvas images as raster fallback (vector PDF is preferred)
+            await autoFetchExistingPanelData(
+                projectId,
+                rooms,
+                wallsResponse.data,
+                ceilingPlansResponse.data,
+                floorPlansResponse.data
+            );
+
             if (
                 captureImages &&
                 setCurrentView &&
@@ -1006,29 +1061,28 @@ const InstallationTimeEstimator = ({
                 setCaptureSuccess
             ) {
                 console.log('🖼️ Auto-capturing canvas images...');
-                setIsCapturingImages(true);
-                setCaptureSuccess(false);
+                if (setFetchOverlayMode) setFetchOverlayMode('images');
                 try {
                     await captureAllCanvasImages(setCurrentView);
-                    setCaptureSuccess(true);
-                    // Show success for 2 seconds then hide modal
-                    setTimeout(() => {
-                        setIsCapturingImages(false);
-                        setCaptureSuccess(false);
-                    }, 2000);
+                    await finishOverlay({ success: true });
                 } catch (error) {
                     console.error('Error capturing images:', error);
-                    setIsCapturingImages(false);
-                    setCaptureSuccess(false);
+                    await finishOverlay({ success: false });
                 }
+            } else if (showOverlay) {
+                await finishOverlay({ success: true });
             }
-            
+
             console.log('✅ Manual auto-fetch completed');
         } catch (error) {
             console.error('Error in manual auto-fetch:', error);
             setError('Failed to auto-fetch data. Please try again.');
+            if (showOverlay && setIsCapturingImages) {
+                setIsCapturingImages(false);
+                if (setCaptureSuccess) setCaptureSuccess(false);
+            }
         } finally {
-            setIsLoading(false);
+            if (showFullPageLoading) setIsLoading(false);
         }
     };
 
@@ -1073,10 +1127,11 @@ const InstallationTimeEstimator = ({
     };
 
     // Auto-fetch existing ceiling panel data
-    const autoFetchCeilingPanelData = async (projectId, rooms) => {
+    const autoFetchCeilingPanelData = async (projectId, rooms, ceilingPlansOverride = null) => {
         try {
+            const plans = Array.isArray(ceilingPlansOverride) ? ceilingPlansOverride : ceilingPlans;
             // Check if ceiling plans exist
-            if (ceilingPlans.length > 0) {
+            if (plans.length > 0) {
                 console.log('🔝 Auto-fetching ceiling panel data from existing plans...');
                 
                 const ceilingPanelsResponse = await api.get(`/ceiling-panels/?project=${projectId}`);
@@ -1100,7 +1155,12 @@ const InstallationTimeEstimator = ({
                     });
                     
                     console.log('✅ Ceiling panels auto-fetched:', processedPanels);
+                } else {
+                    // Mark as loaded (empty) so export does not keep re-fetching forever
+                    updateSharedPanelData('ceiling-plan', [], { autoFetched: true });
                 }
+            } else {
+                updateSharedPanelData('ceiling-plan', [], { autoFetched: true });
             }
         } catch (error) {
             console.error('Error auto-fetching ceiling panel data:', error);
@@ -1108,10 +1168,11 @@ const InstallationTimeEstimator = ({
     };
 
     // Auto-fetch existing floor panel data
-    const autoFetchFloorPanelData = async (projectId, rooms) => {
+    const autoFetchFloorPanelData = async (projectId, rooms, floorPlansOverride = null) => {
         try {
+            const plans = Array.isArray(floorPlansOverride) ? floorPlansOverride : floorPlans;
             // Check if floor plans exist
-            if (floorPlans.length > 0) {
+            if (plans.length > 0) {
                 console.log('🏠 Auto-fetching floor panel data from existing plans...');
                 
                 const floorPanelsResponse = await api.get(`/floor-panels/?project=${projectId}`);
@@ -1127,7 +1188,11 @@ const InstallationTimeEstimator = ({
                     });
                     
                     console.log('✅ Floor panels auto-fetched:', processedPanels);
+                } else {
+                    updateSharedPanelData('floor-plan', [], { autoFetched: true });
                 }
+            } else {
+                updateSharedPanelData('floor-plan', [], { autoFetched: true });
             }
         } catch (error) {
             console.error('Error auto-fetching floor panel data:', error);
@@ -1154,6 +1219,8 @@ const InstallationTimeEstimator = ({
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+            displayWidth = roundPanelSizeMmUp(displayWidth);
+            displayLength = roundPanelSizeMmUp(displayLength);
 
             // Face information (fallback to defaults if not present)
             const intMat = panel.inner_face_material ?? 'PPGI';
@@ -1202,6 +1269,8 @@ const InstallationTimeEstimator = ({
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+            displayWidth = roundPanelSizeMmUp(displayWidth);
+            displayLength = roundPanelSizeMmUp(displayLength);
 
             const key = `${displayWidth}_${displayLength}_${floorThickness}_${panelType}`;
             if (!panelsByKey.has(key)) {
@@ -1442,113 +1511,118 @@ const InstallationTimeEstimator = ({
         return images;
     };
 
-    // Prepare export data
+    // Prepare export data — always re-fetch so Export uses current panels, not whatever
+    // happened to be shared when the summary tab first mounted.
     const prepareExportData = async () => {
-        console.log('Shared panel data:', sharedPanelData);
-        console.log('Wall panels:', sharedPanelData?.wallPanels);
-        console.log('Ceiling panels:', sharedPanelData?.ceilingPanels);
-        console.log('Floor panels:', sharedPanelData?.floorPanels);
-        
-        // Check if we have panel data, if not, try to auto-fetch first
-        if (!sharedPanelData?.wallPanels && !sharedPanelData?.ceilingPanels && !sharedPanelData?.floorPanels) {
-            console.log('⚠️ No panel data available, attempting auto-fetch...');
-            
-            try {
-                // Show loading state
-                setIsLoading(true);
-                
-                // Trigger auto-fetch
-                await triggerAutoFetch({ captureImages: false });
-                
-                // Wait a moment for the data to be processed
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                console.log('✅ Auto-fetch completed, now preparing export data...');
-            } catch (error) {
-                console.error('Auto-fetch failed:', error);
-                // Continue with export even if auto-fetch fails
-            } finally {
-                setIsLoading(false);
-            }
-        }
-        
-        // Get canvas images from shared data
-        const capturedImages = getCanvasImagesFromSharedData();
-        
-        // Enrich wall panels with thickness and surface types from walls data (fallbacks when missing)
-        const enrichedWallPanels = sortMaterialPanels((sharedPanelData?.wallPanels || []).map(panel => {
-            const wall = walls.find(w => String(w.id) === String(panel.wallId || panel.anyWallId));
-            const thickness = wall?.thickness || panel.thickness || 150; // Default wall thickness
-            const inner_face_material = panel.inner_face_material ?? wall?.inner_face_material ?? 'PPGI';
-            const inner_face_thickness = panel.inner_face_thickness ?? wall?.inner_face_thickness ?? 0.5;
-            const outer_face_material = panel.outer_face_material ?? wall?.outer_face_material ?? 'PPGI';
-            const outer_face_thickness = panel.outer_face_thickness ?? wall?.outer_face_thickness ?? 0.5;
-            return {
-                ...panel,
-                thickness,
-                inner_face_material,
-                inner_face_thickness,
-                outer_face_material,
-                outer_face_thickness
-            };
-        }));
-        
-        const sortedRooms = sortRoomsByLevelThenName(rooms, storeys);
+        console.log('Shared panel data (before export fetch):', sharedPanelData);
 
-        const data = {
-            projectInfo: {
-                name: projectData?.name || 'Unknown Project',
-                dimensions: projectData ? `${Math.round(projectData.width / 1000)} × ${Math.round(projectData.length / 1000)} × ${Math.round(projectData.height / 1000)} m` : 'N/A',
-                rooms: rooms.length,
-                walls: walls.length,
-                doors: doors.length
-            },
-            rooms: sortedRooms,
-            wallPanels: enrichedWallPanels,
-            ceilingPanels: sortMaterialPanels(sharedPanelData?.ceilingPanels || []),
-            floorPanels: sortMaterialPanels(sharedPanelData?.floorPanels || []),
-            wallPanelAnalysis: sharedPanelData?.wallPanelAnalysis || null,
-            doors: sortDoorsForMaterialList(doors),
-            slabs: sortedRooms.filter(room => room.floor_type === 'slab' || room.floor_type === 'Slab'),
-            installationEstimates: installationEstimates,
-            supportAccessories: {
-                type: sharedPanelData?.supportType || 'nylon',
-                includeAccessories: sharedPanelData?.includeAccessories || false,
-                includeCable: sharedPanelData?.includeCable || false,
-                customDrawing: sharedPanelData?.aluSuspensionCustomDrawing || false,
-                // Use the panelsNeedSupport from shared data
-                isNeeded: sharedPanelData?.panelsNeedSupport || false
-            },
-            exportDate: new Date().toLocaleString(),
-            // Add captured canvas images
-            planImages: {
-                ...capturedImages,
-                wallPlansByStorey: capturedImages.wallPlansByStorey || []
-            }
-        };
-        
-        // Debug logging for support accessories
-        console.log('🔍 Support Accessories Debug Info:');
-        console.log('  - sharedPanelData:', sharedPanelData);
-        console.log('  - supportType:', sharedPanelData?.supportType);
-        console.log('  - includeAccessories:', sharedPanelData?.includeAccessories);
-        console.log('  - includeCable:', sharedPanelData?.includeCable);
-        console.log('  - aluSuspensionCustomDrawing:', sharedPanelData?.aluSuspensionCustomDrawing);
-        console.log('  - panelsNeedSupport:', sharedPanelData?.panelsNeedSupport);
-        console.log('  - Final supportAccessories:', data.supportAccessories);
-        
-        setExportData(data);
-        setShowExportPreview(true);
-        
-        // Reset expansion states when opening preview
-        setExpandedTables({
-            wallPanels: false,
-            ceilingPanels: false,
-            floorPanels: false,
-            rooms: false,
-            slabs: false,
-            doors: false
-        });
+        setIsPreparingExport(true);
+        try {
+            console.log('🔄 Export: re-fetching panel data...');
+            // Full-screen overlay stays up at least ~2.5s even though we skip image capture.
+            await triggerAutoFetch({
+                captureImages: false,
+                showFullPageLoading: false,
+                showOverlay: true,
+                minOverlayMs: 2500,
+            });
+            console.log('✅ Export fetch completed, building preview payload...');
+
+            // sharedPanelData in this closure is still the pre-fetch snapshot. Pull fresh
+            // lists for the preview so we never open an empty/stale report.
+            const wallsForCalc = (allWalls && allWalls.length > 0) ? allWalls : walls;
+            const [ceilingPanelsResponse, floorPanelsResponse] = await Promise.all([
+                api.get(`/ceiling-panels/?project=${projectId}`).catch(() => ({ data: [] })),
+                api.get(`/floor-panels/?project=${projectId}`).catch(() => ({ data: [] })),
+            ]);
+            const intersections = await fetchMergedWallIntersections(api, projectId, wallsForCalc);
+            const { allPanels } = calculateProjectWallPanels(wallsForCalc, intersections);
+            const wallPanelsForExport = sortMaterialPanels(groupWallPanelsForDisplay(allPanels));
+            const ceilingPanelsForExport = processCeilingPanelsForSharing(ceilingPanelsResponse.data || []);
+            const floorPanelsForExport = processFloorPanelsForSharing(floorPanelsResponse.data || [], rooms);
+
+            const supportMeta = {
+                supportType: sharedPanelData?.supportType,
+                includeAccessories: sharedPanelData?.includeAccessories,
+                includeCable: sharedPanelData?.includeCable,
+                aluSuspensionCustomDrawing: sharedPanelData?.aluSuspensionCustomDrawing,
+                panelsNeedSupport: sharedPanelData?.panelsNeedSupport,
+                wallPanelAnalysis: sharedPanelData?.wallPanelAnalysis,
+            };
+
+            // Get canvas images from shared data
+            const capturedImages = getCanvasImagesFromSharedData();
+
+            // Enrich wall panels with thickness and surface types from walls data (fallbacks when missing)
+            const enrichedWallPanels = sortMaterialPanels((wallPanelsForExport || []).map(panel => {
+                const wall = walls.find(w => String(w.id) === String(panel.wallId || panel.anyWallId));
+                const thickness = wall?.thickness || panel.thickness || 150; // Default wall thickness
+                const inner_face_material = panel.inner_face_material ?? wall?.inner_face_material ?? 'PPGI';
+                const inner_face_thickness = panel.inner_face_thickness ?? wall?.inner_face_thickness ?? 0.5;
+                const outer_face_material = panel.outer_face_material ?? wall?.outer_face_material ?? 'PPGI';
+                const outer_face_thickness = panel.outer_face_thickness ?? wall?.outer_face_thickness ?? 0.5;
+                return {
+                    ...panel,
+                    thickness,
+                    inner_face_material,
+                    inner_face_thickness,
+                    outer_face_material,
+                    outer_face_thickness
+                };
+            }));
+
+            const sortedRooms = sortRoomsByLevelThenName(rooms, storeys);
+
+            const data = {
+                projectInfo: {
+                    name: projectData?.name || 'Unknown Project',
+                    dimensions: projectData ? `${Math.round(projectData.width / 1000)} × ${Math.round(projectData.length / 1000)} × ${Math.round(projectData.height / 1000)} m` : 'N/A',
+                    rooms: rooms.length,
+                    walls: walls.length,
+                    doors: doors.length
+                },
+                rooms: sortedRooms,
+                wallPanels: enrichedWallPanels,
+                ceilingPanels: sortMaterialPanels(ceilingPanelsForExport || []),
+                floorPanels: sortMaterialPanels(floorPanelsForExport || []),
+                wallPanelAnalysis: supportMeta.wallPanelAnalysis || null,
+                doors: sortDoorsForMaterialList(doors),
+                slabs: sortedRooms.filter(room => room.floor_type === 'slab' || room.floor_type === 'Slab'),
+                installationEstimates: installationEstimates,
+                supportAccessories: {
+                    type: supportMeta.supportType || 'nylon',
+                    includeAccessories: supportMeta.includeAccessories || false,
+                    includeCable: supportMeta.includeCable || false,
+                    customDrawing: supportMeta.aluSuspensionCustomDrawing || false,
+                    isNeeded: supportMeta.panelsNeedSupport || false
+                },
+                exportDate: new Date().toLocaleString(),
+                planImages: {
+                    ...capturedImages,
+                    wallPlansByStorey: capturedImages.wallPlansByStorey || []
+                }
+            };
+
+            console.log('🔍 Support Accessories Debug Info:');
+            console.log('  - Final supportAccessories:', data.supportAccessories);
+
+            setExportData(data);
+            setShowExportPreview(true);
+
+            setExpandedTables({
+                wallPanels: false,
+                ceilingPanels: false,
+                floorPanels: false,
+                rooms: false,
+                slabs: false,
+                doors: false
+            });
+        } catch (error) {
+            console.error('Error preparing export data:', error);
+            setError('Failed to prepare export data. Please try again.');
+        } finally {
+            setIsPreparingExport(false);
+        }
     };
 
     // Generate Excel export (project sheet + one sheet per room; no drawings)
@@ -1748,9 +1822,9 @@ const InstallationTimeEstimator = ({
                 if (!body || body.length === 0) return;
 
                 const tableHeadH = 7;
-                // Aggressive initial guess — real row height is learned after the first chunk
-                let measuredRowH = Math.max(3.4, fontSize * 0.28 + 2.0);
-                const minRemainToContinue = 18; // mm — keep filling column if more space than this
+                const safetyMm = 3;
+                // Start slightly conservative; learn real row height after the first successful chunk
+                let measuredRowH = Math.max(4.2, fontSize * 0.42 + 2.0);
 
                 const subtitleHeightFor = (width) => {
                     if (!subtitle) return 0;
@@ -1761,7 +1835,13 @@ const InstallationTimeEstimator = ({
                 let rowIndex = 0;
                 let firstChunk = true;
                 let lastSide = null;
-                let forceSide = null; // keep filling this column until it's truly full
+                // Keep filling the same column until it cannot fit another header+row
+                let forceSide = null;
+
+                const markColumnFull = (side) => {
+                    if (side === 'left') dualCols.leftY = pageBreakY + 1;
+                    else dualCols.rightY = pageBreakY + 1;
+                };
 
                 while (rowIndex < body.length) {
                     pageBreakY = getPageBreakY();
@@ -1769,48 +1849,54 @@ const InstallationTimeEstimator = ({
 
                     let slot;
                     if (forceSide === 'left' || forceSide === 'right') {
+                        const yCursor = forceSide === 'left' ? dualCols.leftY : dualCols.rightY;
                         slot = {
                             side: forceSide,
                             x: forceSide === 'left' ? dualLeftX : dualRightX,
-                            y: forceSide === 'left' ? dualCols.leftY : dualCols.rightY,
+                            y: yCursor,
                             width: dualColWidth
                         };
-                        // If forced side somehow has no room, clear force and pick normally
-                        if (slot.y + tableHeadH + measuredRowH + 2 > pageBreakY) {
-                            if (forceSide === 'left') dualCols.leftY = pageBreakY + 1;
-                            else dualCols.rightY = pageBreakY + 1;
+                        // Forced column exhausted — open the other column / next page
+                        if (yCursor + tableHeadH + measuredRowH + safetyMm > pageBreakY) {
+                            markColumnFull(forceSide);
                             forceSide = null;
                             lastSide = null;
                             continue;
                         }
                     } else {
-                        const bannerPad = firstChunk ? 13 + subtitleHeightFor(dualColWidth) : 0;
-                        slot = pickDualColumn(tableHeadH + measuredRowH + 2 + bannerPad);
+                        const reserveBanner = firstChunk
+                            ? 12 + subtitleHeightFor(dualColWidth)
+                            : 12;
+                        slot = pickDualColumn(tableHeadH + measuredRowH + safetyMm + 2 + reserveBanner);
                     }
 
                     const showBanner =
                         firstChunk ||
                         slot.side !== lastSide ||
                         slot.y <= 22;
-
                     const bannerSpace = showBanner
                         ? 12 + (includeSubtitle ? subtitleHeightFor(slot.width) : 0)
                         : 0;
+                    // Table column header only when starting a column (with the section banner)
+                    const headReserve = showBanner ? tableHeadH : 0;
 
-                    const availForRows = pageBreakY - slot.y - bannerSpace - tableHeadH - 2;
+                    const availForRows = pageBreakY - slot.y - bannerSpace - headReserve - safetyMm;
                     let maxRows = Math.floor(availForRows / measuredRowH);
 
                     if (maxRows < 1) {
-                        if (slot.side === 'left') dualCols.leftY = pageBreakY + 1;
-                        else dualCols.rightY = pageBreakY + 1;
+                        markColumnFull(slot.side);
                         forceSide = null;
                         lastSide = null;
                         continue;
                     }
 
                     maxRows = Math.min(maxRows, body.length - rowIndex);
-                    const chunk = body.slice(rowIndex, rowIndex + maxRows);
+                    let chunk = body.slice(rowIndex, rowIndex + maxRows);
                     if (chunk.length === 0) break;
+
+                    // Column header (blue bar) only at top of each column; table head row only then too
+                    const showTableHead = showBanner;
+                    const headHeightThisChunk = showTableHead ? tableHeadH : 0;
 
                     let y = slot.y;
                     if (showBanner) {
@@ -1825,64 +1911,87 @@ const InstallationTimeEstimator = ({
                         }
                     }
 
-                    const tableStartY = y;
-                    const pagesBefore = doc.internal.getNumberOfPages();
-                    autoTable(doc, {
-                        startY: y,
-                        head: [head],
-                        body: chunk,
-                        theme,
-                        styles: {
-                            fontSize,
-                            cellPadding: 1.0,
-                            overflow: 'ellipsize'
-                        },
-                        headStyles: {
-                            fillColor: headFill || color,
-                            fontStyle: 'bold',
-                            fontSize: Math.min(fontSize + 1, 9),
-                            overflow: 'ellipsize'
-                        },
-                        alternateRowStyles: altFill ? { fillColor: altFill } : undefined,
-                        margin: { left: slot.x, right: pageWidth - slot.x - slot.width },
-                        tableWidth: slot.width,
-                        columnStyles,
-                        // Manual chunking owns pagination — never jump mid-chunk
-                        pageBreak: 'avoid'
-                    });
+                    // Fit as many rows as possible without spilling to a new page
+                    let placed = false;
+                    let finalY = y;
+                    let attemptChunk = chunk;
+                    for (let attempt = 0; attempt < 8 && attemptChunk.length > 0; attempt++) {
+                        const pagesBefore = doc.internal.getNumberOfPages();
+                        const tableStartY = y;
+                        autoTable(doc, {
+                            startY: y,
+                            head: showTableHead ? [head] : undefined,
+                            body: attemptChunk,
+                            theme,
+                            styles: {
+                                fontSize,
+                                cellPadding: 1.0,
+                                overflow: 'ellipsize'
+                            },
+                            headStyles: {
+                                fillColor: headFill || color,
+                                fontStyle: 'bold',
+                                fontSize: Math.min(fontSize + 1, 9),
+                                overflow: 'ellipsize'
+                            },
+                            alternateRowStyles: altFill ? { fillColor: altFill } : undefined,
+                            margin: { left: slot.x, right: pageWidth - slot.x - slot.width },
+                            tableWidth: slot.width,
+                            columnStyles,
+                            pageBreak: 'avoid',
+                            showHead: showTableHead ? 'firstPage' : 'never'
+                        });
 
-                    if (doc.internal.getNumberOfPages() > pagesBefore) {
-                        // Chunk still didn't fit — cursors belong on the new page
-                        pageBreakY = getPageBreakY();
-                        dualCols.leftY = 20;
-                        dualCols.rightY = 20;
+                        if (doc.internal.getNumberOfPages() > pagesBefore) {
+                            // Spilled — remove extra pages and stay on the column's page
+                            while (doc.internal.getNumberOfPages() > pagesBefore) {
+                                doc.deletePage(doc.internal.getNumberOfPages());
+                            }
+                            doc.setPage(pagesBefore);
+                            if (attemptChunk.length <= 1) {
+                                markColumnFull(slot.side);
+                                forceSide = null;
+                                lastSide = null;
+                                setDualColumnY(slot.side, Math.min(pageBreakY, y + 2));
+                                break;
+                            }
+                            attemptChunk = attemptChunk.slice(0, Math.max(1, Math.floor(attemptChunk.length / 2)));
+                            continue;
+                        }
+
+                        finalY = doc.lastAutoTable.finalY;
+                        const drawnRows = attemptChunk.length;
+                        const bodyH = Math.max(0, finalY - tableStartY - headHeightThisChunk);
+                        if (drawnRows > 0 && bodyH > 0) {
+                            // Trust the measured height (don't keep an inflated estimate)
+                            measuredRowH = Math.max(3.8, bodyH / drawnRows);
+                        }
+                        rowIndex += drawnRows;
+                        placed = true;
+                        break;
+                    }
+
+                    if (!placed) {
+                        markColumnFull(slot.side);
+                        forceSide = null;
                         lastSide = null;
+                        continue;
                     }
 
-                    const finalY = doc.lastAutoTable.finalY;
-                    const drawnRows = chunk.length;
-                    const bodyH = Math.max(0, finalY - tableStartY - tableHeadH);
-                    if (drawnRows > 0 && bodyH > 0) {
-                        measuredRowH = Math.max(3.2, bodyH / drawnRows);
-                    }
-
-                    rowIndex += drawnRows;
                     firstChunk = false;
                     lastSide = slot.side;
 
+                    // Keep using this column until fewer than one more data row fits (no extra header)
                     const remain = pageBreakY - finalY;
-                    if (rowIndex < body.length && remain > minRemainToContinue) {
-                        // Column still has usable space — stay here (fixes large empty bottoms)
+                    const needForAnotherChunk = measuredRowH + safetyMm;
+                    if (rowIndex < body.length && remain >= needForAnotherChunk) {
                         forceSide = slot.side;
-                        setDualColumnY(slot.side, finalY + 2);
+                        setDualColumnY(slot.side, finalY + 1.5);
                     } else if (rowIndex < body.length) {
-                        // Column is full enough — move left→right→next page
+                        markColumnFull(slot.side);
                         forceSide = null;
-                        if (slot.side === 'left') dualCols.leftY = pageBreakY + 1;
-                        else dualCols.rightY = pageBreakY + 1;
                         lastSide = null;
                     } else {
-                        // Section finished mid-column — leave cursor for the next section
                         forceSide = null;
                         setDualColumnY(slot.side, finalY + SECTION_GAP_MM);
                     }
@@ -1919,25 +2028,34 @@ const InstallationTimeEstimator = ({
                         fontSize,
                         cellPadding: theme === 'grid' ? 3 : 2,
                         fontStyle: theme === 'grid' ? 'bold' : 'normal',
-                        halign: headHalign || 'left'
+                        halign: headHalign || 'left',
+                        overflow: 'linebreak'
                     },
                     headStyles: {
                         fillColor: headFill || color,
                         fontStyle: 'bold',
                         fontSize: fontSize + 1,
-                        halign: headHalign || 'left'
+                        halign: headHalign || 'left',
+                        overflow: 'linebreak'
                     },
                     alternateRowStyles: altFill ? { fillColor: altFill } : undefined,
                     margin: { left: margin, right: margin },
                     columnStyles
                 });
                 yPos = doc.lastAutoTable.finalY + 10;
+                if (isLandscapeLayout) syncDualYFromPage();
                 checkNewPage();
             };
 
             const drawTableSection = (section) => {
-                if (isLandscapeLayout) drawPackedTableSection(section);
-                else drawFullWidthTableSection(section);
+                // Wide tables need full page width; compact ones pack left/right in landscape
+                if (isLandscapeLayout && !section.fullWidth) drawPackedTableSection(section);
+                else {
+                    if (isLandscapeLayout) {
+                        yPos = Math.max(dualCols.leftY, dualCols.rightY);
+                    }
+                    drawFullWidthTableSection(section);
+                }
             };
             
             // Project Overview - Simple text layout like preview (no table)
@@ -2001,32 +2119,8 @@ const InstallationTimeEstimator = ({
                     ['Total Slabs', totalSlabsSummary.toString(), `For rooms with slab floors (${slabWidth}×${slabLength}mm)`]
                 ]
             });
-            
-            // Room Details
-            if (exportData.rooms && exportData.rooms.length > 0) {
-                drawTableSection({
-                    title: 'Room Details',
-                    color: [55, 65, 81],
-                    bgColor: [249, 250, 251],
-                    headFill: [107, 114, 128],
-                    altFill: [249, 250, 251],
-                    subtitle: `Total: ${exportData.rooms.length} rooms`,
-                    fontSize: 8,
-                    head: ['Level', 'Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)'],
-                    body: exportData.rooms.map(room => [
-                        room.storey_name || 'Unassigned',
-                        room.room_name || 'Unnamed Room',
-                        room.floor_type || 'N/A',
-                        room.floor_thickness || 'N/A',
-                        room.height || 'N/A',
-                        room.room_points && room.room_points.length > 0 
-                            ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
-                            : 'N/A'
-                    ])
-                });
-            }
 
-            // Installation Time Estimates
+            // Small summary next to Material Quantities (landscape left/right packing)
             drawTableSection({
                 title: 'Installation Time Estimates',
                 color: [79, 70, 229],
@@ -2042,13 +2136,33 @@ const InstallationTimeEstimator = ({
                     exportData.installationEstimates.months.toString()
                 ]]
             });
-
-            // Force a new page for detailed panel/support tables
-            addDocPage();
-            if (isLandscapeLayout) {
-                dualCols.leftY = 20;
-                dualCols.rightY = 20;
+            
+            // Room Details — full width so Level / name columns are not ellipsized in half-page columns
+            if (exportData.rooms && exportData.rooms.length > 0) {
+                drawTableSection({
+                    title: 'Room Details',
+                    color: [55, 65, 81],
+                    bgColor: [249, 250, 251],
+                    headFill: [107, 114, 128],
+                    altFill: [249, 250, 251],
+                    subtitle: `Total: ${exportData.rooms.length} rooms`,
+                    fontSize: 8,
+                    fullWidth: true,
+                    head: ['Level', 'Room Name', 'Floor Type', 'Floor Thickness (mm)', 'Height (mm)', 'Area (m²)'],
+                    body: exportData.rooms.map(room => [
+                        room.storey_name || 'Unassigned',
+                        room.room_name || 'Unnamed Room',
+                        room.floor_type || 'N/A',
+                        room.floor_thickness || 'N/A',
+                        room.height || 'N/A',
+                        room.room_points && room.room_points.length > 0 
+                            ? `${Math.round(calculateRoomArea(room.room_points) / 1000000)} m²` 
+                            : 'N/A'
+                    ])
+                });
             }
+
+            // Panel / accessory tables continue packing left→right (no forced blank page)
             
             // Wall Panels
             if (exportData.wallPanels && exportData.wallPanels.length > 0) {
@@ -2797,13 +2911,18 @@ const InstallationTimeEstimator = ({
                     {/* Export Button */}
                     <button
                         onClick={prepareExportData}
-                        disabled={isLoading || isCapturingImages}
+                        disabled={isLoading || isCapturingImages || isPreparingExport}
                         className="summary-tab-btn-primary"
                     >
                         {isCapturingImages ? (
                             <>
                                 <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
                                 Capturing Images...
+                            </>
+                        ) : isPreparingExport ? (
+                            <>
+                                <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
+                                Preparing Export...
                             </>
                         ) : isLoading ? (
                             <>
@@ -2867,15 +2986,20 @@ const InstallationTimeEstimator = ({
                         </button>
 
                         <button
-                            onClick={() => triggerAutoFetch({ captureImages: true })}
-                            disabled={isLoading || isCapturingImages}
+                            onClick={() => triggerAutoFetch({
+                                captureImages: false,
+                                showFullPageLoading: false,
+                                showOverlay: true,
+                                minOverlayMs: 2500,
+                            })}
+                            disabled={isLoading || isCapturingImages || isPreparingExport}
                             className="summary-tab-btn-info"
-                            title="Refresh panel data and optionally capture canvas images as PDF raster fallback"
+                            title="Refresh wall, ceiling and floor panel data for export"
                         >
-                            {isCapturingImages ? (
+                            {isCapturingImages || isPreparingExport ? (
                                 <>
                                     <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
-                                    Capturing...
+                                    Fetching...
                                 </>
                             ) : isLoading ? (
                                 <>
@@ -3230,20 +3354,20 @@ const InstallationTimeEstimator = ({
             {/* Export Preview Modal */}
             {showExportPreview && exportData && (
                 <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto modal-scroll-panel">
-                        <div className="p-6 border-b border-gray-200">
+                    <div className="export-preview-panel bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto modal-scroll-panel border border-transparent dark:border-gray-700">
+                        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                             <div className="flex justify-between items-center">
-                                <h3 className="text-2xl font-bold text-gray-900">Export Preview</h3>
+                                <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Export Preview</h3>
                                 <button
                                     onClick={() => setShowExportPreview(false)}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                                 >
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
                                 </button>
                             </div>
-                            <p className="text-gray-600 mt-2">Preview of what will be exported to PDF</p>
+                            <p className="text-gray-600 dark:text-gray-400 mt-2">Preview of what will be exported to PDF</p>
                         </div>
 
                         <div className="p-6 space-y-6">
@@ -4050,38 +4174,15 @@ const InstallationTimeEstimator = ({
                                             </svg>
                                             Plan Export Settings
                                         </h5>
-                                        <p className="text-xs text-gray-600 mb-3">These settings affect captured tab images (fallback) and vector wall/ceiling/floor layout in the previews and in the PDF plan pages.</p>
+                                        <p className="text-xs text-gray-600 mb-3">
+                                            Plans always fit the page (one plan per page). Landscape packs summary tables in two columns to save space.
+                                        </p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                            {/* Fit to Page Toggle */}
-                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                                <div>
-                                                    <label className="text-sm font-medium text-gray-700">Fit to Page</label>
-                                                    <p className="text-xs text-gray-500 mt-1">Remove boundary, fill page</p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setFitToPage(!fitToPage)}
-                                                    className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
-                                                        fitToPage
-                                                            ? 'bg-orange-600 text-white'
-                                                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500'
-                                                    }`}
-                                                >
-                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        {fitToPage ? (
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                                                        ) : (
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
-                                                        )}
-                                                    </svg>
-                                                    {fitToPage ? 'Fit' : 'Bordered'}
-                                                </button>
-                                            </div>
-                                            
                                             {/* Page Orientation Toggle */}
                                             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                                 <div>
                                                     <label className="text-sm font-medium text-gray-700">Page Orientation</label>
-                                                    <p className="text-xs text-gray-500 mt-1">Whole PDF — landscape uses two columns</p>
+                                                    <p className="text-xs text-gray-500 mt-1">Whole PDF — landscape uses two columns for tables</p>
                                                 </div>
                                                 <button
                                                     onClick={() => setPlanPageOrientation(planPageOrientation === 'portrait' ? 'landscape' : 'portrait')}
@@ -4099,31 +4200,6 @@ const InstallationTimeEstimator = ({
                                                         )}
                                                     </svg>
                                                     {planPageOrientation === 'portrait' ? 'Portrait' : 'Landscape'}
-                                                </button>
-                                            </div>
-                                            
-                                            {/* Single Plan Per Page Toggle */}
-                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                                <div>
-                                                    <label className="text-sm font-medium text-gray-700">Plan Layout</label>
-                                                    <p className="text-xs text-gray-500 mt-1">One plan per page (full size) or compact</p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setSinglePlanPerPage(!singlePlanPerPage)}
-                                                    className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center ${
-                                                        singlePlanPerPage
-                                                            ? 'bg-green-600 text-white'
-                                                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-100 dark:hover:bg-gray-500'
-                                                    }`}
-                                                >
-                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        {singlePlanPerPage ? (
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                                                        ) : (
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
-                                                        )}
-                                                    </svg>
-                                                    {singlePlanPerPage ? 'One per Page' : 'Compact'}
                                                 </button>
                                             </div>
 

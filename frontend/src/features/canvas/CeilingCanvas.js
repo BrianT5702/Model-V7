@@ -58,7 +58,7 @@ import {
     exteriorVerticalTextCenterX,
     buildVerticalPlanLabelEntry
 } from './collisionDetection.js';
-import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
+import { sortMaterialPanels, roundPanelSizeMmUp } from '../panel/wallPlanPanelUtils';
 
 // Build a stable identity key for ceiling panels based on thickness + inner/outer finishes
 function getCeilingPanelFinishKey(panel) {
@@ -2615,39 +2615,70 @@ const CeilingCanvas = ({
         // Add room name label (with collision detection against all text elements)
         if (room.room_name) {
             const labelText = room.room_name;
-            
-            // Calculate label dimensions FIRST based on state (before finding position)
-            // This ensures collision detection uses exact same bounds as what will be drawn
-            let labelWidth, labelHeight, padding, textColor, bgColor;
-            
+            const sf = scaleFactor.current;
+            const roomCanvasMinX = Math.min(...room.room_points.map(p => p.x * sf + offsetX.current));
+            const roomCanvasMaxX = Math.max(...room.room_points.map(p => p.x * sf + offsetX.current));
+            const roomCanvasMinY = Math.min(...room.room_points.map(p => p.y * sf + offsetY.current));
+            const roomCanvasMaxY = Math.max(...room.room_points.map(p => p.y * sf + offsetY.current));
+            const roomCanvasWidth = roomCanvasMaxX - roomCanvasMinX;
+            const roomCanvasHeight = roomCanvasMaxY - roomCanvasMinY;
+            const maxNameW = Math.max(roomCanvasWidth * 0.86, 18);
+            const roomFitRatio = Math.min(1, Math.max(0.18, (roomCanvasWidth * 0.92) / 120));
+            let fontSize = Math.max(8 * roomFitRatio, 2.5);
+            const fontFamily = "'Segoe UI', Arial, sans-serif";
+            const fontWeight = (isSelected || isHovered || !isRoomMode) ? 'bold' : 'normal';
+
+            const wrapName = (size) => {
+                ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
+                const words = String(labelText).split(/\s+/).filter(Boolean);
+                if (words.length === 0) return [String(labelText)];
+                const out = [];
+                let cur = words[0];
+                for (let i = 1; i < words.length; i++) {
+                    const trial = `${cur} ${words[i]}`;
+                    if (ctx.measureText(trial).width <= maxNameW) cur = trial;
+                    else {
+                        out.push(cur);
+                        cur = words[i];
+                    }
+                }
+                out.push(cur);
+                return out;
+            };
+
+            let nameLines = wrapName(fontSize);
+            for (let guard = 0; guard < 40; guard++) {
+                ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+                const widest = Math.max(...nameLines.map((l) => ctx.measureText(l).width));
+                const blockH = nameLines.length * Math.max(fontSize * 1.15, 10);
+                if (widest <= maxNameW + 0.5 && blockH <= roomCanvasHeight * 0.9) break;
+                if (fontSize <= 2.5) break;
+                fontSize = Math.max(2.5, fontSize - 0.25);
+                nameLines = wrapName(fontSize);
+            }
+
+            ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+            const lineGap = Math.max(fontSize * 1.15, 10);
+            const labelWidth = Math.max(...nameLines.map((l) => ctx.measureText(l).width));
+            const labelHeight = nameLines.length * lineGap;
+            let padding, textColor, bgColor;
+
             if (isSelected) {
-                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-                labelWidth = ctx.measureText(labelText).width;
-                labelHeight = Math.max(16, 18 * scaleFactor.current);
                 padding = 8;
                 textColor = '#ffffff';
                 bgColor = 'rgba(59, 130, 246, 0.9)';
             } else if (isHovered) {
-                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-                labelWidth = ctx.measureText(labelText).width;
-                labelHeight = Math.max(14, 16 * scaleFactor.current);
                 padding = 4;
                 textColor = '#3b82f6';
                 bgColor = 'rgba(59, 130, 246, 0.2)';
             } else if (isRoomMode) {
-                ctx.font = `normal ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-                labelWidth = ctx.measureText(labelText).width;
-                labelHeight = Math.max(14, 16 * scaleFactor.current);
                 padding = 4;
                 textColor = isPlanCanvasDark() ? '#d1d5db' : '#9ca3af';
-                bgColor = null; // No background
+                bgColor = null;
             } else {
-                ctx.font = `bold ${Math.max(14, 200 * scaleFactor.current)}px 'Segoe UI', Arial, sans-serif`;
-                labelWidth = ctx.measureText(labelText).width;
-                labelHeight = Math.max(14, 16 * scaleFactor.current);
                 padding = 4;
                 textColor = isPlanCanvasDark() ? '#e5e7eb' : '#6b7280';
-                bgColor = null; // No background
+                bgColor = null;
             }
             
             // Use stored label position if available, otherwise calculate smart center
@@ -2673,47 +2704,43 @@ const CeilingCanvas = ({
             const optimalPosition = findOptimalNamePositionWithDimensions(room, baseX, baseY, labelWidth, labelHeight, padding, placedLabels || []);
             const labelX = optimalPosition.x;
             const labelY = optimalPosition.y;
+            const canvasX = labelX * sf + offsetX.current;
+            const canvasY = labelY * sf + offsetY.current;
+            const totalH = nameLines.length * lineGap;
+            const nameStartY = canvasY - totalH / 2 + lineGap / 2;
             
             // Draw background if needed
             if (bgColor) {
                 ctx.fillStyle = bgColor;
                 ctx.fillRect(
-                    labelX * scaleFactor.current + offsetX.current - labelWidth/2 - padding,
-                    labelY * scaleFactor.current + offsetY.current - labelHeight/2 - padding,
+                    canvasX - labelWidth / 2 - padding,
+                    canvasY - labelHeight / 2 - padding,
                     labelWidth + padding * 2,
                     labelHeight + padding * 2
                 );
             }
             
-            // Draw text
+            // Draw text (wrapped / scaled to room width)
             ctx.fillStyle = textColor;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(labelText, labelX * scaleFactor.current + offsetX.current, labelY * scaleFactor.current + offsetY.current);
+            ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+            nameLines.forEach((line, idx) => {
+                ctx.fillText(line, canvasX, nameStartY + idx * lineGap);
+            });
             
             // Add room name to collision detection system so dimensions and other text avoid it
             // Use EXACT same bounds calculation as what was drawn (matching the fillRect call above)
             if (placedLabels) {
                 // Calculate bounds exactly as drawn (matching the fillRect coordinates if bgColor exists, or text bounds if not)
-                const canvasX = labelX * scaleFactor.current + offsetX.current;
-                const canvasY = labelY * scaleFactor.current + offsetY.current;
-                
-                // Use the exact same calculation as the fillRect/drawing code
-                const roomNameBounds = {
+                placedLabels.push({
                     x: canvasX - labelWidth / 2 - padding,
                     y: canvasY - labelHeight / 2 - padding,
                     width: labelWidth + padding * 2,
                     height: labelHeight + padding * 2,
-                    text: labelText,
-                    type: 'room_name'
-                };
-                
-                // Verify bounds are valid (not NaN or invalid)
-                if (isFinite(roomNameBounds.x) && isFinite(roomNameBounds.y) && 
-                    isFinite(roomNameBounds.width) && isFinite(roomNameBounds.height) &&
-                    roomNameBounds.width > 0 && roomNameBounds.height > 0) {
-                    placedLabels.push(roomNameBounds);
-                }
+                    type: 'room-name',
+                    roomId: room.id,
+                });
             }
         }
     };
@@ -3868,6 +3895,8 @@ const CeilingCanvas = ({
                 displayWidth = panel.length;
                 displayLength = panel.width;
             }
+            displayWidth = roundPanelSizeMmUp(displayWidth);
+            displayLength = roundPanelSizeMmUp(displayLength);
 
             // Face finishes for grouping
             const intMat = panel.inner_face_material ?? 'PPGI';
@@ -4139,6 +4168,10 @@ const CeilingCanvas = ({
                 fixedLabelX: fixedColumnX,
                 fontSize
             });
+            if (!placed) {
+                ctx.font = previousFont;
+                return;
+            }
             labelX = placed.labelX;
             labelY = placed.labelY;
             offsetPx = placed.rowOffset;

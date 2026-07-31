@@ -630,17 +630,51 @@ const FloorCanvas = ({
                 return;
             }
 
-            const sf = scaleFactor.current;
-            const roomNameFontSize = Math.min(Math.max(12, 14 * sf), 22);
-            const slabFontSize = Math.min(Math.max(10, 11 * sf), 15);
-            const lineGap = Math.max(14, 12 * sf);
-
+            const maxNameW = Math.max(roomCanvasWidth * 0.86, 18);
+            const roomFitRatio = Math.min(1, Math.max(0.18, (roomCanvasWidth * 0.92) / 120));
+            let roomNameFontSize = Math.max(8 * roomFitRatio, 2.5);
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-
             ctx.fillStyle = isPlanCanvasDark() ? '#e5e7eb' : '#374151';
+
+            const wrapName = (fontSize) => {
+                ctx.font = `600 ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+                const words = String(room.room_name).split(/\s+/).filter(Boolean);
+                if (words.length === 0) return [String(room.room_name)];
+                const lines = [];
+                let cur = words[0];
+                for (let i = 1; i < words.length; i++) {
+                    const trial = `${cur} ${words[i]}`;
+                    if (ctx.measureText(trial).width <= maxNameW) cur = trial;
+                    else {
+                        lines.push(cur);
+                        cur = words[i];
+                    }
+                }
+                lines.push(cur);
+                return lines;
+            };
+
+            let nameLines = wrapName(roomNameFontSize);
+            for (let guard = 0; guard < 40; guard++) {
+                const widest = Math.max(...nameLines.map((l) => {
+                    ctx.font = `600 ${roomNameFontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+                    return ctx.measureText(l).width;
+                }));
+                const blockH = nameLines.length * Math.max(roomNameFontSize * 1.15, 10);
+                if (widest <= maxNameW + 0.5 && blockH <= roomCanvasHeight * 0.9) break;
+                if (roomNameFontSize <= 2.5) break;
+                roomNameFontSize = Math.max(2.5, roomNameFontSize - 0.25);
+                nameLines = wrapName(roomNameFontSize);
+            }
+
+            const lineGap = Math.max(roomNameFontSize * 1.15, 10);
+            const totalH = nameLines.length * lineGap;
+            const nameStartY = canvasY - totalH / 2 + lineGap / 2;
             ctx.font = `600 ${roomNameFontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-            ctx.fillText(room.room_name, canvasX, canvasY);
+            nameLines.forEach((line, idx) => {
+                ctx.fillText(line, canvasX, nameStartY + idx * lineGap);
+            });
 
             if (isSlabRoom && roomCanvasHeight >= 36) {
                 const roomAreaMm2 = calculateRoomArea(room);
@@ -648,9 +682,14 @@ const FloorCanvas = ({
                 if (roomAreaMm2 > 0 && slabAreaMm2 > 0) {
                     const slabsNeeded = Math.ceil(roomAreaMm2 / slabAreaMm2);
                     const slabText = `${slabsNeeded} slab${slabsNeeded === 1 ? '' : 's'} · ${Math.round(slabWidth)}×${Math.round(slabLength)}`;
-                    const slabY = canvasY + lineGap;
-
+                    let slabFontSize = Math.max(roomNameFontSize * 0.82, 2.2);
                     ctx.font = `500 ${slabFontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+                    while (ctx.measureText(slabText).width > maxNameW && slabFontSize > 2.2) {
+                        slabFontSize -= 0.2;
+                        ctx.font = `500 ${slabFontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+                    }
+                    const slabY = nameStartY + (nameLines.length - 1) * lineGap + Math.max(lineGap * 0.95, 12);
+
                     const textW = ctx.measureText(slabText).width;
                     const padH = 6;
                     const padV = 3;
@@ -1429,6 +1468,9 @@ const FloorCanvas = ({
                 fixedLabelX: fixedColumnX,
                 fontSize
             });
+            if (!placed) {
+                return;
+            }
             labelX = placed.labelX;
             labelY = placed.labelY;
             if (!isHorizontal && dimensionLanes) {

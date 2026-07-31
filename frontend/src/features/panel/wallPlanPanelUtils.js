@@ -27,6 +27,17 @@ const PANEL_TYPE_SORT_ORDER = {
 };
 
 /**
+ * Ceiling/floor cut panels often carry floating-point leftovers (e.g. 6404.693…).
+ * Round up to whole mm for material lists so sizes stay readable and conservative.
+ */
+export function roundPanelSizeMmUp(mm) {
+    const n = Number(mm);
+    if (!Number.isFinite(n) || n <= 0) return n;
+    // Tiny epsilon so exact integers (and FP dust just under them) are not bumped.
+    return Math.ceil(n - 1e-9);
+}
+
+/**
  * Sort material panel rows so finishing and type stay grouped (no mixed full/side blocks).
  * Order: finishing → type (full, side/cut, leftover) → application → thickness →
  * width (desc) → length (desc when width matches).
