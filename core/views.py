@@ -151,12 +151,13 @@ class ProjectViewSet(ShareScopedModelViewSet):
     @action(detail=False, methods=['post'], url_path='import-from-pdf')
     def import_from_pdf(self, request):
         """
-        Create a new project from a PDF floor plan.
+        Create a new project from a PDF / DWG / DXF floor plan.
 
         multipart:
           - name: required project name (user-entered)
-          - file: PDF
-          - page_index: optional
+          - file: PDF, DWG, or DXF
+          - page_index: optional (PDF)
+          - region_index: optional (DWG/DXF plan cluster)
         """
         if not user_can_edit(request.user):
             return Response({'error': 'Edit permission required.'}, status=status.HTTP_403_FORBIDDEN)
@@ -167,38 +168,52 @@ class ProjectViewSet(ShareScopedModelViewSet):
 
         upload = request.FILES.get('file')
         if not upload:
-            return Response({'error': 'PDF file is required (field name: file).'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Plan file is required (field name: file).'}, status=status.HTTP_400_BAD_REQUEST)
 
         filename = (upload.name or '').lower()
-        if not filename.endswith('.pdf'):
-            return Response({'error': 'Only PDF files are supported.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not filename.endswith(('.pdf', '.dwg', '.dxf')):
+            return Response(
+                {'error': 'Supported file types: PDF, DWG, DXF.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             page_index = int(request.data.get('page_index', 0))
         except (TypeError, ValueError):
             return Response({'error': 'page_index must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            region_index = int(request.data.get('region_index', 0))
+        except (TypeError, ValueError):
+            return Response({'error': 'region_index must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            from .pdf_wall_import import extract_walls_from_pdf_bytes
-            preview = extract_walls_from_pdf_bytes(upload.read(), page_index=page_index)
+            from .dwg_plan_import import extract_plan_from_upload_bytes
+            from .pdf_plan_import import persist_plan_import
+            preview = extract_plan_from_upload_bytes(
+                upload.read(),
+                filename=filename,
+                page_index=page_index,
+                region_index=region_index,
+            )
         except RuntimeError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
-            logger.exception('PDF create-from-import failed')
-            return Response({'error': f'Failed to parse PDF: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+            logger.exception('Plan create-from-import failed')
+            return Response({'error': f'Failed to parse plan file: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
 
         walls_data = preview.get('walls') or []
         if not walls_data:
-            return Response({'error': 'No walls found in the PDF.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No walls found in the plan file.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        meta = preview.get('project_meta') or {}
         max_x = max(max(w['start_x'], w['end_x']) for w in walls_data)
         max_y = max(max(w['start_y'], w['end_y']) for w in walls_data)
-        width = float(preview.get('overall_width_mm') or max_x or 1000)
-        length = float(max_y or 1000)
-        height = float(preview.get('height_mm') or 2500)
-        thickness = float(preview.get('thickness_mm') or 100)
+        width = float(meta.get('width') or preview.get('overall_width_mm') or max_x or 1000)
+        length = float(meta.get('length') or max_y or 1000)
+        height = float(meta.get('height') or preview.get('height_mm') or 2500)
+        thickness = float(meta.get('wall_thickness') or preview.get('thickness_mm') or 100)
 
         serializer = self.get_serializer(data={
             'name': name,
@@ -221,45 +236,28 @@ class ProjectViewSet(ShareScopedModelViewSet):
             },
         )
 
-        # Replace auto boundary walls with PDF walls
+        # Replace auto boundary walls with full PDF plan entities
         Wall.objects.filter(project=project).delete()
-        created = []
-        for segment in walls_data:
-            sx, sy, ex, ey = normalize_wall_coordinates(
-                float(segment['start_x']),
-                float(segment['start_y']),
-                float(segment['end_x']),
-                float(segment['end_y']),
-            )
-            created.append(
-                Wall(
-                    project=project,
-                    storey=default_storey,
-                    start_x=sx,
-                    start_y=sy,
-                    end_x=ex,
-                    end_y=ey,
-                    height=project.height,
-                    thickness=project.wall_thickness,
-                    application_type='wall',
-                    is_default=False,
-                    inner_face_material='PPGI',
-                    outer_face_material='PPGI',
-                    inner_face_thickness=0.5,
-                    outer_face_thickness=0.5,
-                )
-            )
-        Wall.objects.bulk_create(created)
-        created_ids = list(Wall.objects.filter(project=project).values_list('id', flat=True))
-        if created_ids:
-            WallService.update_wall_base_elevations(created_ids)
+        created = persist_plan_import(
+            project=project,
+            storey=default_storey,
+            preview=preview,
+            replace_existing=False,
+        )
 
         refreshed = self._refresh_project_for_list(project)
         payload = ProjectListSerializer(refreshed).data
         payload['import_meta'] = {
-            'created_count': len(created_ids),
+            'created_count': len(created['walls']),
+            'doors_count': len(created['doors']),
+            'rooms_count': len(created['rooms']),
+            'intersections_count': len(created['intersections']),
+            'dialect': preview.get('dialect'),
             'cluster': preview.get('cluster'),
+            'regions': preview.get('regions'),
+            'region_index': preview.get('region_index'),
             'dimensions': preview.get('dimensions'),
+            'panel_hints': preview.get('panel_hints'),
             'notes': preview.get('notes'),
         }
         return Response(payload, status=status.HTTP_201_CREATED)
@@ -283,14 +281,16 @@ class ProjectViewSet(ShareScopedModelViewSet):
     )
     def import_pdf_walls(self, request, pk=None):
         """
-        Preview or create walls from a United Panel PDF floor plan.
+        Preview or import a United Panel plan from PDF / DWG / DXF
+        (walls, doors, rooms, joints when detected).
 
         multipart form:
-          - file: PDF
-          - confirm: 'true' to create walls (default preview only)
+          - file: PDF, DWG, or DXF
+          - confirm: 'true' to persist (default preview only)
           - storey: optional storey id
-          - replace_existing: 'true' to delete existing walls first
-          - page_index: optional page number (default 0)
+          - replace_existing: 'true' to delete existing walls/doors/rooms/joints first
+          - page_index: optional page number for PDF (default 0)
+          - region_index: optional DWG/DXF plan cluster (default 0 = largest)
         """
         if not user_can_edit(request.user):
             return Response({'error': 'Edit permission required.'}, status=status.HTTP_403_FORBIDDEN)
@@ -298,30 +298,43 @@ class ProjectViewSet(ShareScopedModelViewSet):
         project = self.get_object()
         upload = request.FILES.get('file')
         if not upload:
-            return Response({'error': 'PDF file is required (field name: file).'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Plan file is required (field name: file).'}, status=status.HTTP_400_BAD_REQUEST)
 
         filename = (upload.name or '').lower()
-        if not filename.endswith('.pdf'):
-            return Response({'error': 'Only PDF files are supported.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not filename.endswith(('.pdf', '.dwg', '.dxf')):
+            return Response(
+                {'error': 'Supported file types: PDF, DWG, DXF.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             page_index = int(request.data.get('page_index', 0))
         except (TypeError, ValueError):
             return Response({'error': 'page_index must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            region_index = int(request.data.get('region_index', 0))
+        except (TypeError, ValueError):
+            return Response({'error': 'region_index must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
 
         confirm = str(request.data.get('confirm', 'false')).lower() in ('1', 'true', 'yes')
         replace_existing = str(request.data.get('replace_existing', 'false')).lower() in ('1', 'true', 'yes')
 
         try:
-            from .pdf_wall_import import extract_walls_from_pdf_bytes
-            preview = extract_walls_from_pdf_bytes(upload.read(), page_index=page_index)
+            from .dwg_plan_import import extract_plan_from_upload_bytes
+            from .pdf_plan_import import persist_plan_import
+            preview = extract_plan_from_upload_bytes(
+                upload.read(),
+                filename=filename,
+                page_index=page_index,
+                region_index=region_index,
+            )
         except RuntimeError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
-            logger.exception('PDF wall import failed')
-            return Response({'error': f'Failed to parse PDF: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+            logger.exception('Plan wall import failed')
+            return Response({'error': f'Failed to parse plan file: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not confirm:
             return Response({'preview': True, **preview}, status=status.HTTP_200_OK)
@@ -339,47 +352,44 @@ class ProjectViewSet(ShareScopedModelViewSet):
         height = float(preview.get('height_mm') or project.height or 2500)
         thickness = float(preview.get('thickness_mm') or project.wall_thickness or 100)
 
-        if replace_existing:
-            Wall.objects.filter(project=project).delete()
+        created = persist_plan_import(
+            project=project,
+            storey=storey,
+            preview=preview,
+            replace_existing=replace_existing,
+        )
 
-        created = []
-        for segment in preview.get('walls') or []:
-            sx, sy = float(segment['start_x']), float(segment['start_y'])
-            ex, ey = float(segment['end_x']), float(segment['end_y'])
-            sx, sy, ex, ey = normalize_wall_coordinates(sx, sy, ex, ey)
-            wall = Wall.objects.create(
-                project=project,
-                storey=storey,
-                start_x=sx,
-                start_y=sy,
-                end_x=ex,
-                end_y=ey,
-                height=height,
-                thickness=thickness,
-                application_type='wall',
-                is_default=False,
-                inner_face_material='PPGI',
-                outer_face_material='PPGI',
-                inner_face_thickness=0.5,
-                outer_face_thickness=0.5,
-            )
-            created.append(wall)
-
-        if created:
-            WallService.update_wall_base_elevations([w.id for w in created])
+        if replace_existing and created['walls']:
+            max_x = max(max(w.start_x, w.end_x) for w in created['walls'])
+            max_y = max(max(w.start_y, w.end_y) for w in created['walls'])
+            project.width = max(float(preview.get('overall_width_mm') or max_x), 100)
+            project.length = max(float(max_y), 100)
+            project.height = height
+            project.wall_thickness = thickness
+            project.save(update_fields=['width', 'length', 'height', 'wall_thickness'])
 
         return Response(
             {
                 'preview': False,
-                'created_count': len(created),
-                'walls': WallSerializer(created, many=True).data,
+                'created_count': len(created['walls']),
+                'walls': WallSerializer(created['walls'], many=True).data,
+                'doors': DoorSerializer(created['doors'], many=True).data,
+                'rooms': RoomSerializer(created['rooms'], many=True).data,
+                'intersections': IntersectionSerializer(created['intersections'], many=True).data,
                 'import_meta': {
+                    'dialect': preview.get('dialect'),
                     'cluster': preview.get('cluster'),
+                    'regions': preview.get('regions'),
+                    'region_index': preview.get('region_index'),
                     'scale_mm_per_pt': preview.get('scale_mm_per_pt'),
                     'overall_width_mm': preview.get('overall_width_mm'),
                     'height_mm': height,
                     'thickness_mm': thickness,
                     'dimensions': preview.get('dimensions'),
+                    'panel_hints': preview.get('panel_hints'),
+                    'doors_count': len(created['doors']),
+                    'rooms_count': len(created['rooms']),
+                    'intersections_count': len(created['intersections']),
                     'notes': preview.get('notes'),
                 },
             },

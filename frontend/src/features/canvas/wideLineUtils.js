@@ -5,6 +5,35 @@ import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { THREE_CONFIG } from './threeConfig';
 
+/** All LineMaterials created here — must sync resolution on resize or lines look soft/wrong. */
+const trackedLineMaterials = new Set();
+
+let lastResW = 1;
+let lastResH = 1;
+
+/**
+ * Keep fat-line materials in sync with the drawing buffer size.
+ * Call after renderer.setSize / setPixelRatio.
+ */
+export function syncLineMaterialResolution(width, height, pixelRatio = 1) {
+  const w = Math.max(1, Math.floor((width || 1) * (pixelRatio || 1)));
+  const h = Math.max(1, Math.floor((height || 1) * (pixelRatio || 1)));
+  lastResW = w;
+  lastResH = h;
+  trackedLineMaterials.forEach((mat) => {
+    if (mat && mat.resolution) {
+      mat.resolution.set(w, h);
+      mat.needsUpdate = true;
+    }
+  });
+}
+
+export function disposeTrackedLineMaterial(mat) {
+  if (!mat) return;
+  trackedLineMaterials.delete(mat);
+  if (typeof mat.dispose === 'function') mat.dispose();
+}
+
 function buildLineMaterial(options) {
   const {
     color = 0x000000,
@@ -51,6 +80,8 @@ function buildLineMaterial(options) {
     polygonOffsetFactor,
     polygonOffsetUnits,
   });
+  mat.resolution.set(lastResW, lastResH);
+  trackedLineMaterials.add(mat);
   return mat;
 }
 

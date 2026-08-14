@@ -1,6 +1,9 @@
 class PanelCalculator {
     constructor() {
         this.MAX_PANEL_WIDTH = 1150; // mm
+        this.FACTORY_JOINT_WIDTH = 20; // mm — 公 or 母 nest
+        // Max covering width of one panel with both factory joints cut off.
+        this.MAX_BOTH_ENDS_CUT_WIDTH = this.MAX_PANEL_WIDTH - this.FACTORY_JOINT_WIDTH * 2; // 1110
         this.leftovers = []; // Array to store leftover panels
         this.panelAnalysis = {
             totalFullPanels: 0,
@@ -144,13 +147,26 @@ class PanelCalculator {
         // Handle remaining length
         if (remainingLength > 0) {
             // console.log(`\nHandling remaining length: ${remainingLength}mm`);
+
+            // Whole wall < 1110mm: one panel, both ends shop-cut, no factory 公/母.
+            // A leftover scrap can be reused even if its factory joints are already gone.
+            if (fullPanelsCount === 0 && remainingLength <= this.MAX_BOTH_ENDS_CUT_WIDTH) {
+                const shortWallPanel = this.createBothEndsCutPanel(
+                    remainingLength,
+                    wallThickness,
+                    jointType
+                );
+                shortWallPanel.optimizationNote =
+                    `Single panel (${remainingLength}mm ≤ ${this.MAX_BOTH_ENDS_CUT_WIDTH}mm); both ends shop-cut, no factory joint`;
+                shortWallPanel.optimizationSymbol = '✂️';
+                shortWallPanel.optimizationType = 'BOTH_ENDS_CUT';
+                shortWallPanel.placementNote = `FULL SPAN - both ends cut to joining walls`;
+                panels.push(shortWallPanel);
+                return panels;
+            }
             
-            // Check if remaining length is too small for a minimum panel
-            if (remainingLength < minPanelWidth) {
-                if (fullPanelsCount > 0) {
-                    // console.log(`- Remaining length (${remainingLength}mm) < minimum panel width (${minPanelWidth}mm)`);
-                    // console.log(`- Adding remaining length to last full panel and splitting into two`);
-                    
+            // Remainder after full panels is too small — split last full + remainder into two SPs
+            if (remainingLength < minPanelWidth && fullPanelsCount > 0) {
                     // Remove the last full panel
                     const lastFullPanel = panels.pop();
                     
@@ -225,20 +241,6 @@ class PanelCalculator {
                     }
                     
                     return panels;
-                } else {
-                    // console.log(`- Wall length (${remainingLength}mm) < minimum panel width (${minPanelWidth}mm)`);
-                    // console.log(`- Creating minimum size panel to meet requirements`);
-                    
-                    // Create a panel with minimum required width
-                    const minPanel = this.createSidePanel(minPanelWidth, 'center', jointType);
-                    minPanel.optimizationNote = `Minimum size panel created (${minPanelWidth}mm) to meet requirements`;
-                    minPanel.optimizationSymbol = '⚠️';
-                    minPanel.optimizationType = 'MINIMUM_SIZE_PANEL';
-                    minPanel.placementNote = `MINIMUM SIZE - Required ${minPanelWidth}mm, actual wall ${remainingLength}mm`;
-                    panels.push(minPanel);
-                    
-                    return panels;
-                }
             }
             //
             if (remainingLength <= threshold) {
@@ -428,6 +430,300 @@ class PanelCalculator {
         return panels;
     }
 
+    /**
+     * One panel covering a short wall (≤ 1110mm). Both ends are shop-cut to the
+     * joining walls — factory 公/母 are not used. A leftover shop cut is kept
+     * when it already matches a wall end (no flip, or after an allowed face flip).
+     */
+    createBothEndsCutPanel(width, wallThickness, jointType) {
+        width = Math.round(width);
+        const leftJoint = typeof jointType === 'object' ? jointType.left : jointType;
+        const rightJoint = typeof jointType === 'object' ? jointType.right : jointType;
+        const leftSlash = leftJoint === '45_cut' ? (this.currentCutSlashes?.left || '/') : null;
+        const rightSlash = rightJoint === '45_cut' ? (this.currentCutSlashes?.right || '/') : null;
+
+        const compatible = this.findCompatibleLeftoverForBothEndsCut(
+            width,
+            wallThickness,
+            this.currentFaceInfo,
+            leftJoint,
+            rightJoint,
+            leftSlash,
+            rightSlash
+        );
+
+        if (compatible) {
+            const panel = this.createPanelFromLeftover(compatible.leftover, width, 'center', jointType);
+            panel.cutSlash = { left: leftSlash, right: rightSlash };
+            panel.bothEndsCut = true;
+            panel.noFactoryJoint = true;
+            panel.keptLeftoverCut = compatible.placement;
+            this.updateLeftoverAfterBothEndsCut(
+                compatible.leftover,
+                width,
+                wallThickness,
+                leftJoint,
+                rightJoint,
+                leftSlash,
+                rightSlash,
+                compatible.placement
+            );
+            return panel;
+        }
+
+        const panel = this.createSidePanel(width, 'center', jointType);
+        panel.cutSlash = { left: leftSlash, right: rightSlash };
+        panel.bothEndsCut = true;
+        panel.noFactoryJoint = true;
+        this.panelAnalysis.fullPanelsUsedForCutting++;
+
+        // Cut the used piece from the left of stock (公 recut away); leftover keeps 母.
+        // Leftover's new left edge is the split = wall's right shop cut.
+        const leftover = {
+            id: Date.now() + Math.random(),
+            wallThickness,
+            leftEdgeType: rightJoint === '45_cut' ? '45_cut' : 'straight',
+            rightEdgeType: 'straight',
+            leftEdgeSlash: rightSlash,
+            rightEdgeSlash: null,
+            created: Date.now(),
+            panelLength: this.currentWallHeight || 3000,
+            leftJointConsumed: true,
+            rightJointConsumed: false,
+            innerFaceMaterial: this.currentFaceInfo.innerFaceMaterial,
+            innerFaceThickness: this.currentFaceInfo.innerFaceThickness,
+            outerFaceMaterial: this.currentFaceInfo.outerFaceMaterial,
+            outerFaceThickness: this.currentFaceInfo.outerFaceThickness
+        };
+
+        if (rightJoint === '45_cut') {
+            leftover.longer_face = this.MAX_PANEL_WIDTH - width + wallThickness;
+            leftover.shorter_face = leftover.longer_face - wallThickness;
+        } else {
+            leftover.longer_face = this.MAX_PANEL_WIDTH - width;
+            leftover.shorter_face = leftover.longer_face;
+        }
+
+        this.leftovers.push(leftover);
+        this.cleanupLeftovers();
+        return panel;
+    }
+
+    /**
+     * Covering width available for a both-ends-cut short wall.
+     * Remaining factory 公/母 must be cut off (20mm each), so they are not usable length.
+     */
+    leftoverUsableBothEndsCutFaces(leftover) {
+        const factoryLeft = leftover.leftJointConsumed ? 0 : 1;
+        const factoryRight = leftover.rightJointConsumed ? 0 : 1;
+        const deduct = (factoryLeft + factoryRight) * this.FACTORY_JOINT_WIDTH;
+        return {
+            shorter: (leftover.shorter_face || 0) - deduct,
+            longer: (leftover.longer_face || 0) - deduct,
+        };
+    }
+
+    /**
+     * 45° leftover → butt wall: only shorter (45 recut to square).
+     * Wall needs 45° and faces already match: longer face is allowed.
+     */
+    leftoverUsableWidthForShortWall(leftover, leftJoint, rightJoint) {
+        const faces = this.leftoverUsableBothEndsCutFaces(leftover);
+        const leftoverHas45 = leftover.leftEdgeType === '45_cut' || leftover.rightEdgeType === '45_cut';
+        const wallNeeds45 = leftJoint === '45_cut' || rightJoint === '45_cut';
+        if (leftoverHas45 && !wallNeeds45) return faces.shorter;
+        if (wallNeeds45) return Math.max(faces.shorter, faces.longer);
+        return faces.shorter;
+    }
+
+    flipSlash(slash) {
+        if (slash === '/') return '\\';
+        if (slash === '\\') return '/';
+        return slash;
+    }
+
+    /** Shop-cut edge matches a wall end: 45° vs butt, and slash after optional flip. */
+    shopCutMatchesWallEnd(edgeType, edgeSlash, wallJoint, wallSlash, slashFlipped) {
+        const want45 = wallJoint === '45_cut';
+        const has45 = edgeType === '45_cut';
+        if (want45 !== has45) return false;
+        if (!want45) return true;
+        const existing = edgeSlash === '/' || edgeSlash === '\\' ? edgeSlash : '/';
+        const needed = wallSlash === '/' || wallSlash === '\\' ? wallSlash : '/';
+        const effective = slashFlipped ? this.flipSlash(existing) : existing;
+        return effective === needed;
+    }
+
+    /**
+     * Place leftover's existing shop cut onto a short-wall end.
+     * Prefer keeping an existing shop cut when type + slash match (no flip, or after allowed flip).
+     * Otherwise recut: 45° leftover may become butt (shorter face) or another 45° slash.
+     */
+    findShortWallShopCutPlacement(
+        leftover,
+        leftJoint,
+        rightJoint,
+        leftSlash,
+        rightSlash,
+        faceFlipped,
+        allowExtraSlashFlip
+    ) {
+        const shopSides = [];
+        if (leftover.leftJointConsumed) shopSides.push('left');
+        if (leftover.rightJointConsumed) shopSides.push('right');
+
+        // No shop cut yet (both factory) — both ends will be recut.
+        if (shopSides.length === 0) {
+            return { loSide: null, wallSide: null, slashFlipped: !!faceFlipped };
+        }
+
+        const slashFlipOptions = faceFlipped
+            ? [true]
+            : (allowExtraSlashFlip ? [false, true] : [false]);
+
+        const candidates = [];
+        slashFlipOptions.forEach((slashFlipped) => {
+            shopSides.forEach((loSide) => {
+                ['left', 'right'].forEach((wallSide) => {
+                    candidates.push({ loSide, wallSide, slashFlipped });
+                });
+            });
+        });
+        candidates.sort((a, b) => {
+            if (a.slashFlipped !== b.slashFlipped) return a.slashFlipped ? 1 : -1;
+            const aSame = a.loSide === a.wallSide;
+            const bSame = b.loSide === b.wallSide;
+            if (aSame !== bSame) return aSame ? -1 : 1;
+            return 0;
+        });
+
+        for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            const edgeType = c.loSide === 'left' ? leftover.leftEdgeType : leftover.rightEdgeType;
+            const edgeSlash = c.loSide === 'left' ? leftover.leftEdgeSlash : leftover.rightEdgeSlash;
+            const wallJoint = c.wallSide === 'left' ? leftJoint : rightJoint;
+            const wallSlash = c.wallSide === 'left' ? leftSlash : rightSlash;
+            if (this.shopCutMatchesWallEnd(edgeType, edgeSlash, wallJoint, wallSlash, c.slashFlipped)) {
+                return { ...c, keep: true };
+            }
+        }
+
+        // No keep: 45° leftover can still be recut to butt (shorter) or a different 45° slash.
+        const loSide = shopSides.find((side) => (
+            (side === 'left' ? leftover.leftEdgeType : leftover.rightEdgeType) === '45_cut'
+        )) || shopSides[0];
+        const wallSide = leftJoint !== '45_cut' ? 'left' : (rightJoint !== '45_cut' ? 'right' : 'left');
+        return {
+            loSide,
+            wallSide,
+            slashFlipped: !!faceFlipped,
+            keep: false,
+        };
+    }
+
+    /**
+     * Size + thickness + height + faces. Factory joints deducted from length.
+     * 45° leftover → butt uses shorter; 45° wall with matching faces may use longer.
+     */
+    findCompatibleLeftoverForBothEndsCut(
+        neededWidth,
+        wallThickness,
+        faceInfo,
+        leftJoint,
+        rightJoint,
+        leftSlash,
+        rightSlash
+    ) {
+        const currentFaceInfo = faceInfo || this.currentFaceInfo || {
+            innerFaceMaterial: null,
+            innerFaceThickness: null,
+            outerFaceMaterial: null,
+            outerFaceThickness: null
+        };
+
+        for (let i = 0; i < this.leftovers.length; i++) {
+            const leftover = this.leftovers[i];
+            if (leftover.wallThickness !== wallThickness) continue;
+            if (leftover.panelLength < this.currentWallHeight) continue;
+
+            const leftoverHasFaceInfo =
+                leftover.innerFaceMaterial !== undefined || leftover.outerFaceMaterial !== undefined;
+            const currentHasFaceInfo =
+                currentFaceInfo.innerFaceMaterial !== null || currentFaceInfo.outerFaceMaterial !== null;
+
+            let faceFlipped = false;
+            if (leftoverHasFaceInfo || currentHasFaceInfo) {
+                const faceMatch = this.facesMatchWithOptionalFlip(leftover, currentFaceInfo);
+                if (!faceMatch.match) continue;
+                faceFlipped = faceMatch.flipped;
+            }
+
+            const usableWidth = this.leftoverUsableWidthForShortWall(leftover, leftJoint, rightJoint);
+            if (usableWidth < neededWidth) continue;
+
+            const allowExtraSlashFlip = !faceFlipped && this.wallAllowsSideFlip(currentFaceInfo);
+            const placement = this.findShortWallShopCutPlacement(
+                leftover,
+                leftJoint,
+                rightJoint,
+                leftSlash,
+                rightSlash,
+                faceFlipped,
+                allowExtraSlashFlip
+            );
+            if (!placement) continue;
+
+            return { leftover, placement };
+        }
+
+        return null;
+    }
+
+    updateLeftoverAfterBothEndsCut(
+        leftover,
+        cutWidth,
+        wallThickness,
+        leftJoint,
+        rightJoint,
+        leftSlash,
+        rightSlash,
+        placement = null
+    ) {
+        let cutFromRight;
+        if (placement && placement.loSide === 'right') {
+            cutFromRight = true;
+        } else if (placement && placement.loSide === 'left') {
+            cutFromRight = false;
+        } else if (leftover.rightJointConsumed && !leftover.leftJointConsumed) {
+            cutFromRight = true;
+        } else if (leftover.leftJointConsumed && !leftover.rightJointConsumed) {
+            cutFromRight = false;
+        } else {
+            cutFromRight = false;
+        }
+
+        // Kept shop cut stays on the used piece; remnant split is the other wall end.
+        let facingJoint;
+        let facingSlash;
+        if (placement && placement.wallSide) {
+            facingJoint = placement.wallSide === 'left' ? rightJoint : leftJoint;
+            facingSlash = placement.wallSide === 'left' ? rightSlash : leftSlash;
+        } else {
+            facingJoint = cutFromRight ? rightJoint : leftJoint;
+            facingSlash = cutFromRight ? rightSlash : leftSlash;
+        }
+
+        const position = cutFromRight ? 'left' : 'right';
+        this.updateLeftoverAfterCut(
+            leftover,
+            cutWidth,
+            wallThickness,
+            facingJoint,
+            position,
+            facingSlash
+        );
+    }
+
     createSidePanelWithCut(width, wallThickness, position, jointType, leftoverSearchEndIndex = undefined) {
         width = Math.round(width);
         
@@ -566,15 +862,10 @@ class PanelCalculator {
                 }
             }
 
-            // Size check for 45°:
-            // - shorter_face always OK
-            // - longer_face only if faces still match after flip (same both sides / flip-compatible)
+            // Size: 45° leftover → butt uses shorter only. 45° wall + matching faces may use longer.
             if (jointType === '45_cut') {
                 if (leftover.shorter_face >= neededWidth) return leftover;
-                const canUseLongerFace =
-                    leftover.longer_face >= neededWidth &&
-                    (faceFlipped || this.wallAllowsSideFlip(currentFaceInfo));
-                if (canUseLongerFace) return leftover;
+                if (leftover.longer_face >= neededWidth) return leftover;
             } else if (leftover.shorter_face >= neededWidth) {
                 return leftover;
             }

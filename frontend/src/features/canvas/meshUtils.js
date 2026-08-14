@@ -10,6 +10,28 @@ import { resolveWallBaseElevationMm } from '../project/projectUtils';
 import { getWallInteriorNormalModel } from './wallInteriorSide';
 import { buildIntersectionsFromJoints } from '../panel/wallPanelCalculationUtils';
 
+/** Remove horizontal edges near Y=0 so wall bases don't z-fight the floor while orbiting. */
+function stripNearBottomHorizontalEdges(THREE, edgesGeometry, yEps = 0.08) {
+  const pos = edgesGeometry.attributes.position;
+  if (!pos || pos.count < 2) return edgesGeometry;
+  const kept = [];
+  for (let i = 0; i < pos.count; i += 2) {
+    const y1 = pos.getY(i);
+    const y2 = pos.getY(i + 1);
+    const nearBottom = y1 <= yEps && y2 <= yEps;
+    const nearlyHorizontal = Math.abs(y1 - y2) <= yEps;
+    if (nearBottom && nearlyHorizontal) continue;
+    kept.push(
+      pos.getX(i), y1, pos.getZ(i),
+      pos.getX(i + 1), y2, pos.getZ(i + 1)
+    );
+  }
+  edgesGeometry.dispose();
+  const filtered = new THREE.BufferGeometry();
+  filtered.setAttribute('position', new THREE.Float32BufferAttribute(kept, 3));
+  return filtered;
+}
+
 /**
  * Joint context for the interior-face rule, in the shape the 2D plan uses. Memoised on the
  * identity of the wall/joint arrays so a rebuild recomputes it but each door in a build does
@@ -1311,12 +1333,14 @@ export function createWallMesh(instance, wall) {
   const wallGeometry = new instance.THREE.ExtrudeGeometry(wallShape, extrudeSettings);
   wallGeometry.computeVertexNormals();
   // Use professional material settings from config
-  const wallMaterial = new instance.THREE.MeshStandardMaterial({ 
-    color: THREE_CONFIG.MATERIALS.WALL.color,
-    roughness: THREE_CONFIG.MATERIALS.WALL.roughness,
-    metalness: THREE_CONFIG.MATERIALS.WALL.metalness,
-    emissive: THREE_CONFIG.MATERIALS.WALL.emissive,
-    emissiveIntensity: THREE_CONFIG.MATERIALS.WALL.emissiveIntensity
+  const wallCfg = THREE_CONFIG.MATERIALS.WALL;
+  const wallMaterial = new instance.THREE.MeshStandardMaterial({
+    color: wallCfg.color,
+    roughness: wallCfg.roughness,
+    metalness: wallCfg.metalness,
+    envMapIntensity: wallCfg.envMapIntensity ?? 0.45,
+    emissive: wallCfg.emissive ?? 0x000000,
+    emissiveIntensity: wallCfg.emissiveIntensity ?? 0,
   });
   let wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
   // A butt-in that only covers part of the height needs the same vertex pass, to hand the
@@ -1385,7 +1409,8 @@ export function createWallMesh(instance, wall) {
   }
   wallMesh.userData.isWall = true;
   wallMesh.castShadow = true;
-  wallMesh.receiveShadow = true;
+  // Cast-only: wall self-receive causes shadow acne that blinks while orbiting
+  wallMesh.receiveShadow = false;
   wallMesh.rotation.y = -Math.atan2(finalDz, finalDx);
   // Position the mesh so that the database line is one face, and thickness extends toward the model center
   wallMesh.position.set(finalStartX + instance.modelOffset.x, basePositionY, finalStartZ + instance.modelOffset.z);
@@ -1394,25 +1419,34 @@ export function createWallMesh(instance, wall) {
   // Default threshold is 1 degree, but we increase it to ~15 degrees to hide internal edges
   // This prevents unwanted lines from appearing on walls (like vertical lines from geometry artifacts)
   const edgeThreshold = 15; // degrees - only show edges with dihedral angle > 15 degrees
-  const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
-  const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
-    color: 0x000000,
-    linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-    depthTest: true,
-    depthWrite: false,
-    renderOrder: 2,
-  });
+  let edgeLines = null;
+  if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
+    const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
+    // Drop bottom horizontal edges — they z-fight floor/ground and blink while orbiting
+    const filtered = stripNearBottomHorizontalEdges(instance.THREE, edges, 0.08);
+    edgeLines = createFatLineSegmentsFromEdgesGeometry(filtered, {
+      color: THREE_CONFIG.EDGE_LINES?.COLOR ?? 0x94a3b8,
+      linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+      transparent: (THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1) < 1,
+      opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
+      depthTest: true,
+      depthWrite: false,
+      renderOrder: 2,
+    });
+  }
   
   // Debug: Log edge count for wall 7083 to help diagnose the line issue
-  if (id === 7083) {
-    console.log(`[Wall 7083 Edge Debug] Edge count: ${edges.attributes.position.count / 2}`, {
+  if (id === 7083 && edgeLines) {
+    console.log(`[Wall 7083 Edge Debug] edge lines enabled`, {
       edgeThreshold,
       geometryVertices: wallMesh.geometry.attributes.position.count,
       geometryFaces: wallMesh.geometry.attributes.position.count / 3
     });
   }
   
-  wallMesh.add(edgeLines);
+  if (edgeLines) {
+    wallMesh.add(edgeLines);
+  }
   
   // Add black outlines for door and window holes (cutouts)
   // Door holes are in the wall's local coordinate system:
@@ -1502,14 +1536,18 @@ export function createWallMesh(instance, wall) {
       cutout.start, cutoutTopY, 0,
       cutout.start, cutoutBottomY, 0
     ]);
-    const outlineLines = createFatLineSegmentsFromPositions(vertices, {
-      color: 0x000000,
-      linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-      depthTest: true,
-      depthWrite: false,
-      renderOrder: 2,
-    });
-    wallMesh.add(outlineLines);
+    if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
+      const outlineLines = createFatLineSegmentsFromPositions(vertices, {
+        color: THREE_CONFIG.EDGE_LINES?.COLOR_OPENING ?? 0x64748b,
+        linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+        transparent: (THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1) < 1,
+        opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
+        depthTest: true,
+        depthWrite: false,
+        renderOrder: 2,
+      });
+      wallMesh.add(outlineLines);
+    }
     
     if (id === 7083) {
       console.log(`[Wall 7083] Created cutout outline:`, {
@@ -1578,20 +1616,23 @@ export function createWallMesh(instance, wall) {
   
   // Add window glass panels
   if (wallWindows.length > 0) {
+    const glassCfg = THREE_CONFIG.MATERIALS.GLASS || {};
+    const frameCfg = THREE_CONFIG.MATERIALS.WINDOW_FRAME || {};
     const glassMaterial = new instance.THREE.MeshStandardMaterial({
-      color: 0xADD8E6, // Light blue tint
-      roughness: 0.05,
-      metalness: 0.1,
+      color: glassCfg.color ?? 0xc5dceb,
+      roughness: glassCfg.roughness ?? 0.12,
+      metalness: glassCfg.metalness ?? 0.0,
       transparent: true,
-      opacity: 0.3,
+      opacity: glassCfg.opacity ?? 0.32,
       side: instance.THREE.DoubleSide,
-      envMapIntensity: 1.0
+      envMapIntensity: glassCfg.envMapIntensity ?? 0.7,
     });
     
     const frameMaterial = new instance.THREE.MeshStandardMaterial({
-      color: 0x1a1a1a, // Very dark/black for frame
-      roughness: 0.8,
-      metalness: 0.2
+      color: frameCfg.color ?? 0x2f3845,
+      roughness: frameCfg.roughness ?? 0.48,
+      metalness: frameCfg.metalness ?? 0.28,
+      envMapIntensity: frameCfg.envMapIntensity ?? 0.55,
     });
     
     const windowThickness = 3 * scale;
@@ -1838,6 +1879,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
   // Helper function to add outer frame outline to door
   // edgeLineOffsetX: if provided, use this for edge lines instead of offsetX (for double-sided swing doors)
   const addDoorFrameOutline = (doorMeshOrGroup) => {
+    if (!THREE_CONFIG.EDGE_LINES?.ENABLED) return;
     // Create outline geometry for outer frame on both sides
     // Door extends from -doorWidth/2 to +doorWidth/2 in X, -doorHeight/2 to +doorHeight/2 in Y
     // Outline should be on both faces: front (z = +doorThickness/2) and back (z = -doorThickness/2)
@@ -1848,8 +1890,10 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
     const edgeOffset = edgeLineOffsetX !== null ? edgeLineOffsetX : offsetX;
     
     const lineOpts = {
-      color: 0x000000,
-      linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+      color: THREE_CONFIG.EDGE_LINES?.COLOR ?? 0x94a3b8,
+      linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+      transparent: (THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1) < 1,
+      opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
       depthTest: true,
       depthWrite: false,
       renderOrder: 2,
@@ -2045,20 +2089,23 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
 function addWindowGlass(instance, doorMesh, windows, doorWidth, doorHeight, doorThickness, scale, offsetX = 0, zPos = 0) {
   if (!windows || windows.length === 0) return;
   
+  const glassCfg = THREE_CONFIG.MATERIALS.GLASS || {};
+  const frameCfg = THREE_CONFIG.MATERIALS.WINDOW_FRAME || {};
   const glassMaterial = new instance.THREE.MeshStandardMaterial({
-    color: 0xADD8E6, // Light blue tint
-    roughness: 0.05,
-    metalness: 0.1,
+    color: glassCfg.color ?? 0xc5dceb,
+    roughness: glassCfg.roughness ?? 0.12,
+    metalness: glassCfg.metalness ?? 0.0,
     transparent: true,
-    opacity: 0.3,
+    opacity: glassCfg.opacity ?? 0.32,
     side: instance.THREE.DoubleSide,
-    envMapIntensity: 1.0
+    envMapIntensity: glassCfg.envMapIntensity ?? 0.7,
   });
   
   const frameMaterial = new instance.THREE.MeshStandardMaterial({
-    color: 0x1a1a1a, // Very dark/black for frame
-    roughness: 0.8,
-    metalness: 0.2
+    color: frameCfg.color ?? 0x2f3845,
+    roughness: frameCfg.roughness ?? 0.48,
+    metalness: frameCfg.metalness ?? 0.28,
+    envMapIntensity: frameCfg.envMapIntensity ?? 0.55,
   });
   
   windows.forEach((window) => {
@@ -2359,11 +2406,13 @@ export function createDoorMesh(instance, door, wall) {
   const doorWidthMultiplier = isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05;
   const doorWidth = width * scale * doorWidthMultiplier;
   const doorThickness = thickness * instance.scalingFactor;
+  const doorCfg = THREE_CONFIG.MATERIALS.DOOR || {};
   const doorMaterial = new instance.THREE.MeshStandardMaterial({
-    color: door_type === 'swing' ? 0xF8F8FF : 0xF8F8FF,
-    roughness: 0.5,
-    metalness: 0.3,
-    transparent: true,
+    color: doorCfg.color ?? 0xf3f4f6,
+    roughness: doorCfg.roughness ?? 0.58,
+    metalness: doorCfg.metalness ?? 0.05,
+    envMapIntensity: doorCfg.envMapIntensity ?? 0.4,
+    transparent: false,
     opacity: 1
   });
   if (door_type === 'slide') {
@@ -2802,11 +2851,12 @@ export function createDoorMesh(instance, door, wall) {
     doorContainer.rotation.y = -wallAngle;
     // Create a cover panel (flat rectangle) that covers the door opening
     const coverMaterial = new instance.THREE.MeshStandardMaterial({
-      color: 0xCCCCCC, // Gray color for dock door cover
-      roughness: 0.7,
-      metalness: 0.2,
+      color: 0xe8ebef,
+      roughness: 0.58,
+      metalness: 0.06,
       transparent: false,
-      opacity: 1
+      opacity: 1,
+      envMapIntensity: 0.4,
     });
     // Create cover panel - positioned at the wall face (exterior side by default)
     const coverPanel = new instance.THREE.Mesh(

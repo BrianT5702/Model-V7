@@ -1,4 +1,5 @@
 // Configuration constants for Three.js 3D system
+// Look target: clean web 3D builders (Floorplanner / Cedreo / Homestyler / SketchUp Web)
 
 function parseEnvNumber(name, fallback) {
   if (typeof process === 'undefined' || !process.env) return fallback;
@@ -25,150 +26,199 @@ function parseEnvFlagTrue(name) {
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
+/** Env var must be explicitly falsy (0/false/off/no). Missing = not false. */
+function parseEnvFlagFalse(name) {
+  if (typeof process === 'undefined' || !process.env) return false;
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return false;
+  const v = String(raw).toLowerCase();
+  return v === '0' || v === 'false' || v === 'no' || v === 'off';
+}
+
 export const THREE_CONFIG = {
-  // Scaling and dimensions
   SCALING_FACTOR: 0.01,
   DEFAULT_CEILING_THICKNESS: 150,
   DEFAULT_FLOOR_THICKNESS: 150,
   DEFAULT_WALL_HEIGHT: 3000,
   DEFAULT_WALL_THICKNESS: 200,
-  
-  // Camera settings
+
   CAMERA: {
-    FOV: 75,
-    /** Slightly larger near improves depth precision vs FAR=10000 (less edge flicker). REACT_APP_THREE_CAMERA_NEAR */
+    /** Web builders use moderate FOV — not fisheye CAD, not telephoto cinema */
+    FOV: 48,
     NEAR: Math.max(0.05, Math.min(5, parseEnvFloat('REACT_APP_THREE_CAMERA_NEAR', 0.35) || 0.35)),
-    FAR: 10000, // Increased from 2000 to prevent cut-off when zooming out
-    DEFAULT_POSITION: { x: 200, y: 200, z: 200 }
+    FAR: 10000,
+    DEFAULT_POSITION: { x: 200, y: 200, z: 200 },
   },
 
-  /**
-   * Canvas resolution: higher = sharper edges when zoomed out on large models (costs GPU memory).
-   * REACT_APP_THREE_MAX_DPR — cap devicePixelRatio (try 2.5–3 on desktop; lower on mobile if needed).
-   * REACT_APP_THREE_QUALITY_BIAS — multiply DPR before cap (e.g. 1.1 for ~10% more pixels on 1x displays).
-   */
   RENDERER: {
-    MAX_PIXEL_RATIO: parseEnvNumber('REACT_APP_THREE_MAX_DPR', 2.5),
-    QUALITY_BIAS: parseEnvNumber('REACT_APP_THREE_QUALITY_BIAS', 1),
-    /** Screen-space line width for Line2 / LineSegments2 (WebGL ignores linewidth on LineBasicMaterial). */
-    SCREEN_LINE_WIDTH_PX: parseEnvNumber('REACT_APP_THREE_LINE_WIDTH_PX', 1.35),
-    /**
-     * Pull outline lines slightly toward the camera in depth to reduce z-fighting / flicker when zoomed out.
-     * REACT_APP_THREE_LINE_OFFSET_FACTOR / UNITS — signed floats (defaults negative).
-     */
-    /** Gentler bias = less “double”/soft look; increase magnitude (e.g. -4) if edges still flicker. */
-    LINE_POLYGON_OFFSET_FACTOR: parseEnvFloat('REACT_APP_THREE_LINE_OFFSET_FACTOR', -2),
-    LINE_POLYGON_OFFSET_UNITS: parseEnvFloat('REACT_APP_THREE_LINE_OFFSET_UNITS', -2),
-    /**
-     * Log depth can interact badly with Line2/LineMaterial (depth shimmer). Default off.
-     * Set REACT_APP_THREE_LOG_DEPTH=true only if you need it for huge scenes without lines issues.
-     */
+    MAX_PIXEL_RATIO: parseEnvNumber('REACT_APP_THREE_MAX_DPR', 3),
+    QUALITY_BIAS: parseEnvNumber('REACT_APP_THREE_QUALITY_BIAS', 1.25),
+    SCREEN_LINE_WIDTH_PX: parseEnvNumber('REACT_APP_THREE_LINE_WIDTH_PX', 1.75),
     LOG_DEPTH_BUFFER:
-      typeof process !== 'undefined' &&
-      process.env &&
-      String(process.env.REACT_APP_THREE_LOG_DEPTH || '').toLowerCase() === 'true',
-    /** MSAA edge softening on opaque Line2 materials. Set REACT_APP_THREE_LINE_ATOC=false if it sparkles on a device. */
-    LINE_ALPHA_TO_COVERAGE:
       !(
         typeof process !== 'undefined' &&
         process.env &&
-        String(process.env.REACT_APP_THREE_LINE_ATOC || '').toLowerCase() === 'false'
+        String(process.env.REACT_APP_THREE_LOG_DEPTH || '').toLowerCase() === 'false'
       ),
+    LINE_POLYGON_OFFSET_FACTOR: parseEnvFloat('REACT_APP_THREE_LINE_OFFSET_FACTOR', -4),
+    LINE_POLYGON_OFFSET_UNITS: parseEnvFloat('REACT_APP_THREE_LINE_OFFSET_UNITS', -4),
+    LINE_ALPHA_TO_COVERAGE:
+      typeof process !== 'undefined' &&
+      process.env &&
+      String(process.env.REACT_APP_THREE_LINE_ATOC || '').toLowerCase() === 'true',
   },
 
-  /**
-   * Wall / ceiling panel division overlays in 3D (Line2 / LineSegments2).
-   * Black for standard joints; blue for cut panels, fallbacks, and subtle door-top segments.
-   */
   PANEL_LINES: {
-    LINE_WIDTH_PX: parseEnvNumber('REACT_APP_THREE_PANEL_LINE_WIDTH_PX', 1.65),
-    /** Full / standard panel joints */
-    COLOR_FULL: 0x000000,
-    /** Cut / partial panels */
-    COLOR_CUT: 0x2563eb,
-    /** Fallback divisions when panel map is missing */
-    COLOR_FALLBACK: 0x2563eb,
-    /** Door-top remainder segments (used with transparency in ThreeCanvas3D) */
-    COLOR_DOOR_GAP: 0x2563eb,
-    /** World-units offset along wall outward normal (reduces z-fight vs mesh) */
-    SURFACE_OFFSET: parseEnvFloat('REACT_APP_THREE_PANEL_SURFACE_OFFSET', 0.004),
-    /** Draw after wall edge lines (renderOrder 2) */
+    LINE_WIDTH_PX: parseEnvNumber('REACT_APP_THREE_PANEL_LINE_WIDTH_PX', 1.85),
+    /** Soft joint seams — look like panel gaps, not CAD ink */
+    COLOR_FULL: 0x64748b,
+    COLOR_CUT: 0x38bdf8,
+    COLOR_FALLBACK: 0x64748b,
+    COLOR_DOOR_GAP: 0x64748b,
+    SURFACE_OFFSET: parseEnvFloat('REACT_APP_THREE_PANEL_SURFACE_OFFSET', 0.04),
     RENDER_ORDER: 3,
-    /** Extra lift above ceiling mesh for panel loops (mm in DB space × scaling applied in code) */
     CEILING_LIFT_MM: parseEnvFloat('REACT_APP_THREE_PANEL_CEILING_LIFT_MM', 2),
   },
 
   /**
-   * 3D viewport presentation (background + optional studio floor).
-   * Keeps building materials white while avoiding a “empty white void” look.
+   * Post-FX OFF by default — GTAO caused light/shadow blinking.
+   * Opt-in only: REACT_APP_THREE_POST_FX=true
    */
-  SCENE: {
-    /** Clear color + scene.background (linear-style cool gray) */
-    BACKGROUND_COLOR: 0xe8ecf2,
-    /** Large horizontal plane under the model (FrontSide only — invisible when orbiting from below). */
-    STUDIO_GROUND: true,
-    STUDIO_GROUND_COLOR: 0xd6dce6,
-    /** World units — plane sits below typical storey floors */
-    STUDIO_GROUND_Y: -2.5,
-    STUDIO_GROUND_SIZE: 80000,
+  PRESENTATION: {
+    POST_FX: parseEnvFlagTrue('REACT_APP_THREE_POST_FX'),
+    AO: false,
+    AO_BLEND: parseEnvFloat('REACT_APP_THREE_AO_BLEND', 0.38),
+    AO_RADIUS: parseEnvFloat('REACT_APP_THREE_AO_RADIUS', 2.2),
+    AO_SAMPLES: parseEnvNumber('REACT_APP_THREE_AO_SAMPLES', 8),
   },
 
-  // Grid settings
+  /**
+   * Studio contrast + soft pad under the building.
+   */
+  SCENE: {
+    BACKGROUND_COLOR: 0x7d8fa3,
+    FOG_NEAR: 0,
+    FOG_FAR: 0,
+    FOG_COLOR: 0x7d8fa3,
+    STUDIO_GROUND: true,
+    STUDIO_GROUND_COLOR: 0x667588,
+    /** Flush with wall bottoms (was -0.5 → huge under-wall gap). */
+    STUDIO_GROUND_Y: 0,
+    STUDIO_GROUND_SIZE: 80000,
+    CONTACT_SHADOW: false,
+    /** Off: dual ground planes z-fight while orbiting (blinks; zoom-in hides it) */
+    STUDIO_PAD: false,
+    USE_IBL: true,
+    ENVIRONMENT_INTENSITY: parseEnvFloat('REACT_APP_THREE_ENV_INTENSITY', 0.4),
+    USE_SKY_GRADIENT: true,
+  },
+
+  /**
+   * Soft architecture edge lines ON by default (without them white faces look fake/flat).
+   * Set REACT_APP_THREE_EDGE_LINES=false to hide.
+   */
+  EDGE_LINES: {
+    ENABLED: !parseEnvFlagFalse('REACT_APP_THREE_EDGE_LINES'),
+    /** Soft slate — reads as built edges, not CAD black wireframe */
+    COLOR: 0x475569,
+    COLOR_OPENING: 0x334155,
+    OPACITY: 1,
+    LINEWIDTH: parseEnvNumber('REACT_APP_THREE_EDGE_WIDTH_PX', 1.9),
+  },
+
+  /** Daylight fill — shadow maps OFF (orbit shadow acne = blink) */
+  LIGHTING: {
+    HEMISPHERE_SKY: 0xffffff,
+    HEMISPHERE_GROUND: 0x6b7788,
+    HEMISPHERE_INTENSITY: 0.55,
+    AMBIENT_COLOR: 0xffffff,
+    AMBIENT_INTENSITY: 0.32,
+    SUN_COLOR: 0xfff4e8,
+    SUN_INTENSITY: 1.28,
+    SUN_POSITION: { x: 210, y: 380, z: 150 },
+    FILL_COLOR: 0xdce6f2,
+    FILL_INTENSITY: 0.4,
+    FILL_POSITION: { x: -170, y: 150, z: -130 },
+    RIM_COLOR: 0xeef4fb,
+    RIM_INTENSITY: 0.22,
+    RIM_POSITION: { x: -70, y: 110, z: 220 },
+    SHADOWS: false,
+    SHADOW_MAP_SIZE: 2048,
+    SHADOW_BIAS: -0.0005,
+    SHADOW_NORMAL_BIAS: 0.12,
+    SHADOW_RADIUS: 1,
+    TONE_MAPPING_EXPOSURE: parseEnvFloat('REACT_APP_THREE_EXPOSURE', 1.06),
+  },
+
   GRID: {
-    SIZE: 10000, // Increased from 1000 to cover whole area
-    DIVISIONS: 100, // Increased divisions for better detail at larger size
+    SIZE: 10000,
+    DIVISIONS: 100,
     COLOR: 0x888888,
     SECONDARY_COLOR: 0xcccccc,
-    /**
-     * Infinite floor GridHelper in 3D. Floors/rooms already give context; hiding reduces visual noise.
-     * Set REACT_APP_THREE_SHOW_GRID=true to show the reference grid.
-     */
     SHOW_IN_3D: parseEnvFlagTrue('REACT_APP_THREE_SHOW_GRID'),
   },
-  
-  // Materials - Bright white metallic with ambient white appearance
+
+  /**
+   * Surface variety. Low metalness — IBL specular shimmer looks like blinking while orbiting.
+   */
   MATERIALS: {
     WALL: {
-      color: 0xFFFFFF, // Pure white for bright ambient appearance
-      roughness: 0.15, // Lower roughness for more reflective/metallic look
-      metalness: 0.8, // High metalness for strong metallic appearance
-      emissive: 0xFFFFFF, // Emissive white to make it appear brighter
-      emissiveIntensity: 2.0, // Very high emissive intensity for maximum whiteness
-      transparent: false
+      color: 0xffffff,
+      roughness: 0.62,
+      metalness: 0.02,
+      envMapIntensity: 0.35,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
+      transparent: false,
     },
     FLOOR: {
-      color: 0xFFFFFF, // Pure white for bright ambient appearance
-      roughness: 0.2, // Lower roughness for more metallic floor
-      metalness: 0.85, // High metalness for strong metallic floor surface
-      emissive: 0xFFFFFF, // Emissive white to make it appear brighter
-      emissiveIntensity: 1.0, // Very high emissive intensity for maximum whiteness
-      transparent: false
+      color: 0xc5bdb2,
+      roughness: 0.88,
+      metalness: 0.0,
+      envMapIntensity: 0.12,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
+      transparent: false,
     },
     CEILING: {
-      color: 0xFFFFFF, // Pure white for bright ambient appearance
-      roughness: 0.1, // Very low roughness for highly reflective metallic ceiling
-      metalness: 0.85, // High metalness for strong metallic ceiling
-      emissive: 0xFFFFFF, // Emissive white to make it appear brighter
-      emissiveIntensity: 1.0, // Very high emissive intensity for maximum whiteness
-      transparent: false
+      color: 0xe8ebef,
+      roughness: 0.82,
+      metalness: 0.0,
+      envMapIntensity: 0.15,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
+      transparent: false,
     },
     DOOR: {
-      color: 0xFFFFFF, // Pure white for bright ambient appearance
-      roughness: 0.25, // More glossy
-      metalness: 0.5, // Metallic doors
+      color: 0xd8dee5,
+      roughness: 0.65,
+      metalness: 0.04,
+      envMapIntensity: 0.3,
+      transparent: false,
+      opacity: 1,
+    },
+    GLASS: {
+      color: 0x9ecae6,
+      roughness: 0.12,
+      metalness: 0.0,
       transparent: true,
-      opacity: 0.95 // Slightly transparent for glass effect
-    }
+      opacity: 0.28,
+      envMapIntensity: 0.55,
+    },
+    WINDOW_FRAME: {
+      color: 0x2a313c,
+      roughness: 0.55,
+      metalness: 0.12,
+      envMapIntensity: 0.3,
+    },
   },
-  
-  // Animation settings
+
   ANIMATION: {
     DOOR_DURATION: 1.5,
     CAMERA_DURATION: 2,
-    EASE: 'power2.inOut'
+    EASE: 'power2.inOut',
   },
-  
-  // UI settings
+
   UI: {
     BUTTON_STYLE: {
       padding: '8px 16px',
@@ -176,9 +226,9 @@ export const THREE_CONFIG = {
       fontWeight: '500',
       fontSize: '14px',
       boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-      transition: 'all 0.2s ease'
-    }
-  }
+      transition: 'all 0.2s ease',
+    },
+  },
 };
 
 export default THREE_CONFIG;

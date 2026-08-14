@@ -20,6 +20,7 @@ import CeilingManager from '../ceiling/CeilingManager';
 import FloorManager from '../floor/FloorManager';
 import InstallationTimeEstimator from '../estimation/InstallationTimeEstimator';
 import ProjectCommentsPanel from './ProjectCommentsPanel';
+import ImportPdfWallsModal from './ImportPdfWallsModal';
 import { buildRoomLabelLines } from '../room/roomLabelUtils';
 import api from '../../api/api';
 import ModalOverlay from '../../components/ModalOverlay';
@@ -51,8 +52,38 @@ import {
     FaStreetView,
     FaShareAlt,
     FaFilePdf,
+    FaExpand,
+    FaCompress,
 } from 'react-icons/fa';
-import ImportPdfWallsModal from './ImportPdfWallsModal';
+
+function getDocumentFullscreenElement() {
+    if (typeof document === 'undefined') return null;
+    return (
+        document.fullscreenElement
+        || document.webkitFullscreenElement
+        || document.mozFullScreenElement
+        || document.msFullscreenElement
+        || null
+    );
+}
+
+function requestElementFullscreen(el) {
+    if (!el) return Promise.reject(new Error('No fullscreen target'));
+    if (el.requestFullscreen) return el.requestFullscreen();
+    if (el.webkitRequestFullscreen) return Promise.resolve(el.webkitRequestFullscreen());
+    if (el.mozRequestFullScreen) return Promise.resolve(el.mozRequestFullScreen());
+    if (el.msRequestFullscreen) return Promise.resolve(el.msRequestFullscreen());
+    return Promise.reject(new Error('Fullscreen API unavailable'));
+}
+
+function exitDocumentFullscreen() {
+    if (typeof document === 'undefined') return Promise.resolve();
+    if (document.exitFullscreen) return document.exitFullscreen();
+    if (document.webkitExitFullscreen) return Promise.resolve(document.webkitExitFullscreen());
+    if (document.mozCancelFullScreen) return Promise.resolve(document.mozCancelFullScreen());
+    if (document.msExitFullscreen) return Promise.resolve(document.msExitFullscreen());
+    return Promise.reject(new Error('Exit fullscreen unavailable'));
+}
 
 const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const { projectId: routeProjectId } = useParams();
@@ -67,6 +98,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
     const [shareModalOpen, setShareModalOpen] = useState(false);
+    const [importPdfModalOpen, setImportPdfModalOpen] = useState(false);
     const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
     const [commentWallSelectMode, setCommentWallSelectMode] = useState(false);
     const [selectedWallsForComment, setSelectedWallsForComment] = useState([]);
@@ -75,11 +107,13 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const [unreadCommentCount, setUnreadCommentCount] = useState(0);
     const [planAnnotateMode, setPlanAnnotateMode] = useState(false);
     const [planNoteAddMode, setPlanNoteAddMode] = useState(false);
-    const [showImportPdfWallsModal, setShowImportPdfWallsModal] = useState(false);
     const [selectedPlanAnnotationId, setSelectedPlanAnnotationId] = useState(null);
     const [planAnnotationArrowPlacementId, setPlanAnnotationArrowPlacementId] = useState(null);
     const [levelActionsMenuOpen, setLevelActionsMenuOpen] = useState(false);
     const canvasPanelScrollRef = useRef(null);
+    const threeCanvasViewRef = useRef(null);
+    const [is3DFullscreen, setIs3DFullscreen] = useState(false);
+    const [is3DPseudoFullscreen, setIs3DPseudoFullscreen] = useState(false);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
     const undoProjectAction = projectDetails.undoProjectAction;
@@ -1082,8 +1116,97 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     useEffect(() => {
         if (projectDetails.is3DView) {
             setSidebarOpen(false);
+        } else {
+            // Leave 3D → drop any fullscreen state
+            if (getDocumentFullscreenElement()) {
+                exitDocumentFullscreen().catch(() => {});
+            }
+            setIs3DPseudoFullscreen(false);
+            setIs3DFullscreen(false);
+            document.body.classList.remove('three-view-fullscreen-lock');
         }
     }, [projectDetails.is3DView]);
+
+    const resizeThreeCanvas = useCallback(() => {
+        requestAnimationFrame(() => {
+            projectDetails.threeCanvasInstance?.current?.handleResize?.();
+        });
+    }, [projectDetails.threeCanvasInstance]);
+
+    const applyPseudo3DFullscreen = useCallback((active) => {
+        const target = threeCanvasViewRef.current;
+        setIs3DPseudoFullscreen(Boolean(active));
+        setIs3DFullscreen(Boolean(active));
+        if (target) {
+            target.classList.toggle('three-view-fullscreen', Boolean(active));
+        }
+        document.body.classList.toggle('three-view-fullscreen-lock', Boolean(active));
+        resizeThreeCanvas();
+    }, [resizeThreeCanvas]);
+
+    const toggle3DFullscreen = useCallback(async () => {
+        const target = threeCanvasViewRef.current;
+        if (!target) return;
+
+        const nativeActive = getDocumentFullscreenElement() === target;
+        const anyActive = nativeActive || is3DPseudoFullscreen;
+
+        if (anyActive) {
+            if (nativeActive) {
+                try {
+                    await exitDocumentFullscreen();
+                } catch (e) {
+                    // fall through to pseudo clear
+                }
+            }
+            applyPseudo3DFullscreen(false);
+            return;
+        }
+
+        try {
+            await requestElementFullscreen(target);
+            setIs3DFullscreen(true);
+            // Drop CSS fallback if native worked
+            target.classList.remove('three-view-fullscreen');
+            document.body.classList.remove('three-view-fullscreen-lock');
+            setIs3DPseudoFullscreen(false);
+            resizeThreeCanvas();
+        } catch (e) {
+            // iOS / blocked Fullscreen API → CSS fixed overlay
+            applyPseudo3DFullscreen(true);
+        }
+    }, [applyPseudo3DFullscreen, is3DPseudoFullscreen, resizeThreeCanvas]);
+
+    useEffect(() => {
+        const onFsChange = () => {
+            const target = threeCanvasViewRef.current;
+            const active = Boolean(target && getDocumentFullscreenElement() === target);
+            if (active) {
+                setIs3DFullscreen(true);
+                setIs3DPseudoFullscreen(false);
+                target?.classList.remove('three-view-fullscreen');
+                document.body.classList.remove('three-view-fullscreen-lock');
+            } else if (!is3DPseudoFullscreen) {
+                setIs3DFullscreen(false);
+            }
+            resizeThreeCanvas();
+        };
+
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape' && is3DPseudoFullscreen) {
+                applyPseudo3DFullscreen(false);
+            }
+        };
+
+        document.addEventListener('fullscreenchange', onFsChange);
+        document.addEventListener('webkitfullscreenchange', onFsChange);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('fullscreenchange', onFsChange);
+            document.removeEventListener('webkitfullscreenchange', onFsChange);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [applyPseudo3DFullscreen, is3DPseudoFullscreen, resizeThreeCanvas]);
 
     // Guard: If projectId is missing or invalid, show error and redirect
     if (!projectId || projectId === 'undefined' || projectId === 'null') {
@@ -1487,6 +1610,17 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     )}
                                 </button>
                             )}
+                            {canEdit && !isShareSession && projectDetails.currentView === 'wall-plan' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setImportPdfModalOpen(true)}
+                                    className="flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary"
+                                    title="Import walls, doors, rooms from DWG, DXF, or PDF"
+                                >
+                                    <FaFilePdf className="mr-1.5 text-xs" />
+                                    Import plan
+                                </button>
+                            )}
                             {canEdit && projectDetails.currentView === 'wall-plan' && (
                                 <button
                                     type="button"
@@ -1499,17 +1633,6 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                 >
                                     <FaStickyNote className="mr-1.5 text-xs" />
                                     Plan notes
-                                </button>
-                            )}
-                            {canEdit && projectDetails.currentView === 'wall-plan' && (
-                                <button
-                                    type="button"
-                                    onClick={() => setShowImportPdfWallsModal(true)}
-                                    className="flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary"
-                                    title="Import walls from a United Panel PDF"
-                                >
-                                    <FaFilePdf className="mr-1.5 text-xs" />
-                                    Import PDF
                                 </button>
                             )}
                             {projectDetails.currentView === 'wall-plan' && (
@@ -2423,7 +2546,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                         projectDetails.is3DView ? 'canvas-container-3d flex flex-col m-2 sm:m-3' : 'canvas-container-2d flex flex-col overflow-hidden m-3 sm:m-6'
                     }`}>
                         {projectDetails.is3DView ? (
-                            <div className="three-canvas-view flex flex-col flex-1 min-h-0">
+                            <div
+                                ref={threeCanvasViewRef}
+                                className={`three-canvas-view flex flex-col flex-1 min-h-0${is3DFullscreen ? ' is-fullscreen' : ''}`}
+                            >
                                 {/* Tab Navigation - Same structure as 2D */}
                                 <div className="px-3 sm:px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors shrink-0">
                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
@@ -2472,6 +2598,26 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 <span className="hidden sm:inline">{projectDetails.showPanelLines ? 'Hide Panel Lines' : 'Show Panel Lines'}</span>
                                                 <span className="sm:hidden">{projectDetails.showPanelLines ? 'Hide' : 'Show'}</span>
                                             </button>
+                                            <button
+                                                type="button"
+                                                onClick={toggle3DFullscreen}
+                                                title={is3DFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen 3D view'}
+                                                className={`flex items-center px-2 sm:px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 shadow-sm ${
+                                                    is3DFullscreen
+                                                        ? 'bg-slate-800 text-white hover:bg-slate-900'
+                                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 dark:border dark:border-gray-600'
+                                                }`}
+                                            >
+                                                {is3DFullscreen ? (
+                                                    <FaCompress className="mr-1.5 text-xs" />
+                                                ) : (
+                                                    <FaExpand className="mr-1.5 text-xs" />
+                                                )}
+                                                <span className="hidden sm:inline">
+                                                    {is3DFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                                                </span>
+                                                <span className="sm:hidden">{is3DFullscreen ? 'Exit' : 'Full'}</span>
+                                            </button>
                                         </div>
                                         <div className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 leading-tight">
                                             <span className="font-medium">View:</span>{' '}
@@ -2484,13 +2630,13 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             <span className="ml-1">
                                                 {projectDetails.isTourMode
                                                     ? 'Click the floor to set start · Start tour or Enter · Esc cancel'
-                                                    : 'Drag to rotate · Pinch to zoom · Swipe outside canvas to scroll'}
+                                                    : 'Drag to rotate · Pinch to zoom · Fullscreen for a complete view'}
                                             </span>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                {/* 3D Canvas Content — fixed stage height on phone so the page can scroll */}
+                                {/* 3D Canvas Content — expands in fullscreen; taller stage on phone by default */}
                                 <div className="three-canvas-stage">
                                     <div
                                         id="three-canvas-container"
@@ -4142,13 +4288,14 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             )}
 
             <ImportPdfWallsModal
-                open={showImportPdfWallsModal}
+                open={importPdfModalOpen}
                 projectId={projectId}
                 storeyId={projectDetails.activeStoreyId}
-                onClose={() => setShowImportPdfWallsModal(false)}
+                onClose={() => setImportPdfModalOpen(false)}
                 onImported={async () => {
-                    if (typeof projectDetails.refreshWalls === 'function') {
-                        await projectDetails.refreshWalls();
+                    setImportPdfModalOpen(false);
+                    if (typeof projectDetails.fetchProjectDetails === 'function') {
+                        await projectDetails.fetchProjectDetails();
                     }
                 }}
             />

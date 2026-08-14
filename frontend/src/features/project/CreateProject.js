@@ -36,6 +36,7 @@ const CreateProject = ({
     const [projectCreateError, setProjectCreateError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    const [pdfPageIndex, setPdfPageIndex] = useState(0);
     const pdfInputRef = useRef(null);
 
     const targetFolderLabel = targetFolderKey != null
@@ -189,7 +190,7 @@ const CreateProject = ({
     const handleImportClick = () => {
         const name = (formData.name || '').trim();
         if (!name) {
-            setProjectCreateError('Enter a project name before importing a PDF.');
+            setProjectCreateError('Enter a project name before importing a plan.');
             setTimeout(() => setProjectCreateError(''), 5000);
             return;
         }
@@ -203,7 +204,7 @@ const CreateProject = ({
 
         const name = (formData.name || '').trim();
         if (!name) {
-            setProjectCreateError('Enter a project name before importing a PDF.');
+            setProjectCreateError('Enter a project name before importing a plan.');
             setTimeout(() => setProjectCreateError(''), 5000);
             return;
         }
@@ -214,22 +215,42 @@ const CreateProject = ({
             const body = new FormData();
             body.append('name', name);
             body.append('file', file);
+            body.append('page_index', String(pdfPageIndex || 0));
+            body.append('region_index', '0');
             const response = await api.post('projects/import-from-pdf/', body, {
                 headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 180000, // large CAD + conversion often exceed 30s
             });
+            const meta = response.data?.import_meta;
+            if (meta) {
+                const parts = [
+                    `${meta.created_count ?? 0} walls`,
+                    `${meta.doors_count ?? 0} doors`,
+                    `${meta.rooms_count ?? 0} rooms`,
+                    `${meta.intersections_count ?? 0} joints`,
+                ];
+                console.info('Plan import:', meta.dialect, parts.join(', '));
+            }
             await finalizeCreatedProject(response.data);
         } catch (error) {
-            console.error('Error importing project from PDF:', error);
+            console.error('Error importing project from plan file:', error);
             if (isDatabaseConnectionError(error)) {
                 showDatabaseError();
+            } else if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '')) {
+                setProjectCreateError(
+                    'Import timed out. Large drawings can take 1–3 minutes — try again, or check if the project already appeared in the list (same name cannot be imported twice).'
+                );
+            } else if (error.response?.data?.name) {
+                const nameErr = Array.isArray(error.response.data.name)
+                    ? error.response.data.name[0]
+                    : error.response.data.name;
+                setProjectCreateError(`Error: ${nameErr}`);
             } else if (error.response?.data?.error) {
                 setProjectCreateError(`Error: ${error.response.data.error}`);
-            } else if (error.response?.data?.name) {
-                setProjectCreateError(`Error: ${error.response.data.name[0]}`);
             } else {
-                setProjectCreateError('Failed to import walls from PDF. Please try again.');
+                setProjectCreateError('Failed to import walls from plan file. Please try again.');
             }
-            setTimeout(() => setProjectCreateError(''), 6000);
+            setTimeout(() => setProjectCreateError(''), 8000);
         } finally {
             setIsImporting(false);
         }
@@ -311,11 +332,25 @@ const CreateProject = ({
                         <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 px-4 py-3">
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                 <div>
-                                    <p className="text-sm font-medium text-blue-900">Import from PDF</p>
+                                    <p className="text-sm font-medium text-blue-900">Import from DWG / PDF</p>
                                     <p className="text-xs text-blue-800 mt-0.5">
-                                        Enter the project name above, then choose a United Panel PDF.
-                                        Walls are drawn automatically; joints/doors/windows you set later.
+                                        Prefer DWG/DXF for accurate wall layers. PDF still works for older sheets.
+                                        Enter the project name above, then choose the file.
                                     </p>
+                                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-blue-900">
+                                        PDF page
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={(pdfPageIndex || 0) + 1}
+                                            onChange={(e) => {
+                                                const page = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                                setPdfPageIndex(page - 1);
+                                            }}
+                                            disabled={isImporting || isSubmitting}
+                                            className="w-16 rounded border border-blue-200 px-2 py-1"
+                                        />
+                                    </label>
                                 </div>
                                 <button
                                     type="button"
@@ -324,13 +359,13 @@ const CreateProject = ({
                                     className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-100 disabled:opacity-60 shrink-0"
                                 >
                                     <FaFilePdf className="w-4 h-4" />
-                                    {isImporting ? 'Importing…' : 'Import PDF'}
+                                    {isImporting ? 'Importing…' : 'Import plan'}
                                 </button>
                             </div>
                             <input
                                 ref={pdfInputRef}
                                 type="file"
-                                accept="application/pdf,.pdf"
+                                accept=".pdf,.dwg,.dxf,application/pdf"
                                 className="hidden"
                                 onChange={handlePdfSelected}
                             />

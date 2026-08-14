@@ -330,10 +330,11 @@ const PanelCalculationControls = ({
             const factoryJointsRemaining = [];
             if (hasGong) factoryJointsRemaining.push('公');
             if (hasMu) factoryJointsRemaining.push('母');
-            const status = (hasGong || hasMu) ? 'Reusable' : 'Scrap';
             const usableFor = [];
             if (hasGong) usableFor.push('Right SP');
             if (hasMu) usableFor.push('Left SP');
+            usableFor.push('Short wall (recut ends)');
+            const status = (hasGong || hasMu) ? 'Reusable' : 'Short wall only';
 
             const grouped = {
                 ...leftover,
@@ -373,9 +374,9 @@ const PanelCalculationControls = ({
         });
 
         return [...groups.values()].sort((a, b) => {
-            // Reusable first, then scrap
+            const statusRank = (s) => (s === 'Reusable' ? 0 : s === 'Short wall only' ? 1 : 2);
             if (a.status !== b.status) {
-                return a.status === 'Reusable' ? -1 : 1;
+                return statusRank(a.status) - statusRank(b.status);
             }
 
             const lengthA = Number(a?.panelLength) || 0;
@@ -560,7 +561,7 @@ const PanelCalculationControls = ({
                                     <div className="text-[11px] text-gray-500 mt-0.5">
                                         {groupedLeftovers.filter((l) => l.status === 'Reusable').reduce((s, l) => s + l.quantity, 0)} reusable
                                         {' · '}
-                                        {groupedLeftovers.filter((l) => l.status === 'Scrap').reduce((s, l) => s + l.quantity, 0)} scrap
+                                        {groupedLeftovers.filter((l) => l.status === 'Short wall only').reduce((s, l) => s + l.quantity, 0)} short-wall only
                                     </div>
                                 )}
                             </div>
@@ -593,7 +594,7 @@ const PanelCalculationControls = ({
                                     {' · '}
                                     Reusable: {groupedLeftovers.filter((l) => l.status === 'Reusable').reduce((s, l) => s + l.quantity, 0)}
                                     {' · '}
-                                    Scrap: {groupedLeftovers.filter((l) => l.status === 'Scrap').reduce((s, l) => s + l.quantity, 0)}
+                                    Short wall only: {groupedLeftovers.filter((l) => l.status === 'Short wall only').reduce((s, l) => s + l.quantity, 0)}
                                 </p>
                             </div>
                             <button
@@ -634,6 +635,7 @@ const PanelCalculationControls = ({
                                             ? `45° Cut${leftover.rightEdgeSlash ? ` (${leftover.rightEdgeSlash})` : ''}`
                                             : (leftover.rightEdgeType || 'Straight');
                                         const isReusable = leftover.status === 'Reusable';
+                                        const isShortWallOnly = leftover.status === 'Short wall only';
                                         const factoryJointLabel = leftover.factoryJointsRemaining?.length
                                             ? leftover.factoryJointsRemaining.join(' + ')
                                             : 'None';
@@ -651,6 +653,8 @@ const PanelCalculationControls = ({
                                                 className={
                                                     isReusable
                                                         ? 'bg-green-50/40 text-gray-900 hover:bg-green-100 dark:bg-emerald-950/50 dark:text-gray-100 dark:hover:bg-emerald-900/60'
+                                                        : isShortWallOnly
+                                                        ? 'bg-amber-50/40 text-gray-900 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-gray-100 dark:hover:bg-amber-900/50'
                                                         : 'bg-red-50/30 text-gray-900 hover:bg-gray-50 dark:bg-red-950/40 dark:text-gray-100 dark:hover:bg-gray-800'
                                                 }
                                             >
@@ -659,6 +663,8 @@ const PanelCalculationControls = ({
                                                     <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold ${
                                                         isReusable
                                                             ? 'bg-green-100 text-green-800 dark:bg-emerald-900 dark:text-emerald-200'
+                                                            : isShortWallOnly
+                                                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
                                                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                                                     }`}>
                                                         {leftover.status}

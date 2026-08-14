@@ -54,12 +54,20 @@ export class WallRenderer {
       const wallHeight = height * scale;
       
       const geometry = new this.THREE.BoxGeometry(length, wallHeight, width);
-      const material = new this.THREE.MeshStandardMaterial(THREE_CONFIG.MATERIALS.WALL);
+      const material = new this.THREE.MeshStandardMaterial({
+        color: THREE_CONFIG.MATERIALS.WALL.color,
+        roughness: THREE_CONFIG.MATERIALS.WALL.roughness,
+        metalness: THREE_CONFIG.MATERIALS.WALL.metalness,
+        envMapIntensity: THREE_CONFIG.MATERIALS.WALL.envMapIntensity ?? 0.45,
+        emissive: THREE_CONFIG.MATERIALS.WALL.emissive ?? 0x000000,
+        emissiveIntensity: THREE_CONFIG.MATERIALS.WALL.emissiveIntensity ?? 0,
+      });
       
       const mesh = new this.THREE.Mesh(geometry, material);
       mesh.userData.isWall = true;
       mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      // Cast-only: wall self-receive causes shadow acne that blinks while orbiting
+      mesh.receiveShadow = false;
       
       // Determine base elevation based on whether it was manually set
       // Use room or wall base elevation directly (absolute values), don't add storey elevation

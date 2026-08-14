@@ -4,3 +4,9 @@ __pycache__/
 frontend/build/
 frontend/dist/
 debug.log
+
+# Local PDF/DWG import debug dumps (raster masks, crops, overlays)
+scripts/_pdf_samples/
+
+# Local LibreDWG binaries (not source)
+tools/libredwg/

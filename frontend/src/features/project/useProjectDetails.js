@@ -1257,7 +1257,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     const [wallMergeSuccess, setWallMergeSuccess] = useState(false);
     const [roomError, setRoomError] = useState('');
     const [projectLoadError, setProjectLoadError] = useState('');
-    const [showPanelLines, setShowPanelLines] = useState(false);
+    const [showPanelLines, setShowPanelLines] = useState(true);
 
   // Utility: DB/network error check
   const isDatabaseConnectionError = (error) => {

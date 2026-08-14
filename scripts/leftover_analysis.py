@@ -17,6 +17,8 @@ from scripts.export_project_calc_data import find_intersections, merge_joints, s
 from core.models import Intersection, Project, Wall  # noqa: E402
 
 MAX_PANEL_WIDTH = 1150
+FACTORY_JOINT_WIDTH = 20
+MAX_BOTH_ENDS_CUT_WIDTH = MAX_PANEL_WIDTH - FACTORY_JOINT_WIDTH * 2  # 1110
 
 
 def wall_length(wall):
@@ -237,11 +239,7 @@ class PanelCalculatorPy:
             if joint_type == '45_cut':
                 if leftover['shorter_face'] >= needed_width:
                     return leftover
-                can_use_longer = (
-                    leftover['longer_face'] >= needed_width
-                    and (face_flipped or self.wall_allows_side_flip(face_info))
-                )
-                if can_use_longer:
+                if leftover['longer_face'] >= needed_width:
                     return leftover
             elif leftover['shorter_face'] >= needed_width:
                 return leftover
@@ -338,6 +336,182 @@ class PanelCalculatorPy:
             leftover['shorter_face'] = leftover['longer_face']
         self.leftovers.append(leftover)
 
+    def _flip_slash(self, slash):
+        if slash == '/':
+            return '\\'
+        if slash == '\\':
+            return '/'
+        return slash
+
+    def shop_cut_matches_wall_end(self, edge_type, edge_slash, wall_joint, wall_slash, slash_flipped):
+        want_45 = wall_joint == '45_cut'
+        has_45 = edge_type == '45_cut'
+        if want_45 != has_45:
+            return False
+        if not want_45:
+            return True
+        existing = edge_slash if edge_slash in ('/', '\\') else '/'
+        needed = wall_slash if wall_slash in ('/', '\\') else '/'
+        effective = self._flip_slash(existing) if slash_flipped else existing
+        return effective == needed
+
+    def find_short_wall_shop_cut_placement(
+        self, leftover, left_joint, right_joint, left_slash, right_slash, face_flipped, allow_extra_slash_flip
+    ):
+        shop_sides = []
+        if leftover.get('leftJointConsumed'):
+            shop_sides.append('left')
+        if leftover.get('rightJointConsumed'):
+            shop_sides.append('right')
+        if not shop_sides:
+            return {'loSide': None, 'wallSide': None, 'slashFlipped': bool(face_flipped)}
+
+        slash_flip_options = [True] if face_flipped else ([False, True] if allow_extra_slash_flip else [False])
+        candidates = []
+        for slash_flipped in slash_flip_options:
+            for lo_side in shop_sides:
+                for wall_side in ('left', 'right'):
+                    candidates.append({
+                        'loSide': lo_side,
+                        'wallSide': wall_side,
+                        'slashFlipped': slash_flipped,
+                    })
+        candidates.sort(key=lambda c: (c['slashFlipped'], 0 if c['loSide'] == c['wallSide'] else 1))
+
+        for c in candidates:
+            edge_type = leftover['leftEdgeType'] if c['loSide'] == 'left' else leftover['rightEdgeType']
+            edge_slash = leftover.get('leftEdgeSlash') if c['loSide'] == 'left' else leftover.get('rightEdgeSlash')
+            wall_joint = left_joint if c['wallSide'] == 'left' else right_joint
+            wall_slash = left_slash if c['wallSide'] == 'left' else right_slash
+            if self.shop_cut_matches_wall_end(edge_type, edge_slash, wall_joint, wall_slash, c['slashFlipped']):
+                c['keep'] = True
+                return c
+
+        lo_side = next(
+            (
+                side for side in shop_sides
+                if (leftover['leftEdgeType'] if side == 'left' else leftover['rightEdgeType']) == '45_cut'
+            ),
+            shop_sides[0],
+        )
+        wall_side = 'left' if left_joint != '45_cut' else ('right' if right_joint != '45_cut' else 'left')
+        return {
+            'loSide': lo_side,
+            'wallSide': wall_side,
+            'slashFlipped': bool(face_flipped),
+            'keep': False,
+        }
+
+    def find_compatible_leftover_for_both_ends_cut(
+        self, needed_width, wall_thickness, panel_length, face_info, left_joint, right_joint, left_slash, right_slash
+    ):
+        for leftover in self.leftovers:
+            if leftover['wallThickness'] != wall_thickness:
+                continue
+            if leftover['panelLength'] < panel_length:
+                continue
+            match, face_flipped = self.faces_match_with_optional_flip(leftover, face_info)
+            if not match:
+                continue
+            factory_left = 0 if leftover.get('leftJointConsumed') else 1
+            factory_right = 0 if leftover.get('rightJointConsumed') else 1
+            deduct = (factory_left + factory_right) * FACTORY_JOINT_WIDTH
+            shorter = leftover['shorter_face'] - deduct
+            longer = leftover['longer_face'] - deduct
+            leftover_has_45 = leftover.get('leftEdgeType') == '45_cut' or leftover.get('rightEdgeType') == '45_cut'
+            wall_needs_45 = left_joint == '45_cut' or right_joint == '45_cut'
+            if leftover_has_45 and not wall_needs_45:
+                usable = shorter
+            elif wall_needs_45:
+                usable = max(shorter, longer)
+            else:
+                usable = shorter
+            if usable < needed_width:
+                continue
+            allow_extra = (not face_flipped) and self.wall_allows_side_flip(face_info)
+            placement = self.find_short_wall_shop_cut_placement(
+                leftover, left_joint, right_joint, left_slash, right_slash, face_flipped, allow_extra
+            )
+            if not placement:
+                continue
+            return leftover, placement
+        return None
+
+    def update_leftover_after_both_ends_cut(
+        self, leftover, cut_width, wall_thickness, left_joint, right_joint, left_slash, right_slash, placement=None
+    ):
+        if placement and placement.get('loSide') == 'right':
+            cut_from_right = True
+        elif placement and placement.get('loSide') == 'left':
+            cut_from_right = False
+        elif leftover.get('rightJointConsumed') and not leftover.get('leftJointConsumed'):
+            cut_from_right = True
+        elif leftover.get('leftJointConsumed') and not leftover.get('rightJointConsumed'):
+            cut_from_right = False
+        else:
+            cut_from_right = False
+
+        if placement and placement.get('wallSide'):
+            facing_joint = right_joint if placement['wallSide'] == 'left' else left_joint
+            facing_slash = right_slash if placement['wallSide'] == 'left' else left_slash
+        else:
+            facing_joint = right_joint if cut_from_right else left_joint
+            facing_slash = right_slash if cut_from_right else left_slash
+
+        position = 'left' if cut_from_right else 'right'
+        self.update_leftover_after_cut(
+            leftover, cut_width, wall_thickness, facing_joint, position=position, needed_slash=facing_slash
+        )
+
+    def create_both_ends_cut_panel(self, width, wall_thickness, joint_types, panel_length, face_info):
+        width = round(width)
+        left_joint = joint_types['left']
+        right_joint = joint_types['right']
+        left_slash = self.current_cut_slashes.get('left') if left_joint == '45_cut' else None
+        right_slash = self.current_cut_slashes.get('right') if right_joint == '45_cut' else None
+        if left_joint == '45_cut' and left_slash is None:
+            left_slash = '/'
+        if right_joint == '45_cut' and right_slash is None:
+            right_slash = '/'
+
+        found = self.find_compatible_leftover_for_both_ends_cut(
+            width, wall_thickness, panel_length, face_info,
+            left_joint, right_joint, left_slash, right_slash,
+        )
+        if found:
+            compatible, placement = found
+            self.leftover_reused += 1
+            self.update_leftover_after_both_ends_cut(
+                compatible, width, wall_thickness, left_joint, right_joint, left_slash, right_slash, placement
+            )
+            return
+
+        self.full_panels_used_for_cutting += 1
+        leftover = {
+            'id': self._next_id,
+            'wallThickness': wall_thickness,
+            'leftEdgeType': '45_cut' if right_joint == '45_cut' else 'straight',
+            'rightEdgeType': 'straight',
+            'leftEdgeSlash': right_slash,
+            'rightEdgeSlash': None,
+            'panelLength': panel_length,
+            'leftJointConsumed': True,
+            'rightJointConsumed': False,
+            'innerFaceMaterial': face_info.get('innerFaceMaterial'),
+            'innerFaceThickness': face_info.get('innerFaceThickness'),
+            'outerFaceMaterial': face_info.get('outerFaceMaterial'),
+            'outerFaceThickness': face_info.get('outerFaceThickness'),
+        }
+        self._next_id += 1
+        if right_joint == '45_cut':
+            leftover['longer_face'] = MAX_PANEL_WIDTH - width + wall_thickness
+            leftover['shorter_face'] = leftover['longer_face'] - wall_thickness
+        else:
+            leftover['longer_face'] = MAX_PANEL_WIDTH - width
+            leftover['shorter_face'] = leftover['longer_face']
+        self.leftovers.append(leftover)
+        self.cleanup_leftovers()
+
     def calculate_panels(self, length, wall_thickness, joint_types, panel_length, face_info, cut_slashes=None):
         self.current_cut_slashes = cut_slashes or {'left': None, 'right': None}
         length = round(length)
@@ -348,6 +522,12 @@ class PanelCalculatorPy:
         remaining -= full_count * MAX_PANEL_WIDTH
 
         if remaining <= 0:
+            return
+
+        if full_count == 0 and remaining <= MAX_BOTH_ENDS_CUT_WIDTH:
+            self.create_both_ends_cut_panel(
+                remaining, wall_thickness, joint_types, panel_length, face_info
+            )
             return
 
         if remaining < min_panel_width and full_count > 0:

@@ -91,6 +91,13 @@ code {
   height: 100%;
 }
 
+/* Desktop: give 3D a taller usable stage inside the project shell */
+@media (min-width: 1024px) {
+  .canvas-container-3d .three-canvas-stage {
+    min-height: min(72vh, 820px);
+  }
+}
+
 @media (max-width: 1023px) {
   /* Match 2D: let the page scroll; give the 3D stage a concrete height instead of locking the viewport */
   .project-details-workspace .project-details-main > .canvas-container.canvas-container-3d {
@@ -107,9 +114,46 @@ code {
 
   .canvas-container-3d .three-canvas-stage {
     flex: none;
-    height: min(70vh, 560px);
-    min-height: 280px;
+    height: min(78dvh, 720px);
+    min-height: 360px;
   }
+}
+
+/* Fullscreen 3D view (native Fullscreen API or CSS fallback) */
+.three-canvas-view:fullscreen,
+.three-canvas-view:-webkit-full-screen,
+.three-canvas-view.three-view-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 10000 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  background: #7d8fa3 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.three-canvas-view:fullscreen .three-canvas-stage,
+.three-canvas-view:-webkit-full-screen .three-canvas-stage,
+.three-canvas-view.three-view-fullscreen .three-canvas-stage {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.three-canvas-view:fullscreen #three-canvas-container,
+.three-canvas-view:-webkit-full-screen #three-canvas-container,
+.three-canvas-view.three-view-fullscreen #three-canvas-container {
+  background: #7d8fa3 !important;
+}
+
+body.three-view-fullscreen-lock {
+  overflow: hidden !important;
+  touch-action: none;
 }
 
 @media (min-width: 640px) {

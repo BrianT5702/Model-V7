@@ -2,7 +2,14 @@ import THREE from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
-import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset } from './sceneUtils';
+import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset, fitMainLightShadows } from './sceneUtils';
+import {
+  setupPresentationPostFx,
+  resizePresentationPostFx,
+  renderPresentationPostFx,
+  disposePresentationPostFx,
+  updatePresentationAoClip,
+} from './presentationPostFx';
 import { createWallMesh, createDoorMesh } from './meshUtils';
 import PanelCalculator from '../panel/PanelCalculator';
 import {
@@ -14,6 +21,7 @@ import {
   createFatLineSegmentsFromEdgesGeometry,
   createFatLineSegmentsFromPositions,
   createFatLine2FromPositions,
+  syncLineMaterialResolution,
 } from './wideLineUtils';
 import WallRenderer from './components/WallRenderer';
 import DoorRenderer from './components/DoorRenderer';
@@ -36,6 +44,38 @@ const debugWarn = (...args) => {
 
 /** Shared styling for wall + ceiling panel division overlays */
 const PL = THREE_CONFIG.PANEL_LINES;
+
+/** Shrink an XZ polygon toward its centroid so floor perimeter clears wall faces. */
+function insetPolygonXZ(vertices, inset) {
+  if (!Array.isArray(vertices) || vertices.length < 3 || !(inset > 0)) {
+    return vertices;
+  }
+  let cx = 0;
+  let cz = 0;
+  vertices.forEach((v) => {
+    cx += v.x;
+    cz += v.z;
+  });
+  cx /= vertices.length;
+  cz /= vertices.length;
+
+  const out = vertices.map((v) => {
+    const dx = v.x - cx;
+    const dz = v.z - cz;
+    const len = Math.hypot(dx, dz) || 1;
+    const scale = Math.max(0.05, (len - inset) / len);
+    return { x: cx + dx * scale, z: cz + dz * scale };
+  });
+
+  // Degenerate if inset collapsed the polygon
+  let area = 0;
+  for (let i = 0; i < out.length; i++) {
+    const a = out[i];
+    const b = out[(i + 1) % out.length];
+    area += a.x * b.z - b.x * a.z;
+  }
+  return Math.abs(area) < 1e-4 ? vertices : out;
+}
 
 window.gsap = gsap;
 
@@ -85,11 +125,11 @@ export default class ThreeCanvas3D {
     
     // Panel division lines
     this.panelLines = []; // Store panel division line objects
-    this.showPanelLines = false; // Toggle for panel lines visibility
+    this.showPanelLines = true; // Soft panel seams on by default
     
     // Ceiling panel division lines
     this.ceilingPanelLines = []; // Store ceiling panel division line objects
-    this.showCeilingPanelLines = false; // Toggle for ceiling panel lines visibility
+    this.showCeilingPanelLines = true; // Soft seams on by default (synced with wall panel lines)
     
     // Store HTML container for UI elements
     this.uiContainer = document.createElement('div');
@@ -157,14 +197,29 @@ export default class ThreeCanvas3D {
     
     // Set renderer size accounting for pixel ratio
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    syncLineMaterialResolution(
+      this.container.clientWidth,
+      this.container.clientHeight,
+      this.renderer.getPixelRatio()
+    );
     
-    // Professional renderer settings
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = this.THREE.PCFSoftShadowMap; // Soft shadows
-    this.renderer.toneMapping = this.THREE.ACESFilmicToneMapping; // Professional tone mapping
-    this.renderer.toneMappingExposure = 1.0; // Adjust exposure for brightness
-    this.renderer.outputEncoding = this.THREE.sRGBEncoding; // sRGB for better color accuracy
-    
+    // Shadows OFF by default — orbit shadow acne / depth fighting looks like blinking light
+    const shadowsOn = THREE_CONFIG.LIGHTING?.SHADOWS === true;
+    this.renderer.shadowMap.enabled = shadowsOn;
+    this.renderer.shadowMap.type = this.THREE.BasicShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = shadowsOn;
+    this.renderer.toneMapping = this.THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure =
+      THREE_CONFIG.LIGHTING?.TONE_MAPPING_EXPOSURE ?? 1.15;
+    if (this.THREE.SRGBColorSpace != null && 'outputColorSpace' in this.renderer) {
+      this.renderer.outputColorSpace = this.THREE.SRGBColorSpace;
+    } else if (this.THREE.sRGBEncoding != null) {
+      this.renderer.outputEncoding = this.THREE.sRGBEncoding;
+    }
+    if ('physicallyCorrectLights' in this.renderer) {
+      this.renderer.physicallyCorrectLights = true;
+    }    
     this.container.appendChild(this.renderer.domElement);
 
     // OrbitControls needs touch-action: none on the canvas so one-finger drag orbits the model.
@@ -221,6 +276,9 @@ export default class ThreeCanvas3D {
     addControls(this);
     calculateModelOffset(this);
     this.buildModel();
+    fitMainLightShadows(this);
+    setupPresentationPostFx(this);
+    updatePresentationAoClip(this);
 
     // Add a red dot at the model center (disabled for cleaner view)
     // Uncomment the following lines to enable debug marker
@@ -255,6 +313,8 @@ export default class ThreeCanvas3D {
     
     // Update renderer size (will use pixel ratio automatically)
     this.renderer.setSize(width, height);
+    syncLineMaterialResolution(width, height, this.renderer.getPixelRatio());
+    resizePresentationPostFx(this, width, height);
     this.tourRoomLabels?.syncRendererSize();
 
     debugLog(`📱 Resize: ${width}x${height} (aspect: ${this.camera.aspect.toFixed(2)})`);
@@ -378,10 +438,35 @@ export default class ThreeCanvas3D {
 
     if (this.studioGround) {
       if (this.studioGround.geometry) this.studioGround.geometry.dispose();
-      if (this.studioGround.material) this.studioGround.material.dispose();
+      if (this.studioGround.material) {
+        if (this.studioGround.material.map) this.studioGround.material.map.dispose();
+        this.studioGround.material.dispose();
+      }
       this.scene?.remove(this.studioGround);
       this.studioGround = null;
     }
+
+    if (this.contactShadow) {
+      if (this.contactShadow.geometry) this.contactShadow.geometry.dispose();
+      if (this.contactShadow.material) {
+        if (this.contactShadow.material.map) this.contactShadow.material.map.dispose();
+        this.contactShadow.material.dispose();
+      }
+      this.scene?.remove(this.contactShadow);
+      this.contactShadow = null;
+    }
+
+    if (this.studioPad) {
+      if (this.studioPad.geometry) this.studioPad.geometry.dispose();
+      if (this.studioPad.material) {
+        if (this.studioPad.material.map) this.studioPad.material.map.dispose();
+        this.studioPad.material.dispose();
+      }
+      this.scene?.remove(this.studioPad);
+      this.studioPad = null;
+    }
+
+    disposePresentationPostFx(this);
 
     // Dispose of renderer
     if (this.renderer) {
@@ -692,7 +777,7 @@ getModelBounds() {
     } else if (this.controls) {
       this.controls.update();
     }
-    this.renderer.render(this.scene, this.camera);
+    renderPresentationPostFx(this);
 
     if (this.isTourEngaged()) {
       const playerRef = this.roomTourController.isWalking()
@@ -752,6 +837,8 @@ getModelBounds() {
       this.project = project;
     }
     this.buildModel();
+    fitMainLightShadows(this);
+    updatePresentationAoClip(this);
   }
 
   // Method to rebuild the model
@@ -823,6 +910,8 @@ getModelBounds() {
       
       // Update grid size to cover the entire model area
       this.updateGridSize();
+      fitMainLightShadows(this);
+      updatePresentationAoClip(this);
 
       if (this.roomTourController?.isPlacing?.() || this.roomTourController?.isWalking?.()) {
         this.roomTourController.buildDoorOpenings();
@@ -1191,11 +1280,14 @@ getModelBounds() {
       
       // Create material to match wall appearance
       const material = new this.THREE.MeshStandardMaterial({
-        color: 0xFFFFFFF, // Same white color as walls
+        color: THREE_CONFIG.MATERIALS.CEILING.color,
         side: this.THREE.DoubleSide,
-        roughness: 0.5,   // Same roughness as walls
-        metalness: 0.7,   // Same metalness as walls
-        transparent: false // Not transparent like walls
+        roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
+        metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
+        envMapIntensity: THREE_CONFIG.MATERIALS.CEILING.envMapIntensity ?? 0.85,
+        emissive: THREE_CONFIG.MATERIALS.CEILING.emissive ?? 0x000000,
+        emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity ?? 0,
+        transparent: false
       });
       
       // Create mesh
@@ -1205,15 +1297,19 @@ getModelBounds() {
       // Position the ceiling at the calculated elevation (storey elevation + room base + room height)
       ceiling.position.y = maxCeilingElevation * this.scalingFactor;
       
-      const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
-        color: 0x000000,
-        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-        depthTest: true,
-        depthWrite: false,
-        renderOrder: 2,
-      });
-      ceiling.add(edgeLines);
+      if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
+        const edges = new this.THREE.EdgesGeometry(geometry);
+        const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+          color: THREE_CONFIG.EDGE_LINES?.COLOR ?? 0x94a3b8,
+          linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+          transparent: (THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1) < 1,
+          opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
+          depthTest: true,
+          depthWrite: false,
+          renderOrder: 2,
+        });
+        ceiling.add(edgeLines);
+      }
       
       // Set shadow properties
       // Disable shadow receiving on ceiling to avoid dark shadow rectangles from walls
@@ -1998,8 +2094,9 @@ getModelBounds() {
         side: this.THREE.DoubleSide,
         roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
         metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
-        emissive: THREE_CONFIG.MATERIALS.CEILING.emissive,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity,
+        envMapIntensity: THREE_CONFIG.MATERIALS.CEILING.envMapIntensity ?? 0.85,
+        emissive: THREE_CONFIG.MATERIALS.CEILING.emissive ?? 0x000000,
+        emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity ?? 0,
         transparent: false,
         depthWrite: true,
         depthTest: true,
@@ -2013,15 +2110,19 @@ getModelBounds() {
       // Set render order to render after walls (higher number = renders later)
       ceiling.renderOrder = 1;
       
-      const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
-        color: 0x000000,
-        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-        depthTest: true,
-        depthWrite: false,
-        renderOrder: 2,
-      });
-      ceiling.add(edgeLines);
+      if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
+        const edges = new this.THREE.EdgesGeometry(geometry);
+        const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+          color: THREE_CONFIG.EDGE_LINES?.COLOR ?? 0x94a3b8,
+          linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+          transparent: (THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1) < 1,
+          opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
+          depthTest: true,
+          depthWrite: false,
+          renderOrder: 2,
+        });
+        ceiling.add(edgeLines);
+      }
       
       // Set shadow properties
       // Disable shadow receiving on ceiling to avoid dark shadow rectangles from walls
@@ -5434,7 +5535,7 @@ getModelBounds() {
         const floorMesh = this.createRoomFloorMesh(roomVertices, room, roomFloorThickness);
         
         if (floorMesh) {
-            // Position floor at absolute base elevation - floor extends upward from here
+            // Bottom flush with wall base; slab expands upward by floor thickness
             floorMesh.position.y = baseElevation;
           floorMesh.name = `floor_room_${room.id}`;
           floorMesh.userData = {
@@ -5453,133 +5554,87 @@ getModelBounds() {
     });
   }
 
-  // Create individual room floor mesh with thickness
+  // Create room floor slab: bottom at y=0, top at y=floorThickness (expands upward)
   createRoomFloorMesh(roomVertices, room, floorThickness) {
     try {
-      // Convert vertices to format required by earcut
+      // Use room outline as-is so the slab meets the walls (no visual under-wall gap)
+      const verts = roomVertices;
+      if (!verts || verts.length < 3) {
+        return null;
+      }
+
       const flatVertices = [];
-      roomVertices.forEach(vertex => {
+      verts.forEach((vertex) => {
         flatVertices.push(vertex.x);
         flatVertices.push(vertex.z);
       });
-      
-      // Triangulate the room polygon
+
       const triangles = earcut(flatVertices);
       if (triangles.length === 0) {
         return null;
       }
-      
-      // Create the top surface (floor surface - at the top of the floor thickness)
-      const topGeometry = new this.THREE.BufferGeometry();
+
       const topPositions = new Float32Array(triangles.length * 3);
-      
+      const bottomPositions = new Float32Array(triangles.length * 3);
       for (let i = 0; i < triangles.length; i++) {
         const vertexIndex = triangles[i];
         const x = flatVertices[vertexIndex * 2];
         const z = flatVertices[vertexIndex * 2 + 1];
         topPositions[i * 3] = x;
-        topPositions[i * 3 + 1] = floorThickness; // Top surface at Y=+thickness
+        topPositions[i * 3 + 1] = floorThickness;
         topPositions[i * 3 + 2] = z;
+        // Bottom winding reversed so normals face -Y (visible from underneath)
+        const bi = triangles.length - 1 - i;
+        const bIdx = triangles[bi];
+        bottomPositions[i * 3] = flatVertices[bIdx * 2];
+        bottomPositions[i * 3 + 1] = 0;
+        bottomPositions[i * 3 + 2] = flatVertices[bIdx * 2 + 1];
       }
-      topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
-      topGeometry.computeVertexNormals();
-      
-      // Create the bottom surface (ground level)
-      const bottomGeometry = new this.THREE.BufferGeometry();
-      const bottomPositions = new Float32Array(triangles.length * 3);
-      
-      for (let i = 0; i < triangles.length; i++) {
-        const vertexIndex = triangles[i];
-        const x = flatVertices[vertexIndex * 2];
-        const z = flatVertices[vertexIndex * 2 + 1];
-        bottomPositions[i * 3] = x;
-        bottomPositions[i * 3 + 1] = 0; // Bottom surface at Y=0 (ground level)
-        bottomPositions[i * 3 + 2] = z;
-      }
-      bottomGeometry.setAttribute('position', new this.THREE.BufferAttribute(bottomPositions, 3));
-      bottomGeometry.computeVertexNormals();
-      
-      // Create side walls to connect top and bottom surfaces
-      const sideGeometry = new this.THREE.BufferGeometry();
+
       const sidePositions = [];
-      
-      // For each edge of the room, create two triangles to form a side wall
-      for (let i = 0; i < roomVertices.length; i++) {
-        const current = roomVertices[i];
-        const next = roomVertices[(i + 1) % roomVertices.length];
-        
-        // Side wall quad (two triangles)
-        // Triangle 1
+      for (let i = 0; i < verts.length; i++) {
+        const current = verts[i];
+        const next = verts[(i + 1) % verts.length];
         sidePositions.push(
-          current.x, 0, current.z,                    // Bottom front (ground level)
-          next.x, 0, next.z,                          // Bottom back (ground level)
-          current.x, floorThickness, current.z         // Top front (floor top)
-        );
-        
-        // Triangle 2
-        sidePositions.push(
-          next.x, 0, next.z,                          // Bottom back (ground level)
-          next.x, floorThickness, next.z,              // Top back (floor top)
-          current.x, floorThickness, current.z         // Top front (floor top)
+          current.x, 0, current.z,
+          next.x, 0, next.z,
+          current.x, floorThickness, current.z,
+          next.x, 0, next.z,
+          next.x, floorThickness, next.z,
+          current.x, floorThickness, current.z
         );
       }
-      
-      sideGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
-      sideGeometry.computeVertexNormals();
-      
-      // Merge all geometries into one
-      const geometry = new this.THREE.BufferGeometry();
+
       const mergedPositions = [];
-      
-      // Add top surface
-      for (let i = 0; i < topPositions.length; i += 3) {
-        mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
-      }
-      
-      // Add bottom surface
-      for (let i = 0; i < bottomPositions.length; i += 3) {
-        mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
-      }
-      
-      // Add side walls
-      for (let i = 0; i < sidePositions.length; i += 3) {
-        mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
-      }
-      
+      for (let i = 0; i < topPositions.length; i++) mergedPositions.push(topPositions[i]);
+      for (let i = 0; i < bottomPositions.length; i++) mergedPositions.push(bottomPositions[i]);
+      for (let i = 0; i < sidePositions.length; i++) mergedPositions.push(sidePositions[i]);
+
+      const geometry = new this.THREE.BufferGeometry();
       geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
       geometry.computeVertexNormals();
-      
-      // Create material using professional config
+
       const material = new this.THREE.MeshStandardMaterial({
         color: THREE_CONFIG.MATERIALS.FLOOR.color,
         side: this.THREE.DoubleSide,
         roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
         metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
-        emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity,
-        transparent: false
+        envMapIntensity: THREE_CONFIG.MATERIALS.FLOOR.envMapIntensity ?? 0.7,
+        emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive ?? 0x000000,
+        emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity ?? 0,
+        transparent: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
       });
-      
-      // Create mesh
+
       const floor = new this.THREE.Mesh(geometry, material);
-      
-      const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
-        color: 0x000000,
-        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-        depthTest: true,
-        depthWrite: false,
-        renderOrder: 2,
-      });
-      floor.add(edgeLines);
-      
-      // Set shadow properties to match walls
-      floor.castShadow = true;
-      floor.receiveShadow = true;
-      
-      // Add room label on the floor
-      this.addRoomLabelToFloor(floor, room, roomVertices, floorThickness);
-      
+      // No floor edge lines — they z-fight wall bases
+      floor.castShadow = false;
+      floor.receiveShadow = false;
+
+      this.addRoomLabelToFloor(floor, room, verts, floorThickness);
+
       return floor;
     } catch (error) {
       console.error(`❌ Error creating room floor mesh for room ${room.id}:`, error);
@@ -5797,12 +5852,16 @@ getModelBounds() {
       // Create material using professional config
       const material = new this.THREE.MeshStandardMaterial({
         color: THREE_CONFIG.MATERIALS.FLOOR.color,
-        side: this.THREE.DoubleSide,
+        side: this.THREE.FrontSide,
         roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
         metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
-        emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity,
-        transparent: false
+        envMapIntensity: THREE_CONFIG.MATERIALS.FLOOR.envMapIntensity ?? 0.7,
+        emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive ?? 0x000000,
+        emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity ?? 0,
+        transparent: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 2,
+        polygonOffsetUnits: 2,
       });
       
       // Create mesh
@@ -5812,19 +5871,11 @@ getModelBounds() {
       // Position the floor at the calculated elevation (storey elevation + room base elevation)
       floor.position.y = minFloorElevation * this.scalingFactor;
       
-      const edges = new this.THREE.EdgesGeometry(geometry);
-      const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
-        color: 0x000000,
-        linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-        depthTest: true,
-        depthWrite: false,
-        renderOrder: 2,
-      });
-      floor.add(edgeLines);
+      // No floor edge lines — they z-fight wall bases
       
       // Set shadow properties
-      floor.castShadow = true;
-      floor.receiveShadow = true;
+      floor.castShadow = false;
+      floor.receiveShadow = false; // no receive: shadow acne blinks while orbiting
       
       // Store floor info in userData
       floor.userData = {

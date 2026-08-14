@@ -1,6 +1,6 @@
 // Utility functions for Three.js scene setup and model building
 
-import { OrbitControls } from './threeInstance';
+import { OrbitControls, RoomEnvironment } from './threeInstance';
 import earcut from 'earcut';
 import { THREE_CONFIG } from './threeConfig';
 import { createFatLineSegmentsFromEdgesGeometry } from './wideLineUtils';
@@ -9,47 +9,133 @@ export function addGrid(instance) {
   if (!THREE_CONFIG.GRID.SHOW_IN_3D) {
     return;
   }
-  // Calculate dynamic grid size based on model bounds, or use default
   let size = instance.gridSize || 10000;
   
-  // Try to calculate grid size from model bounds if available
   if (instance.walls && instance.walls.length > 0 && typeof instance.getModelBounds === 'function') {
     try {
       const bounds = instance.getModelBounds();
       const modelWidth = Math.abs(bounds.maxX - bounds.minX);
       const modelDepth = Math.abs(bounds.maxZ - bounds.minZ);
       const modelSize = Math.max(modelWidth, modelDepth);
-      
-      // Make grid 3x larger than model size to ensure full coverage, with minimum of 5000
       size = Math.max(modelSize * 3, 5000);
-      
-      // Round up to nearest 1000 for cleaner grid
       size = Math.ceil(size / 1000) * 1000;
     } catch (error) {
-      // Fallback to default size if calculation fails
       console.warn('Could not calculate dynamic grid size, using default:', error);
     }
   }
   
-  // Calculate appropriate divisions based on size (more divisions for larger grids)
   const divisions = Math.max(20, Math.min(100, Math.ceil(size / 100)));
   
   const gridHelper = new instance.THREE.GridHelper(size, divisions, 0x888888, 0xcccccc);
   gridHelper.position.y = 0.01;
-  gridHelper.name = 'grid'; // Name it so we can update it later
+  gridHelper.name = 'grid';
   instance.scene.add(gridHelper);
-  instance.gridHelper = gridHelper; // Store reference for potential updates
+  instance.gridHelper = gridHelper;
 }
 
 /**
- * Studio-style backdrop: soft background color + optional infinite ground plane
- * so the 3D view reads as intentional product/architecture viz, not a blank canvas.
+ * Soft cool sky → horizon (distinct from white walls).
+ */
+function createSkyGradientTexture(THREE) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 4;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+  gradient.addColorStop(0, '#6a7f96');
+  gradient.addColorStop(0.4, '#8496ab');
+  gradient.addColorStop(0.7, '#9aabbd');
+  gradient.addColorStop(1, '#708297');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 4, 512);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createContactShadowTexture(THREE) {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.05, size / 2, size / 2, size * 0.48);
+  g.addColorStop(0, 'rgba(18, 24, 36, 0.32)');
+  g.addColorStop(0.4, 'rgba(18, 24, 36, 0.14)');
+  g.addColorStop(0.75, 'rgba(18, 24, 36, 0.05)');
+  g.addColorStop(1, 'rgba(18, 24, 36, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** Soft radial pad under the building (lighter than infinite ground). */
+function createStudioPadTexture(THREE) {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.08, size / 2, size / 2, size * 0.5);
+  g.addColorStop(0, '#9aa8b8');
+  g.addColorStop(0.55, '#7d8b9c');
+  g.addColorStop(1, '#667588');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/**
+ * Contrast studio: cooler mid-tone sky/ground so the white building stands out.
  */
 export function addStudioEnvironment(instance) {
   const cfg = THREE_CONFIG.SCENE;
+  const THREE = instance.THREE;
   const bg = cfg.BACKGROUND_COLOR;
-  instance.scene.background = new instance.THREE.Color(bg);
+
+  if (cfg.USE_SKY_GRADIENT !== false) {
+    try {
+      instance.scene.background = createSkyGradientTexture(THREE);
+    } catch (e) {
+      instance.scene.background = new THREE.Color(bg);
+    }
+  } else {
+    instance.scene.background = new THREE.Color(bg);
+  }
   instance.renderer.setClearColor(bg, 1);
+
+  if (cfg.FOG_FAR > cfg.FOG_NEAR && cfg.FOG_NEAR > 0) {
+    instance.scene.fog = new THREE.Fog(cfg.FOG_COLOR, cfg.FOG_NEAR, cfg.FOG_FAR);
+  } else {
+    instance.scene.fog = null;
+  }
+
+  if (cfg.USE_IBL !== false) {
+    try {
+      const pmrem = new THREE.PMREMGenerator(instance.renderer);
+      pmrem.compileEquirectangularShader();
+      const room = new RoomEnvironment();
+      const envTex = pmrem.fromScene(room, 0.04).texture;
+      instance.scene.environment = envTex;
+      if ('environmentIntensity' in instance.scene) {
+        instance.scene.environmentIntensity = cfg.ENVIRONMENT_INTENSITY ?? 0.65;
+      }
+      room.dispose?.();
+      pmrem.dispose();
+      instance._presentationEnvMap = envTex;
+    } catch (e) {
+      console.warn('Could not create studio IBL environment:', e);
+    }
+  }
+
+  instance.studioPad = null;
+  instance.contactShadow = null;
 
   if (!cfg.STUDIO_GROUND) {
     instance.studioGround = null;
@@ -57,79 +143,187 @@ export function addStudioEnvironment(instance) {
   }
 
   const size = cfg.STUDIO_GROUND_SIZE;
-  const geom = new instance.THREE.PlaneGeometry(size, size, 1, 1);
-  const mat = new instance.THREE.MeshStandardMaterial({
+  const geom = new THREE.PlaneGeometry(size, size, 1, 1);
+  // BasicMaterial: no lighting/shadow shimmer on the huge ground plane while orbiting
+  const mat = new THREE.MeshBasicMaterial({
     color: cfg.STUDIO_GROUND_COLOR,
-    roughness: 1,
-    metalness: 0,
-    // FrontSide only: plane faces +Y after rotation. From below, back faces are culled so the
-    // infinite ground does not cover the model when orbiting under the floor.
-    side: instance.THREE.FrontSide,
+    side: THREE.FrontSide,
     depthWrite: true,
   });
-  const ground = new instance.THREE.Mesh(geom, mat);
+  const ground = new THREE.Mesh(geom, mat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = cfg.STUDIO_GROUND_Y;
-  ground.receiveShadow = true;
+  ground.receiveShadow = false;
   ground.castShadow = false;
   ground.name = 'studio_ground';
   ground.userData.isStudioGround = true;
   instance.scene.add(ground);
   instance.studioGround = ground;
+
+  // Soft radial pad under the model (breaks the infinite flat void)
+  if (cfg.STUDIO_PAD !== false) {
+    try {
+      const padGeom = new THREE.PlaneGeometry(1, 1, 1, 1);
+      const padMat = new THREE.MeshStandardMaterial({
+        map: createStudioPadTexture(THREE),
+        color: 0xffffff,
+        roughness: 0.9,
+        metalness: 0.0,
+        envMapIntensity: 0.25,
+        side: THREE.FrontSide,
+        depthWrite: true,
+      });
+      const pad = new THREE.Mesh(padGeom, padMat);
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.y = cfg.STUDIO_GROUND_Y + 0.04;
+      pad.receiveShadow = true;
+      pad.castShadow = false;
+      pad.name = 'studio_pad';
+      pad.userData.isStudioPad = true;
+      pad.scale.set(400, 400, 1);
+      instance.scene.add(pad);
+      instance.studioPad = pad;
+    } catch (e) {
+      instance.studioPad = null;
+    }
+  }
+
+  // Soft contact blob — BasicMaterial so it won't fight real shadow maps
+  if (cfg.CONTACT_SHADOW !== false) {
+    try {
+      const shadowGeom = new THREE.PlaneGeometry(1, 1, 1, 1);
+      const shadowMat = new THREE.MeshBasicMaterial({
+        map: createContactShadowTexture(THREE),
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        side: THREE.FrontSide,
+      });
+      const contactShadow = new THREE.Mesh(shadowGeom, shadowMat);
+      contactShadow.rotation.x = -Math.PI / 2;
+      contactShadow.position.y = cfg.STUDIO_GROUND_Y + 0.12;
+      contactShadow.name = 'contact_shadow';
+      contactShadow.userData.isContactShadow = true;
+      contactShadow.renderOrder = 1;
+      contactShadow.receiveShadow = false;
+      contactShadow.castShadow = false;
+      instance.scene.add(contactShadow);
+      instance.contactShadow = contactShadow;
+    } catch (e) {
+      instance.contactShadow = null;
+    }
+  }
 }
 
 export function adjustModelScale(instance) {
-  // Example logic, adjust as needed for your app
-  // This could be more complex depending on your model
   instance.camera.position.set(200, 200, 200);
   instance.camera.lookAt(0, 0, 0);
 }
 
 export function addLighting(instance) {
-  // Bright lighting with gentle sky/ground variation so white walls keep shape (less flat void)
-  const hemisphereLight = new instance.THREE.HemisphereLight(
-    0xf7f9fc,
-    0xe1e6ee,
-    1.15
+  const L = THREE_CONFIG.LIGHTING;
+  const THREE = instance.THREE;
+
+  const hemisphereLight = new THREE.HemisphereLight(
+    L.HEMISPHERE_SKY,
+    L.HEMISPHERE_GROUND,
+    L.HEMISPHERE_INTENSITY
   );
   instance.scene.add(hemisphereLight);
-  
-  const ambientLight = new instance.THREE.AmbientLight(0xffffff, 0.95);
+
+  const ambientLight = new THREE.AmbientLight(L.AMBIENT_COLOR, L.AMBIENT_INTENSITY);
   instance.scene.add(ambientLight);
-  
-  // Main directional light (sun) - primary light source with high intensity
-  const mainLight = new instance.THREE.DirectionalLight(0xffffff, 2.0);
-  mainLight.position.set(150, 300, 150);
-  mainLight.castShadow = true;
-  
-  // Configure shadow properties for better quality
-  mainLight.shadow.mapSize.width = 2048;
-  mainLight.shadow.mapSize.height = 2048;
-  mainLight.shadow.camera.near = 0.5;
-  mainLight.shadow.camera.far = 2000;
-  mainLight.shadow.camera.left = -500;
-  mainLight.shadow.camera.right = 500;
-  mainLight.shadow.camera.top = 500;
-  mainLight.shadow.camera.bottom = -500;
-  mainLight.shadow.bias = -0.0001;
-  mainLight.shadow.normalBias = 0.02;
-  
+
+  const mainLight = new THREE.DirectionalLight(L.SUN_COLOR, L.SUN_INTENSITY);
+  mainLight.position.set(L.SUN_POSITION.x, L.SUN_POSITION.y, L.SUN_POSITION.z);
+  mainLight.castShadow = L.SHADOWS === true;
+
+  const mapSize = L.SHADOW_MAP_SIZE || 2048;
+  mainLight.shadow.mapSize.width = mapSize;
+  mainLight.shadow.mapSize.height = mapSize;
+  mainLight.shadow.camera.near = 1;
+  mainLight.shadow.camera.far = 2500;
+  mainLight.shadow.camera.left = -600;
+  mainLight.shadow.camera.right = 600;
+  mainLight.shadow.camera.top = 600;
+  mainLight.shadow.camera.bottom = -600;
+  // Stable shadow acne fix (blinking usually = bias too weak / soft PCF swimming)
+  mainLight.shadow.bias = L.SHADOW_BIAS ?? -0.00025;
+  mainLight.shadow.normalBias = L.SHADOW_NORMAL_BIAS ?? 0.06;
+  mainLight.shadow.radius = L.SHADOW_RADIUS ?? 1;
+
   instance.scene.add(mainLight);
-  
-  // Strong fill light from opposite side for even brightness
-  const fillLight = new instance.THREE.DirectionalLight(0xffffff, 1.0);
-  fillLight.position.set(-150, 200, -150);
+  mainLight.target.position.set(0, 0, 0);
+  instance.scene.add(mainLight.target);
+
+  const fillLight = new THREE.DirectionalLight(L.FILL_COLOR, L.FILL_INTENSITY);
+  fillLight.position.set(L.FILL_POSITION.x, L.FILL_POSITION.y, L.FILL_POSITION.z);
   fillLight.castShadow = false;
   instance.scene.add(fillLight);
-  
-  // Additional top light for maximum brightness
-  const topLight = new instance.THREE.DirectionalLight(0xffffff, 0.8);
-  topLight.position.set(0, 400, 0);
-  topLight.castShadow = false;
-  instance.scene.add(topLight);
-  
-  // Store main light reference for potential updates
+
+  const rimLight = new THREE.DirectionalLight(L.RIM_COLOR, L.RIM_INTENSITY);
+  rimLight.position.set(L.RIM_POSITION.x, L.RIM_POSITION.y, L.RIM_POSITION.z);
+  rimLight.castShadow = false;
+  instance.scene.add(rimLight);
+
   instance.mainLight = mainLight;
+  instance.fillLight = fillLight;
+  instance.rimLight = rimLight;
+}
+
+export function fitMainLightShadows(instance) {
+  if (!instance.mainLight || typeof instance.getModelBounds !== 'function') return;
+  try {
+    const bounds = instance.getModelBounds();
+    const minX = bounds.minX;
+    const maxX = bounds.maxX;
+    const minZ = bounds.minZ;
+    const maxZ = bounds.maxZ;
+    const minY = bounds.minY ?? 0;
+    const maxY = bounds.maxY ?? 50;
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const cz = (minZ + maxZ) / 2;
+    const spanX = Math.max(Math.abs(maxX - minX), 20);
+    const spanZ = Math.max(Math.abs(maxZ - minZ), 20);
+    const spanY = Math.max(Math.abs(maxY - minY), 20);
+    const half = Math.max(spanX, spanZ, spanY) * 0.85 + 60;
+
+    const light = instance.mainLight;
+    light.target.position.set(cx, cy, cz);
+    light.target.updateMatrixWorld();
+    const offset = new instance.THREE.Vector3(200, 340, 150).normalize().multiplyScalar(half * 2.4);
+    light.position.set(cx + offset.x, cy + offset.y, cz + offset.z);
+
+    const cam = light.shadow.camera;
+    cam.left = -half;
+    cam.right = half;
+    cam.top = half;
+    cam.bottom = -half;
+    cam.near = Math.max(1, half * 0.05);
+    cam.far = half * 5.5;
+    cam.updateProjectionMatrix();
+    light.shadow.needsUpdate = true;
+    if (instance.renderer?.shadowMap) {
+      instance.renderer.shadowMap.needsUpdate = true;
+    }
+
+    if (instance.studioPad) {
+      const padScale = 1.85;
+      instance.studioPad.position.x = cx;
+      instance.studioPad.position.z = cz;
+      instance.studioPad.scale.set(spanX * padScale, spanZ * padScale, 1);
+    }
+
+    if (instance.contactShadow) {
+      const contactScale = 1.4;
+      instance.contactShadow.position.x = cx;
+      instance.contactShadow.position.z = cz;
+      instance.contactShadow.scale.set(spanX * contactScale, spanZ * contactScale, 1);
+    }
+  } catch (e) {
+    // Non-fatal
+  }
 }
 
 export function addControls(instance) {
@@ -719,8 +913,9 @@ export function addCeiling(instance) {
     side: instance.THREE.DoubleSide,
     roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
     metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
-    emissive: THREE_CONFIG.MATERIALS.CEILING.emissive,
-    emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity,
+    envMapIntensity: THREE_CONFIG.MATERIALS.CEILING.envMapIntensity ?? 0.85,
+    emissive: THREE_CONFIG.MATERIALS.CEILING.emissive ?? 0x000000,
+    emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity ?? 0,
     transparent: false,
     depthWrite: true,
     depthTest: true,
@@ -737,15 +932,19 @@ export function addCeiling(instance) {
   // Add a tiny offset to prevent z-fighting with wall tops
   ceiling.position.y = maxCeilingElevation * instance.scalingFactor + 0.001;
   
-  const edges = new instance.THREE.EdgesGeometry(geometry);
-  const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
-    color: 0x000000,
-    linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-    depthTest: true,
-    depthWrite: false,
-    renderOrder: 2,
-  });
-  ceiling.add(edgeLines);
+  if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
+    const edges = new instance.THREE.EdgesGeometry(geometry);
+    const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
+      color: THREE_CONFIG.EDGE_LINES?.COLOR ?? 0x94a3b8,
+      linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+      transparent: (THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1) < 1,
+      opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
+      depthTest: true,
+      depthWrite: false,
+      renderOrder: 2,
+    });
+    ceiling.add(edgeLines);
+  }
   
   // Set shadow properties
   // Disable shadow receiving on ceiling to avoid dark shadow rectangles from walls
@@ -911,12 +1110,16 @@ export function addFloor(instance) {
   // Create material for floor
   const material = new instance.THREE.MeshStandardMaterial({
     color: THREE_CONFIG.MATERIALS.FLOOR.color,
-    side: instance.THREE.DoubleSide,
+    side: instance.THREE.FrontSide,
     roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
     metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
-    emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive,
-    emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity,
-    transparent: false
+    envMapIntensity: THREE_CONFIG.MATERIALS.FLOOR.envMapIntensity ?? 0.7,
+    emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive ?? 0x000000,
+    emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity ?? 0,
+    transparent: false,
+    polygonOffset: true,
+    polygonOffsetFactor: 2,
+    polygonOffsetUnits: 2,
   });
   
   // Create mesh
@@ -926,19 +1129,11 @@ export function addFloor(instance) {
   // Position the floor at the calculated elevation (storey elevation + room base elevation)
   floor.position.y = minFloorElevation * instance.scalingFactor;
   
-  const edges = new instance.THREE.EdgesGeometry(geometry);
-  const edgeLines = createFatLineSegmentsFromEdgesGeometry(edges, {
-    color: 0x000000,
-    linewidth: THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-    depthTest: true,
-    depthWrite: false,
-    renderOrder: 2,
-  });
-  floor.add(edgeLines);
+  // No floor edge lines — they z-fight wall bases
   
   // Set shadow properties
-  floor.castShadow = true;
-  floor.receiveShadow = true;
+  floor.castShadow = false;
+  floor.receiveShadow = false; // no receive: shadow acne blinks while orbiting
   
   // Store floor info in userData
   floor.userData = {
