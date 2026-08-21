@@ -20,7 +20,6 @@ import CeilingManager from '../ceiling/CeilingManager';
 import FloorManager from '../floor/FloorManager';
 import InstallationTimeEstimator from '../estimation/InstallationTimeEstimator';
 import ProjectCommentsPanel from './ProjectCommentsPanel';
-import ImportPdfWallsModal from './ImportPdfWallsModal';
 import { buildRoomLabelLines } from '../room/roomLabelUtils';
 import api from '../../api/api';
 import ModalOverlay from '../../components/ModalOverlay';
@@ -51,7 +50,6 @@ import {
     FaRedo,
     FaStreetView,
     FaShareAlt,
-    FaFilePdf,
     FaExpand,
     FaCompress,
 } from 'react-icons/fa';
@@ -98,7 +96,6 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
     const [shareModalOpen, setShareModalOpen] = useState(false);
-    const [importPdfModalOpen, setImportPdfModalOpen] = useState(false);
     const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
     const [commentWallSelectMode, setCommentWallSelectMode] = useState(false);
     const [selectedWallsForComment, setSelectedWallsForComment] = useState([]);
@@ -1608,17 +1605,6 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             {unreadCommentCount > 9 ? '9+' : unreadCommentCount}
                                         </span>
                                     )}
-                                </button>
-                            )}
-                            {canEdit && !isShareSession && projectDetails.currentView === 'wall-plan' && (
-                                <button
-                                    type="button"
-                                    onClick={() => setImportPdfModalOpen(true)}
-                                    className="flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary"
-                                    title="Import walls, doors, rooms from DWG, DXF, or PDF"
-                                >
-                                    <FaFilePdf className="mr-1.5 text-xs" />
-                                    Import plan
                                 </button>
                             )}
                             {canEdit && projectDetails.currentView === 'wall-plan' && (
@@ -4286,19 +4272,6 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     onClose={() => setShareModalOpen(false)}
                 />
             )}
-
-            <ImportPdfWallsModal
-                open={importPdfModalOpen}
-                projectId={projectId}
-                storeyId={projectDetails.activeStoreyId}
-                onClose={() => setImportPdfModalOpen(false)}
-                onImported={async () => {
-                    setImportPdfModalOpen(false);
-                    if (typeof projectDetails.fetchProjectDetails === 'function') {
-                        await projectDetails.fetchProjectDetails();
-                    }
-                }}
-            />
 
             </div>
         </div>

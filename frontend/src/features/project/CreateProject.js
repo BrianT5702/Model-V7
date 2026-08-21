@@ -329,59 +329,6 @@ const CreateProject = ({
                             </div>
                         </div>
 
-                        <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 px-4 py-3">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                <div>
-                                    <p className="text-sm font-medium text-blue-900">Import from DWG / PDF</p>
-                                    <p className="text-xs text-blue-800 mt-0.5">
-                                        Prefer DWG/DXF for accurate wall layers. PDF still works for older sheets.
-                                        Enter the project name above, then choose the file.
-                                    </p>
-                                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-blue-900">
-                                        PDF page
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            value={(pdfPageIndex || 0) + 1}
-                                            onChange={(e) => {
-                                                const page = Math.max(1, parseInt(e.target.value, 10) || 1);
-                                                setPdfPageIndex(page - 1);
-                                            }}
-                                            disabled={isImporting || isSubmitting}
-                                            className="w-16 rounded border border-blue-200 px-2 py-1"
-                                        />
-                                    </label>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={handleImportClick}
-                                    disabled={isImporting || isSubmitting}
-                                    className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-100 disabled:opacity-60 shrink-0"
-                                >
-                                    <FaFilePdf className="w-4 h-4" />
-                                    {isImporting ? 'Importing…' : 'Import plan'}
-                                </button>
-                            </div>
-                            <input
-                                ref={pdfInputRef}
-                                type="file"
-                                accept=".pdf,.dwg,.dxf,application/pdf"
-                                className="hidden"
-                                onChange={handlePdfSelected}
-                            />
-                        </div>
-
-                        <div className="relative py-1">
-                            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                                <div className="w-full border-t border-gray-200" />
-                            </div>
-                            <div className="relative flex justify-center">
-                                <span className="bg-white px-3 text-xs text-gray-500 uppercase tracking-wide">
-                                    or create manually
-                                </span>
-                            </div>
-                        </div>
-
                         <div className="flex gap-6">
                             <div className="flex-1">
                                 <label className="block text-sm font-medium text-gray-700">Width (mm)</label>
@@ -447,6 +394,64 @@ const CreateProject = ({
                             >
                                 {isSubmitting ? 'Creating...' : 'Create Project'}
                             </button>
+                        </div>
+
+                        <div className="relative py-1">
+                            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                                <div className="w-full border-t border-gray-200" />
+                            </div>
+                            <div className="relative flex justify-center">
+                                <span className="bg-white px-3 text-xs text-gray-500 uppercase tracking-wide">
+                                    or import from plan
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <p className="text-sm font-medium text-gray-700">
+                                        Import from DWG / PDF
+                                        <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">
+                                            In development
+                                        </span>
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-0.5">
+                                        Prefer DWG/DXF for accurate wall layers. PDF still works for older sheets.
+                                        Enter the project name above, then choose the file.
+                                    </p>
+                                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700">
+                                        PDF page
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={(pdfPageIndex || 0) + 1}
+                                            onChange={(e) => {
+                                                const page = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                                setPdfPageIndex(page - 1);
+                                            }}
+                                            disabled={isImporting || isSubmitting}
+                                            className="w-16 rounded border border-gray-300 px-2 py-1"
+                                        />
+                                    </label>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleImportClick}
+                                    disabled={isImporting || isSubmitting}
+                                    className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-100 disabled:opacity-60 shrink-0"
+                                >
+                                    <FaFilePdf className="w-4 h-4" />
+                                    {isImporting ? 'Importing…' : 'Import plan'}
+                                </button>
+                            </div>
+                            <input
+                                ref={pdfInputRef}
+                                type="file"
+                                accept=".pdf,.dwg,.dxf,application/pdf"
+                                className="hidden"
+                                onChange={handlePdfSelected}
+                            />
                         </div>
                     </form>
                 </>
