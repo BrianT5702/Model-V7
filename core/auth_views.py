@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .permissions import IsAdminRole
+from .permissions import IsAdminRole, IsEditorRole
 from .role_utils import (
     ROLE_DRAFTER,
     ROLE_SALESMAN,
@@ -139,6 +139,23 @@ def list_users_view(request):
         for user in _admin_user_queryset()
     ]
     return Response({'users': users})
+
+
+@api_view(['GET'])
+@permission_classes([IsEditorRole])
+def list_salesmen_view(request):
+    """Salesman accounts that editors can grant project visibility to."""
+    users = (
+        User.objects
+        .filter(profile__role=ROLE_SALESMAN)
+        .order_by('username')
+    )
+    return Response({
+        'users': [
+            {'id': user.id, 'username': user.username}
+            for user in users
+        ],
+    })
 
 
 @api_view(['PATCH', 'DELETE'])

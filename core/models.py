@@ -92,6 +92,12 @@ class Project(models.Model):
         null=True,
         blank=True,
     )
+    visible_to_salesmen = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='visible_projects',
+        blank=True,
+        help_text='Salesman accounts that can see this project. Admin and drafter always see all.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

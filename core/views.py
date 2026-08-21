@@ -14,8 +14,10 @@ from .serializers import (
     ProjectCommentSerializer, PlanAnnotationSerializer,
 )
 from .comment_utils import get_unread_comment_counts, mark_project_comments_read
+from django.contrib.auth.models import User
 from .permissions import CanAddProjectComment, PlanAnnotationPermission
-from .role_utils import user_can_edit
+from .project_visibility import scope_queryset_for_salesman
+from .role_utils import ROLE_SALESMAN, user_can_edit
 from .services import WallService, RoomService, DoorService, CeilingService, FloorService, normalize_wall_coordinates
 from .share_utils import scope_queryset_for_anonymous_share
 
@@ -28,7 +30,8 @@ class ShareScopedModelViewSet(viewsets.ModelViewSet):
 
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)
-        return scope_queryset_for_anonymous_share(self.request, queryset)
+        queryset = scope_queryset_for_anonymous_share(self.request, queryset)
+        return scope_queryset_for_salesman(self.request, queryset)
 
 
 class ProjectViewSet(ShareScopedModelViewSet):
@@ -38,7 +41,7 @@ class ProjectViewSet(ShareScopedModelViewSet):
     def get_queryset(self):
         # Keep list endpoint lean for fast homepage loads.
         if self.action == 'list':
-            return (
+            queryset = (
                 Project.objects
                 .select_related('folder', 'created_by', 'last_edited_by')
                 .only(
@@ -61,6 +64,9 @@ class ProjectViewSet(ShareScopedModelViewSet):
                 )
                 .order_by('folder__order', 'list_order', '-updated_at', '-id')
             )
+            if user_can_edit(self.request.user):
+                queryset = queryset.prefetch_related('visible_to_salesmen')
+            return queryset
         if self.action == 'retrieve':
             return (
                 Project.objects
@@ -101,12 +107,16 @@ class ProjectViewSet(ShareScopedModelViewSet):
         return (
             Project.objects
             .select_related('folder', 'created_by', 'last_edited_by')
+            .prefetch_related('visible_to_salesmen')
             .get(pk=project.pk)
         )
 
     def _list_project_response(self, project, status_code=status.HTTP_200_OK):
         refreshed = self._refresh_project_for_list(project)
-        return Response(ProjectListSerializer(refreshed).data, status=status_code)
+        return Response(
+            ProjectListSerializer(refreshed, context={'request': self.request}).data,
+            status=status_code,
+        )
 
     def perform_create(self, serializer):
         user = self._acting_user()
@@ -507,6 +517,47 @@ class ProjectViewSet(ShareScopedModelViewSet):
         project = self.get_object()
         mark_project_comments_read(request.user, project)
         return Response({'message': 'Comments marked as read.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['put', 'patch'], url_path='salesman-viewers')
+    def salesman_viewers(self, request, pk=None):
+        """Set which salesman accounts can see this project."""
+        if not user_can_edit(request.user):
+            return Response({'error': 'Edit permission required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        project = self.get_object()
+        raw_ids = request.data.get('user_ids', request.data.get('visible_to_salesman_ids'))
+        if raw_ids is None:
+            return Response({'error': 'user_ids is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(raw_ids, list):
+            return Response({'error': 'user_ids must be a list of integers.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user_ids = []
+        for value in raw_ids:
+            try:
+                user_ids.append(int(value))
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'user_ids must be a list of integers.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        unique_ids = list(dict.fromkeys(user_ids))
+        if unique_ids:
+            users = list(
+                User.objects.filter(id__in=unique_ids, profile__role=ROLE_SALESMAN)
+            )
+            found_ids = {user.id for user in users}
+            missing = [uid for uid in unique_ids if uid not in found_ids]
+            if missing:
+                return Response(
+                    {'error': f'Not salesman accounts: {missing}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            users = []
+
+        project.visible_to_salesmen.set(users)
+        return self._list_project_response(project)
 
 
 class ProjectFolderViewSet(ShareScopedModelViewSet):

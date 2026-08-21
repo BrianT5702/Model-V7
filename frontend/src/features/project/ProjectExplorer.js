@@ -12,6 +12,7 @@ import {
     FaSearch,
     FaTimes,
     FaTrash,
+    FaUserFriends,
 } from 'react-icons/fa';
 import { UNCATEGORIZED_KEY } from './ProjectFolderSection';
 import {
@@ -282,6 +283,7 @@ const ProjectRow = ({
     onOpen,
     onEdit,
     onDelete,
+    onManageViewers,
 }) => (
     <tr
         draggable={enableDrag}
@@ -348,7 +350,23 @@ const ProjectRow = ({
         </td>
         <td className="px-4 py-2.5 text-right">
             {canEdit ? (
-                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center justify-end gap-1">
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onManageViewers?.(project);
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className="p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded"
+                        title={
+                            (project.visible_to_salesman_usernames || []).length > 0
+                                ? `Visible to: ${project.visible_to_salesman_usernames.join(', ')}`
+                                : 'Choose which salesmen can view this project'
+                        }
+                    >
+                        <FaUserFriends className="w-3.5 h-3.5" />
+                    </button>
                     <button
                         type="button"
                         onClick={(e) => {
@@ -406,6 +424,7 @@ const ProjectExplorer = ({
     onProjectClick,
     onProjectEdit,
     onProjectDelete,
+    onProjectManageViewers,
     onCreateInFolder,
     currentFolderLabel,
     createFolderParentLabel,
@@ -774,6 +793,7 @@ const ProjectExplorer = ({
                                             )}
                                             onEdit={onProjectEdit}
                                             onDelete={onProjectDelete}
+                                            onManageViewers={onProjectManageViewers}
                                         />
                                     ))}
                                 </tbody>

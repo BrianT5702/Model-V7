@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .auth_views import (
     current_user_view,
     list_users_view,
+    list_salesmen_view,
     login_view,
     logout_view,
     register_view,
@@ -58,6 +59,7 @@ urlpatterns = [
     path('auth/logout/', logout_view, name='auth-logout'),
     path('auth/register/', register_view, name='auth-register'),
     path('auth/users/', list_users_view, name='auth-users-list'),
+    path('auth/salesmen/', list_salesmen_view, name='auth-salesmen-list'),
     path('auth/users/<int:user_id>/', user_detail_view, name='auth-user-detail'),
     path('projects/<int:project_id>/share-links/', project_share_links_view, name='project-share-links'),
     path(

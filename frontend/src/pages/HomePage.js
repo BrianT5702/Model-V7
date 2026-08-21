@@ -212,7 +212,7 @@ const HomePage = () => {
                 <div id="projects-section" className="flex flex-col min-h-[480px]">
                     {!canEdit && isAuthenticated && (
                         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            View-only access (Salesman). You can browse projects, open plans, use 3D, and export — but cannot create or edit.
+                            View-only access (Salesman). You only see projects assigned to your account, and cannot create or edit.
                         </div>
                     )}
 

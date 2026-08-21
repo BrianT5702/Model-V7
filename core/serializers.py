@@ -476,7 +476,12 @@ class ProjectFolderSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
     def get_project_count(self, obj):
-        return obj.projects.count()
+        request = self.context.get('request')
+        queryset = obj.projects.all()
+        if request is not None:
+            from .project_visibility import filter_project_queryset_for_request
+            queryset = filter_project_queryset_for_request(request, queryset)
+        return queryset.count()
 
     def _would_create_cycle(self, parent):
         if not self.instance or not parent:
@@ -741,6 +746,19 @@ class ProjectListSerializer(serializers.ModelSerializer):
     created_by_username = serializers.SerializerMethodField()
     last_edited_by_username = serializers.SerializerMethodField()
     unread_comment_count = serializers.SerializerMethodField()
+    visible_to_salesman_ids = serializers.SerializerMethodField()
+    visible_to_salesman_usernames = serializers.SerializerMethodField()
+
+    def _viewer_users(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return []
+        from .role_utils import user_can_edit
+        if not user_can_edit(request.user):
+            return []
+        users = list(obj.visible_to_salesmen.all())
+        users.sort(key=lambda user: user.username.lower())
+        return users
 
     def get_created_by_username(self, obj):
         if getattr(obj, 'created_by_id', None) and obj.created_by:
@@ -755,6 +773,12 @@ class ProjectListSerializer(serializers.ModelSerializer):
     def get_unread_comment_count(self, obj):
         counts = self.context.get('unread_comment_counts', {})
         return counts.get(obj.id, 0)
+
+    def get_visible_to_salesman_ids(self, obj):
+        return [user.id for user in self._viewer_users(obj)]
+
+    def get_visible_to_salesman_usernames(self, obj):
+        return [user.username for user in self._viewer_users(obj)]
 
     class Meta:
         model = Project
@@ -775,4 +799,6 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'unread_comment_count',
+            'visible_to_salesman_ids',
+            'visible_to_salesman_usernames',
         ]

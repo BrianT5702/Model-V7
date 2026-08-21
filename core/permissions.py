@@ -1,5 +1,6 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
+from .project_visibility import user_can_access_obj
 from .role_utils import user_can_comment, user_can_edit, user_is_admin
 from .share_utils import (
     extract_project_id_from_obj,
@@ -66,7 +67,7 @@ class IsEditorOrReadOnly(BasePermission):
             return False
 
         if _is_authenticated(request.user):
-            return True
+            return user_can_access_obj(request, obj)
 
         share = get_share_link_from_request(request)
         return _share_matches_obj(share, obj)
@@ -121,9 +122,16 @@ class PlanAnnotationPermission(BasePermission):
         if request.method not in SAFE_METHODS:
             return False
         if _is_authenticated(request.user):
-            return True
+            return user_can_access_obj(request, obj)
         share = get_share_link_from_request(request)
         return _share_matches_obj(share, obj)
+
+
+class IsEditorRole(BasePermission):
+    """Admin or Drafter."""
+
+    def has_permission(self, request, view):
+        return user_can_edit(request.user)
 
 
 class CanManageProjectShareLinks(BasePermission):

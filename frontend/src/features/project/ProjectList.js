@@ -5,6 +5,7 @@ import api from '../../api/api';
 import EditProject from './EditProject';
 import ProjectExplorer from './ProjectExplorer';
 import CreateFolderModal from './CreateFolderModal';
+import ProjectVisibilityModal from './ProjectVisibilityModal';
 import { UNCATEGORIZED_KEY } from './ProjectFolderSection';
 import {
     buildProjectPath,
@@ -33,6 +34,8 @@ const ProjectList = ({
     const [deleteError, setDeleteError] = useState('');
     const [showEditModal, setShowEditModal] = useState(false);
     const [projectToEdit, setProjectToEdit] = useState(null);
+    const [showVisibilityModal, setShowVisibilityModal] = useState(false);
+    const [projectToManageViewers, setProjectToManageViewers] = useState(null);
     const [draggingProjectId, setDraggingProjectId] = useState(null);
     const [dropTargetId, setDropTargetId] = useState(null);
     const [showFolderDeleteConfirm, setShowFolderDeleteConfirm] = useState(false);
@@ -107,6 +110,22 @@ const ProjectList = ({
     };
 
     const handleEditSuccess = (updatedProject) => {
+        setProjects(safeProjects.map((project) =>
+            project.id === updatedProject.id ? { ...project, ...updatedProject } : project
+        ));
+    };
+
+    const handleManageViewersClick = (project) => {
+        setProjectToManageViewers(project);
+        setShowVisibilityModal(true);
+    };
+
+    const handleVisibilityClose = () => {
+        setShowVisibilityModal(false);
+        setProjectToManageViewers(null);
+    };
+
+    const handleVisibilitySaved = (updatedProject) => {
         setProjects(safeProjects.map((project) =>
             project.id === updatedProject.id ? { ...project, ...updatedProject } : project
         ));
@@ -326,6 +345,7 @@ const ProjectList = ({
         onProjectClick: handleProjectClick,
         onProjectEdit: handleEditClick,
         onProjectDelete: handleDeleteClick,
+        onProjectManageViewers: handleManageViewersClick,
         onCreateInFolder: canEdit && foldersAvailable && onCreateInFolder
             ? () => onCreateInFolder(selectedFolderKey)
             : undefined,
@@ -405,7 +425,7 @@ const ProjectList = ({
                     ) : (
                         <p className="text-sm text-gray-500">
                             {isAuthenticated
-                                ? 'No projects yet. Your account cannot create projects.'
+                                ? 'No projects have been assigned to your account yet.'
                                 : 'Log in to create projects.'}
                         </p>
                     )}
@@ -424,6 +444,14 @@ const ProjectList = ({
                     project={projectToEdit}
                     onClose={handleEditClose}
                     onSuccess={handleEditSuccess}
+                />
+            )}
+
+            {canEdit && showVisibilityModal && projectToManageViewers && (
+                <ProjectVisibilityModal
+                    project={projectToManageViewers}
+                    onClose={handleVisibilityClose}
+                    onSaved={handleVisibilitySaved}
                 />
             )}
 

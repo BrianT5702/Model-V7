@@ -1503,6 +1503,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       console.error('Error fetching project details:', error);
       if (isDatabaseConnectionError(error)) {
         setProjectLoadError('Fail to connect to database. Try again later.');
+      } else if ([403, 404].includes(error.response?.status)) {
+        setProjectLoadError('This project is not available on your account.');
       } else {
         setProjectLoadError('Failed to load project. Please try again.');
       }
