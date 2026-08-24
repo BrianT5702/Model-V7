@@ -1993,10 +1993,15 @@ const CeilingCanvas = ({
         const suppressed = new Set(meta.suppressedAutoPanelKeys || []);
         const manualNylon = nylon.filter((s) => !(s.isAuto && !s.isManual));
         const autoBySlot = new Map();
+        const autoByPanel = new Map();
         nylon
             .filter((s) => s.isAuto && !s.isManual)
             .forEach((s) => {
-                autoBySlot.set(nylonAutoSlotFromSupport(s), ensureStableNylonKey(s));
+                const keyed = ensureStableNylonKey(s);
+                autoBySlot.set(nylonAutoSlotFromSupport(s), keyed);
+                const panelGroup = `${s.room_id}:${s.panel_id ?? ''}`;
+                if (!autoByPanel.has(panelGroup)) autoByPanel.set(panelGroup, []);
+                autoByPanel.get(panelGroup).push(keyed);
             });
 
         const nextAuto = [];
@@ -2012,6 +2017,7 @@ const CeilingCanvas = ({
                 if (suppressed.has(autoNylonSlotKey(roomId, panelId))) return;
 
                 const placements = getAutoNylonHangerOffsets(panel, ceilingThickness);
+                const required = [];
                 placements.forEach((placement) => {
                     const slot = autoNylonSlotKey(
                         roomId,
@@ -2020,18 +2026,38 @@ const CeilingCanvas = ({
                         placement.offsetWidth == null ? 'center' : placement.offsetWidth
                     );
                     if (suppressed.has(slot)) return;
-                    if (autoBySlot.has(slot)) {
-                        nextAuto.push(autoBySlot.get(slot));
+                    required.push({ placement, slot });
+                });
+
+                const existingOnPanel = [...(autoByPanel.get(`${roomId}:${panelId}`) || [])];
+                const usedKeys = new Set();
+                const unmatched = [];
+                required.forEach(({ placement, slot }) => {
+                    const exact = autoBySlot.get(slot);
+                    if (exact && !usedKeys.has(nylonHangerKey(exact))) {
+                        nextAuto.push(exact);
+                        usedKeys.add(nylonHangerKey(exact));
                     } else {
-                        const entry = buildNylonEntryForPanel(
-                            room,
-                            panel,
-                            placement.offsetLength,
-                            placement.offsetWidth,
-                            true
-                        );
-                        if (entry) nextAuto.push(entry);
+                        unmatched.push(placement);
                     }
+                });
+                // Keep user-moved auto hangers instead of recreating defaults (that
+                // would change keys and close the Support Tools editor).
+                const leftover = existingOnPanel.filter((s) => !usedKeys.has(nylonHangerKey(s)));
+                unmatched.forEach((placement) => {
+                    const reuse = leftover.shift();
+                    if (reuse) {
+                        nextAuto.push(reuse);
+                        return;
+                    }
+                    const entry = buildNylonEntryForPanel(
+                        room,
+                        panel,
+                        placement.offsetLength,
+                        placement.offsetWidth,
+                        true
+                    );
+                    if (entry) nextAuto.push(entry);
                 });
             });
         }
@@ -2105,7 +2131,7 @@ const CeilingCanvas = ({
         }
         const hanger = listNylonHangers().find((h) => h.key === selectedNylonKey);
         if (!hanger) {
-            setSelectedNylonKey(null);
+            // Keep the editor open across an in-progress offset apply.
             return;
         }
         const panel = findPanelById(hanger.panel_id, hanger.room_id);
@@ -5817,6 +5843,7 @@ const CeilingCanvas = ({
                         <button
                             type="button"
                             className="w-full px-2 py-1.5 text-sm rounded-lg bg-red-100 text-red-900 border border-red-200 hover:bg-red-200"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                                 updateNylonPlacement(
                                     selectedNylonKey,
@@ -5834,6 +5861,7 @@ const CeilingCanvas = ({
                         <button
                             type="button"
                             className="w-full px-2 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                                 updateNylonPlacement(
                                     selectedNylonKey,
@@ -5849,13 +5877,18 @@ const CeilingCanvas = ({
                     <button
                         type="button"
                         className="w-full px-2 py-1.5 text-sm rounded-lg bg-gray-700 text-white hover:bg-gray-800"
-                        onClick={() => setSelectedNylonKey(null)}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                            commitNylonEditField();
+                            setSelectedNylonKey(null);
+                        }}
                     >
                         Done
                     </button>
                     <button
                         type="button"
                         className="support-secondary-btn w-full px-2 py-1.5 text-sm rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => deleteNylonByKey(selectedNylonKey)}
                     >
                         Delete hanger

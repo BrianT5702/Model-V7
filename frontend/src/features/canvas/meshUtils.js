@@ -33,6 +33,45 @@ function stripNearBottomHorizontalEdges(THREE, edgesGeometry, yEps = 0.08) {
 }
 
 /**
+ * Drop fake "cuts" across a wall's long faces.
+ *
+ * A partial-height 45° / butt-in (fill-gap meeting a taller wall) inserts extra
+ * vertices on the joint edge so the miter can stop at the overlap. Earcut then
+ * fans those points to the far corner, and EdgesGeometry treats the spanning
+ * triangle edges as unmatched boundaries — a diagonal from the joining wall's
+ * top down to the opposite bottom corner. Real cap outlines are axis-aligned
+ * in local XY; 45° miters live on the end faces (Z varies).
+ */
+function stripInteriorCapDiagonals(THREE, edgesGeometry, wallThickness, axisEps = 0.08) {
+  const pos = edgesGeometry.attributes.position;
+  if (!pos || pos.count < 2) return edgesGeometry;
+  const zLo = 0;
+  const zHi = Number(wallThickness) || 0;
+  const kept = [];
+  for (let i = 0; i < pos.count; i += 2) {
+    const x1 = pos.getX(i);
+    const y1 = pos.getY(i);
+    const z1 = pos.getZ(i);
+    const x2 = pos.getX(i + 1);
+    const y2 = pos.getY(i + 1);
+    const z2 = pos.getZ(i + 1);
+    const sameZ = Math.abs(z1 - z2) <= axisEps;
+    const onCap = sameZ && (
+      (Math.abs(z1 - zLo) <= axisEps && Math.abs(z2 - zLo) <= axisEps)
+      || (Math.abs(z1 - zHi) <= axisEps && Math.abs(z2 - zHi) <= axisEps)
+    );
+    const spansX = Math.abs(x2 - x1) > axisEps;
+    const spansY = Math.abs(y2 - y1) > axisEps;
+    if (onCap && spansX && spansY) continue;
+    kept.push(x1, y1, z1, x2, y2, z2);
+  }
+  edgesGeometry.dispose();
+  const filtered = new THREE.BufferGeometry();
+  filtered.setAttribute('position', new THREE.Float32BufferAttribute(kept, 3));
+  return filtered;
+}
+
+/**
  * Joint context for the interior-face rule, in the shape the 2D plan uses. Memoised on the
  * identity of the wall/joint arrays so a rebuild recomputes it but each door in a build does
  * not.
@@ -1422,8 +1461,10 @@ export function createWallMesh(instance, wall) {
   let edgeLines = null;
   if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
     const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
+    // Drop earcut diagonals on the long faces (partial 45° / fill-gap joints)
+    const noCapDiags = stripInteriorCapDiagonals(instance.THREE, edges, wallThickness, 0.08);
     // Drop bottom horizontal edges — they z-fight floor/ground and blink while orbiting
-    const filtered = stripNearBottomHorizontalEdges(instance.THREE, edges, 0.08);
+    const filtered = stripNearBottomHorizontalEdges(instance.THREE, noCapDiags, 0.08);
     edgeLines = createFatLineSegmentsFromEdgesGeometry(filtered, {
       color: THREE_CONFIG.EDGE_LINES?.COLOR ?? 0x94a3b8,
       linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
