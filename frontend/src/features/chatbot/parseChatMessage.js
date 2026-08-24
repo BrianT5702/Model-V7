@@ -81,6 +81,42 @@ export function parseYesNo(text) {
   return null;
 }
 
+/** Copy remaining details from the previous room (not "same" = project height). */
+export function isSameAsPrevious(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return false;
+  return /^(same\s+as\s+(previous|last|before|the\s+last(\s+room)?)|copy(\s+(previous|last))?|same\s+as\s+last\s+room)$/i.test(t);
+}
+
+/**
+ * Parse a room temperature in °C.
+ * Accepts "0", "-18", "2-6", "2 to 6", "ambient", "default".
+ * @returns {{ temperature: number, temperature_min?: number, temperature_max?: number } | null}
+ */
+export function parseTemperature(text) {
+  const t = String(text || '').trim().toLowerCase().replace(/°\s*c|deg(?:rees?)?\s*c?/g, '').trim();
+  if (!t) return null;
+  if (/^(default|skip|ambient|none|na|n\/a|room)$/i.test(t)) {
+    return { temperature: 0 };
+  }
+
+  const range = t.match(/(-?\d+(?:\.\d+)?)\s*(?:-|to|~)\s*(-?\d+(?:\.\d+)?)/);
+  if (range) {
+    const a = Number(range[1]);
+    const b = Number(range[2]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    const min = Math.min(a, b);
+    const max = Math.max(a, b);
+    return { temperature: max, temperature_min: min, temperature_max: max };
+  }
+
+  const one = t.match(/^(-?\d+(?:\.\d+)?)$/);
+  if (!one) return null;
+  const value = Number(one[1]);
+  if (!Number.isFinite(value)) return null;
+  return { temperature: value };
+}
+
 export function parseFloorType(text) {
   const t = String(text || '').trim().toLowerCase();
   if (!t) return null;

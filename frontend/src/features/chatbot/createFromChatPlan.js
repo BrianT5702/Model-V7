@@ -19,6 +19,7 @@ function wallPayload({
   inner,
   outer,
   isDefault = false,
+  applicationType = 'wall',
 }) {
   return {
     project: projectId,
@@ -29,7 +30,7 @@ function wallPayload({
     end_y: end.y,
     height,
     thickness,
-    application_type: 'wall',
+    application_type: applicationType,
     inner_face_material: inner || 'PPGI',
     inner_face_thickness: FACE_THICKNESS,
     outer_face_material: outer || 'PPGI',
@@ -105,6 +106,9 @@ export async function createProjectFromChatDraft(draft) {
         width: r.width,
         length: r.length,
         height: r.height,
+        temperature: r.temperature,
+        temperature_min: r.temperature_min,
+        temperature_max: r.temperature_max,
         floor_type: r.floor_type,
         floor_thickness: r.floor_thickness,
         include_ceiling: r.include_ceiling,
@@ -163,6 +167,7 @@ export async function createProjectFromChatDraft(draft) {
           inner: owner?.inner_face_material,
           outer: owner?.outer_face_material,
           isDefault: false,
+          applicationType: 'partition',
         }));
         wallBySegment.set(key, response.data);
         walls.push(response.data);
@@ -193,6 +198,7 @@ export async function createProjectFromChatDraft(draft) {
               inner: placed.inner_face_material,
               outer: placed.outer_face_material,
               isDefault: false,
+              applicationType: 'partition',
             }));
             wallBySegment.set(key, response.data);
             walls.push(response.data);
@@ -208,7 +214,9 @@ export async function createProjectFromChatDraft(draft) {
         floor_type: placed.floor_type || 'Panel',
         floor_thickness: placed.floor_thickness ?? 0,
         floor_layers: 1,
-        temperature: 0,
+        temperature: placed.temperature ?? 0,
+        temperature_min: placed.temperature_min ?? null,
+        temperature_max: placed.temperature_max ?? null,
         height: placed.height || draft.height,
         base_elevation_mm: 0,
         remarks: 'Created by project chatbot',
@@ -232,6 +240,65 @@ export async function createProjectFromChatDraft(draft) {
       }
 
       createdRooms.push(room);
+
+      const innerFinish = placed.inner_face_material || 'PPGI';
+      const outerFinish = placed.outer_face_material || 'PPGI';
+      for (const wallId of linkedIds) {
+        const wall = walls.find((w) => w.id === wallId);
+        if (!wall || wall.is_default === false) continue;
+        if (wall.inner_face_material === innerFinish && wall.outer_face_material === outerFinish) continue;
+        try {
+          const patched = await api.patch(`/walls/${wallId}/`, {
+            inner_face_material: innerFinish,
+            outer_face_material: outerFinish,
+          });
+          const idx = walls.findIndex((w) => w.id === wallId);
+          if (idx >= 0) walls[idx] = patched.data;
+        } catch (err) {
+          console.warn('Could not update boundary wall finishes:', err);
+        }
+      }
+    }
+  }
+
+  const warnings = [];
+
+  const hasPanelFloor = createdRooms.some((room) => {
+    const type = String(room.floor_type || '').toLowerCase();
+    return type === 'panel';
+  });
+  if (hasPanelFloor) {
+    try {
+      await api.post('/floor-plans/generate_floor_plan/', {
+        project_id: projectId,
+        orientation_strategy: 'auto',
+        panel_width: 1150,
+        panel_length: 'auto',
+      });
+    } catch (err) {
+      console.warn('Chatbot floor generation failed:', err);
+      warnings.push('Floor panels could not be generated automatically. You can generate them on the Floor tab.');
+    }
+  }
+
+  const hasCeiling = createdRooms.some((room) => room.exclude_from_ceiling !== true);
+  if (hasCeiling && createdRooms.length > 0) {
+    try {
+      await api.post('/ceiling-plans/generate_enhanced_ceiling_plan/', {
+        project_id: projectId,
+        orientation_strategy: 'auto',
+        panel_width: 1150,
+        panel_length: 'auto',
+        ceiling_thickness: 150,
+        support_type: 'nylon',
+        support_config: {
+          enableNylonHangers: true,
+          enableAluSuspension: false,
+        },
+      });
+    } catch (err) {
+      console.warn('Chatbot ceiling generation failed:', err);
+      warnings.push('Ceiling panels could not be generated automatically. You can generate them on the Ceiling tab.');
     }
   }
 
@@ -240,5 +307,6 @@ export async function createProjectFromChatDraft(draft) {
     project: refreshed.data,
     rooms: createdRooms,
     layout,
+    warnings,
   };
 }

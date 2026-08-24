@@ -74,6 +74,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const historyTargetSnapshotRef = useRef(null);
   const historySyncGenerationRef = useRef(0);
   const historyResyncNeededRef = useRef(false);
+  const historyIdleResolversRef = useRef([]);
+  const historyActionChainRef = useRef(Promise.resolve());
   const [isHistoryBusy, setIsHistoryBusy] = useState(false);
   const [planAnnotations, setPlanAnnotations] = useState([]);
   const [filteredPlanAnnotations, setFilteredPlanAnnotations] = useState([]);
@@ -1306,6 +1308,19 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     );
   }, []);
 
+  const notifyHistoryIdle = useCallback(() => {
+    if (
+      historySyncInFlightRef.current
+      || historySyncTimerRef.current
+      || historyResyncNeededRef.current
+    ) {
+      return;
+    }
+    const resolvers = historyIdleResolversRef.current;
+    historyIdleResolversRef.current = [];
+    resolvers.forEach((resolve) => resolve());
+  }, []);
+
   const drainHistorySync = useCallback(async () => {
     const snapshot = historyTargetSnapshotRef.current;
     if (!snapshot || historySyncInFlightRef.current) {
@@ -1320,6 +1335,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
       // User undid/redid further while this sync was running — keep the newer canvas.
       if (historySyncGenerationRef.current !== syncGeneration) {
+        historyResyncNeededRef.current = true;
         return;
       }
 
@@ -1356,13 +1372,15 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       }
     } finally {
       historySyncInFlightRef.current = false;
-      setIsHistoryBusy(false);
       if (historyResyncNeededRef.current) {
         historyResyncNeededRef.current = false;
         void drainHistorySync();
+      } else {
+        setIsHistoryBusy(false);
+        notifyHistoryIdle();
       }
     }
-  }, [projectId, syncProjectEntitiesFromApi, snapshotsEntityIdsMatch]);
+  }, [projectId, syncProjectEntitiesFromApi, snapshotsEntityIdsMatch, notifyHistoryIdle]);
 
   const scheduleHistorySync = useCallback(() => {
     if (historySyncInFlightRef.current) {
@@ -1378,10 +1396,29 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }, 200);
   }, [drainHistorySync]);
 
+  const waitForHistoryIdle = useCallback(() => {
+    if (historySyncTimerRef.current) {
+      clearTimeout(historySyncTimerRef.current);
+      historySyncTimerRef.current = null;
+      void drainHistorySync();
+    }
+    if (
+      !historySyncInFlightRef.current
+      && !historySyncTimerRef.current
+      && !historyResyncNeededRef.current
+    ) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      historyIdleResolversRef.current.push(resolve);
+    });
+  }, [drainHistorySync]);
+
   const applyHistorySnapshot = useCallback((snapshot) => {
     clearDimensionPlacementMemory();
     historySyncGenerationRef.current += 1;
     historyTargetSnapshotRef.current = snapshot;
+    setIsHistoryBusy(true);
     setWalls(snapshot.walls || []);
     setRooms(snapshot.rooms || []);
     setDoors(snapshot.doors || []);
@@ -1390,33 +1427,41 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
   const projectHistory = useProjectHistory({ onApplySnapshot: applyHistorySnapshot });
 
-  const commitHistoryAction = useCallback(async (label, actionFn) => {
-    if (!canEdit || historySyncInFlightRef.current) {
+  const commitHistoryAction = useCallback((label, actionFn) => {
+    if (!canEdit) {
       return actionFn();
     }
-    const beforeSnapshot = captureProjectSnapshot(
-      wallsRef.current,
-      roomsRef.current,
-      doorsRef.current
-    );
-    try {
-      const result = await actionFn();
-      const afterSnapshot = await syncProjectEntitiesFromApi();
-      projectHistory.push({
-        label,
-        undoSnapshot: beforeSnapshot,
-        redoSnapshot: afterSnapshot,
-      });
-      return result;
-    } catch (error) {
+
+    const run = async () => {
+      await waitForHistoryIdle();
+      const beforeSnapshot = captureProjectSnapshot(
+        wallsRef.current,
+        roomsRef.current,
+        doorsRef.current
+      );
       try {
-        await syncProjectEntitiesFromApi();
-      } catch (syncError) {
-        console.warn('Failed to resync project entities after history action error:', syncError);
+        const result = await actionFn();
+        const afterSnapshot = await syncProjectEntitiesFromApi();
+        projectHistory.push({
+          label,
+          undoSnapshot: beforeSnapshot,
+          redoSnapshot: afterSnapshot,
+        });
+        return result;
+      } catch (error) {
+        try {
+          await syncProjectEntitiesFromApi();
+        } catch (syncError) {
+          console.warn('Failed to resync project entities after history action error:', syncError);
+        }
+        throw error;
       }
-      throw error;
-    }
-  }, [canEdit, projectHistory, syncProjectEntitiesFromApi]);
+    };
+
+    const next = historyActionChainRef.current.then(run, run);
+    historyActionChainRef.current = next.then(() => undefined, () => undefined);
+    return next;
+  }, [canEdit, projectHistory, syncProjectEntitiesFromApi, waitForHistoryIdle]);
 
   const undoProjectAction = useCallback(() => {
     return projectHistory.undo();
@@ -2337,7 +2382,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const handleWallDelete = async (wallId) => {
     return commitHistoryAction('Delete wall', async () => {
       // Find the wall to be deleted
-      const wallToDelete = walls.find(w => w.id === wallId);
+      const wallToDelete = wallsRef.current.find(w => w.id === wallId);
       if (!wallToDelete) return;
 
       const deletedStoreyId = wallToDelete.storey ?? wallToDelete.storey_id ?? null;
@@ -2355,7 +2400,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         { x: wallToDelete.end_x, y: wallToDelete.end_y }
       ];
       // Find same-storey walls that intersect wallToDelete (not at endpoints)
-      walls.forEach(wall => {
+      wallsRef.current.forEach(wall => {
         if (wall.id === wallToDelete.id) return;
         if (!sameStoreyAsDeleted(wall)) return;
         const intersection = calculateIntersection(
@@ -2380,7 +2425,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
       // Delete the wall
       await api.delete(`/walls/${wallId}/`);
-      let updatedWalls = walls.filter(w => w.id !== wallId);
+      let updatedWalls = wallsRef.current.filter(w => w.id !== wallId);
 
       // Helper to find walls sharing a point (same storey only)
       const findWallsAtPoint = (pt, wallList) =>

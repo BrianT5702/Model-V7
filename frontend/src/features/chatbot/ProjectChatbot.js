@@ -112,22 +112,26 @@ const ProjectChatbot = ({
     setIsBusy(true);
     setError('');
     try {
-      const { project, rooms } = await createProjectFromChatDraft(planDraft);
+      const { project, rooms, warnings = [] } = await createProjectFromChatDraft(planDraft);
       updateProjectInList(project);
 
       const roomNote = rooms.length
-        ? ` Created ${rooms.length} room(s) with shared walls where rooms touch.`
+        ? ` Created ${rooms.length} room(s), shared walls where rooms touch, plus floor and ceiling where requested. Joints were not created.`
         : ' Site and boundary walls are ready.';
 
       const folderNote = planDraft.folderDecided && planDraft.folderLabel
         ? ` Saved to folder **${planDraft.folderLabel}**.`
         : '';
 
+      const warningNote = warnings.length
+        ? `\n${warnings.map((w) => `Note: ${w}`).join('\n')}`
+        : '';
+
       setMessages((prev) => [
         ...prev,
         withId({
           role: 'assistant',
-          text: `Done! Project **${project.name}** is ready.${folderNote}${roomNote}\nOpening the project…`,
+          text: `Done! Project **${project.name}** is ready.${folderNote}${roomNote}${warningNote}\nOpening the project…`,
         }),
       ]);
       setPhase(PHASES.DONE);
@@ -259,7 +263,7 @@ const ProjectChatbot = ({
           Project Chat Assistant
         </h2>
         <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Ask me to create a project — I&apos;ll ask where to place it if you don&apos;t say a folder, then collect size, rooms, and finishes.
+          Create a full project in chat — I&apos;ll guide you, place rooms automatically, and build walls, floor, and ceiling. Joints are skipped.
         </p>
       </div>
 
@@ -287,7 +291,7 @@ const ProjectChatbot = ({
         ))}
         {isBusy && (
           <div className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">
-            Working…
+            Creating project, placing rooms, generating floor and ceiling…
           </div>
         )}
       </div>
@@ -340,8 +344,61 @@ const ProjectChatbot = ({
           </>
         )}
         {phase === PHASES.ROOM_SIZE && (
-          <button type="button" onClick={() => handleQuick('follow the project size')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-            Follow project size
+          <>
+            <button type="button" onClick={() => handleQuick('follow the project size')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              Follow project size
+            </button>
+            {draft.currentRoomIndex > 0 && (
+              <button type="button" onClick={() => handleQuick('same as previous')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+                Same as previous
+              </button>
+            )}
+          </>
+        )}
+        {phase === PHASES.ROOM_HEIGHT && (
+          <button type="button" onClick={() => handleQuick('same')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+            Same as project height
+          </button>
+        )}
+        {phase === PHASES.ROOM_TEMPERATURE && (
+          <>
+            <button type="button" onClick={() => handleQuick('0')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              0 °C
+            </button>
+            <button type="button" onClick={() => handleQuick('-18')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              -18 °C
+            </button>
+            <button type="button" onClick={() => handleQuick('2 to 6')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              2 to 6 °C
+            </button>
+          </>
+        )}
+        {phase === PHASES.ROOM_FLOOR && (
+          <>
+            <button type="button" onClick={() => handleQuick('Panel')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              Panel
+            </button>
+            <button type="button" onClick={() => handleQuick('Slab')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              Slab
+            </button>
+            <button type="button" onClick={() => handleQuick('None')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              None
+            </button>
+          </>
+        )}
+        {phase === PHASES.ROOM_CEILING && (
+          <>
+            <button type="button" onClick={() => handleQuick('yes')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              Yes
+            </button>
+            <button type="button" onClick={() => handleQuick('no')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              No
+            </button>
+          </>
+        )}
+        {phase === PHASES.ROOM_WALLS && (
+          <button type="button" onClick={() => handleQuick('default')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+            Default PPGI
           </button>
         )}
         {phase === PHASES.CONFIRM && (

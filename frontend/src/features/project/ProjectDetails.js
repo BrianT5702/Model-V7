@@ -1557,7 +1557,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         onClick={() => projectDetails.undoProjectAction()}
                                         disabled={!projectDetails.canUndoProject}
                                         className="flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title="Undo (Ctrl+Z)"
+                                        title={projectDetails.isHistoryBusy ? 'Saving undo… then you can keep editing' : 'Undo (Ctrl+Z)'}
                                     >
                                         <FaUndo className="mr-1.5 text-xs" />
                                         <span className="hidden sm:inline">Undo</span>
@@ -1567,7 +1567,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         onClick={() => projectDetails.redoProjectAction()}
                                         disabled={!projectDetails.canRedoProject}
                                         className="flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title="Redo (Ctrl+Y)"
+                                        title={projectDetails.isHistoryBusy ? 'Saving undo… then you can keep editing' : 'Redo (Ctrl+Y)'}
                                     >
                                         <FaRedo className="mr-1.5 text-xs" />
                                         <span className="hidden sm:inline">Redo</span>

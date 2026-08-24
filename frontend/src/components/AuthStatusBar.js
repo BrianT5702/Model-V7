@@ -6,6 +6,7 @@ import { useShare } from '../features/share/ShareContext';
 import { ROLE_BADGE_CLASSES, ROLE_LABELS } from '../features/auth/authUtils';
 import AdminAccountsModal from './AdminAccountsModal';
 import ThemeToggle from './ThemeToggle';
+import HelpButton from '../features/help/HelpButton';
 
 const AuthStatusBar = () => {
     const { isAuthenticated, isAdmin, role, user, logout, isLoading } = useAuth();
@@ -14,7 +15,12 @@ const AuthStatusBar = () => {
     const [showAccountsModal, setShowAccountsModal] = useState(false);
 
     if (isLoading) {
-        return null;
+        return (
+            <div className="flex items-center gap-1.5 sm:gap-2">
+                <HelpButton />
+                <ThemeToggle />
+            </div>
+        );
     }
 
     const roleBadgeClass = ROLE_BADGE_CLASSES[role] || 'text-gray-700 bg-gray-50 border-gray-200';
@@ -27,6 +33,7 @@ const AuthStatusBar = () => {
     if (isViewOnlyShare) {
         return (
             <div className="flex items-center gap-1.5 sm:gap-2">
+                <HelpButton />
                 <ThemeToggle />
                 <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 dark:text-amber-200 dark:bg-amber-950/50 dark:border-amber-800 rounded-md px-1.5 py-0.5">
                     View-only link
@@ -39,6 +46,7 @@ const AuthStatusBar = () => {
     if (isEditShare) {
         return (
             <div className="flex items-center gap-1.5 sm:gap-2">
+                <HelpButton />
                 <ThemeToggle />
                 <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 dark:text-emerald-200 dark:bg-emerald-950/50 dark:border-emerald-800 rounded-md px-1.5 py-0.5">
                     Editable link
@@ -79,6 +87,7 @@ const AuthStatusBar = () => {
 
     return (
         <div className="flex items-center gap-1.5 sm:gap-2">
+            <HelpButton />
             <ThemeToggle />
             {isAuthenticated ? (
                 <>

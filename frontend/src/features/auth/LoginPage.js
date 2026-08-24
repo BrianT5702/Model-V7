@@ -4,6 +4,7 @@ import { FaCube, FaSignInAlt } from 'react-icons/fa';
 import { useAuth } from './AuthContext';
 import { useShare } from '../share/ShareContext';
 import ThemeToggle from '../../components/ThemeToggle';
+import HelpButton from '../help/HelpButton';
 
 const LoginPage = () => {
     const navigate = useNavigate();
@@ -41,7 +42,8 @@ const LoginPage = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-gray-950 dark:via-gray-900 dark:to-slate-900 flex items-center justify-center px-4 py-10 transition-colors relative">
-            <div className="absolute top-4 right-4">
+            <div className="absolute top-4 right-4 flex items-center gap-1.5">
+                <HelpButton />
                 <ThemeToggle />
             </div>
             <div className="w-full max-w-md">

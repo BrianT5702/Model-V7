@@ -14,6 +14,8 @@ import {
   parseRoomCount,
   parseSingleDimension,
   parseYesNo,
+  parseTemperature,
+  isSameAsPrevious,
   resolveFolderChoice,
   buildFolderPaths,
   getSortedFolderEntries,
@@ -31,6 +33,7 @@ export const PHASES = {
   ROOM_NAMES: 'room_names',
   ROOM_SIZE: 'room_size',
   ROOM_HEIGHT: 'room_height',
+  ROOM_TEMPERATURE: 'room_temperature',
   ROOM_FLOOR: 'room_floor',
   ROOM_FLOOR_THICKNESS: 'room_floor_thickness',
   ROOM_CEILING: 'room_ceiling',
@@ -62,6 +65,9 @@ export function createEmptyRoom(name = '') {
     width: null,
     length: null,
     height: null,
+    temperature: null,
+    temperature_min: null,
+    temperature_max: null,
     floor_type: null,
     floor_thickness: null,
     include_ceiling: null,
@@ -132,9 +138,13 @@ export function buildSummary(draft, folders = []) {
   } else {
     lines.push(`Rooms (${draft.rooms.length}):`);
     draft.rooms.forEach((room, i) => {
+      const temp = room.temperature_min != null && room.temperature_max != null
+        ? `${room.temperature_min} to ${room.temperature_max} °C`
+        : (room.temperature != null ? `${room.temperature} °C` : '—');
       lines.push(
         `  ${i + 1}. ${room.name} — ${formatMm(room.width)} × ${formatMm(room.length)}, ` +
-          `height ${formatMm(room.height)}, floor ${room.floor_type}/${formatThicknessMm(room.floor_thickness)}, ` +
+          `height ${formatMm(room.height)}, ${temp}, ` +
+          `floor ${room.floor_type}/${formatThicknessMm(room.floor_thickness)}, ` +
           `ceiling ${room.include_ceiling ? 'yes' : 'no'}, walls ${room.inner_face_material}/${room.outer_face_material}`
       );
     });
@@ -149,7 +159,8 @@ export function buildSummary(draft, folders = []) {
     } else {
       lines.push(
         `Auto-layout: rooms packed into ${formatMm(layout.usedWidth)} × ${formatMm(layout.usedLength)} ` +
-          `(site ${formatMm(draft.width)} × ${formatMm(draft.length)}). Shared walls will be reused.`
+          `(site ${formatMm(draft.width)} × ${formatMm(draft.length)}). ` +
+          `Shared walls will be reused. Joints will not be created.`
       );
     }
   }
@@ -160,7 +171,9 @@ export function buildSummary(draft, folders = []) {
 export function getWelcomeMessages() {
   return [
     bot(
-      "Hi! Ask me to **create a project** and I'll walk you through it.\n\n" +
+      "Hi! Ask me to **create a project** and I'll walk you through the whole thing — " +
+        "site, rooms, walls, floor, and ceiling. I'll place rooms so they share walls. " +
+        "I won't create joints.\n\n" +
         "Examples:\n" +
         "• *Help me create a project*\n" +
         "• *Create a project and place it under folder Cold Stores*\n" +
@@ -297,10 +310,61 @@ function fillRoomWithProjectSize(draft, index = draft.currentRoomIndex) {
   return { ...draft, rooms };
 }
 
+function copyPreviousRoom(draft, { copySize = false } = {}) {
+  const index = draft.currentRoomIndex;
+  if (index < 1) return null;
+  const previous = draft.rooms[index - 1];
+  const rooms = [...draft.rooms];
+  rooms[index] = {
+    ...rooms[index],
+    ...(copySize && previous.width && previous.length
+      ? { width: previous.width, length: previous.length }
+      : {}),
+    height: previous.height,
+    temperature: previous.temperature,
+    temperature_min: previous.temperature_min,
+    temperature_max: previous.temperature_max,
+    floor_type: previous.floor_type,
+    floor_thickness: previous.floor_thickness,
+    include_ceiling: previous.include_ceiling,
+    inner_face_material: previous.inner_face_material,
+    outer_face_material: previous.outer_face_material,
+  };
+  return { ...draft, rooms };
+}
+
+function tryCopyPrevious(draft, text, folders, { copySize = false } = {}) {
+  if (!isSameAsPrevious(text) || draft.currentRoomIndex < 1) return null;
+  const next = copyPreviousRoom(draft, { copySize });
+  if (!next) return null;
+  const room = next.rooms[next.currentRoomIndex];
+  if (room.width && room.length) {
+    return advanceAfterRoomWalls(
+      next,
+      folders,
+      'Copied height, temperature, floor, ceiling, and wall finishes from the previous room.'
+    );
+  }
+  return {
+    draft: next,
+    phase: PHASES.ROOM_SIZE,
+    messages: [
+      bot('Copied the other details from the previous room. I still need this room’s size.'),
+      askRoomSize(next),
+    ],
+  };
+}
+
 /** Start collecting room details — auto-fit a single room to the full project site. */
 function beginRoomDetails(draft, preface = null) {
   const messages = [];
   if (preface) messages.push(bot(preface));
+
+  if (draft.currentRoomIndex > 0) {
+    messages.push(bot(
+      'You can say **same as previous** to copy height, temperature, floor, ceiling, and wall finishes from the last room.'
+    ));
+  }
 
   if (draft.rooms.length === 1 && draft.width && draft.length) {
     const next = fillRoomWithProjectSize(draft, 0);
@@ -321,6 +385,13 @@ function askRoomHeight(draft) {
   return bot(
     `${roomPromptPrefix(draft)}: what is the **room height**?${fallback}\n` +
       'Example: `4500` or `4.5m`, or say **same** to use the project height.'
+  );
+}
+
+function askRoomTemperature(draft) {
+  return bot(
+    `${roomPromptPrefix(draft)}: what is the **room temperature** (°C)?\n` +
+      'Example: `0`, `-18`, or `2 to 6`. Say **ambient** for 0 °C.'
   );
 }
 
@@ -357,22 +428,28 @@ function askRoomWalls(draft) {
 function askConfirm(draft, folders = []) {
   return bot(
     `Please confirm this plan:\n\n${buildSummary(draft, folders)}\n\n` +
-      'Reply **create** to build it, or **restart** to start over.'
+      'Reply **create** to build the project (rooms, walls, floor, and ceiling). ' +
+      'Joints will not be created. Or **restart** to start over.'
   );
 }
 
-function advanceAfterRoomWalls(draft, folders = []) {
+function advanceAfterRoomWalls(draft, folders = [], copiedNote = null) {
   const nextIndex = draft.currentRoomIndex + 1;
   if (nextIndex < draft.rooms.length) {
     return beginRoomDetails(
       { ...draft, currentRoomIndex: nextIndex },
-      `Next room (${nextIndex + 1}/${draft.rooms.length}).`
+      copiedNote
+        ? `${copiedNote}\nNext room (${nextIndex + 1}/${draft.rooms.length}).`
+        : `Next room (${nextIndex + 1}/${draft.rooms.length}).`
     );
   }
+  const messages = [];
+  if (copiedNote) messages.push(bot(copiedNote));
+  messages.push(askConfirm(draft, folders));
   return {
     draft,
     phase: PHASES.CONFIRM,
-    messages: [askConfirm(draft, folders)],
+    messages,
   };
 }
 
@@ -673,6 +750,21 @@ export function processChatMessage(phase, draft, userText, options = {}) {
   }
 
   // --- PER-ROOM FIELDS ---
+  if ([
+    PHASES.ROOM_SIZE,
+    PHASES.ROOM_HEIGHT,
+    PHASES.ROOM_TEMPERATURE,
+    PHASES.ROOM_FLOOR,
+    PHASES.ROOM_FLOOR_THICKNESS,
+    PHASES.ROOM_CEILING,
+    PHASES.ROOM_WALLS,
+  ].includes(phase)) {
+    const copied = tryCopyPrevious(draft, text, folders, {
+      copySize: phase === PHASES.ROOM_SIZE,
+    });
+    if (copied) return copied;
+  }
+
   if (phase === PHASES.ROOM_SIZE) {
     let dims = parseDimensionPair(text);
     if (!dims && isFollowProjectSize(text)) {
@@ -727,6 +819,26 @@ export function processChatMessage(phase, draft, userText, options = {}) {
     }
     const rooms = [...draft.rooms];
     rooms[draft.currentRoomIndex] = { ...rooms[draft.currentRoomIndex], height };
+    const next = { ...draft, rooms };
+    return {
+      draft: next,
+      phase: PHASES.ROOM_TEMPERATURE,
+      messages: [askRoomTemperature(next)],
+    };
+  }
+
+  if (phase === PHASES.ROOM_TEMPERATURE) {
+    const parsed = parseTemperature(text);
+    if (!parsed) {
+      return { draft, phase, messages: [askRoomTemperature(draft)] };
+    }
+    const rooms = [...draft.rooms];
+    rooms[draft.currentRoomIndex] = {
+      ...rooms[draft.currentRoomIndex],
+      temperature: parsed.temperature,
+      temperature_min: parsed.temperature_min ?? null,
+      temperature_max: parsed.temperature_max ?? null,
+    };
     const next = { ...draft, rooms };
     return {
       draft: next,
@@ -851,14 +963,14 @@ export function processChatMessage(phase, draft, userText, options = {}) {
         return {
           draft: next,
           phase: PHASES.CREATING,
-          messages: [bot('Creating your project and arranging rooms…')],
+          messages: [bot('Creating your project, placing rooms, and generating floor and ceiling (no joints)…')],
           readyToCreate: true,
         };
       }
       return {
         draft,
         phase: PHASES.CREATING,
-        messages: [bot('Creating your project and arranging rooms…')],
+        messages: [bot('Creating your project, placing rooms, and generating floor and ceiling (no joints)…')],
         readyToCreate: true,
       };
     }
