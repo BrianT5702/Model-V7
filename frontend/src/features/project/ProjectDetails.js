@@ -4,6 +4,8 @@ import useProjectDetails from './useProjectDetails';
 import { useAuth } from '../auth/AuthContext';
 import { useShare } from '../share/ShareContext';
 import ShareProjectModal from '../share/ShareProjectModal';
+import ProjectVersionModal from './ProjectVersionModal';
+import VersionCompareModal from './VersionCompareModal';
 import AuthStatusBar from '../../components/AuthStatusBar';
 import { getWallSegmentKey } from './projectUtils';
 import {
@@ -50,6 +52,7 @@ import {
     FaRedo,
     FaStreetView,
     FaShareAlt,
+    FaHistory,
     FaExpand,
     FaCompress,
 } from 'react-icons/fa';
@@ -90,12 +93,17 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const [searchParams] = useSearchParams();
     const { canEdit: authCanEdit, canComment, isAuthenticated } = useAuth();
     const { isShareSession, isViewOnlyShare, isEditShare, share } = useShare();
-    // View-only share: never editable. Editable share: only after login as editor.
-    const canEdit = isViewOnlyShare ? false : authCanEdit;
+    const [viewingVersion, setViewingVersion] = useState(null);
+    const [compareVersionKeys, setCompareVersionKeys] = useState(null);
+    const canEdit = (isViewOnlyShare || viewingVersion) ? false : authCanEdit;
+    const canManageVersions = authCanEdit && !isViewOnlyShare;
     const projectDetails = useProjectDetails(projectId, { canEdit });
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [controlsSidebarCollapsed, setControlsSidebarCollapsed] = useState(true);
     const [shareModalOpen, setShareModalOpen] = useState(false);
+    const [versionModalOpen, setVersionModalOpen] = useState(false);
+    const [layoutEpoch, setLayoutEpoch] = useState(0);
+    const [versionNotice, setVersionNotice] = useState('');
     const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
     const [commentWallSelectMode, setCommentWallSelectMode] = useState(false);
     const [selectedWallsForComment, setSelectedWallsForComment] = useState([]);
@@ -115,6 +123,79 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
     const undoProjectAction = projectDetails.undoProjectAction;
     const redoProjectAction = projectDetails.redoProjectAction;
+
+    useEffect(() => {
+        setViewingVersion(null);
+    }, [projectId]);
+
+    useEffect(() => {
+        if (!versionNotice) {
+            return undefined;
+        }
+        const timer = window.setTimeout(() => setVersionNotice(''), 4000);
+        return () => window.clearTimeout(timer);
+    }, [versionNotice]);
+
+    const handleVersionSaved = async (payload) => {
+        const version = payload?.version || payload;
+        if (projectDetails.is3DView) {
+            projectDetails.forceCleanup3D();
+            projectDetails.setIs3DView(false);
+        }
+        projectDetails.setCurrentView('wall-plan');
+        projectDetails.applyLayoutPreview(payload);
+        setLayoutEpoch((value) => value + 1);
+        setViewingVersion(version || { number: '' });
+        setVersionModalOpen(false);
+        const label = version?.label ? ` “${version.label}”` : '';
+        setVersionNotice(`Version ${version?.number ?? ''}${label} saved.`.replace('  ', ' '));
+    };
+
+    const handleVersionRestored = async (version) => {
+        if (projectDetails.is3DView) {
+            projectDetails.forceCleanup3D();
+        }
+        await projectDetails.reloadProjectLayout();
+        setLayoutEpoch((value) => value + 1);
+        setViewingVersion(null);
+        setVersionModalOpen(false);
+        const label = version?.label ? ` “${version.label}”` : '';
+        setVersionNotice(`Loaded version ${version.number}${label} for editing. Version 0 is unchanged. Save version to keep these edits.`);
+    };
+
+    const handleVersionDeleted = async (version) => {
+        if (viewingVersion && viewingVersion.id === version.id) {
+            if (projectDetails.is3DView) {
+                projectDetails.forceCleanup3D();
+            }
+            setViewingVersion(null);
+            await projectDetails.reloadProjectLayout({ showOriginal: true });
+            setLayoutEpoch((value) => value + 1);
+        }
+        setVersionNotice(`Deleted version ${version.number}${version.label ? ` “${version.label}”` : ''}.`);
+    };
+
+    const handleVersionViewed = (payload) => {
+        const version = payload?.version;
+        if (projectDetails.is3DView) {
+            projectDetails.forceCleanup3D();
+            projectDetails.setIs3DView(false);
+        }
+        projectDetails.setCurrentView('wall-plan');
+        projectDetails.applyLayoutPreview(payload);
+        setLayoutEpoch((value) => value + 1);
+        setViewingVersion(version || { number: '' });
+        setVersionModalOpen(false);
+    };
+
+    const handleExitVersionView = async () => {
+        if (projectDetails.is3DView) {
+            projectDetails.forceCleanup3D();
+        }
+        setViewingVersion(null);
+        await projectDetails.reloadProjectLayout({ showOriginal: true });
+        setLayoutEpoch((value) => value + 1);
+    };
 
     // Non-passive wheel listener so we can scroll the 2D panel even when a child
     // canvas calls preventDefault (React's onWheel is often passive).
@@ -1473,7 +1554,21 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                 </div>
             </div>
 
-            {!canEdit && (
+            {viewingVersion ? (
+                <div className="shrink-0 bg-blue-50 border-b border-blue-200 px-4 sm:px-6 py-2 text-sm text-blue-900 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-100 flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                        Viewing version {viewingVersion.number}
+                        {viewingVersion.label ? ` · ${viewingVersion.label}` : ''}. This is a snapshot — the original (version 0) is unchanged.
+                    </span>
+                    <button
+                        type="button"
+                        onClick={handleExitVersionView}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                        Back to original
+                    </button>
+                </div>
+            ) : !canEdit && (
                 <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-sm text-amber-800">
                     {isViewOnlyShare ? (
                         'View-only shared link. You can browse this project, but cannot edit it or open the project list.'
@@ -1574,6 +1669,19 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     </button>
                                 </>
                             )}
+                            <button
+                                type="button"
+                                onClick={() => setVersionModalOpen(true)}
+                                className={`flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                                    viewingVersion
+                                        ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-900/40 dark:text-blue-100 dark:border-blue-600'
+                                        : 'btn-secondary'
+                                }`}
+                                title="View saved versions of this project"
+                            >
+                                <FaHistory className="mr-1.5 text-xs" />
+                                Versions
+                            </button>
                             {authCanEdit && !isShareSession && (
                                 <button
                                     type="button"
@@ -3259,8 +3367,8 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     {((projectDetails.selectedWall !== null || (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor)) && projectDetails.currentMode === 'edit-wall') && (
                 <>
                 <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto modal-scroll-panel">
-                                <div className="form-modal-header">
+                    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+                                <div className="form-modal-header shrink-0">
                             <h3 className="form-modal-title">
                                 {projectDetails.selectedWallsForEdit.length > 0 
                                     ? `Edit ${projectDetails.selectedWallsForEdit.length} Wall${projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''}`
@@ -3274,21 +3382,20 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             projectDetails.setIsMultiWallEditMode(false);
                                             projectDetails.setCurrentMode(null);
                                         }}
-                                className="text-gray-400 hover:text-gray-600 focus-ring"
+                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus-ring"
                                     >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                                     </button>
                                 </div>
                         {/* Wall editor content */}
-                                <div className="form-panel space-y-4">
+                                <div className="form-panel space-y-2 min-h-0 flex-1 overflow-y-auto overscroll-y-contain modal-scroll-panel">
                                     {/* Multi-wall info */}
                                     {projectDetails.selectedWallsForEdit.length > 0 && (
-                                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                            <p className="text-sm text-blue-800">
-                                                Editing {projectDetails.selectedWallsForEdit.length} wall{projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''}. 
-                                                Changes will be applied to all selected walls.
+                                        <div className="p-2 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded">
+                                            <p className="text-[11px] text-blue-800 dark:text-blue-200">
+                                                Editing {projectDetails.selectedWallsForEdit.length} wall{projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''}. Changes apply to all selected walls.
                                             </p>
                                         </div>
                                     )}
@@ -3296,30 +3403,26 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     {/* Position & Dimensions Section - Only show for single wall */}
                                     {projectDetails.selectedWall !== null && (
                                     <div>
-                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Position & Dimensions</h4>
-                                        <div className="form-grid mt-2">
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <span className="form-label">Start Point</span>
-                                                    <div className="grid grid-cols-2 gap-2 mt-1">
-                                                        {['start_x', 'start_y'].map((coordKey) => {
+                                        <h4 className="form-section-title mb-1">Position & Dimensions</h4>
+                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                            {['start_x', 'start_y'].map((coordKey) => {
                                                             const isY = coordKey === 'start_y';
                                                             const locked = !!lockedWallCoords[coordKey];
                                                             return (
-                                                                <div key={coordKey}>
-                                                                    <div className="flex items-center justify-between gap-1">
-                                                                        <span className="text-xs text-gray-500">{isY ? 'Y:' : 'X:'}</span>
+                                                                <div key={coordKey} className="min-w-0">
+                                                                    <div className="flex items-center gap-1 mb-0.5">
+                                                                        <span className="form-label !mb-0">{isY ? 'Start Y' : 'Start X'}</span>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => toggleWallCoordLock(coordKey)}
-                                                                            className={`p-1 rounded transition-colors ${
+                                                                            className={`p-0.5 rounded transition-colors ${
                                                                                 locked
-                                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
-                                                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300'
+                                                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
                                                                             }`}
                                                                             title={locked ? `Unlock Start ${isY ? 'Y' : 'X'}` : `Lock Start ${isY ? 'Y' : 'X'}`}
                                                                         >
-                                                                            {locked ? <FaLock className="w-3 h-3" /> : <FaUnlock className="w-3 h-3" />}
+                                                                            {locked ? <FaLock className="w-2.5 h-2.5" /> : <FaUnlock className="w-2.5 h-2.5" />}
                                                                         </button>
                                                                     </div>
                                                                     <input
@@ -3352,37 +3455,29 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                                                 patchEditedWall({ [coordKey]: newVal });
                                                                             }
                                                                         }}
-                                                                        className={`form-control mt-1 ${locked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                        className={`form-control ${locked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
                                                                     />
                                                                 </div>
                                                             );
                                                         })}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <span className="form-label">End Point</span>
-                                                    <div className="grid grid-cols-2 gap-2 mt-1">
-                                                        {['end_x', 'end_y'].map((coordKey) => {
+                                            {['end_x', 'end_y'].map((coordKey) => {
                                                             const isY = coordKey === 'end_y';
                                                             const locked = !!lockedWallCoords[coordKey];
                                                             return (
-                                                                <div key={coordKey}>
-                                                                    <div className="flex items-center justify-between gap-1">
-                                                                        <span className="text-xs text-gray-500">{isY ? 'Y:' : 'X:'}</span>
+                                                                <div key={coordKey} className="min-w-0">
+                                                                    <div className="flex items-center gap-1 mb-0.5">
+                                                                        <span className="form-label !mb-0">{isY ? 'End Y' : 'End X'}</span>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => toggleWallCoordLock(coordKey)}
-                                                                            className={`p-1 rounded transition-colors ${
+                                                                            className={`p-0.5 rounded transition-colors ${
                                                                                 locked
-                                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
-                                                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300'
+                                                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
                                                                             }`}
                                                                             title={locked ? `Unlock End ${isY ? 'Y' : 'X'}` : `Lock End ${isY ? 'Y' : 'X'}`}
                                                                         >
-                                                                            {locked ? <FaLock className="w-3 h-3" /> : <FaUnlock className="w-3 h-3" />}
+                                                                            {locked ? <FaLock className="w-2.5 h-2.5" /> : <FaUnlock className="w-2.5 h-2.5" />}
                                                                         </button>
                                                                     </div>
                                                                     <input
@@ -3435,36 +3530,30 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                                                 patchEditedWall({ [coordKey]: newVal });
                                                                             }
                                                                         }}
-                                                                        className={`form-control mt-1 ${locked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                        className={`form-control ${locked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
                                                                     />
                                                                 </div>
                                                             );
                                                         })}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="md:col-span-2">
-                                                <label className="block">
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <span className="form-label">Wall Length (mm):</span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setIsLengthLocked(!isLengthLocked)}
-                                                            className={`p-2 rounded-lg transition-colors ${
-                                                                isLengthLocked
-                                                                    ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
-                                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                            }`}
-                                                            title={isLengthLocked ? 'Unlock length' : 'Lock length'}
-                                                        >
-                                                            {isLengthLocked ? (
-                                                                <FaLock className="w-4 h-4" />
-                                                            ) : (
-                                                                <FaUnlock className="w-4 h-4" />
-                                                            )}
-                                                        </button>
-                                                    </div>
+                                            <div className="col-span-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="form-label !mb-0 shrink-0">Length (mm)</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsLengthLocked(!isLengthLocked)}
+                                                        className={`p-0.5 rounded transition-colors ${
+                                                            isLengthLocked
+                                                                ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300'
+                                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                                                        }`}
+                                                        title={isLengthLocked ? 'Unlock length' : 'Lock length'}
+                                                    >
+                                                        {isLengthLocked ? (
+                                                            <FaLock className="w-2.5 h-2.5" />
+                                                        ) : (
+                                                            <FaUnlock className="w-2.5 h-2.5" />
+                                                        )}
+                                                    </button>
                                                     <input 
                                                         type="number" 
                                                         value={editedWall ? Math.round(Math.hypot(
@@ -3542,16 +3631,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                         min="0"
                                                         step="1"
                                                         disabled={isLengthLocked}
-                                                        className={`form-control mt-1 ${isLengthLocked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                        className={`form-control flex-1 ${isLengthLocked ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
                                                     />
-                                                    {(isLengthLocked || Object.values(lockedWallCoords).some(Boolean)) && (
-                                                        <p className="mt-1 text-xs text-blue-600">
-                                                            {isLengthLocked
-                                                                ? 'Length is locked. Changing unlocked start/end coordinates will adjust the other point to maintain this length.'
-                                                                : 'Locked coordinates stay fixed while you edit other fields.'}
-                                                        </p>
-                                                    )}
-                                                </label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -3559,50 +3641,50 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
                                     {/* Wall Properties Section */}
                                     <div>
-                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Wall Properties</h4>
-                                        <div className="form-grid mt-2">
-                                            <label className="block">
-                                                <span className="form-label">Wall Height (mm):</span>
+                                        <h4 className="form-section-title mb-1">Wall Properties</h4>
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-1.5">
+                                            <label className="block min-w-0">
+                                                <span className="form-label">Height (mm)</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.height || ''} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, height: parseFloat(e.target.value) })} 
                                                     min="10"
                                                     step="10"
-                                                    className="form-control mt-1"
+                                                    className="form-control"
                                                 />
                                             </label>
 
-                                            <label className="block">
-                                                <span className="form-label">Wall Base Elevation (mm):</span>
+                                            <label className="block min-w-0">
+                                                <span className="form-label">Base elev. (mm)</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.base_elevation_mm ?? 0} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, base_elevation_mm: parseFloat(e.target.value) || 0 })} 
                                                     step="10"
-                                                    className="form-control mt-1"
+                                                    className="form-control"
                                                     placeholder="0"
                                                 />
                                             </label>
 
-                                            <label className="block">
-                                                <span className="form-label">Wall Thickness (mm):</span>
+                                            <label className="block min-w-0">
+                                                <span className="form-label">Thickness (mm)</span>
                                                 <input 
                                                     type="number" 
                                                     value={editedWall?.thickness || ''} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, thickness: parseFloat(e.target.value) })} 
                                                     min="25"
                                                     step="25"
-                                                    className="form-control mt-1"
+                                                    className="form-control"
                                                 />
                                             </label>
 
-                                            <label className="block">
-                                                <span className="form-label">Wall Type:</span>
+                                            <label className="block min-w-0">
+                                                <span className="form-label">Type</span>
                                                 <select 
                                                     value={editedWall?.application_type || 'wall'} 
                                                     onChange={(e) => setEditedWall({ ...editedWall, application_type: e.target.value })} 
-                                                    className="form-control mt-1"
+                                                    className="form-control"
                                                 >
                                                     <option value="wall">Wall</option>
                                                     <option value="partition">Partition</option>
@@ -3613,59 +3695,63 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
                                     {/* Face Finishes Section */}
                                     <div>
-                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Face Finishes</h4>
-                                        <div className="form-grid mt-2">
-                                            <div className="form-subsection">
-                                                <h5 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Inner Face</h5>
-                                                <label className="block">
-                                                    <span className="form-label">Material:</span>
+                                        <h4 className="form-section-title mb-1">Face Finishes</h4>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="form-subsection !p-1.5 !space-y-1">
+                                                <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Inner</h5>
+                                                <div className="grid grid-cols-2 gap-1.5">
+                                                <label className="block min-w-0">
+                                                    <span className="form-label">Material</span>
                                                     <select
                                                         value={editedWall?.inner_face_material || 'PPGI'}
                                                         onChange={(e) => setEditedWall({ ...editedWall, inner_face_material: e.target.value })}
-                                                        className="form-control mt-1"
+                                                        className="form-control"
                                                     >
                                                         <option value="PPGI">PPGI</option>
                                                         <option value="S/Steel">S/Steel</option>
                                                         <option value="PVC">PVC</option>
                                                     </select>
                                                 </label>
-                                                <label className="block">
-                                                    <span className="form-label">Thickness (mm):</span>
+                                                <label className="block min-w-0">
+                                                    <span className="form-label">Thk (mm)</span>
                                                     <input
                                                         type="number"
                                                         min="0.1"
                                                         step="0.1"
                                                         value={editedWall?.inner_face_thickness ?? 0.5}
                                                         onChange={(e) => setEditedWall({ ...editedWall, inner_face_thickness: parseFloat(e.target.value) })}
-                                                        className="form-control mt-1"
+                                                        className="form-control"
                                                     />
                                                 </label>
+                                                </div>
                                             </div>
-                                            <div className="form-subsection">
-                                                <h5 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Outer Face</h5>
-                                                <label className="block">
-                                                    <span className="form-label">Material:</span>
+                                            <div className="form-subsection !p-1.5 !space-y-1">
+                                                <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Outer</h5>
+                                                <div className="grid grid-cols-2 gap-1.5">
+                                                <label className="block min-w-0">
+                                                    <span className="form-label">Material</span>
                                                     <select
                                                         value={editedWall?.outer_face_material || 'PPGI'}
                                                         onChange={(e) => setEditedWall({ ...editedWall, outer_face_material: e.target.value })}
-                                                        className="form-control mt-1"
+                                                        className="form-control"
                                                     >
                                                         <option value="PPGI">PPGI</option>
                                                         <option value="S/Steel">S/Steel</option>
                                                         <option value="PVC">PVC</option>
                                                     </select>
                                                 </label>
-                                                <label className="block">
-                                                    <span className="form-label">Thickness (mm):</span>
+                                                <label className="block min-w-0">
+                                                    <span className="form-label">Thk (mm)</span>
                                                     <input
                                                         type="number"
                                                         min="0.1"
                                                         step="0.1"
                                                         value={editedWall?.outer_face_thickness ?? 0.5}
                                                         onChange={(e) => setEditedWall({ ...editedWall, outer_face_thickness: parseFloat(e.target.value) })}
-                                                        className="form-control mt-1"
+                                                        className="form-control"
                                                     />
                                                 </label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -3673,21 +3759,20 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     {/* Gap-Fill Toggle Section - Only show for single wall */}
                                     {projectDetails.selectedWall !== null && (
                                     <div>
-                                        <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Advanced Options</h4>
-                                        <div className="mt-3">
-                                            <div className="form-toggle-row">
+                                        <h4 className="form-section-title mb-1">Advanced Options</h4>
+                                            <div className="form-toggle-row !p-1.5">
                                                 <div className="flex-1 min-w-0">
-                                                    <h5 className="text-xs font-medium text-gray-800">Fill Gap Between Rooms</h5>
+                                                    <h5 className="text-[11px] font-medium text-gray-800 dark:text-gray-200">Fill Gap Between Rooms</h5>
                                                     <p className="form-hint">
                                                         Fill only the gap between rooms with different heights
                                                     </p>
                                                     {editedWall?.gap_fill_height && (
-                                                        <div className="mt-2 text-xs text-blue-700 font-medium">
+                                                        <div className="mt-0.5 text-[10px] text-blue-700 dark:text-blue-300 font-medium">
                                                             Current: {editedWall.gap_fill_height}mm at {editedWall.gap_base_position}mm position
                                                         </div>
                                                     )}
                                                     {gapFillError && (
-                                                        <div className="mt-2 text-xs text-red-600 font-medium">
+                                                        <div className="mt-0.5 text-[10px] text-red-600 font-medium">
                                                             {gapFillError}
                                                         </div>
                                                     )}
@@ -3726,63 +3811,59 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     {editedWall?.fill_gap_mode ? '✓ Enabled' : 'Enable Gap-Fill'}
                                                 </button>
                                             </div>
-                                        </div>
                                     </div>
                                     )}
                                     
                                     {/* Windows Section - Only show for single wall */}
                                     {projectDetails.selectedWall !== null && (
                                     <div>
-                                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
-                                            <h4 className="text-sm font-semibold text-gray-700">Windows on Wall</h4>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <h4 className="form-section-title !mb-0">Windows on Wall</h4>
                                             <button
                                                 onClick={handleAddWallWindow}
                                                 disabled={!editedWall?.id}
-                                                className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 ${
+                                                className={`form-btn ${
                                                     editedWall?.id
                                                         ? 'bg-blue-600 text-white hover:bg-blue-700'
                                                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                 }`}
                                                 title={!editedWall?.id ? 'Save the wall first to add windows' : ''}
                                             >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                                </svg>
-                                                Add Window
+                                                + Add Window
                                             </button>
                                         </div>
                                         
                                         {!editedWall?.id ? (
-                                            <p className="text-sm text-gray-500 italic mt-2">Save the wall first to add windows.</p>
+                                            <p className="form-hint">Save the wall first to add windows.</p>
                                         ) : wallWindows.length === 0 ? (
-                                            <p className="text-sm text-gray-500 italic mt-2">No windows added yet. Click "Add Window" to add one.</p>
+                                            <p className="form-hint">No windows yet.</p>
                                         ) : (
-                                            <div className="space-y-2 mt-3">
+                                            <div className="space-y-1 mt-1">
                                                 {wallWindows.map((window) => (
-                                                    <div key={window.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                                        <div className="flex-1">
+                                                    <div key={window.id} className="flex items-center justify-between gap-2 px-2 py-1 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                                                        <div className="flex-1 min-w-0">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="form-label">
+                                                                <span className="form-label !mb-0">
                                                                     {window.window_type || 'glass'} window
                                                                 </span>
-                                                                <span className="text-xs text-gray-500">
+                                                                <span className="text-[10px] text-gray-500">
                                                                     {window.width}mm × {window.height}mm
                                                                 </span>
                                                             </div>
-                                                            <div className="text-xs text-gray-500 mt-1">
-                                                                Position: {Math.round(window.position_x * 100)}% along wall, {Math.round(window.position_y * 100)}% height
+                                                            <div className="text-[10px] text-gray-500">
+                                                                {Math.round(window.position_x * 100)}% along, {Math.round(window.position_y * 100)}% height
                                                             </div>
                                                         </div>
-                                                        <div className="flex gap-2">
+                                                        <div className="flex gap-1 shrink-0">
                                                             <button
                                                                 onClick={() => handleEditWallWindow(window)}
-                                                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                                                                className="px-1.5 py-0.5 text-[10px] bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
                                                             >
                                                                 Edit
                                                             </button>
                                                             <button
                                                                 onClick={() => handleDeleteWallWindow(window.id)}
-                                                                className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                                                                className="px-1.5 py-0.5 text-[10px] bg-red-100 text-red-700 rounded hover:bg-red-200"
                                                             >
                                                                 Delete
                                                             </button>
@@ -3793,9 +3874,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         )}
                                     </div>
                                     )}
+                                </div>
 
                                     {/* Action Buttons: delete left, save right */}
-                                    <div className={`form-actions px-4 pb-4${projectDetails.selectedWall !== null ? ' !justify-between' : ''}`}>
+                                    <div className={`form-actions shrink-0 !flex-row px-3 py-2 bg-white dark:bg-gray-900${projectDetails.selectedWall !== null ? ' !justify-between' : ''}`}>
                                         {projectDetails.selectedWall !== null && (
                                         <button
                                             onClick={() => {
@@ -3809,8 +3891,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 projectDetails.setIsMultiWallEditMode(false);
                                                 setEditedWall(null);
                                             }}
-                                            className="form-btn-danger w-full sm:w-auto 
-                                                transition-colors text-sm font-medium"
+                                            className="form-btn-danger"
                                         >
                                             Remove Wall
                                         </button>
@@ -3903,12 +3984,11 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     setEditedWall(null);
                                                 }
                                             }}
-                                            className="form-btn-primary w-full sm:w-auto"
+                                            className="form-btn-primary"
                                         >
                                             Save
                                         </button>
                                     </div>
-                                </div>
                     </div>
                 </ModalOverlay>
                     
@@ -4264,6 +4344,42 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                 onCommentStatusChanged={handleCommentStatusChanged}
                 highlightedWallCount={commentHighlightWallIds.length}
             />
+
+            {versionNotice && (
+                <div className="notification-banner-success top-24 px-4 py-3 z-[13000]">
+                    <span className="font-medium">{versionNotice}</span>
+                </div>
+            )}
+
+            {versionModalOpen && (
+                <ProjectVersionModal
+                    projectId={projectId}
+                    projectName={projectDetails.project?.name}
+                    canManage={canManageVersions}
+                    viewingVersionId={viewingVersion?.id}
+                    onClose={() => setVersionModalOpen(false)}
+                    onRestored={handleVersionRestored}
+                    onViewed={handleVersionViewed}
+                    onSaved={handleVersionSaved}
+                    onDeleted={handleVersionDeleted}
+                    onViewOriginal={handleExitVersionView}
+                    onCompare={(keys) => {
+                        setCompareVersionKeys(keys);
+                        setVersionModalOpen(false);
+                    }}
+                />
+            )}
+
+            {compareVersionKeys && (
+                <VersionCompareModal
+                    projectId={projectId}
+                    versionKeys={compareVersionKeys}
+                    onClose={() => {
+                        setCompareVersionKeys(null);
+                        setVersionModalOpen(true);
+                    }}
+                />
+            )}
 
             {shareModalOpen && (
                 <ShareProjectModal

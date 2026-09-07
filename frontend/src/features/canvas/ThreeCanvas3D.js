@@ -17,6 +17,7 @@ import {
   buildProjectWallPanelsMap,
 } from '../panel/wallPanelCalculationUtils';
 import { THREE_CONFIG } from './threeConfig';
+import { disposeMaterialSafe } from './wallSurfaceTextures';
 import {
   createFatLineSegmentsFromEdgesGeometry,
   createFatLineSegmentsFromPositions,
@@ -44,6 +45,22 @@ const debugWarn = (...args) => {
 
 /** Shared styling for wall + ceiling panel division overlays */
 const PL = THREE_CONFIG.PANEL_LINES;
+
+/** Thin recessed seam — world-sized so it fades in orbit and reads up close. */
+function panelSeamOptions(color, extra = {}) {
+  const world = PL.USE_WORLD_UNITS !== false;
+  return {
+    color,
+    linewidth: world ? (PL.WORLD_WIDTH ?? 0.042) : (PL.LINE_WIDTH_PX ?? 1.15),
+    worldUnits: world,
+    transparent: true,
+    opacity: PL.OPACITY ?? 0.48,
+    alphaToCoverage: false,
+    depthTest: true,
+    renderOrder: PL.RENDER_ORDER,
+    ...extra,
+  };
+}
 
 /** Shrink an XZ polygon toward its centroid so floor perimeter clears wall faces. */
 function insetPolygonXZ(vertices, inset) {
@@ -857,15 +874,7 @@ getModelBounds() {
           
           // Dispose of materials
           if (object.material) {
-            if (Array.isArray(object.material)) {
-              object.material.forEach(material => {
-                if (material.map) material.map.dispose();
-                material.dispose();
-              });
-            } else {
-              if (object.material.map) object.material.map.dispose();
-              object.material.dispose();
-            }
+            disposeMaterialSafe(object.material);
           }
           
           // Remove from scene
@@ -3109,14 +3118,7 @@ getModelBounds() {
           offsetLinePoint.x + offsetX, wallBaseY, offsetLinePoint.z + offsetZ,
           offsetLinePoint.x + offsetX, wallTopY, offsetLinePoint.z + offsetZ
         ]);
-        const line = createFatLineSegmentsFromPositions(vertices, {
-          color: PL.COLOR_FALLBACK,
-          linewidth: PL.LINE_WIDTH_PX,
-          transparent: false,
-          opacity: 1,
-          depthTest: true,
-          renderOrder: PL.RENDER_ORDER,
-        });
+        const line = createFatLineSegmentsFromPositions(vertices, panelSeamOptions(PL.COLOR_FALLBACK));
         line.userData = { isPanelLine: true, wallId: id };
         line.visible = this.showPanelLines;
         
@@ -3335,14 +3337,7 @@ getModelBounds() {
         offsetLinePoint.x + offsetX, wallTopY, offsetLinePoint.z + offsetZ
       ]);
       const lineColor = isCutPanel ? PL.COLOR_CUT : PL.COLOR_FULL;
-      const line = createFatLineSegmentsFromPositions(vertices, {
-        color: lineColor,
-        linewidth: PL.LINE_WIDTH_PX,
-        transparent: false,
-        opacity: 1.0,
-        depthTest: true,
-        renderOrder: PL.RENDER_ORDER,
-      });
+      const line = createFatLineSegmentsFromPositions(vertices, panelSeamOptions(lineColor));
       line.userData.isPanelLine = true;
       line.visible = this.showPanelLines;
       
@@ -3361,15 +3356,7 @@ getModelBounds() {
         offsetLinePoint.x + offsetX, wallTopY - ghostLift, offsetLinePoint.z + offsetZ,
         offsetLinePoint.x + offsetX, wallTopY, offsetLinePoint.z + offsetZ
       ]);
-      const line = createFatLineSegmentsFromPositions(vertices, {
-        color: PL.COLOR_DOOR_GAP,
-        linewidth: PL.LINE_WIDTH_PX,
-        transparent: true,
-        opacity: 0.55,
-        alphaToCoverage: false,
-        depthTest: true,
-        renderOrder: PL.RENDER_ORDER,
-      });
+      const line = createFatLineSegmentsFromPositions(vertices, panelSeamOptions(PL.COLOR_DOOR_GAP, { opacity: Math.min(0.28, PL.OPACITY ?? 0.48) }));
       line.userData.isPanelLine = true;
       line.visible = this.showPanelLines;
       
@@ -3400,14 +3387,7 @@ getModelBounds() {
       offsetLinePoint.x + offsetX, wallBaseY + wallHeight, offsetLinePoint.z + offsetZ
     ]);
     const lineColor = isCutPanel ? PL.COLOR_CUT : PL.COLOR_FULL;
-    const divisionLine = createFatLineSegmentsFromPositions(vertices, {
-      color: lineColor,
-      linewidth: PL.LINE_WIDTH_PX,
-      transparent: false,
-      opacity: 1.0,
-      depthTest: true,
-      renderOrder: PL.RENDER_ORDER,
-    });
+    const divisionLine = createFatLineSegmentsFromPositions(vertices, panelSeamOptions(lineColor));
     divisionLine.userData.isPanelLine = true;
     divisionLine.visible = this.showPanelLines;
     
@@ -3626,14 +3606,9 @@ getModelBounds() {
              const firstCeilingY = getCeilingTopY(firstPointX, firstPointY);
              vertices.push(clippedShape[0].x, firstCeilingY, clippedShape[0].z);
 
-             const line = createFatLine2FromPositions(vertices, {
-               color: panel.is_cut_panel ? PL.COLOR_CUT : PL.COLOR_FULL,
-               linewidth: PL.LINE_WIDTH_PX,
-               transparent: false,
-               opacity: 1.0,
-               depthTest: true,
-               renderOrder: PL.RENDER_ORDER,
-             });
+             const line = createFatLine2FromPositions(vertices, panelSeamOptions(
+               panel.is_cut_panel ? PL.COLOR_CUT : PL.COLOR_FULL
+             ));
              
              // Lines are positioned directly in vertex coordinates (lineY)
              // No additional offset needed - vertices are already at correct height

@@ -220,7 +220,6 @@ function packMaxRects(rooms, siteW, siteL, largestFirst) {
             leftover,
           };
         }
-        void bottomLeft;
       }
     }
 

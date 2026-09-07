@@ -1,6 +1,10 @@
 // Wall rendering module for Three.js 3D system
 import { createWallMesh } from '../meshUtils';
-import { THREE_CONFIG } from '../threeConfig';
+import {
+  createWallSurfaceMaterial,
+  prepareWallSurfaceGeometry,
+  ensureWallSurfaceDetail,
+} from '../wallSurfaceTextures';
 
 export class WallRenderer {
   constructor(instance) {
@@ -54,16 +58,10 @@ export class WallRenderer {
       const wallHeight = height * scale;
       
       const geometry = new this.THREE.BoxGeometry(length, wallHeight, width);
-      const material = new this.THREE.MeshStandardMaterial({
-        color: THREE_CONFIG.MATERIALS.WALL.color,
-        roughness: THREE_CONFIG.MATERIALS.WALL.roughness,
-        metalness: THREE_CONFIG.MATERIALS.WALL.metalness,
-        envMapIntensity: THREE_CONFIG.MATERIALS.WALL.envMapIntensity ?? 0.45,
-        emissive: THREE_CONFIG.MATERIALS.WALL.emissive ?? 0x000000,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.WALL.emissiveIntensity ?? 0,
-      });
-      
+      const material = createWallSurfaceMaterial(this.THREE, this.instance.renderer);
       const mesh = new this.THREE.Mesh(geometry, material);
+      prepareWallSurfaceGeometry(this.THREE, mesh.geometry);
+      ensureWallSurfaceDetail(this.THREE, mesh, this.instance.renderer);
       mesh.userData.isWall = true;
       mesh.castShadow = true;
       // Cast-only: wall self-receive causes shadow acne that blinks while orbiting

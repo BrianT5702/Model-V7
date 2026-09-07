@@ -4,62 +4,86 @@ import ModalOverlay from '../../components/ModalOverlay';
 import { useAuth } from '../auth/AuthContext';
 import { ROLE_LABELS } from '../auth/authUtils';
 import {
-    HELP_ROLE_OPTIONS,
     MANUAL_GROUPS,
     searchManualSections,
 } from './userManualContent';
 
-const ROLE_TAB_CLASSES = {
-    admin: 'text-indigo-800 bg-indigo-50 border-indigo-200 dark:text-indigo-100 dark:bg-indigo-950/50 dark:border-indigo-700',
-    drafter: 'text-blue-800 bg-blue-50 border-blue-200 dark:text-blue-100 dark:bg-blue-950/50 dark:border-blue-700',
-    salesman: 'text-amber-800 bg-amber-50 border-amber-200 dark:text-amber-100 dark:bg-amber-950/50 dark:border-amber-700',
-    guest: 'text-gray-800 bg-gray-50 border-gray-300 dark:text-gray-100 dark:bg-gray-800 dark:border-gray-600',
+/** Renders Help copy. Wrap UI labels in **bold**. */
+const HelpText = ({ text }) => {
+    if (text == null || text === '') return null;
+    const parts = String(text).split(/(\*\*[^*]+\*\*)/g);
+    return (
+        <>
+            {parts.map((part, index) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                    return (
+                        <strong key={index} className="font-semibold text-gray-900 dark:text-gray-50">
+                            {part.slice(2, -2)}
+                        </strong>
+                    );
+                }
+                return <React.Fragment key={index}>{part}</React.Fragment>;
+            })}
+        </>
+    );
 };
 
 const Block = ({ block }) => {
     if (block.type === 'img') {
         return (
-            <figure className="my-2">
+            <figure className="my-1">
                 <img
                     src={block.src}
                     alt={block.alt || ''}
-                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700"
+                    className="w-full max-h-64 object-contain object-top bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
                 />
                 {block.caption ? (
-                    <figcaption className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                        {block.caption}
+                    <figcaption className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-snug">
+                        <HelpText text={block.caption} />
                     </figcaption>
                 ) : null}
             </figure>
         );
     }
     if (block.type === 'p') {
-        return <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{block.text}</p>;
+        return (
+            <p className="text-[15px] text-gray-800 dark:text-gray-200 leading-[1.65]">
+                <HelpText text={block.text} />
+            </p>
+        );
     }
     if (block.type === 'h3') {
-        return <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-1">{block.text}</h3>;
+        return (
+            <h3 className="mt-6 mb-2.5 pl-3 text-xl font-bold tracking-tight text-blue-700 dark:text-sky-400 border-l-[3px] border-blue-600 dark:border-sky-400 leading-snug">
+                {block.text}
+            </h3>
+        );
     }
     if (block.type === 'note') {
         return (
-            <p className="text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
-                {block.text}
+            <p className="text-[15px] leading-[1.65] text-amber-950 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3.5 py-2.5">
+                <HelpText text={block.text} />
             </p>
         );
     }
     if (block.type === 'ul') {
         return (
-            <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+            <ul className="list-disc pl-5 space-y-2 text-[15px] text-gray-800 dark:text-gray-200 leading-[1.65]">
                 {block.items.map((item, index) => (
-                    <li key={index}>{item}</li>
+                    <li key={index} className="pl-1">
+                        <HelpText text={item} />
+                    </li>
                 ))}
             </ul>
         );
     }
     if (block.type === 'steps') {
         return (
-            <ol className="list-decimal pl-5 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+            <ol className="list-decimal pl-5 space-y-2.5 text-[15px] text-gray-800 dark:text-gray-200 leading-[1.65] marker:font-semibold marker:text-gray-500 dark:marker:text-gray-400">
                 {block.items.map((item, index) => (
-                    <li key={index}>{item}</li>
+                    <li key={index} className="pl-1.5">
+                        <HelpText text={item} />
+                    </li>
                 ))}
             </ol>
         );
@@ -67,12 +91,12 @@ const Block = ({ block }) => {
     if (block.type === 'table') {
         return (
             <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-                <table className="w-full text-sm text-left">
+                <table className="w-full text-[14px] text-left">
                     <thead className="bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
                         <tr>
                             {block.headers.map((header) => (
-                                <th key={header} className="px-3 py-2 font-medium whitespace-nowrap">
-                                    {header}
+                                <th key={header} className="px-3 py-2.5 font-semibold">
+                                    <HelpText text={header} />
                                 </th>
                             ))}
                         </tr>
@@ -83,9 +107,13 @@ const Block = ({ block }) => {
                                 {row.map((cell, index) => (
                                     <td
                                         key={index}
-                                        className={`px-3 py-2 text-gray-700 dark:text-gray-300 ${index === 0 ? 'font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap' : ''}`}
+                                        className={`px-3 py-2.5 leading-[1.6] ${
+                                            index === 0
+                                                ? 'font-medium text-gray-900 dark:text-gray-100 min-w-[8rem]'
+                                                : 'text-gray-800 dark:text-gray-200'
+                                        }`}
                                     >
-                                        {cell}
+                                        <HelpText text={cell} />
                                     </td>
                                 ))}
                             </tr>
@@ -101,15 +129,14 @@ const Block = ({ block }) => {
 const UserManualModal = ({ onClose }) => {
     const { isAuthenticated, role } = useAuth();
     const accountRole = isAuthenticated && role ? role : 'guest';
-    const [viewRole, setViewRole] = useState(accountRole);
     const [query, setQuery] = useState('');
     const [activeId, setActiveId] = useState('intro');
 
     useEffect(() => {
-        setViewRole(accountRole);
+        setActiveId('intro');
     }, [accountRole]);
 
-    const matches = useMemo(() => searchManualSections(query, viewRole), [query, viewRole]);
+    const matches = useMemo(() => searchManualSections(query, accountRole), [query, accountRole]);
     const active = matches.find((section) => section.id === activeId) || matches[0] || null;
 
     useEffect(() => {
@@ -132,8 +159,6 @@ const UserManualModal = ({ onClose }) => {
     })).filter((group) => group.sections.length > 0);
 
     const accountLabel = ROLE_LABELS[accountRole] || 'Guest';
-    const viewLabel = ROLE_LABELS[viewRole] || (viewRole === 'guest' ? 'Guest' : viewRole);
-    const isPreview = viewRole !== accountRole;
 
     return (
         <ModalOverlay
@@ -146,9 +171,9 @@ const UserManualModal = ({ onClose }) => {
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <div className="min-w-0">
                         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">User manual</h2>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {isPreview
-                                ? `Previewing ${viewLabel} Help — your account is ${accountLabel}`
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">
+                            {accountRole === 'guest'
+                                ? 'Sign in to see Help for your account. This page only covers signing in.'
                                 : `Showing Help for your ${accountLabel} account`}
                         </p>
                     </div>
@@ -160,34 +185,6 @@ const UserManualModal = ({ onClose }) => {
                     >
                         <FaTimes />
                     </button>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
-                    <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mr-1">Role</span>
-                    {HELP_ROLE_OPTIONS.map((option) => {
-                        const selected = viewRole === option.id;
-                        return (
-                            <button
-                                key={option.id}
-                                type="button"
-                                onClick={() => {
-                                    setViewRole(option.id);
-                                    setActiveId('intro');
-                                }}
-                                className={`px-2 py-1 rounded-md text-xs font-medium border ${
-                                    selected
-                                        ? ROLE_TAB_CLASSES[option.id]
-                                        : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-100 dark:text-gray-300 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800'
-                                }`}
-                                aria-pressed={selected}
-                            >
-                                {option.label}
-                                {option.id === accountRole ? (
-                                    <span className="ml-1 opacity-70">· you</span>
-                                ) : null}
-                            </button>
-                        );
-                    })}
                 </div>
 
                 <div className="flex flex-1 min-h-0">
@@ -205,13 +202,13 @@ const UserManualModal = ({ onClose }) => {
                                 />
                             </label>
                         </div>
-                        <nav className="flex-1 overflow-y-auto modal-scroll-panel p-2 space-y-3" data-modal-scroll>
+                        <nav className="flex-1 overflow-y-auto modal-scroll-panel p-2 space-y-4" data-modal-scroll>
                             {grouped.length === 0 && (
-                                <p className="text-xs text-gray-500 px-2">No matching topics.</p>
+                                <p className="text-sm text-gray-500 px-2">No matching topics.</p>
                             )}
                             {grouped.map((group) => (
                                 <div key={group.id}>
-                                    <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                                    <p className="px-2 mb-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
                                         {group.title}
                                     </p>
                                     {group.sections.map((section) => (
@@ -219,7 +216,7 @@ const UserManualModal = ({ onClose }) => {
                                             key={section.id}
                                             type="button"
                                             onClick={() => setActiveId(section.id)}
-                                            className={`w-full text-left px-2 py-1.5 rounded-md text-sm ${
+                                            className={`w-full text-left px-2 py-1.5 rounded-md text-sm leading-snug ${
                                                 active?.id === section.id
                                                     ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-100'
                                                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
@@ -233,16 +230,18 @@ const UserManualModal = ({ onClose }) => {
                         </nav>
                     </aside>
 
-                    <article className="flex-1 min-w-0 overflow-y-auto modal-scroll-panel px-4 py-4 space-y-3" data-modal-scroll>
+                    <article className="flex-1 min-w-0 overflow-y-auto modal-scroll-panel px-5 sm:px-8 py-5" data-modal-scroll>
                         {active ? (
-                            <>
-                                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{active.title}</h3>
+                            <div className="max-w-[40rem] space-y-3">
+                                <h3 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight pb-2 mb-1 border-b-2 border-blue-500 dark:border-blue-400">
+                                    {active.title}
+                                </h3>
                                 {active.blocks.map((block, index) => (
                                     <Block key={`${active.id}-${index}`} block={block} />
                                 ))}
-                            </>
+                            </div>
                         ) : (
-                            <p className="text-sm text-gray-500">Try a different search.</p>
+                            <p className="text-[15px] text-gray-500">Try a different search.</p>
                         )}
                     </article>
                 </div>

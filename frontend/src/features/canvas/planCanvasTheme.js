@@ -148,7 +148,7 @@ function ceilingPanelFillLightness(isCut) {
 
 function ceilingPanelStrokeLightness(isCut) {
     if (!isPlanCanvasDark()) return isCut ? 20 : 35;
-    return isCut ? 68 : 76;
+    return isCut ? 78 : 86;
 }
 
 /** Ceiling panel fill/stroke colours keyed by finish hue. */
@@ -172,10 +172,10 @@ export function getCeilingNeutralPanelColors() {
         };
     }
     return {
-        panelFillFull: 'rgba(186, 196, 214, 0.32)',
-        panelFillCut: 'rgba(148, 163, 184, 0.55)',
-        panelStrokeFull: '#d1d5db',
-        panelStrokeCut: '#9ca3af',
+        panelFillFull: 'rgba(186, 196, 214, 0.42)',
+        panelFillCut: 'rgba(148, 163, 184, 0.62)',
+        panelStrokeFull: '#f3f4f6',
+        panelStrokeCut: '#e5e7eb',
     };
 }
 

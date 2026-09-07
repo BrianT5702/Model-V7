@@ -477,7 +477,7 @@ class ProjectFolderSerializer(serializers.ModelSerializer):
 
     def get_project_count(self, obj):
         request = self.context.get('request')
-        queryset = obj.projects.all()
+        queryset = obj.projects.filter(hidden_from_list=False)
         if request is not None:
             from .project_visibility import filter_project_queryset_for_request
             queryset = filter_project_queryset_for_request(request, queryset)

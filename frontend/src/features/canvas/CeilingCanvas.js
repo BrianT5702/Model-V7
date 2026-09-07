@@ -20,43 +20,24 @@ import { useTheme } from '../theme/ThemeContext';
 import useScrollContainment from '../../utils/useScrollContainment';
 import {
     calculateOffsetPoints,
-    drawOrthoPlanDimensionGeometryLikeWall,
     makeLabelDrawFn,
-    buildWallOffsetOptions,
-    computeWallPlanDimensionFontSize,
-    placeExteriorWallDimensionAvoidingLabels,
-    resolveWallExteriorPlacementSide
+    buildWallOffsetOptions
 } from './drawing.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 import { computePlanFitTransform } from './planCanvasUtils.js';
+import { drawCeilingPlanDimensionOnContext } from './planDimensionDrawing.js';
 import {
     panelNeedsNylonSupport as panelNeedsNylonSupportUtil,
     getAutoNylonHangerOffsets
 } from '../ceiling/nylonHangerUtils.js';
 import {
     DIMENSION_CONFIG,
-    formatPlanDimensionLabel,
     planCeilingValueDedupKey,
     createDimensionLaneCounters,
-    consumeDimensionLane,
-    getDimensionSpanForLane,
-    comparePlanDimensionsDrawOrder,
-    getPlanDimensionLaneConfig,
-    getPlanExteriorSide,
-    getDimensionEdge,
-    computeExteriorPlanLabelCoords,
-    getPlanExteriorFixedColumnX,
-    rememberPlanExteriorColumnX,
-    applyPlanOuterTierMinOffset,
-    recordPlanInnerTierMaxOffset
+    comparePlanDimensionsDrawOrder
 } from './DimensionConfig.js';
 import {
-    hasLabelOverlap,
-    calculateHorizontalLabelBounds,
-    calculateVerticalLabelBounds,
-    calculateRotatedVerticalDimBounds,
-    exteriorVerticalTextCenterX,
-    buildVerticalPlanLabelEntry
+    hasLabelOverlap
 } from './collisionDetection.js';
 import { sortMaterialPanels, roundPanelSizeMmUp } from '../panel/wallPlanPanelUtils';
 
@@ -167,6 +148,27 @@ const PADDING = 50;
 const ALU_RAIL_HANGER_SPACING_MM = 500;
 /** Rails sketched along walls often sit just outside panel AABBs; still treat as over the ceiling grid. */
 const ALU_RAIL_PANEL_PROXIMITY_MM = 220;
+
+/** Nylon marker size in canvas px. Follows zoom instead of sticking at a 2px floor. */
+function getNylonHangerDrawSizes(scaleFactor) {
+    const sf = Number(scaleFactor) || 0;
+    // Zoomed-out (fit-project) views used to hit a 2px radius floor, so hangers
+    // looked huge next to ~8px-wide panels. Keep a faint speck, grow when zoomed in.
+    const zoomShrink = sf >= 0.03 ? 1 : Math.max(0.35, sf / 0.03);
+    const mainR = Math.max(0.7, 75 * sf * zoomShrink);
+    return {
+        mainR,
+        lineW: Math.max(0.4, 30 * sf * zoomShrink),
+        previewLineW: Math.max(0.35, 20 * sf * zoomShrink),
+        selectedPad: Math.max(0.8, 10 * sf * zoomShrink),
+        selectedLineW: Math.max(0.5, 3 * sf * zoomShrink),
+        accessoryR: Math.max(0.4, 45 * sf * zoomShrink),
+        accessoryLineW: Math.max(0.3, 2 * sf * zoomShrink),
+        cableStart: 35 * sf * zoomShrink,
+        cableEnd: 60 * sf * zoomShrink,
+        cableLineW: Math.max(0.35, 3 * sf * zoomShrink)
+    };
+}
 
 const CeilingCanvas = ({ 
     // Multi-room props
@@ -667,9 +669,15 @@ const CeilingCanvas = ({
     }, [isMultiRoomMode, ceilingPlans, ceilingPlan]);
 
     const getRoomOrientation = useCallback((roomId) => {
-        const normalizedRoomId = typeof roomId === 'string' ? parseInt(roomId, 10) : roomId;
+        const isZoneKey = typeof roomId === 'string' && roomId.startsWith('zone-');
+        const zoneId = isZoneKey ? Number(String(roomId).slice(5)) : null;
+        const normalizedRoomId = typeof roomId === 'string' && !isZoneKey ? parseInt(roomId, 10) : roomId;
 
         let ceilingPlan = effectiveCeilingPlans.find(cp => {
+            if (isZoneKey && Number.isFinite(zoneId)) {
+                const cpZone = cp.zone_id ?? (typeof cp.zone === 'object' ? cp.zone?.id : cp.zone);
+                if (Number(cpZone) === zoneId) return true;
+            }
             if (cp.room && (cp.room === roomId || cp.room === normalizedRoomId)) return true;
             if (cp.room_id && (cp.room_id === roomId || cp.room_id === normalizedRoomId)) return true;
             if (cp.room && typeof cp.room === 'object' && (cp.room.id === roomId || cp.room.id === normalizedRoomId)) return true;
@@ -1735,6 +1743,54 @@ const CeilingCanvas = ({
         return raw == null ? '' : String(raw);
     }, []);
 
+    /** Room id, or `zone-{id}` for merged-zone panels that have no room FK. */
+    const getPanelOwnerKey = useCallback((panel) => {
+        if (!panel) return null;
+        if (panel.room_id !== undefined && panel.room_id !== null && panel.room_id !== '') {
+            return panel.room_id;
+        }
+        if (panel.room != null && typeof panel.room === 'object' && panel.room.id != null) {
+            return panel.room.id;
+        }
+        if (panel.room != null && panel.room !== '') return panel.room;
+        if (panel.zone_id !== undefined && panel.zone_id !== null && panel.zone_id !== '') {
+            return `zone-${panel.zone_id}`;
+        }
+        if (panel.zone !== undefined && panel.zone !== null && panel.zone !== '') {
+            const zid = typeof panel.zone === 'object' ? panel.zone.id : panel.zone;
+            if (zid != null && zid !== '') return `zone-${zid}`;
+        }
+        return null;
+    }, []);
+
+    const sameOwnerId = useCallback((a, b) => {
+        if (a == null || b == null || a === '' || b === '') return false;
+        return String(a) === String(b);
+    }, []);
+
+    const findOwnerByKey = useCallback((ownerKey) => {
+        if (ownerKey == null || ownerKey === '') return null;
+        const keyStr = String(ownerKey);
+        const room = effectiveRooms.find((r) => String(r.id) === keyStr);
+        if (room) return room;
+        if (!keyStr.startsWith('zone-')) return null;
+        const zoneId = Number(keyStr.slice(5));
+        if (!Number.isFinite(zoneId)) return null;
+        const zone = (zones || []).find((z) => Number(z.id) === zoneId);
+        const outline = Array.isArray(zone?.outline_points) && zone.outline_points.length >= 3
+            ? zone.outline_points
+            : zone?.outlinePoints;
+        return {
+            id: `zone-${zoneId}`,
+            zone_id: zoneId,
+            room_name: zone?.room_ids?.length
+                ? `Zone ${zoneId} (${zone.room_ids.length} rooms)`
+                : `Zone ${zoneId}`,
+            room_points: outline || [],
+            exclude_from_ceiling: false
+        };
+    }, [effectiveRooms, zones]);
+
     const partitionCustomSupports = useCallback((supports) => {
         const list = Array.isArray(supports) ? supports : [];
         const metaEntry = list.find((s) => s?.type === '_nylonMeta') || {
@@ -1834,8 +1890,9 @@ const CeilingCanvas = ({
             const pid = String(panelId ?? '');
             if (!pid) return null;
             const match = (p) => {
-                const rid = p.room_id ?? p.room;
-                if (Number(rid) !== Number(roomId)) return false;
+                if (roomId != null && roomId !== '' && !sameOwnerId(getPanelOwnerKey(p), roomId)) {
+                    return false;
+                }
                 const ids = [getPanelKey(p), p.panel_id, p.id, p.panelId, p.uuid]
                     .filter((v) => v != null && v !== '')
                     .map(String);
@@ -1843,7 +1900,7 @@ const CeilingCanvas = ({
             };
             return allCeilingPanelsForAluPlacement.find(match) || allCeilingPanels.find(match) || null;
         },
-        [allCeilingPanelsForAluPlacement, allCeilingPanels, getPanelKey]
+        [allCeilingPanelsForAluPlacement, allCeilingPanels, getPanelKey, getPanelOwnerKey, sameOwnerId]
     );
 
     const nylonAutoSlotFromSupport = useCallback(
@@ -1904,12 +1961,16 @@ const CeilingCanvas = ({
             );
             if (!pos || !room) return null;
             const panelId = panel.id ?? panel.panel_id ?? null;
+            const zoneId = room.zone_id ?? (
+                String(room.id).startsWith('zone-') ? Number(String(room.id).slice(5)) : null
+            );
             const entry = {
                 type: 'nylon',
                 nylonKey: `nylon-${room.id}-${panelId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 isAuto: Boolean(isAuto),
                 isManual: !isAuto,
                 room_id: room.id,
+                zone_id: Number.isFinite(Number(zoneId)) ? Number(zoneId) : undefined,
                 panel_id: panelId,
                 x: pos.x,
                 y: pos.y,
@@ -1934,9 +1995,12 @@ const CeilingCanvas = ({
         [effectiveCustomSupports, partitionCustomSupports, nylonHangerKey, ensureStableNylonKey]
     );
 
-    /** Pick radius in canvas pixels — matches drawn symbol (~75 * scale). */
+    /** Pick radius in canvas pixels — tracks the drawn marker, with a small hit pad. */
     const nylonHangerPickRadiusCanvas = useCallback(
-        () => Math.max(14, 75 * scaleFactor.current + 6),
+        () => {
+            const { mainR } = getNylonHangerDrawSizes(scaleFactor.current);
+            return mainR + Math.max(3, 8 * scaleFactor.current);
+        },
         []
     );
 
@@ -2007,10 +2071,10 @@ const CeilingCanvas = ({
         const nextAuto = [];
         if (enableNylonHangers) {
             allCeilingPanelsForAluPlacement.forEach((panel) => {
-                const roomId = panel.room_id ?? panel.room;
+                const roomId = getPanelOwnerKey(panel);
                 const panelId = getPanelKey(panel);
                 if (roomId == null || !panelId) return;
-                const room = effectiveRooms.find((r) => Number(r.id) === Number(roomId));
+                const room = findOwnerByKey(roomId);
                 if (!room || room.exclude_from_ceiling) return;
                 if (!panelNeedsNylonSupport(panel)) return;
                 // Legacy suppressions used room:panel (all positions).
@@ -2101,6 +2165,8 @@ const CeilingCanvas = ({
         autoNylonSlotKey,
         nylonAutoSlotFromSupport,
         getPanelKey,
+        getPanelOwnerKey,
+        findOwnerByKey,
         panelNeedsNylonSupport,
         ceilingThickness,
         buildNylonEntryForPanel,
@@ -2167,7 +2233,7 @@ const CeilingCanvas = ({
 
                 let targets = [hanger];
                 if (scope === 'room') {
-                    targets = stableNylon.filter((s) => Number(s.room_id) === Number(hanger.room_id));
+                    targets = stableNylon.filter((s) => sameOwnerId(s.room_id, hanger.room_id));
                 } else if (scope === 'line') {
                     const lineKey = frozenLineKey || getNylonHangerLineKey(hanger);
                     targets = stableNylon.filter((s) => getNylonHangerLineKey(s) === lineKey);
@@ -2183,7 +2249,7 @@ const CeilingCanvas = ({
                 let updated = [...stableNylon];
                 let changed = false;
                 targets.forEach((target) => {
-                    const room = effectiveRooms.find((r) => Number(r.id) === Number(target.room_id));
+                    const room = findOwnerByKey(target.room_id);
                     const panel = findPanelById(target.panel_id, target.room_id);
                     if (!room || !panel) {
                         skippedCount += 1;
@@ -2251,6 +2317,8 @@ const CeilingCanvas = ({
             canEditSupports,
             partitionCustomSupports,
             effectiveRooms,
+            findOwnerByKey,
+            sameOwnerId,
             findPanelById,
             getNylonHangerLineKey,
             buildNylonEntryForPanel,
@@ -2303,11 +2371,10 @@ const CeilingCanvas = ({
 
     const getQualifyingPanelsInRoom = useCallback(
         (roomId) =>
-            allCeilingPanelsForAluPlacement.filter((p) => {
-                const rid = p.room_id ?? p.room;
-                return Number(rid) === Number(roomId) && panelNeedsNylonSupport(p);
-            }),
-        [allCeilingPanelsForAluPlacement, panelNeedsNylonSupport]
+            allCeilingPanelsForAluPlacement.filter((p) => (
+                sameOwnerId(getPanelOwnerKey(p), roomId) && panelNeedsNylonSupport(p)
+            )),
+        [allCeilingPanelsForAluPlacement, panelNeedsNylonSupport, getPanelOwnerKey, sameOwnerId]
     );
 
     const commitNylonAddFromForm = useCallback(
@@ -2322,7 +2389,7 @@ const CeilingCanvas = ({
                 );
                 return false;
             }
-            const room = effectiveRooms.find((r) => Number(r.id) === Number(nylonAddTarget.roomId));
+            const room = findOwnerByKey(nylonAddTarget.roomId);
             if (!room || room.exclude_from_ceiling) {
                 setNylonFormError('Room not available for nylon placement.');
                 return false;
@@ -2376,6 +2443,7 @@ const CeilingCanvas = ({
             nylonAddTarget,
             nylonAddDraft,
             effectiveRooms,
+            findOwnerByKey,
             getQualifyingPanelsInRoom,
             findPanelById,
             getNylonPlacementFieldDefs,
@@ -2580,6 +2648,64 @@ const CeilingCanvas = ({
         return { x: baseX, y: baseY };
     };
 
+    // L-shaped leader from an outside room name to the room, matching the wall-plan arrow.
+    const drawRoomNameLeaderArrow = (ctx, room, labelX, labelY, canvasX, canvasY, boxWidth, boxHeight) => {
+        if (!room?.room_points || room.room_points.length < 3) return;
+        if (isPointInPolygon(labelX, labelY, room.room_points)) return;
+
+        const roomCenterX = room.room_points.reduce((sum, p) => sum + (Number(p.x) || 0), 0) / room.room_points.length;
+        const roomCenterY = room.room_points.reduce((sum, p) => sum + (Number(p.y) || 0), 0) / room.room_points.length;
+        const dx = roomCenterX - labelX;
+        const dy = roomCenterY - labelY;
+        if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
+
+        let startX;
+        let startY;
+        let isHorizontalEdge = false;
+        if (Math.abs(dx) > Math.abs(dy)) {
+            isHorizontalEdge = true;
+            startX = canvasX + (dx > 0 ? boxWidth / 2 : -boxWidth / 2);
+            startY = canvasY;
+        } else {
+            startX = canvasX;
+            startY = canvasY + (dy > 0 ? boxHeight / 2 : -boxHeight / 2);
+        }
+
+        const endX = roomCenterX * scaleFactor.current + offsetX.current;
+        const endY = roomCenterY * scaleFactor.current + offsetY.current;
+        const midX = isHorizontalEdge ? endX : startX;
+        const midY = isHorizontalEdge ? startY : endY;
+        const arrowLen = 8;
+        const angle = Math.atan2(endY - midY, endX - midX);
+        const lineEndX = endX - Math.cos(angle) * arrowLen * 0.85;
+        const lineEndY = endY - Math.sin(angle) * arrowLen * 0.85;
+
+        ctx.save();
+        ctx.strokeStyle = '#ff0000';
+        ctx.fillStyle = '#ff0000';
+        ctx.lineWidth = Math.max(1.2, 1);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(midX, midY);
+        ctx.lineTo(lineEndX, lineEndY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(
+            endX - arrowLen * Math.cos(angle - Math.PI / 6),
+            endY - arrowLen * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.lineTo(
+            endX - arrowLen * Math.cos(angle + Math.PI / 6),
+            endY - arrowLen * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    };
+
     // Draw room outline
     const drawRoomOutline = (ctx, room, placedLabels = []) => {
         if (!room.room_points || room.room_points.length < 3) return;
@@ -2648,13 +2774,25 @@ const CeilingCanvas = ({
             const roomCanvasMaxY = Math.max(...room.room_points.map(p => p.y * sf + offsetY.current));
             const roomCanvasWidth = roomCanvasMaxX - roomCanvasMinX;
             const roomCanvasHeight = roomCanvasMaxY - roomCanvasMinY;
-            const maxNameW = Math.max(roomCanvasWidth * 0.86, 18);
-            const roomFitRatio = Math.min(1, Math.max(0.18, (roomCanvasWidth * 0.92) / 120));
-            let fontSize = Math.max(8 * roomFitRatio, 2.5);
             const fontFamily = "'Segoe UI', Arial, sans-serif";
             const fontWeight = (isSelected || isHovered || !isRoomMode) ? 'bold' : 'normal';
 
-            const wrapName = (size) => {
+            let baseX, baseY;
+            if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
+                baseX = room.label_position.x;
+                baseY = room.label_position.y;
+            } else {
+                const smartCenter = calculatePolygonVisualCenter(room.room_points);
+                if (smartCenter) {
+                    baseX = smartCenter.x;
+                    baseY = smartCenter.y;
+                } else {
+                    baseX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
+                    baseY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
+                }
+            }
+
+            const wrapName = (size, maxW) => {
                 ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
                 const words = String(labelText).split(/\s+/).filter(Boolean);
                 if (words.length === 0) return [String(labelText)];
@@ -2662,7 +2800,7 @@ const CeilingCanvas = ({
                 let cur = words[0];
                 for (let i = 1; i < words.length; i++) {
                     const trial = `${cur} ${words[i]}`;
-                    if (ctx.measureText(trial).width <= maxNameW) cur = trial;
+                    if (ctx.measureText(trial).width <= maxW) cur = trial;
                     else {
                         out.push(cur);
                         cur = words[i];
@@ -2672,23 +2810,48 @@ const CeilingCanvas = ({
                 return out;
             };
 
-            let nameLines = wrapName(fontSize);
-            for (let guard = 0; guard < 40; guard++) {
+            const layoutName = (maxW, startSize, maxH) => {
+                let fontSize = startSize;
+                let nameLines = wrapName(fontSize, maxW);
+                if (maxH != null) {
+                    for (let guard = 0; guard < 40; guard++) {
+                        ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+                        const widest = Math.max(...nameLines.map((l) => ctx.measureText(l).width));
+                        const blockH = nameLines.length * Math.max(fontSize * 1.15, 10);
+                        if (widest <= maxW + 0.5 && blockH <= maxH) break;
+                        if (fontSize <= 2.5) break;
+                        fontSize = Math.max(2.5, fontSize - 0.25);
+                        nameLines = wrapName(fontSize, maxW);
+                    }
+                }
                 ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-                const widest = Math.max(...nameLines.map((l) => ctx.measureText(l).width));
-                const blockH = nameLines.length * Math.max(fontSize * 1.15, 10);
-                if (widest <= maxNameW + 0.5 && blockH <= roomCanvasHeight * 0.9) break;
-                if (fontSize <= 2.5) break;
-                fontSize = Math.max(2.5, fontSize - 0.25);
-                nameLines = wrapName(fontSize);
-            }
+                const lineGap = Math.max(fontSize * 1.2, fontSize);
+                const labelWidth = Math.max(...nameLines.map((l) => ctx.measureText(l).width));
+                const labelHeight = nameLines.length * lineGap;
+                return { fontSize, nameLines, lineGap, labelWidth, labelHeight };
+            };
 
-            ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-            const lineGap = Math.max(fontSize * 1.15, 10);
-            const labelWidth = Math.max(...nameLines.map((l) => ctx.measureText(l).width));
-            const labelHeight = nameLines.length * lineGap;
+            const BASE_FONT_SIZE = 8;
+            const BASE_MAX_WIDTH = 120;
+            const zoomRatio = initialScale.current > 0 ? sf / initialScale.current : 1;
+            const smoothZoomRatio = zoomRatio >= 1 ? Math.sqrt(zoomRatio) : zoomRatio;
+            const roomFitRatio = Math.min(1, Math.max(0.18, (roomCanvasWidth * 0.92) / BASE_MAX_WIDTH));
+            const labelScale = smoothZoomRatio * roomFitRatio;
+            const wallPlanFont = Math.max(BASE_FONT_SIZE * labelScale, 2.5);
+            const wallPlanMaxW = Math.max(Math.min(BASE_MAX_WIDTH * labelScale, roomCanvasWidth * 0.92), 18);
+
+            const baseIsOutside = room.room_points.length >= 3 &&
+                !isPointInPolygon(baseX, baseY, room.room_points);
+
+            let layout = baseIsOutside
+                ? layoutName(wallPlanMaxW, wallPlanFont, null)
+                : layoutName(
+                    Math.max(roomCanvasWidth * 0.86, 18),
+                    wallPlanFont,
+                    roomCanvasHeight * 0.9
+                );
+
             let padding, textColor, bgColor;
-
             if (isSelected) {
                 padding = 8;
                 textColor = '#ffffff';
@@ -2706,34 +2869,45 @@ const CeilingCanvas = ({
                 textColor = isPlanCanvasDark() ? '#e5e7eb' : '#6b7280';
                 bgColor = null;
             }
-            
-            // Use stored label position if available, otherwise calculate smart center
-            let baseX, baseY;
-            if (room.label_position && room.label_position.x !== undefined && room.label_position.y !== undefined) {
-                // Use stored position from Canvas2D
-                baseX = room.label_position.x;
-                baseY = room.label_position.y;
-            } else {
-                // Calculate smart visual center for better placement
-                const smartCenter = calculatePolygonVisualCenter(room.room_points);
-                if (smartCenter) {
-                    baseX = smartCenter.x;
-                    baseY = smartCenter.y;
-                } else {
-                    // Fallback to geometric center
-                    baseX = room.room_points.reduce((sum, p) => sum + p.x, 0) / room.room_points.length;
-                    baseY = room.room_points.reduce((sum, p) => sum + p.y, 0) / room.room_points.length;
-                }
+
+            let labelX = baseX;
+            let labelY = baseY;
+            if (!baseIsOutside) {
+                const optimalPosition = findOptimalNamePositionWithDimensions(
+                    room, baseX, baseY, layout.labelWidth, layout.labelHeight, padding, placedLabels || []
+                );
+                labelX = optimalPosition.x;
+                labelY = optimalPosition.y;
             }
-            
-            // Find optimal position using EXACT label dimensions calculated above
-            const optimalPosition = findOptimalNamePositionWithDimensions(room, baseX, baseY, labelWidth, labelHeight, padding, placedLabels || []);
-            const labelX = optimalPosition.x;
-            const labelY = optimalPosition.y;
+
+            const isOutsideRoom = room.room_points.length >= 3 &&
+                !isPointInPolygon(labelX, labelY, room.room_points);
+            if (isOutsideRoom && !baseIsOutside) {
+                layout = layoutName(wallPlanMaxW, wallPlanFont, null);
+            }
+
+            let fontSize = layout.fontSize;
+            let nameLines = layout.nameLines;
+            const lineGap = layout.lineGap;
+            const labelWidth = layout.labelWidth;
+            const labelHeight = layout.labelHeight;
             const canvasX = labelX * sf + offsetX.current;
             const canvasY = labelY * sf + offsetY.current;
             const totalH = nameLines.length * lineGap;
             const nameStartY = canvasY - totalH / 2 + lineGap / 2;
+            const labelBoxWidth = labelWidth + padding * 2;
+            const labelBoxHeight = labelHeight + padding * 2;
+
+            drawRoomNameLeaderArrow(
+                ctx,
+                room,
+                labelX,
+                labelY,
+                canvasX,
+                canvasY,
+                labelBoxWidth,
+                labelBoxHeight
+            );
             
             // Draw background if needed
             if (bgColor) {
@@ -3132,7 +3306,7 @@ const CeilingCanvas = ({
                 const highlightIndex = selectionIndex !== -1 ? selectionIndex : 0;
                 ctx.fillStyle = fillColors[highlightIndex] ?? 'rgba(37, 99, 235, 0.75)';
                 ctx.strokeStyle = borderColors[highlightIndex] ?? '#1d4ed8';
-                ctx.lineWidth = 14 * scaleFactor.current;
+                ctx.lineWidth = Math.max(1.5, 14 * scaleFactor.current);
             } else {
                 // Derive colours from ceiling panel build-up (thickness + finishes), like wall plan
                 const finishKey = getCeilingPanelFinishKey(panel);
@@ -3164,8 +3338,8 @@ const CeilingCanvas = ({
                 }
 
                 ctx.lineWidth = shouldDimPanels
-                    ? 5 * scaleFactor.current
-                    : (isRoomSelected ? 12 * scaleFactor.current : 10 * scaleFactor.current);
+                    ? Math.max(1, 5 * scaleFactor.current)
+                    : Math.max(1.25, (isRoomSelected ? 12 : 10) * scaleFactor.current);
             }
 
             // === DRAWING LOGIC ===
@@ -3217,8 +3391,9 @@ const CeilingCanvas = ({
                 const y = startY * scaleFactor.current + offsetY.current;
 
                 ctx.strokeStyle = '#22c55e';
-                ctx.lineWidth = 10 * scaleFactor.current;
-                ctx.setLineDash([8 * scaleFactor.current, 4 * scaleFactor.current]);
+                ctx.lineWidth = Math.max(1.15, 10 * scaleFactor.current);
+                const dash = Math.max(4, 8 * scaleFactor.current);
+                ctx.setLineDash([dash, dash * 0.5]);
                 ctx.strokeRect(x + 2, y + 2, width - 4, height - 4);
                 ctx.setLineDash([]);
             }
@@ -4013,8 +4188,6 @@ const CeilingCanvas = ({
         nylonHangerOptions
     ]);
 
-    const getDimensionText = (dimension, length) => formatPlanDimensionLabel(dimension, length);
-
     const getCeilingDimensionOrientation = (dimension) => {
         if (dimension.isHorizontal !== undefined) {
             return dimension.isHorizontal;
@@ -4052,275 +4225,25 @@ const CeilingCanvas = ({
     };
 
     const drawCeilingDimension = (ctx, dimension, bounds, placedLabels, allLabels, dimensionLanes = null) => {
-        const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea } = dimension;
-        const visibleColor = getPlanDimensionStrokeColor(color);
-
-        const isHorizontal = getCeilingDimensionOrientation(dimension);
-
-        const dedupKey =
-            !dimension.skipValueDedup && typeof length === 'number'
-                ? planCeilingValueDedupKey(length, isHorizontal)
-                : null;
-        const globalDimensionValues = dimensionValuesSeen.current;
-        if (dedupKey && globalDimensionValues?.has(dedupKey)) return;
-        
-        const midX = (startX + endX) / 2;
-        const midY = (startY + endY) / 2;
-        
-        // Create unique key for this dimension to remember placement decision
-        const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_${type || 'default'}`;
-        
-        // Check if we have a stored placement decision for this dimension
-        const storedPlacement = dimensionPlacementMemory.current.get(dimensionKey);
-        const lockedSide = storedPlacement ? storedPlacement.side : null;
-        
-        let labelX;
-        let labelY;
-
-        const fontSize = computeWallPlanDimensionFontSize(
-            scaleFactor.current,
-            initialScale.current
-        );
-        const dimensionFont = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-        const previousFont = ctx.font;
-        ctx.font = dimensionFont;
-
-        const text = getDimensionText(dimension, length);
-        const textWidth = ctx.measureText(text).width;
-
-        const planBounds = avoidArea || bounds;
-        const gb = dimension.groupBounds;
-        const spanMidX = gb ? (gb.minX + gb.maxX) / 2 : midX;
-        const spanMidY = gb ? (gb.minY + gb.maxY) / 2 : midY;
-        const anchorX = gb ? spanMidX : midX;
-        const anchorY = gb ? spanMidY : midY;
-
-        const laneCfg = getPlanDimensionLaneConfig(priority);
-        const wallLikeSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
-        const preferredSide =
-            !isHorizontal && planBounds && anchorX > (planBounds.minX + planBounds.maxX) / 2
-                ? 'side2'
-                : null;
-        const preferredExteriorSide =
-            lockedSide ||
-            preferredSide ||
-            (planBounds ? getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) : 'side1');
-
-        const { lo: spanLo, hi: spanHi } = getDimensionSpanForLane(dimension, isHorizontal);
-
-        const sf = scaleFactor.current;
-        const ox = offsetX.current;
-        const oy = offsetY.current;
-        const padH = 2;
-        const padV = 8;
-
-        let side = lockedSide || preferredExteriorSide;
-        if (planBounds) {
-            const trialOffset = laneCfg.baseOffset;
-            const side1Coords = computeExteriorPlanLabelCoords(
-                isHorizontal,
-                'side1',
-                trialOffset,
-                planBounds,
-                spanMidX,
-                spanMidY,
-                sf,
-                ox,
-                oy
-            );
-            const side2Coords = computeExteriorPlanLabelCoords(
-                isHorizontal,
-                'side2',
-                trialOffset,
-                planBounds,
-                spanMidX,
-                spanMidY,
-                sf,
-                ox,
-                oy
-            );
-            const side1Bounds = isHorizontal
-                ? calculateHorizontalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV)
-                : calculateVerticalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV);
-            const side2Bounds = isHorizontal
-                ? calculateHorizontalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV)
-                : calculateVerticalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV);
-            side =
-                lockedSide ||
-                resolveWallExteriorPlacementSide({
-                    isHorizontal,
-                    wallMidX: spanMidX,
-                    wallMidY: spanMidY,
-                    modelBounds: planBounds,
-                    dimensionLanes,
-                    side1Bounds,
-                    side2Bounds,
-                    placedLabels
-                });
-        }
-
-        let offsetPx = consumeDimensionLane(
-            dimensionLanes,
-            isHorizontal,
-            side,
-            laneCfg.baseOffset,
-            wallLikeSpacing,
-            spanLo,
-            spanHi,
-            priority
-        );
-        const vEdge = !isHorizontal ? getDimensionEdge(false, side) : null;
-        offsetPx = applyPlanOuterTierMinOffset(dimensionLanes, vEdge, priority, offsetPx);
-        offsetPx = Math.min(offsetPx, laneCfg.maxOffset);
-
-        if (planBounds) {
-            const fixedColumnX = getPlanExteriorFixedColumnX(dimensionLanes, vEdge, priority);
-            const placed = placeExteriorWallDimensionAvoidingLabels({
-                isHorizontal,
-                side,
-                rowOffsetPx: offsetPx,
-                spanLo,
-                spanHi,
-                anchorX: spanMidX,
-                anchorY: spanMidY,
-                bounds: planBounds,
-                scaleFactor: sf,
-                offsetX: ox,
-                offsetY: oy,
-                textWidth,
-                placedLabels,
-                paddingH: padH,
-                paddingV: padV,
-                fixedLabelX: fixedColumnX,
-                fontSize
-            });
-            if (!placed) {
-                ctx.font = previousFont;
-                return;
-            }
-            labelX = placed.labelX;
-            labelY = placed.labelY;
-            offsetPx = placed.rowOffset;
-
-            if (!isHorizontal && dimensionLanes) {
-                rememberPlanExteriorColumnX(dimensionLanes, vEdge, priority, labelX);
-                recordPlanInnerTierMaxOffset(dimensionLanes, vEdge, priority, offsetPx);
-            }
-        } else {
-            labelX = spanMidX * sf + ox;
-            labelY = spanMidY * sf + oy;
-        }
-
-        if (!storedPlacement) {
-            dimensionPlacementMemory.current.set(dimensionKey, { side });
-        }
-
-        const dxLine = endX - startX;
-        const dyLine = endY - startY;
-        const angleDeg = Math.atan2(dyLine, dxLine) * (180 / Math.PI);
-        const startYScreen = startY * sf + oy;
-        const endYScreen = endY * sf + oy;
-        if (!isHorizontal) {
-            labelY = (startYScreen + endYScreen) / 2;
-        }
-
-        const dimSide = isHorizontal
-            ? side === 'side1'
-                ? 'top'
-                : 'bottom'
-            : side === 'side1'
-                ? 'left'
-                : 'right';
-
-        const wallStyleBounds = isHorizontal
-            ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, padH, padV)
-            : calculateRotatedVerticalDimBounds(
-                  exteriorVerticalTextCenterX(labelX, fontSize, dimSide),
-                  labelY,
-                  textWidth,
-                  fontSize,
-                  2
-              );
-
-        const isValidPosition =
-            wallStyleBounds.x >= 0 &&
-            wallStyleBounds.y >= 0 &&
-            wallStyleBounds.x + wallStyleBounds.width <= CANVAS_WIDTH &&
-            wallStyleBounds.y + wallStyleBounds.height <= CANVAS_HEIGHT;
-
-        if (!isValidPosition) {
-            ctx.font = previousFont;
-            return;
-        }
-
-        if (
-            type?.startsWith('alu_rail_') &&
-            hasLabelOverlap(wallStyleBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)
-        ) {
-            ctx.font = previousFont;
-            return;
-        }
-
-        drawOrthoPlanDimensionGeometryLikeWall(
+        drawCeilingPlanDimensionOnContext(
             ctx,
+            { ...dimension, color: getPlanDimensionStrokeColor(dimension.color) },
+            bounds,
+            placedLabels,
+            allLabels,
+            dimensionLanes,
             {
-                startX,
-                startY,
-                endX,
-                endY,
-                isHorizontal,
-                labelX,
-                labelY,
-                textWidth,
-                color: visibleColor
-            },
-            sf,
-            ox,
-            oy,
-            bounds
+                scaleFactor: scaleFactor.current,
+                offsetX: offsetX.current,
+                offsetY: offsetY.current,
+                initialScale: initialScale.current,
+                placementMemory: dimensionPlacementMemory.current,
+                dimensionValuesSeen: dimensionValuesSeen.current,
+                walls,
+                canvasWidth: CANVAS_WIDTH,
+                canvasHeight: CANVAS_HEIGHT
+            }
         );
-
-        if (
-            isFinite(wallStyleBounds.x) &&
-            isFinite(wallStyleBounds.y) &&
-            isFinite(wallStyleBounds.width) &&
-            isFinite(wallStyleBounds.height) &&
-            wallStyleBounds.width > 0 &&
-            wallStyleBounds.height > 0
-        ) {
-            placedLabels.push({
-                x: wallStyleBounds.x,
-                y: wallStyleBounds.y,
-                width: wallStyleBounds.width,
-                height: wallStyleBounds.height,
-                text,
-                type
-            });
-        }
-
-        if (isHorizontal) {
-            allLabels.push({
-                x: wallStyleBounds.x,
-                y: wallStyleBounds.y,
-                width: wallStyleBounds.width,
-                height: wallStyleBounds.height,
-                side: dimSide,
-                text,
-                angle: angleDeg,
-                type: 'wall',
-                textColor: visibleColor
-            });
-        } else {
-            allLabels.push(
-                buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
-                    type: 'wall',
-                    textColor: visibleColor
-                })
-            );
-        }
-
-        if (dedupKey) globalDimensionValues?.add(dedupKey);
-        ctx.font = previousFont;
     };
 
     const buildRailDimensionObjects = (sl, railKey) => {
@@ -4997,7 +4920,7 @@ const CeilingCanvas = ({
         if (canEditSupports && isNylonAddModeActive()) {
             const panel = findPanelAtModelPoint(modelX, modelY);
             if (panel) {
-                const roomId = panel.room_id ?? panel.room;
+                const roomId = getPanelOwnerKey(panel);
                 setNylonAddTarget({
                     roomId,
                     panelId: getPanelKey(panel)
@@ -5328,19 +5251,19 @@ const CeilingCanvas = ({
         const { preview = false, selected = false } = options;
         const canvasX = modelX * scaleFactor + offsetX;
         const canvasY = modelY * scaleFactor + offsetY;
-        const mainR = Math.max(2, 75 * scaleFactor);
-        const lineW = Math.max(0.8, preview ? 20 * scaleFactor : 30 * scaleFactor);
+        const sizes = getNylonHangerDrawSizes(scaleFactor);
+        const lineW = preview ? sizes.previewLineW : sizes.lineW;
 
         ctx.save();
         if (selected) {
             ctx.beginPath();
-            ctx.arc(canvasX, canvasY, mainR + Math.max(4, 10 * scaleFactor), 0, 2 * Math.PI);
+            ctx.arc(canvasX, canvasY, sizes.mainR + sizes.selectedPad, 0, 2 * Math.PI);
             ctx.strokeStyle = '#f59e0b';
-            ctx.lineWidth = Math.max(1.2, 3 * scaleFactor);
+            ctx.lineWidth = sizes.selectedLineW;
             ctx.stroke();
         }
         ctx.beginPath();
-        ctx.arc(canvasX, canvasY, mainR, 0, 2 * Math.PI);
+        ctx.arc(canvasX, canvasY, sizes.mainR, 0, 2 * Math.PI);
         ctx.strokeStyle = preview ? 'rgba(239, 68, 68, 0.55)' : selected ? '#dc2626' : '#ef4444';
         ctx.lineWidth = lineW;
         if (preview) ctx.setLineDash([4, 4]);
@@ -5349,17 +5272,17 @@ const CeilingCanvas = ({
 
         if (nylonHangerOptions?.includeAccessories) {
             ctx.beginPath();
-            ctx.arc(canvasX, canvasY, Math.max(1.2, 45 * scaleFactor), 0, 2 * Math.PI);
+            ctx.arc(canvasX, canvasY, sizes.accessoryR, 0, 2 * Math.PI);
             ctx.strokeStyle = '#f59e0b';
-            ctx.lineWidth = Math.max(0.6, 2 * scaleFactor);
+            ctx.lineWidth = sizes.accessoryLineW;
             ctx.stroke();
         }
         if (nylonHangerOptions?.includeCable) {
             ctx.beginPath();
-            ctx.moveTo(canvasX, canvasY + 35 * scaleFactor);
-            ctx.lineTo(canvasX, canvasY + 60 * scaleFactor);
+            ctx.moveTo(canvasX, canvasY + sizes.cableStart);
+            ctx.lineTo(canvasX, canvasY + sizes.cableEnd);
             ctx.strokeStyle = '#10b981';
-            ctx.lineWidth = Math.max(0.8, 3 * scaleFactor);
+            ctx.lineWidth = sizes.cableLineW;
             ctx.stroke();
         }
         ctx.restore();
@@ -5450,6 +5373,10 @@ const CeilingCanvas = ({
             if (!support) return false;
             let rid = support.room_id;
             if (rid != null && typeof rid === 'object') rid = rid.id;
+            if (rid != null && String(rid).startsWith('zone-')) {
+                const zFromRoom = Number(String(rid).slice(5));
+                if (Number.isFinite(zFromRoom)) return zoneIdSet.has(zFromRoom);
+            }
             if (rid != null && Number.isFinite(Number(rid))) {
                 return roomIdSet.has(Number(rid));
             }
@@ -5790,7 +5717,7 @@ const CeilingCanvas = ({
             : [];
         const lineHangerCount = lineHangers.length;
         const roomHangerCount = listNylonHangers().filter(
-            (h) => Number(h.room_id) === Number(nylonEditDraft.roomId)
+            (h) => sameOwnerId(h.room_id, nylonEditDraft.roomId)
         ).length;
         const lineOffsetLabel = (() => {
             if (lineKeyForUi.startsWith('line:')) return 'same batch line';
@@ -5900,7 +5827,7 @@ const CeilingCanvas = ({
 
     const renderNylonAddPanel = (wrapperClassName = '') => {
         if (!canEditSupports || !nylonAddTarget) return null;
-        const room = effectiveRooms.find((r) => Number(r.id) === Number(nylonAddTarget.roomId));
+        const room = findOwnerByKey(nylonAddTarget.roomId);
         const panel = findPanelById(nylonAddTarget.panelId, nylonAddTarget.roomId);
         const qualCount = getQualifyingPanelsInRoom(nylonAddTarget.roomId).length;
 

@@ -38,6 +38,7 @@ function buildLineMaterial(options) {
   const {
     color = 0x000000,
     linewidth = THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
+    worldUnits = false,
     depthTest = true,
     depthWrite = false,
     transparent = false,
@@ -71,6 +72,7 @@ function buildLineMaterial(options) {
   const mat = new LineMaterial({
     color,
     linewidth,
+    worldUnits: Boolean(worldUnits),
     depthTest,
     depthWrite,
     transparent,

@@ -1,6 +1,6 @@
 """Signal handlers that mark a project as edited when related content changes."""
 
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from .project_activity import mark_project_edited, resolve_project_id
@@ -16,6 +16,28 @@ def _touch_related_project(instance, **kwargs):
     except Exception:
         # Cascade deletes can leave FKs pointing at rows already removed.
         # Never block the originating save/delete.
+        return
+
+
+def _freeze_baseline_before_layout_write(instance, **kwargs):
+    if kwargs.get('raw'):
+        return
+    adding = bool(getattr(getattr(instance, '_state', None), 'adding', False))
+    if adding:
+        return
+    try:
+        project_id = resolve_project_id(instance)
+        if project_id is None:
+            return
+        from .models import Project
+        from .project_versions import ensure_project_baseline
+        project = Project.objects.filter(pk=project_id).first()
+        if project is None or project.baseline_snapshot:
+            return
+        if project.versions.exists():
+            return
+        ensure_project_baseline(project)
+    except Exception:
         return
 
 
@@ -51,6 +73,15 @@ def connect_project_activity_signals():
         FloorPanel,
         PlanAnnotation,
     )
+
+    freeze_models = (Wall, Room, Door)
+
+    for model in freeze_models:
+        pre_save.connect(
+            _freeze_baseline_before_layout_write,
+            sender=model,
+            dispatch_uid=f'core_freeze_baseline_on_pre_save_{model.__name__}',
+        )
 
     for model in models:
         post_save.connect(

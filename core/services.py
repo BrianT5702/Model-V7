@@ -2937,7 +2937,7 @@ class CeilingService:
     
     # Panel dimensions - now configurable via user input
     DEFAULT_PANEL_WIDTH = 1150  # Default panel width in mm
-    DEFAULT_PANEL_LENGTH = 'auto'  # Default panel length (auto = project length)
+    DEFAULT_PANEL_LENGTH = 6000  # Default panel length in mm (user may switch to auto/custom)
     DEFAULT_WALL_THICKNESS = 150  # Default wall thickness in mm
 
     @staticmethod
@@ -6838,7 +6838,7 @@ class CeilingService:
             return [], LeftoverTracker(context='GENERATION')
     
     @staticmethod
-    def generate_enhanced_ceiling_plan(project_id, orientation_strategy='auto', panel_width=1150, panel_length='auto', 
+    def generate_enhanced_ceiling_plan(project_id, orientation_strategy='auto', panel_width=1150, panel_length=None, 
                                       ceiling_thickness=150, custom_panel_length=None, support_type='nylon', support_config=None, room_specific_config=None):
         """Stage 3: Generate enhanced ceiling plan with intelligent panel placement
         
@@ -6850,6 +6850,9 @@ class CeilingService:
         """
         try:
             from .models import CeilingZone, Room
+
+            if panel_length is None:
+                panel_length = CeilingService.DEFAULT_PANEL_LENGTH
 
             zones = list(CeilingZone.objects.filter(project_id=project_id).prefetch_related('rooms', 'ceiling_plan', 'ceiling_panels'))
             zone_room_ids = {room.id for zone in zones for room in zone.rooms.all()}

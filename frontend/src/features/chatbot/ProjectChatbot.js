@@ -14,8 +14,18 @@ import {
   getWelcomeMessages,
   processChatMessage,
 } from './chatbotEngine';
-import { getSortedFolderEntries } from './parseChatMessage';
+import { getSortedFolderEntries, resolveFolderByPathSegments } from './parseChatMessage';
 import { createProjectFromChatDraft } from './createFromChatPlan';
+
+function inputPlaceholder(phase) {
+  if (phase === PHASES.WELCOME || phase === PHASES.DONE) {
+    return 'New? Tap I’m new — guide me. Or type a reply here…';
+  }
+  if (phase === PHASES.FOLDER) return 'Tap an existing folder, Create new folder, or Uncategorized…';
+  if (phase === PHASES.FOLDER_NEW) return 'Type a new folder name, or tap an existing folder…';
+  if (phase === PHASES.CONFIRM) return 'Tap Create project, or type create…';
+  return 'Type a reply, or tap a chip…';
+}
 
 let messageId = 0;
 function withId(msg) {
@@ -70,14 +80,45 @@ const ProjectChatbot = ({
     projects.some((p) => p.id === project.id) ? projects : [...projects, project]
   );
 
-  const assignProjectToFolder = async (project, folderKey, projectsSnapshot = getProjectsSnapshot(project)) => {
+  const assignProjectToFolder = async (
+    project,
+    folderKey,
+    projectsSnapshot = getProjectsSnapshot(project),
+    foldersForMeta = folders
+  ) => {
     const targetFolderId = folderKeyToId(folderKey);
     const listOrder = getNextListOrder(projectsSnapshot, folderKey);
     const response = await api.patch(`projects/${project.id}/`, {
       folder: targetFolderId,
       list_order: listOrder,
     });
-    return mergeProjectFolderMeta(response.data, folderKey, folders);
+    return mergeProjectFolderMeta(response.data, folderKey, foldersForMeta);
+  };
+
+  const ensureNewFolderPath = async (pathName) => {
+    const segments = String(pathName || '').split('/').map((s) => s.trim()).filter(Boolean);
+    if (!segments.length) {
+      throw new Error('Folder name is empty.');
+    }
+    let list = Array.isArray(folders) ? [...folders] : [];
+    let parentId = null;
+    let lastKey = null;
+    const prefix = [];
+    for (const seg of segments) {
+      prefix.push(seg);
+      const existing = resolveFolderByPathSegments(prefix, list);
+      if (existing) {
+        parentId = existing.key;
+        lastKey = existing.key;
+        continue;
+      }
+      const response = await api.post('project-folders/', { name: seg, parent: parentId });
+      list = [...list, response.data];
+      parentId = response.data.id;
+      lastKey = response.data.id;
+    }
+    setFolders(list);
+    return { key: lastKey, label: prefix.join(' / '), folders: list };
   };
 
   const finishWithFolder = (folderKey, project) => {
@@ -112,15 +153,31 @@ const ProjectChatbot = ({
     setIsBusy(true);
     setError('');
     try {
+      let folderKey = planDraft.folderDecided
+        ? (planDraft.folderKey ?? UNCATEGORIZED_KEY)
+        : UNCATEGORIZED_KEY;
+      let folderLabel = planDraft.folderLabel || '';
+      let foldersForMeta = folders;
+
+      if (planDraft.newFolderName && foldersAvailable) {
+        const createdFolder = await ensureNewFolderPath(planDraft.newFolderName);
+        folderKey = createdFolder.key;
+        folderLabel = createdFolder.label;
+        foldersForMeta = createdFolder.folders;
+      }
+
       const { project, rooms, warnings = [] } = await createProjectFromChatDraft(planDraft);
+
       updateProjectInList(project);
 
       const roomNote = rooms.length
         ? ` Created ${rooms.length} room(s), shared walls where rooms touch, plus floor and ceiling where requested. Joints were not created.`
         : ' Site and boundary walls are ready.';
 
-      const folderNote = planDraft.folderDecided && planDraft.folderLabel
-        ? ` Saved to folder **${planDraft.folderLabel}**.`
+      const folderNote = folderLabel
+        ? (planDraft.newFolderName
+          ? ` Created folder **${folderLabel}** and saved the project there.`
+          : ` Saved to folder **${folderLabel}**.`)
         : '';
 
       const warningNote = warnings.length
@@ -137,12 +194,8 @@ const ProjectChatbot = ({
       setPhase(PHASES.DONE);
       setCreatedProject(project);
 
-      const folderKey = planDraft.folderDecided
-        ? (planDraft.folderKey ?? UNCATEGORIZED_KEY)
-        : UNCATEGORIZED_KEY;
-
       if (foldersAvailable) {
-        const updated = await assignProjectToFolder(project, folderKey);
+        const updated = await assignProjectToFolder(project, folderKey, getProjectsSnapshot(project), foldersForMeta);
         updateProjectInList(updated);
         finishWithFolder(folderKey, updated);
         return;
@@ -185,7 +238,20 @@ const ProjectChatbot = ({
     setInput('');
     setMessages((prev) => [...prev, withId({ role: 'user', text: userText.trim() })]);
 
-    const result = processChatMessage(phase, draft, userText.trim(), chatOptions);
+    let result;
+    try {
+      result = processChatMessage(phase, draft, userText.trim(), chatOptions);
+    } catch (err) {
+      console.error('Chatbot process failed:', err);
+      setMessages((prev) => [
+        ...prev,
+        withId({
+          role: 'assistant',
+          text: `Something went wrong handling that reply (${err.message || err}). You can try again or say **restart**.`,
+        }),
+      ]);
+      return;
+    }
     setDraft(result.draft);
     setPhase(result.phase);
     setMessages((prev) => [...prev, ...result.messages.map(withId)]);
@@ -263,7 +329,7 @@ const ProjectChatbot = ({
           Project Chat Assistant
         </h2>
         <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Create a full project in chat — I&apos;ll guide you, place rooms automatically, and build walls, floor, and ceiling. Joints are skipped.
+          New here? Tap <span className="font-medium text-gray-700 dark:text-gray-200">I&apos;m new — guide me</span>, then answer each question. Or paste the whole job and tap Create project.
         </p>
       </div>
 
@@ -304,13 +370,24 @@ const ProjectChatbot = ({
 
       <div className={`${isPanel ? 'px-4' : 'px-6'} pb-2 flex flex-wrap gap-2`}>
         {phase === PHASES.WELCOME && (
-          <button type="button" onClick={() => handleQuick('Help me create a project')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700">
-            Help me create a project
-          </button>
+          <>
+            <button type="button" onClick={() => handleQuick("I'm new — guide me")} className="text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-100">
+              I&apos;m new — guide me
+            </button>
+            <button type="button" onClick={() => handleQuick('Show an example')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700">
+              Show an example
+            </button>
+            <button type="button" onClick={() => handleQuick('Help me create a project')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700">
+              Help me create a project
+            </button>
+          </>
         )}
         {phase === PHASES.FOLDER && (
           <>
-            {getSortedFolderEntries(folders).slice(0, 4).map((entry) => (
+            <button type="button" onClick={() => handleQuick('Create new folder')} className="text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-100">
+              Create new folder
+            </button>
+            {getSortedFolderEntries(folders).slice(0, 8).map((entry) => (
               <button
                 key={entry.folder.id}
                 type="button"
@@ -325,25 +402,37 @@ const ProjectChatbot = ({
             </button>
           </>
         )}
-        {phase === PHASES.WALL_THICKNESS && (
-          <button type="button" onClick={() => handleQuick('default')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-            Default 200 mm
-          </button>
+        {phase === PHASES.FOLDER_NEW && (
+          <>
+            {getSortedFolderEntries(folders).slice(0, 8).map((entry) => (
+              <button
+                key={entry.folder.id}
+                type="button"
+                onClick={() => handleQuick(entry.pathSlash)}
+                className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+              >
+                {entry.path}
+              </button>
+            ))}
+            <button type="button" onClick={() => handleQuick('uncategorized')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              Uncategorized
+            </button>
+          </>
         )}
         {phase === PHASES.ROOM_INTENT && (
           <>
+            <button type="button" onClick={() => handleQuick('Freezer, Chiller')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+              2 named rooms
+            </button>
             <button type="button" onClick={() => handleQuick('1 room')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
               1 room
-            </button>
-            <button type="button" onClick={() => handleQuick('yes, 2 rooms')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              Yes, 2 rooms
             </button>
             <button type="button" onClick={() => handleQuick('no')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
               No rooms
             </button>
           </>
         )}
-        {phase === PHASES.ROOM_SIZE && (
+        {(phase === PHASES.ROOM_DETAILS || phase === PHASES.ROOM_SIZE) && (
           <>
             <button type="button" onClick={() => handleQuick('follow the project size')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
               Follow project size
@@ -355,52 +444,6 @@ const ProjectChatbot = ({
             )}
           </>
         )}
-        {phase === PHASES.ROOM_HEIGHT && (
-          <button type="button" onClick={() => handleQuick('same')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-            Same as project height
-          </button>
-        )}
-        {phase === PHASES.ROOM_TEMPERATURE && (
-          <>
-            <button type="button" onClick={() => handleQuick('0')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              0 °C
-            </button>
-            <button type="button" onClick={() => handleQuick('-18')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              -18 °C
-            </button>
-            <button type="button" onClick={() => handleQuick('2 to 6')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              2 to 6 °C
-            </button>
-          </>
-        )}
-        {phase === PHASES.ROOM_FLOOR && (
-          <>
-            <button type="button" onClick={() => handleQuick('Panel')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              Panel
-            </button>
-            <button type="button" onClick={() => handleQuick('Slab')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              Slab
-            </button>
-            <button type="button" onClick={() => handleQuick('None')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              None
-            </button>
-          </>
-        )}
-        {phase === PHASES.ROOM_CEILING && (
-          <>
-            <button type="button" onClick={() => handleQuick('yes')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              Yes
-            </button>
-            <button type="button" onClick={() => handleQuick('no')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-              No
-            </button>
-          </>
-        )}
-        {phase === PHASES.ROOM_WALLS && (
-          <button type="button" onClick={() => handleQuick('default')} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-            Default PPGI
-          </button>
-        )}
         {phase === PHASES.CONFIRM && (
           <button type="button" onClick={() => handleQuick('create')} className="text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-800">
             Create project
@@ -409,13 +452,19 @@ const ProjectChatbot = ({
       </div>
 
       <form onSubmit={handleSend} className={`${footerPad} flex gap-2 border-t border-gray-100 dark:border-gray-800`}>
-        <input
-          type="text"
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSend(e);
+            }
+          }}
           disabled={isBusy || phase === PHASES.CREATING}
-          placeholder="Type your reply…"
-          className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-gray-100"
+          rows={3}
+          placeholder={inputPlaceholder(phase)}
+          className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-gray-100 resize-none"
         />
         <button
           type="submit"

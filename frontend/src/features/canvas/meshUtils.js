@@ -9,6 +9,11 @@ import {
 import { resolveWallBaseElevationMm } from '../project/projectUtils';
 import { getWallInteriorNormalModel } from './wallInteriorSide';
 import { buildIntersectionsFromJoints } from '../panel/wallPanelCalculationUtils';
+import {
+  createWallSurfaceMaterial,
+  prepareWallSurfaceGeometry,
+  ensureWallSurfaceDetail,
+} from './wallSurfaceTextures';
 
 /** Remove horizontal edges near Y=0 so wall bases don't z-fight the floor while orbiting. */
 function stripNearBottomHorizontalEdges(THREE, edgesGeometry, yEps = 0.08) {
@@ -1371,16 +1376,7 @@ export function createWallMesh(instance, wall) {
   };
   const wallGeometry = new instance.THREE.ExtrudeGeometry(wallShape, extrudeSettings);
   wallGeometry.computeVertexNormals();
-  // Use professional material settings from config
-  const wallCfg = THREE_CONFIG.MATERIALS.WALL;
-  const wallMaterial = new instance.THREE.MeshStandardMaterial({
-    color: wallCfg.color,
-    roughness: wallCfg.roughness,
-    metalness: wallCfg.metalness,
-    envMapIntensity: wallCfg.envMapIntensity ?? 0.45,
-    emissive: wallCfg.emissive ?? 0x000000,
-    emissiveIntensity: wallCfg.emissiveIntensity ?? 0,
-  });
+  const wallMaterial = createWallSurfaceMaterial(instance.THREE, instance.renderer);
   let wallMesh = new instance.THREE.Mesh(wallGeometry, wallMaterial);
   // A butt-in that only covers part of the height needs the same vertex pass, to hand the
   // uncovered part of the tip its length back.
@@ -1446,6 +1442,8 @@ export function createWallMesh(instance, wall) {
   } else {
     console.log(`[45° Cut Debug] Wall ${id} - No 45° cuts detected for this wall`);
   }
+  prepareWallSurfaceGeometry(instance.THREE, wallMesh.geometry);
+  ensureWallSurfaceDetail(instance.THREE, wallMesh, instance.renderer);
   wallMesh.userData.isWall = true;
   wallMesh.castShadow = true;
   // Cast-only: wall self-receive causes shadow acne that blinks while orbiting
@@ -1658,26 +1656,12 @@ export function createWallMesh(instance, wall) {
   // Add window glass panels
   if (wallWindows.length > 0) {
     const glassCfg = THREE_CONFIG.MATERIALS.GLASS || {};
-    const frameCfg = THREE_CONFIG.MATERIALS.WINDOW_FRAME || {};
-    const glassMaterial = new instance.THREE.MeshStandardMaterial({
-      color: glassCfg.color ?? 0xc5dceb,
-      roughness: glassCfg.roughness ?? 0.12,
-      metalness: glassCfg.metalness ?? 0.0,
-      transparent: true,
-      opacity: glassCfg.opacity ?? 0.32,
-      side: instance.THREE.DoubleSide,
-      envMapIntensity: glassCfg.envMapIntensity ?? 0.7,
-    });
-    
-    const frameMaterial = new instance.THREE.MeshStandardMaterial({
-      color: frameCfg.color ?? 0x2f3845,
-      roughness: frameCfg.roughness ?? 0.48,
-      metalness: frameCfg.metalness ?? 0.28,
-      envMapIntensity: frameCfg.envMapIntensity ?? 0.55,
-    });
-    
-    const windowThickness = 3 * scale;
-    const frameThickness = 3 * scale;
+    const frameCfg = THREE_CONFIG.MATERIALS.WINDOW_FRAME || THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {};
+    const glassMaterial = makeGlassMaterial(instance.THREE, glassCfg);
+    const frameMaterial = makeStdMaterial(instance.THREE, frameCfg);
+    const glassThickness = mmToWorld(scale, THREE_CONFIG.DOOR_DETAIL?.GLASS_THICKNESS_MM ?? 10);
+    const liningW = mmToWorld(scale, THREE_CONFIG.DOOR_DETAIL?.GLAZING_LINING_MM ?? 22);
+    const zMid = wallThickness / 2;
     
     // Find the corresponding window cutout for each window to get exact positioning
     for (const window of wallWindows) {
@@ -1691,40 +1675,42 @@ export function createWallMesh(instance, wall) {
       // Calculate window center from cutout bounds
       const windowCenterX_local = (matchingCutout.start + matchingCutout.end) / 2;
       const windowCenterY_local = (matchingCutout.bottomY + matchingCutout.topY) / 2;
+      const glassW = Math.max(0.02, windowWidth_scaled - liningW * 2);
+      const glassH = Math.max(0.02, windowHeight_scaled - liningW * 2);
       
-      // Create glass panel (centered in wall thickness, z=0 is at the outer face)
-      const glassGeometry = new instance.THREE.BoxGeometry(windowWidth_scaled, windowHeight_scaled, windowThickness);
+      const glassGeometry = new instance.THREE.BoxGeometry(glassW, glassH, glassThickness);
       const glassMesh = new instance.THREE.Mesh(glassGeometry, glassMaterial);
-      glassMesh.position.set(windowCenterX_local, windowCenterY_local, 0);
+      glassMesh.position.set(windowCenterX_local, windowCenterY_local, zMid);
+      glassMesh.userData.isDoorGlass = true;
       wallMesh.add(glassMesh);
-      
-      // Create frame (outer border)
-      const frameWidth = windowWidth_scaled;
-      const frameHeight = windowHeight_scaled;
-      
-      // Top frame
-      const topFrameGeometry = new instance.THREE.BoxGeometry(frameWidth, frameThickness, windowThickness);
-      const topFrame = new instance.THREE.Mesh(topFrameGeometry, frameMaterial);
-      topFrame.position.set(windowCenterX_local, windowCenterY_local + frameHeight / 2 - frameThickness / 2, 0);
+
+      const liningInnerH = Math.max(0.01, windowHeight_scaled - liningW * 2);
+      const topFrame = new instance.THREE.Mesh(
+        new instance.THREE.BoxGeometry(windowWidth_scaled, liningW, wallThickness),
+        frameMaterial
+      );
+      topFrame.position.set(windowCenterX_local, windowCenterY_local + windowHeight_scaled / 2 - liningW / 2, zMid);
       wallMesh.add(topFrame);
-      
-      // Bottom frame
-      const bottomFrameGeometry = new instance.THREE.BoxGeometry(frameWidth, frameThickness, windowThickness);
-      const bottomFrame = new instance.THREE.Mesh(bottomFrameGeometry, frameMaterial);
-      bottomFrame.position.set(windowCenterX_local, windowCenterY_local - frameHeight / 2 + frameThickness / 2, 0);
+      const bottomFrame = new instance.THREE.Mesh(
+        new instance.THREE.BoxGeometry(windowWidth_scaled, liningW, wallThickness),
+        frameMaterial
+      );
+      bottomFrame.position.set(windowCenterX_local, windowCenterY_local - windowHeight_scaled / 2 + liningW / 2, zMid);
       wallMesh.add(bottomFrame);
-      
-      // Left frame
-      const leftFrameGeometry = new instance.THREE.BoxGeometry(frameThickness, frameHeight - 2 * frameThickness, windowThickness);
-      const leftFrame = new instance.THREE.Mesh(leftFrameGeometry, frameMaterial);
-      leftFrame.position.set(windowCenterX_local - frameWidth / 2 + frameThickness / 2, windowCenterY_local, 0);
-      wallMesh.add(leftFrame);
-      
-      // Right frame
-      const rightFrameGeometry = new instance.THREE.BoxGeometry(frameThickness, frameHeight - 2 * frameThickness, windowThickness);
-      const rightFrame = new instance.THREE.Mesh(rightFrameGeometry, frameMaterial);
-      rightFrame.position.set(windowCenterX_local + frameWidth / 2 - frameThickness / 2, windowCenterY_local, 0);
-      wallMesh.add(rightFrame);
+      if (liningInnerH > 0.01) {
+        const leftFrame = new instance.THREE.Mesh(
+          new instance.THREE.BoxGeometry(liningW, liningInnerH, wallThickness),
+          frameMaterial
+        );
+        leftFrame.position.set(windowCenterX_local - windowWidth_scaled / 2 + liningW / 2, windowCenterY_local, zMid);
+        wallMesh.add(leftFrame);
+        const rightFrame = new instance.THREE.Mesh(
+          new instance.THREE.BoxGeometry(liningW, liningInnerH, wallThickness),
+          frameMaterial
+        );
+        rightFrame.position.set(windowCenterX_local + windowWidth_scaled / 2 - liningW / 2, windowCenterY_local, zMid);
+        wallMesh.add(rightFrame);
+      }
     }
   }
   
@@ -1914,66 +1900,221 @@ function apply45DegreeCuts(
   return wallMesh;
 }
 
+function mmToWorld(scale, mm) {
+  return (Number(mm) || 0) * scale;
+}
+
+function makeStdMaterial(THREE, cfg = {}, extras = {}) {
+  return new THREE.MeshStandardMaterial({
+    color: cfg.color ?? 0xffffff,
+    roughness: cfg.roughness ?? 0.5,
+    metalness: cfg.metalness ?? 0,
+    envMapIntensity: cfg.envMapIntensity ?? 0.4,
+    transparent: cfg.transparent ?? false,
+    opacity: cfg.opacity ?? 1,
+    ...extras,
+  });
+}
+
+function makeGlassMaterial(THREE, cfg = {}, extras = {}) {
+  return new THREE.MeshPhysicalMaterial({
+    color: cfg.color ?? 0xb9d4e2,
+    roughness: cfg.roughness ?? 0.04,
+    metalness: 0,
+    transparent: true,
+    opacity: cfg.opacity ?? 0.28,
+    envMapIntensity: cfg.envMapIntensity ?? 1.35,
+    transmission: 0.15,
+    thickness: 0.08,
+    ior: 1.45,
+    side: THREE.DoubleSide,
+    ...extras,
+  });
+}
+
+function addDoorBox(instance, parent, material, sx, sy, sz, x, y, z, extraData = {}) {
+  const mesh = new instance.THREE.Mesh(new instance.THREE.BoxGeometry(sx, sy, sz), material);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.userData.isDoorHardware = true;
+  Object.assign(mesh.userData, extraData);
+  parent.add(mesh);
+  return mesh;
+}
+
+function addDoorCylinder(instance, parent, material, radius, height, x, y, z, rotX = 0, rotZ = 0) {
+  const mesh = new instance.THREE.Mesh(
+    new instance.THREE.CylinderGeometry(radius, radius, height, 12),
+    material
+  );
+  mesh.position.set(x, y, z);
+  mesh.rotation.x = rotX;
+  mesh.rotation.z = rotZ;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.userData.isDoorHardware = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function getDoorDetail() {
+  return THREE_CONFIG.DOOR_DETAIL || {};
+}
+
+function addAluminumDoorFrame(instance, parent, doorWidth, doorHeight, doorThickness, scale, offsetX = 0) {
+  const d = getDoorDetail();
+  const face = mmToWorld(scale, d.FRAME_FACE_MM ?? 32);
+  const proud = mmToWorld(scale, d.FRAME_PROUD_MM ?? 4);
+  // Keep the outer faces just outside the leaf so they are not coplanar (z-fighting).
+  const skin = mmToWorld(scale, 1.5);
+  const alu = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {});
+  const depth = doorThickness + proud * 2;
+  const ox = offsetX;
+  addDoorBox(instance, parent, alu, doorWidth + skin * 2, face, depth, ox, doorHeight / 2 - face / 2 + skin, 0);
+  addDoorBox(instance, parent, alu, doorWidth + skin * 2, face, depth, ox, -doorHeight / 2 + face / 2 - skin, 0);
+  const sideH = Math.max(0.01, doorHeight - face * 2 + skin * 2);
+  addDoorBox(instance, parent, alu, face, sideH, depth, ox - doorWidth / 2 + face / 2 - skin, 0, 0);
+  addDoorBox(instance, parent, alu, face, sideH, depth, ox + doorWidth / 2 - face / 2 + skin, 0, 0);
+}
+
+function slideLeafOffsetZ(adjustedSide, wallDepth, doorThickness, scale) {
+  const d = getDoorDetail();
+  const clearance = mmToWorld(scale, d.SLIDE_CLEARANCE_MM ?? 12);
+  const proud = mmToWorld(scale, d.FRAME_PROUD_MM ?? 4);
+  const gap = clearance + proud;
+  if (adjustedSide === 'exterior') {
+    return -(doorThickness / 2 + gap);
+  }
+  return wallDepth + doorThickness / 2 + gap;
+}
+
+function slideTrackOffsetZ(adjustedSide, wallDepth, scale) {
+  const d = getDoorDetail();
+  const td = mmToWorld(scale, d.TRACK_DEPTH_MM ?? 62);
+  const skin = mmToWorld(scale, 2);
+  if (adjustedSide === 'exterior') {
+    return -(td / 2 + skin);
+  }
+  return wallDepth + td / 2 + skin;
+}
+
+function addDoorPanelSeams(instance, parent, doorWidth, doorHeight, doorThickness, scale, offsetX = 0) {
+  const d = getDoorDetail();
+  const pitch = mmToWorld(scale, d.PANEL_PITCH_MM ?? 1150);
+  if (doorWidth < pitch * 1.15) return;
+  const seam = mmToWorld(scale, d.SEAM_MM ?? 2.8);
+  const groove = mmToWorld(scale, 1.6);
+  const seamMat = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {}, {
+    color: 0x8b9298,
+    metalness: 0.35,
+    roughness: 0.48,
+  });
+  const count = Math.max(1, Math.floor(doorWidth / pitch));
+  const innerH = doorHeight - mmToWorld(scale, (d.FRAME_FACE_MM ?? 32) * 2);
+  if (innerH <= 0.01) return;
+  const faceZ = doorThickness / 2 - groove / 2;
+  for (let i = 1; i < count + 1; i += 1) {
+    const x = -doorWidth / 2 + i * pitch;
+    if (x <= -doorWidth / 2 + pitch * 0.15 || x >= doorWidth / 2 - pitch * 0.15) continue;
+    addDoorBox(instance, parent, seamMat, seam, innerH, groove, offsetX + x, 0, faceZ);
+    addDoorBox(instance, parent, seamMat, seam, innerH, groove, offsetX + x, 0, -faceZ);
+  }
+}
+
+function addSlideLeafHandle(instance, leaf, doorWidth, doorHeight, doorThickness, scale, handleOnRight, faceZSign) {
+  const d = getDoorDetail();
+  const hw = mmToWorld(scale, d.HANDLE_WIDTH_MM ?? 28);
+  const hh = Math.min(mmToWorld(scale, d.HANDLE_HEIGHT_MM ?? 520), doorHeight * 0.48);
+  const hd = mmToWorld(scale, d.HANDLE_DEPTH_MM ?? 42);
+  const inset = mmToWorld(scale, d.HANDLE_INSET_MM ?? 52);
+  const black = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_HARDWARE || {});
+  const alu = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {}, {
+    metalness: 0.88,
+    roughness: 0.22,
+  });
+  const x = handleOnRight ? doorWidth / 2 - inset : -doorWidth / 2 + inset;
+  const y = -doorHeight * 0.04;
+  const face = faceZSign * (doorThickness / 2);
+  const plateT = mmToWorld(scale, 6);
+  addDoorBox(instance, leaf, alu, hw * 1.35, hh + mmToWorld(scale, 36), plateT, x, y, face + faceZSign * (plateT / 2));
+  const gripR = hw * 0.42;
+  const gripZ = face + faceZSign * (hd * 0.55);
+  addDoorCylinder(instance, leaf, black, gripR, hh, x, y, gripZ);
+  const capH = mmToWorld(scale, 14);
+  addDoorCylinder(instance, leaf, alu, gripR * 1.08, capH, x, y + hh / 2 - capH / 2, gripZ);
+  addDoorCylinder(instance, leaf, alu, gripR * 1.08, capH, x, y - hh / 2 + capH / 2, gripZ);
+}
+
+function addSlideLeafHangers(instance, leaf, doorWidth, doorHeight, doorThickness, scale, faceZSign, trackZ, leafZ) {
+  const d = getDoorDetail();
+  const size = mmToWorld(scale, d.ROLLER_MM ?? 48);
+  const black = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_HARDWARE || {});
+  const yTop = doorHeight / 2;
+  const wallSideZ = -faceZSign * (doorThickness / 2);
+  const trackLocalZ = (Number.isFinite(trackZ) ? trackZ : leafZ) - (Number.isFinite(leafZ) ? leafZ : 0);
+  const armZ = (wallSideZ + trackLocalZ) / 2;
+  const armDepth = Math.max(size * 0.4, Math.abs(trackLocalZ - wallSideZ) + size * 0.2);
+  const span = Math.max(doorWidth * 0.26, mmToWorld(scale, 180));
+  [-span, span].forEach((x) => {
+    addDoorBox(instance, leaf, black, size * 0.55, size * 1.15, size * 0.28, x, yTop + size * 0.15, wallSideZ);
+    addDoorBox(instance, leaf, black, size * 0.4, size * 0.32, armDepth, x, yTop + size * 0.85, armZ);
+    addDoorCylinder(instance, leaf, black, size * 0.18, size * 0.7, x, yTop + size * 1.05, trackLocalZ, Math.PI / 2, 0);
+  });
+}
+
+function addSlideDoorTrack(instance, container, {
+  openingWidth,
+  doorHeight,
+  scale,
+  zPos,
+  faceZSign = 1,
+  slideSign = 0,
+  extraTravel = 0,
+}) {
+  const d = getDoorDetail();
+  const th = mmToWorld(scale, d.TRACK_HEIGHT_MM ?? 78);
+  const td = mmToWorld(scale, d.TRACK_DEPTH_MM ?? 62);
+  const gap = mmToWorld(scale, d.TRACK_GAP_MM ?? 10);
+  const alu = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {}, {
+    color: 0xc9d2da,
+    metalness: 0.82,
+    roughness: 0.24,
+  });
+  const travel = Math.abs(extraTravel);
+  const length = openingWidth + travel + mmToWorld(scale, 120);
+  const x = slideSign * (travel / 2);
+  const y = doorHeight / 2 + gap + th / 2;
+  const z = zPos;
+  const mountT = mmToWorld(scale, 10);
+  const backZ = z - faceZSign * (td / 2 - mountT / 2);
+  addDoorBox(instance, container, alu, length, th + mmToWorld(scale, 16), mountT, x, y, backZ, { isSlideTrack: true });
+  const track = addDoorBox(instance, container, alu, length, th, td, x, y, z, { isSlideTrack: true });
+  addDoorBox(instance, container, alu, length, mmToWorld(scale, 10), td * 0.42, x, y - th / 2 + mmToWorld(scale, 5), z + faceZSign * (td * 0.18), { isSlideTrack: true });
+  addDoorBox(instance, container, alu, length, mmToWorld(scale, 8), td * 0.85, x, y + th / 2 - mmToWorld(scale, 4), z, { isSlideTrack: true });
+  return track;
+}
+
+function decorateSlideLeaf(instance, leaf, {
+  doorWidth,
+  doorHeight,
+  doorThickness,
+  scale,
+  offsetX = 0,
+  handleOnRight,
+  faceZSign,
+  trackZ,
+  leafZ,
+}) {
+  addDoorPanelSeams(instance, leaf, doorWidth, doorHeight, doorThickness, scale, offsetX);
+  addSlideLeafHangers(instance, leaf, doorWidth, doorHeight, doorThickness, scale, faceZSign, trackZ, leafZ);
+  addSlideLeafHandle(instance, leaf, doorWidth, doorHeight, doorThickness, scale, handleOnRight, faceZSign);
+}
+
 // Helper function to create a door with window holes
 // This creates the door in sections around windows, leaving actual holes
 function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, doorMaterial, windows, scale, offsetX = 0, edgeLineOffsetX = null) {
-  // Helper function to add outer frame outline to door
-  // edgeLineOffsetX: if provided, use this for edge lines instead of offsetX (for double-sided swing doors)
-  const addDoorFrameOutline = (doorMeshOrGroup) => {
-    if (!THREE_CONFIG.EDGE_LINES?.ENABLED) return;
-    // Create outline geometry for outer frame on both sides
-    // Door extends from -doorWidth/2 to +doorWidth/2 in X, -doorHeight/2 to +doorHeight/2 in Y
-    // Outline should be on both faces: front (z = +doorThickness/2) and back (z = -doorThickness/2)
-    const halfWidth = doorWidth / 2;
-    const halfHeight = doorHeight / 2;
-    const halfThickness = doorThickness / 2;
-    // Use edgeLineOffsetX if provided, otherwise use offsetX
-    const edgeOffset = edgeLineOffsetX !== null ? edgeLineOffsetX : offsetX;
-    
-    const lineOpts = {
-      color: THREE_CONFIG.EDGE_LINES?.COLOR ?? 0x94a3b8,
-      linewidth: THREE_CONFIG.EDGE_LINES?.LINEWIDTH ?? THREE_CONFIG.RENDERER.SCREEN_LINE_WIDTH_PX,
-      transparent: (THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1) < 1,
-      opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
-      depthTest: true,
-      depthWrite: false,
-      renderOrder: 2,
-    };
-    const frontVertices = new Float32Array([
-      -halfWidth + edgeOffset, halfHeight, halfThickness,
-      halfWidth + edgeOffset, halfHeight, halfThickness,
-      halfWidth + edgeOffset, halfHeight, halfThickness,
-      halfWidth + edgeOffset, -halfHeight, halfThickness,
-      halfWidth + edgeOffset, -halfHeight, halfThickness,
-      -halfWidth + edgeOffset, -halfHeight, halfThickness,
-      -halfWidth + edgeOffset, -halfHeight, halfThickness,
-      -halfWidth + edgeOffset, halfHeight, halfThickness
-    ]);
-    const backVertices = new Float32Array([
-      -halfWidth + edgeOffset, halfHeight, -halfThickness,
-      halfWidth + edgeOffset, halfHeight, -halfThickness,
-      halfWidth + edgeOffset, halfHeight, -halfThickness,
-      halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      -halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      -halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      -halfWidth + edgeOffset, halfHeight, -halfThickness
-    ]);
-    const thicknessVertices = new Float32Array([
-      -halfWidth + edgeOffset, halfHeight, halfThickness,
-      -halfWidth + edgeOffset, halfHeight, -halfThickness,
-      halfWidth + edgeOffset, halfHeight, halfThickness,
-      halfWidth + edgeOffset, halfHeight, -halfThickness,
-      -halfWidth + edgeOffset, -halfHeight, halfThickness,
-      -halfWidth + edgeOffset, -halfHeight, -halfThickness,
-      halfWidth + edgeOffset, -halfHeight, halfThickness,
-      halfWidth + edgeOffset, -halfHeight, -halfThickness
-    ]);
-    doorMeshOrGroup.add(createFatLineSegmentsFromPositions(frontVertices, lineOpts));
-    doorMeshOrGroup.add(createFatLineSegmentsFromPositions(backVertices, lineOpts));
-    doorMeshOrGroup.add(createFatLineSegmentsFromPositions(thicknessVertices, lineOpts));
-  };
-  
+  void edgeLineOffsetX;
   // If no windows, create a simple box door
   if (!windows || windows.length === 0) {
     const doorGeometry = new instance.THREE.BoxGeometry(doorWidth, doorHeight, doorThickness);
@@ -1981,8 +2122,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
       doorGeometry.translate(offsetX, 0, 0);
     }
     const doorMesh = new instance.THREE.Mesh(doorGeometry, doorMaterial);
-    // Add outer frame outline
-    addDoorFrameOutline(doorMesh);
+    addAluminumDoorFrame(instance, doorMesh, doorWidth, doorHeight, doorThickness, scale, offsetX);
     return doorMesh;
   }
   
@@ -2120,8 +2260,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
     }
   });
   
-  // Add outer frame outline to door group
-  addDoorFrameOutline(doorGroup);
+  addAluminumDoorFrame(instance, doorGroup, doorWidth, doorHeight, doorThickness, scale, offsetX);
   
   return doorGroup;
 }
@@ -2129,75 +2268,57 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
 // Helper function to add window glass in the holes
 function addWindowGlass(instance, doorMesh, windows, doorWidth, doorHeight, doorThickness, scale, offsetX = 0, zPos = 0) {
   if (!windows || windows.length === 0) return;
-  
+
   const glassCfg = THREE_CONFIG.MATERIALS.GLASS || {};
-  const frameCfg = THREE_CONFIG.MATERIALS.WINDOW_FRAME || {};
-  const glassMaterial = new instance.THREE.MeshStandardMaterial({
-    color: glassCfg.color ?? 0xc5dceb,
-    roughness: glassCfg.roughness ?? 0.12,
-    metalness: glassCfg.metalness ?? 0.0,
-    transparent: true,
-    opacity: glassCfg.opacity ?? 0.32,
-    side: instance.THREE.DoubleSide,
-    envMapIntensity: glassCfg.envMapIntensity ?? 0.7,
+  const frameCfg = THREE_CONFIG.MATERIALS.WINDOW_FRAME || THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {};
+  const glassMaterial = makeGlassMaterial(instance.THREE, glassCfg);
+  const frameMaterial = makeStdMaterial(instance.THREE, frameCfg);
+  const revealMat = makeStdMaterial(instance.THREE, frameCfg, {
+    color: 0x5a6167,
+    metalness: 0.18,
+    roughness: 0.62,
+    envMapIntensity: 0.2,
   });
-  
-  const frameMaterial = new instance.THREE.MeshStandardMaterial({
-    color: frameCfg.color ?? 0x2f3845,
-    roughness: frameCfg.roughness ?? 0.48,
-    metalness: frameCfg.metalness ?? 0.28,
-    envMapIntensity: frameCfg.envMapIntensity ?? 0.55,
-  });
-  
+  const d = getDoorDetail();
+  const glassThickness = mmToWorld(scale, d.GLASS_THICKNESS_MM ?? 10);
+  const liningW = mmToWorld(scale, d.GLAZING_LINING_MM ?? 22);
+  const beadT = mmToWorld(scale, 10);
+
   windows.forEach((window) => {
-    // Calculate window position relative to door center
     const windowCenterX = (window.position_x - 0.5) * doorWidth;
     const windowCenterY = (window.position_y - 0.5) * doorHeight;
     const windowWidth_scaled = window.width * scale;
     const windowHeight_scaled = window.height * scale;
-    const windowThickness = Math.min(3 * scale, doorThickness * 0.8); // Thin glass, but not thicker than door
-    const frameThickness = 3 * scale;
-    
-    // Create window glass panel
-    const windowGeometry = new instance.THREE.BoxGeometry(windowWidth_scaled, windowHeight_scaled, windowThickness);
+    const cx = windowCenterX + offsetX;
+    const cy = windowCenterY;
+    const glassW = Math.max(0.02, windowWidth_scaled - liningW * 2);
+    const glassH = Math.max(0.02, windowHeight_scaled - liningW * 2);
+
+    const windowGeometry = new instance.THREE.BoxGeometry(glassW, glassH, glassThickness);
     const windowGlass = new instance.THREE.Mesh(windowGeometry, glassMaterial);
-    // Position glass so its center is at zPos (which should be the center of the door thickness)
-    windowGlass.position.set(windowCenterX + offsetX, windowCenterY, zPos);
+    windowGlass.position.set(cx, cy, zPos);
+    windowGlass.userData.isDoorGlass = true;
+    windowGlass.renderOrder = 2;
     doorMesh.add(windowGlass);
-    
-    // Create frame around window (inside the hole)
-    const topFrame = new instance.THREE.Mesh(
-      new instance.THREE.BoxGeometry(windowWidth_scaled, frameThickness, doorThickness),
-      frameMaterial
-    );
-    topFrame.position.set(windowCenterX + offsetX, windowCenterY + windowHeight_scaled/2 - frameThickness/2, zPos);
-    doorMesh.add(topFrame);
-    
-    const bottomFrame = new instance.THREE.Mesh(
-      new instance.THREE.BoxGeometry(windowWidth_scaled, frameThickness, doorThickness),
-      frameMaterial
-    );
-    bottomFrame.position.set(windowCenterX + offsetX, windowCenterY - windowHeight_scaled/2 + frameThickness/2, zPos);
-    doorMesh.add(bottomFrame);
-    
-    // Left and right frames should not overlap with top/bottom frames
-    // Subtract 2 * frameThickness to avoid overlap at corners
-    const verticalFrameHeight = windowHeight_scaled - (2 * frameThickness);
-    if (verticalFrameHeight > 0) {
-      const leftFrame = new instance.THREE.Mesh(
-        new instance.THREE.BoxGeometry(frameThickness, verticalFrameHeight, doorThickness),
-        frameMaterial
-      );
-      leftFrame.position.set(windowCenterX + offsetX - windowWidth_scaled/2 + frameThickness/2, windowCenterY, zPos);
-      doorMesh.add(leftFrame);
-      
-      const rightFrame = new instance.THREE.Mesh(
-        new instance.THREE.BoxGeometry(frameThickness, verticalFrameHeight, doorThickness),
-        frameMaterial
-      );
-      rightFrame.position.set(windowCenterX + offsetX + windowWidth_scaled/2 - frameThickness/2, windowCenterY, zPos);
-      doorMesh.add(rightFrame);
+
+    const liningInnerH = Math.max(0.01, windowHeight_scaled - liningW * 2);
+    addDoorBox(instance, doorMesh, revealMat, windowWidth_scaled, liningW, doorThickness, cx, cy + windowHeight_scaled / 2 - liningW / 2, zPos);
+    addDoorBox(instance, doorMesh, revealMat, windowWidth_scaled, liningW, doorThickness, cx, cy - windowHeight_scaled / 2 + liningW / 2, zPos);
+    if (liningInnerH > 0.01) {
+      addDoorBox(instance, doorMesh, revealMat, liningW, liningInnerH, doorThickness, cx - windowWidth_scaled / 2 + liningW / 2, cy, zPos);
+      addDoorBox(instance, doorMesh, revealMat, liningW, liningInnerH, doorThickness, cx + windowWidth_scaled / 2 - liningW / 2, cy, zPos);
     }
+
+    const faceZ = doorThickness / 2 - beadT / 2;
+    [-1, 1].forEach((side) => {
+      const z = zPos + side * faceZ;
+      addDoorBox(instance, doorMesh, frameMaterial, windowWidth_scaled, liningW, beadT, cx, cy + windowHeight_scaled / 2 - liningW / 2, z);
+      addDoorBox(instance, doorMesh, frameMaterial, windowWidth_scaled, liningW, beadT, cx, cy - windowHeight_scaled / 2 + liningW / 2, z);
+      if (liningInnerH > 0.01) {
+        addDoorBox(instance, doorMesh, frameMaterial, liningW, liningInnerH, beadT, cx - windowWidth_scaled / 2 + liningW / 2, cy, z);
+        addDoorBox(instance, doorMesh, frameMaterial, liningW, liningInnerH, beadT, cx + windowWidth_scaled / 2 - liningW / 2, cy, z);
+      }
+    });
   });
 }
 
@@ -2454,7 +2575,10 @@ export function createDoorMesh(instance, door, wall) {
     metalness: doorCfg.metalness ?? 0.05,
     envMapIntensity: doorCfg.envMapIntensity ?? 0.4,
     transparent: false,
-    opacity: 1
+    opacity: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
   });
   if (door_type === 'slide') {
     if (configuration === 'double_sided') {
@@ -2574,16 +2698,14 @@ export function createDoorMesh(instance, door, wall) {
       // The wall extrudes from local z=0 (database line / outer face) to z=wallDepth (inner
       // face), so the interior panel sits past +wallDepth and the exterior panel below 0.
       // These two were swapped, which mounted every sliding door on the opposite face.
-      if (adjustedSide === 'interior') {
-        leftDoor.position.set(-halfWidth/2, 0, wallDepth * 1.2);
-        rightDoor.position.set(halfWidth/2, 0, wallDepth * 1.2);
-      } else {
-        leftDoor.position.set(-halfWidth/2, 0, -wallDepth/2);
-        rightDoor.position.set(halfWidth/2, 0, -wallDepth/2);
-      }
+      const leafZ = slideLeafOffsetZ(adjustedSide, wallDepth, doorThickness, scale);
+      leftDoor.position.set(-halfWidth/2, 0, leafZ);
+      rightDoor.position.set(halfWidth/2, 0, leafZ);
       // Store original positions
       leftDoor.userData.origPosition = { x: leftDoor.position.x, z: leftDoor.position.z };
       rightDoor.userData.origPosition = { x: rightDoor.position.x, z: rightDoor.position.z };
+      leftDoor.userData.isSlidingLeaf = true;
+      rightDoor.userData.isSlidingLeaf = true;
       // Add to container
       doorContainer.add(leftDoor);
       doorContainer.add(rightDoor);
@@ -2607,9 +2729,39 @@ export function createDoorMesh(instance, door, wall) {
       if (adjustedRightWindows.length > 0) {
         addWindowGlass(instance, rightDoor, adjustedRightWindows, halfWidth, doorHeight, doorThickness, scale, 0, 0);
       }
-      
-      // Animate doors sliding open
+
+      const faceZSign = adjustedSide === 'interior' ? 1 : -1;
+      const trackZ = slideTrackOffsetZ(adjustedSide, wallDepth, scale);
+      decorateSlideLeaf(instance, leftDoor, {
+        doorWidth: halfWidth,
+        doorHeight,
+        doorThickness,
+        scale,
+        handleOnRight: true,
+        faceZSign,
+        trackZ,
+        leafZ,
+      });
+      decorateSlideLeaf(instance, rightDoor, {
+        doorWidth: halfWidth,
+        doorHeight,
+        doorThickness,
+        scale,
+        handleOnRight: false,
+        faceZSign,
+        trackZ,
+        leafZ,
+      });
       const slideDistance = halfWidth * 0.9;
+      addSlideDoorTrack(instance, doorContainer, {
+        openingWidth: doorWidth,
+        doorHeight,
+        scale,
+        zPos: trackZ,
+        faceZSign,
+        slideSign: 0,
+        extraTravel: slideDistance * 2,
+      });
       if (typeof window !== 'undefined' && window.gsap) {
         window.gsap.to(leftDoor.position, {
           x: -halfWidth/2 - slideDistance,
@@ -2648,14 +2800,11 @@ export function createDoorMesh(instance, door, wall) {
       // Position door at wall face. The wall extrudes from local z=0 (database line / outer
       // face) to z=wallDepth (inner face), so interior mounts past +wallDepth and exterior
       // below 0. These were swapped, mounting sliding doors on the opposite face.
-      if (adjustedSide === 'exterior') {
-        doorMesh.position.z = -wallDepth/2;
-      } else {
-        doorMesh.position.z = wallDepth * 1.2;
-      }
+      doorMesh.position.z = slideLeafOffsetZ(adjustedSide, wallDepth, doorThickness, scale);
       doorContainer.add(doorMesh);
       // Store original position
       doorMesh.userData.origPosition = { x: 0, z: doorMesh.position.z };
+      doorMesh.userData.isSlidingLeaf = true;
       // Register as a door object with metadata
       doorContainer.userData.isDoor = true;
       doorContainer.userData.doorId = `door_${door.id}`;
@@ -2672,11 +2821,30 @@ export function createDoorMesh(instance, door, wall) {
       if (door.windows && door.windows.length > 0) {
         addWindowGlass(instance, doorMesh, door.windows, doorWidth, doorHeight, doorThickness, scale, 0, 0);
       }
-      
-      // Sliding direction: local +X is the wall's start→end, matching the 2D arrow, and the
-      // mounting face must not mirror it (the plan arrow does not change with side).
+
       const slideDirectionSign = adjustedSlideDirection === 'right' ? 1 : -1;
       const slideDistance = doorWidth * 0.9;
+      const faceZSign = adjustedSide === 'interior' ? 1 : -1;
+      const trackZ = slideTrackOffsetZ(adjustedSide, wallDepth, scale);
+      decorateSlideLeaf(instance, doorMesh, {
+        doorWidth,
+        doorHeight,
+        doorThickness,
+        scale,
+        handleOnRight: slideDirectionSign < 0,
+        faceZSign,
+        trackZ,
+        leafZ: doorMesh.position.z,
+      });
+      addSlideDoorTrack(instance, doorContainer, {
+        openingWidth: doorWidth,
+        doorHeight,
+        scale,
+        zPos: trackZ,
+        faceZSign,
+        slideSign: slideDirectionSign,
+        extraTravel: slideDistance,
+      });
       // Animate door sliding
       if (typeof window !== 'undefined' && window.gsap) {
         window.gsap.to(doorMesh.position, {
@@ -2778,10 +2946,10 @@ export function createDoorMesh(instance, door, wall) {
       // For double swing doors, the door panel geometry is translated by +(wallDepth / 2) in z
       // So the glass should also be at z = wallDepth/2 in the panel's local space to match
       if (leftPanelWindows.length > 0) {
-        addWindowGlass(instance, leftPanel, leftPanelWindows, halfWidth, doorHeight, doorThickness, scale, halfWidth / 2, wallDepth / 2);
+        addWindowGlass(instance, leftPanel, leftPanelWindows, halfWidth, doorHeight, doorThickness, scale, halfWidth / 2, wallDepth / 2 - doorThickness / 2);
       }
       if (rightPanelWindows.length > 0) {
-        addWindowGlass(instance, rightPanel, rightPanelWindows, halfWidth, doorHeight, doorThickness, scale, -halfWidth / 2, wallDepth / 2);
+        addWindowGlass(instance, rightPanel, rightPanelWindows, halfWidth, doorHeight, doorThickness, scale, -halfWidth / 2, wallDepth / 2 - doorThickness / 2);
       }
       
       doorContainer.userData.isDoor = true;

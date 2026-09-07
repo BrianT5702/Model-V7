@@ -12,38 +12,17 @@ import {
 } from './planCanvasTheme';
 import {
     calculateOffsetPoints,
-    drawOrthoPlanDimensionGeometryLikeWall,
     makeLabelDrawFn,
     buildWallOffsetOptions,
-    resolve45CutForceShouldFlip,
-    placeExteriorWallDimensionAvoidingLabels,
-    resolveWallExteriorPlacementSide,
-    computeWallPlanDimensionFontSize
+    resolve45CutForceShouldFlip
 } from './drawing.js';
+import { drawFloorPlanDimensionOnContext } from './planDimensionDrawing.js';
 import {
     DIMENSION_CONFIG,
-    formatPlanDimensionLabel,
     planCeilingValueDedupKey,
     createDimensionLaneCounters,
-    consumeDimensionLane,
-    getDimensionSpanForLane,
-    comparePlanDimensionsDrawOrder,
-    getPlanDimensionLaneConfig,
-    getPlanExteriorSide,
-    getDimensionEdge,
-    computeExteriorPlanLabelCoords,
-    getPlanExteriorFixedColumnX,
-    rememberPlanExteriorColumnX,
-    applyPlanOuterTierMinOffset,
-    recordPlanInnerTierMaxOffset
+    comparePlanDimensionsDrawOrder
 } from './DimensionConfig.js';
-import {
-    calculateHorizontalLabelBounds,
-    calculateVerticalLabelBounds,
-    calculateRotatedVerticalDimBounds,
-    exteriorVerticalTextCenterX,
-    buildVerticalPlanLabelEntry
-} from './collisionDetection.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
 import { sortRoomsByLevelThenName } from '../room/roomSortUtils';
@@ -1317,280 +1296,29 @@ const FloorCanvas = ({
 
     // PASS 1: Draw dimension LINES
     const drawRoomDimensions = (ctx, dimension, bounds, placedLabels, allLabels, dimensionLanes = null) => {
-        const { startX, endX, startY, endY, dimension: length, color, avoidArea } = dimension;
-        if (!bounds && !modelBounds) return;
-
-        let isHorizontal;
-        if (dimension.isHorizontal !== undefined) {
-            isHorizontal = dimension.isHorizontal;
-        } else {
-            const dx = endX - startX;
-            const dy = endY - startY;
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-            isHorizontal = Math.abs(angle) < 45 || Math.abs(angle) > 135;
-        }
-
-        const globalDimensionValues = dimensionValuesSeen.current;
-        if (globalDimensionValues && typeof length === 'number') {
-            const dedupKey = planCeilingValueDedupKey(length, isHorizontal);
-            if (dedupKey && globalDimensionValues.has(dedupKey)) return;
-            if (dedupKey) globalDimensionValues.add(dedupKey);
-        }
-        
-        const midX = (startX + endX) / 2;
-        const midY = (startY + endY) / 2;
-        
-        const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_${dimension.type || 'default'}`;
-        const storedPlacement = dimensionPlacementMemory.current.get(dimensionKey);
-        const lockedSide = storedPlacement ? storedPlacement.side : null;
-        
-        const text = formatPlanDimensionLabel(dimension, length);
-
-        const fontSize = computeWallPlanDimensionFontSize(scaleFactor.current, initialScale.current);
-        const previousFont = ctx.font;
-        ctx.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-        const textWidth = ctx.measureText(text).width;
-
-        const planBounds = avoidArea || bounds || modelBounds;
-        const gb = dimension.groupBounds;
-        const spanMidX = gb ? (gb.minX + gb.maxX) / 2 : midX;
-        const spanMidY = gb ? (gb.minY + gb.maxY) / 2 : midY;
-        const anchorX = gb ? spanMidX : midX;
-        const anchorY = gb ? spanMidY : midY;
-
-        const laneCfg = getPlanDimensionLaneConfig(dimension.priority);
-        const preferredSide =
-            !isHorizontal && planBounds && anchorX > (planBounds.minX + planBounds.maxX) / 2
-                ? 'side2'
-                : null;
-        const preferredExteriorSide =
-            lockedSide ||
-            preferredSide ||
-            (planBounds ? getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) : 'side1');
-
-        const { lo: spanLo, hi: spanHi } = getDimensionSpanForLane(dimension, isHorizontal);
-
-        const sf = scaleFactor.current;
-        const ox = offsetX.current;
-        const oy = offsetY.current;
-        const wallLikeSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
-        const padH = 2;
-        const padV = 8;
-
-        let side = lockedSide || preferredExteriorSide;
-        if (planBounds) {
-            const trialOffset = laneCfg.baseOffset;
-            const side1Coords = computeExteriorPlanLabelCoords(
-                isHorizontal,
-                'side1',
-                trialOffset,
-                planBounds,
-                spanMidX,
-                spanMidY,
-                sf,
-                ox,
-                oy
-            );
-            const side2Coords = computeExteriorPlanLabelCoords(
-                isHorizontal,
-                'side2',
-                trialOffset,
-                planBounds,
-                spanMidX,
-                spanMidY,
-                sf,
-                ox,
-                oy
-            );
-            const side1Bounds = isHorizontal
-                ? calculateHorizontalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV)
-                : calculateVerticalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV);
-            const side2Bounds = isHorizontal
-                ? calculateHorizontalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV)
-                : calculateVerticalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV);
-            side =
-                lockedSide ||
-                resolveWallExteriorPlacementSide({
-                    isHorizontal,
-                    wallMidX: spanMidX,
-                    wallMidY: spanMidY,
-                    modelBounds: planBounds,
-                    dimensionLanes,
-                    side1Bounds,
-                    side2Bounds,
-                    placedLabels
-                });
-        }
-
-        let offsetPx = consumeDimensionLane(
-            dimensionLanes,
-            isHorizontal,
-            side,
-            laneCfg.baseOffset,
-            wallLikeSpacing,
-            spanLo,
-            spanHi,
-            dimension.priority
-        );
-        const vEdge = !isHorizontal ? getDimensionEdge(false, side) : null;
-        offsetPx = applyPlanOuterTierMinOffset(
-            dimensionLanes,
-            vEdge,
-            dimension.priority,
-            offsetPx
-        );
-        offsetPx = Math.min(offsetPx, laneCfg.maxOffset);
-
-        let labelX;
-        let labelY;
-        if (planBounds) {
-            const fixedColumnX = getPlanExteriorFixedColumnX(
-                dimensionLanes,
-                vEdge,
-                dimension.priority
-            );
-            const placed = placeExteriorWallDimensionAvoidingLabels({
-                isHorizontal,
-                side,
-                rowOffsetPx: offsetPx,
-                spanLo,
-                spanHi,
-                anchorX: spanMidX,
-                anchorY: spanMidY,
-                bounds: planBounds,
-                scaleFactor: sf,
-                offsetX: ox,
-                offsetY: oy,
-                textWidth,
-                placedLabels,
-                paddingH: padH,
-                paddingV: padV,
-                fixedLabelX: fixedColumnX,
-                fontSize
-            });
-            if (!placed) {
-                return;
-            }
-            labelX = placed.labelX;
-            labelY = placed.labelY;
-            if (!isHorizontal && dimensionLanes) {
-                rememberPlanExteriorColumnX(dimensionLanes, vEdge, dimension.priority, labelX);
-                recordPlanInnerTierMaxOffset(dimensionLanes, vEdge, dimension.priority, offsetPx);
-            }
-        } else {
-            labelX = spanMidX * sf + ox;
-            labelY = spanMidY * sf + oy;
-        }
-
-        if (!storedPlacement) {
-            dimensionPlacementMemory.current.set(dimensionKey, { side });
-        }
-
-        const dxLine = endX - startX;
-        const dyLine = endY - startY;
-        const angleDeg = Math.atan2(dyLine, dxLine) * (180 / Math.PI);
-        const startYScreen = startY * sf + oy;
-        const endYScreen = endY * sf + oy;
-        if (!isHorizontal) {
-            labelY = (startYScreen + endYScreen) / 2;
-        }
-
-        const dimSide = isHorizontal
-            ? side === 'side1'
-                ? 'top'
-                : 'bottom'
-            : side === 'side1'
-                ? 'left'
-                : 'right';
-
-        const wallStyleBounds = isHorizontal
-            ? calculateHorizontalLabelBounds(labelX, labelY, textWidth, padH, padV)
-            : calculateRotatedVerticalDimBounds(
-                  exteriorVerticalTextCenterX(labelX, fontSize, dimSide),
-                  labelY,
-                  textWidth,
-                  fontSize,
-                  2
-              );
-
-        const clipBounds = bounds || modelBounds;
-        if (!clipBounds) {
-            ctx.font = previousFont;
-            return;
-        }
-
-        const isValidPosition =
-            wallStyleBounds.x >= 0 &&
-            wallStyleBounds.y >= 0 &&
-            wallStyleBounds.x + wallStyleBounds.width <= CANVAS_WIDTH &&
-            wallStyleBounds.y + wallStyleBounds.height <= CANVAS_HEIGHT;
-
-        if (!isValidPosition) {
-            ctx.font = previousFont;
-            return;
-        }
-
-        drawOrthoPlanDimensionGeometryLikeWall(
+        const planBounds = bounds || modelBounds;
+        if (!planBounds) return;
+        drawFloorPlanDimensionOnContext(
             ctx,
+            dimension,
+            planBounds,
+            placedLabels,
+            allLabels,
+            dimensionLanes,
             {
-                startX,
-                startY,
-                endX,
-                endY,
-                isHorizontal,
-                labelX,
-                labelY,
-                textWidth,
-                color
-            },
-            sf,
-            ox,
-            oy,
-            clipBounds
+                scaleFactor: scaleFactor.current,
+                offsetX: offsetX.current,
+                offsetY: offsetY.current,
+                initialScale: initialScale.current,
+                placementMemory: dimensionPlacementMemory.current,
+                dimensionValuesSeen: dimensionValuesSeen.current,
+                walls,
+                canvasWidth: CANVAS_WIDTH,
+                canvasHeight: CANVAS_HEIGHT
+            }
         );
-
-        if (
-            isFinite(wallStyleBounds.x) &&
-            isFinite(wallStyleBounds.y) &&
-            isFinite(wallStyleBounds.width) &&
-            isFinite(wallStyleBounds.height) &&
-            wallStyleBounds.width > 0 &&
-            wallStyleBounds.height > 0
-        ) {
-            placedLabels.push({
-                x: wallStyleBounds.x,
-                y: wallStyleBounds.y,
-                width: wallStyleBounds.width,
-                height: wallStyleBounds.height,
-                text,
-                type: dimension.type || 'default'
-            });
-        }
-
-        if (isHorizontal) {
-            allLabels.push({
-                x: wallStyleBounds.x,
-                y: wallStyleBounds.y,
-                width: wallStyleBounds.width,
-                height: wallStyleBounds.height,
-                side: dimSide,
-                text,
-                angle: angleDeg,
-                type: 'wall',
-                textColor: color
-            });
-        } else {
-            allLabels.push(
-                buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
-                    type: 'wall',
-                    textColor: color
-                })
-            );
-        }
-
-        ctx.font = previousFont;
     };
-    
+
     // Draw Grouped Dimensions (collector/scheduler: collect for sort-then-draw, like room/cut panel dims)
     const drawGroupedPanelDimensions = (
         ctx,

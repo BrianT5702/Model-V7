@@ -1,4 +1,4 @@
-﻿# Model-V6
+# Model-V6
 
 After you have done clone this github repository, please do the below to run the system.
 
@@ -14,3 +14,5 @@ After you have done clone this github repository, please do the below to run the
     2. python manage.py migrate
     3. py manage.py runserver.
 5. Now you may reach the system running in your browser.
+
+The full user guide is in `USER_MANUAL.md`. In the app, click **Help** in the top bar. Help shows only the screens for your account (Admin, Drafter, or Salesman).

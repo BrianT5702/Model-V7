@@ -1125,7 +1125,8 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         offsetY: canvasOffsetY = 0,
         initialScale: canvasInitialScale = 0,
         canvasWidth = 0,
-        canvasHeight = 0
+        canvasHeight = 0,
+        walls: hintWalls = []
     } = layoutHint;
     const useCanvasLayer = Boolean(canvasCtx);
     const dimensionsToDraw = [];
@@ -1450,14 +1451,25 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         const labelY = placement.labelY;
         const textTop = labelY - textWidth / 2 - textPadding;
         const textBottom = labelY + textWidth / 2 + textPadding;
-        const startYScreen = yLo;
-        const endYScreen = yHi;
+        const clipMidX = transformX((clipModelForDims.minX + clipModelForDims.maxX) / 2);
+        const attachX = labelX < clipMidX ? transformX(clipModelForDims.minX) : transformX(clipModelForDims.maxX);
+        const edgeTol = 250;
+        const spanLo = Math.min(minYModel, maxYModel);
+        const spanHi = Math.max(minYModel, maxYModel);
+        const startYScreen =
+            spanLo - clipModelForDims.minY <= edgeTol && clipModelForDims.maxY - spanHi <= edgeTol
+                ? transformY(clipModelForDims.minY)
+                : yLo;
+        const endYScreen =
+            spanLo - clipModelForDims.minY <= edgeTol && clipModelForDims.maxY - spanHi <= edgeTol
+                ? transformY(clipModelForDims.maxY)
+                : yHi;
 
         setPdfDash(pdfExtDash);
         doc.setLineWidth(pdfExtLineW);
         doc.setDrawColor(colorRgb[0], colorRgb[1], colorRgb[2]);
-        drawDashedExtensionLine(xc, yLo, labelX, yLo);
-        drawDashedExtensionLine(xc, yHi, labelX, yHi);
+        drawDashedExtensionLine(attachX, startYScreen, labelX, startYScreen);
+        drawDashedExtensionLine(attachX, endYScreen, labelX, endYScreen);
 
         setPdfDash([]);
         doc.setLineWidth(pdfDimLineW);
@@ -1554,8 +1566,19 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         if (!placementMemory.has(dimKey)) placementMemory.set(dimKey, placement.side);
 
         const labelY = placement.labelY;
-        const startXScreen = xL;
-        const endXScreen = xR;
+        const clipMidY = transformY((clipModelForDims.minY + clipModelForDims.maxY) / 2);
+        const attachY = labelY < clipMidY ? transformY(clipModelForDims.minY) : transformY(clipModelForDims.maxY);
+        const edgeTol = 250;
+        const spanLo = Math.min(minXModel, maxXModel);
+        const spanHi = Math.max(minXModel, maxXModel);
+        const startXScreen =
+            spanLo - clipModelForDims.minX <= edgeTol && clipModelForDims.maxX - spanHi <= edgeTol
+                ? transformX(clipModelForDims.minX)
+                : xL;
+        const endXScreen =
+            spanLo - clipModelForDims.minX <= edgeTol && clipModelForDims.maxX - spanHi <= edgeTol
+                ? transformX(clipModelForDims.maxX)
+                : xR;
         const centeredLabelX = (startXScreen + endXScreen) / 2;
         const centeredTextLeft = centeredLabelX - textWidth / 2 - textPadding;
         const centeredTextRight = centeredLabelX + textWidth / 2 + textPadding;
@@ -1563,8 +1586,8 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
         setPdfDash(pdfExtDash);
         doc.setLineWidth(pdfExtLineW);
         doc.setDrawColor(colorRgb[0], colorRgb[1], colorRgb[2]);
-        drawDashedExtensionLine(xL, yc, xL, labelY);
-        drawDashedExtensionLine(xR, yc, xR, labelY);
+        drawDashedExtensionLine(startXScreen, attachY, startXScreen, labelY);
+        drawDashedExtensionLine(endXScreen, attachY, endXScreen, labelY);
 
         setPdfDash([]);
         doc.setLineWidth(pdfDimLineW);
@@ -1954,7 +1977,8 @@ function drawPlanDimensions(doc, storeyRooms, panels, transformX, transformY, _s
             placementMemory,
             dimensionValuesSeen: new Set(),
             canvasWidth,
-            canvasHeight
+            canvasHeight,
+            walls: hintWalls
         });
     }
 }
@@ -2679,7 +2703,8 @@ function drawPlanPage(doc, {
                 geometryBounds: geometryBoundsUnpadded,
                 kind,
                 ceilingPlans,
-                floorPlans
+                floorPlans,
+                walls: storeyWalls
             });
             try {
                 const imgData = dimCanvas.toDataURL('image/png');

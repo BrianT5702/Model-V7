@@ -1,23 +1,23 @@
 import {
-  CHAT_OPTIONS,
   extractFolderMention,
   extractProjectName,
   extractRoomNames,
+  extractWallThickness,
+  extractNewFolderName,
   isCreateProjectIntent,
-  isFollowProjectSize,
+  isCreateNewFolderIntent,
+  isUsageHelpIntent,
+  normalizeChatText,
   parseDimensionPair,
-  parseFaceMaterial,
-  parseFloorThickness,
   parseThicknessMm,
-  parseFloorType,
   parseProjectSize,
   parseRoomCount,
+  parseRoomDetailsFromText,
+  parseNamedRoomSpecs,
   parseSingleDimension,
   parseYesNo,
-  parseTemperature,
   isSameAsPrevious,
   resolveFolderChoice,
-  buildFolderPaths,
   getSortedFolderEntries,
 } from './parseChatMessage';
 import { arrangeRooms } from './roomLayoutEngine';
@@ -26,11 +26,13 @@ import { UNCATEGORIZED_KEY, getFolderPath } from '../project/projectFolderUtils'
 export const PHASES = {
   WELCOME: 'welcome',
   FOLDER: 'folder',
+  FOLDER_NEW: 'folder_new',
   PROJECT_NAME: 'project_name',
   PROJECT_SIZE: 'project_size',
   WALL_THICKNESS: 'wall_thickness',
   ROOM_INTENT: 'room_intent',
   ROOM_NAMES: 'room_names',
+  ROOM_DETAILS: 'room_details',
   ROOM_SIZE: 'room_size',
   ROOM_HEIGHT: 'room_height',
   ROOM_TEMPERATURE: 'room_temperature',
@@ -43,19 +45,33 @@ export const PHASES = {
   DONE: 'done',
 };
 
+const ROOM_DETAIL_PHASES = [
+  PHASES.ROOM_DETAILS,
+  PHASES.ROOM_SIZE,
+  PHASES.ROOM_HEIGHT,
+  PHASES.ROOM_TEMPERATURE,
+  PHASES.ROOM_FLOOR,
+  PHASES.ROOM_FLOOR_THICKNESS,
+  PHASES.ROOM_CEILING,
+  PHASES.ROOM_WALLS,
+];
+
 export function createInitialDraft() {
   return {
     name: '',
     width: null,
     length: null,
     height: null,
-    wall_thickness: 200,
+    wall_thickness: 100,
+    wallThicknessDecided: false,
     rooms: [],
     currentRoomIndex: 0,
     skipRooms: false,
     folderKey: null,
     folderLabel: null,
     folderDecided: false,
+    newFolderName: null,
+    unmatchedFolderName: null,
   };
 }
 
@@ -121,9 +137,11 @@ function formatThicknessMm(n) {
 
 export function buildSummary(draft, folders = []) {
   const folderLine = draft.folderDecided
-    ? (draft.folderLabel
-      || getFolderPath(draft.folderKey ?? UNCATEGORIZED_KEY, folders)
-      || 'Uncategorized')
+    ? (draft.newFolderName
+      ? `${draft.newFolderName} (new folder)`
+      : (draft.folderLabel
+        || getFolderPath(draft.folderKey ?? UNCATEGORIZED_KEY, folders)
+        || 'Uncategorized'))
     : '(not chosen yet)';
 
   const lines = [
@@ -171,14 +189,27 @@ export function buildSummary(draft, folders = []) {
 export function getWelcomeMessages() {
   return [
     bot(
-      "Hi! Ask me to **create a project** and I'll walk you through the whole thing — " +
-        "site, rooms, walls, floor, and ceiling. I'll place rooms so they share walls. " +
-        "I won't create joints.\n\n" +
-        "Examples:\n" +
-        "• *Help me create a project*\n" +
-        "• *Create a project and place it under folder Cold Stores*\n" +
-        "• *Help me create project Alpha, site 24m × 12m × 6m, under folder Clients*\n\n" +
-        "If you don't say where to put it, I'll ask which folder to use."
+      "Hi — I can **create a full project from this chat** (folder, site, rooms, walls, floor, and ceiling). I skip joints.\n\n" +
+        "**Sizes:** `5000 × 8500 × 6000` is millimetres. `5m × 8.5m × 6m` is metres.\n" +
+        "Missing room details default to project height, 0°C, slab 100 mm, ceiling yes, PPGI.\n\n" +
+        "**Never used this?**\n" +
+        "1. Tap **I’m new — guide me** below.\n" +
+        "2. Answer one question at a time (or tap a chip).\n" +
+        "3. When I show a summary, tap **Create project**.\n\n" +
+        "Or tap **Show an example** to paste a full spec. Type **restart** to start over."
+    ),
+  ];
+}
+
+export function getExampleMessages() {
+  return [
+    bot(
+      "Paste something like this in **one message**, then tap **Create project**:\n\n" +
+        "`Create project My Cold Store in Testing, site 5000 × 8500 × 6000, walls 100`\n" +
+        "`CHILLER 3050 × 8500 height 6000, 2 to 6°C, slab 100`\n" +
+        "`EXT HT 1950 × 8500 height 3300, 0°C, slab 100`\n\n" +
+        "Wording can vary — `5000x8500`, `5m by 8.5m`, `CHILLER: 3050*8500`, `2-6C`, `slab100` all work.\n\n" +
+        "Or tap **I’m new — guide me** and I’ll ask you the pieces one by one."
     ),
   ];
 }
@@ -189,15 +220,28 @@ function formatFolderList(folders) {
   }
   const entries = getSortedFolderEntries(folders);
   const lines = entries.map((e, i) => `• **${i + 1}.** ${e.path}`);
-  lines.push('• Or say **uncategorized** for no folder');
   return lines.join('\n');
 }
 
 function askFolder(folders = []) {
+  const existing = folders.length
+    ? `${formatFolderList(folders)}\n\n`
+    : '';
   return bot(
-    "Where should I **place this project**?\n\n" +
-      `${formatFolderList(folders)}\n\n` +
-      'Reply with a folder path (e.g. `Brian/2025`), number, or **uncategorized**.'
+    "Where should this project **go**? You choose:\n\n" +
+      "1. **Place it in a folder that already exists** — tap a chip or type the path (e.g. `Testing`).\n" +
+      "2. **Create a new folder** — tap **Create new folder**, or say `new folder Cold Stores`.\n" +
+      "3. **Uncategorized** — no folder.\n\n" +
+      `${existing}` +
+      'You can also type a number from the list.'
+  );
+}
+
+function askNewFolderName() {
+  return bot(
+    "What should the **new folder** be called?\n\n" +
+      "Type a name like `Cold Stores`, or a path like `Brian/2026` (I'll create any missing parts).\n" +
+      "Or tap an **existing folder** below if you'd rather place it there instead."
   );
 }
 
@@ -208,6 +252,23 @@ function applyFolderChoice(draft, choice) {
     folderKey: choice.key === 'uncategorized' ? UNCATEGORIZED_KEY : choice.key,
     folderLabel: choice.label,
     folderDecided: true,
+    newFolderName: null,
+    unmatchedFolderName: null,
+  };
+}
+
+function applyNewFolderChoice(draft, name) {
+  const folderName = String(name || '').trim();
+  if (!folderName) return draft;
+  const sameAsProjectName = String(draft.name || '').trim().toLowerCase() === folderName.toLowerCase();
+  return {
+    ...draft,
+    name: sameAsProjectName ? '' : draft.name,
+    newFolderName: folderName,
+    folderKey: null,
+    folderLabel: `${folderName} (new)`,
+    folderDecided: true,
+    unmatchedFolderName: null,
   };
 }
 
@@ -215,6 +276,9 @@ function tryApplyFolderFromText(draft, text, folders, foldersAvailable) {
   if (!foldersAvailable) {
     return applyFolderChoice(draft, { key: 'uncategorized', label: 'Uncategorized' });
   }
+  const newName = extractNewFolderName(text);
+  if (newName) return applyNewFolderChoice(draft, newName);
+  if (isCreateNewFolderIntent(text)) return draft;
   const choice = resolveFolderChoice(text, folders);
   if (choice) return applyFolderChoice(draft, choice);
   // Mentioned a folder name that didn't resolve — keep undecided
@@ -222,31 +286,251 @@ function tryApplyFolderFromText(draft, text, folders, foldersAvailable) {
   return draft;
 }
 
-function nextAfterFolder(draft, preface = null) {
+function folderNameGuess(text) {
+  if (isCreateNewFolderIntent(text) && !extractNewFolderName(text)) return null;
+  const mentioned = extractFolderMention(text);
+  if (mentioned) return mentioned.slice(0, 80);
+  const cleaned = String(text || '').trim().replace(/^(folder|the|in|under|into)\s+/i, '').trim();
+  if (!cleaned || cleaned.length > 80) return null;
+  if (parseProjectSize(cleaned) || parseDimensionPair(cleaned)) return null;
+  if (/^(yes|no|y|n|ok|okay|create|restart)$/i.test(cleaned)) return null;
+  if (!/[a-z]/i.test(cleaned)) return null;
+  return cleaned;
+}
+
+function offerCreateMissingFolder(draft, guess, folders) {
+  return {
+    draft: { ...draft, unmatchedFolderName: guess, folderDecided: false },
+    phase: PHASES.FOLDER,
+    messages: [
+      bot(
+        `There's no folder **${guess}** yet.\n\n` +
+          `Reply **create it** to make that new folder, pick an existing one, tap **Create new folder**, or say **uncategorized**.`
+      ),
+      askFolder(folders),
+    ],
+  };
+}
+
+function startNewFolderFlow(draft, text, folders) {
+  const named = extractNewFolderName(text);
+  if (named) {
+    const next = applyNewFolderChoice(draft, named);
+    return continueDraft(next, folders, `I'll **create a new folder** **${named}** and put the project there.`);
+  }
+  if (/^(create\s+it|yes,?\s*create(\s+it)?)$/i.test(String(text || '').trim()) && draft.unmatchedFolderName) {
+    const next = applyNewFolderChoice(draft, draft.unmatchedFolderName);
+    return continueDraft(next, folders, `I'll **create a new folder** **${draft.unmatchedFolderName}** and put the project there.`);
+  }
+  return {
+    draft,
+    phase: PHASES.FOLDER_NEW,
+    messages: [askNewFolderName()],
+  };
+}
+
+function specWithoutMeta(spec) {
+  const {
+    name,
+    followProjectSize,
+    sameAsPrevious,
+    useProjectHeight,
+    ...fields
+  } = spec || {};
+  return fields;
+}
+
+function applySpecToRoom(room, spec, draft) {
+  if (!spec) return room;
+  const next = { ...room, ...specWithoutMeta(spec) };
+  if (spec.followProjectSize && draft.width && draft.length) {
+    next.width = draft.width;
+    next.length = draft.length;
+  }
+  if (spec.useProjectHeight && draft.height) {
+    next.height = draft.height;
+  }
+  return next;
+}
+
+function finalizeRoom(room, draft) {
+  if (!room?.width || !room?.length) return room;
+  const floorType = room.floor_type || 'Slab';
+  const noneFloor = floorType === 'None';
+  return {
+    ...room,
+    height: room.height || draft.height,
+    temperature: room.temperature ?? 0,
+    temperature_min: room.temperature_min ?? null,
+    temperature_max: room.temperature_max ?? null,
+    floor_type: floorType,
+    floor_thickness: noneFloor ? 0 : (room.floor_thickness ?? 100),
+    include_ceiling: room.include_ceiling ?? true,
+    inner_face_material: room.inner_face_material || 'PPGI',
+    outer_face_material: room.outer_face_material || 'PPGI',
+  };
+}
+
+function finalizeAllSizedRooms(draft) {
+  return {
+    ...draft,
+    rooms: draft.rooms.map((room) => finalizeRoom(room, draft)),
+  };
+}
+
+function applyNamedRoomSpecs(draft, specs) {
+  if (!specs?.length) return draft;
+  let rooms = [...draft.rooms];
+  if (!rooms.length) {
+    rooms = specs.map((spec) => applySpecToRoom(createEmptyRoom(spec.name), spec, draft));
+  } else {
+    specs.forEach((spec) => {
+      const idx = rooms.findIndex((r) => r.name.toLowerCase() === spec.name.toLowerCase());
+      if (idx >= 0) {
+        rooms[idx] = applySpecToRoom(rooms[idx], spec, draft);
+      } else {
+        rooms.push(applySpecToRoom(createEmptyRoom(spec.name), spec, draft));
+      }
+    });
+  }
+  return {
+    ...draft,
+    rooms,
+    currentRoomIndex: 0,
+    skipRooms: false,
+  };
+}
+
+function firstRoomMissingSize(draft) {
+  const idx = draft.rooms.findIndex((room) => !room.width || !room.length);
+  return idx < 0 ? null : idx;
+}
+
+function harvestDraft(draft, text, folders, canUseFolders, phase) {
+  let next = { ...draft };
+  next = tryApplyFolderFromText(next, text, folders, canUseFolders);
+
+  const roomPhase = ROOM_DETAIL_PHASES.includes(phase);
+  const size = parseProjectSize(text);
+  if (size && size.width && size.length) {
+    if (!roomPhase) {
+      next = applyProjectSize(next, size);
+    } else if (missingProjectSize(next) && /\b(site|project)\b/i.test(text) && size.height) {
+      next = applyProjectSize(next, size);
+    }
+  }
+
+  const thickness = extractWallThickness(text);
+  if (thickness) {
+    next = { ...next, wall_thickness: thickness, wallThicknessDecided: true };
+  }
+
+  if (
+    !next.name
+    && [PHASES.WELCOME, PHASES.DONE, PHASES.FOLDER, PHASES.PROJECT_NAME].includes(phase)
+    && phase !== PHASES.FOLDER_NEW
+    && !isCreateNewFolderIntent(text)
+  ) {
+    const name = extractProjectName(text);
+    const roomNames = extractRoomNames(text);
+    const looksLikeRoomList = roomNames.length > 1
+      && !isCreateProjectIntent(text)
+      && !parseProjectSize(text);
+    const folderOnlyReply = (phase === PHASES.FOLDER || phase === PHASES.FOLDER_NEW)
+      && name
+      && name.toLowerCase() === String(text || '').trim().toLowerCase();
+    if (name && !looksLikeRoomList && !folderOnlyReply) next = { ...next, name };
+  }
+
+  const namedSpecs = parseNamedRoomSpecs(text);
+  if (namedSpecs.length) {
+    next = applyNamedRoomSpecs(next, namedSpecs);
+  } else if (
+    !next.rooms.length
+    && [
+      PHASES.WELCOME,
+      PHASES.DONE,
+      PHASES.FOLDER,
+      PHASES.PROJECT_NAME,
+      PHASES.PROJECT_SIZE,
+      PHASES.WALL_THICKNESS,
+      PHASES.ROOM_INTENT,
+      PHASES.ROOM_NAMES,
+    ].includes(phase)
+  ) {
+    const names = extractRoomNames(text);
+    if (names.length > 0) {
+      next = {
+        ...next,
+        rooms: names.map((n) => createEmptyRoom(n)),
+        currentRoomIndex: 0,
+        skipRooms: false,
+      };
+    }
+  }
+
+  return next;
+}
+
+function continueDraft(draft, folders = [], preface = null) {
   const messages = [];
   if (preface) messages.push(bot(preface));
 
-  if (!draft.name) {
+  let next = { ...draft };
+  if (!next.wallThicknessDecided) {
+    next = {
+      ...next,
+      wall_thickness: next.wall_thickness || 100,
+      wallThicknessDecided: true,
+    };
+  }
+
+  if (!next.folderDecided) {
+    messages.push(askFolder(folders));
+    return { draft: next, phase: PHASES.FOLDER, messages };
+  }
+  if (!next.name) {
     messages.push(askProjectName());
-    return { draft, phase: PHASES.PROJECT_NAME, messages };
+    return { draft: next, phase: PHASES.PROJECT_NAME, messages };
   }
-  if (missingProjectSize(draft)) {
-    messages.push(askProjectSize(draft));
-    return { draft, phase: PHASES.PROJECT_SIZE, messages };
+  if (missingProjectSize(next)) {
+    messages.push(askProjectSize(next));
+    return { draft: next, phase: PHASES.PROJECT_SIZE, messages };
   }
-  messages.push(askWallThickness());
-  return { draft, phase: PHASES.WALL_THICKNESS, messages };
+
+  if (!next.skipRooms && next.rooms.length === 0) {
+    messages.push(askRoomIntent());
+    return { draft: next, phase: PHASES.ROOM_INTENT, messages };
+  }
+
+  if (!next.skipRooms) {
+    if (next.rooms.length === 1 && next.width && next.length && !next.rooms[0].width) {
+      next = fillRoomWithProjectSize(next, 0);
+    }
+    const idx = firstRoomMissingSize(next);
+    if (idx != null) {
+      const ready = { ...next, currentRoomIndex: idx };
+      messages.push(askRoomDetails(ready));
+      return { draft: ready, phase: PHASES.ROOM_DETAILS, messages };
+    }
+    const filled = finalizeAllSizedRooms(next);
+    messages.push(askConfirm(filled, folders));
+    return { draft: filled, phase: PHASES.CONFIRM, messages };
+  }
+
+  messages.push(askConfirm(next, folders));
+  return { draft: next, phase: PHASES.CONFIRM, messages };
 }
 
 function ensureFolderOrContinue(draft, folders, foldersAvailable, preface = null) {
   if (!foldersAvailable) {
     const next = applyFolderChoice(draft, { key: 'uncategorized', label: 'Uncategorized' });
-    return nextAfterFolder(next, preface);
+    return continueDraft(next, folders, preface);
   }
   if (draft.folderDecided) {
     const folderNote = preface
       || `Okay — I'll put it in **${draft.folderLabel || getFolderPath(draft.folderKey, folders)}**.`;
-    return nextAfterFolder(draft, folderNote);
+    return continueDraft(draft, folders, folderNote);
   }
   const messages = [];
   if (preface) messages.push(bot(preface));
@@ -269,16 +553,10 @@ function askProjectSize(draft) {
   );
 }
 
-function askWallThickness() {
-  return bot(
-    'What **wall thickness** should we use? (mm)\nReply with a number, or say **default** for 200 mm.'
-  );
-}
-
 function askRoomIntent() {
   return bot(
-    'Do you want me to create **rooms** inside this project?\n' +
-      'Reply **yes** (and optionally how many / names), or **no** for site + boundary walls only.'
+    'Do you want **rooms** inside this project?\n' +
+      'Reply with names (`CHILLER, EXT HT`), **yes** + a count, or **no** for site walls only.'
   );
 }
 
@@ -288,13 +566,17 @@ function askRoomNames() {
   );
 }
 
-function askRoomSize(draft) {
-  const projectHint = draft.width && draft.length
-    ? `\nOr say **follow the project size** to use ${formatMm(draft.width)} × ${formatMm(draft.length)}.`
+function askRoomDetails(draft) {
+  const heightHint = draft.height ? formatMm(draft.height) : 'the project height';
+  const extras = draft.currentRoomIndex > 0
+    ? '\nOr say **same as previous** to copy the last room’s height, temperature, floor, ceiling, and walls.'
     : '';
   return bot(
-    `${roomPromptPrefix(draft)}: what is the **floor plan size** (width × length)?\n` +
-      `Example: \`8000 × 6000\` or \`8m × 6m\`.${projectHint}`
+    `${roomPromptPrefix(draft)}: send the **size** in one message. ` +
+      'You can add height, temperature, and floor in the same reply.\n\n' +
+      'Example: `3050 × 8500, height 6000, 2 to 6°C, slab 100`\n' +
+      `If you only send the size, I’ll use ${heightHint}, 0°C, slab 100 mm, ceiling yes, PPGI.` +
+      extras
   );
 }
 
@@ -339,92 +621,29 @@ function tryCopyPrevious(draft, text, folders, { copySize = false } = {}) {
   if (!next) return null;
   const room = next.rooms[next.currentRoomIndex];
   if (room.width && room.length) {
-    return advanceAfterRoomWalls(
-      next,
+    const filled = {
+      ...next,
+      rooms: next.rooms.map((r, i) => (
+        i === next.currentRoomIndex ? finalizeRoom(r, next) : r
+      )),
+    };
+    return advanceAfterRoomDetails(
+      filled,
       folders,
       'Copied height, temperature, floor, ceiling, and wall finishes from the previous room.'
     );
   }
   return {
     draft: next,
-    phase: PHASES.ROOM_SIZE,
+    phase: PHASES.ROOM_DETAILS,
     messages: [
       bot('Copied the other details from the previous room. I still need this room’s size.'),
-      askRoomSize(next),
+      askRoomDetails(next),
     ],
   };
 }
 
 /** Start collecting room details — auto-fit a single room to the full project site. */
-function beginRoomDetails(draft, preface = null) {
-  const messages = [];
-  if (preface) messages.push(bot(preface));
-
-  if (draft.currentRoomIndex > 0) {
-    messages.push(bot(
-      'You can say **same as previous** to copy height, temperature, floor, ceiling, and wall finishes from the last room.'
-    ));
-  }
-
-  if (draft.rooms.length === 1 && draft.width && draft.length) {
-    const next = fillRoomWithProjectSize(draft, 0);
-    messages.push(bot(
-      `Since there's only **one room**, I'll fit it to the whole project site ` +
-        `(${formatMm(next.width)} × ${formatMm(next.length)}).`
-    ));
-    messages.push(askRoomHeight(next));
-    return { draft: next, phase: PHASES.ROOM_HEIGHT, messages };
-  }
-
-  messages.push(askRoomSize(draft));
-  return { draft, phase: PHASES.ROOM_SIZE, messages };
-}
-
-function askRoomHeight(draft) {
-  const fallback = draft.height ? ` (project height is ${formatMm(draft.height)})` : '';
-  return bot(
-    `${roomPromptPrefix(draft)}: what is the **room height**?${fallback}\n` +
-      'Example: `4500` or `4.5m`, or say **same** to use the project height.'
-  );
-}
-
-function askRoomTemperature(draft) {
-  return bot(
-    `${roomPromptPrefix(draft)}: what is the **room temperature** (°C)?\n` +
-      'Example: `0`, `-18`, or `2 to 6`. Say **ambient** for 0 °C.'
-  );
-}
-
-function askRoomFloor(draft) {
-  return bot(
-    `${roomPromptPrefix(draft)}: what is the **floor identity**?\n` +
-      `Choose: ${CHAT_OPTIONS.FLOOR_TYPES.join(', ')}`
-  );
-}
-
-function askRoomFloorThickness(draft) {
-  return bot(
-    `${roomPromptPrefix(draft)}: what is the **floor thickness** (mm)?\n` +
-      `Typical options: ${CHAT_OPTIONS.FLOOR_THICKNESSES.join(', ')}\n` +
-      'Use `0` for none.'
-  );
-}
-
-function askRoomCeiling(draft) {
-  return bot(
-    `${roomPromptPrefix(draft)}: should this room **include a ceiling**?\n` +
-      'Reply **yes** or **no** (no = exclude from ceiling generation).'
-  );
-}
-
-function askRoomWalls(draft) {
-  return bot(
-    `${roomPromptPrefix(draft)}: wall face materials (**inner / outer**)?\n` +
-      `Options: ${CHAT_OPTIONS.FACE_MATERIALS.join(', ')}\n` +
-      'Example: `PPGI / PPGI` or say **default**.'
-  );
-}
-
 function askConfirm(draft, folders = []) {
   return bot(
     `Please confirm this plan:\n\n${buildSummary(draft, folders)}\n\n` +
@@ -433,24 +652,12 @@ function askConfirm(draft, folders = []) {
   );
 }
 
-function advanceAfterRoomWalls(draft, folders = [], copiedNote = null) {
-  const nextIndex = draft.currentRoomIndex + 1;
-  if (nextIndex < draft.rooms.length) {
-    return beginRoomDetails(
-      { ...draft, currentRoomIndex: nextIndex },
-      copiedNote
-        ? `${copiedNote}\nNext room (${nextIndex + 1}/${draft.rooms.length}).`
-        : `Next room (${nextIndex + 1}/${draft.rooms.length}).`
-    );
-  }
-  const messages = [];
-  if (copiedNote) messages.push(bot(copiedNote));
-  messages.push(askConfirm(draft, folders));
-  return {
-    draft,
-    phase: PHASES.CONFIRM,
-    messages,
-  };
+function advanceAfterRoomDetails(draft, folders = [], copiedNote = null) {
+  const rooms = draft.rooms.map((room, i) => (
+    i === draft.currentRoomIndex ? finalizeRoom(room, draft) : room
+  ));
+  const next = { ...draft, rooms };
+  return continueDraft(next, folders, copiedNote);
 }
 
 /**
@@ -464,7 +671,7 @@ export function processChatMessage(phase, draft, userText, options = {}) {
   const folders = Array.isArray(options.folders) ? options.folders : [];
   const canUseFolders = options.foldersAvailable !== false;
 
-  const text = String(userText || '').trim();
+  const text = normalizeChatText(userText);
   const lower = text.toLowerCase();
 
   if (!text) {
@@ -485,54 +692,42 @@ export function processChatMessage(phase, draft, userText, options = {}) {
 
   // --- WELCOME / free-form kickoff ---
   if (phase === PHASES.WELCOME || phase === PHASES.DONE) {
-    let next = { ...createInitialDraft(), ...draft };
-    // Reset done-state draft into a fresh create attempt when user speaks again
-    if (phase === PHASES.DONE) {
-      next = createInitialDraft();
-    }
-
-    next = tryApplyFolderFromText(next, text, folders, canUseFolders);
-
-    const name = extractProjectName(text);
-    const size = parseProjectSize(text);
-    const roomNames = extractRoomNames(text);
-    const roomCount = parseRoomCount(text);
-    const createIntent = isCreateProjectIntent(text);
-
-    if (name) next.name = name;
-    if (size) next = applyProjectSize(next, size);
-
-    if (roomNames.length > 1 || (roomNames.length === 1 && /room/i.test(text))) {
-      next.rooms = roomNames.map((n) => createEmptyRoom(n));
-      next.currentRoomIndex = 0;
-    } else if (roomCount != null && roomCount > 0) {
-      next.rooms = Array.from({ length: roomCount }, (_, i) => createEmptyRoom(`Room ${i + 1}`));
-      next.currentRoomIndex = 0;
-    }
-
-    // Vague greeting without create intent
-    if (!createIntent && !name && !size && !next.folderDecided
-      && /^(hi|hello|hey)$/i.test(lower)) {
+    if (isUsageHelpIntent(text) && !isCreateProjectIntent(text)) {
       return {
-        draft: next,
+        draft: phase === PHASES.DONE ? createInitialDraft() : draft,
+        phase: PHASES.WELCOME,
+        messages: /example/i.test(lower) ? getExampleMessages() : getWelcomeMessages(),
+      };
+    }
+    if (/^(hi|hello|hey)$/i.test(lower)) {
+      return {
+        draft: phase === PHASES.DONE ? createInitialDraft() : draft,
         phase: PHASES.WELCOME,
         messages: getWelcomeMessages(),
       };
     }
 
-    // Folder mentioned but not matched
+    let next = phase === PHASES.DONE ? createInitialDraft() : { ...createInitialDraft(), ...draft };
+    next = harvestDraft(next, text, folders, canUseFolders, PHASES.WELCOME);
+
+    if (isCreateNewFolderIntent(text) && !next.folderDecided && canUseFolders) {
+      return startNewFolderFlow(next, text, folders);
+    }
+
     if (extractFolderMention(text) && !next.folderDecided && canUseFolders) {
+      const guess = folderNameGuess(text);
+      if (guess) return offerCreateMissingFolder(next, guess, folders);
       return {
         draft: next,
         phase: PHASES.FOLDER,
         messages: [
-          bot("I couldn't match that folder. Try the full path, e.g. `Brian/2025`."),
+          bot("I couldn't match that folder."),
           askFolder(folders),
         ],
       };
     }
 
-    const preface = createIntent || name || size || next.folderDecided
+    const preface = isCreateProjectIntent(text) || next.name || !missingProjectSize(next) || next.folderDecided
       ? (next.folderDecided
         ? `Sure — I'll create a project in **${next.folderLabel}**.`
         : 'Sure — I can help you create a project.')
@@ -543,66 +738,82 @@ export function processChatMessage(phase, draft, userText, options = {}) {
 
   // --- FOLDER ---
   if (phase === PHASES.FOLDER) {
+    const harvested = harvestDraft(draft, text, folders, canUseFolders, phase);
+    if (harvested.folderDecided) {
+      const note = harvested.newFolderName
+        ? `I'll **create a new folder** **${harvested.newFolderName}** and put the project there.`
+        : `Got it — I'll **place it** in **${harvested.folderLabel}**.`;
+      return continueDraft(harvested, folders, note);
+    }
     if (!canUseFolders) {
       const next = applyFolderChoice(draft, { key: 'uncategorized', label: 'Uncategorized' });
-      return nextAfterFolder(next, 'Folders are unavailable, so I will leave it uncategorized.');
+      return continueDraft(next, folders, 'Folders are unavailable, so I will leave it uncategorized.');
     }
+    if (isCreateNewFolderIntent(text)) {
+      return startNewFolderFlow(harvested, text, folders);
+    }
+    const guess = folderNameGuess(text);
+    if (guess) return offerCreateMissingFolder(harvested, guess, folders);
+    return {
+      draft: harvested,
+      phase: PHASES.FOLDER,
+      messages: [
+        bot("I need a placement: an **existing folder**, **Create new folder**, or **uncategorized**."),
+        askFolder(folders),
+      ],
+    };
+  }
 
-    const choice = resolveFolderChoice(text, folders);
-    if (!choice) {
+  // --- NEW FOLDER NAME ---
+  if (phase === PHASES.FOLDER_NEW) {
+    const harvested = harvestDraft(draft, text, folders, canUseFolders, PHASES.FOLDER_NEW);
+    if (harvested.folderDecided) {
+      const note = harvested.newFolderName
+        ? `I'll **create a new folder** **${harvested.newFolderName}** and put the project there.`
+        : `Got it — I'll **place it** in **${harvested.folderLabel}**.`;
+      return continueDraft(harvested, folders, note);
+    }
+    if (/^(uncategorized|skip|cancel|none)$/i.test(lower)) {
+      const next = applyFolderChoice(harvested, { key: 'uncategorized', label: 'Uncategorized' });
+      return continueDraft(next, folders, "Okay — I'll leave it uncategorized.");
+    }
+    if (isCreateNewFolderIntent(text) && !extractNewFolderName(text)) {
       return {
-        draft,
-        phase: PHASES.FOLDER,
-        messages: [
-          bot("I couldn't match that. Use a full path like `Brian/2025`, pick a number, or say **uncategorized**."),
-          askFolder(folders),
-        ],
+        draft: harvested,
+        phase: PHASES.FOLDER_NEW,
+        messages: [askNewFolderName()],
       };
     }
-
-    const next = applyFolderChoice(draft, choice);
-    return nextAfterFolder(
-      next,
-      `Got it — project will go in **${choice.label}**.`
-    );
+    const named = extractNewFolderName(text) || folderNameGuess(text);
+    if (named) {
+      const next = applyNewFolderChoice(harvested, named);
+      return continueDraft(next, folders, `I'll **create a new folder** **${named}** and put the project there.`);
+    }
+    return {
+      draft: harvested,
+      phase: PHASES.FOLDER_NEW,
+      messages: [
+        bot("Please type a folder name, or tap an existing folder to place the project there instead."),
+        askNewFolderName(),
+      ],
+    };
   }
 
   // --- PROJECT NAME ---
   if (phase === PHASES.PROJECT_NAME) {
-    const name = extractProjectName(text);
-    if (!name) {
-      return { draft, phase, messages: [bot('Please give a project name (e.g. `Cold Store Alpha`).')] };
+    const harvested = harvestDraft(draft, text, folders, canUseFolders, phase);
+    if (!harvested.name) {
+      return { draft: harvested, phase, messages: [bot('Please give a project name (e.g. `Cold Store Alpha`).')] };
     }
-    let next = { ...draft, name };
-    next = tryApplyFolderFromText(next, text, folders, canUseFolders);
-    const size = parseProjectSize(text);
-    if (size) next = applyProjectSize(next, size);
-
-    if (!next.folderDecided && canUseFolders) {
-      return ensureFolderOrContinue(next, folders, canUseFolders, `Project name set to **${name}**.`);
-    }
-
-    if (missingProjectSize(next)) {
-      return {
-        draft: next,
-        phase: PHASES.PROJECT_SIZE,
-        messages: [bot(`Project name set to **${name}**.`), askProjectSize(next)],
-      };
-    }
-    return {
-      draft: next,
-      phase: PHASES.WALL_THICKNESS,
-      messages: [bot(`Project **${name}** noted.`), askWallThickness()],
-    };
+    return continueDraft(harvested, folders, `Project name set to **${harvested.name}**.`);
   }
 
-  // --- PROJECT SIZE (must ask if missing) ---
+  // --- PROJECT SIZE ---
   if (phase === PHASES.PROJECT_SIZE) {
-    let next = { ...draft };
+    let next = harvestDraft(draft, text, folders, canUseFolders, phase);
     const size = parseProjectSize(text) || parseDimensionPair(text);
     if (size) next = applyProjectSize(next, size);
 
-    // Allow "width 24m, length 12m, height 6m"
     const wMatch = text.match(/width\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(m|mm|cm)?/i);
     const lMatch = text.match(/length\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(m|mm|cm)?/i);
     const hMatch = text.match(/height\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(m|mm|cm)?/i);
@@ -610,7 +821,6 @@ export function processChatMessage(phase, draft, userText, options = {}) {
     if (lMatch) next.length = parseSingleDimension(`${lMatch[1]}${lMatch[2] || ''}`) ?? next.length;
     if (hMatch) next.height = parseSingleDimension(`${hMatch[1]}${hMatch[2] || ''}`) ?? next.height;
 
-    // Three bare numbers
     if (missingProjectSize(next)) {
       const nums = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(m|mm|cm)?/gi)];
       if (nums.length >= 3) {
@@ -621,324 +831,134 @@ export function processChatMessage(phase, draft, userText, options = {}) {
     }
 
     if (missingProjectSize(next)) {
-      return {
-        draft: next,
-        phase: PHASES.PROJECT_SIZE,
-        messages: [askProjectSize(next)],
-      };
+      return { draft: next, phase: PHASES.PROJECT_SIZE, messages: [askProjectSize(next)] };
     }
-
-    return {
-      draft: next,
-      phase: PHASES.WALL_THICKNESS,
-      messages: [
-        bot(
-          `Site size set to ${formatMm(next.width)} × ${formatMm(next.length)}, height ${formatMm(next.height)}.`
-        ),
-        askWallThickness(),
-      ],
-    };
+    return continueDraft(
+      next,
+      folders,
+      `Site size set to ${formatMm(next.width)} × ${formatMm(next.length)}, height ${formatMm(next.height)}.`
+    );
   }
 
-  // --- WALL THICKNESS ---
+  // --- WALL THICKNESS (optional leftover step) ---
   if (phase === PHASES.WALL_THICKNESS) {
-    let thickness = draft.wall_thickness || 200;
+    let next = harvestDraft(draft, text, folders, canUseFolders, phase);
+    let thickness = next.wall_thickness || 100;
     if (/default|skip|ok|same/i.test(lower)) {
-      thickness = 200;
+      thickness = 100;
     } else {
-      const parsed = parseThicknessMm(text);
-      if (parsed == null || parsed <= 0) {
-        return {
-          draft,
-          phase,
-          messages: [bot('Please enter a wall thickness in mm (e.g. `150`), or **default**.')],
-        };
-      }
-      thickness = parsed;
+      const parsed = parseThicknessMm(text) ?? extractWallThickness(text);
+      if (parsed != null && parsed > 0) thickness = parsed;
     }
-    const next = { ...draft, wall_thickness: thickness };
-
-    if (next.rooms.length > 0) {
-      return beginRoomDetails(
-        { ...next, currentRoomIndex: 0 },
-        `Wall thickness ${formatMm(thickness)}. I'll collect details for each room.`
-      );
-    }
-
-    return {
-      draft: next,
-      phase: PHASES.ROOM_INTENT,
-      messages: [bot(`Wall thickness ${formatMm(thickness)}.`), askRoomIntent()],
-    };
+    next = { ...next, wall_thickness: thickness, wallThicknessDecided: true };
+    return continueDraft(next, folders, `Wall thickness ${formatThicknessMm(thickness)}.`);
   }
 
   // --- ROOM INTENT ---
   if (phase === PHASES.ROOM_INTENT) {
+    const harvested = harvestDraft(draft, text, folders, canUseFolders, phase);
     const yesNo = parseYesNo(text);
     const count = parseRoomCount(text);
-    const names = extractRoomNames(text);
 
     if (yesNo === false || count === 0) {
-      const next = { ...draft, skipRooms: true, rooms: [] };
-      return {
-        draft: next,
-        phase: PHASES.CONFIRM,
-        messages: [askConfirm(next, folders)],
-      };
+      return continueDraft({ ...harvested, skipRooms: true, rooms: [] }, folders);
     }
-
-    // Prefer explicit count ("yes, 2 rooms") over accidental name parsing
+    if (harvested.rooms.length > 0) {
+      return continueDraft(harvested, folders, `Great — ${harvested.rooms.length} room(s).`);
+    }
     if (count === 1) {
-      const next = {
-        ...draft,
+      return continueDraft({
+        ...harvested,
         rooms: [createEmptyRoom('Room 1')],
         currentRoomIndex: 0,
         skipRooms: false,
-      };
-      return beginRoomDetails(next, 'Okay — **1 room**.');
+      }, folders, 'Okay — **1 room**.');
     }
-
     if (count != null && count > 1) {
       const rooms = Array.from({ length: count }, (_, i) => createEmptyRoom(`Room ${i + 1}`));
-      const next = { ...draft, rooms, currentRoomIndex: 0, skipRooms: false };
       return {
-        draft: next,
+        draft: { ...harvested, rooms, currentRoomIndex: 0, skipRooms: false },
         phase: PHASES.ROOM_NAMES,
         messages: [
-          bot(`Okay, ${count} rooms. You can rename them now, or say **keep** to use Room 1…Room ${count}.`),
+          bot(`Okay, ${count} rooms. Rename them now, or say **keep** to use Room 1…Room ${count}.`),
           askRoomNames(),
         ],
       };
     }
-
-    if (names.length > 0 && yesNo !== false) {
-      const rooms = names.map((n) => createEmptyRoom(n));
-      const next = { ...draft, rooms, currentRoomIndex: 0, skipRooms: false };
-      return beginRoomDetails(next, `Great — ${rooms.length} room(s).`);
-    }
-
     if (yesNo === true) {
-      return {
-        draft,
-        phase: PHASES.ROOM_NAMES,
-        messages: [askRoomNames()],
-      };
+      return { draft: harvested, phase: PHASES.ROOM_NAMES, messages: [askRoomNames()] };
     }
-
     return {
-      draft,
+      draft: harvested,
       phase,
-      messages: [bot('Please reply **yes** (with room count/names) or **no**.')],
+      messages: [bot('Please reply with room names (`CHILLER, EXT HT`), **yes** + a count, or **no**.')],
     };
   }
 
   // --- ROOM NAMES ---
   if (phase === PHASES.ROOM_NAMES) {
-    let rooms = draft.rooms;
+    const harvested = harvestDraft(draft, text, folders, canUseFolders, phase);
+    if (harvested.rooms.length && harvested.rooms.some((r) => r.width && r.length)) {
+      return continueDraft(harvested, folders);
+    }
+    let rooms = harvested.rooms;
     if (!/^(keep|ok|same|default)$/i.test(lower)) {
       const names = extractRoomNames(text);
-      if (!names.length) {
-        return { draft, phase, messages: [askRoomNames()] };
+      if (!names.length && !rooms.length) {
+        return { draft: harvested, phase, messages: [askRoomNames()] };
       }
-      rooms = names.map((n) => createEmptyRoom(n));
+      if (names.length) rooms = names.map((n) => createEmptyRoom(n));
     } else if (!rooms.length) {
-      return { draft, phase, messages: [askRoomNames()] };
+      return { draft: harvested, phase, messages: [askRoomNames()] };
     }
-
-    const next = { ...draft, rooms, currentRoomIndex: 0, skipRooms: false };
-    return beginRoomDetails(next, `Rooms: ${rooms.map((r) => r.name).join(', ')}.`);
+    return continueDraft(
+      { ...harvested, rooms, currentRoomIndex: 0, skipRooms: false },
+      folders,
+      `Rooms: ${rooms.map((r) => r.name).join(', ')}.`
+    );
   }
 
-  // --- PER-ROOM FIELDS ---
-  if ([
-    PHASES.ROOM_SIZE,
-    PHASES.ROOM_HEIGHT,
-    PHASES.ROOM_TEMPERATURE,
-    PHASES.ROOM_FLOOR,
-    PHASES.ROOM_FLOOR_THICKNESS,
-    PHASES.ROOM_CEILING,
-    PHASES.ROOM_WALLS,
-  ].includes(phase)) {
-    const copied = tryCopyPrevious(draft, text, folders, {
-      copySize: phase === PHASES.ROOM_SIZE,
-    });
+  // --- PER-ROOM DETAILS (one message per room, or a dump of all rooms) ---
+  if (ROOM_DETAIL_PHASES.includes(phase)) {
+    const copied = tryCopyPrevious(draft, text, folders, { copySize: false });
     if (copied) return copied;
-  }
 
-  if (phase === PHASES.ROOM_SIZE) {
-    let dims = parseDimensionPair(text);
-    if (!dims && isFollowProjectSize(text)) {
-      if (draft.width == null || draft.length == null) {
-        return {
-          draft,
-          phase,
-          messages: [
-            bot('Project size is not set yet, so I need an explicit room size (e.g. `8m × 6m`).'),
-            askRoomSize(draft),
-          ],
+    let next = harvestDraft(draft, text, folders, canUseFolders, phase);
+    const spec = parseRoomDetailsFromText(text);
+    const rooms = [...next.rooms];
+    const idx = next.currentRoomIndex;
+    if (rooms[idx]) {
+      rooms[idx] = applySpecToRoom(rooms[idx], spec, next);
+      if (/^(ok|okay|defaults|default|same)$/i.test(lower) && next.width && next.length && rooms.length === 1) {
+        rooms[idx] = {
+          ...rooms[idx],
+          width: rooms[idx].width || next.width,
+          length: rooms[idx].length || next.length,
         };
       }
-      dims = { width: draft.width, length: draft.length };
     }
-    if (!dims) {
+    next = { ...next, rooms };
+
+    if (!rooms[idx]?.width || !rooms[idx]?.length) {
       return {
-        draft,
-        phase,
+        draft: next,
+        phase: PHASES.ROOM_DETAILS,
         messages: [
-          bot("I didn't catch a size. Reply like `8m × 6m`, or say **follow the project size**."),
-          askRoomSize(draft),
+          bot("I still need this room’s size. Example: `3050 × 8500` or `3050 × 8500, height 6000, 2 to 6°C, slab 100`."),
+          askRoomDetails(next),
         ],
       };
     }
-    const rooms = [...draft.rooms];
-    rooms[draft.currentRoomIndex] = {
-      ...rooms[draft.currentRoomIndex],
-      width: dims.width,
-      length: dims.length,
-    };
-    const next = { ...draft, rooms };
-    const note = isFollowProjectSize(text)
-      ? bot(`Using the project size: ${formatMm(dims.width)} × ${formatMm(dims.length)}.`)
-      : null;
-    return {
-      draft: next,
-      phase: PHASES.ROOM_HEIGHT,
-      messages: note ? [note, askRoomHeight(next)] : [askRoomHeight(next)],
-    };
+
+    rooms[idx] = finalizeRoom(rooms[idx], next);
+    next = { ...next, rooms };
+    return continueDraft(next, folders);
   }
 
-  if (phase === PHASES.ROOM_HEIGHT) {
-    let height = null;
-    if (/^(same|default|project)$/i.test(lower)) {
-      height = draft.height;
-    } else {
-      height = parseSingleDimension(text);
-    }
-    if (height == null || height <= 0) {
-      return { draft, phase, messages: [askRoomHeight(draft)] };
-    }
-    const rooms = [...draft.rooms];
-    rooms[draft.currentRoomIndex] = { ...rooms[draft.currentRoomIndex], height };
-    const next = { ...draft, rooms };
-    return {
-      draft: next,
-      phase: PHASES.ROOM_TEMPERATURE,
-      messages: [askRoomTemperature(next)],
-    };
-  }
-
-  if (phase === PHASES.ROOM_TEMPERATURE) {
-    const parsed = parseTemperature(text);
-    if (!parsed) {
-      return { draft, phase, messages: [askRoomTemperature(draft)] };
-    }
-    const rooms = [...draft.rooms];
-    rooms[draft.currentRoomIndex] = {
-      ...rooms[draft.currentRoomIndex],
-      temperature: parsed.temperature,
-      temperature_min: parsed.temperature_min ?? null,
-      temperature_max: parsed.temperature_max ?? null,
-    };
-    const next = { ...draft, rooms };
-    return {
-      draft: next,
-      phase: PHASES.ROOM_FLOOR,
-      messages: [askRoomFloor(next)],
-    };
-  }
-
-  if (phase === PHASES.ROOM_FLOOR) {
-    const floorType = parseFloorType(text);
-    if (!floorType) {
-      return { draft, phase, messages: [askRoomFloor(draft)] };
-    }
-    const rooms = [...draft.rooms];
-    rooms[draft.currentRoomIndex] = { ...rooms[draft.currentRoomIndex], floor_type: floorType };
-    const next = { ...draft, rooms };
-    if (floorType === 'None') {
-      rooms[draft.currentRoomIndex].floor_thickness = 0;
-      return {
-        draft: { ...next, rooms },
-        phase: PHASES.ROOM_CEILING,
-        messages: [askRoomCeiling({ ...next, rooms })],
-      };
-    }
-    return {
-      draft: next,
-      phase: PHASES.ROOM_FLOOR_THICKNESS,
-      messages: [askRoomFloorThickness(next)],
-    };
-  }
-
-  if (phase === PHASES.ROOM_FLOOR_THICKNESS) {
-    const thickness = parseFloorThickness(text);
-    if (thickness == null || thickness < 0) {
-      return { draft, phase, messages: [askRoomFloorThickness(draft)] };
-    }
-    const rooms = [...draft.rooms];
-    rooms[draft.currentRoomIndex] = {
-      ...rooms[draft.currentRoomIndex],
-      floor_thickness: thickness,
-    };
-    const next = { ...draft, rooms };
-    return {
-      draft: next,
-      phase: PHASES.ROOM_CEILING,
-      messages: [askRoomCeiling(next)],
-    };
-  }
-
-  if (phase === PHASES.ROOM_CEILING) {
-    const include = parseYesNo(text);
-    if (include == null) {
-      return { draft, phase, messages: [askRoomCeiling(draft)] };
-    }
-    const rooms = [...draft.rooms];
-    rooms[draft.currentRoomIndex] = {
-      ...rooms[draft.currentRoomIndex],
-      include_ceiling: include,
-    };
-    const next = { ...draft, rooms };
-    return {
-      draft: next,
-      phase: PHASES.ROOM_WALLS,
-      messages: [askRoomWalls(next)],
-    };
-  }
-
-  if (phase === PHASES.ROOM_WALLS) {
-    let inner = 'PPGI';
-    let outer = 'PPGI';
-    if (!/^(default|same|ok)$/i.test(lower)) {
-      const parts = text.split(/\/|,| and | & /i).map((p) => p.trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        inner = parseFaceMaterial(parts[0]) || null;
-        outer = parseFaceMaterial(parts[1]) || null;
-      } else {
-        const one = parseFaceMaterial(text);
-        if (one) {
-          inner = one;
-          outer = one;
-        } else {
-          return { draft, phase, messages: [askRoomWalls(draft)] };
-        }
-      }
-      if (!inner || !outer) {
-        return { draft, phase, messages: [askRoomWalls(draft)] };
-      }
-    }
-    const rooms = [...draft.rooms];
-    rooms[draft.currentRoomIndex] = {
-      ...rooms[draft.currentRoomIndex],
-      inner_face_material: inner,
-      outer_face_material: outer,
-    };
-    return advanceAfterRoomWalls({ ...draft, rooms }, folders);
-  }
 
   // --- CONFIRM ---
   if (phase === PHASES.CONFIRM) {
-    if (/^(create|confirm|yes|go|build|ok)$/i.test(lower)) {
+    if (/^(create|confirm|yes|go|build|ok)\b/i.test(lower)) {
       const layout = arrangeRooms(
         draft.rooms.map((r) => ({ name: r.name, width: r.width, length: r.length })),
         draft.width,

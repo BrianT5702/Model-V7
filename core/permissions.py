@@ -134,6 +134,17 @@ class IsEditorRole(BasePermission):
         return user_can_edit(request.user)
 
 
+class CanAccessProjectVersions(BasePermission):
+    """Anyone who can open the project may list/view versions. Editors save, restore, and delete."""
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            if _is_authenticated(request.user):
+                return True
+            return get_share_link_from_request(request) is not None
+        return user_can_edit(request.user)
+
+
 class CanManageProjectShareLinks(BasePermission):
     """Only editors can create/list/revoke share links."""
 

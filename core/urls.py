@@ -9,6 +9,12 @@ from .auth_views import (
     register_view,
     user_detail_view,
 )
+from .project_version_views import (
+    project_version_detail_view,
+    project_version_original_preview_view,
+    project_versions_view,
+    restore_project_version_view,
+)
 from .share_views import (
     project_share_links_view,
     resolve_share_link_view,
@@ -61,6 +67,22 @@ urlpatterns = [
     path('auth/users/', list_users_view, name='auth-users-list'),
     path('auth/salesmen/', list_salesmen_view, name='auth-salesmen-list'),
     path('auth/users/<int:user_id>/', user_detail_view, name='auth-user-detail'),
+    path('projects/<int:project_id>/versions/', project_versions_view, name='project-versions'),
+    path(
+        'projects/<int:project_id>/versions/original/',
+        project_version_original_preview_view,
+        name='project-version-original',
+    ),
+    path(
+        'projects/<int:project_id>/versions/<int:version_id>/',
+        project_version_detail_view,
+        name='project-version-detail',
+    ),
+    path(
+        'projects/<int:project_id>/versions/<int:version_id>/restore/',
+        restore_project_version_view,
+        name='project-version-restore',
+    ),
     path('projects/<int:project_id>/share-links/', project_share_links_view, name='project-share-links'),
     path(
         'projects/<int:project_id>/share-links/<int:link_id>/revoke/',

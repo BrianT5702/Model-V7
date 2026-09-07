@@ -43,6 +43,7 @@ class ProjectViewSet(ShareScopedModelViewSet):
         if self.action == 'list':
             queryset = (
                 Project.objects
+                .filter(hidden_from_list=False)
                 .select_related('folder', 'created_by', 'last_edited_by')
                 .only(
                     'id',
@@ -53,6 +54,7 @@ class ProjectViewSet(ShareScopedModelViewSet):
                     'wall_thickness',
                     'folder_id',
                     'list_order',
+                    'hidden_from_list',
                     'created_by_id',
                     'last_edited_by_id',
                     'created_at',
@@ -156,7 +158,22 @@ class ProjectViewSet(ShareScopedModelViewSet):
         )
 
         WallService.create_default_walls(project, storey=default_storey)
+        from .project_versions import ensure_project_baseline
+        ensure_project_baseline(project)
         return self._list_project_response(project, status.HTTP_201_CREATED)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        from .project_versions import prepare_project_original_on_open
+        show_original = str(request.query_params.get('original', '')).lower() in ('1', 'true', 'yes')
+        if show_original:
+            instance = prepare_project_original_on_open(instance, user=request.user)
+            instance = Project.objects.get(pk=instance.pk)
+        elif user_can_edit(request.user):
+            from .project_versions import ensure_project_baseline
+            instance = ensure_project_baseline(instance)
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     @action(detail=False, methods=['post'], url_path='import-from-pdf')
     def import_from_pdf(self, request):
@@ -1185,7 +1202,7 @@ class CeilingPlanViewSet(ShareScopedModelViewSet):
         """Stage 2: Analyze different panel orientation strategies"""
         project_id = request.data.get('project_id')
         panel_width = request.data.get('panel_width', 1150)
-        panel_length = request.data.get('panel_length', 'auto')
+        panel_length = request.data.get('panel_length', CeilingService.DEFAULT_PANEL_LENGTH)
         ceiling_thickness = request.data.get('ceiling_thickness', 150)
         
         if not project_id:
@@ -1219,7 +1236,7 @@ class CeilingPlanViewSet(ShareScopedModelViewSet):
         project_id = request.data.get('project_id')
         orientation_strategy = request.data.get('orientation_strategy', 'auto')
         panel_width = request.data.get('panel_width', 1150)
-        panel_length = request.data.get('panel_length', 'auto')
+        panel_length = request.data.get('panel_length', CeilingService.DEFAULT_PANEL_LENGTH)
         ceiling_thickness = request.data.get('ceiling_thickness', 150)
         
         # Extract additional generation parameters

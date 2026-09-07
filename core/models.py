@@ -68,6 +68,16 @@ class Project(models.Model):
         default=0,
         help_text="Sort order within a folder (or uncategorized group).",
     )
+    hidden_from_list = models.BooleanField(
+        default=False,
+        help_text="If True, this project is hidden on Home. Used for leftover version copies.",
+    )
+    baseline_snapshot = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Frozen original layout. Save version stores the current drawing, then reverts the live project to this snapshot.",
+    )
     panel_optimization = models.JSONField(
         null=True,
         blank=True,
@@ -106,6 +116,40 @@ class Project(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ProjectVersion(models.Model):
+    """Named snapshot of a project's layout. The live Project row stays current."""
+    project = models.ForeignKey(
+        Project,
+        related_name='versions',
+        on_delete=models.CASCADE,
+    )
+    number = models.PositiveIntegerField()
+    label = models.CharField(max_length=255, blank=True, default='')
+    snapshot = models.JSONField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='project_versions_created',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-number', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['project', 'number'],
+                name='unique_project_version_number',
+            ),
+        ]
+
+    def __str__(self):
+        label = (self.label or '').strip()
+        suffix = f' ({label})' if label else ''
+        return f'{self.project.name} v{self.number}{suffix}'
 
 
 class ProjectShareLink(models.Model):

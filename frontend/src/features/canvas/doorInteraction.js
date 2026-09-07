@@ -83,11 +83,12 @@ export function animateDoorToState(instance, doorContainer, doorInfo, open) {
 
   if (doorInfo.door_type === 'slide') {
     if (doorInfo.configuration === 'double_sided') {
-      if (doorContainer.children.length < 2) {
+      const leaves = doorContainer.children.filter((child) => child.userData?.isSlidingLeaf);
+      const leftDoor = leaves[0] || doorContainer.children[0];
+      const rightDoor = leaves[1] || doorContainer.children[1];
+      if (!leftDoor || !rightDoor) {
         return;
       }
-      const leftDoor = doorContainer.children[0];
-      const rightDoor = doorContainer.children[1];
       const origLeftPos = leftDoor.userData.origPosition || { x: leftDoor.position.x, z: leftDoor.position.z };
       const origRightPos = rightDoor.userData.origPosition || { x: rightDoor.position.x, z: rightDoor.position.z };
       if (!leftDoor.userData.origPosition) {
@@ -111,7 +112,8 @@ export function animateDoorToState(instance, doorContainer, doorInfo, open) {
       return;
     }
 
-    const doorPanel = doorContainer.children[0];
+    const doorPanel = doorContainer.children.find((child) => child.userData?.isSlidingLeaf)
+      || doorContainer.children[0];
     if (!doorPanel) {
       return;
     }

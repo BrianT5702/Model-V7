@@ -18,7 +18,7 @@ const ChatbotFab = ({
   return (
     <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3 pointer-events-none">
       {open && (
-        <div className="pointer-events-auto w-[min(100vw-1.5rem,24rem)] sm:w-[26rem] shadow-2xl rounded-2xl overflow-hidden">
+        <div className="pointer-events-auto w-[min(100vw-1.5rem,28rem)] sm:w-[32rem] shadow-2xl rounded-2xl overflow-hidden">
           <ProjectChatbot
             variant="panel"
             projects={projects}

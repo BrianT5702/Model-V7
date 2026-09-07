@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -51,6 +52,8 @@ def _serialize_model(instance):
         if field.name == 'id':
             continue
         if field.many_to_many:
+            continue
+        if field.name == 'baseline_snapshot':
             continue
         if _is_concrete_relation_field(field):
             data[field.name] = getattr(instance, f'{field.name}_id')
@@ -110,12 +113,17 @@ def _collect_project_queryset(project):
     }
 
 
-def export_project_by_name(project_name: str) -> dict:
-    try:
-        project = Project.objects.get(name=project_name)
-    except Project.DoesNotExist as exc:
-        raise ValueError(f'Project not found: {project_name!r}') from exc
+def _json_ready(payload: dict) -> dict:
+    return json.loads(json.dumps(payload, default=_json_default))
 
+
+def _as_pk(value):
+    if value is None or value == '':
+        return None
+    return int(value)
+
+
+def export_project(project: Project, *, include_comments: bool = True) -> dict:
     collected = _collect_project_queryset(project)
     payload = {
         'version': EXPORT_VERSION,
@@ -135,11 +143,19 @@ def export_project_by_name(project_name: str) -> dict:
         'ceiling_plans': [_serialize_model(item) for item in collected['ceiling_plans']],
         'floor_panels': [_serialize_model(item) for item in collected['floor_panels']],
         'floor_plans': [_serialize_model(item) for item in collected['floor_plans']],
-        'comments': [_serialize_model(item) for item in collected['comments']],
+        'comments': [_serialize_model(item) for item in collected['comments']] if include_comments else [],
         'room_walls': collected['room_walls'],
         'zone_rooms': collected['zone_rooms'],
     }
-    return payload
+    return _json_ready(payload)
+
+
+def export_project_by_name(project_name: str) -> dict:
+    try:
+        project = Project.objects.get(name=project_name)
+    except Project.DoesNotExist as exc:
+        raise ValueError(f'Project not found: {project_name!r}') from exc
+    return export_project(project)
 
 
 def export_project_to_file(project_name: str, output_path: str) -> dict:
@@ -171,65 +187,62 @@ def _create_rows(model, rows, pk_map, fk_maps=None, null_fields=None):
                 row[f'{field_name}_id'] = row.pop(field_name)
 
     for row in rows:
-        old_pk = row.pop('_pk')
+        old_pk = _as_pk(row.pop('_pk', None))
+        row.pop('id', None)
+        row.pop('created_at', None)
+        row.pop('updated_at', None)
         for field_name, ref_map in fk_maps.items():
             if field_name not in row:
                 continue
             value = row.pop(field_name)
             if value is not None:
-                value = ref_map[value]
+                mapped = ref_map.get(_as_pk(value))
+                if mapped is None and _as_pk(value) is not None:
+                    raise KeyError(f'Could not map {field_name} id {value!r}')
+                value = mapped
             set_fk(row, field_name, value)
         for field_name in null_fields:
             row.pop(field_name, None)
             set_fk(row, field_name, None)
         finalize_row_fks(row)
         instance = model.objects.create(**row)
-        pk_map[old_pk] = instance.pk
+        if old_pk is not None:
+            pk_map[old_pk] = instance.pk
+            pk_map[str(old_pk)] = instance.pk
     return pk_map
 
 
-@transaction.atomic
-def import_project_from_payload(payload: dict, *, replace: bool = False, rename: str | None = None) -> Project:
-    if payload.get('version') != EXPORT_VERSION:
-        raise ValueError('Unsupported export file version.')
+def _map_pk(pk_map, old_pk):
+    key = _as_pk(old_pk)
+    if key is None:
+        raise KeyError(old_pk)
+    if key in pk_map:
+        return pk_map[key]
+    return pk_map[str(key)]
 
-    project_row = dict(payload['project'])
-    old_project_pk = project_row.pop('_pk')
-    project_name = rename or project_row.get('name') or payload.get('source_project_name')
-    project_row['name'] = project_name
-    project_row['folder_id'] = None
-    project_row.pop('folder', None)
-    project_row['created_by_id'] = None
-    project_row.pop('created_by', None)
-    project_row['last_edited_by_id'] = None
-    project_row.pop('last_edited_by', None)
 
-    existing = Project.objects.filter(name=project_name).first()
-    if existing and not replace:
-        raise ValueError(
-            f'Local project {project_name!r} already exists. '
-            'Use --replace to overwrite it or --rename to import under a new name.'
-        )
-    if existing and replace:
-        existing.delete()
+def _project_payload_pk(payload: dict):
+    project_row = payload.get('project') or {}
+    return _as_pk(project_row.get('_pk') or payload.get('source_project_id'))
+
+
+def _apply_layout_from_payload(project: Project, payload: dict, *, include_comments: bool = False):
+    old_project_pk = _project_payload_pk(payload)
+    if old_project_pk is None:
+        old_project_pk = project.pk
 
     storey_map = {}
     wall_map = {}
     room_map = {}
     door_map = {}
     zone_map = {}
-
-    for field in Project._meta.concrete_fields:
-        if _is_concrete_relation_field(field):
-            project_row.pop(field.name, None)
-
-    project = Project.objects.create(**project_row)
+    project_pk_map = {old_project_pk: project.pk, str(old_project_pk): project.pk}
 
     _create_rows(
         Storey,
         [dict(row) for row in payload.get('storeys', [])],
         storey_map,
-        fk_maps={'project': {old_project_pk: project.pk}},
+        fk_maps={'project': project_pk_map},
     )
 
     wall_rows = []
@@ -258,9 +271,15 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
         fk_maps={'storey': storey_map},
     )
 
-    for old_room_pk, old_wall_pks in payload.get('room_walls', {}).items():
-        room = Room.objects.get(pk=room_map[int(old_room_pk)])
-        room.walls.set([wall_map[int(old_wall_pk)] for old_wall_pk in old_wall_pks])
+    for old_room_pk, old_wall_pks in (payload.get('room_walls') or {}).items():
+        room = Room.objects.get(pk=_map_pk(room_map, old_room_pk))
+        room.walls.set([
+            _map_pk(wall_map, old_wall_pk)
+            for old_wall_pk in old_wall_pks
+            if _as_pk(old_wall_pk) is not None and (
+                _as_pk(old_wall_pk) in wall_map or str(_as_pk(old_wall_pk)) in wall_map
+            )
+        ])
 
     door_rows = []
     for row in payload.get('doors', []):
@@ -329,9 +348,15 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
         fk_maps={'storey': storey_map},
     )
 
-    for old_zone_pk, old_room_pks in payload.get('zone_rooms', {}).items():
-        zone = CeilingZone.objects.get(pk=zone_map[int(old_zone_pk)])
-        zone.rooms.set([room_map[int(old_room_pk)] for old_room_pk in old_room_pks])
+    for old_zone_pk, old_room_pks in (payload.get('zone_rooms') or {}).items():
+        zone = CeilingZone.objects.get(pk=_map_pk(zone_map, old_zone_pk))
+        zone.rooms.set([
+            _map_pk(room_map, old_room_pk)
+            for old_room_pk in old_room_pks
+            if _as_pk(old_room_pk) is not None and (
+                _as_pk(old_room_pk) in room_map or str(_as_pk(old_room_pk)) in room_map
+            )
+        ])
 
     _create_rows(
         CeilingPanel,
@@ -361,9 +386,14 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
         fk_maps={'room': room_map},
     )
 
+    if not include_comments:
+        return
+
     for row in payload.get('comments', []):
         item = dict(row)
         item.pop('_pk', None)
+        item.pop('id', None)
+        item.pop('created_at', None)
         item['project_id'] = project.pk
         item.pop('project', None)
         item['author_id'] = None
@@ -371,9 +401,123 @@ def import_project_from_payload(payload: dict, *, replace: bool = False, rename:
         item['resolved_by_id'] = None
         item.pop('resolved_by', None)
         wall_ids = item.get('wall_ids') or []
-        item['wall_ids'] = [wall_map[int(wall_id)] for wall_id in wall_ids if int(wall_id) in wall_map]
+        remapped = []
+        for wall_id in wall_ids:
+            key = _as_pk(wall_id)
+            if key is None:
+                continue
+            if key in wall_map:
+                remapped.append(wall_map[key])
+            elif str(key) in wall_map:
+                remapped.append(wall_map[str(key)])
+        item['wall_ids'] = remapped
         ProjectComment.objects.create(**item)
 
+
+def clear_project_layout(project: Project):
+    project_id = project.pk
+    rooms = Room.objects.filter(project_id=project_id)
+    zones = CeilingZone.objects.filter(project_id=project_id)
+    room_ids = list(rooms.values_list('pk', flat=True))
+    zone_ids = list(zones.values_list('pk', flat=True))
+    CeilingPanel.objects.filter(Q(room_id__in=room_ids) | Q(zone_id__in=zone_ids)).delete()
+    CeilingPlan.objects.filter(Q(room_id__in=room_ids) | Q(zone_id__in=zone_ids)).delete()
+    FloorPanel.objects.filter(room_id__in=room_ids).delete()
+    FloorPlan.objects.filter(room_id__in=room_ids).delete()
+    zones.delete()
+    Window.objects.filter(door__project_id=project_id).delete()
+    WallWindow.objects.filter(wall__project_id=project_id).delete()
+    Door.objects.filter(project_id=project_id).delete()
+    Intersection.objects.filter(project_id=project_id).delete()
+    PlanAnnotation.objects.filter(project_id=project_id).delete()
+    for room in rooms:
+        room.walls.clear()
+    rooms.delete()
+    Wall.objects.filter(project_id=project_id).delete()
+    Storey.objects.filter(project_id=project_id).delete()
+
+
+LAYOUT_PROJECT_FIELDS = ('width', 'length', 'height', 'wall_thickness', 'panel_optimization')
+
+
+def _apply_project_layout_fields(project: Project, payload: dict):
+    project_row = payload.get('project') or {}
+    for field_name in LAYOUT_PROJECT_FIELDS:
+        if field_name in project_row:
+            setattr(project, field_name, project_row[field_name])
+
+
+@transaction.atomic
+def restore_project_from_payload(project: Project, payload: dict, *, user=None) -> Project:
+    if payload.get('version') != EXPORT_VERSION:
+        raise ValueError('Unsupported snapshot version.')
+    working = copy.deepcopy(payload)
+    _apply_project_layout_fields(project, working)
+    update_fields = list(LAYOUT_PROJECT_FIELDS)
+    if user is not None and getattr(user, 'is_authenticated', False):
+        project.last_edited_by = user
+        update_fields.append('last_edited_by')
+    project.save(update_fields=update_fields)
+    clear_project_layout(project)
+    _apply_layout_from_payload(project, working, include_comments=False)
+    return project
+
+
+@transaction.atomic
+def import_project_from_payload(
+    payload: dict,
+    *,
+    replace: bool = False,
+    rename: str | None = None,
+    folder=None,
+    user=None,
+    include_comments: bool = True,
+) -> Project:
+    if payload.get('version') != EXPORT_VERSION:
+        raise ValueError('Unsupported export file version.')
+
+    working = copy.deepcopy(payload)
+    project_row = dict(working.get('project') or {})
+    project_row.pop('_pk', None)
+    project_name = rename or project_row.get('name') or working.get('source_project_name')
+    project_row['name'] = project_name
+    project_row['folder_id'] = getattr(folder, 'pk', None) if folder is not None else None
+    project_row.pop('folder', None)
+    project_row['created_by_id'] = user.pk if user is not None and getattr(user, 'is_authenticated', False) else None
+    project_row.pop('created_by', None)
+    project_row['last_edited_by_id'] = project_row['created_by_id']
+    project_row.pop('last_edited_by', None)
+    project_row.pop('created_at', None)
+    project_row.pop('updated_at', None)
+
+    existing = Project.objects.filter(name=project_name).first()
+    if existing and not replace:
+        raise ValueError(
+            f'Local project {project_name!r} already exists. '
+            'Use --replace to overwrite it or --rename to import under a new name.'
+        )
+    if existing and replace:
+        existing.delete()
+
+    for field in Project._meta.concrete_fields:
+        if _is_concrete_relation_field(field):
+            project_row.pop(field.name, None)
+
+    project = Project.objects.create(**project_row)
+    _apply_layout_from_payload(project, working, include_comments=include_comments)
+    return project
+
+
+def copy_project_from_payload(payload: dict, *, name: str, folder=None, user=None) -> Project:
+    project = import_project_from_payload(
+        payload,
+        rename=name,
+        folder=folder,
+        user=user,
+        include_comments=False,
+    )
+    project.hidden_from_list = True
+    project.save(update_fields=['hidden_from_list'])
     return project
 
 

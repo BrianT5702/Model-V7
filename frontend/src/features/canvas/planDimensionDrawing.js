@@ -10,11 +10,9 @@ import {
     comparePlanDimensionsDrawOrder,
     createDimensionLaneCounters,
     consumeDimensionLane,
-    getPlanExteriorSide,
     getPlanDimensionLaneConfig,
     getDimensionSpanForLane,
     getDimensionEdge,
-    computeExteriorPlanLabelCoords,
     getPlanExteriorFixedColumnX,
     rememberPlanExteriorColumnX,
     applyPlanOuterTierMinOffset,
@@ -24,14 +22,16 @@ import {
     computeWallPlanDimensionFontSize,
     resolveWallExteriorPlacementSide,
     placeExteriorWallDimensionAvoidingLabels,
-    drawOrthoPlanDimensionGeometryLikeWall
+    drawOrthoPlanDimensionGeometryLikeWall,
+    insetBoundsToInnerFaces
 } from './drawing';
 import {
+    hasLabelOverlap,
     calculateHorizontalLabelBounds,
-    calculateVerticalLabelBounds,
     calculateRotatedVerticalDimBounds,
     exteriorVerticalTextCenterX,
-    buildVerticalPlanLabelEntry
+    buildVerticalPlanLabelEntry,
+    overlapsDimensionText
 } from './collisionDetection';
 
 /**
@@ -85,15 +85,16 @@ export function drawCeilingPlanDimensionOnContext(
 ) {
     const { startX, endX, startY, endY, dimension: length, type, color, priority, avoidArea } = dimension;
     const isHorizontal = getPlanDimensionOrientation(dimension);
-    const dedupKey = typeof length === 'number' ? planCeilingValueDedupKey(length, isHorizontal) : null;
+    const dedupKey =
+        !dimension.skipValueDedup && typeof length === 'number'
+            ? planCeilingValueDedupKey(length, isHorizontal)
+            : null;
     if (dedupKey && state.dimensionValuesSeen?.has(dedupKey)) return;
     if (dedupKey) state.dimensionValuesSeen?.add(dedupKey);
 
     const midX = (startX + endX) / 2;
     const midY = (startY + endY) / 2;
     const dimensionKey = `${startX.toFixed(2)}_${startY.toFixed(2)}_${endX.toFixed(2)}_${endY.toFixed(2)}_${type || 'default'}`;
-    const storedPlacement = state.placementMemory.get(dimensionKey);
-    const lockedSide = storedPlacement ? storedPlacement.side : null;
 
     const fontSize = computeWallPlanDimensionFontSize(state.scaleFactor, state.initialScale);
     const previousFont = ctx.font;
@@ -105,18 +106,9 @@ export function drawCeilingPlanDimensionOnContext(
     const gb = dimension.groupBounds;
     const spanMidX = gb ? (gb.minX + gb.maxX) / 2 : midX;
     const spanMidY = gb ? (gb.minY + gb.maxY) / 2 : midY;
-    const anchorX = gb ? spanMidX : midX;
-    const anchorY = gb ? spanMidY : midY;
 
     const laneCfg = getPlanDimensionLaneConfig(priority);
     const wallLikeSpacing = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
-    const preferredSide =
-        !isHorizontal && planBounds && anchorX > (planBounds.minX + planBounds.maxX) / 2 ? 'side2' : null;
-    const preferredExteriorSide =
-        lockedSide ||
-        preferredSide ||
-        (planBounds ? getPlanExteriorSide(isHorizontal, anchorX, anchorY, planBounds) : 'side1');
-
     const { lo: spanLo, hi: spanHi } = getDimensionSpanForLane(dimension, isHorizontal);
     const sf = state.scaleFactor;
     const ox = state.offsetX;
@@ -124,50 +116,17 @@ export function drawCeilingPlanDimensionOnContext(
     const padH = 2;
     const padV = 8;
 
-    let side = lockedSide || preferredExteriorSide;
-    if (planBounds) {
-        const trialOffset = laneCfg.baseOffset;
-        const side1Coords = computeExteriorPlanLabelCoords(
-            isHorizontal,
-            'side1',
-            trialOffset,
-            planBounds,
-            spanMidX,
-            spanMidY,
-            sf,
-            ox,
-            oy
-        );
-        const side2Coords = computeExteriorPlanLabelCoords(
-            isHorizontal,
-            'side2',
-            trialOffset,
-            planBounds,
-            spanMidX,
-            spanMidY,
-            sf,
-            ox,
-            oy
-        );
-        const side1Bounds = isHorizontal
-            ? calculateHorizontalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV)
-            : calculateVerticalLabelBounds(side1Coords.labelX, side1Coords.labelY, textWidth, padH, padV);
-        const side2Bounds = isHorizontal
-            ? calculateHorizontalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV)
-            : calculateVerticalLabelBounds(side2Coords.labelX, side2Coords.labelY, textWidth, padH, padV);
-        side =
-            lockedSide ||
-            resolveWallExteriorPlacementSide({
-                isHorizontal,
-                wallMidX: spanMidX,
-                wallMidY: spanMidY,
-                modelBounds: planBounds,
-                dimensionLanes,
-                side1Bounds,
-                side2Bounds,
-                placedLabels
-            });
-    }
+    // Same as wall plan: nearest project edge only. Never flip a top-edge
+    // dimension onto the bottom of the site (or left onto right) when a row is busy.
+    const side = planBounds
+        ? resolveWallExteriorPlacementSide({
+              isHorizontal,
+              wallMidX: spanMidX,
+              wallMidY: spanMidY,
+              modelBounds: planBounds,
+              dimensionLanes
+          })
+        : 'side1';
 
     let offsetPx = consumeDimensionLane(
         dimensionLanes,
@@ -204,9 +163,11 @@ export function drawCeilingPlanDimensionOnContext(
             paddingH: padH,
             paddingV: padV,
             fixedLabelX: fixedColumnX,
-            fontSize
+            fontSize,
+            lockRow: true
         });
         if (!placed) {
+            ctx.font = previousFont;
             return;
         }
         labelX = placed.labelX;
@@ -221,14 +182,18 @@ export function drawCeilingPlanDimensionOnContext(
         labelY = spanMidY * sf + oy;
     }
 
-    if (!storedPlacement) state.placementMemory.set(dimensionKey, { side });
+    state.placementMemory?.set(dimensionKey, { side });
 
     const dxLine = endX - startX;
     const dyLine = endY - startY;
     const angleDeg = Math.atan2(dyLine, dxLine) * (180 / Math.PI);
+    const startXScreen = startX * sf + ox;
+    const endXScreen = endX * sf + ox;
     const startYScreen = startY * sf + oy;
     const endYScreen = endY * sf + oy;
-    if (!isHorizontal) {
+    if (isHorizontal) {
+        labelX = (startXScreen + endXScreen) / 2;
+    } else {
         labelY = (startYScreen + endYScreen) / 2;
     }
 
@@ -262,7 +227,15 @@ export function drawCeilingPlanDimensionOnContext(
         return;
     }
 
-    const clipBounds = bounds;
+    if (
+        type?.startsWith('alu_rail_') &&
+        hasLabelOverlap(wallStyleBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)
+    ) {
+        ctx.font = previousFont;
+        return;
+    }
+
+    const clipBounds = insetBoundsToInnerFaces(bounds, state.walls);
     drawOrthoPlanDimensionGeometryLikeWall(
         ctx,
         { startX, startY, endX, endY, isHorizontal, labelX, labelY, textWidth, color },
@@ -288,25 +261,29 @@ export function drawCeilingPlanDimensionOnContext(
         });
     }
 
-    if (isHorizontal) {
-        allLabels.push({
-            x: wallStyleBounds.x,
-            y: wallStyleBounds.y,
-            width: wallStyleBounds.width,
-            height: wallStyleBounds.height,
-            side: dimSide,
-            text,
-            angle: angleDeg,
-            type: 'plan',
-            textColor: color
-        });
-    } else {
-        allLabels.push(
-            buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
+    if (!overlapsDimensionText(wallStyleBounds, allLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
+        if (isHorizontal) {
+            allLabels.push({
+                x: wallStyleBounds.x,
+                y: wallStyleBounds.y,
+                width: wallStyleBounds.width,
+                height: wallStyleBounds.height,
+                cx: labelX,
+                cy: labelY,
+                side: dimSide,
+                text,
+                angle: angleDeg,
                 type: 'plan',
                 textColor: color
-            })
-        );
+            });
+        } else {
+            allLabels.push(
+                buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
+                    type: 'plan',
+                    textColor: color
+                })
+            );
+        }
     }
     ctx.font = previousFont;
 }

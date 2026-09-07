@@ -45,6 +45,13 @@ export function isLabelPlacementClean(labelBounds, placedLabels, minSeparation =
     return !hasLabelOverlap(labelBounds, placedLabels, minSeparation);
 }
 
+/** True when this box sits on another dimension number (ignore door/wall obstacles). */
+export function overlapsDimensionText(labelBounds, placedLabels, minSeparation = DIMENSION_CONFIG.LABEL_MIN_SEPARATION) {
+    if (!labelBounds || !placedLabels?.length) return false;
+    const textLabels = placedLabels.filter((existing) => existing.text != null && String(existing.text).length > 0);
+    return hasLabelOverlap(labelBounds, textLabels, minSeparation);
+}
+
 export function hasLabelOverlap(labelBounds, placedLabels, minSeparation = 3) {
     // Quick spatial optimization: only check labels that are potentially close
     // Calculate approximate distance to filter out obviously far labels
@@ -145,6 +152,8 @@ export function buildVerticalPlanLabelEntry(
         y: b.y,
         width: b.width,
         height: b.height,
+        cx: textCenterX,
+        cy: labelY,
         side,
         text,
         angle: angleDeg,
@@ -564,7 +573,8 @@ export function tryPlaceExteriorDimensionLabel({
     minSeparation = DIMENSION_CONFIG.LABEL_MIN_SEPARATION,
     fixedLabelX = null,
     fontSize = null,
-    yBiasPx = 0
+    yBiasPx = 0,
+    lockAlongSpan = false
 }) {
     if (!bounds || !Number.isFinite(spanLo) || !Number.isFinite(spanHi)) return null;
     const sf = scaleFactor;
@@ -587,8 +597,10 @@ export function tryPlaceExteriorDimensionLabel({
             const usable = Math.max(0, xHi - xLo - 2 * halfW);
             const step = Math.max(6, Math.min(halfW, usable / 6 || halfW));
             out.push(xCenter);
-            for (let d = step; d <= usable / 2 + step; d += step) {
-                out.push(xCenter + d, xCenter - d);
+            if (!lockAlongSpan) {
+                for (let d = step; d <= usable / 2 + step; d += step) {
+                    out.push(xCenter + d, xCenter - d);
+                }
             }
             // A span narrower than the text inverts these limits, and clamping to an
             // inverted range lands past the far end — the label then reads as belonging to
@@ -620,10 +632,13 @@ export function tryPlaceExteriorDimensionLabel({
         const step = Math.max(4, Math.min(halfH / 2, usable / 12 || halfH / 2));
         const yEndLo = yLo + halfH;
         const yEndHi = yHi - halfH;
-        // Prefer span center (matches horizontal dims and readable placement on the line).
-        const ys = [yCenter, yEndLo, yEndHi];
-        for (let d = step; d <= usable / 2 + step; d += step) {
-            ys.push(yCenter + d, yCenter - d);
+        // Prefer span center so the number sits on the line it measures. Sliding to
+        // the ticks (yEndLo / yEndHi) makes stacked chain dims unreadable.
+        const ys = lockAlongSpan ? [yCenter] : [yCenter, yEndLo, yEndHi];
+        if (!lockAlongSpan) {
+            for (let d = step; d <= usable / 2 + step; d += step) {
+                ys.push(yCenter + d, yCenter - d);
+            }
         }
         // Rotated text is as tall as the number is long, so a short wall inverts these
         // limits; clamping to an inverted range drops the label below the wall it measures.

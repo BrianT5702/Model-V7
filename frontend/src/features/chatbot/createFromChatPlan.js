@@ -44,6 +44,25 @@ function wallPayload({
   };
 }
 
+function pointOnWall(point, wall, tol = 1) {
+  const dx = Number(wall.end_x) - Number(wall.start_x);
+  const dy = Number(wall.end_y) - Number(wall.start_y);
+  const len = Math.hypot(dx, dy);
+  if (len < 0.001) return false;
+  const ux = dx / len;
+  const uy = dy / len;
+  const relX = point.x - Number(wall.start_x);
+  const relY = point.y - Number(wall.start_y);
+  const along = relX * ux + relY * uy;
+  const perp = Math.abs(relX * -uy + relY * ux);
+  return perp <= tol && along >= -tol && along <= len + tol;
+}
+
+/** True when both ends already lie on an existing wall (site boundary or earlier segment). */
+function isSegmentCoveredByWalls(start, end, walls, tol = 1) {
+  return walls.some((wall) => pointOnWall(start, wall, tol) && pointOnWall(end, wall, tol));
+}
+
 function resolveRoomWallIds(roomPoints, walls, preferDefaultBoundary = false) {
   let wallIds = detectRoomWalls(roomPoints, walls, 2);
   if (wallIds.length >= 3) return wallIds;
@@ -146,6 +165,7 @@ export async function createProjectFromChatDraft(draft) {
       for (const segment of uniqueSegments) {
         const key = segmentKey(segment.start, segment.end);
         if (wallBySegment.has(key)) continue;
+        if (isSegmentCoveredByWalls(segment.start, segment.end, walls)) continue;
 
         const owner = layout.placed.find((room) => {
           const pts = room.room_points;
@@ -187,7 +207,7 @@ export async function createProjectFromChatDraft(draft) {
           const start = pts[i];
           const end = pts[(i + 1) % pts.length];
           const key = segmentKey(start, end);
-          if (!wallBySegment.has(key)) {
+          if (!wallBySegment.has(key) && !isSegmentCoveredByWalls(start, end, walls)) {
             const response = await api.post('/walls/', wallPayload({
               projectId,
               storeyId,
@@ -288,7 +308,8 @@ export async function createProjectFromChatDraft(draft) {
         project_id: projectId,
         orientation_strategy: 'auto',
         panel_width: 1150,
-        panel_length: 'auto',
+        panel_length: 6000,
+        custom_panel_length: 6000,
         ceiling_thickness: 150,
         support_type: 'nylon',
         support_config: {

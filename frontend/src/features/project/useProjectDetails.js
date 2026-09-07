@@ -76,6 +76,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const historyResyncNeededRef = useRef(false);
   const historyIdleResolversRef = useRef([]);
   const historyActionChainRef = useRef(Promise.resolve());
+  const layoutAuthorityRef = useRef('original');
   const [isHistoryBusy, setIsHistoryBusy] = useState(false);
   const [planAnnotations, setPlanAnnotations] = useState([]);
   const [filteredPlanAnnotations, setFilteredPlanAnnotations] = useState([]);
@@ -424,12 +425,12 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const ensureStoreys = useCallback(async (projectData = null, prefetchedStoreys = null) => {
     setIsStoreyLoading(true);
     try {
-      if (projectData && Array.isArray(projectData.storeys) && projectData.storeys.length > 0) {
-        return applyStoreyList(projectData.storeys);
-      }
-
       if (Array.isArray(prefetchedStoreys) && prefetchedStoreys.length > 0) {
         return applyStoreyList(prefetchedStoreys);
+      }
+
+      if (projectData && Array.isArray(projectData.storeys) && projectData.storeys.length > 0) {
+        return applyStoreyList(projectData.storeys);
       }
 
       const response = await api.get(`/storeys/?project=${projectId}`);
@@ -1330,12 +1331,24 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     const syncGeneration = historySyncGenerationRef.current;
     historySyncInFlightRef.current = true;
     setIsHistoryBusy(true);
+    const shouldAbort = () => (
+      historySyncGenerationRef.current !== syncGeneration
+      || layoutAuthorityRef.current === 'original'
+    );
     try {
-      const result = await restoreProjectSnapshot(api, projectId, snapshot);
+      if (shouldAbort()) {
+        return;
+      }
+      const result = await restoreProjectSnapshot(api, projectId, snapshot, { shouldAbort });
 
-      // User undid/redid further while this sync was running — keep the newer canvas.
-      if (historySyncGenerationRef.current !== syncGeneration) {
-        historyResyncNeededRef.current = true;
+      if (shouldAbort() || result.aborted) {
+        if (layoutAuthorityRef.current === 'original') {
+          try {
+            await api.get(`/projects/${projectId}/?original=1`);
+          } catch (repairError) {
+            console.warn('Could not restore original after cancelled undo/redo sync:', repairError);
+          }
+        }
         return;
       }
 
@@ -1372,10 +1385,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       }
     } finally {
       historySyncInFlightRef.current = false;
-      if (historyResyncNeededRef.current) {
+      if (historyResyncNeededRef.current && layoutAuthorityRef.current !== 'original') {
         historyResyncNeededRef.current = false;
         void drainHistorySync();
       } else {
+        historyResyncNeededRef.current = false;
         setIsHistoryBusy(false);
         notifyHistoryIdle();
       }
@@ -1383,6 +1397,9 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   }, [projectId, syncProjectEntitiesFromApi, snapshotsEntityIdsMatch, notifyHistoryIdle]);
 
   const scheduleHistorySync = useCallback(() => {
+    if (layoutAuthorityRef.current === 'original') {
+      return;
+    }
     if (historySyncInFlightRef.current) {
       historyResyncNeededRef.current = true;
       return;
@@ -1414,6 +1431,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     });
   }, [drainHistorySync]);
 
+  const waitForPendingProjectWrites = useCallback(async () => {
+    await historyActionChainRef.current;
+    await waitForHistoryIdle();
+  }, [waitForHistoryIdle]);
+
   const applyHistorySnapshot = useCallback((snapshot) => {
     clearDimensionPlacementMemory();
     historySyncGenerationRef.current += 1;
@@ -1433,6 +1455,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
 
     const run = async () => {
+      layoutAuthorityRef.current = 'working';
       await waitForHistoryIdle();
       const beforeSnapshot = captureProjectSnapshot(
         wallsRef.current,
@@ -1496,7 +1519,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   }, []);
 
   // Fetch project details (parallel requests for faster load)
-  const fetchProjectDetails = async () => {
+  const fetchProjectDetails = async ({ showOriginal = false } = {}) => {
     if (!projectId || projectId === 'undefined' || projectId === 'null') {
       console.warn('ProjectDetails: projectId is missing or invalid, skipping fetch');
       setProjectLoadError('Invalid project ID. Please navigate to a valid project.');
@@ -1504,21 +1527,41 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
 
     try {
-      const [
-        projectResponse,
-        wallsResponse,
-        doorsResponse,
-        intersectionsResponse,
-        roomsResponse,
-        storeysResponse,
-      ] = await Promise.all([
-        api.get(`/projects/${projectId}/`),
+      const projectUrl = showOriginal
+        ? `/projects/${projectId}/?original=1`
+        : `/projects/${projectId}/`;
+      const layoutRequests = [
         api.get(`/projects/${projectId}/walls/`),
         api.get(`/doors/?project=${projectId}`),
         api.get(`/intersections/?project=${projectId}`),
         api.get(`/rooms/?project=${projectId}`),
         api.get(`/storeys/?project=${projectId}`),
-      ]);
+      ];
+      let projectResponse;
+      let wallsResponse;
+      let doorsResponse;
+      let intersectionsResponse;
+      let roomsResponse;
+      let storeysResponse;
+      if (showOriginal) {
+        projectResponse = await api.get(projectUrl);
+        [
+          wallsResponse,
+          doorsResponse,
+          intersectionsResponse,
+          roomsResponse,
+          storeysResponse,
+        ] = await Promise.all(layoutRequests);
+      } else {
+        [
+          projectResponse,
+          wallsResponse,
+          doorsResponse,
+          intersectionsResponse,
+          roomsResponse,
+          storeysResponse,
+        ] = await Promise.all([api.get(projectUrl), ...layoutRequests]);
+      }
 
       let planAnnotationsData = [];
       try {
@@ -1541,6 +1584,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       setRooms(Array.isArray(roomsResponse.data) ? roomsResponse.data : []);
       setPlanAnnotations(planAnnotationsData);
       const prefetchedStoreys = Array.isArray(storeysResponse?.data) ? storeysResponse.data : [];
+      setActiveStoreyId(null);
       await ensureStoreys(projectData, prefetchedStoreys);
       setStoreyError('');
       setProjectLoadError('');
@@ -1556,25 +1600,90 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   };
 
+  const cancelPendingHistorySync = useCallback(() => {
+    historySyncGenerationRef.current += 1;
+    historyTargetSnapshotRef.current = null;
+    historyResyncNeededRef.current = false;
+    if (historySyncTimerRef.current) {
+      clearTimeout(historySyncTimerRef.current);
+      historySyncTimerRef.current = null;
+    }
+  }, []);
+
+  const applyLayoutPreview = (payload) => {
+    layoutAuthorityRef.current = 'original';
+    cancelPendingHistorySync();
+    projectHistory.clear();
+    setSharedPanelData({
+      wallPanels: null,
+      ceilingPanels: null,
+      wallPlanImage: null,
+      ceilingPlanImage: null,
+      floorPlanImage: null,
+      floorPanels: null,
+      wallPanelAnalysis: null,
+      supportType: null,
+      includeAccessories: false,
+      includeCable: false,
+      aluSuspensionCustomDrawing: false,
+      panelsNeedSupport: false,
+      lastUpdated: null,
+    });
+    const projectData = payload?.project || {};
+    setProject((current) => ({
+      ...(current || {}),
+      ...projectData,
+      id: current?.id ?? projectData.id,
+      name: current?.name ?? projectData.name,
+    }));
+    setWalls(Array.isArray(payload?.walls) ? payload.walls : []);
+    setDoors(Array.isArray(payload?.doors) ? payload.doors : []);
+    setJoints(Array.isArray(payload?.intersections) ? payload.intersections : []);
+    setRooms(Array.isArray(payload?.rooms) ? payload.rooms : []);
+    setPlanAnnotations(Array.isArray(payload?.plan_annotations) ? payload.plan_annotations : []);
+    applyStoreyList(Array.isArray(payload?.storeys) ? payload.storeys : []);
+    setStoreyError('');
+    setProjectLoadError('');
+  };
+
+  const reloadProjectLayout = async ({ showOriginal = false } = {}) => {
+    layoutAuthorityRef.current = showOriginal ? 'original' : 'working';
+    cancelPendingHistorySync();
+    projectHistory.clear();
+    setSharedPanelData({
+      wallPanels: null,
+      ceilingPanels: null,
+      wallPlanImage: null,
+      ceilingPlanImage: null,
+      floorPlanImage: null,
+      floorPanels: null,
+      wallPanelAnalysis: null,
+      supportType: null,
+      includeAccessories: false,
+      includeCable: false,
+      aluSuspensionCustomDrawing: false,
+      panelsNeedSupport: false,
+      lastUpdated: null,
+    });
+    await fetchProjectDetails({ showOriginal });
+  };
+
   useEffect(() => {
     if (projectId && projectId !== 'undefined' && projectId !== 'null') {
-      if (historySyncTimerRef.current) {
-        clearTimeout(historySyncTimerRef.current);
-        historySyncTimerRef.current = null;
-      }
+      layoutAuthorityRef.current = 'original';
+      cancelPendingHistorySync();
       projectHistory.clear();
-      fetchProjectDetails();
+      fetchProjectDetails({ showOriginal: true });
     }
     // eslint-disable-next-line
   }, [projectId]);
 
   useEffect(() => {
     return () => {
-      if (historySyncTimerRef.current) {
-        clearTimeout(historySyncTimerRef.current);
-      }
+      layoutAuthorityRef.current = 'original';
+      cancelPendingHistorySync();
     };
-  }, []);
+  }, [cancelPendingHistorySync]);
 
   // 3D view effect
   useEffect(() => {
@@ -3765,6 +3874,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     getAllPanelData,
     // Handlers
     fetchProjectDetails,
+    reloadProjectLayout,
+    applyLayoutPreview,
+    waitForHistoryIdle,
+    waitForPendingProjectWrites,
+    cancelPendingHistorySync,
     ensureStoreys,
     beginStoreyAreaSelection,
     cancelStoreyAreaSelection,

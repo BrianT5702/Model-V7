@@ -8,6 +8,8 @@ import { calculateGhostDataForStorey } from '../estimation/pdfVectorWallPlan';
 import { panelNeedsNylonSupport } from './nylonHangerUtils';
 import useScrollContainment from '../../utils/useScrollContainment';
 
+const DEFAULT_CEILING_PANEL_LENGTH_MM = 6000;
+
 const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
     const { isAuthenticated } = useAuth();
     // Essential state for project-level ceiling planning
@@ -59,8 +61,8 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
     
     // Panel dimension configuration
     const [panelWidth, setPanelWidth] = useState(1150);
-    const [panelLength, setPanelLength] = useState('auto');
-    const [customPanelLength, setCustomPanelLength] = useState(10000);
+    const [panelLength, setPanelLength] = useState('custom');
+    const [customPanelLength, setCustomPanelLength] = useState(DEFAULT_CEILING_PANEL_LENGTH_MM);
     const [ceilingThickness, setCeilingThickness] = useState(150);
 
     // Per-room ceiling configuration (thickness, panel size, finishes, orientation)
@@ -1205,7 +1207,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 ceiling_thickness: ceilingThickness,
                 orientation_strategy: selectedOrientationStrategy,
                 panel_width: panelWidth,
-                panel_length: panelLength,
+                panel_length: panelLength === 'auto' ? 'auto' : customPanelLength,
                 custom_panel_length: panelLength === 'auto' ? null : customPanelLength,
                 support_type: supportType,
                 support_config: {
@@ -1676,14 +1678,11 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                     if (existingPlan.panel_width) {
                         setPanelWidth(existingPlan.panel_width);
                     }
-                    if (existingPlan.panel_length) {
-                        // Check if panel_length is 'auto' or a numeric value
-                        if (existingPlan.panel_length === 'auto') {
-                            setPanelLength('auto');
-                        } else {
-                            // It's a custom value, set dropdown to 'custom' and use the value
-                            setPanelLength('custom');
-                            setCustomPanelLength(existingPlan.panel_length);
+                    if (existingPlan.panel_length && existingPlan.panel_length !== 'auto') {
+                        setPanelLength('custom');
+                        const savedLength = parseFloat(existingPlan.panel_length);
+                        if (Number.isFinite(savedLength) && savedLength > 0) {
+                            setCustomPanelLength(savedLength);
                         }
                     }
                     if (existingPlan.custom_panel_length) {
@@ -1998,7 +1997,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 project_id: parseInt(projectId),
                 orientation_strategy: selectedOrientationStrategy,
                 panel_width: panelWidth,  // Global panel width (for other rooms)
-                panel_length: panelLength,  // Global panel length (for other rooms)
+                panel_length: panelLength === 'auto' ? 'auto' : customPanelLength,
                 ceiling_thickness: ceilingThickness,  // Global thickness (for other rooms)
                 custom_panel_length: customPanelLength,  // Global custom length (for other rooms)
                 support_type: supportType,
@@ -2573,29 +2572,24 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                                 <select
                                     value={panelLength}
                                     onChange={(e) => handlePanelLengthChange(e.target.value)}
-                                    className="flex-1"
+                                    className="w-[7.5rem] shrink-0"
                                 >
-                                    <option value="auto">🔄 Auto (Project)</option>
                                     <option value="custom">✏️ Custom</option>
+                                    <option value="auto">🔄 Auto (Project)</option>
                                 </select>
+                                <input
+                                    type="number"
+                                    min="1000"
+                                    max="20000"
+                                    step="100"
+                                    value={customPanelLength}
+                                    disabled={panelLength === 'auto'}
+                                    onChange={(e) => handleCustomPanelLengthChange(parseInt(e.target.value))}
+                                    className="w-16 min-w-0"
+                                    placeholder="6000"
+                                />
+                                <span className="text-[10px] text-gray-500 shrink-0">mm</span>
                             </div>
-                            
-                            {panelLength === 'custom' && (
-                                <div className="flex items-center gap-2">
-                                    <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400 min-w-[3.5rem]">Custom:</label>
-                                    <input
-                                        type="number"
-                                        min="1000"
-                                        max="20000"
-                                        step="100"
-                                        value={customPanelLength}
-                                        onChange={(e) => handleCustomPanelLengthChange(parseInt(e.target.value))}
-                                        className="w-16 min-w-0"
-                                        placeholder="5000"
-                                    />
-                                    <span className="text-[10px] text-gray-500 shrink-0">mm</span>
-                                </div>
-                            )}
                         </div>
                     </div>
 

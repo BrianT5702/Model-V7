@@ -222,12 +222,28 @@ async function syncDoors(api, projectId, targetDoors, currentDoors, wallIdMap) {
   return { doors: finalResponse.data || [], changed: true };
 }
 
-export async function restoreProjectSnapshot(api, projectId, snapshot) {
+export async function restoreProjectSnapshot(api, projectId, snapshot, options = {}) {
+  const shouldAbort = options.shouldAbort || (() => false);
+  const abortedResult = {
+    walls: snapshot.walls || [],
+    rooms: snapshot.rooms || [],
+    doors: snapshot.doors || [],
+    needsIntersectionRefresh: false,
+    aborted: true,
+  };
+  if (shouldAbort()) {
+    return abortedResult;
+  }
+
   const [wallsResponse, roomsResponse, doorsResponse] = await Promise.all([
     api.get(`/projects/${projectId}/walls/`),
     api.get(`/rooms/?project=${projectId}`),
     api.get(`/doors/?project=${projectId}`),
   ]);
+
+  if (shouldAbort()) {
+    return abortedResult;
+  }
 
   const currentWalls = wallsResponse.data || [];
   const currentRooms = Array.isArray(roomsResponse.data) ? roomsResponse.data : [];
@@ -240,6 +256,10 @@ export async function restoreProjectSnapshot(api, projectId, snapshot) {
     currentWalls
   );
 
+  if (shouldAbort()) {
+    return { ...abortedResult, aborted: true };
+  }
+
   const { rooms: syncedRooms, changed: roomsChanged } = await syncRooms(
     api,
     projectId,
@@ -247,6 +267,10 @@ export async function restoreProjectSnapshot(api, projectId, snapshot) {
     currentRooms,
     wallIdMap
   );
+
+  if (shouldAbort()) {
+    return { ...abortedResult, aborted: true };
+  }
 
   const { doors: syncedDoors, changed: doorsChanged } = await syncDoors(
     api,
@@ -261,5 +285,6 @@ export async function restoreProjectSnapshot(api, projectId, snapshot) {
     rooms: syncedRooms,
     doors: syncedDoors,
     needsIntersectionRefresh: wallsChanged || roomsChanged || doorsChanged,
+    aborted: false,
   };
 }

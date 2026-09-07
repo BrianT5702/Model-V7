@@ -69,13 +69,20 @@ export const THREE_CONFIG = {
   },
 
   PANEL_LINES: {
-    LINE_WIDTH_PX: parseEnvNumber('REACT_APP_THREE_PANEL_LINE_WIDTH_PX', 1.85),
-    /** Soft joint seams — look like panel gaps, not CAD ink */
-    COLOR_FULL: 0x64748b,
-    COLOR_CUT: 0x38bdf8,
-    COLOR_FALLBACK: 0x64748b,
-    COLOR_DOOR_GAP: 0x64748b,
-    SURFACE_OFFSET: parseEnvFloat('REACT_APP_THREE_PANEL_SURFACE_OFFSET', 0.04),
+    LINE_WIDTH_PX: parseEnvNumber('REACT_APP_THREE_PANEL_LINE_WIDTH_PX', 1.15),
+    /**
+     * World-space seam width (scene units; 0.04 ≈ 4 mm at scale 0.01).
+     * Screen-pixel lines stay the same size when you zoom out and look like CAD ink.
+     */
+    USE_WORLD_UNITS: true,
+    WORLD_WIDTH: parseEnvFloat('REACT_APP_THREE_PANEL_WORLD_WIDTH', 0.042),
+    OPACITY: parseEnvFloat('REACT_APP_THREE_PANEL_LINE_OPACITY', 0.48),
+    /** Recessed PPGI joint — slightly darker than the off-white face, not slate/cyan ink */
+    COLOR_FULL: 0x6f6b65,
+    COLOR_CUT: 0x5e6a74,
+    COLOR_FALLBACK: 0x6f6b65,
+    COLOR_DOOR_GAP: 0x6f6b65,
+    SURFACE_OFFSET: parseEnvFloat('REACT_APP_THREE_PANEL_SURFACE_OFFSET', 0.03),
     RENDER_ORDER: 3,
     CEILING_LIFT_MM: parseEnvFloat('REACT_APP_THREE_PANEL_CEILING_LIFT_MM', 2),
   },
@@ -159,14 +166,30 @@ export const THREE_CONFIG = {
   },
 
   /**
+   * PPGI micro-rib face. One texture tile = TILE_WORLD scene units
+   * (1 unit = 100 mm at SCALING_FACTOR 0.01). Grooves mipmap away in orbit
+   * and read as recessed slats when the camera is close.
+   */
+  WALL_SURFACE: {
+    ENABLED: true,
+    TILE_WORLD: 1,
+    RIB_PITCH_MM: 18,
+    GROOVE_FRACTION: 0.16,
+    TEXTURE_SIZE: 1024,
+    NORMAL_SCALE: 0.95,
+    NORMAL_DERIV_STRENGTH: 10,
+    BUMP_SCALE: 3.2,
+  },
+
+  /**
    * Surface variety. Low metalness — IBL specular shimmer looks like blinking while orbiting.
    */
   MATERIALS: {
     WALL: {
       color: 0xffffff,
-      roughness: 0.62,
+      roughness: 0.74,
       metalness: 0.02,
-      envMapIntensity: 0.35,
+      envMapIntensity: 0.28,
       emissive: 0x000000,
       emissiveIntensity: 0,
       transparent: false,
@@ -190,27 +213,61 @@ export const THREE_CONFIG = {
       transparent: false,
     },
     DOOR: {
-      color: 0xd8dee5,
-      roughness: 0.65,
-      metalness: 0.04,
-      envMapIntensity: 0.3,
+      color: 0xeeeae3,
+      roughness: 0.74,
+      metalness: 0.02,
+      envMapIntensity: 0.2,
       transparent: false,
       opacity: 1,
     },
+    DOOR_ALUMINUM: {
+      color: 0xd5dde4,
+      roughness: 0.26,
+      metalness: 0.84,
+      envMapIntensity: 0.9,
+    },
+    DOOR_HARDWARE: {
+      color: 0x17181a,
+      roughness: 0.5,
+      metalness: 0.22,
+      envMapIntensity: 0.3,
+    },
     GLASS: {
-      color: 0x9ecae6,
-      roughness: 0.12,
+      color: 0xb9d4e2,
+      roughness: 0.04,
       metalness: 0.0,
       transparent: true,
       opacity: 0.28,
-      envMapIntensity: 0.55,
+      envMapIntensity: 1.35,
     },
     WINDOW_FRAME: {
-      color: 0x2a313c,
-      roughness: 0.55,
-      metalness: 0.12,
-      envMapIntensity: 0.3,
+      color: 0xc5ced6,
+      roughness: 0.3,
+      metalness: 0.7,
+      envMapIntensity: 0.7,
     },
+  },
+
+  /**
+   * Cold-room door hardware (mm). Glass sits in the middle of the leaf,
+   * much thinner than the insulated panel.
+   */
+  DOOR_DETAIL: {
+    FRAME_FACE_MM: 32,
+    FRAME_PROUD_MM: 4,
+    SLIDE_CLEARANCE_MM: 12,
+    GLASS_THICKNESS_MM: 10,
+    GLAZING_LINING_MM: 22,
+    TRACK_HEIGHT_MM: 78,
+    TRACK_DEPTH_MM: 62,
+    TRACK_GAP_MM: 10,
+    ROLLER_MM: 48,
+    HANDLE_HEIGHT_MM: 520,
+    HANDLE_WIDTH_MM: 28,
+    HANDLE_DEPTH_MM: 42,
+    HANDLE_INSET_MM: 52,
+    SEAM_MM: 2.8,
+    PANEL_PITCH_MM: 1150,
   },
 
   ANIMATION: {
