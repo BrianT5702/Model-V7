@@ -37,6 +37,7 @@ import {
     smartPlacement,
     isLabelPlacementClean,
     overlapsDimensionText,
+    overlapsDoorObstacle,
     checkBoxOverlap,
     tryPlaceExteriorDimensionLabel,
     exteriorVerticalLabelBounds
@@ -1108,8 +1109,8 @@ function placeNearWallWallDimension({
     initialScale,
     rotatedVerticalText,
     calculateBounds,
-    spanLo: _spanLo,
-    spanHi: _spanHi,
+    spanLo = null,
+    spanHi = null,
 }) {
     // Walls lying on one straight line form a single dimension run. Identify the run by the
     // line it sits on, so chained lengths share a side and an offset while walls on other
@@ -1120,8 +1121,8 @@ function placeNearWallWallDimension({
         : 'unscoped';
     const preferredSide = dimensionLanes?._nearWallRunSides?.[runKey] ?? null;
 
-    // No along-wall sliding: if the mid-wall near position (with small outward steps) is
-    // blocked, return null so the caller hides the dimension instead of relocating it.
+    // Stay on this wall's span. If the midpoint sits on a door, step out or slide
+    // along the panel so the number stays visible instead of disappearing.
     const near = tryPlaceNearWallLabel({
         wall: wallForNear,
         anchorXModel: wallMidX,
@@ -1139,22 +1140,20 @@ function placeNearWallWallDimension({
         dimensionLanes,
         initialScale,
         rotatedVerticalText,
-        preferredSide
+        preferredSide,
+        isHorizontal,
+        spanLo,
+        spanHi
     });
     if (!near) return null;
 
-    const anchorXModel = wallMidX;
-    const anchorYModel = wallMidY;
+    const anchorXModel = Number.isFinite(near.anchorXModel) ? near.anchorXModel : wallMidX;
+    const anchorYModel = Number.isFinite(near.anchorYModel) ? near.anchorYModel : wallMidY;
 
     const hostWallData = findWallLineDataForWall(wallLinesMap, wallForNear);
-    // Share the offset across the run so chained lengths line up, but no wider than that:
-    // sharing across a whole plan edge let one collision push every label into a distant row.
     const sharedKey = runKey;
     const laneSpacing = DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
-    const maxSteps = Math.max(
-        DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS,
-        8
-    );
+    const maxSteps = nearWallMaxStepsForDoors(placedLabels, laneSpacing);
 
     const tryOffset = (off) => {
         const nx = near.ext?.nx ?? 0;
@@ -1294,9 +1293,50 @@ function doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor,
     return false;
 }
 
+function nearWallMaxStepsForDoors(placedLabels, laneSpacing) {
+    const base = DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS;
+    let thin = 0;
+    for (const existing of placedLabels || []) {
+        if (existing?.type !== 'door_obstacle') continue;
+        const w = Number(existing.width) || 0;
+        const h = Number(existing.height) || 0;
+        thin = Math.max(thin, Math.min(w, h) || Math.max(w, h));
+    }
+    if (thin <= 0) return Math.max(base, 8);
+    return Math.min(40, base + Math.ceil(thin / Math.max(2, laneSpacing)) + 8);
+}
+
+function nearWallSpanAnchors({
+    anchorXModel,
+    anchorYModel,
+    isHorizontal,
+    spanLo,
+    spanHi,
+    textWidth,
+    scaleFactor
+}) {
+    const anchors = [{ ax: anchorXModel, ay: anchorYModel }];
+    if (!Number.isFinite(spanLo) || !Number.isFinite(spanHi) || !(spanHi > spanLo)) {
+        return anchors;
+    }
+    const padMm = ((textWidth || 40) / 2 + 4) / Math.max(scaleFactor || 0.01, 1e-6);
+    const usableLo = spanLo + padMm;
+    const usableHi = spanHi - padMm;
+    if (!(usableHi > usableLo)) return anchors;
+    const mid = isHorizontal ? anchorXModel : anchorYModel;
+    const steps = 8;
+    for (let i = 0; i <= steps; i++) {
+        const pos = usableLo + ((usableHi - usableLo) * i) / steps;
+        if (Math.abs(pos - mid) < 1) continue;
+        if (isHorizontal) anchors.push({ ax: pos, ay: anchorYModel });
+        else anchors.push({ ax: anchorXModel, ay: pos });
+    }
+    return anchors;
+}
+
 /**
- * Near-wall label: smaller text, stay close to wall, try top/bottom/left/right by lane load.
- * Returns null if no side is clear (do not push far outward).
+ * Near-wall label: smaller text, stay close to the wall. If the midpoint sits on a
+ * door, step outward or slide along this span so the number stays on the drawing.
  */
 function tryPlaceNearWallLabel({
     wall,
@@ -1315,7 +1355,10 @@ function tryPlaceNearWallLabel({
     dimensionLanes = null,
     initialScale = 1,
     rotatedVerticalText = false,
-    preferredSide = null
+    preferredSide = null,
+    isHorizontal = null,
+    spanLo = null,
+    spanHi = null
 }) {
     if (!wall) return null;
     const hostWallData = findWallLineDataForWall(wallLinesMap, wall);
@@ -1331,9 +1374,6 @@ function tryPlaceNearWallLabel({
     const ext = getExteriorNormalUnit(wall, rooms, modelBounds);
     const extEdge = exteriorSideName(ext.nx, ext.ny);
     const sorted = [...candidates].sort((a, b) => {
-        // The exterior normal is guessed per wall, so two walls forming one straight run can
-        // disagree and send their labels to opposite faces of the same run. Once a run has a
-        // side, later dimensions on it follow, which keeps a chain readable as one row.
         if (a.edge === preferredSide && b.edge !== preferredSide) return -1;
         if (b.edge === preferredSide && a.edge !== preferredSide) return 1;
         if (a.edge === extEdge && b.edge !== extEdge) return -1;
@@ -1343,41 +1383,94 @@ function tryPlaceNearWallLabel({
         return la - lb;
     });
 
-    const maxSteps = DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS;
-    // Stay at the wall midpoint — never slide along the run. If no clear near-wall slot
-    // exists after a few outward steps, the caller hides the dimension.
+    const alongHorizontal =
+        isHorizontal != null
+            ? isHorizontal
+            : Math.abs(ext.ny) >= Math.abs(ext.nx);
+    const anchors = nearWallSpanAnchors({
+        anchorXModel,
+        anchorYModel,
+        isHorizontal: alongHorizontal,
+        spanLo,
+        spanHi,
+        textWidth,
+        scaleFactor
+    });
+    const maxSteps = nearWallMaxStepsForDoors(placedLabels, laneSpacing);
+
+    const accept = (labelX, labelY, bounds, cand, off, ax, ay) => {
+        if (
+            !isLabelAcceptableForNearWallPlacement(
+                labelX,
+                labelY,
+                bounds,
+                placedLabels,
+                hostWallData,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                initialScale,
+                wallLinesMap
+            )
+        ) {
+            return null;
+        }
+        if (dimensionLanes && cand.edge) {
+            dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
+        }
+        return {
+            labelX,
+            labelY,
+            bounds,
+            ext: { nx: cand.nx, ny: cand.ny },
+            side: cand.edge,
+            off,
+            anchorXModel: ax,
+            anchorYModel: ay
+        };
+    };
+
     for (let step = 0; step < maxSteps; step++) {
         const off = baseOff + step * laneSpacing;
         for (const cand of sorted) {
-            const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * off;
-            const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * off;
-            const bounds = calculateBounds(labelX, labelY, textWidth);
-            if (
-                isLabelAcceptableForNearWallPlacement(
-                    labelX,
-                    labelY,
-                    bounds,
-                    placedLabels,
-                    hostWallData,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    initialScale,
-                    wallLinesMap
-                )
-            ) {
-                if (dimensionLanes && cand.edge) {
-                    dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
-                }
-                return {
-                    labelX,
-                    labelY,
-                    bounds,
-                    ext: { nx: cand.nx, ny: cand.ny },
-                    side: cand.edge,
-                    off
-                };
+            for (const { ax, ay } of anchors) {
+                const labelX = ax * scaleFactor + offsetX + cand.nx * off;
+                const labelY = ay * scaleFactor + offsetY + cand.ny * off;
+                const bounds = calculateBounds(labelX, labelY, textWidth);
+                const placed = accept(labelX, labelY, bounds, cand, off, ax, ay);
+                if (placed) return placed;
             }
+        }
+    }
+
+    // Door blocked every near lane: still draw, just far enough out that the hatch is clear.
+    const sep = nearWallLabelSeparationPx(scaleFactor, initialScale);
+    for (let step = maxSteps; step < maxSteps + 16; step++) {
+        const off = baseOff + step * laneSpacing;
+        for (const cand of sorted) {
+            const ax = anchorXModel;
+            const ay = anchorYModel;
+            const labelX = ax * scaleFactor + offsetX + cand.nx * off;
+            const labelY = ay * scaleFactor + offsetY + cand.ny * off;
+            const bounds = calculateBounds(labelX, labelY, textWidth);
+            if (overlapsDoorObstacle(bounds, placedLabels, sep)) continue;
+            if (doesNearWallLabelOverlapAnyWall(bounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
+                continue;
+            }
+            if (overlapsDimensionText(bounds, placedLabels, sep)) continue;
+            if (dimensionLanes && cand.edge) {
+                dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
+            }
+            return {
+                labelX,
+                labelY,
+                bounds,
+                ext: { nx: cand.nx, ny: cand.ny },
+                side: cand.edge,
+                off,
+                anchorXModel: ax,
+                anchorYModel: ay
+            };
         }
     }
     return null;
@@ -1527,7 +1620,7 @@ export function placeExteriorWallDimensionAvoidingLabels({
 }) {
     const sep = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
     const rowStep = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
-    const maxBumps = lockRow ? 0 : DIMENSION_CONFIG.MAX_ATTEMPTS;
+    const maxBumps = lockRow ? 6 : DIMENSION_CONFIG.MAX_ATTEMPTS;
     let rowOffset = rowOffsetPx;
     const columnLocked = !isHorizontal && fixedLabelX != null && Number.isFinite(fixedLabelX);
 
@@ -1602,15 +1695,22 @@ export function placeExteriorWallDimensionAvoidingLabels({
                 return { ...placed, rowOffset, labelBounds };
             }
         }
-        if (lockRow) break;
         rowOffset += rowStep;
     }
 
-    // Chained exterior dims stay on their span midpoint even if a door marker is
-    // nearby. Do not stack a second number on top of one already drawn.
+    // Chained exterior dims stay on their span midpoint. Step the row out if a door
+    // is in the way so the number remains visible.
     if (lockRow) {
+        for (let extra = 0; extra <= 8; extra++) {
+            const tryOff = rowOffsetPx + extra * rowStep;
+            const { placed, labelBounds } = tryOnce(tryOff, 0);
+            if (placed && labelBounds && isLabelPlacementClean(labelBounds, placedLabels, sep)) {
+                return { ...placed, rowOffset: tryOff, labelBounds };
+            }
+        }
         const { placed, labelBounds } = tryOnce(rowOffsetPx, 0);
-        if (placed && labelBounds && !overlapsDimensionText(labelBounds, placedLabels, sep)) {
+        if (placed && labelBounds && !overlapsDimensionText(labelBounds, placedLabels, sep)
+            && !overlapsDoorObstacle(labelBounds, placedLabels, sep)) {
             return { ...placed, rowOffset: rowOffsetPx, labelBounds };
         }
         return null;
@@ -1988,14 +2088,16 @@ function expandEndpointToJoiningFaces(x, y, isHorizontal, towardMax, wallLinesMa
 }
 
 /**
- * Stretch a wall dimension so ticks sit on the drawn faces (outer corners),
- * not the centerline which visually stops in the middle of the wall.
+ * Stretch a wall dimension so ticks sit on the drawn faces:
+ * 45° miters use the outer corners; butt-in stems stop at the shortened end
+ * (host inner face) instead of continuing through the host wall.
  */
 function expandDimensionSegmentToWallFaces(startX, startY, endX, endY, wallData, modelBounds = null, wallLinesMap = null) {
     const line1 = wallData?.line1;
     const line2 = wallData?.line2;
+    const hasOwnFaces = Boolean(line1 && line2);
     let result = { startX, startY, endX, endY };
-    if (line1 && line2) {
+    if (hasOwnFaces) {
         const pts = [...line1, ...line2];
         const dx = endX - startX;
         const dy = endY - startY;
@@ -2038,43 +2140,51 @@ function expandDimensionSegmentToWallFaces(startX, startY, endX, endY, wallData,
         }
     }
 
-    const dx = result.endX - result.startX;
-    const dy = result.endY - result.startY;
-    if (Math.abs(dy) <= WALL_AXIS_ALIGN_TOL_MM) {
-        result.startX = expandEndpointToJoiningFaces(
-            result.startX,
-            result.startY,
-            true,
-            result.startX > result.endX,
-            wallLinesMap
-        );
-        result.endX = expandEndpointToJoiningFaces(
-            result.endX,
-            result.endY,
-            true,
-            result.endX > result.startX,
-            wallLinesMap
-        );
-    } else if (Math.abs(dx) <= WALL_AXIS_ALIGN_TOL_MM) {
-        result.startY = expandEndpointToJoiningFaces(
-            result.startX,
-            result.startY,
-            false,
-            result.startY > result.endY,
-            wallLinesMap
-        );
-        result.endY = expandEndpointToJoiningFaces(
-            result.endX,
-            result.endY,
-            false,
-            result.endY > result.startY,
-            wallLinesMap
-        );
+    // Joining-wall outer faces are for 45° fallback only. Pulling a butt-in stem
+    // through the host would make the dimension overshoot the shortened end.
+    if (!hasOwnFaces) {
+        const dx = result.endX - result.startX;
+        const dy = result.endY - result.startY;
+        if (Math.abs(dy) <= WALL_AXIS_ALIGN_TOL_MM) {
+            result.startX = expandEndpointToJoiningFaces(
+                result.startX,
+                result.startY,
+                true,
+                result.startX > result.endX,
+                wallLinesMap
+            );
+            result.endX = expandEndpointToJoiningFaces(
+                result.endX,
+                result.endY,
+                true,
+                result.endX > result.startX,
+                wallLinesMap
+            );
+        } else if (Math.abs(dx) <= WALL_AXIS_ALIGN_TOL_MM) {
+            result.startY = expandEndpointToJoiningFaces(
+                result.startX,
+                result.startY,
+                false,
+                result.startY > result.endY,
+                wallLinesMap
+            );
+            result.endY = expandEndpointToJoiningFaces(
+                result.endX,
+                result.endY,
+                false,
+                result.endY > result.startY,
+                wallLinesMap
+            );
+        }
     }
 
     if (modelBounds) {
+        // Tiny gap only (miter already on the outer). A host-thickness gap is a
+        // shortened butt-in and must not snap out to the site envelope.
         const thickness = Number(wallData?.wall?.thickness) || 100;
-        const tol = Math.max(thickness * 1.25, 80);
+        const tol = hasOwnFaces
+            ? Math.max(8, thickness * 0.15)
+            : Math.max(thickness * 1.25, 80);
         const rdx = result.endX - result.startX;
         const rdy = result.endY - result.startY;
         if (Math.abs(rdy) <= WALL_AXIS_ALIGN_TOL_MM) {
@@ -2098,6 +2208,98 @@ function expandDimensionSegmentToWallFaces(startX, startY, endX, endY, wallData,
         }
     }
     return result;
+}
+
+/**
+ * First/last side-panel ticks follow the drawn faces: 45° outer corner when that
+ * end is extended, shortened face for butt-in. Interior seams stay on the joint.
+ */
+function snapSidePanelDimensionEnds({
+    isFirst,
+    isLast,
+    mxStart,
+    myStart,
+    mxEnd,
+    myEnd,
+    line1,
+    line2
+}) {
+    const startFace = [line1?.[0], line2?.[0]].filter(Boolean);
+    const endFace = [line1?.[1], line2?.[1]].filter(Boolean);
+    let startX = mxStart;
+    let startY = myStart;
+    let endX = mxEnd;
+    let endY = myEnd;
+    if (!startFace.length || !endFace.length) {
+        return { startX, startY, endX, endY };
+    }
+
+    const dx = mxEnd - mxStart;
+    const dy = myEnd - myStart;
+    const pickExtreme = (pts, towardMax, axis) => {
+        let best = pts[0];
+        for (const p of pts) {
+            if (!p || !Number.isFinite(p[axis])) continue;
+            if (!best || (towardMax ? p[axis] > best[axis] : p[axis] < best[axis])) {
+                best = p;
+            }
+        }
+        return best || pts[0];
+    };
+
+    if (Math.abs(dy) <= WALL_AXIS_ALIGN_TOL_MM) {
+        const goingPos = dx >= 0;
+        if (isFirst) {
+            const p = pickExtreme(startFace, !goingPos, 'x');
+            startX = p.x;
+            startY = p.y;
+        }
+        if (isLast) {
+            const p = pickExtreme(endFace, goingPos, 'x');
+            endX = p.x;
+            endY = p.y;
+        }
+    } else if (Math.abs(dx) <= WALL_AXIS_ALIGN_TOL_MM) {
+        const goingPos = dy >= 0;
+        if (isFirst) {
+            const p = pickExtreme(startFace, !goingPos, 'y');
+            startX = p.x;
+            startY = p.y;
+        }
+        if (isLast) {
+            const p = pickExtreme(endFace, goingPos, 'y');
+            endX = p.x;
+            endY = p.y;
+        }
+    } else {
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const extremeAlong = (pts, wantMin) => {
+            let best = pts[0];
+            let bestT = wantMin ? Infinity : -Infinity;
+            for (const p of pts) {
+                if (!p) continue;
+                const t = (p.x - mxStart) * ux + (p.y - myStart) * uy;
+                if (wantMin ? t < bestT : t > bestT) {
+                    bestT = t;
+                    best = p;
+                }
+            }
+            return best;
+        };
+        if (isFirst) {
+            const p = extremeAlong(startFace, true);
+            startX = p.x;
+            startY = p.y;
+        }
+        if (isLast) {
+            const p = extremeAlong(endFace, false);
+            endX = p.x;
+            endY = p.y;
+        }
+    }
+    return { startX, startY, endX, endY };
 }
 
 // Calculate actual project dimensions from wall start/end (the drawn outer).
@@ -2166,10 +2368,20 @@ export function drawOverallProjectDimensions(
 ) {
     if (!walls || walls.length === 0) return;
     
-    // Wall start/end is the drawn outer. Do not add thickness on top or the
-    // overall size (and the site-exceeded warning) will look larger than the layout.
+    // Wall start/end is the 2D centerline (± half thickness). Overall ticks must
+    // sit on the drawn outer faces so extensions meet the corners, not the miter middle.
     const actualDimensions = calculateActualProjectDimensions(walls);
-    const { minX, maxX, minY, maxY } = actualDimensions;
+    const outerBounds = expandBoundsToWallFaces(
+        {
+            minX: actualDimensions.minX,
+            maxX: actualDimensions.maxX,
+            minY: actualDimensions.minY,
+            maxY: actualDimensions.maxY
+        },
+        walls,
+        wallLinesMap
+    );
+    const { minX, maxX, minY, maxY } = outerBounds;
 
     // Same bounds as wall dimensions so offsets are comparable (screen px from building edge)
     const placementBounds = { minX, maxX, minY, maxY };
@@ -2316,7 +2528,7 @@ function drawProjectDimension(
         const textPadding = 4;
         const startXScreen = startX * scaleFactor + offsetX;
         const endXScreen = endX * scaleFactor + offsetX;
-        const originY = (clipBoundsModel?.minY ?? startY) * scaleFactor + offsetY;
+        const originY = startY * scaleFactor + offsetY;
 
         context.strokeStyle = color;
         context.lineWidth = extLineW;
@@ -2393,7 +2605,7 @@ function drawProjectDimension(
         labelY = wallMidY * scaleFactor + offsetY;
 
         const textPadding = 4;
-        const originX = (clipBoundsModel?.maxX ?? startX) * scaleFactor + offsetX;
+        const originX = startX * scaleFactor + offsetX;
         const yStart = startY * scaleFactor + offsetY;
         const yEnd = endY * scaleFactor + offsetY;
 
@@ -2450,6 +2662,103 @@ function canvasDrawExtensionDashed(context, x1, y1, x2, y2, rectScreen) {
         context.moveTo(s.x1, s.y1);
         context.lineTo(s.x2, s.y2);
         context.stroke();
+    }
+}
+
+function nearerWallFace(line1, line2, px, py) {
+    const mid = (line) => ({
+        x: (line[0].x + line[1].x) / 2,
+        y: (line[0].y + line[1].y) / 2
+    });
+    const m1 = mid(line1);
+    const m2 = mid(line2);
+    const d1 = (px - m1.x) ** 2 + (py - m1.y) ** 2;
+    const d2 = (px - m2.x) ** 2 + (py - m2.y) ** 2;
+    return d1 <= d2 ? line1 : line2;
+}
+
+function pointOnWallFace(face, t) {
+    return {
+        x: face[0].x + (face[1].x - face[0].x) * t,
+        y: face[0].y + (face[1].y - face[0].y) * t
+    };
+}
+
+function sidePanelAttachPoints({
+    isFirst,
+    isLast,
+    line1,
+    line2,
+    tStart,
+    tEnd,
+    dimStartX,
+    dimStartY,
+    dimEndX,
+    dimEndY,
+    labelModelX,
+    labelModelY
+}) {
+    const face = nearerWallFace(line1, line2, labelModelX, labelModelY);
+    const seamStart = pointOnWallFace(face, tStart);
+    const seamEnd = pointOnWallFace(face, tEnd);
+    return {
+        startX: isFirst ? dimStartX : seamStart.x,
+        startY: isFirst ? dimStartY : seamStart.y,
+        endX: isLast ? dimEndX : seamEnd.x,
+        endY: isLast ? dimEndY : seamEnd.y
+    };
+}
+
+function drawSidePanelDimensionArtwork({
+    context,
+    isHorizontal,
+    dimStartX,
+    dimStartY,
+    dimEndX,
+    dimEndY,
+    attachStartX,
+    attachStartY,
+    attachEndX,
+    attachEndY,
+    labelX,
+    labelY,
+    textWidth,
+    color,
+    scaleFactor,
+    offsetX,
+    offsetY
+}) {
+    const sx0 = dimStartX * scaleFactor + offsetX;
+    const sy0 = dimStartY * scaleFactor + offsetY;
+    const sx1 = dimEndX * scaleFactor + offsetX;
+    const sy1 = dimEndY * scaleFactor + offsetY;
+    const ax0 = attachStartX * scaleFactor + offsetX;
+    const ay0 = attachStartY * scaleFactor + offsetY;
+    const ax1 = attachEndX * scaleFactor + offsetX;
+    const ay1 = attachEndY * scaleFactor + offsetY;
+    const extDash = getCanvasExtensionDashPattern(scaleFactor);
+    const extLineW = getCanvasExtensionLineWidth();
+    const dimLineW = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+    const tickPx = 4;
+    context.strokeStyle = color;
+    context.lineWidth = extLineW;
+    context.setLineDash(extDash);
+    // Near-wall panel dashes are short (face → label). Do not clip them against the
+    // site envelope — that hid the ticks when the number sat just beside the wall.
+    if (isHorizontal) {
+        canvasDrawExtensionDashed(context, sx0, ay0, sx0, labelY, null);
+        canvasDrawExtensionDashed(context, sx1, ay1, sx1, labelY, null);
+        context.setLineDash([]);
+        context.lineWidth = dimLineW;
+        strokeHorizontalDimLineAtY(context, labelY, sx0, sx1, labelX, textWidth, 2);
+        canvasHorizontalDimArrows(context, sx0, sx1, labelY, color, tickPx);
+    } else {
+        canvasDrawExtensionDashed(context, ax0, sy0, labelX, sy0, null);
+        canvasDrawExtensionDashed(context, ax1, sy1, labelX, sy1, null);
+        context.setLineDash([]);
+        context.lineWidth = dimLineW;
+        strokeVerticalDimLineAtX(context, labelX, sy0, sy1, labelY, textWidth, 2);
+        canvasVerticalDimArrows(context, labelX, sy0, sy1, color, tickPx);
     }
 }
 
@@ -2528,8 +2837,9 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
 
     const strokeColor = adjustPlanStrokeColor(color);
 
-    // Attach extensions at the building/room edge on the label's side (wall ends /
-    // corners), not at centerX/centerY which visually stops in the middle of the wall.
+    // Attach extensions at the measured segment ends (outer/room edge). Clip is
+    // only used to hide strokes that would cross the plan interior — do not snap
+    // the span onto the inner AABB (that lands ticks in the middle of the wall).
     let attachX = startX;
     let attachY = startY;
     let spanStartX = startX;
@@ -2537,25 +2847,12 @@ export function drawOrthoPlanDimensionGeometryLikeWall(
     let spanStartY = startY;
     let spanEndY = endY;
     if (clip) {
-        const edgeTol = 250;
         if (isHorizontal) {
             const midY = ((clip.minY + clip.maxY) / 2) * scaleFactor + offsetY;
-            attachY = labelY < midY ? clip.minY : clip.maxY;
-            const lo = Math.min(startX, endX);
-            const hi = Math.max(startX, endX);
-            if (lo - clip.minX <= edgeTol && clip.maxX - hi <= edgeTol) {
-                spanStartX = startX <= endX ? clip.minX : clip.maxX;
-                spanEndX = startX <= endX ? clip.maxX : clip.minX;
-            }
+            attachY = labelY < midY ? Math.min(startY, endY) : Math.max(startY, endY);
         } else {
             const midX = ((clip.minX + clip.maxX) / 2) * scaleFactor + offsetX;
-            attachX = labelX < midX ? clip.minX : clip.maxX;
-            const lo = Math.min(startY, endY);
-            const hi = Math.max(startY, endY);
-            if (lo - clip.minY <= edgeTol && clip.maxY - hi <= edgeTol) {
-                spanStartY = startY <= endY ? clip.minY : clip.maxY;
-                spanEndY = startY <= endY ? clip.maxY : clip.minY;
-            }
+            attachX = labelX < midX ? Math.min(startX, endX) : Math.max(startX, endX);
         }
     }
 
@@ -3141,7 +3438,10 @@ export function drawDimensions(
             const startXScreen = dimStartX * scaleFactor + offsetX;
             const endXScreen = dimEndX * scaleFactor + offsetX;
             const clipMidYScreen = ((clipBounds.minY + clipBounds.maxY) / 2) * scaleFactor + offsetY;
-            const originY = (labelY < clipMidYScreen ? clipBounds.minY : clipBounds.maxY) * scaleFactor + offsetY;
+            const originYModel = onExteriorEdge
+                ? (labelY < clipMidYScreen ? minY : maxY)
+                : (labelY < clipMidYScreen ? clipBounds.minY : clipBounds.maxY);
+            const originY = originYModel * scaleFactor + offsetY;
 
             context.strokeStyle = color;
             context.lineWidth = extLineW;
@@ -3396,7 +3696,10 @@ export function drawDimensions(
             const startYScreen = dimStartY * scaleFactor + offsetY;
             const endYScreen = dimEndY * scaleFactor + offsetY;
             const clipMidXScreen = ((clipBounds.minX + clipBounds.maxX) / 2) * scaleFactor + offsetX;
-            const originX = (labelX < clipMidXScreen ? clipBounds.minX : clipBounds.maxX) * scaleFactor + offsetX;
+            const originXModel = onExteriorEdge
+                ? (labelX < clipMidXScreen ? minX : maxX)
+                : (labelX < clipMidXScreen ? clipBounds.minX : clipBounds.maxX);
+            const originX = originXModel * scaleFactor + offsetX;
 
             context.strokeStyle = color;
             context.lineWidth = extLineW;
@@ -4268,11 +4571,21 @@ export function drawWallPlanDimensionsLayer({
     const showProjectDimensions = dimensionVisibility?.project !== false;
 
     const actualDimensions = calculateActualProjectDimensions(walls);
+    const outerBounds = expandBoundsToWallFaces(
+        {
+            minX: actualDimensions.minX,
+            maxX: actualDimensions.maxX,
+            minY: actualDimensions.minY,
+            maxY: actualDimensions.maxY
+        },
+        walls,
+        wallLinesMap
+    );
     const modelBounds = {
-        minX: actualDimensions.minX,
-        maxX: actualDimensions.maxX,
-        minY: actualDimensions.minY,
-        maxY: actualDimensions.maxY,
+        minX: outerBounds.minX,
+        maxX: outerBounds.maxX,
+        minY: outerBounds.minY,
+        maxY: outerBounds.maxY,
         clip: insetBoundsToInnerFaces(actualDimensions, walls)
     };
 
@@ -4402,9 +4715,15 @@ export function drawWallPlanDimensionsLayer({
     });
 
     // Side-panel dimension labels after wall dims so both can coexist.
-    // Use the same dimensionLanes + placedLabels so panel text respects wall-dim collisions.
+    // Prefer top/left walls first so a repeated size (305 top and bottom) keeps the upper one.
     if (showPanelDimensions && wallPanelsMap) {
-        walls.forEach((wall) => {
+        const wallsForPanels = [...walls].sort((a, b) => {
+            const ay = Math.min(a.start_y, a.end_y);
+            const by = Math.min(b.start_y, b.end_y);
+            if (ay !== by) return ay - by;
+            return Math.min(a.start_x, a.end_x) - Math.min(b.start_x, b.end_x);
+        });
+        wallsForPanels.forEach((wall) => {
             const panels = wallPanelsMap[wall.id];
             if (!panels?.length) return;
             if (!wall._line1 || !wall._line2) {
@@ -4435,7 +4754,8 @@ export function drawWallPlanDimensionsLayer({
                 rooms,
                 wallLinesMap,
                 dimensionLanes,
-                false // lines already drawn above when showPanelLines
+                false,
+                valuesSeen
             );
         });
     }
@@ -5516,7 +5836,7 @@ export function drawWalls({
         doors,
     });
 
-    return { thicknessColorMap, dimensionEdgeExtents };
+    return { thicknessColorMap, dimensionEdgeExtents, wallLinesMap };
 }
 
 // Draw diagonal hatching for partitions
@@ -5566,7 +5886,8 @@ export function drawPanelDivisions(
     rooms = [],
     wallLinesMap = null,
     dimensionLanes = null,
-    showPanelLines = true
+    showPanelLines = true,
+    dimensionValuesSeen = null
 ) {
     if (!panels || panels.length === 0 || !wall._line1 || !wall._line2) return;
     const line1Raw = wall._line1;
@@ -5587,12 +5908,6 @@ export function drawPanelDivisions(
         if (Number.isFinite(actual) && actual > 0) return actual;
         return Number(panel?.width) || 0;
     };
-    const is1130OptimizedPanel = (panel) => {
-        const opt = panel?.optimizationType;
-        if (opt === 'LEFT_OPTIMIZED' || opt === 'RIGHT_OPTIMIZED') return true;
-        return Math.round(getPanelDrawWidth(panel)) === 1130;
-    };
-    
     let accumulated = 0;
     
     // Draw panel division lines (independent of side-panel dimension labels)
@@ -5630,80 +5945,6 @@ export function drawPanelDivisions(
         context.stroke();
         context.restore();
     }
-    
-    // Draw special markers for 1130mm panels (20mm optimization)
-    accumulated = 0;
-    for (let i = 0; i < panels.length; i++) {
-        const panel = panels[i];
-        const panelWidth = getPanelDrawWidth(panel);
-        
-        // Highlight both left- and right-end 1130 optimizations
-        if (is1130OptimizedPanel(panel)) {
-            const panelStart = accumulated;
-            const panelEnd = accumulated + panelWidth;
-            const tStart = panelStart / wallLength;
-            const tEnd = panelEnd / wallLength;
-            
-            // Calculate panel boundaries
-            const cxStart = line1[0].x + (line1[1].x - line1[0].x) * tStart;
-            const cyStart = line1[0].y + (line1[1].y - line1[0].y) * tStart;
-            const c2xStart = line2[0].x + (line2[1].x - line2[0].x) * tStart;
-            const c2yStart = line2[0].y + (line2[1].y - line2[0].y) * tStart;
-            const mxStart = (cxStart + c2xStart) / 2;
-            const myStart = (cyStart + c2yStart) / 2;
-            
-            const cxEnd = line1[0].x + (line1[1].x - line1[0].x) * tEnd;
-            const cyEnd = line1[0].y + (line1[1].y - line1[0].y) * tEnd;
-            const c2xEnd = line2[0].x + (line2[1].x - line2[0].x) * tEnd;
-            const c2yEnd = line2[0].y + (line2[1].y - line2[0].y) * tEnd;
-            const mxEnd = (cxEnd + c2xEnd) / 2;
-            const myEnd = (cyEnd + c2yEnd) / 2;
-            
-            // Draw red diagonal slashes for 1130mm panels
-            context.save();
-            context.strokeStyle = '#FF0000';
-            context.lineWidth = 2;
-            
-            // Calculate diagonal slash pattern
-            const slashSpacing = 20; // Spacing between slashes
-            const slashLength = 15;
-            
-            // Direction vector along the panel
-            const dx = mxEnd - mxStart;
-            const dy = myEnd - myStart;
-            const panelLength = Math.sqrt(dx * dx + dy * dy);
-            
-            if (panelLength > 0) {
-                const numSlashes = Math.floor(panelLength / slashSpacing);
-                
-                for (let k = 0; k < numSlashes; k++) {
-                    const t = (k + 0.5) / numSlashes; // Center the slashes
-                    const slashX = mxStart + t * dx;
-                    const slashY = myStart + t * dy;
-                    
-                    // Calculate perpendicular direction for slashes
-                    const perpX = -dy / panelLength;
-                    const perpY = dx / panelLength;
-                    
-                    // Draw diagonal slash
-                    context.beginPath();
-                    context.moveTo(
-                        (slashX - perpX * slashLength/2) * scaleFactor + offsetX,
-                        (slashY - perpY * slashLength/2) * scaleFactor + offsetY
-                    );
-                    context.lineTo(
-                        (slashX + perpX * slashLength/2) * scaleFactor + offsetX,
-                        (slashY + perpY * slashLength/2) * scaleFactor + offsetY
-                    );
-                    context.stroke();
-                }
-            }
-            
-            context.restore();
-        }
-        
-        accumulated += panelWidth;
-    }
     } // end showPanelLines
     
     if (!showPanelDimensions) {
@@ -5716,11 +5957,31 @@ export function drawPanelDivisions(
         const panel = panels[i];
         const panelWidth = getPanelDrawWidth(panel);
         
-        // Show labels for side panels (first and last panels)
-        // Skip 1130 optimized panels — red slash highlight is enough
-        // No dedup filtering — side panel dimensions should appear on every wall
-        if ((i === 0 || i === panels.length - 1) &&
-            !is1130OptimizedPanel(panel)) {
+        // Show labels for side panels (first and last).
+        // Same size at both ends of a wall, or the same size already drawn on another
+        // wall in this direction, is shown once (305 at the top is not repeated at the bottom).
+        const isFirst = i === 0;
+        const isLast = i === panels.length - 1;
+        if (!isFirst && !isLast) {
+            accumulated += panelWidth;
+            continue;
+        }
+        const firstWidth = getPanelDrawWidth(panels[0]);
+        if (isLast && panels.length > 1 && Math.round(panelWidth) === Math.round(firstWidth)) {
+            accumulated += panelWidth;
+            continue;
+        }
+        const panelDedupKey = `SP-${planCeilingValueDedupKey(panelWidth, isHorizontal) || ''}`;
+        if (dimensionValuesSeen && panelDedupKey !== 'SP-' && dimensionValuesSeen.has(panelDedupKey)) {
+            accumulated += panelWidth;
+            continue;
+        }
+        const markPanelValueSeen = () => {
+            if (dimensionValuesSeen && panelDedupKey !== 'SP-') {
+                dimensionValuesSeen.add(panelDedupKey);
+            }
+        };
+        if (isFirst || isLast) {
             
             let displayWidth = panelWidth;
             let specialSymbol = '';
@@ -5748,14 +6009,31 @@ export function drawPanelDivisions(
             const mxEnd = (cxEnd + c2xEnd) / 2;
             const myEnd = (cyEnd + c2yEnd) / 2;
 
+            const isFirst = i === 0;
+            const isLast = i === panels.length - 1;
+            const drawnEnds = snapSidePanelDimensionEnds({
+                isFirst,
+                isLast,
+                mxStart,
+                myStart,
+                mxEnd,
+                myEnd,
+                line1,
+                line2
+            });
+            const dimStartX = drawnEnds.startX;
+            const dimStartY = drawnEnds.startY;
+            const dimEndX = drawnEnds.endX;
+            const dimEndY = drawnEnds.endY;
+
             // Calculate direction and angle
-            const dx = mxEnd - mxStart;
-            const dy = myEnd - myStart;
+            const dx = dimEndX - dimStartX;
+            const dy = dimEndY - dimStartY;
             const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
             // Panel midpoint
-            const panelMidX = (mxStart + mxEnd) / 2;
-            const panelMidY = (myStart + myEnd) / 2;
+            const panelMidX = (dimStartX + dimEndX) / 2;
+            const panelMidY = (dimStartY + dimEndY) / 2;
 
             // Use the passed modelBounds or fallback to wall bounds
             const bounds = modelBounds || {
@@ -5774,8 +6052,8 @@ export function drawPanelDivisions(
             const textWidth = context.measureText(text).width;
 
             if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-                const spanLo = Math.min(mxStart, mxEnd);
-                const spanHi = Math.max(mxStart, mxEnd);
+                const spanLo = Math.min(dimStartX, dimEndX);
+                const spanHi = Math.max(dimStartX, dimEndX);
                 const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, false);
                 const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
                 const side1Bounds = calculateHorizontalLabelBounds(
@@ -5826,35 +6104,42 @@ export function drawPanelDivisions(
                 const labelY = near.labelY;
                 const side = near.side;
                 const finalLabelBounds = near.bounds;
-                
-                const textPadding = 2;
-                const textLeft = labelX - textWidth / 2 - textPadding;
-                const textRight = labelX + textWidth / 2 + textPadding;
-                const rectScreenPanel = modelBoundsToScreenRect(bounds, scaleFactor, offsetX, offsetY);
-                const extDashPanel = getCanvasExtensionDashPattern(scaleFactor);
-                const extLineWPanel = getCanvasExtensionLineWidth();
-                const dimLineWPanel = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
-                const startXScreen = mxStart * scaleFactor + offsetX;
-                const endXScreen = mxEnd * scaleFactor + offsetX;
-                const yStartP = myStart * scaleFactor + offsetY;
-                const yEndP = myEnd * scaleFactor + offsetY;
-                context.strokeStyle = specialColor;
-                context.lineWidth = extLineWPanel;
-                context.setLineDash(extDashPanel);
-                canvasDrawExtensionDashed(context, startXScreen, yStartP, startXScreen, labelY, rectScreenPanel);
-                canvasDrawExtensionDashed(context, endXScreen, yEndP, endXScreen, labelY, rectScreenPanel);
-                context.setLineDash([]);
-                context.lineWidth = dimLineWPanel;
-                context.beginPath();
-                if (startXScreen < textLeft) {
-                    context.moveTo(startXScreen, labelY);
-                    context.lineTo(textLeft, labelY);
-                }
-                if (endXScreen > textRight) {
-                    context.moveTo(textRight, labelY);
-                    context.lineTo(endXScreen, labelY);
-                }
-                context.stroke();
+                const labelMx = (labelX - offsetX) / scaleFactor;
+                const labelMy = (labelY - offsetY) / scaleFactor;
+                const attach = sidePanelAttachPoints({
+                    isFirst,
+                    isLast,
+                    line1,
+                    line2,
+                    tStart,
+                    tEnd,
+                    dimStartX,
+                    dimStartY,
+                    dimEndX,
+                    dimEndY,
+                    labelModelX: labelMx,
+                    labelModelY: labelMy
+                });
+                markPanelValueSeen();
+                drawSidePanelDimensionArtwork({
+                    context,
+                    isHorizontal: true,
+                    dimStartX,
+                    dimStartY,
+                    dimEndX,
+                    dimEndY,
+                    attachStartX: attach.startX,
+                    attachStartY: attach.startY,
+                    attachEndX: attach.endX,
+                    attachEndY: attach.endY,
+                    labelX,
+                    labelY,
+                    textWidth,
+                    color: specialColor,
+                    scaleFactor,
+                    offsetX,
+                    offsetY
+                });
                 
                 // Add to placed labels for future collision detection (use calculated bounds)
                 placedLabels.push({
@@ -5882,8 +6167,8 @@ export function drawPanelDivisions(
                      });
                  }
             } else {
-                const spanLo = Math.min(myStart, myEnd);
-                const spanHi = Math.max(myStart, myEnd);
+                const spanLo = Math.min(dimStartY, dimEndY);
+                const spanHi = Math.max(dimStartY, dimEndY);
                 const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, true);
                 const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
                 const side1Bounds = calculateVerticalLabelBounds(
@@ -5934,35 +6219,42 @@ export function drawPanelDivisions(
                 const labelY = near.labelY;
                 const side = near.side;
                 const finalLabelBounds = near.bounds;
-
-                const textPadding = 2;
-                const textTop = labelY - textWidth / 2 - textPadding;
-                const textBottom = labelY + textWidth / 2 + textPadding;
-                const rectScreenPanelV = modelBoundsToScreenRect(bounds, scaleFactor, offsetX, offsetY);
-                const extDashPanelV = getCanvasExtensionDashPattern(scaleFactor);
-                const extLineWPanelV = getCanvasExtensionLineWidth();
-                const dimLineWPanelV = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
-                const xStartP = mxStart * scaleFactor + offsetX;
-                const xEndP = mxEnd * scaleFactor + offsetX;
-                const startYScreen = myStart * scaleFactor + offsetY;
-                const endYScreen = myEnd * scaleFactor + offsetY;
-                context.strokeStyle = specialColor;
-                context.lineWidth = extLineWPanelV;
-                context.setLineDash(extDashPanelV);
-                canvasDrawExtensionDashed(context, xStartP, startYScreen, labelX, startYScreen, rectScreenPanelV);
-                canvasDrawExtensionDashed(context, xEndP, endYScreen, labelX, endYScreen, rectScreenPanelV);
-                context.setLineDash([]);
-                context.lineWidth = dimLineWPanelV;
-                context.beginPath();
-                if (startYScreen < textTop) {
-                    context.moveTo(labelX, startYScreen);
-                    context.lineTo(labelX, textTop);
-                }
-                if (endYScreen > textBottom) {
-                    context.moveTo(labelX, textBottom);
-                    context.lineTo(labelX, endYScreen);
-                }
-                context.stroke();
+                const labelMxV = (labelX - offsetX) / scaleFactor;
+                const labelMyV = (labelY - offsetY) / scaleFactor;
+                const attachV = sidePanelAttachPoints({
+                    isFirst,
+                    isLast,
+                    line1,
+                    line2,
+                    tStart,
+                    tEnd,
+                    dimStartX,
+                    dimStartY,
+                    dimEndX,
+                    dimEndY,
+                    labelModelX: labelMxV,
+                    labelModelY: labelMyV
+                });
+                markPanelValueSeen();
+                drawSidePanelDimensionArtwork({
+                    context,
+                    isHorizontal: false,
+                    dimStartX,
+                    dimStartY,
+                    dimEndX,
+                    dimEndY,
+                    attachStartX: attachV.startX,
+                    attachStartY: attachV.startY,
+                    attachEndX: attachV.endX,
+                    attachEndY: attachV.endY,
+                    labelX,
+                    labelY,
+                    textWidth,
+                    color: specialColor,
+                    scaleFactor,
+                    offsetX,
+                    offsetY
+                });
                 
                 // Add to placed labels for future collision detection (use calculated bounds)
                 placedLabels.push({

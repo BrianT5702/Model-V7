@@ -94,6 +94,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const { canEdit: authCanEdit, canComment, isAuthenticated } = useAuth();
     const { isShareSession, isViewOnlyShare, isEditShare, share } = useShare();
     const [viewingVersion, setViewingVersion] = useState(null);
+    const [editingFromVersion, setEditingFromVersion] = useState(null);
     const [compareVersionKeys, setCompareVersionKeys] = useState(null);
     const canEdit = (isViewOnlyShare || viewingVersion) ? false : authCanEdit;
     const canManageVersions = authCanEdit && !isViewOnlyShare;
@@ -126,6 +127,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
     useEffect(() => {
         setViewingVersion(null);
+        setEditingFromVersion(null);
     }, [projectId]);
 
     useEffect(() => {
@@ -136,39 +138,55 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
         return () => window.clearTimeout(timer);
     }, [versionNotice]);
 
-    const handleVersionSaved = async (payload) => {
-        const version = payload?.version || payload;
+    const showVersionOnWallPlan = () => {
         if (projectDetails.is3DView) {
             projectDetails.forceCleanup3D();
             projectDetails.setIs3DView(false);
         }
         projectDetails.setCurrentView('wall-plan');
+    };
+
+    const handleVersionSaved = async (payload) => {
+        const version = payload?.version || payload;
+        showVersionOnWallPlan();
         projectDetails.applyLayoutPreview(payload);
         setLayoutEpoch((value) => value + 1);
         setViewingVersion(version || { number: '' });
+        setEditingFromVersion(null);
         setVersionModalOpen(false);
         const label = version?.label ? ` “${version.label}”` : '';
-        setVersionNotice(`Version ${version?.number ?? ''}${label} saved.`.replace('  ', ' '));
+        setVersionNotice(`Version ${version?.number ?? ''}${label} saved. Showing the wall plan.`.replace('  ', ' '));
     };
 
     const handleVersionRestored = async (version) => {
-        if (projectDetails.is3DView) {
-            projectDetails.forceCleanup3D();
-        }
+        showVersionOnWallPlan();
         await projectDetails.reloadProjectLayout();
         setLayoutEpoch((value) => value + 1);
         setViewingVersion(null);
+        setEditingFromVersion(version);
         setVersionModalOpen(false);
         const label = version?.label ? ` “${version.label}”` : '';
-        setVersionNotice(`Loaded version ${version.number}${label} for editing. Version 0 is unchanged. Save version to keep these edits.`);
+        setVersionNotice(`Loaded version ${version.number}${label} for editing. Showing the wall plan. Version 0 is unchanged. Save version to keep these edits.`);
+    };
+
+    const handleRestoreOriginal = async () => {
+        showVersionOnWallPlan();
+        await projectDetails.reloadProjectLayout({ showOriginal: true });
+        setLayoutEpoch((value) => value + 1);
+        setViewingVersion(null);
+        setEditingFromVersion(null);
+        setVersionModalOpen(false);
+        setVersionNotice('Loaded original (version 0) for editing. Showing the wall plan.');
     };
 
     const handleVersionDeleted = async (version) => {
-        if (viewingVersion && viewingVersion.id === version.id) {
-            if (projectDetails.is3DView) {
-                projectDetails.forceCleanup3D();
-            }
+        if (
+            (viewingVersion && viewingVersion.id === version.id)
+            || (editingFromVersion && editingFromVersion.id === version.id)
+        ) {
+            showVersionOnWallPlan();
             setViewingVersion(null);
+            setEditingFromVersion(null);
             await projectDetails.reloadProjectLayout({ showOriginal: true });
             setLayoutEpoch((value) => value + 1);
         }
@@ -177,24 +195,24 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
     const handleVersionViewed = (payload) => {
         const version = payload?.version;
-        if (projectDetails.is3DView) {
-            projectDetails.forceCleanup3D();
-            projectDetails.setIs3DView(false);
-        }
-        projectDetails.setCurrentView('wall-plan');
+        showVersionOnWallPlan();
         projectDetails.applyLayoutPreview(payload);
         setLayoutEpoch((value) => value + 1);
         setViewingVersion(version || { number: '' });
         setVersionModalOpen(false);
+        const viewedLabel = Number(version?.number) === 0
+            ? 'original (version 0)'
+            : `version ${version?.number ?? ''}${version?.label ? ` “${version.label}”` : ''}`;
+        setVersionNotice(`Viewing ${viewedLabel}. Showing the wall plan.`);
     };
 
     const handleExitVersionView = async () => {
-        if (projectDetails.is3DView) {
-            projectDetails.forceCleanup3D();
-        }
-        setViewingVersion(null);
+        showVersionOnWallPlan();
         await projectDetails.reloadProjectLayout({ showOriginal: true });
         setLayoutEpoch((value) => value + 1);
+        setViewingVersion(null);
+        setEditingFromVersion(null);
+        setVersionNotice('Back to original. Showing the wall plan.');
     };
 
     // Non-passive wheel listener so we can scroll the 2D panel even when a child
@@ -1557,8 +1575,28 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             {viewingVersion ? (
                 <div className="shrink-0 bg-blue-50 border-b border-blue-200 px-4 sm:px-6 py-2 text-sm text-blue-900 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-100 flex flex-wrap items-center justify-between gap-2">
                     <span>
-                        Viewing version {viewingVersion.number}
-                        {viewingVersion.label ? ` · ${viewingVersion.label}` : ''}. This is a snapshot — the original (version 0) is unchanged.
+                        {Number(viewingVersion.number) === 0
+                            ? 'Viewing original (version 0). This is a snapshot — restore original to edit from it.'
+                            : (
+                                <>
+                                    Viewing version {viewingVersion.number}
+                                    {viewingVersion.label ? ` · ${viewingVersion.label}` : ''}. This is a snapshot — the original (version 0) is unchanged.
+                                </>
+                            )}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={handleExitVersionView}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                        Back to original
+                    </button>
+                </div>
+            ) : editingFromVersion ? (
+                <div className="shrink-0 bg-blue-50 border-b border-blue-200 px-4 sm:px-6 py-2 text-sm text-blue-900 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-100 flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                        Editing from version {editingFromVersion.number}
+                        {editingFromVersion.label ? ` · ${editingFromVersion.label}` : ''}. Version 0 is unchanged. Save version to keep these edits.
                     </span>
                     <button
                         type="button"
@@ -2840,6 +2878,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                 <div className="relative">
                                     {projectDetails.currentView === 'wall-plan' ? (
                                         <Canvas2D
+                                            key={`wall-plan-${layoutEpoch}`}
                                             walls={projectDetails.filteredWalls}
                                             allWalls={projectDetails.walls}
                                             setWalls={projectDetails.setWalls}
@@ -2924,6 +2963,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         <FloorManager
                                             projectId={projectId}
                                             canEdit={canEdit}
+                                            layoutPreview={projectDetails.layoutPreview}
                                             onClose={() => {
                                                 projectDetails.resetAllSelections();
                                                 projectDetails.setCurrentView('wall-plan');
@@ -2958,6 +2998,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         <CeilingManager
                                             projectId={projectId}
                                             canEdit={canEdit}
+                                            layoutPreview={projectDetails.layoutPreview}
                                             room={projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 ? projectDetails.filteredRooms[0] : null}
                                             onClose={() => {
                                                 projectDetails.resetAllSelections();
@@ -4357,12 +4398,13 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     projectName={projectDetails.project?.name}
                     canManage={canManageVersions}
                     viewingVersionId={viewingVersion?.id}
+                    editingFromVersionId={editingFromVersion?.id}
                     onClose={() => setVersionModalOpen(false)}
                     onRestored={handleVersionRestored}
                     onViewed={handleVersionViewed}
                     onSaved={handleVersionSaved}
                     onDeleted={handleVersionDeleted}
-                    onViewOriginal={handleExitVersionView}
+                    onRestoreOriginal={handleRestoreOriginal}
                     onCompare={(keys) => {
                         setCompareVersionKeys(keys);
                         setVersionModalOpen(false);

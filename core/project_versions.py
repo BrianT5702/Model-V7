@@ -155,6 +155,118 @@ def _snapshot_row_as_api(row, project_id):
     return item, pk
 
 
+def _snapshot_panel_as_api(row, project_id):
+    item, pk = _snapshot_row_as_api(row, project_id)
+    room_id = _as_pk(item.get('room'))
+    zone_id = _as_pk(item.get('zone'))
+    item['room'] = room_id
+    item['room_id'] = room_id
+    if 'zone' in item or zone_id is not None:
+        item['zone'] = zone_id
+        item['zone_id'] = zone_id
+    item['is_cut'] = bool(item.get('is_cut_panel'))
+    if 'shape_points' not in item:
+        item['shape_points'] = item.get('shape_data')
+    return item, pk
+
+
+def _snapshot_plan_as_api(row, project_id):
+    item, pk = _snapshot_row_as_api(row, project_id)
+    room_id = _as_pk(item.get('room'))
+    zone_id = _as_pk(item.get('zone'))
+    item['room'] = room_id
+    item['room_id'] = room_id
+    item['zone'] = zone_id
+    item['zone_id'] = zone_id
+    return item, pk
+
+
+def _attach_snapshot_ceiling_and_floor(snapshot, project_id, rooms):
+
+    ceiling_panels = []
+    ceiling_panels_by_room = {}
+    ceiling_panels_by_zone = {}
+    for row in snapshot.get('ceiling_panels') or []:
+        item, pk = _snapshot_panel_as_api(row, project_id)
+        ceiling_panels.append(item)
+        room_id = item.get('room_id')
+        zone_id = item.get('zone_id')
+        if room_id is not None:
+            ceiling_panels_by_room.setdefault(room_id, []).append(item)
+        if zone_id is not None:
+            ceiling_panels_by_zone.setdefault(zone_id, []).append(item)
+
+    floor_panels = []
+    floor_panels_by_room = {}
+    for row in snapshot.get('floor_panels') or []:
+        item, pk = _snapshot_panel_as_api(row, project_id)
+        floor_panels.append(item)
+        room_id = item.get('room_id')
+        if room_id is not None:
+            floor_panels_by_room.setdefault(room_id, []).append(item)
+
+    ceiling_plans = []
+    ceiling_plans_by_room = {}
+    ceiling_plans_by_zone = {}
+    for row in snapshot.get('ceiling_plans') or []:
+        item, pk = _snapshot_plan_as_api(row, project_id)
+        room_id = item.get('room_id')
+        zone_id = item.get('zone_id')
+        if zone_id is not None:
+            item['ceiling_panels'] = ceiling_panels_by_zone.get(zone_id, [])
+            ceiling_plans_by_zone[zone_id] = item
+        else:
+            item['ceiling_panels'] = ceiling_panels_by_room.get(room_id, [])
+            if room_id is not None:
+                ceiling_plans_by_room[room_id] = item
+        ceiling_plans.append(item)
+
+    floor_plans = []
+    floor_plans_by_room = {}
+    for row in snapshot.get('floor_plans') or []:
+        item, pk = _snapshot_plan_as_api(row, project_id)
+        room_id = item.get('room_id')
+        item['floor_panels'] = floor_panels_by_room.get(room_id, [])
+        if room_id is not None:
+            floor_plans_by_room[room_id] = item
+        floor_plans.append(item)
+
+    zone_rooms = snapshot.get('zone_rooms') or {}
+    ceiling_zones = []
+    zones_by_room = {}
+    for row in snapshot.get('ceiling_zones') or []:
+        item, pk = _snapshot_row_as_api(row, project_id)
+        raw_rooms = zone_rooms.get(str(pk), zone_rooms.get(pk, [])) or []
+        room_ids = [_as_pk(room_id) for room_id in raw_rooms]
+        item['room_ids'] = [room_id for room_id in room_ids if room_id is not None]
+        item['ceiling_panels'] = ceiling_panels_by_zone.get(pk, [])
+        item['ceiling_plan'] = ceiling_plans_by_zone.get(pk)
+        ceiling_zones.append(item)
+        zone_summary = {'id': pk, 'name': item.get('name') or f'Zone {pk}'}
+        for room_id in item['room_ids']:
+            zones_by_room.setdefault(room_id, []).append(zone_summary)
+
+    for room in rooms:
+        room_id = room.get('id')
+        room['ceiling_zones'] = zones_by_room.get(room_id, [])
+        room['ceiling_plan'] = ceiling_plans_by_room.get(room_id)
+        room['floor_plan'] = floor_plans_by_room.get(room_id)
+        zone_plan = None
+        for zone in room['ceiling_zones']:
+            zone_plan = ceiling_plans_by_zone.get(zone.get('id'))
+            if zone_plan is not None:
+                break
+        room['zone_ceiling_plan'] = zone_plan
+
+    return {
+        'ceiling_panels': ceiling_panels,
+        'ceiling_plans': ceiling_plans,
+        'ceiling_zones': ceiling_zones,
+        'floor_panels': floor_panels,
+        'floor_plans': floor_plans,
+    }
+
+
 def build_version_preview(project: Project, snapshot: dict) -> dict:
     snapshot = snapshot or {}
     project_id = project.pk
@@ -218,6 +330,8 @@ def build_version_preview(project: Project, snapshot: dict) -> dict:
         item, _pk = _snapshot_row_as_api(row, project_id)
         annotations.append(item)
 
+    ceiling_floor = _attach_snapshot_ceiling_and_floor(snapshot, project_id, rooms)
+
     return {
         'project': {
             'id': project.pk,
@@ -235,18 +349,21 @@ def build_version_preview(project: Project, snapshot: dict) -> dict:
         'doors': doors,
         'intersections': intersections,
         'plan_annotations': annotations,
+        **ceiling_floor,
     }
 
 
-def _layout_fingerprint(snapshot: dict) -> tuple:
+def _layout_num(value):
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _geometry_fingerprint(snapshot: dict) -> tuple:
     snapshot = snapshot or {}
     project_row = snapshot.get('project') or {}
-
-    def num(value):
-        try:
-            return round(float(value), 2)
-        except (TypeError, ValueError):
-            return 0.0
+    num = _layout_num
 
     walls = tuple(sorted(
         (
@@ -289,6 +406,55 @@ def _layout_fingerprint(snapshot: dict) -> tuple:
         doors,
         len(snapshot.get('storeys') or []),
     )
+
+
+def _intersections_fingerprint(snapshot: dict) -> tuple:
+    snapshot = snapshot or {}
+    num = _layout_num
+    wall_geom = {}
+    for row in snapshot.get('walls') or []:
+        pk = _as_pk(row.get('_pk') or row.get('id'))
+        if pk is None:
+            continue
+        wall_geom[pk] = (
+            num(row.get('start_x')),
+            num(row.get('start_y')),
+            num(row.get('end_x')),
+            num(row.get('end_y')),
+        )
+    items = []
+    for row in snapshot.get('intersections') or []:
+        items.append((
+            wall_geom.get(_as_pk(row.get('wall_1')), (0.0, 0.0, 0.0, 0.0)),
+            wall_geom.get(_as_pk(row.get('wall_2')), (0.0, 0.0, 0.0, 0.0)),
+            (row.get('joining_method') or ''),
+            bool(row.get('deduct_joining_thickness')),
+        ))
+    return tuple(sorted(items))
+
+
+def _layout_fingerprint(snapshot: dict) -> tuple:
+    return (
+        *_geometry_fingerprint(snapshot),
+        _intersections_fingerprint(snapshot),
+    )
+
+
+@transaction.atomic
+def capture_original_edits_if_live_is_original(project: Project) -> Project:
+    """If the user is editing version 0, keep joint changes in the frozen original."""
+    locked = Project.objects.select_for_update().get(pk=project.pk)
+    if not locked.versions.exists():
+        return locked
+    original = original_layout_snapshot(locked)
+    if original is None:
+        return locked
+    current = export_project(locked, include_comments=False)
+    if _geometry_fingerprint(current) != _geometry_fingerprint(original):
+        return locked
+    if _layout_fingerprint(current) != _layout_fingerprint(original):
+        _persist_original(locked, current)
+    return locked
 
 
 @transaction.atomic

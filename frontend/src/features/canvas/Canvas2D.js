@@ -2763,6 +2763,7 @@ const Canvas2D = ({
         });
         const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
         const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;
+        const wallLinesMap = wallDrawResult?.wallLinesMap ?? null;
         // Update legend only when entries change (avoids extra paint after theme redraw)
         if (colorMap instanceof Map) {
             const prev = thicknessColorMapRef.current;
@@ -2793,7 +2794,7 @@ const Canvas2D = ({
                 placedLabels,
                 allLabels,
                 initialScale.current,
-                null,
+                wallLinesMap,
                 dimensionEdgeExtents
             );
         }

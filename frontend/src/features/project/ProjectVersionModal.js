@@ -24,12 +24,13 @@ const ProjectVersionModal = ({
     projectName,
     canManage = false,
     viewingVersionId = null,
+    editingFromVersionId = null,
     onClose,
     onRestored,
     onViewed,
     onSaved,
     onDeleted,
-    onViewOriginal,
+    onRestoreOriginal,
     onBeforeSave,
     onCompare,
 }) => {
@@ -161,11 +162,45 @@ const ProjectVersionModal = ({
     };
 
     const viewOriginal = async () => {
+        setBusyId(ORIGINAL_VERSION_KEY);
+        setError('');
+        setNotice('');
         clearConfirms();
-        if (onViewOriginal) {
-            await onViewOriginal();
+        try {
+            const response = await api.get(
+                `projects/${projectId}/versions/original/`,
+                { timeout: VERSION_TIMEOUT_MS },
+            );
+            if (onViewed) {
+                onViewed({
+                    ...response.data,
+                    version: {
+                        ...(response.data.version || {}),
+                        id: ORIGINAL_VERSION_KEY,
+                        number: 0,
+                        label: response.data.version?.label || 'Original',
+                    },
+                });
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to open the original drawing.');
+            setBusyId(null);
         }
-        onClose();
+    };
+
+    const restoreOriginal = async () => {
+        setBusyId(ORIGINAL_VERSION_KEY);
+        setError('');
+        setNotice('');
+        try {
+            if (onRestoreOriginal) {
+                await onRestoreOriginal();
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to restore the original drawing.');
+            setBusyId(null);
+            clearConfirms();
+        }
     };
 
     const toggleCompareKey = (key) => {
@@ -188,7 +223,11 @@ const ProjectVersionModal = ({
     };
 
     const isBusy = saving || busyId != null;
-    const showingOriginal = viewingVersionId == null;
+    const isViewingOriginal = viewingVersionId === ORIGINAL_VERSION_KEY;
+    const showingOriginalLive = viewingVersionId == null && editingFromVersionId == null;
+    const showingOriginal = showingOriginalLive || isViewingOriginal;
+    const confirmingRestoreOriginal = confirmRestoreId === ORIGINAL_VERSION_KEY;
+    const originalRowBusy = busyId === ORIGINAL_VERSION_KEY;
 
     return (
         <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-[12000] p-4">
@@ -219,8 +258,8 @@ const ProjectVersionModal = ({
                 <div className="px-4 py-4 space-y-4">
                     <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                         {canManage
-                            ? 'Opening this project always shows the original (version 0). Save version stores your current drawing as a snapshot, then opens that snapshot. Use View to look at another snapshot. Compare shows two to four snapshots side by side without changing the live project. Restore loads a snapshot onto the canvas so you can edit from it; version 0 stays. Save version afterwards to keep those edits as the next snapshot. Delete removes a snapshot only.'
-                            : 'Opening this project always shows the original (version 0). Use View to look at another snapshot. Compare shows two to four snapshots side by side.'}
+                            ? 'Opening this project always shows the original (version 0). Save version stores your current drawing as a snapshot, then opens that snapshot on the wall plan. Use View to look at another snapshot, including Original — it also opens the wall plan first; then you can switch to Ceiling or Floor. Compare shows two to four snapshots side by side without changing the live project. Restore loads a snapshot onto the canvas so you can edit from it; version 0 stays frozen until you Restore Original. Save version afterwards to keep those edits as the next snapshot. Delete removes a snapshot only.'
+                            : 'Opening this project always shows the original (version 0). Use View to look at another snapshot, including Original. View always opens the wall plan first; then you can switch to Ceiling or Floor. Compare shows two to four snapshots side by side.'}
                     </p>
 
                     {canManage && (
@@ -306,28 +345,73 @@ const ProjectVersionModal = ({
                                                     </span>
                                                 </p>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                                    {showingOriginal
+                                                    {showingOriginalLive
                                                         ? 'This is what you see when you open the project.'
-                                                        : 'Return to the original drawing.'}
+                                                        : isViewingOriginal
+                                                            ? 'Snapshot of the original drawing.'
+                                                            : 'The original drawing. Restore it to edit from version 0.'}
                                                 </p>
                                                 </div>
                                             </label>
                                         </div>
-                                        {showingOriginal ? (
-                                            <p className="mt-2 text-xs font-medium text-blue-800 dark:text-blue-200">
-                                                Showing
-                                            </p>
+                                        {confirmingRestoreOriginal ? (
+                                            <div className="mt-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2.5 py-2">
+                                                <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
+                                                    Restore original (version 0)? This loads the original drawing onto the canvas for editing. Unsaved drawing on the canvas will be replaced.
+                                                </p>
+                                                <div className="mt-2 flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={originalRowBusy}
+                                                        onClick={restoreOriginal}
+                                                        className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-60"
+                                                    >
+                                                        {originalRowBusy ? 'Restoring…' : 'Restore'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={originalRowBusy}
+                                                        onClick={() => setConfirmRestoreId(null)}
+                                                        className="px-2.5 py-1 rounded-md text-xs font-medium btn-secondary disabled:opacity-60"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
                                         ) : (
                                             <div className="mt-2">
-                                                <button
-                                                    type="button"
-                                                    disabled={isBusy}
-                                                    onClick={viewOriginal}
-                                                    className="flex items-center px-2.5 py-1 rounded-md text-xs font-medium btn-secondary disabled:opacity-60"
-                                                >
-                                                    <FaEye className="mr-1.5" />
-                                                    View
-                                                </button>
+                                                {showingOriginal && (
+                                                    <p className="mb-2 text-xs font-medium text-blue-800 dark:text-blue-200">
+                                                        Showing
+                                                    </p>
+                                                )}
+                                                {!showingOriginalLive && (
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                            type="button"
+                                                            disabled={isBusy || isViewingOriginal}
+                                                            onClick={viewOriginal}
+                                                            className="flex items-center px-2.5 py-1 rounded-md text-xs font-medium btn-secondary disabled:opacity-60"
+                                                        >
+                                                            <FaEye className="mr-1.5" />
+                                                            {originalRowBusy && !confirmingRestoreOriginal ? 'Opening…' : isViewingOriginal ? 'Viewing' : 'View'}
+                                                        </button>
+                                                        {canManage && (
+                                                            <button
+                                                                type="button"
+                                                                disabled={isBusy}
+                                                                onClick={() => {
+                                                                    setConfirmDeleteId(null);
+                                                                    setConfirmRestoreId(ORIGINAL_VERSION_KEY);
+                                                                }}
+                                                                className="flex items-center px-2.5 py-1 rounded-md text-xs font-medium btn-secondary disabled:opacity-60"
+                                                            >
+                                                                <FaUndo className="mr-1.5" />
+                                                                Restore
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -341,12 +425,14 @@ const ProjectVersionModal = ({
                                             const confirmingDelete = confirmDeleteId === version.id;
                                             const rowBusy = busyId === version.id;
                                             const isViewing = viewingVersionId === version.id;
+                                            const isEditingFrom = viewingVersionId == null && editingFromVersionId === version.id;
+                                            const isShowing = isViewing || isEditingFrom;
                                             const compareChecked = compareKeys.includes(version.id);
                                             return (
                                                 <div
                                                     key={version.id}
                                                     className={`rounded-lg border px-3 py-2.5 ${
-                                                        isViewing
+                                                        isShowing
                                                             ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30'
                                                             : 'border-gray-200 dark:border-gray-700'
                                                     }`}
@@ -428,7 +514,13 @@ const ProjectVersionModal = ({
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <div className="mt-2 flex flex-wrap gap-2">
+                                                        <div className="mt-2">
+                                                            {isShowing && (
+                                                                <p className="mb-2 text-xs font-medium text-blue-800 dark:text-blue-200">
+                                                                    {isEditingFrom && !isViewing ? 'Showing · loaded for editing' : 'Showing'}
+                                                                </p>
+                                                            )}
+                                                            <div className="flex flex-wrap gap-2">
                                                             <button
                                                                 type="button"
                                                                 disabled={isBusy || isViewing}
@@ -466,6 +558,7 @@ const ProjectVersionModal = ({
                                                                 Delete
                                                             </button>
                                                             )}
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>

@@ -10,6 +10,7 @@ import {
     adjustPlanStrokeColor,
     buildCeilingPanelFinishColors,
     getCeilingNeutralPanelColors,
+    getCeilingRoomAccent,
     getPlanDimensionStrokeColor,
     getPlanLabelBackground,
     getPlanWallInnerStroke,
@@ -1615,15 +1616,13 @@ const CeilingCanvas = ({
         // Collect all dimensions so we can sort by value: smaller inner, larger outer when overlapping
         const dimensionsToDraw = [];
 
-        // PASS 1: Draw all rooms and their ceiling panels (includes dimension LINES only)
-        // Draw room outlines first (room names will be added to collision detection)
+        // PASS 1: Fill rooms (tinted) and place names, then panels, then room edges on top
         if (effectiveRooms && effectiveRooms.length > 0) {
-            effectiveRooms.forEach(room => {
-                drawRoomOutline(ctx, room, globalPlacedLabels);
+            effectiveRooms.forEach((room, roomIndex) => {
+                drawRoomOutline(ctx, room, globalPlacedLabels, 'fill', roomIndex);
             });
         }
 
-        // Then draw panels and collect dimensions (or draw dimensions if not collecting)
         if (effectiveRooms && effectiveRooms.length > 0) {
             effectiveRooms.forEach(room => {
                 drawCeilingPanels(ctx, room, globalPlacedLabels, globalAllLabels, dimensionsToDraw);
@@ -1632,6 +1631,15 @@ const CeilingCanvas = ({
 
         if (enableAluSuspension && effectiveCustomSupports.length > 0) {
             appendAluRailDimensionsToCollector(effectiveCustomSupports, dimensionsToDraw);
+        }
+
+        if (effectiveRooms && effectiveRooms.length > 0) {
+            effectiveRooms.forEach((room, roomIndex) => {
+                drawRoomOutline(ctx, room, globalPlacedLabels, 'boundary', roomIndex);
+            });
+            effectiveRooms.forEach((room, roomIndex) => {
+                drawRoomOutline(ctx, room, globalPlacedLabels, 'label', roomIndex);
+            });
         }
 
         const dimensionLanes = createDimensionLaneCounters();
@@ -2707,7 +2715,7 @@ const CeilingCanvas = ({
     };
 
     // Draw room outline
-    const drawRoomOutline = (ctx, room, placedLabels = []) => {
+    const drawRoomOutline = (ctx, room, placedLabels = [], phase = 'all', roomIndex = 0) => {
         if (!room.room_points || room.room_points.length < 3) return;
 
         const isSelected = room.id === selectedRoomId;
@@ -2715,36 +2723,15 @@ const CeilingCanvas = ({
         const isZoneSelectionActive = typeof selectedRoomId === 'string' && selectedRoomId.startsWith('zone-');
         const isZoneRoom = typeof room.id === 'string' && room.id.startsWith('zone-');
         const isRoomMode = !showAllRooms && selectedRoomId;
+        const drawFill = phase === 'all' || phase === 'fill';
+        const drawBoundary = phase === 'all' || phase === 'boundary';
+        const drawLabel = phase === 'all' || phase === 'label';
+        const accent = getCeilingRoomAccent(roomIndex);
 
         if (isZoneSelectionActive && !isZoneRoom) {
             return;
         }
-        
-        // Room outline styling
-        if (isSelected) {
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.25)'; // More visible blue for selected room
-            ctx.strokeStyle = '#1d4ed8'; // Darker blue border for selected room
-            ctx.lineWidth = 6 * scaleFactor.current; // Thicker border for better visibility
-        } else if (isZoneSelectionActive) {
-            ctx.fillStyle = 'rgba(156, 163, 175, 0.05)'; // Dimmed when zone is selected
-            ctx.strokeStyle = adjustPlanStrokeColor('#d1d5db');
-            ctx.lineWidth = 1 * scaleFactor.current;
-        } else if (isHovered) {
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; // Light blue for hovered room
-            ctx.strokeStyle = '#3b82f6'; // Blue border for hovered room
-            ctx.lineWidth = 4 * scaleFactor.current; // Thicker border for hover
-        } else if (isRoomMode) {
-            // When in single room mode, dim unselected rooms
-            ctx.fillStyle = 'rgba(156, 163, 175, 0.02)'; // Very light gray for unselected rooms
-            ctx.strokeStyle = adjustPlanStrokeColor('#d1d5db');
-            ctx.lineWidth = 1 * scaleFactor.current;
-        } else {
-            ctx.fillStyle = 'rgba(156, 163, 175, 0.05)'; // Very light gray for unselected rooms
-            ctx.strokeStyle = adjustPlanStrokeColor('#9ca3af');
-            ctx.lineWidth = 2 * scaleFactor.current;
-        }
 
-        // Draw room outline
         ctx.beginPath();
         const firstPoint = room.room_points[0];
         ctx.moveTo(
@@ -2761,11 +2748,45 @@ const CeilingCanvas = ({
         }
 
         ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
 
-        // Add room name label (with collision detection against all text elements)
-        if (room.room_name) {
+        if (drawFill) {
+            if (isSelected) {
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.22)';
+            } else if (isZoneSelectionActive) {
+                ctx.fillStyle = 'rgba(156, 163, 175, 0.05)';
+            } else if (isHovered) {
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+            } else if (isRoomMode) {
+                ctx.fillStyle = 'rgba(156, 163, 175, 0.04)';
+            } else {
+                ctx.fillStyle = accent.fill;
+            }
+            ctx.fill();
+        }
+
+        if (drawBoundary) {
+            ctx.setLineDash([]);
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = isPlanCanvasDark() ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)';
+            ctx.lineWidth = isSelected ? 6 : isHovered ? 5 : 4.5;
+            ctx.stroke();
+            if (isSelected) {
+                ctx.strokeStyle = '#1d4ed8';
+            } else if (isHovered) {
+                ctx.strokeStyle = '#3b82f6';
+            } else if (isZoneSelectionActive || isRoomMode) {
+                ctx.strokeStyle = accent.stroke;
+            } else {
+                ctx.strokeStyle = accent.stroke;
+            }
+            ctx.lineWidth = isSelected ? 3.25 : isHovered ? 2.75 : 2.5;
+            ctx.stroke();
+        }
+
+        if (!drawLabel || !room.room_name) {
+            return;
+        }
             const labelText = room.room_name;
             const sf = scaleFactor.current;
             const roomCanvasMinX = Math.min(...room.room_points.map(p => p.x * sf + offsetX.current));
@@ -2855,19 +2876,15 @@ const CeilingCanvas = ({
             if (isSelected) {
                 padding = 8;
                 textColor = '#ffffff';
-                bgColor = 'rgba(59, 130, 246, 0.9)';
+                bgColor = 'rgba(59, 130, 246, 0.92)';
             } else if (isHovered) {
-                padding = 4;
-                textColor = '#3b82f6';
-                bgColor = 'rgba(59, 130, 246, 0.2)';
-            } else if (isRoomMode) {
-                padding = 4;
-                textColor = isPlanCanvasDark() ? '#d1d5db' : '#9ca3af';
-                bgColor = null;
+                padding = 6;
+                textColor = '#ffffff';
+                bgColor = 'rgba(37, 99, 235, 0.88)';
             } else {
-                padding = 4;
-                textColor = isPlanCanvasDark() ? '#e5e7eb' : '#6b7280';
-                bgColor = null;
+                padding = 6;
+                textColor = accent.labelText;
+                bgColor = accent.labelBg;
             }
 
             let labelX = baseX;
@@ -2942,7 +2959,6 @@ const CeilingCanvas = ({
                     roomId: room.id,
                 });
             }
-        }
     };
 
     // Draw walls with dashed lines (inner face)
@@ -3338,8 +3354,8 @@ const CeilingCanvas = ({
                 }
 
                 ctx.lineWidth = shouldDimPanels
-                    ? Math.max(1, 5 * scaleFactor.current)
-                    : Math.max(1.25, (isRoomSelected ? 12 : 10) * scaleFactor.current);
+                    ? Math.max(1, 2)
+                    : Math.max(1, (isRoomSelected ? 2.25 : 1.5));
             }
 
             // === DRAWING LOGIC ===

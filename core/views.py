@@ -1532,6 +1532,25 @@ class IntersectionViewSet(ShareScopedModelViewSet):
             return Intersection.objects.filter(project_id=project_id)
         return super().get_queryset()
 
+    def _sync_original_joints(self, project):
+        if project is None:
+            return
+        from .project_versions import capture_original_edits_if_live_is_original
+        capture_original_edits_if_live_is_original(project)
+
+    def perform_create(self, serializer):
+        intersection = serializer.save()
+        self._sync_original_joints(intersection.project)
+
+    def perform_update(self, serializer):
+        intersection = serializer.save()
+        self._sync_original_joints(intersection.project)
+
+    def perform_destroy(self, instance):
+        project = instance.project
+        super().perform_destroy(instance)
+        self._sync_original_joints(project)
+
     @action(detail=False, methods=['post'], url_path='set_joint')
     def set_joint(self, request):
         """Set the joining method for an intersection"""
@@ -1584,6 +1603,7 @@ class IntersectionViewSet(ShareScopedModelViewSet):
                     deduct_joining_thickness=deduct_joining_thickness,
             )
 
+            self._sync_original_joints(wall_1.project)
             return Response(IntersectionSerializer(intersection).data, status=status.HTTP_200_OK)
         except Wall.DoesNotExist:
             return Response({'error': 'One or more walls not found'}, status=status.HTTP_404_NOT_FOUND)

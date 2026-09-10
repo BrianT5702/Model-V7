@@ -53,25 +53,28 @@ export function overlapsDimensionText(labelBounds, placedLabels, minSeparation =
 }
 
 export function hasLabelOverlap(labelBounds, placedLabels, minSeparation = 3) {
-    // Quick spatial optimization: only check labels that are potentially close
-    // Calculate approximate distance to filter out obviously far labels
-    const labelCenterX = labelBounds.x + labelBounds.width / 2;
-    const labelCenterY = labelBounds.y + labelBounds.height / 2;
-    const maxDistance = Math.max(labelBounds.width, labelBounds.height) + minSeparation * 2;
-    
-    // Filter labels that are potentially close (simple distance check)
-    const nearbyLabels = placedLabels.filter(existing => {
-        const existingCenterX = existing.x + existing.width / 2;
-        const existingCenterY = existing.y + existing.height / 2;
-        const distanceX = Math.abs(labelCenterX - existingCenterX);
-        const distanceY = Math.abs(labelCenterY - existingCenterY);
-        const maxDim = Math.max(existing.width, existing.height);
-        // Only check if within reasonable distance
-        return distanceX < maxDistance + maxDim && distanceY < maxDistance + maxDim;
+    if (!labelBounds || !placedLabels?.length) return false;
+    // AABB only. A center-distance prefilter dropped long thin door hatches: the label
+    // sat on the opening while the door centre was far enough along the wall to skip.
+    return placedLabels.some((existing) => {
+        if (
+            existing == null
+            || !Number.isFinite(existing.x)
+            || !Number.isFinite(existing.y)
+            || !Number.isFinite(existing.width)
+            || !Number.isFinite(existing.height)
+        ) {
+            return false;
+        }
+        return checkBoxOverlap(labelBounds, existing, minSeparation);
     });
-    
-    // Check overlap with nearby labels only
-    return nearbyLabels.some(existing => checkBoxOverlap(labelBounds, existing, minSeparation));
+}
+
+export function overlapsDoorObstacle(labelBounds, placedLabels, minSeparation = 0) {
+    if (!labelBounds || !placedLabels?.length) return false;
+    return placedLabels.some(
+        (existing) => existing?.type === 'door_obstacle' && checkBoxOverlap(labelBounds, existing, minSeparation)
+    );
 }
 
 /**

@@ -6,7 +6,7 @@ import api from '../../api/api';
 import { sortMaterialPanels } from '../panel/wallPlanPanelUtils';
 import { calculateGhostDataForStorey } from '../estimation/pdfVectorWallPlan';
 
-const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated, updateSharedPanelData = null }) => {
+const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated, updateSharedPanelData = null, layoutPreview = null }) => {
     const { isAuthenticated } = useAuth();
     // Essential state for project-level floor planning
     const [isGenerating, setIsGenerating] = useState(false);
@@ -220,7 +220,50 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
         }
     }, [projectId, panelWidth, panelLength, customPanelLength, floorPlan]);
 
+    const applyLayoutPreviewData = useCallback((preview) => {
+        if (!preview) {
+            return;
+        }
+        const loadedStoreys = Array.isArray(preview.storeys)
+            ? preview.storeys
+            : (Array.isArray(preview.project?.storeys) ? preview.project.storeys : []);
+        const rooms = Array.isArray(preview.rooms) ? preview.rooms : [];
+        const panels = Array.isArray(preview.floor_panels) ? preview.floor_panels : [];
+        const plans = Array.isArray(preview.floor_plans) ? preview.floor_plans : [];
+
+        setProjectData(preview.project || null);
+        setStoreys(loadedStoreys);
+        if (loadedStoreys.length > 0) {
+            setSelectedStoreyId((prev) => prev ?? loadedStoreys[0].id);
+        }
+        setAllRooms(rooms);
+        setAllWalls(Array.isArray(preview.walls) ? preview.walls : []);
+        setAllIntersections(Array.isArray(preview.intersections) ? preview.intersections : []);
+        setFloorPanels(panels);
+        if (plans.length > 0) {
+            setFloorPlan({
+                ...plans[0],
+                total_panels: panels.length,
+                enhanced_panels: panels,
+                floor_panels: panels,
+            });
+        } else {
+            setFloorPlan(null);
+        }
+        const panelRooms = rooms.filter(room => room.floor_type === 'panel' || room.floor_type === 'Panel');
+        const slabRooms = rooms.filter(room => room.floor_type === 'slab' || room.floor_type === 'Slab');
+        if (panelRooms.length === 0 && slabRooms.length === 0) {
+            setError('No rooms with panel or slab floors found. Floor plan is available for rooms with floor_type = "panel" (panel layout) or "slab" (slab count).');
+        } else {
+            setError(null);
+        }
+    }, []);
+
     const loadProjectData = useCallback(async () => {
+        if (layoutPreview) {
+            applyLayoutPreviewData(layoutPreview);
+            return;
+        }
         try {
             const pid = parseInt(projectId, 10);
             const [
@@ -324,13 +367,17 @@ const FloorManager = ({ projectId, canEdit = true, onClose, onFloorPlanGenerated
         } catch (error) {
             console.error('Error loading project data:', error);
         }
-    }, [projectId, loadExistingFloorPlan, loadOrientationAnalysis]);
+    }, [projectId, loadExistingFloorPlan, loadOrientationAnalysis, layoutPreview, applyLayoutPreviewData]);
 
     useEffect(() => {
+        if (layoutPreview) {
+            applyLayoutPreviewData(layoutPreview);
+            return;
+        }
         if (projectId) {
             loadProjectData();
         }
-    }, [projectId, loadProjectData]);
+    }, [projectId, loadProjectData, layoutPreview, applyLayoutPreviewData]);
 
     // Process floor panels for sharing with other tabs (matches table structure)
     const processFloorPanelsForSharing = (panels, rooms) => {

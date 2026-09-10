@@ -10,7 +10,7 @@ import useScrollContainment from '../../utils/useScrollContainment';
 
 const DEFAULT_CEILING_PANEL_LENGTH_MM = 6000;
 
-const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null }) => {
+const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null, layoutPreview = null }) => {
     const { isAuthenticated } = useAuth();
     // Essential state for project-level ceiling planning
     const [isGenerating, setIsGenerating] = useState(false);
@@ -1812,7 +1812,47 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
         }
     }, [projectId, panelWidth, panelLength, customPanelLength, ceilingThickness]);
 
+    const applyLayoutPreviewData = useCallback((preview) => {
+        if (!preview) {
+            return;
+        }
+        const loadedStoreys = Array.isArray(preview.storeys)
+            ? preview.storeys
+            : (Array.isArray(preview.project?.storeys) ? preview.project.storeys : []);
+        const loadedRooms = Array.isArray(preview.rooms) ? preview.rooms : [];
+        const panels = Array.isArray(preview.ceiling_panels) ? preview.ceiling_panels : [];
+        const plans = Array.isArray(preview.ceiling_plans) ? preview.ceiling_plans : [];
+        const zones = Array.isArray(preview.ceiling_zones) ? preview.ceiling_zones : [];
+
+        setProjectData(preview.project || null);
+        setStoreys(loadedStoreys);
+        if (loadedStoreys.length > 0) {
+            setSelectedStoreyId((prev) => prev || loadedStoreys[0].id);
+        }
+        setAllRooms(loadedRooms);
+        setAllWalls(Array.isArray(preview.walls) ? preview.walls : []);
+        setAllIntersections(Array.isArray(preview.intersections) ? preview.intersections : []);
+        setCeilingPanels(panels);
+        setCeilingZones(zones);
+        setCeilingPlans(plans);
+        if (plans.length > 0) {
+            setCeilingPlan({
+                ...plans[0],
+                total_panels: panels.length,
+                enhanced_panels: panels,
+                ceiling_panels: panels,
+                zone_plans: zones,
+            });
+        } else {
+            setCeilingPlan(null);
+        }
+    }, []);
+
     const loadProjectData = useCallback(async () => {
+        if (layoutPreview) {
+            applyLayoutPreviewData(layoutPreview);
+            return;
+        }
         try {
             const pid = parseInt(projectId, 10);
             const [
@@ -1890,13 +1930,17 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
     // Do NOT depend on loadOrientationAnalysis / ceilingThickness — that recreated this
     // callback on every Thickness keystroke, reloaded the plan, and snapped the field back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [projectId, loadCeilingZones, loadExistingCeilingPlan]);
+    }, [projectId, loadCeilingZones, loadExistingCeilingPlan, layoutPreview, applyLayoutPreviewData]);
 
     useEffect(() => {
+        if (layoutPreview) {
+            applyLayoutPreviewData(layoutPreview);
+            return;
+        }
         if (projectId) {
             loadProjectData();
         }
-    }, [projectId, loadProjectData]);
+    }, [projectId, loadProjectData, layoutPreview, applyLayoutPreviewData]);
 
     // Generate ceiling plan for a specific room only
     const generateCeilingPlanForRoom = async (roomId, config, options = {}) => {

@@ -124,7 +124,7 @@ function modelPointToScreen(x, y, scaleFactor, offsetX, offsetY) {
     return { x: x * scaleFactor + offsetX, y: y * scaleFactor + offsetY };
 }
 
-function boundsFromModelPoints(points, scaleFactor, offsetX, offsetY, paddingPx = 12) {
+function boundsFromModelPoints(points, scaleFactor, offsetX, offsetY, paddingPx = 10) {
     if (!points.length) return null;
     let minX = Infinity;
     let minY = Infinity;
@@ -146,6 +146,26 @@ function boundsFromModelPoints(points, scaleFactor, offsetX, offsetY, paddingPx 
     };
 }
 
+function wallIdMatchesDoor(wallId, doorRef) {
+    if (wallId == null || doorRef == null) return false;
+    if (typeof doorRef === 'object') {
+        return wallIdMatchesDoor(wallId, doorRef.id ?? doorRef.pk);
+    }
+    return String(wallId) === String(doorRef);
+}
+
+export function findWallForDoor(walls, door) {
+    if (!Array.isArray(walls) || !door) return null;
+    return (
+        walls.find(
+            (w) =>
+                wallIdMatchesDoor(w.id, door.linked_wall) ||
+                wallIdMatchesDoor(w.id, door.wall_id) ||
+                wallIdMatchesDoor(w.id, door.wall)
+        ) || null
+    );
+}
+
 function collectDoorSymbolPoints(door, wall, placement) {
     const points = [];
     const { slashHalf, isInterior } = placement;
@@ -153,6 +173,15 @@ function collectDoorSymbolPoints(door, wall, placement) {
     const addLocal = (localX, localY, options = {}) => {
         points.push(doorLocalToWorld(localX, localY, placement, options));
     };
+
+    // Wall opening only (hatch). Keep this tight so the number can sit beside the
+    // door instead of being treated as having no slot and disappearing.
+    const openingHalf = Math.max(slashHalf, (Number(door.width) || 0) / 2);
+    const hatchBleed = wallThickness * 0.35;
+    addLocal(-openingHalf, -hatchBleed);
+    addLocal(openingHalf, -hatchBleed);
+    addLocal(openingHalf, wallThickness);
+    addLocal(-openingHalf, wallThickness);
 
     if (door.door_type === 'dock') {
         const rectWidth = door.width * 0.6;
@@ -182,9 +211,9 @@ function collectDoorSymbolPoints(door, wall, placement) {
             door.configuration === 'double_sided' ? [-slashHalf / 2, slashHalf / 2] : [0];
         for (const offsetX of offsets) {
             addLocal(offsetX - halfLength / 2, panelYOffset - wallThickness / 2);
+            addLocal(offsetX + halfLength / 2, panelYOffset - wallThickness / 2);
             addLocal(offsetX + halfLength / 2, panelYOffset + wallThickness / 2);
-            addLocal(offsetX - halfLength / 2, panelYOffset + wallThickness * 2);
-            addLocal(offsetX + halfLength / 2, panelYOffset + wallThickness * 2);
+            addLocal(offsetX - halfLength / 2, panelYOffset + wallThickness / 2);
         }
     } else if (door.door_type === 'swing') {
         const radius = door.width / (door.configuration === 'double_sided' ? 2 : 1);
@@ -223,12 +252,12 @@ export function buildDoorLabelObstacles(doors, walls, scaleFactor, offsetX, offs
 
     const obstacles = [];
     for (const door of doors) {
-        const wall = walls.find((w) => w.id === door.linked_wall || w.id === door.wall_id);
+        const wall = findWallForDoor(walls, door);
         if (!wall) continue;
         const wallWithLines = wallWithOffsetLines(wall, wallLinesMap);
         const placement = resolveDoorPlacement(wallWithLines, door);
         const points = collectDoorSymbolPoints(door, wallWithLines, placement);
-        const bounds = boundsFromModelPoints(points, scaleFactor, offsetX, offsetY);
+        const bounds = boundsFromModelPoints(points, scaleFactor, offsetX, offsetY, 10);
         if (bounds) obstacles.push(bounds);
     }
     return obstacles;

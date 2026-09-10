@@ -1,10 +1,11 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from core.models import Project, ProjectComment, ProjectVersion, Room, Storey, Wall
+from core.models import Intersection, Project, ProjectComment, ProjectVersion, Room, Storey, Wall
 from core.project_versions import (
     MAX_PROJECT_VERSIONS,
     build_version_preview,
+    capture_original_edits_if_live_is_original,
     copy_project_version,
     create_project_version,
     delete_project_version,
@@ -170,6 +171,62 @@ class ProjectVersionTests(TestCase):
         self.assertEqual(Wall.objects.get(project=self.project).end_x, 4000)
         self.assertEqual(Project.objects.filter(hidden_from_list=False).count(), 1)
 
+    def test_preview_includes_snapshot_ceiling_and_floor(self):
+        from core.models import CeilingPanel, CeilingPlan, FloorPanel, FloorPlan
+
+        ensure_project_baseline(self.project)
+        CeilingPlan.objects.create(
+            room=self.room,
+            total_area=1000000,
+            total_panels=1,
+            full_panels=1,
+            cut_panels=0,
+            ceiling_thickness=150,
+            orientation_strategy='horizontal',
+            panel_width=1150,
+        )
+        CeilingPanel.objects.create(
+            room=self.room,
+            panel_id='C1',
+            start_x=0,
+            start_y=0,
+            end_x=1150,
+            end_y=4000,
+            width=1150,
+            length=4000,
+        )
+        FloorPlan.objects.create(
+            room=self.room,
+            total_area=1000000,
+            total_panels=1,
+            full_panels=1,
+            cut_panels=0,
+            orientation_strategy='vertical',
+            panel_width=1150,
+        )
+        FloorPanel.objects.create(
+            room=self.room,
+            panel_id='F1',
+            start_x=0,
+            start_y=0,
+            end_x=1150,
+            end_y=3000,
+            width=1150,
+            length=3000,
+        )
+        version = create_project_version(self.project, label='Ceiling done', user=self.user)
+
+        preview = build_version_preview(self.project, version.snapshot)
+        room_preview = preview['rooms'][0]
+        self.assertEqual(room_preview['ceiling_plan']['orientation_strategy'], 'horizontal')
+        self.assertEqual(len(preview['ceiling_panels']), 1)
+        self.assertEqual(preview['ceiling_panels'][0]['length'], 4000)
+        self.assertEqual(preview['ceiling_panels'][0]['room_id'], self.room.pk)
+        self.assertFalse(preview['ceiling_panels'][0]['is_cut'])
+        self.assertEqual(room_preview['floor_plan']['orientation_strategy'], 'vertical')
+        self.assertEqual(len(preview['floor_panels']), 1)
+        self.assertEqual(preview['floor_panels'][0]['length'], 3000)
+
     def test_version_cap_keeps_latest(self):
         for index in range(MAX_PROJECT_VERSIONS + 3):
             create_project_version(self.project, label=f'v{index}', user=self.user)
@@ -331,3 +388,40 @@ class ProjectVersionTests(TestCase):
         preview = build_version_preview(self.project, original_layout_snapshot(self.project))
         self.assertEqual(preview['walls'][0]['end_x'], 4000)
         self.assertEqual(Wall.objects.get(project=self.project).end_x, 4000)
+
+    def test_joint_edit_on_original_survives_restore_roundtrip(self):
+        wall_b = Wall.objects.create(
+            project=self.project,
+            storey=self.storey,
+            start_x=4000,
+            start_y=0,
+            end_x=4000,
+            end_y=3000,
+            is_default=False,
+        )
+        Intersection.objects.create(
+            project=self.project,
+            wall_1=self.wall,
+            wall_2=wall_b,
+            joining_method='none',
+        )
+        ensure_project_baseline(self.project)
+
+        live_wall = Wall.objects.get(pk=self.wall.pk)
+        live_wall.end_x = 9000
+        live_wall.save()
+        version_one = create_project_version(self.project, label='Longer wall', user=self.user)
+
+        joint = Intersection.objects.get(project=self.project)
+        joint.joining_method = '45_cut'
+        joint.save()
+        capture_original_edits_if_live_is_original(self.project)
+
+        restore_project_version(self.project, version_one, user=self.user)
+        self.assertEqual(Intersection.objects.get(project=self.project).joining_method, 'none')
+
+        ensure_live_is_original(self.project)
+        self.project.refresh_from_db()
+        self.assertEqual(Intersection.objects.get(project=self.project).joining_method, '45_cut')
+        preview = build_version_preview(self.project, original_layout_snapshot(self.project))
+        self.assertEqual(preview['intersections'][0]['joining_method'], '45_cut')

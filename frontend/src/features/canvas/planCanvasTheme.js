@@ -167,15 +167,35 @@ export function getCeilingNeutralPanelColors() {
         return {
             panelFillFull: 'rgba(148, 163, 184, 0.35)',
             panelFillCut: 'rgba(148, 163, 184, 0.7)',
-            panelStrokeFull: '#9ca3af',
-            panelStrokeCut: '#4b5563',
+            panelStrokeFull: '#94a3b8',
+            panelStrokeCut: '#64748b',
         };
     }
     return {
-        panelFillFull: 'rgba(186, 196, 214, 0.42)',
-        panelFillCut: 'rgba(148, 163, 184, 0.62)',
-        panelStrokeFull: '#f3f4f6',
-        panelStrokeCut: '#e5e7eb',
+        panelFillFull: 'rgba(186, 196, 214, 0.32)',
+        panelFillCut: 'rgba(148, 163, 184, 0.5)',
+        panelStrokeFull: '#7c8aa0',
+        panelStrokeCut: '#94a3b8',
+    };
+}
+
+const CEILING_ROOM_ACCENT_HUES = [199, 32, 262, 160, 330, 48];
+
+export function getCeilingRoomAccent(index = 0) {
+    const hue = CEILING_ROOM_ACCENT_HUES[Math.abs(Number(index) || 0) % CEILING_ROOM_ACCENT_HUES.length];
+    if (isPlanCanvasDark()) {
+        return {
+            fill: `hsla(${hue}, 78%, 62%, 0.20)`,
+            stroke: `hsl(${hue}, 88%, 70%)`,
+            labelBg: `hsla(${hue}, 62%, 26%, 0.94)`,
+            labelText: '#ffffff',
+        };
+    }
+    return {
+        fill: `hsla(${hue}, 70%, 46%, 0.14)`,
+        stroke: `hsl(${hue}, 68%, 36%)`,
+        labelBg: `hsla(${hue}, 70%, 94%, 0.96)`,
+        labelText: `hsl(${hue}, 72%, 24%)`,
     };
 }
 
