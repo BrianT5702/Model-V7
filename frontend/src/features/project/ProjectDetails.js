@@ -27,6 +27,8 @@ import api from '../../api/api';
 import ModalOverlay from '../../components/ModalOverlay';
 import {
     describeSidePanelPlan,
+    explainSidePanelPlan,
+    nearestValidSideLengths,
     planCustomSidePanelsForWall,
 } from '../panel/sidePanelLayout';
 
@@ -616,6 +618,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
+    const editedWallSourceIdRef = useRef(null);
     const [gapFillError, setGapFillError] = useState('');
     const [isLengthLocked, setIsLengthLocked] = useState(false);
     const [lockedWallCoords, setLockedWallCoords] = useState({
@@ -1091,20 +1094,27 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
         }
     }, [projectDetails]);
 
-    // When the modal opens, copy the selected wall to local state
+    // Copy the wall into the form when the selection changes.
+    // A later wall-list refresh must not wipe a length the drafter is still typing.
     useEffect(() => {
         if (projectDetails.selectedWall !== null) {
             const wall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWall);
-            setEditedWall(wall ? { ...wall } : null);
-            resetWallEditLocks();
-        } else if (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor) {
-            // For multi-wall editing, use the first wall as a template
-            const firstWall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWallsForEdit[0]);
-            if (firstWall) {
-                setEditedWall({ ...firstWall });
+            if (!wall) return;
+            if (editedWallSourceIdRef.current !== wall.id) {
+                editedWallSourceIdRef.current = wall.id;
+                setEditedWall({ ...wall });
+                resetWallEditLocks();
             }
-            resetWallEditLocks();
+        } else if (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor) {
+            const firstWall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWallsForEdit[0]);
+            const sourceKey = firstWall ? `multi-${firstWall.id}` : null;
+            if (firstWall && editedWallSourceIdRef.current !== sourceKey) {
+                editedWallSourceIdRef.current = sourceKey;
+                setEditedWall({ ...firstWall });
+                resetWallEditLocks();
+            }
         } else {
+            editedWallSourceIdRef.current = null;
             setEditedWall(null);
             resetWallEditLocks();
         }
@@ -3849,14 +3859,35 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             </label>
                                         </div>
                                         {sidePanelPlan?.ok && (
-                                            <p className="mt-1 text-[10px] text-blue-700 dark:text-blue-300 font-medium">
+                                            <p className="mt-1 text-xs text-blue-700 dark:text-blue-300 font-medium">
                                                 {describeSidePanelPlan(editedWall, sidePanelPlan)}
                                             </p>
                                         )}
                                         {sidePanelPlan && !sidePanelPlan.ok && (
-                                            <p className="mt-1 text-[10px] text-red-600 font-medium">
-                                                {sidePanelPlan.error}
-                                            </p>
+                                            <div className="mt-1 space-y-1">
+                                                <p className="text-xs text-red-600 font-medium">
+                                                    {explainSidePanelPlan(editedWall, sidePanelPlan)}
+                                                </p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {nearestValidSideLengths(
+                                                        Math.hypot(
+                                                            (editedWall?.end_x || 0) - (editedWall?.start_x || 0),
+                                                            (editedWall?.end_y || 0) - (editedWall?.start_y || 0)
+                                                        ),
+                                                        editedWall?.height,
+                                                        editedWall?.side_panel_length
+                                                    ).map((length) => (
+                                                        <button
+                                                            key={length}
+                                                            type="button"
+                                                            onClick={() => setEditedWall({ ...editedWall, side_panel_length: length })}
+                                                            className="px-2 py-0.5 text-[11px] rounded bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-200"
+                                                        >
+                                                            Use {length} mm
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
                                     )}
@@ -4002,9 +4033,11 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         </button>
                                         )}
                                         <button
-                                            disabled={Boolean(sidePanelPlan && !sidePanelPlan.ok)}
                                             onClick={async () => {
-                                                if (sidePanelPlan && !sidePanelPlan.ok) return;
+                                                if (sidePanelPlan && !sidePanelPlan.ok) {
+                                                    window.alert(explainSidePanelPlan(editedWall, sidePanelPlan));
+                                                    return;
+                                                }
                                                 if (projectDetails.selectedWallsForEdit.length > 0) {
                                                     // Multi-wall editing: apply changes to all selected walls
                                                     const updates = [];
@@ -4036,7 +4069,13 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     // Single wall editing: original logic
                                                     // 1. Find which endpoints changed
                                                     const original = projectDetails.walls.find(w => w.id === projectDetails.selectedWall);
-                                                    const edited = editedWall;
+                                                    const edited = editedWall ? { ...editedWall } : editedWall;
+                                                    if (edited && edited.side_panel_length != null && edited.side_panel_length !== '') {
+                                                        edited.side_panel_length = Math.round(Number(edited.side_panel_length));
+                                                    }
+                                                    if (edited && !edited.side_panel_end) {
+                                                        edited.side_panel_end = 'start';
+                                                    }
                                                     const changedEndpoints = [];
                                                     if (original && edited) {
                                                         if (original.start_x !== edited.start_x || original.start_y !== edited.start_y) {
@@ -4091,7 +4130,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     setEditedWall(null);
                                                 }
                                             }}
-                                            className={`form-btn-primary ${sidePanelPlan && !sidePanelPlan.ok ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            className="form-btn-primary"
                                         >
                                             Save
                                         </button>

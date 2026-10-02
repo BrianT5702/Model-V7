@@ -71,7 +71,9 @@ export function planCustomSidePanels(wallLength, wallHeight, panelSide, lengthMm
             : `The other end would be ${other} mm`;
         return {
             ok: false,
-            error: `${afterFulls}, below the ${minPanelWidth} mm minimum. Use a length that leaves at least ${minPanelWidth} mm on the other end, or that fills the rest of the wall with exact ${MAX_WALL_PANEL_WIDTH} mm panels.`,
+            error: `${afterFulls}, below the ${minPanelWidth} mm minimum.`,
+            other,
+            minPanelWidth,
         };
     }
 
@@ -100,6 +102,70 @@ export function planCustomSidePanelsForWall(wall) {
         wallEndToPanelSide(wall, wall.side_panel_end || 'start'),
         wall.side_panel_length
     );
+}
+
+function sideLengthFits(wall, length, minPanelWidth) {
+    if (length < minPanelWidth || length > MAX_WALL_PANEL_WIDTH || length >= wall) return false;
+    const rest = wall - length;
+    const other = rest - Math.floor(rest / MAX_WALL_PANEL_WIDTH) * MAX_WALL_PANEL_WIDTH;
+    return other === 0 || other >= minPanelWidth;
+}
+
+/** Lengths that leave a valid other end, as "300–310 mm" phrases. */
+export function validSidePanelLengthRanges(wallLength, wallHeight) {
+    const wall = Math.round(Number(wallLength));
+    const { minPanelWidth } = sidePanelLimits(wallHeight);
+    if (!Number.isFinite(wall) || wall <= MAX_BOTH_ENDS_CUT_WIDTH) return [];
+    const upper = Math.min(MAX_WALL_PANEL_WIDTH, wall - 1);
+    const phrases = [];
+    let start = null;
+    let prev = null;
+    for (let length = minPanelWidth; length <= upper; length += 1) {
+        if (sideLengthFits(wall, length, minPanelWidth)) {
+            if (start == null) start = length;
+            prev = length;
+        } else if (start != null) {
+            phrases.push(start === prev ? `${start} mm` : `${start}–${prev} mm`);
+            start = null;
+            prev = null;
+        }
+    }
+    if (start != null) {
+        phrases.push(start === prev ? `${start} mm` : `${start}–${prev} mm`);
+    }
+    return phrases;
+}
+
+/** Closest lengths that fit, for a value the drafter typed that does not. */
+export function nearestValidSideLengths(wallLength, wallHeight, targetLength, count = 2) {
+    const wall = Math.round(Number(wallLength));
+    const target = Math.round(Number(targetLength));
+    const { minPanelWidth } = sidePanelLimits(wallHeight);
+    if (!Number.isFinite(wall) || wall <= MAX_BOTH_ENDS_CUT_WIDTH) return [];
+    const upper = Math.min(MAX_WALL_PANEL_WIDTH, wall - 1);
+    const valid = [];
+    for (let length = minPanelWidth; length <= upper; length += 1) {
+        if (sideLengthFits(wall, length, minPanelWidth)) valid.push(length);
+    }
+    valid.sort((a, b) => Math.abs(a - target) - Math.abs(b - target) || a - b);
+    const picked = [];
+    valid.forEach((length) => {
+        if (picked.length >= count) return;
+        if (picked.every((chosen) => Math.abs(chosen - length) >= 50)) picked.push(length);
+    });
+    return picked;
+}
+
+export function explainSidePanelPlan(wall, plan) {
+    if (!plan) return '';
+    if (plan.ok) return describeSidePanelPlan(wall, plan);
+    const wallLength = Math.round(Math.hypot(
+        Number(wall?.end_x) - Number(wall?.start_x),
+        Number(wall?.end_y) - Number(wall?.start_y)
+    ));
+    const ranges = validSidePanelLengthRanges(wallLength, wall?.height);
+    if (!ranges.length) return plan.error;
+    return `${plan.error} Lengths that fit this wall: ${ranges.join(', ')}.`;
 }
 
 /** Start/end sentence for a successful custom plan. */
