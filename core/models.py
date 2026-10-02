@@ -405,6 +405,17 @@ class Wall(models.Model):
     fill_gap_mode = models.BooleanField(default=False, help_text="Fill only the gap between rooms with different heights")
     gap_fill_height = models.FloatField(null=True, blank=True, help_text="Height of the wall when filling gap between rooms in mm")
     gap_base_position = models.FloatField(null=True, blank=True, help_text="Y position (height) where the gap-fill wall starts in mm")
+    side_panel_length = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Drafter-set length (mm) of one end panel. Empty uses the automatic split (half the remainder, or the whole remainder on one end)."
+    )
+    side_panel_end = models.CharField(
+        max_length=10,
+        choices=[('start', 'Start'), ('end', 'End')],
+        default='start',
+        help_text="Which wall end side_panel_length applies to. The other end is calculated."
+    )
     ceiling_joint_type = models.CharField(
         max_length=20,
         choices=CEILING_JOINT_TYPES,

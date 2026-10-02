@@ -2117,6 +2117,594 @@ function decorateSlideLeaf(instance, leaf, {
   addSlideLeafHandle(instance, leaf, doorWidth, doorHeight, doorThickness, scale, handleOnRight, faceZSign);
 }
 
+function stampDockSkinUVs(THREE, mesh, sectionTop) {
+  const tile = THREE_CONFIG.WALL_SURFACE?.TILE_WORLD || 1;
+  const inv = 1 / tile;
+  const geo = mesh.geometry;
+  const pos = geo.attributes.position;
+  if (!pos) return;
+  const originX = mesh.position.x;
+  const originY = mesh.position.y + sectionTop;
+  let uv = geo.attributes.uv;
+  if (!uv || uv.count !== pos.count) {
+    uv = new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2);
+    geo.setAttribute('uv', uv);
+  }
+  for (let i = 0; i < pos.count; i += 1) {
+    uv.setXY(i, (pos.getX(i) + originX) * inv, (pos.getY(i) + originY) * inv);
+  }
+  uv.needsUpdate = true;
+  geo.computeVertexNormals();
+  try {
+    if (geo.attributes.tangent) geo.deleteAttribute('tangent');
+    geo.computeTangents();
+  } catch {
+    // Bump map covers meshes whose tangents cannot be built.
+  }
+}
+
+function addDockSkinBox(instance, parent, material, width, height, depth, x, doorY, sectionTop) {
+  if (width <= 0.02 || height <= 0.01) return null;
+  const mesh = addDoorBox(
+    instance,
+    parent,
+    material,
+    width,
+    height,
+    depth,
+    x,
+    doorY - sectionTop,
+    0
+  );
+  stampDockSkinUVs(instance.THREE, mesh, sectionTop);
+  ensureWallSurfaceDetail(instance.THREE, mesh, instance.renderer);
+  return mesh;
+}
+
+/** Side columns run the full slat height so the ribs beside a window match the slats above and below. */
+function addDockSectionSkin(instance, section, {
+  bottom,
+  top,
+  leafW,
+  leafT,
+  rects,
+  material,
+}) {
+  const overlapping = rects.filter((rect) => rect.top > bottom + 0.01 && rect.bottom < top - 0.01);
+  if (overlapping.length === 0) {
+    addDockSkinBox(instance, section, material, leafW, top - bottom, leafT, 0, (bottom + top) / 2, top);
+    return;
+  }
+  const holes = overlapping.map((rect) => ({ left: rect.left, right: rect.right }));
+  subtractHorizontalSpans(-leafW / 2, leafW / 2, holes).forEach((span) => {
+    const spanW = span.right - span.left;
+    addDockSkinBox(
+      instance,
+      section,
+      material,
+      spanW,
+      top - bottom,
+      leafT,
+      (span.left + span.right) / 2,
+      (bottom + top) / 2,
+      top
+    );
+  });
+  overlapping.forEach((rect) => {
+    const x0 = Math.max(rect.left, -leafW / 2);
+    const x1 = Math.min(rect.right, leafW / 2);
+    if (x1 - x0 <= 0.02) return;
+    const bands = [];
+    if (rect.bottom > bottom + 0.01) bands.push([bottom, Math.min(rect.bottom, top)]);
+    if (rect.top < top - 0.01) bands.push([Math.max(rect.top, bottom), top]);
+    bands.forEach(([y0, y1]) => {
+      addDockSkinBox(
+        instance,
+        section,
+        material,
+        x1 - x0,
+        y1 - y0,
+        leafT,
+        (x0 + x1) / 2,
+        (y0 + y1) / 2,
+        top
+      );
+    });
+  });
+}
+
+function subtractHorizontalSpans(left, right, holes) {
+  let spans = [{ left, right }];
+  holes.forEach((hole) => {
+    const next = [];
+    spans.forEach((span) => {
+      const holeLeft = Math.max(hole.left, span.left);
+      const holeRight = Math.min(hole.right, span.right);
+      if (holeRight - holeLeft <= 0.01) {
+        next.push(span);
+        return;
+      }
+      if (holeLeft - span.left > 0.01) next.push({ left: span.left, right: holeLeft });
+      if (span.right - holeRight > 0.01) next.push({ left: holeRight, right: span.right });
+    });
+    spans = next;
+  });
+  return spans;
+}
+
+function dockWindowRects(windows, leafW, leafH, scale) {
+  return (windows || []).map((window) => {
+    const ww = Math.max(0, Number(window.width) || 0) * scale;
+    const hh = Math.max(0, Number(window.height) || 0) * scale;
+    const px = Number(window.position_x);
+    const py = Number(window.position_y);
+    const cx = ((Number.isFinite(px) ? px : 0.5) - 0.5) * leafW;
+    const cy = ((Number.isFinite(py) ? py : 0.5) - 0.5) * leafH;
+    return {
+      left: cx - ww / 2,
+      right: cx + ww / 2,
+      bottom: cy - hh / 2,
+      top: cy + hh / 2,
+      cx,
+      cy,
+      ww,
+      hh,
+    };
+  }).filter((rect) => rect.ww > 0.04 && rect.hh > 0.04);
+}
+
+/** Point and tilt along a sectional-door rail. dist 0 is the bottom of the opening. */
+export function dockRailPose(rail, dist) {
+  const traveled = Math.max(0, dist);
+  const { yBottom, yTop, radius: R, verticalLen, curveLen } = rail;
+  if (traveled <= verticalLen) {
+    return { y: yBottom + traveled, face: 0, angle: 0 };
+  }
+  const curveEnd = verticalLen + curveLen;
+  if (traveled <= curveEnd) {
+    const u = (traveled - verticalLen) / Math.max(curveLen, 0.0001);
+    const a = Math.PI - u * (Math.PI / 2);
+    return {
+      y: yTop + R * Math.sin(a),
+      face: R + R * Math.cos(a),
+      angle: u * (Math.PI / 2),
+    };
+  }
+  return {
+    y: yTop + R,
+    face: R + (traveled - curveEnd),
+    angle: Math.PI / 2,
+  };
+}
+
+/** Park each slat on the rail. travel 0 is closed; travelOpen lays the curtain along the ceiling. */
+export function applySectionalDockPose(leaf, travel) {
+  const rail = leaf?.userData?.rail;
+  const sections = leaf?.userData?.sections;
+  if (!rail || !sections) return;
+  const t = Math.max(0, travel);
+  leaf.userData.travel = t;
+  sections.forEach((section, index) => {
+    const pose = dockRailPose(rail, (index + 1) * rail.sectionH + t);
+    section.position.y = pose.y;
+    section.position.z = rail.faceSign * pose.face;
+    section.rotation.x = rail.faceSign * pose.angle;
+  });
+}
+
+function addDockWindowSlice(instance, parent, rect, leafT, scale, sectionBottom, sectionTop, glassMaterial, frameMat) {
+  const d = getDoorDetail();
+  const frame = mmToWorld(scale, d.DOCK_FRAME_MM ?? 28);
+  const glassT = mmToWorld(scale, d.GLASS_THICKNESS_MM ?? 10);
+  const bead = mmToWorld(scale, 8);
+  if (rect.ww <= frame * 2.2 || rect.hh <= frame * 2.2) return;
+  if (rect.top <= sectionBottom + 0.01 || rect.bottom >= sectionTop - 0.01) return;
+
+  const toY = (doorY) => doorY - sectionTop;
+  const clipBar = (doorY0, doorY1, doorX, sx, doorZ) => {
+    const y0 = Math.max(doorY0, sectionBottom);
+    const y1 = Math.min(doorY1, sectionTop);
+    if (y1 - y0 <= 0.01 || sx <= 0.01) return;
+    addDoorBox(instance, parent, frameMat, sx, y1 - y0, bead, doorX, toY((y0 + y1) / 2), doorZ);
+  };
+
+  const innerBottom = rect.bottom + frame;
+  const innerTop = rect.top - frame;
+  const glassBottom = Math.max(innerBottom, sectionBottom);
+  const glassTop = Math.min(innerTop, sectionTop);
+  const glassW = rect.ww - frame * 2;
+  if (glassTop - glassBottom > 0.02 && glassW > 0.02) {
+    const glass = new instance.THREE.Mesh(
+      new instance.THREE.BoxGeometry(glassW, glassTop - glassBottom, glassT),
+      glassMaterial
+    );
+    glass.position.set(rect.cx, toY((glassBottom + glassTop) / 2), 0);
+    glass.userData.isDoorGlass = true;
+    glass.renderOrder = 2;
+    parent.add(glass);
+  }
+
+  [-1, 1].forEach((side) => {
+    const faceZ = side * (leafT / 2 + bead / 2);
+    clipBar(rect.top - frame, rect.top, rect.cx, rect.ww, faceZ);
+    clipBar(rect.bottom, rect.bottom + frame, rect.cx, rect.ww, faceZ);
+    const innerH0 = rect.bottom + frame;
+    const innerH1 = rect.top - frame;
+    if (innerH1 > innerH0) {
+      clipBar(innerH0, innerH1, rect.cx - rect.ww / 2 + frame / 2, frame, faceZ);
+      clipBar(innerH0, innerH1, rect.cx + rect.ww / 2 - frame / 2, frame, faceZ);
+    }
+  });
+}
+
+function addDockRailArc(instance, parent, x, rail, faceSign, material, railW, railT) {
+  const steps = 12;
+  const start = rail.verticalLen;
+  const end = rail.verticalLen + rail.curveLen;
+  for (let step = 0; step < steps; step += 1) {
+    const d0 = start + ((end - start) * step) / steps;
+    const d1 = start + ((end - start) * (step + 1)) / steps;
+    const p0 = dockRailPose(rail, d0);
+    const p1 = dockRailPose(rail, d1);
+    const dy = p1.y - p0.y;
+    const df = p1.face - p0.face;
+    const len = Math.hypot(dy, df);
+    if (len < 0.001) continue;
+    const seg = addDoorBox(
+      instance,
+      parent,
+      material,
+      railW,
+      len,
+      railT,
+      x,
+      (p0.y + p1.y) / 2,
+      faceSign * ((p0.face + p1.face) / 2)
+    );
+    seg.rotation.x = Math.atan2(faceSign * df, dy);
+  }
+}
+
+/**
+ * Sectional dock curtain. Each slat hangs from a rail that runs up the
+ * jamb, curves through the headroom, and continues back along the ceiling.
+ * A window is cut only where the door actually has one.
+ */
+function createSectionalDockAssembly(instance, {
+  door,
+  cutoutWidth,
+  doorHeight,
+  doorThickness,
+  wallDepth,
+  adjustedSide,
+  scale,
+  wallTopLocal = null,
+}) {
+  const d = getDoorDetail();
+  const leafT = Math.max(doorThickness, mmToWorld(scale, 36));
+  const faceGap = mmToWorld(scale, 8);
+  const faceSign = adjustedSide === 'exterior' ? -1 : 1;
+  const leafZ = adjustedSide === 'exterior'
+    ? -(leafT / 2 + faceGap)
+    : wallDepth + leafT / 2 + faceGap;
+
+  const sideClear = mmToWorld(scale, 14);
+  const leafW = Math.max(cutoutWidth - sideClear * 2, cutoutWidth * 0.86);
+  const sectionPitch = mmToWorld(scale, d.DOCK_SECTION_MM ?? 190);
+  const sectionCount = Math.max(4, Math.round(doorHeight / Math.max(sectionPitch, 0.05)));
+  const sectionH = doorHeight / sectionCount;
+  const grooveH = Math.min(mmToWorld(scale, d.DOCK_GROOVE_MM ?? 11), sectionH * 0.22);
+  const panelH = Math.max(0.02, sectionH - grooveH);
+
+  const trackW = mmToWorld(scale, d.DOCK_TRACK_WIDTH_MM ?? 62);
+  const trackD = Math.max(mmToWorld(scale, d.DOCK_TRACK_DEPTH_MM ?? 78), leafT * 1.15);
+  const hingeW = mmToWorld(scale, d.DOCK_HINGE_W_MM ?? 36);
+  const hingeH = Math.min(mmToWorld(scale, d.DOCK_HINGE_H_MM ?? 44), panelH * 0.85);
+  const hingeD = mmToWorld(scale, d.DOCK_HINGE_D_MM ?? 16);
+  const clipW = mmToWorld(scale, d.DOCK_CLIP_W_MM ?? 46);
+  const clipH = mmToWorld(scale, d.DOCK_CLIP_H_MM ?? 26);
+  const sealH = mmToWorld(scale, d.DOCK_SEAL_MM ?? 26);
+  const headerH = mmToWorld(scale, d.DOCK_HEADER_MM ?? 58);
+
+  const panelMat = createPanelSurfaceMaterial(instance.THREE, instance.renderer, {
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+  const grooveMat = makeStdMaterial(instance.THREE, {
+    color: 0x6a737b,
+    roughness: 0.72,
+    metalness: 0.08,
+    envMapIntensity: 0.12,
+  });
+  const trackMat = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_HARDWARE || {}, {
+    color: 0x2e3338,
+    roughness: 0.46,
+    metalness: 0.4,
+  });
+  const hingeMat = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_HARDWARE || {}, {
+    color: 0x1c1f22,
+    roughness: 0.4,
+    metalness: 0.32,
+  });
+  const clipMat = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {}, {
+    color: 0xc5ced6,
+    metalness: 0.72,
+    roughness: 0.28,
+  });
+  const sealMat = makeStdMaterial(instance.THREE, {
+    color: 0x2a2e32,
+    roughness: 0.84,
+    metalness: 0.02,
+  });
+  const headerMat = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_ALUMINUM || {}, {
+    color: 0x8a939b,
+    metalness: 0.55,
+    roughness: 0.38,
+  });
+
+  const rects = dockWindowRects(door.windows, leafW, doorHeight, scale);
+  const pointInWindow = (x, y) => rects.some((rect) => (
+    x > rect.left && x < rect.right && y > rect.bottom && y < rect.top
+  ));
+  const glassMaterial = makeGlassMaterial(instance.THREE, THREE_CONFIG.MATERIALS.GLASS || {}, { opacity: 0.42 });
+  const windowFrameMat = makeStdMaterial(instance.THREE, THREE_CONFIG.MATERIALS.DOOR_HARDWARE || {}, {
+    color: 0x141618,
+    roughness: 0.42,
+    metalness: 0.35,
+  });
+
+  const yBottom = -doorHeight / 2;
+  const yTop = doorHeight / 2;
+  const roofClear = mmToWorld(scale, 36);
+  const ceilingY = Number.isFinite(wallTopLocal) ? wallTopLocal - roofClear : null;
+  const desiredRadius = mmToWorld(scale, d.DOCK_RAIL_RADIUS_MM ?? 340);
+  const headroom = ceilingY == null ? desiredRadius : ceilingY - yTop;
+  // Keep the ceiling rail under the roof. When the door is close to the roof,
+  // the curve drops toward the head of the door instead of poking through.
+  const radius = ceilingY == null
+    ? desiredRadius
+    : Math.min(desiredRadius, Math.max(0, headroom * 0.55));
+  const verticalLen = doorHeight;
+  const curveLen = radius * (Math.PI / 2);
+  const travelOpen = doorHeight + mmToWorld(scale, 40);
+  const horizontalLen = Math.max(
+    mmToWorld(scale, 600),
+    travelOpen + doorHeight - verticalLen - curveLen + mmToWorld(scale, 220)
+  );
+  const rail = {
+    yBottom,
+    yTop,
+    radius,
+    verticalLen,
+    curveLen,
+    sectionH,
+    faceSign,
+  };
+  const railW = mmToWorld(scale, 34);
+  const railT = mmToWorld(scale, 46);
+  const horizontalY = yTop + radius;
+  const horizontalStart = radius;
+
+  const frame = new instance.THREE.Object3D();
+  frame.position.z = leafZ;
+  [-1, 1].forEach((side) => {
+    const x = side * (cutoutWidth / 2);
+    addDoorBox(instance, frame, trackMat, trackW, doorHeight, trackD, x, 0, 0);
+    addDoorBox(
+      instance,
+      frame,
+      headerMat,
+      trackW * 0.34,
+      doorHeight,
+      trackD * 0.42,
+      x - side * (trackW * 0.28),
+      0,
+      faceSign * trackD * 0.12
+    );
+    addDockRailArc(instance, frame, x, rail, faceSign, trackMat, railW, railT);
+    addDoorBox(
+      instance,
+      frame,
+      trackMat,
+      railW,
+      railT,
+      horizontalLen,
+      x,
+      horizontalY,
+      faceSign * (horizontalStart + horizontalLen / 2)
+    );
+    const gapAboveRail = ceilingY == null
+      ? mmToWorld(scale, 48)
+      : ceilingY - (horizontalY + railT / 2);
+    const hangerSpan = Math.min(mmToWorld(scale, 48), Math.max(0, gapAboveRail));
+    const hangerStep = mmToWorld(scale, 900);
+    if (hangerSpan > mmToWorld(scale, 18)) {
+      for (let face = horizontalStart + hangerStep; face < horizontalStart + horizontalLen - mmToWorld(scale, 80); face += hangerStep) {
+        addDoorBox(
+          instance,
+          frame,
+          headerMat,
+          mmToWorld(scale, 16),
+          hangerSpan,
+          mmToWorld(scale, 16),
+          x,
+          horizontalY + railT / 2 + hangerSpan / 2,
+          faceSign * face
+        );
+      }
+    }
+    const braceDrop = Math.min(mmToWorld(scale, 40), radius * 0.35);
+    if (radius - braceDrop > mmToWorld(scale, 20)) {
+      const braceFace = Math.min(horizontalLen * 0.28, mmToWorld(scale, 700));
+      const braceLen = Math.hypot(radius - braceDrop, braceFace);
+      const brace = addDoorBox(
+        instance,
+        frame,
+        headerMat,
+        mmToWorld(scale, 18),
+        braceLen,
+        mmToWorld(scale, 18),
+        x,
+        yTop + (radius + braceDrop) / 2,
+        faceSign * (braceFace / 2)
+      );
+      brace.rotation.x = Math.atan2(faceSign * braceFace, radius - braceDrop);
+    }
+  });
+  addDoorBox(
+    instance,
+    frame,
+    headerMat,
+    Math.max(leafW * 0.92, cutoutWidth - trackW),
+    headerH,
+    trackD * 0.72,
+    0,
+    yTop - headerH / 2 + mmToWorld(scale, 8),
+    faceSign * mmToWorld(scale, 4)
+  );
+
+  const leaf = new instance.THREE.Object3D();
+  leaf.position.z = leafZ;
+  const sections = [];
+  const rollerR = mmToWorld(scale, 14);
+  const rollerLen = mmToWorld(scale, 32);
+  for (let i = 0; i < sectionCount; i += 1) {
+    const bottom = yBottom + i * sectionH;
+    const top = bottom + sectionH;
+    const section = new instance.THREE.Object3D();
+    section.userData.isDockSection = true;
+    const toY = (doorY) => doorY - top;
+    addDockSectionSkin(instance, section, {
+      bottom,
+      top,
+      leafW,
+      leafT,
+      rects,
+      material: panelMat,
+    });
+    const drawGroove = i > 0;
+    if (drawGroove) {
+      const grooveMid = bottom + grooveH / 2;
+      const grooveHoles = rects
+        .filter((rect) => rect.bottom < grooveMid && rect.top > grooveMid)
+        .map((rect) => ({ left: rect.left, right: rect.right }));
+      subtractHorizontalSpans(-leafW / 2, leafW / 2, grooveHoles).forEach((span) => {
+        const spanW = span.right - span.left;
+        if (spanW <= 0.02) return;
+        addDoorBox(
+          instance,
+          section,
+          grooveMat,
+          spanW,
+          grooveH,
+          leafT * 0.78,
+          (span.left + span.right) / 2,
+          toY(grooveMid),
+          0
+        );
+      });
+    }
+
+    const midY = (bottom + top) / 2;
+    [-1, 1].forEach((side) => {
+      const hx = side * (leafW / 2 - hingeW * 0.2);
+      if (!pointInWindow(hx, midY)) {
+        addDoorBox(
+          instance,
+          section,
+          hingeMat,
+          hingeW,
+          hingeH,
+          hingeD,
+          hx,
+          toY(midY),
+          faceSign * (leafT / 2 + hingeD / 2)
+        );
+      }
+      addDoorCylinder(
+        instance,
+        section,
+        hingeMat,
+        rollerR,
+        rollerLen,
+        side * (leafW / 2 + rollerLen * 0.15),
+        0,
+        0,
+        0,
+        Math.PI / 2
+      );
+    });
+
+    if (drawGroove && !pointInWindow(0, bottom + grooveH / 2)) {
+      addDoorBox(
+        instance,
+        section,
+        clipMat,
+        clipW,
+        clipH,
+        mmToWorld(scale, 8),
+        0,
+        toY(bottom + grooveH / 2),
+        faceSign * (leafT / 2 + mmToWorld(scale, 4))
+      );
+    }
+
+    if (i === 0) {
+      addDoorBox(
+        instance,
+        section,
+        sealMat,
+        leafW,
+        sealH,
+        leafT * 1.04,
+        0,
+        toY(yBottom + sealH / 2),
+        faceSign * mmToWorld(scale, 2)
+      );
+    }
+    if (i === sectionCount - 1) {
+      addDoorBox(
+        instance,
+        section,
+        clipMat,
+        leafW,
+        mmToWorld(scale, 22),
+        leafT * 1.02,
+        0,
+        toY(yTop - mmToWorld(scale, 11)),
+        0
+      );
+    }
+
+    rects.forEach((rect) => addDockWindowSlice(
+      instance,
+      section,
+      rect,
+      leafT,
+      scale,
+      bottom,
+      top,
+      glassMaterial,
+      windowFrameMat
+    ));
+    leaf.add(section);
+    sections.push(section);
+  }
+
+  leaf.userData.isCoverPanel = true;
+  leaf.userData.isSectionalLeaf = true;
+  leaf.userData.rail = rail;
+  leaf.userData.sections = sections;
+  leaf.userData.travel = 0;
+  leaf.userData.travelOpen = travelOpen;
+  leaf.userData.travelProxy = { t: 0 };
+  leaf.visible = true;
+  applySectionalDockPose(leaf, 0);
+
+  return { frame, leaf };
+}
+
 // Helper function to create a door with window holes
 // This creates the door in sections around windows, leaving actual holes
 function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, doorMaterial, windows, scale, offsetX = 0, edgeLineOffsetX = null) {
@@ -3054,42 +3642,40 @@ export function createDoorMesh(instance, door, wall) {
   }
   // === DOCK DOOR IMPLEMENTATION ===
   else if (door_type === 'dock') {
-    // Dock door: Just create a cover panel that can be shown/hidden
-    // The hole is already created in the wall mesh
-    // Dock doors (卷帘门) open upward, so no side or direction settings needed
+    // Sectional curtain in the wall opening. Tracks stay put; the leaf rolls up.
     const doorContainer = new instance.THREE.Object3D();
-    // Position door centered vertically on wall opening (consistent for all door types)
     doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
     doorContainer.rotation.y = -wallAngle;
-    // Create a cover panel (flat rectangle) that covers the door opening
-    const coverMaterial = new instance.THREE.MeshStandardMaterial({
-      color: 0xe8ebef,
-      roughness: 0.58,
-      metalness: 0.06,
-      transparent: false,
-      opacity: 1,
-      envMapIntensity: 0.4,
+    let wallTopLocal = null;
+    if (wallData) {
+      const wallHeightMm = wallData.fill_gap_mode && wallData.gap_fill_height != null
+        ? Number(wallData.gap_fill_height)
+        : Number(wallData.height);
+      if (Number.isFinite(wallHeightMm) && wallHeightMm > 0) {
+        wallTopLocal = doorBaseElevation + wallHeightMm * scale - doorYPosition;
+      }
+    }
+    const { frame, leaf } = createSectionalDockAssembly(instance, {
+      door,
+      cutoutWidth,
+      doorHeight,
+      doorThickness,
+      wallDepth,
+      adjustedSide,
+      scale,
+      wallTopLocal,
     });
-    // Create cover panel - positioned at the wall face (exterior side by default)
-    const coverPanel = new instance.THREE.Mesh(
-      new instance.THREE.BoxGeometry(cutoutWidth, doorHeight, 0.1 * instance.scalingFactor), // Thin cover
-      coverMaterial
-    );
-    // Position cover on exterior side of the wall (dock doors typically face outward)
-    coverPanel.position.z = wallDepth * 1.2;
-    // Start with cover hidden (door open by default)
-    coverPanel.visible = false;
-    coverPanel.userData.isCoverPanel = true; // Mark as cover panel for easy lookup
-    doorContainer.add(coverPanel);
-    // Register as a door object with metadata
+    doorContainer.add(frame);
+    doorContainer.add(leaf);
     doorContainer.userData.isDoor = true;
     doorContainer.userData.doorId = `door_${door.id}`;
     doorContainer.userData.doorInfo = {
       ...door,
-      coverPanel: coverPanel // Store reference to cover panel
+      adjustedSide,
+      coverPanel: leaf,
     };
     instance.doorObjects.push(doorContainer);
-    instance.doorStates.set(`door_${door.id}`, true); // Start open (cover hidden)
+    instance.doorStates.set(`door_${door.id}`, false);
     return doorContainer;
   }
   return null;

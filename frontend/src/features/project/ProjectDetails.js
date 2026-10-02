@@ -25,6 +25,10 @@ import ProjectCommentsPanel from './ProjectCommentsPanel';
 import { buildRoomLabelLines } from '../room/roomLabelUtils';
 import api from '../../api/api';
 import ModalOverlay from '../../components/ModalOverlay';
+import {
+    describeSidePanelPlan,
+    planCustomSidePanelsForWall,
+} from '../panel/sidePanelLayout';
 
 import { 
     FaPencilAlt, 
@@ -634,6 +638,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const toggleWallCoordLock = (key) => {
         setLockedWallCoords((prev) => ({ ...prev, [key]: !prev[key] }));
     };
+
+    const editingOneWall = projectDetails.selectedWall != null
+        && projectDetails.selectedWallsForEdit.length === 0;
+    const sidePanelPlan = editingOneWall ? planCustomSidePanelsForWall(editedWall) : null;
 
     /** Apply wall field updates, skipping any individually locked coordinates. */
     const patchEditedWall = (updates) => {
@@ -3797,6 +3805,62 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         </div>
                                     </div>
 
+                                    {/* Side panel length — single wall only */}
+                                    {editingOneWall && (
+                                    <div>
+                                        <h4 className="form-section-title mb-1">Side Panel Length</h4>
+                                        <p className="form-hint mb-1">
+                                            Leave the length blank to split the remainder in half, or place it all on one end. Enter one end and the other end is calculated.
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                            <label className="block min-w-0">
+                                                <span className="form-label">End</span>
+                                                <select
+                                                    value={editedWall?.side_panel_end || 'start'}
+                                                    onChange={(e) => setEditedWall({ ...editedWall, side_panel_end: e.target.value })}
+                                                    className="form-control"
+                                                >
+                                                    <option value="start">Start</option>
+                                                    <option value="end">End</option>
+                                                </select>
+                                            </label>
+                                            <label className="block min-w-0">
+                                                <span className="form-label">Length (mm)</span>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    placeholder="Automatic"
+                                                    value={editedWall?.side_panel_length ?? ''}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        if (raw === '') {
+                                                            setEditedWall({ ...editedWall, side_panel_length: null });
+                                                            return;
+                                                        }
+                                                        const next = Math.round(parseFloat(raw));
+                                                        setEditedWall({
+                                                            ...editedWall,
+                                                            side_panel_length: Number.isFinite(next) ? next : null,
+                                                        });
+                                                    }}
+                                                    className="form-control"
+                                                />
+                                            </label>
+                                        </div>
+                                        {sidePanelPlan?.ok && (
+                                            <p className="mt-1 text-[10px] text-blue-700 dark:text-blue-300 font-medium">
+                                                {describeSidePanelPlan(editedWall, sidePanelPlan)}
+                                            </p>
+                                        )}
+                                        {sidePanelPlan && !sidePanelPlan.ok && (
+                                            <p className="mt-1 text-[10px] text-red-600 font-medium">
+                                                {sidePanelPlan.error}
+                                            </p>
+                                        )}
+                                    </div>
+                                    )}
+
                                     {/* Gap-Fill Toggle Section - Only show for single wall */}
                                     {projectDetails.selectedWall !== null && (
                                     <div>
@@ -3938,7 +4002,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         </button>
                                         )}
                                         <button
+                                            disabled={Boolean(sidePanelPlan && !sidePanelPlan.ok)}
                                             onClick={async () => {
+                                                if (sidePanelPlan && !sidePanelPlan.ok) return;
                                                 if (projectDetails.selectedWallsForEdit.length > 0) {
                                                     // Multi-wall editing: apply changes to all selected walls
                                                     const updates = [];
@@ -4025,7 +4091,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     setEditedWall(null);
                                                 }
                                             }}
-                                            className="form-btn-primary"
+                                            className={`form-btn-primary ${sidePanelPlan && !sidePanelPlan.ok ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         >
                                             Save
                                         </button>

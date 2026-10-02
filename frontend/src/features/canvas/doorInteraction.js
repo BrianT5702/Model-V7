@@ -1,5 +1,7 @@
 /** Shared door open/close state and animation for orbit mode and tour. */
 
+import { applySectionalDockPose } from './meshUtils';
+
 export function isDoorOpen(instance, doorInfo) {
   if (!doorInfo?.id) {
     return true;
@@ -144,7 +146,29 @@ export function animateDoorToState(instance, doorContainer, doorInfo, open) {
     if (!coverPanel) {
       return;
     }
-    if (window.gsap) {
+    if (coverPanel.userData?.isSectionalLeaf) {
+      const travelOpen = coverPanel.userData.travelOpen ?? 0;
+      if (!coverPanel.userData.travelProxy) {
+        coverPanel.userData.travelProxy = { t: coverPanel.userData.travel || 0 };
+      }
+      const proxy = coverPanel.userData.travelProxy;
+      const target = open ? travelOpen : 0;
+      coverPanel.visible = true;
+      if (window.gsap) {
+        window.gsap.killTweensOf(proxy);
+        window.gsap.to(proxy, {
+          t: target,
+          duration: 1.35,
+          ease: 'power2.inOut',
+          onUpdate: () => applySectionalDockPose(coverPanel, proxy.t),
+        });
+      } else {
+        proxy.t = target;
+        applySectionalDockPose(coverPanel, target);
+      }
+      return;
+    }
+    if (window.gsap && coverPanel.material) {
       window.gsap.to(coverPanel.material, {
         opacity: open ? 0 : 1,
         duration: 0.45,

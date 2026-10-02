@@ -269,6 +269,20 @@ export const THREE_CONFIG = {
     HANDLE_INSET_MM: 52,
     SEAM_MM: 2.8,
     PANEL_PITCH_MM: 1150,
+    // Sectional dock door (horizontal slats, side tracks, edge hinges).
+    DOCK_SECTION_MM: 190,
+    DOCK_GROOVE_MM: 16,
+    DOCK_TRACK_WIDTH_MM: 62,
+    DOCK_TRACK_DEPTH_MM: 78,
+    DOCK_HINGE_W_MM: 36,
+    DOCK_HINGE_H_MM: 44,
+    DOCK_HINGE_D_MM: 16,
+    DOCK_CLIP_W_MM: 46,
+    DOCK_CLIP_H_MM: 26,
+    DOCK_SEAL_MM: 26,
+    DOCK_HEADER_MM: 58,
+    DOCK_FRAME_MM: 28,
+    DOCK_RAIL_RADIUS_MM: 340,
   },
 
   ANIMATION: {

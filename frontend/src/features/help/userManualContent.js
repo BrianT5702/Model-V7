@@ -360,6 +360,7 @@ export const MANUAL_SECTIONS = [
                 'Click a wall. Tick **Select Multiple Walls** to edit several at once.',
                 'Click **Show Edit Wall Form**.',
                 'Change position, height, thickness, type, or finishes. Use the padlock to lock a field.',
+                '**Side panel length** sets one end. Leave it blank for the automatic split (half the remainder, or the whole remainder on one end). The other end is calculated from the length you enter.',
                 'Optional: **Advanced Options** → **Enable Gap-Fill**. Gap-fill walls cannot host doors.',
                 'To add a window, save the wall first if **Add Window** is disabled.',
                 'Click **Save**, or **Remove Wall**.',

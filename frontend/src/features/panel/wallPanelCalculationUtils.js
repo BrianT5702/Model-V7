@@ -1,4 +1,5 @@
 import PanelCalculator from './PanelCalculator';
+import { wallEndToPanelSide } from './sidePanelLayout';
 
 /** Fingerprint walls + joints so we can detect stale material counts. */
 export function getWallCalculationFingerprint(walls = [], intersections = []) {
@@ -17,6 +18,8 @@ export function getWallCalculationFingerprint(walls = [], intersections = []) {
             wall.inner_face_thickness,
             wall.outer_face_material,
             wall.outer_face_thickness,
+            wall.side_panel_length ?? '',
+            wall.side_panel_end ?? '',
         ].join(':'))
         .sort()
         .join('|');
@@ -329,13 +332,21 @@ export function calculateProjectWallPanels(walls = [], intersections = [], wallO
             outerFaceThickness: wall.outer_face_thickness || null,
         };
 
+        const sidePanelPreference = (
+            wall.side_panel_length != null && wall.side_panel_length !== ''
+        ) ? {
+            side: wallEndToPanelSide(wall, wall.side_panel_end || 'start'),
+            length: wall.side_panel_length,
+        } : null;
+
         const panels = calculator.calculatePanels(
             wallLength,
             wall.thickness,
             jointType,
             heightForCalc,
             faceInfo,
-            cutSlashes
+            cutSlashes,
+            sidePanelPreference
         );
 
         if (!panels || !Array.isArray(panels)) return;

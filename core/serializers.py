@@ -78,6 +78,7 @@ class WallSerializer(serializers.ModelSerializer):
             'outer_face_material', 'outer_face_thickness',
             'is_default', 'has_concrete_base', 'concrete_base_height',
             'fill_gap_mode', 'gap_fill_height', 'gap_base_position',
+            'side_panel_length', 'side_panel_end',
             'ceiling_joint_type', 'ceiling_cut_l_horizontal_extension',
             'rooms', 'windows'
         ]
@@ -102,6 +103,11 @@ class WallSerializer(serializers.ModelSerializer):
     def validate_outer_face_thickness(self, value):
         if value <= 0:
             raise serializers.ValidationError("Outer face thickness must be greater than 0")
+        return value
+
+    def validate_side_panel_length(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("Side panel length must be greater than 0")
         return value
     
     def update(self, instance, validated_data):

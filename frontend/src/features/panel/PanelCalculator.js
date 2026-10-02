@@ -1,3 +1,5 @@
+import { planCustomSidePanels } from './sidePanelLayout';
+
 class PanelCalculator {
     constructor() {
         this.MAX_PANEL_WIDTH = 1150; // mm
@@ -108,8 +110,39 @@ class PanelCalculator {
         return defaultPosition;
     }
 
+    /**
+     * Drafter set one end length. Full 1150 mm panels fill the middle,
+     * and the other end is whatever length remains.
+     */
+    buildCustomSidePanels(plan, wallThickness, jointType) {
+        const panels = [];
+        for (let i = 0; i < plan.fullCount; i += 1) {
+            panels.push(this.createFullPanel(jointType));
+        }
+
+        const jointFor = (side) => (
+            typeof jointType === 'object' && jointType ? jointType[side] : jointType
+        );
+
+        const addSide = (width, side) => {
+            if (!(width > 0)) return;
+            const panel = this.createSidePanelWithCut(width, wallThickness, side, jointFor(side));
+            panel.optimizationNote = `Side length set to ${plan.specifiedLength} mm; the other end is calculated`;
+            panel.optimizationSymbol = '✎';
+            panel.optimizationType = 'CUSTOM_SIDE_LENGTH';
+            panel.placementNote = `${side.toUpperCase()} END`;
+            panels.push(panel);
+        };
+
+        // Left end first so the right end can reuse the leftover factory joint.
+        addSide(plan.leftLength, 'left');
+        addSide(plan.rightLength, 'right');
+        return panels;
+    }
+
     // Enhanced panel calculation with 45-degree cut handling and 20mm optimization
-    calculatePanels(wallLength, wallThickness, jointType, wallHeight = 3000, faceInfo = null, cutSlashes = null) {
+    // sidePanelPreference: { side: 'left'|'right', length } — one end set by the drafter.
+    calculatePanels(wallLength, wallThickness, jointType, wallHeight = 3000, faceInfo = null, cutSlashes = null, sidePanelPreference = null) {
         // Store wallHeight for leftover tracking
         this.currentWallHeight = wallHeight;
         
@@ -132,6 +165,19 @@ class PanelCalculator {
         const threshold = wallHeight < 5000 ? 600 : 1000;
         const minPanelWidth = wallHeight < 5000 ? 300 : 500;
         // console.log(`Threshold for panel splitting: ${threshold}mm, Minimum panel width: ${minPanelWidth}mm (wall height: ${wallHeight}mm)`);
+
+        const preferredLength = sidePanelPreference?.length;
+        if (preferredLength != null && preferredLength !== '') {
+            const customPlan = planCustomSidePanels(
+                wallLength,
+                wallHeight,
+                sidePanelPreference.side,
+                preferredLength
+            );
+            if (customPlan.ok) {
+                return this.buildCustomSidePanels(customPlan, wallThickness, jointType);
+            }
+        }
 
         // Calculate full panels needed
         const fullPanelsCount = Math.floor(remainingLength / this.MAX_PANEL_WIDTH);
