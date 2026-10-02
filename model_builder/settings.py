@@ -13,15 +13,29 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
+
+
+def _required_env(name):
+    value = (os.environ.get(name) or '').strip()
+    if not value:
+        raise ImproperlyConfigured(
+            f'{name} is required. Copy .env.example to .env and set it, '
+            'or export it in the environment. Do not commit the real value.'
+        )
+    return value
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-$uu^lgbp-w1j^1nt^1&n2=l!w5v=!@c-c#=1+h5uemvx6o%oai'
+SECRET_KEY = _required_env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -83,11 +97,11 @@ WSGI_APPLICATION = 'model_builder.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'model-builder-v6',  # Your database name
-        'USER': 'postgres',         # Your PostgreSQL username
-        'PASSWORD': '5702Tci123',  # Your PostgreSQL password
-        'HOST': '127.0.0.1',
-        'PORT': '5432',
+        'NAME': os.environ.get('DB_NAME', 'model-builder-v6'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': _required_env('DB_PASSWORD'),
+        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 

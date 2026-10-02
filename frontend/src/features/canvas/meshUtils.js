@@ -10,7 +10,9 @@ import { resolveWallBaseElevationMm } from '../project/projectUtils';
 import { getWallInteriorNormalModel } from './wallInteriorSide';
 import { buildIntersectionsFromJoints } from '../panel/wallPanelCalculationUtils';
 import {
+  createPanelSurfaceMaterial,
   createWallSurfaceMaterial,
+  finishPanelSurfaceMesh,
   prepareWallSurfaceGeometry,
   ensureWallSurfaceDetail,
 } from './wallSurfaceTextures';
@@ -314,14 +316,13 @@ function compute45MiterLocalXs({
     };
   }
 
-  // Fallback: angle-aware inset (90° → inset = thickness)
+  // Fallback: angle-aware inset (90° → inset = thickness).
+  // A very shallow meet makes tan(half) tiny and the inset enormous, which
+  // draws a wall-length spike past the corner. Keep it within a few thicknesses.
   const safeHalf = Math.max(half, 1e-3);
-  const inset = thisThickness / Math.tan(safeHalf);
-  if (!Number.isFinite(inset) || inset < 0) {
-    return cutOnInner
-      ? { xOuter: jointLocalX, xInner: atStart ? inset : jointLocalX - inset }
-      : { xOuter: atStart ? inset : jointLocalX - inset, xInner: jointLocalX };
-  }
+  const rawInset = thisThickness / Math.tan(safeHalf);
+  const insetCap = Math.max(thisThickness, otherThickness, 1e-4) * 4;
+  const inset = Number.isFinite(rawInset) ? Math.max(0, Math.min(rawInset, insetCap)) : 0;
   if (cutOnInner) {
     return {
       xOuter: jointLocalX,
@@ -984,9 +985,12 @@ export function createWallMesh(instance, wall) {
       endCutYMax = Math.max(endCutYMax, band.max);
     }
   };
-  // CRITICAL: Use more lenient tolerance for 45_cut joints (10cm instead of 1cm)
-  // After extension, walls should meet, but floating point precision might cause slight differences
-  const jointTolerance = 0.1; // 10cm tolerance - more lenient for 45_cut joints
+  // 0.1 scene units = 10 mm at scale 0.01. A tip stretched to the joining wall's
+  // far face sits one thickness back from that wall's original line, so the
+  // allowance for each end includes the distance that end was extended.
+  const jointTolerance = 0.1;
+  const startJointTolerance = jointTolerance + startExtensionDist;
+  const endJointTolerance = jointTolerance + endExtensionDist;
   // After extension, check for 45_cut joints at the extended endpoints
   // Use the intersection points that were already calculated during extension
   if (instance.joints && instance.joints.length) {
@@ -1035,7 +1039,7 @@ export function createWallMesh(instance, wall) {
           }
           // Check if joint is at start endpoint (after extension)
           // Use the closer endpoint if within tolerance, or if significantly closer than the other
-          if (isCloserToStart && (startDist < jointTolerance || startDist < endDist * 0.5)) {
+          if (isCloserToStart && startDist < startJointTolerance) {
             hasStart45 = true;
             mergeCutYBand(true, cutYBand);
             // Determine if the joining wall lies on the inner side (along inward normal) or outer side
@@ -1095,7 +1099,7 @@ export function createWallMesh(instance, wall) {
           }
           // Check if joint is at end endpoint (after extension)
           // Use the closer endpoint if within tolerance, or if significantly closer than the other
-          if (!isCloserToStart && (endDist < jointTolerance || endDist < startDist * 0.5)) {
+          if (!isCloserToStart && endDist < endJointTolerance) {
             hasEnd45 = true;
             mergeCutYBand(false, cutYBand);
             const joinMidX = (oSX + oEX) / 2;
@@ -1445,6 +1449,8 @@ export function createWallMesh(instance, wall) {
   prepareWallSurfaceGeometry(instance.THREE, wallMesh.geometry);
   ensureWallSurfaceDetail(instance.THREE, wallMesh, instance.renderer);
   wallMesh.userData.isWall = true;
+  // Draw after the ceiling so a shared face shows the wall panel, not a blend.
+  wallMesh.renderOrder = 2;
   wallMesh.castShadow = true;
   // Cast-only: wall self-receive causes shadow acne that blinks while orbiting
   wallMesh.receiveShadow = false;
@@ -2115,13 +2121,17 @@ function decorateSlideLeaf(instance, leaf, {
 // This creates the door in sections around windows, leaving actual holes
 function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, doorMaterial, windows, scale, offsetX = 0, edgeLineOffsetX = null) {
   void edgeLineOffsetX;
+  const panelLeaf = (mesh) => {
+    finishPanelSurfaceMesh(instance.THREE, mesh, instance.renderer);
+    return mesh;
+  };
   // If no windows, create a simple box door
   if (!windows || windows.length === 0) {
     const doorGeometry = new instance.THREE.BoxGeometry(doorWidth, doorHeight, doorThickness);
     if (offsetX !== 0) {
       doorGeometry.translate(offsetX, 0, 0);
     }
-    const doorMesh = new instance.THREE.Mesh(doorGeometry, doorMaterial);
+    const doorMesh = panelLeaf(new instance.THREE.Mesh(doorGeometry, doorMaterial));
     addAluminumDoorFrame(instance, doorMesh, doorWidth, doorHeight, doorThickness, scale, offsetX);
     return doorMesh;
   }
@@ -2168,7 +2178,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
       if (offsetX !== 0) {
         topGeometry.translate(offsetX, 0, 0);
       }
-      const topMesh = new instance.THREE.Mesh(topGeometry, doorMaterial);
+      const topMesh = panelLeaf(new instance.THREE.Mesh(topGeometry, doorMaterial));
       topMesh.position.y = doorHeight / 2 - topHeight / 2;
       doorGroup.add(topMesh);
     }
@@ -2183,7 +2193,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
       if (offsetX !== 0) {
         bottomGeometry.translate(offsetX, 0, 0);
       }
-      const bottomMesh = new instance.THREE.Mesh(bottomGeometry, doorMaterial);
+      const bottomMesh = panelLeaf(new instance.THREE.Mesh(bottomGeometry, doorMaterial));
       bottomMesh.position.y = -doorHeight / 2 + bottomHeight / 2;
       doorGroup.add(bottomMesh);
     }
@@ -2225,7 +2235,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
         if (offsetX !== 0) {
           leftGeometry.translate(offsetX, 0, 0);
         }
-        const leftMesh = new instance.THREE.Mesh(leftGeometry, doorMaterial);
+        const leftMesh = panelLeaf(new instance.THREE.Mesh(leftGeometry, doorMaterial));
         leftMesh.position.set((-doorWidth / 2 + leftWidth / 2), rowCenterY, 0);
         doorGroup.add(leftMesh);
       }
@@ -2239,7 +2249,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
         if (offsetX !== 0) {
           gapGeometry.translate(offsetX, 0, 0);
         }
-        const gapMesh = new instance.THREE.Mesh(gapGeometry, doorMaterial);
+        const gapMesh = panelLeaf(new instance.THREE.Mesh(gapGeometry, doorMaterial));
         gapMesh.position.set((row[i].right + row[i + 1].left) / 2, rowCenterY, 0);
         doorGroup.add(gapMesh);
       }
@@ -2253,7 +2263,7 @@ function createDoorWithWindows(instance, doorWidth, doorHeight, doorThickness, d
         if (offsetX !== 0) {
           rightGeometry.translate(offsetX, 0, 0);
         }
-        const rightMesh = new instance.THREE.Mesh(rightGeometry, doorMaterial);
+        const rightMesh = panelLeaf(new instance.THREE.Mesh(rightGeometry, doorMaterial));
         rightMesh.position.set((row[row.length - 1].right + doorWidth / 2) / 2, rowCenterY, 0);
         doorGroup.add(rightMesh);
       }
@@ -2568,14 +2578,7 @@ export function createDoorMesh(instance, door, wall) {
   const doorWidthMultiplier = isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05;
   const doorWidth = width * scale * doorWidthMultiplier;
   const doorThickness = thickness * instance.scalingFactor;
-  const doorCfg = THREE_CONFIG.MATERIALS.DOOR || {};
-  const doorMaterial = new instance.THREE.MeshStandardMaterial({
-    color: doorCfg.color ?? 0xf3f4f6,
-    roughness: doorCfg.roughness ?? 0.58,
-    metalness: doorCfg.metalness ?? 0.05,
-    envMapIntensity: doorCfg.envMapIntensity ?? 0.4,
-    transparent: false,
-    opacity: 1,
+  const doorMaterial = createPanelSurfaceMaterial(instance.THREE, instance.renderer, {
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,

@@ -6,7 +6,7 @@ import {
     formatRoomHeightLabel,
     parseRoomHeightInput,
 } from '../room/roomHeightUtils';
-import { buildRoomLabelHtml } from '../room/roomLabelUtils';
+import { buildRoomLabelLines } from '../room/roomLabelUtils';
 
 const InteractiveRoomLabel = ({ 
     room, 
@@ -40,7 +40,7 @@ const InteractiveRoomLabel = ({
     const { isDark } = useTheme();
     const labelTextColor = isDark ? '#e5e7eb' : '#1f2937';
 
-    const getDisplayText = () => buildRoomLabelHtml(room);
+    const displayLines = buildRoomLabelLines(room);
 
     /**
      * Room footprint in screen pixels. `initialScale` is the fit-to-view scale, so a plan
@@ -649,8 +649,14 @@ const InteractiveRoomLabel = ({
                             transition: 'opacity 0.2s ease',
                             opacity: isSelectionDisabled ? 0.6 : 1
                         }}
-                        dangerouslySetInnerHTML={{ __html: getDisplayText() }}
-                    />
+                    >
+                        {displayLines.map((line, index) => (
+                            <React.Fragment key={index}>
+                                {index > 0 && <br />}
+                                {line}
+                            </React.Fragment>
+                        ))}
+                    </div>
                 )}
             </div>
             {shouldShowArrow && arrowPath && (

@@ -1,0 +1,15 @@
+# Dependencies & Package Caches
+node_modules/
+vendor/
+
+# Build artifacts & caches
+dist/
+build/
+storage/
+.git/
+
+# Lock files and large logs
+*.lock
+*.log
+*.min.js
+*.map

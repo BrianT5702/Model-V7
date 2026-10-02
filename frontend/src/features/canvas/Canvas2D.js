@@ -3317,7 +3317,7 @@ const Canvas2D = ({
                                     checked={dimensionVisibility.panel}
                                     onChange={() => handleDimensionVisibilityChange('panel')}
                                 />
-                                <span>Side Panel dimensions</span>
+                                <span title="End panel sizes, plus grouped repeats such as 4 × 1150">Side Panel dimensions</span>
                             </label>
                             <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
                                 <input

@@ -103,12 +103,12 @@ export const THREE_CONFIG = {
    * Studio contrast + soft pad under the building.
    */
   SCENE: {
-    BACKGROUND_COLOR: 0x7d8fa3,
+    BACKGROUND_COLOR: 0x4e6278,
     FOG_NEAR: 0,
     FOG_FAR: 0,
-    FOG_COLOR: 0x7d8fa3,
+    FOG_COLOR: 0x4e6278,
     STUDIO_GROUND: true,
-    STUDIO_GROUND_COLOR: 0x667588,
+    STUDIO_GROUND_COLOR: 0x5c656e,
     /** Flush with wall bottoms (was -0.5 → huge under-wall gap). */
     STUDIO_GROUND_Y: 0,
     STUDIO_GROUND_SIZE: 80000,
@@ -121,8 +121,7 @@ export const THREE_CONFIG = {
   },
 
   /**
-   * Soft architecture edge lines ON by default (without them white faces look fake/flat).
-   * Set REACT_APP_THREE_EDGE_LINES=false to hide.
+   * Soft architecture edge lines. Set REACT_APP_THREE_EDGE_LINES=false to hide.
    */
   EDGE_LINES: {
     ENABLED: !parseEnvFlagFalse('REACT_APP_THREE_EDGE_LINES'),
@@ -135,19 +134,19 @@ export const THREE_CONFIG = {
 
   /** Daylight fill — shadow maps OFF (orbit shadow acne = blink) */
   LIGHTING: {
-    HEMISPHERE_SKY: 0xffffff,
-    HEMISPHERE_GROUND: 0x6b7788,
-    HEMISPHERE_INTENSITY: 0.55,
-    AMBIENT_COLOR: 0xffffff,
-    AMBIENT_INTENSITY: 0.32,
-    SUN_COLOR: 0xfff4e8,
-    SUN_INTENSITY: 1.28,
+    HEMISPHERE_SKY: 0xdbe7f5,
+    HEMISPHERE_GROUND: 0x6a6258,
+    HEMISPHERE_INTENSITY: 0.42,
+    AMBIENT_COLOR: 0xfff8f0,
+    AMBIENT_INTENSITY: 0.18,
+    SUN_COLOR: 0xfff3e0,
+    SUN_INTENSITY: 1.35,
     SUN_POSITION: { x: 210, y: 380, z: 150 },
-    FILL_COLOR: 0xdce6f2,
-    FILL_INTENSITY: 0.4,
+    FILL_COLOR: 0xd5e2f0,
+    FILL_INTENSITY: 0.22,
     FILL_POSITION: { x: -170, y: 150, z: -130 },
     RIM_COLOR: 0xeef4fb,
-    RIM_INTENSITY: 0.22,
+    RIM_INTENSITY: 0.1,
     RIM_POSITION: { x: -70, y: 110, z: 220 },
     SHADOWS: false,
     SHADOW_MAP_SIZE: 2048,
@@ -166,14 +165,15 @@ export const THREE_CONFIG = {
   },
 
   /**
-   * PPGI micro-rib face. One texture tile = TILE_WORLD scene units
-   * (1 unit = 100 mm at SCALING_FACTOR 0.01). Grooves mipmap away in orbit
-   * and read as recessed slats when the camera is close.
+   * PPGI ribbed face. One texture tile = one full panel (1150 mm),
+   * with RIBS_PER_PANEL slats across that width.
    */
   WALL_SURFACE: {
     ENABLED: true,
-    TILE_WORLD: 1,
-    RIB_PITCH_MM: 18,
+    PANEL_WIDTH_MM: 1150,
+    RIBS_PER_PANEL: 9,
+    TILE_WORLD: 11.5,
+    RIB_PITCH_MM: 1150 / 9,
     GROOVE_FRACTION: 0.16,
     TEXTURE_SIZE: 1024,
     NORMAL_SCALE: 0.95,
@@ -182,14 +182,15 @@ export const THREE_CONFIG = {
   },
 
   /**
-   * Surface variety. Low metalness — IBL specular shimmer looks like blinking while orbiting.
+   * Satin coated metal. Enough metalness to read as PPGI, roughness high
+   * enough that reflections stay soft.
    */
   MATERIALS: {
     WALL: {
       color: 0xffffff,
-      roughness: 0.74,
-      metalness: 0.02,
-      envMapIntensity: 0.28,
+      roughness: 0.42,
+      metalness: 0.35,
+      envMapIntensity: 0.22,
       emissive: 0x000000,
       emissiveIntensity: 0,
       transparent: false,

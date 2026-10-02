@@ -314,11 +314,11 @@ export const MANUAL_SECTIONS = [
             { type: 'table', headers: ['Checkbox', 'Colour', 'Meaning'], rows: [
                 ['Overall project dimensions', 'Purple', 'Full site width and length'],
                 ['Wall dimensions', 'Blue', 'Length of each wall'],
-                ['Side Panel dimensions', 'Orange', 'Panel-module sizes along a wall'],
+                ['Side Panel dimensions', 'Orange', 'End panel sizes, plus grouped repeats (for example 4 × 1150)'],
                 ['Panel division lines', '—', 'Seam lines only (1130 mm ends are not hatched)'],
             ] },
             { type: 'p', text: 'Dashed extension lines follow the **drawn wall**. 45° joints meet the outer corners. **Butt-in** walls stop at the shortened end (where they meet the other wall), not through the host wall. Orange side-panel sizes use those same ends. Ceiling and Floor room or panel dimensions use the same end-to-end attach.' },
-            { type: 'note', text: 'If a label would cover a door, it moves beside or outside the opening. The same side-panel size is shown once per direction (305 at the top is not repeated at the bottom). Crowded labels may hide rather than sit on the wrong wall. **Project Dimensions Exceeded** means drawing ran outside the site envelope.' },
+            { type: 'note', text: 'If a label would cover a door, it moves beside or outside the opening. The same side-panel size is shown once per direction (305 at the top is not repeated at the bottom). The same grouped repeat (4 × 1150) is also shown once per direction. Crowded labels may hide rather than sit on the wrong wall. **Project Dimensions Exceeded** means drawing ran outside the site envelope.' },
         ],
     },
     {

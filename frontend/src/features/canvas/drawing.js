@@ -12,6 +12,7 @@ import {
     getProjectDimensionOffsetForEdge,
     syncEdgeExtentsFromPlacedLabels,
     formatDimensionValue,
+    formatGroupedDimensionLabel,
     planCeilingValueDedupKey,
     applyNearWallFontSize,
     nearWallLabelSeparationPx,
@@ -4714,7 +4715,7 @@ export function drawWallPlanDimensionsLayer({
         );
     });
 
-    // Side-panel dimension labels after wall dims so both can coexist.
+    // Side-panel and grouped panel labels after wall dims so both can coexist.
     // Prefer top/left walls first so a repeated size (305 top and bottom) keeps the upper one.
     if (showPanelDimensions && wallPanelsMap) {
         const wallsForPanels = [...walls].sort((a, b) => {
@@ -5866,6 +5867,441 @@ export function drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX
     }
 } 
 
+/**
+ * Side-panel / grouped dimension on a slanted wall: parallel to the wall, text turned
+ * with the slope, same offset rule as the blue wall dimension.
+ */
+function placeObliquePanelSpanDimension({
+    context,
+    wall,
+    line1,
+    line2,
+    tStart,
+    tEnd,
+    isSpanFirst,
+    isSpanLast,
+    dimStartX,
+    dimStartY,
+    dimEndX,
+    dimEndY,
+    panelMidX,
+    panelMidY,
+    text,
+    textWidth,
+    fontSize,
+    angle,
+    labelColor,
+    modelBounds,
+    placedLabels,
+    allPanelLabels,
+    collectOnly,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    initialScale,
+    rooms,
+    wallLinesMap,
+    dimensionLanes,
+}) {
+    const wallLen = Math.hypot(
+        Number(wall.end_x) - Number(wall.start_x),
+        Number(wall.end_y) - Number(wall.start_y)
+    ) || 1;
+    const wux = (Number(wall.end_x) - Number(wall.start_x)) / wallLen;
+    const wuy = (Number(wall.end_y) - Number(wall.start_y)) / wallLen;
+    const nx = -wuy;
+    const ny = wux;
+    const obliqueBounds = (lx, ly, tw) => {
+        const rad = Math.atan2(wuy, wux);
+        const c = Math.abs(Math.cos(rad));
+        const s = Math.abs(Math.sin(rad));
+        const fh = fontSize * 0.45;
+        const bw = tw * c + fh * s + 4;
+        const bh = tw * s + fh * c + 4;
+        return { x: lx - bw / 2, y: ly - bh / 2, width: bw, height: bh };
+    };
+
+    const near = tryPlaceNearWallLabel({
+        wall,
+        anchorXModel: panelMidX,
+        anchorYModel: panelMidY,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        fontSize,
+        calculateBounds: (lx, ly, tw) => obliqueBounds(lx, ly, tw),
+        textWidth,
+        placedLabels,
+        wallLinesMap,
+        modelBounds,
+        rooms,
+        dimensionLanes,
+        initialScale,
+        rotatedVerticalText: false,
+    });
+    if (!near) return false;
+
+    const labelX = near.labelX;
+    const labelY = near.labelY;
+    const labelMx = (labelX - offsetX) / scaleFactor;
+    const labelMy = (labelY - offsetY) / scaleFactor;
+    const attach = sidePanelAttachPoints({
+        isFirst: isSpanFirst,
+        isLast: isSpanLast,
+        line1,
+        line2,
+        tStart,
+        tEnd,
+        dimStartX,
+        dimStartY,
+        dimEndX,
+        dimEndY,
+        labelModelX: labelMx,
+        labelModelY: labelMy,
+    });
+    const along = (x, y) =>
+        (x - Number(wall.start_x)) * wux + (y - Number(wall.start_y)) * wuy;
+    let t0 = along(attach.startX, attach.startY);
+    let t1 = along(attach.endX, attach.endY);
+    if (t1 < t0) {
+        const swap = t0;
+        t0 = t1;
+        t1 = swap;
+    }
+    const baseAt = (t) => ({
+        x: (Number(wall.start_x) + wux * t) * scaleFactor + offsetX,
+        y: (Number(wall.start_y) + wuy * t) * scaleFactor + offsetY,
+    });
+    const B0 = baseAt(t0);
+    const B1 = baseAt(t1);
+    const pmidX = (B0.x + B1.x) / 2;
+    const pmidY = (B0.y + B1.y) / 2;
+    const dOff = (labelX - pmidX) * nx + (labelY - pmidY) * ny;
+    const Ps_ = { x: B0.x + nx * dOff, y: B0.y + ny * dOff };
+    const Pe_ = { x: B1.x + nx * dOff, y: B1.y + ny * dOff };
+    const spanPx = Math.hypot(Pe_.x - Ps_.x, Pe_.y - Ps_.y);
+    if (spanPx < 1e-6) return false;
+    const ux = (Pe_.x - Ps_.x) / spanPx;
+    const uy = (Pe_.y - Ps_.y) / spanPx;
+
+    const As = { x: attach.startX * scaleFactor + offsetX, y: attach.startY * scaleFactor + offsetY };
+    const Ae = { x: attach.endX * scaleFactor + offsetX, y: attach.endY * scaleFactor + offsetY };
+
+    const extDash = getCanvasExtensionDashPattern(scaleFactor);
+    const extLineW = getCanvasExtensionLineWidth();
+    const dimLineW = Math.max(1.2, DIMENSION_CONFIG.DIMENSION_LINE_WIDTH * 1.4);
+    const tickPx = 4;
+    context.strokeStyle = labelColor;
+    context.lineWidth = extLineW;
+    context.setLineDash(extDash);
+    canvasDrawExtensionDashed(context, As.x, As.y, Ps_.x, Ps_.y, null);
+    canvasDrawExtensionDashed(context, Ae.x, Ae.y, Pe_.x, Pe_.y, null);
+
+    const textPadding = 2;
+    const halfText = textWidth / 2 + textPadding;
+    const midS = spanPx / 2;
+    const leftS = midS - halfText;
+    const rightS = midS + halfText;
+    context.setLineDash([]);
+    context.lineWidth = dimLineW;
+    context.strokeStyle = labelColor;
+    context.beginPath();
+    if (rightS <= leftS) {
+        context.moveTo(Ps_.x, Ps_.y);
+        context.lineTo(Pe_.x, Pe_.y);
+    } else {
+        const drawSeg = (s0, s1) => {
+            if (s1 <= s0 + 1e-4) return;
+            context.moveTo(Ps_.x + ux * s0, Ps_.y + uy * s0);
+            context.lineTo(Ps_.x + ux * s1, Ps_.y + uy * s1);
+        };
+        drawSeg(0, Math.max(0, leftS));
+        drawSeg(Math.min(spanPx, rightS), spanPx);
+    }
+    context.stroke();
+    canvasObliqueDimArrows(context, Ps_.x, Ps_.y, Pe_.x, Pe_.y, ux, uy, labelColor, tickPx);
+
+    const textAngleDeg = (Math.atan2(uy, ux) * 180) / Math.PI;
+    const lb = obliqueBounds(labelX, labelY, textWidth);
+    const box = {
+        x: lb.x,
+        y: lb.y,
+        width: lb.width,
+        height: lb.height,
+        cx: labelX,
+        cy: labelY,
+        side: near.side,
+        text,
+        angle,
+        obliqueAngle: textAngleDeg,
+        textColor: labelColor,
+        type: 'panel',
+    };
+    placedLabels.push(box);
+    if (collectOnly) allPanelLabels.push({ ...box });
+    return true;
+}
+
+/**
+ * One orange panel dimension along a wall span (a single side panel, or a grouped run).
+ * Returns false when the label cannot be placed without covering a door or another label.
+ */
+function placePanelSpanDimension({
+    context,
+    wall,
+    line1,
+    line2,
+    tStart,
+    tEnd,
+    isSpanFirst,
+    isSpanLast,
+    labelText,
+    labelColor,
+    modelBounds,
+    placedLabels,
+    allPanelLabels,
+    collectOnly,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    initialScale,
+    rooms,
+    wallLinesMap,
+    dimensionLanes,
+}) {
+    const cxStart = line1[0].x + (line1[1].x - line1[0].x) * tStart;
+    const cyStart = line1[0].y + (line1[1].y - line1[0].y) * tStart;
+    const c2xStart = line2[0].x + (line2[1].x - line2[0].x) * tStart;
+    const c2yStart = line2[0].y + (line2[1].y - line2[0].y) * tStart;
+    const mxStart = (cxStart + c2xStart) / 2;
+    const myStart = (cyStart + c2yStart) / 2;
+
+    const cxEnd = line1[0].x + (line1[1].x - line1[0].x) * tEnd;
+    const cyEnd = line1[0].y + (line1[1].y - line1[0].y) * tEnd;
+    const c2xEnd = line2[0].x + (line2[1].x - line2[0].x) * tEnd;
+    const c2yEnd = line2[0].y + (line2[1].y - line2[0].y) * tEnd;
+    const mxEnd = (cxEnd + c2xEnd) / 2;
+    const myEnd = (cyEnd + c2yEnd) / 2;
+
+    const drawnEnds = snapSidePanelDimensionEnds({
+        isFirst: isSpanFirst,
+        isLast: isSpanLast,
+        mxStart,
+        myStart,
+        mxEnd,
+        myEnd,
+        line1,
+        line2
+    });
+    const dimStartX = drawnEnds.startX;
+    const dimStartY = drawnEnds.startY;
+    const dimEndX = drawnEnds.endX;
+    const dimEndY = drawnEnds.endY;
+
+    const dx = dimEndX - dimStartX;
+    const dy = dimEndY - dimStartY;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    const panelMidX = (dimStartX + dimEndX) / 2;
+    const panelMidY = (dimStartY + dimEndY) / 2;
+    const bounds = modelBounds || {
+        minX: Math.min(wall.start_x, wall.end_x),
+        maxX: Math.max(wall.start_x, wall.end_x),
+        minY: Math.min(wall.start_y, wall.end_y),
+        maxY: Math.max(wall.start_y, wall.end_y)
+    };
+    const text = labelText;
+    const fontSize = applyNearWallFontSize(computeWallPlanDimensionFontSize(scaleFactor, initialScale));
+    context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
+    const textWidth = context.measureText(text).width;
+    // Same rule as wall dimensions: judge the wall, not the snapped panel ends.
+    // A face-to-centerline chord on a horizontal wall is a few millimetres off axis.
+    const wallDx = Number(wall?.end_x) - Number(wall?.start_x);
+    const wallDy = Number(wall?.end_y) - Number(wall?.start_y);
+    const useObliqueSpan =
+        Math.abs(wallDx) > WALL_AXIS_ALIGN_TOL_MM && Math.abs(wallDy) > WALL_AXIS_ALIGN_TOL_MM;
+    if (useObliqueSpan) {
+        return placeObliquePanelSpanDimension({
+            context,
+            wall,
+            line1,
+            line2,
+            tStart,
+            tEnd,
+            isSpanFirst,
+            isSpanLast,
+            dimStartX,
+            dimStartY,
+            dimEndX,
+            dimEndY,
+            panelMidX,
+            panelMidY,
+            text,
+            textWidth,
+            fontSize,
+            angle,
+            labelColor,
+            modelBounds: bounds,
+            placedLabels,
+            allPanelLabels,
+            collectOnly,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            initialScale,
+            rooms,
+            wallLinesMap,
+            dimensionLanes,
+        });
+    }
+    const isHorizontalSpan = Math.abs(angle) < 45 || Math.abs(angle) > 135;
+
+    const recordPlaced = (near) => {
+        const labelX = near.labelX;
+        const labelY = near.labelY;
+        const labelMx = (labelX - offsetX) / scaleFactor;
+        const labelMy = (labelY - offsetY) / scaleFactor;
+        const attach = sidePanelAttachPoints({
+            isFirst: isSpanFirst,
+            isLast: isSpanLast,
+            line1,
+            line2,
+            tStart,
+            tEnd,
+            dimStartX,
+            dimStartY,
+            dimEndX,
+            dimEndY,
+            labelModelX: labelMx,
+            labelModelY: labelMy
+        });
+        drawSidePanelDimensionArtwork({
+            context,
+            isHorizontal: isHorizontalSpan,
+            dimStartX,
+            dimStartY,
+            dimEndX,
+            dimEndY,
+            attachStartX: attach.startX,
+            attachStartY: attach.startY,
+            attachEndX: attach.endX,
+            attachEndY: attach.endY,
+            labelX,
+            labelY,
+            textWidth,
+            color: labelColor,
+            scaleFactor,
+            offsetX,
+            offsetY
+        });
+        const box = {
+            x: near.bounds.x,
+            y: near.bounds.y,
+            width: near.bounds.width,
+            height: near.bounds.height,
+            side: near.side,
+            text,
+            angle,
+            type: 'panel'
+        };
+        placedLabels.push(box);
+        if (collectOnly) allPanelLabels.push({ ...box });
+    };
+
+    if (isHorizontalSpan) {
+        const spanLo = Math.min(dimStartX, dimEndX);
+        const spanHi = Math.max(dimStartX, dimEndX);
+        const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, false);
+        const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
+        const near = placeNearWallWallDimension({
+            wallForNear: wall,
+            wallMidX: panelMidX,
+            wallMidY: panelMidY,
+            isHorizontal: true,
+            modelBounds: bounds,
+            dimensionLanes,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            fontSize,
+            textWidth,
+            placedLabels,
+            wallLinesMap,
+            rooms,
+            initialScale,
+            rotatedVerticalText: false,
+            calculateBounds: (lx, ly, tw) =>
+                calculateNearWallHorizontalDimBounds(lx, ly, tw, fontSize),
+            side1Bounds: calculateHorizontalLabelBounds(
+                panelMidX * scaleFactor + offsetX,
+                myStart * scaleFactor + offsetY - trialOffset,
+                textWidth,
+                2,
+                8
+            ),
+            side2Bounds: calculateHorizontalLabelBounds(
+                panelMidX * scaleFactor + offsetX,
+                myStart * scaleFactor + offsetY + trialOffset,
+                textWidth,
+                2,
+                8
+            ),
+            baseOffset: baseOff,
+            wallLaneSpacing: DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING,
+            spanLo,
+            spanHi
+        });
+        if (!near) return false;
+        recordPlaced(near);
+        return true;
+    }
+
+    const spanLo = Math.min(dimStartY, dimEndY);
+    const spanHi = Math.max(dimStartY, dimEndY);
+    const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, true);
+    const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
+    const near = placeNearWallWallDimension({
+        wallForNear: wall,
+        wallMidX: panelMidX,
+        wallMidY: panelMidY,
+        isHorizontal: false,
+        modelBounds: bounds,
+        dimensionLanes,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        fontSize,
+        textWidth,
+        placedLabels,
+        wallLinesMap,
+        rooms,
+        initialScale,
+        rotatedVerticalText: true,
+        calculateBounds: (lx, ly, tw) =>
+            calculateRotatedVerticalDimBounds(lx, ly, tw, fontSize),
+        side1Bounds: calculateVerticalLabelBounds(
+            mxStart * scaleFactor + offsetX - trialOffset,
+            panelMidY * scaleFactor + offsetY,
+            textWidth,
+            2,
+            8
+        ),
+        side2Bounds: calculateVerticalLabelBounds(
+            mxStart * scaleFactor + offsetX + trialOffset,
+            panelMidY * scaleFactor + offsetY,
+            textWidth,
+            2,
+            8
+        ),
+        baseOffset: baseOff,
+        wallLaneSpacing: DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING,
+        spanLo,
+        spanHi
+    });
+    if (!near) return false;
+    recordPlaced(near);
+    return true;
+}
+
 // Draw panel division lines along a wall
 export function drawPanelDivisions(
     context,
@@ -5951,11 +6387,43 @@ export function drawPanelDivisions(
         return;
     }
 
-    // Draw side panel length labels (original - only first and last)
+    // Consecutive modules of the same width (2 or more) become one grouped label,
+    // for example "4 × 1150". Those panels are not also labeled one by one.
+    const groupedRuns = [];
+    const coveredByGroup = new Set();
+    for (let runStart = 0; runStart < panels.length;) {
+        const runWidth = Math.round(getPanelDrawWidth(panels[runStart]));
+        let runEnd = runStart + 1;
+        while (
+            runEnd < panels.length &&
+            Math.round(getPanelDrawWidth(panels[runEnd])) === runWidth
+        ) {
+            runEnd += 1;
+        }
+        const runCount = runEnd - runStart;
+        if (runCount >= 2 && Number.isFinite(runWidth) && runWidth > 0) {
+            groupedRuns.push({
+                start: runStart,
+                end: runEnd - 1,
+                width: runWidth,
+                count: runCount
+            });
+            for (let k = runStart; k < runEnd; k += 1) coveredByGroup.add(k);
+        }
+        runStart = runEnd;
+    }
+
+    // Draw side panel length labels (original - only first and last).
+    // Ends that belong to a grouped run are labeled by that group instead.
     accumulated = 0;
     for (let i = 0; i < panels.length; i++) {
         const panel = panels[i];
         const panelWidth = getPanelDrawWidth(panel);
+
+        if (coveredByGroup.has(i)) {
+            accumulated += panelWidth;
+            continue;
+        }
         
         // Show labels for side panels (first and last).
         // Same size at both ends of a wall, or the same size already drawn on another
@@ -5990,302 +6458,86 @@ export function drawPanelDivisions(
             const labelText = `${Math.round(displayWidth)}`;
             const fullLabelText = specialSymbol ? `${labelText} ${specialSymbol}` : labelText;
 
-            // Start and end t values for the panel
             const tStart = accumulated / wallLength;
             const tEnd = (accumulated + panelWidth) / wallLength;
-
-            // Start and end points along the wall centerline
-            const cxStart = line1[0].x + (line1[1].x - line1[0].x) * tStart;
-            const cyStart = line1[0].y + (line1[1].y - line1[0].y) * tStart;
-            const c2xStart = line2[0].x + (line2[1].x - line2[0].x) * tStart;
-            const c2yStart = line2[0].y + (line2[1].y - line2[0].y) * tStart;
-            const mxStart = (cxStart + c2xStart) / 2;
-            const myStart = (cyStart + c2yStart) / 2;
-
-            const cxEnd = line1[0].x + (line1[1].x - line1[0].x) * tEnd;
-            const cyEnd = line1[0].y + (line1[1].y - line1[0].y) * tEnd;
-            const c2xEnd = line2[0].x + (line2[1].x - line2[0].x) * tEnd;
-            const c2yEnd = line2[0].y + (line2[1].y - line2[0].y) * tEnd;
-            const mxEnd = (cxEnd + c2xEnd) / 2;
-            const myEnd = (cyEnd + c2yEnd) / 2;
-
-            const isFirst = i === 0;
-            const isLast = i === panels.length - 1;
-            const drawnEnds = snapSidePanelDimensionEnds({
-                isFirst,
-                isLast,
-                mxStart,
-                myStart,
-                mxEnd,
-                myEnd,
+            const placed = placePanelSpanDimension({
+                context,
+                wall,
                 line1,
-                line2
+                line2,
+                tStart,
+                tEnd,
+                isSpanFirst: isFirst,
+                isSpanLast: isLast,
+                labelText: fullLabelText,
+                labelColor: specialColor,
+                modelBounds,
+                placedLabels,
+                allPanelLabels,
+                collectOnly,
+                scaleFactor,
+                offsetX,
+                offsetY,
+                initialScale,
+                rooms,
+                wallLinesMap,
+                dimensionLanes,
             });
-            const dimStartX = drawnEnds.startX;
-            const dimStartY = drawnEnds.startY;
-            const dimEndX = drawnEnds.endX;
-            const dimEndY = drawnEnds.endY;
-
-            // Calculate direction and angle
-            const dx = dimEndX - dimStartX;
-            const dy = dimEndY - dimStartY;
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-            // Panel midpoint
-            const panelMidX = (dimStartX + dimEndX) / 2;
-            const panelMidY = (dimStartY + dimEndY) / 2;
-
-            // Use the passed modelBounds or fallback to wall bounds
-            const bounds = modelBounds || {
-                minX: Math.min(wall.start_x, wall.end_x),
-                maxX: Math.max(wall.start_x, wall.end_x),
-                minY: Math.min(wall.start_y, wall.end_y),
-                maxY: Math.max(wall.start_y, wall.end_y)
-            };
-            const text = fullLabelText;
-            
-            // IMPORTANT: Set font BEFORE measuring text width!
-            const standardPanelFontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
-            let fontSize = standardPanelFontSize;
-            fontSize = applyNearWallFontSize(standardPanelFontSize);
-            context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-            const textWidth = context.measureText(text).width;
-
-            if (Math.abs(angle) < 45 || Math.abs(angle) > 135) {
-                const spanLo = Math.min(dimStartX, dimEndX);
-                const spanHi = Math.max(dimStartX, dimEndX);
-                const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, false);
-                const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
-                const side1Bounds = calculateHorizontalLabelBounds(
-                    panelMidX * scaleFactor + offsetX,
-                    myStart * scaleFactor + offsetY - trialOffset,
-                    textWidth,
-                    2,
-                    8
-                );
-                const side2Bounds = calculateHorizontalLabelBounds(
-                    panelMidX * scaleFactor + offsetX,
-                    myStart * scaleFactor + offsetY + trialOffset,
-                    textWidth,
-                    2,
-                    8
-                );
-                const near = placeNearWallWallDimension({
-                    wallForNear: wall,
-                    wallMidX: panelMidX,
-                    wallMidY: panelMidY,
-                    isHorizontal: true,
-                    modelBounds: bounds,
-                    dimensionLanes,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    fontSize,
-                    textWidth,
-                    placedLabels,
-                    wallLinesMap,
-                    rooms,
-                    initialScale,
-                    rotatedVerticalText: false,
-                    calculateBounds: (lx, ly, tw) =>
-                        calculateNearWallHorizontalDimBounds(lx, ly, tw, fontSize),
-                    side1Bounds,
-                    side2Bounds,
-                    baseOffset: baseOff,
-                    wallLaneSpacing: DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING,
-                    spanLo,
-                    spanHi
-                });
-                if (!near) {
-                    accumulated += panelWidth;
-                    continue;
-                }
-                const labelX = near.labelX;
-                const labelY = near.labelY;
-                const side = near.side;
-                const finalLabelBounds = near.bounds;
-                const labelMx = (labelX - offsetX) / scaleFactor;
-                const labelMy = (labelY - offsetY) / scaleFactor;
-                const attach = sidePanelAttachPoints({
-                    isFirst,
-                    isLast,
-                    line1,
-                    line2,
-                    tStart,
-                    tEnd,
-                    dimStartX,
-                    dimStartY,
-                    dimEndX,
-                    dimEndY,
-                    labelModelX: labelMx,
-                    labelModelY: labelMy
-                });
-                markPanelValueSeen();
-                drawSidePanelDimensionArtwork({
-                    context,
-                    isHorizontal: true,
-                    dimStartX,
-                    dimStartY,
-                    dimEndX,
-                    dimEndY,
-                    attachStartX: attach.startX,
-                    attachStartY: attach.startY,
-                    attachEndX: attach.endX,
-                    attachEndY: attach.endY,
-                    labelX,
-                    labelY,
-                    textWidth,
-                    color: specialColor,
-                    scaleFactor,
-                    offsetX,
-                    offsetY
-                });
-                
-                // Add to placed labels for future collision detection (use calculated bounds)
-                placedLabels.push({
-                    x: finalLabelBounds.x,
-                    y: finalLabelBounds.y,
-                    width: finalLabelBounds.width,
-                    height: finalLabelBounds.height,
-                    side: side,
-                    text: text,
-                    angle: angle,
-                    type: 'panel'
-                });
-                 
-                 // Collect for second pass if needed (use same bounds for consistency)
-                 if (collectOnly) {
-                     allPanelLabels.push({
-                         x: finalLabelBounds.x,
-                         y: finalLabelBounds.y,
-                         width: finalLabelBounds.width,
-                         height: finalLabelBounds.height,
-                         side: side,
-                         text: text,
-                         angle: angle,
-                         type: 'panel'
-                     });
-                 }
-            } else {
-                const spanLo = Math.min(dimStartY, dimEndY);
-                const spanHi = Math.max(dimStartY, dimEndY);
-                const baseOff = computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth, true);
-                const trialOffset = Math.max(baseOff, DIMENSION_CONFIG.MIN_VERTICAL_OFFSET);
-                const side1Bounds = calculateVerticalLabelBounds(
-                    mxStart * scaleFactor + offsetX - trialOffset,
-                    panelMidY * scaleFactor + offsetY,
-                    textWidth,
-                    2,
-                    8
-                );
-                const side2Bounds = calculateVerticalLabelBounds(
-                    mxStart * scaleFactor + offsetX + trialOffset,
-                    panelMidY * scaleFactor + offsetY,
-                    textWidth,
-                    2,
-                    8
-                );
-                const near = placeNearWallWallDimension({
-                    wallForNear: wall,
-                    wallMidX: panelMidX,
-                    wallMidY: panelMidY,
-                    isHorizontal: false,
-                    modelBounds: bounds,
-                    dimensionLanes,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    fontSize,
-                    textWidth,
-                    placedLabels,
-                    wallLinesMap,
-                    rooms,
-                    initialScale,
-                    rotatedVerticalText: true,
-                    calculateBounds: (lx, ly, tw) =>
-                        calculateRotatedVerticalDimBounds(lx, ly, tw, fontSize),
-                    side1Bounds,
-                    side2Bounds,
-                    baseOffset: baseOff,
-                    wallLaneSpacing: DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING,
-                    spanLo,
-                    spanHi
-                });
-                if (!near) {
-                    accumulated += panelWidth;
-                    continue;
-                }
-                const labelX = near.labelX;
-                const labelY = near.labelY;
-                const side = near.side;
-                const finalLabelBounds = near.bounds;
-                const labelMxV = (labelX - offsetX) / scaleFactor;
-                const labelMyV = (labelY - offsetY) / scaleFactor;
-                const attachV = sidePanelAttachPoints({
-                    isFirst,
-                    isLast,
-                    line1,
-                    line2,
-                    tStart,
-                    tEnd,
-                    dimStartX,
-                    dimStartY,
-                    dimEndX,
-                    dimEndY,
-                    labelModelX: labelMxV,
-                    labelModelY: labelMyV
-                });
-                markPanelValueSeen();
-                drawSidePanelDimensionArtwork({
-                    context,
-                    isHorizontal: false,
-                    dimStartX,
-                    dimStartY,
-                    dimEndX,
-                    dimEndY,
-                    attachStartX: attachV.startX,
-                    attachStartY: attachV.startY,
-                    attachEndX: attachV.endX,
-                    attachEndY: attachV.endY,
-                    labelX,
-                    labelY,
-                    textWidth,
-                    color: specialColor,
-                    scaleFactor,
-                    offsetX,
-                    offsetY
-                });
-                
-                // Add to placed labels for future collision detection (use calculated bounds)
-                placedLabels.push({
-                    x: finalLabelBounds.x,
-                    y: finalLabelBounds.y,
-                    width: finalLabelBounds.width,
-                    height: finalLabelBounds.height,
-                    side: side,
-                    text: text,
-                    angle: angle,
-                    type: 'panel'
-                });
-                 
-                 // Collect for second pass if needed (use same bounds for consistency)
-                 if (collectOnly) {
-                     allPanelLabels.push({
-                         x: finalLabelBounds.x,
-                         y: finalLabelBounds.y,
-                         width: finalLabelBounds.width,
-                         height: finalLabelBounds.height,
-                         side: side,
-                         text: text,
-                         angle: angle,
-                         type: 'panel'
-                     });
-                 }
+            if (!placed) {
+                accumulated += panelWidth;
+                continue;
             }
+            markPanelValueSeen();
         }
         
         accumulated += panelWidth;
     }
+
+    const groupedDrawnOnThisWall = new Set();
+    groupedRuns.forEach((run) => {
+        const dedupKey = `GP-${isHorizontal ? 'H' : 'V'}:${run.count}:${run.width}`;
+        // Same group on another wall in this direction is shown once.
+        // Two separate runs on this wall (both "2 × 1150") still both draw.
+        if (
+            dimensionValuesSeen &&
+            dimensionValuesSeen.has(dedupKey) &&
+            !groupedDrawnOnThisWall.has(dedupKey)
+        ) {
+            return;
+        }
+        let acc = 0;
+        for (let i = 0; i < run.start; i += 1) acc += getPanelDrawWidth(panels[i]);
+        let span = 0;
+        for (let i = run.start; i <= run.end; i += 1) span += getPanelDrawWidth(panels[i]);
+        if (!(span > 0)) return;
+        const placed = placePanelSpanDimension({
+            context,
+            wall,
+            line1,
+            line2,
+            tStart: acc / wallLength,
+            tEnd: (acc + span) / wallLength,
+            isSpanFirst: run.start === 0,
+            isSpanLast: run.end === panels.length - 1,
+            labelText: formatGroupedDimensionLabel(run.count, run.width),
+            labelColor: '#FF6B35',
+            modelBounds,
+            placedLabels,
+            allPanelLabels,
+            collectOnly,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            initialScale,
+            rooms,
+            wallLinesMap,
+            dimensionLanes,
+        });
+        if (placed && dimensionValuesSeen) {
+            dimensionValuesSeen.add(dedupKey);
+            groupedDrawnOnThisWall.add(dedupKey);
+        }
+    });
 } 
 
 // Helper to create label draw function (original simple style)
@@ -6294,7 +6546,7 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
         context.save();
         const centerX = Number.isFinite(label.cx) ? label.cx : label.x + label.width / 2;
         const centerY = Number.isFinite(label.cy) ? label.cy : label.y + label.height / 2;
-        if (label.type === 'wall' && label.obliqueAngle != null && !Number.isNaN(label.obliqueAngle)) {
+        if (label.obliqueAngle != null && !Number.isNaN(label.obliqueAngle)) {
             const fontSize = computeWallPlanDimensionFontSize(scaleFactor, initialScale);
             context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
             context.translate(centerX, centerY);
@@ -6303,7 +6555,10 @@ export function makeLabelDrawFn(label, scaleFactor, initialScale = 1) {
             const th = fontSize * 0.75;
             context.fillStyle = getPlanLabelBackground();
             context.fillRect(-tw / 2 - 2, -th / 2 - 1, tw + 4, th + 2);
-            context.fillStyle = adjustPlanStrokeColor('#2196F3');
+            const defaultObliqueColor = label.type === 'panel' ? '#FF6B35' : '#2196F3';
+            context.fillStyle = adjustPlanStrokeColor(
+                label.textColor != null ? label.textColor : defaultObliqueColor
+            );
             context.textAlign = 'center';
             context.textBaseline = 'middle';
             context.fillText(label.text, 0, 0);

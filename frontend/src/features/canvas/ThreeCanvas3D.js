@@ -2,7 +2,7 @@ import THREE from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
-import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset, fitMainLightShadows } from './sceneUtils';
+import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset, disposeSiteDressing, fitMainLightShadows } from './sceneUtils';
 import {
   setupPresentationPostFx,
   resizePresentationPostFx,
@@ -17,7 +17,7 @@ import {
   buildProjectWallPanelsMap,
 } from '../panel/wallPanelCalculationUtils';
 import { THREE_CONFIG } from './threeConfig';
-import { disposeMaterialSafe } from './wallSurfaceTextures';
+import { createPanelSurfaceMaterial, disposeMaterialSafe, finishPanelSurfaceMesh } from './wallSurfaceTextures';
 import {
   createFatLineSegmentsFromEdgesGeometry,
   createFatLineSegmentsFromPositions,
@@ -45,6 +45,19 @@ const debugWarn = (...args) => {
 
 /** Shared styling for wall + ceiling panel division overlays */
 const PL = THREE_CONFIG.PANEL_LINES;
+
+/** Draw a surface 4mm behind a coplanar wall so the wall panel wins, without cutting a gap. */
+function keepSurfaceBehindWalls(material) {
+  material.customProgramCacheKey = () => 'depth-behind-wall';
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+      mvPosition.z -= 0.04;
+      gl_Position = projectionMatrix * mvPosition;`
+    );
+  };
+}
 
 /** Thin recessed seam — world-sized so it fades in orbit and reads up close. */
 function panelSeamOptions(color, extra = {}) {
@@ -452,6 +465,8 @@ export default class ThreeCanvas3D {
       this.tourRoomLabels.dispose();
       this.tourRoomLabels = null;
     }
+
+    disposeSiteDressing(this);
 
     if (this.studioGround) {
       if (this.studioGround.geometry) this.studioGround.geometry.dispose();
@@ -1287,20 +1302,13 @@ getModelBounds() {
       geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
       geometry.computeVertexNormals();
       
-      // Create material to match wall appearance
-      const material = new this.THREE.MeshStandardMaterial({
-        color: THREE_CONFIG.MATERIALS.CEILING.color,
+      const material = createPanelSurfaceMaterial(this.THREE, this.renderer, {
         side: this.THREE.DoubleSide,
-        roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
-        metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
-        envMapIntensity: THREE_CONFIG.MATERIALS.CEILING.envMapIntensity ?? 0.85,
-        emissive: THREE_CONFIG.MATERIALS.CEILING.emissive ?? 0x000000,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity ?? 0,
-        transparent: false
       });
       
       // Create mesh
       const ceiling = new this.THREE.Mesh(geometry, material);
+      finishPanelSurfaceMesh(this.THREE, ceiling, this.renderer);
       ceiling.name = 'ceiling';
       
       // Position the ceiling at the calculated elevation (storey elevation + room base + room height)
@@ -1315,7 +1323,7 @@ getModelBounds() {
           opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
           depthTest: true,
           depthWrite: false,
-          renderOrder: 2,
+          renderOrder: 0,
         });
         ceiling.add(edgeLines);
       }
@@ -1597,9 +1605,6 @@ getModelBounds() {
             z: point.y * this.scalingFactor + this.modelOffset.z
         }));
         
-        // Apply Cut L shrinking for ceiling
-        roomVertices = this.shrinkRoomVerticesForCutL(roomVertices, room);
-
         // Get ceiling thickness from room's ceiling plan or use default
         const roomCeilingThickness = (room.ceiling_plan?.ceiling_thickness || defaultCeilingThickness) * this.scalingFactor;
         
@@ -1608,10 +1613,8 @@ getModelBounds() {
         const ceilingMesh = ceilingResult?.mesh || ceilingResult;
         
         if (ceilingMesh) {
-          // Position ceiling at base elevation + room height (absolute ceiling position)
-          // Use roomCeilingHeight (which is room.height) instead of wall heights
-          // Add a tiny offset to prevent z-fighting with wall tops
-          ceilingMesh.position.y = baseElevation + (roomCeilingHeight * this.scalingFactor) + 0.001;
+          // Sit on the wall top. A lift here put the ceiling in front of the wall and flickered.
+          ceilingMesh.position.y = baseElevation + (roomCeilingHeight * this.scalingFactor);
           ceilingMesh.name = `ceiling_room_${room.id}`;
           ceilingMesh.userData = {
             isCeiling: true,
@@ -1771,130 +1774,141 @@ getModelBounds() {
     return offsets;
   }
 
-  // Shrink room vertices based on Cut L offsets
+  // Room points lie on the wall outer face. A ceiling built on that line shares
+  // the wall face and the wall top, so the two surfaces blink. Pull every edge
+  // that sits on a wall in past that wall's thickness.
   shrinkRoomVerticesForCutL(roomVertices, room) {
-    const offsets = this.calculateCutLWallOffsets(room);
-    
-    // If no Cut L joints, return original vertices
-    if (Object.keys(offsets).length === 0) {
-      return roomVertices;
+    if (!roomVertices || roomVertices.length < 3 || !this.walls?.length) return roomVertices;
+
+    const scale = this.scalingFactor;
+    const originX = this.modelOffset.x;
+    const originZ = this.modelOffset.z;
+    const points = roomVertices.map(v => ({
+      x: (v.x - originX) / scale,
+      y: (v.z - originZ) / scale,
+    }));
+
+    const lineTol = 25;
+    const clearance = 12;
+    const wallSegs = [];
+    this.walls.forEach(wall => {
+      const dx = wall.end_x - wall.start_x;
+      const dy = wall.end_y - wall.start_y;
+      const len = Math.hypot(dx, dy);
+      const thickness = Number(wall.thickness) || 0;
+      if (len < 1 || thickness <= 0) return;
+      wallSegs.push({
+        ax: wall.start_x,
+        ay: wall.start_y,
+        ux: dx / len,
+        uy: dy / len,
+        len,
+        offset: thickness + clearance,
+      });
+    });
+    if (wallSegs.length === 0) return roomVertices;
+
+    const distToLine = (px, py, seg) =>
+      Math.abs((px - seg.ax) * seg.uy - (py - seg.ay) * seg.ux);
+
+    const edges = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      const edx = b.x - a.x;
+      const edy = b.y - a.y;
+      const elen = Math.hypot(edx, edy);
+      if (elen < 0.5) continue;
+      const eux = edx / elen;
+      const euy = edy / elen;
+      const midX = a.x + eux * (elen / 2);
+      const midY = a.y + euy * (elen / 2);
+      let offset = 0;
+      wallSegs.forEach(seg => {
+        if (distToLine(a.x, a.y, seg) > lineTol || distToLine(b.x, b.y, seg) > lineTol) return;
+        if (Math.abs(eux * seg.ux + euy * seg.uy) < 0.98) return;
+        const tm = (midX - seg.ax) * seg.ux + (midY - seg.ay) * seg.uy;
+        if (tm < -lineTol || tm > seg.len + lineTol) return;
+        offset = Math.max(offset, seg.offset);
+      });
+      edges.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y, ux: eux, uy: euy, offset });
     }
-    
-    // Calculate bounding box of original vertices (in 2D coordinates)
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    roomVertices.forEach(v => {
-      const x = (v.x - this.modelOffset.x) / this.scalingFactor;
-      const y = (v.z - this.modelOffset.z) / this.scalingFactor;
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-    });
-    
-    const originalBoundingBox = { min_x: minX, max_x: maxX, min_y: minY, max_y: maxY };
-    
-    // Adjust bounding box for Cut L offsets (similar to backend logic)
-    const adjustedBoundingBox = { ...originalBoundingBox };
-    const tolerance = 1.0;
-    
-    // Get walls that have offsets (only process walls with Cut L joints)
-    const wallsWithOffsets = this.walls.filter(wall => offsets[wall.id]);
-    
-    wallsWithOffsets.forEach(wall => {
-      const offset = offsets[wall.id];
-      const wallStartX = wall.start_x;
-      const wallStartY = wall.start_y;
-      const wallEndX = wall.end_x;
-      const wallEndY = wall.end_y;
-      
-      // Check which boundary this wall touches and adjust (matching backend logic exactly)
-      // LEFT BOUNDARY (min_x) - both endpoints on left boundary
-      if (Math.abs(wallStartX - originalBoundingBox.min_x) < tolerance && 
-          Math.abs(wallEndX - originalBoundingBox.min_x) < tolerance) {
-        adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
-      }
-      // RIGHT BOUNDARY (max_x) - both endpoints on right boundary
-      else if (Math.abs(wallStartX - originalBoundingBox.max_x) < tolerance && 
-               Math.abs(wallEndX - originalBoundingBox.max_x) < tolerance) {
-        adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
-      }
-      // BOTTOM BOUNDARY (min_y) - both endpoints on bottom boundary
-      else if (Math.abs(wallStartY - originalBoundingBox.min_y) < tolerance && 
-               Math.abs(wallEndY - originalBoundingBox.min_y) < tolerance) {
-        adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
-      }
-      // TOP BOUNDARY (max_y) - both endpoints on top boundary
-      else if (Math.abs(wallStartY - originalBoundingBox.max_y) < tolerance && 
-               Math.abs(wallEndY - originalBoundingBox.max_y) < tolerance) {
-        adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
-      }
-      // SPANNING / TOUCHING WALLS - check individual endpoints
-      else {
-        // Check Start Point
-        if (Math.abs(wallStartX - originalBoundingBox.min_x) < tolerance) {
-          adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
-        } else if (Math.abs(wallStartX - originalBoundingBox.max_x) < tolerance) {
-          adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
-        } else if (Math.abs(wallStartY - originalBoundingBox.min_y) < tolerance) {
-          adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
-        } else if (Math.abs(wallStartY - originalBoundingBox.max_y) < tolerance) {
-          adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
-        }
-        
-        // Check End Point
-        if (Math.abs(wallEndX - originalBoundingBox.min_x) < tolerance) {
-          adjustedBoundingBox.min_x = Math.max(adjustedBoundingBox.min_x, originalBoundingBox.min_x + offset);
-        } else if (Math.abs(wallEndX - originalBoundingBox.max_x) < tolerance) {
-          adjustedBoundingBox.max_x = Math.min(adjustedBoundingBox.max_x, originalBoundingBox.max_x - offset);
-        } else if (Math.abs(wallEndY - originalBoundingBox.min_y) < tolerance) {
-          adjustedBoundingBox.min_y = Math.max(adjustedBoundingBox.min_y, originalBoundingBox.min_y + offset);
-        } else if (Math.abs(wallEndY - originalBoundingBox.max_y) < tolerance) {
-          adjustedBoundingBox.max_y = Math.min(adjustedBoundingBox.max_y, originalBoundingBox.max_y - offset);
-        }
-      }
-    });
-    
-    // Check if bounding box was actually adjusted
-    if (Math.abs(adjustedBoundingBox.min_x - originalBoundingBox.min_x) < 0.1 &&
-        Math.abs(adjustedBoundingBox.max_x - originalBoundingBox.max_x) < 0.1 &&
-        Math.abs(adjustedBoundingBox.min_y - originalBoundingBox.min_y) < 0.1 &&
-        Math.abs(adjustedBoundingBox.max_y - originalBoundingBox.max_y) < 0.1) {
-      return roomVertices; // No adjustment needed
+    if (!edges.some(edge => edge.offset > 0)) return roomVertices;
+
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const q = points[(i + 1) % points.length];
+      area += points[i].x * q.y - q.x * points[i].y;
     }
-    
-    // Adjust vertices based on which boundary they're on
-    const adjustedVertices = roomVertices.map(v => {
-      const x = (v.x - this.modelOffset.x) / this.scalingFactor;
-      const y = (v.z - this.modelOffset.z) / this.scalingFactor;
-      
-      let adjustedX = x;
-      let adjustedY = y;
-      
-      // Adjust x coordinate if on left or right boundary
-      if (Math.abs(x - originalBoundingBox.min_x) < tolerance) {
-        adjustedX = adjustedBoundingBox.min_x;
-      } else if (Math.abs(x - originalBoundingBox.max_x) < tolerance) {
-        adjustedX = adjustedBoundingBox.max_x;
+
+    const buildOffset = (inwardSign) => {
+      const offsetEdges = edges.map(edge => {
+        const nx = inwardSign * -edge.uy;
+        const ny = inwardSign * edge.ux;
+        return {
+          x0: edge.x0 + nx * edge.offset,
+          y0: edge.y0 + ny * edge.offset,
+          x1: edge.x1 + nx * edge.offset,
+          y1: edge.y1 + ny * edge.offset,
+          dx: edge.ux,
+          dy: edge.uy,
+        };
+      });
+      const nextPoints = [];
+      const maxJump = Math.max(...edges.map(edge => edge.offset), 1) * 3;
+      for (let i = 0; i < offsetEdges.length; i++) {
+        const prev = offsetEdges[(i + offsetEdges.length - 1) % offsetEdges.length];
+        const curr = offsetEdges[i];
+        const cross = prev.dx * curr.dy - prev.dy * curr.dx;
+        if (Math.abs(cross) < 1e-6) {
+          nextPoints.push({ x: prev.x1, y: prev.y1 });
+          nextPoints.push({ x: curr.x0, y: curr.y0 });
+          continue;
+        }
+        const t = ((curr.x0 - prev.x0) * curr.dy - (curr.y0 - prev.y0) * curr.dx) / cross;
+        const hit = { x: prev.x0 + t * prev.dx, y: prev.y0 + t * prev.dy };
+        const far = Math.hypot(hit.x - prev.x1, hit.y - prev.y1) > maxJump
+          && Math.hypot(hit.x - curr.x0, hit.y - curr.y0) > maxJump;
+        if (far) {
+          nextPoints.push({ x: prev.x1, y: prev.y1 });
+          nextPoints.push({ x: curr.x0, y: curr.y0 });
+        } else {
+          nextPoints.push(hit);
+        }
       }
-      
-      // Adjust y coordinate if on bottom or top boundary
-      if (Math.abs(y - originalBoundingBox.min_y) < tolerance) {
-        adjustedY = adjustedBoundingBox.min_y;
-      } else if (Math.abs(y - originalBoundingBox.max_y) < tolerance) {
-        adjustedY = adjustedBoundingBox.max_y;
+      const cleaned = [];
+      nextPoints.forEach(p => {
+        const last = cleaned[cleaned.length - 1];
+        if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 0.5) cleaned.push(p);
+      });
+      if (cleaned.length >= 2 && Math.hypot(cleaned[0].x - cleaned[cleaned.length - 1].x, cleaned[0].y - cleaned[cleaned.length - 1].y) < 0.5) {
+        cleaned.pop();
       }
-      
-      // Convert back to 3D coordinates
-      return {
-        x: adjustedX * this.scalingFactor + this.modelOffset.x,
-        z: adjustedY * this.scalingFactor + this.modelOffset.z
-      };
-    });
-    
-    return adjustedVertices;
+      return cleaned;
+    };
+
+    const polygonArea = (poly) => {
+      let a = 0;
+      for (let i = 0; i < poly.length; i++) {
+        const q = poly[(i + 1) % poly.length];
+        a += poly[i].x * q.y - q.x * poly[i].y;
+      }
+      return Math.abs(a);
+    };
+
+    const inwardSign = area >= 0 ? 1 : -1;
+    let cleaned = buildOffset(inwardSign);
+    if (cleaned.length >= 3 && polygonArea(cleaned) > polygonArea(points) * 1.01) {
+      cleaned = buildOffset(-inwardSign);
+    }
+    if (cleaned.length < 3 || polygonArea(cleaned) > polygonArea(points) * 1.01) return roomVertices;
+
+    return cleaned.map(p => ({
+      x: p.x * scale + originX,
+      z: p.y * scale + originZ,
+    }));
   }
 
-  // Create individual room ceiling mesh with thickness
   createRoomCeilingMesh(roomVertices, roomHeight, room, ceilingThickness) {
     try {
       // Get room walls - can be array of IDs or objects
@@ -2097,27 +2111,17 @@ getModelBounds() {
       geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
       geometry.computeVertexNormals();
       
-      // Create material using professional config
-      const material = new this.THREE.MeshStandardMaterial({
-        color: THREE_CONFIG.MATERIALS.CEILING.color,
+      const material = createPanelSurfaceMaterial(this.THREE, this.renderer, {
         side: this.THREE.DoubleSide,
-        roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
-        metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
-        envMapIntensity: THREE_CONFIG.MATERIALS.CEILING.envMapIntensity ?? 0.85,
-        emissive: THREE_CONFIG.MATERIALS.CEILING.emissive ?? 0x000000,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity ?? 0,
-        transparent: false,
         depthWrite: true,
         depthTest: true,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1
       });
+      keepSurfaceBehindWalls(material);
       
       // Create mesh
       const ceiling = new this.THREE.Mesh(geometry, material);
-      // Set render order to render after walls (higher number = renders later)
-      ceiling.renderOrder = 1;
+      finishPanelSurfaceMesh(this.THREE, ceiling, this.renderer);
+      ceiling.renderOrder = 0;
       
       if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
         const edges = new this.THREE.EdgesGeometry(geometry);
@@ -2128,7 +2132,7 @@ getModelBounds() {
           opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
           depthTest: true,
           depthWrite: false,
-          renderOrder: 2,
+          renderOrder: 0,
         });
         ceiling.add(edgeLines);
       }
@@ -3607,7 +3611,8 @@ getModelBounds() {
              vertices.push(clippedShape[0].x, firstCeilingY, clippedShape[0].z);
 
              const line = createFatLine2FromPositions(vertices, panelSeamOptions(
-               panel.is_cut_panel ? PL.COLOR_CUT : PL.COLOR_FULL
+               panel.is_cut_panel ? PL.COLOR_CUT : PL.COLOR_FULL,
+               { renderOrder: 1 }
              ));
              
              // Lines are positioned directly in vertex coordinates (lineY)
@@ -5549,6 +5554,10 @@ getModelBounds() {
         return null;
       }
 
+      // Slab starts just off the ground plane so the underside does not flicker,
+      // then rises by the floor thickness.
+      const bottomY = 0.02;
+      const topY = Math.max(bottomY + 0.01, floorThickness);
       const topPositions = new Float32Array(triangles.length * 3);
       const bottomPositions = new Float32Array(triangles.length * 3);
       for (let i = 0; i < triangles.length; i++) {
@@ -5556,54 +5565,84 @@ getModelBounds() {
         const x = flatVertices[vertexIndex * 2];
         const z = flatVertices[vertexIndex * 2 + 1];
         topPositions[i * 3] = x;
-        topPositions[i * 3 + 1] = floorThickness;
+        topPositions[i * 3 + 1] = topY;
         topPositions[i * 3 + 2] = z;
-        // Bottom winding reversed so normals face -Y (visible from underneath)
-        const bi = triangles.length - 1 - i;
-        const bIdx = triangles[bi];
-        bottomPositions[i * 3] = flatVertices[bIdx * 2];
-        bottomPositions[i * 3 + 1] = 0;
-        bottomPositions[i * 3 + 2] = flatVertices[bIdx * 2 + 1];
       }
+      const topGeometry = new this.THREE.BufferGeometry();
+      topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
+      topGeometry.computeVertexNormals();
+      const nrm = topGeometry.attributes.normal;
+      let normalY = 0;
+      for (let i = 0; i < nrm.count; i++) normalY += nrm.getY(i);
+      const faceDown = normalY < 0;
+      if (faceDown) {
+        const pos = topGeometry.attributes.position;
+        for (let i = 0; i < pos.count; i += 3) {
+          const x = pos.getX(i + 1);
+          const y = pos.getY(i + 1);
+          const z = pos.getZ(i + 1);
+          pos.setXYZ(i + 1, pos.getX(i + 2), pos.getY(i + 2), pos.getZ(i + 2));
+          pos.setXYZ(i + 2, x, y, z);
+        }
+        pos.needsUpdate = true;
+        topGeometry.computeVertexNormals();
+      }
+      // Opposite winding so the underside faces down and is visible from below.
+      for (let i = 0; i < triangles.length; i += 3) {
+        const order = faceDown ? [i, i + 1, i + 2] : [i + 2, i + 1, i];
+        for (let k = 0; k < 3; k++) {
+          const vertexIndex = triangles[order[k]];
+          bottomPositions[(i + k) * 3] = flatVertices[vertexIndex * 2];
+          bottomPositions[(i + k) * 3 + 1] = bottomY;
+          bottomPositions[(i + k) * 3 + 2] = flatVertices[vertexIndex * 2 + 1];
+        }
+      }
+      const bottomGeometry = new this.THREE.BufferGeometry();
+      bottomGeometry.setAttribute('position', new this.THREE.BufferAttribute(bottomPositions, 3));
+      bottomGeometry.computeVertexNormals();
 
       const sidePositions = [];
       for (let i = 0; i < verts.length; i++) {
         const current = verts[i];
         const next = verts[(i + 1) % verts.length];
         sidePositions.push(
-          current.x, 0, current.z,
-          next.x, 0, next.z,
-          current.x, floorThickness, current.z,
-          next.x, 0, next.z,
-          next.x, floorThickness, next.z,
-          current.x, floorThickness, current.z
+          current.x, bottomY, current.z,
+          next.x, bottomY, next.z,
+          current.x, topY, current.z,
+          next.x, bottomY, next.z,
+          next.x, topY, next.z,
+          current.x, topY, current.z
         );
       }
+      const sideGeometry = new this.THREE.BufferGeometry();
+      sideGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
+      sideGeometry.computeVertexNormals();
 
-      const mergedPositions = [];
-      for (let i = 0; i < topPositions.length; i++) mergedPositions.push(topPositions[i]);
-      for (let i = 0; i < bottomPositions.length; i++) mergedPositions.push(bottomPositions[i]);
-      for (let i = 0; i < sidePositions.length; i++) mergedPositions.push(sidePositions[i]);
-
-      const geometry = new this.THREE.BufferGeometry();
-      geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
-      geometry.computeVertexNormals();
-
-      const material = new this.THREE.MeshStandardMaterial({
-        color: THREE_CONFIG.MATERIALS.FLOOR.color,
-        side: this.THREE.DoubleSide,
-        roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
-        metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
-        envMapIntensity: THREE_CONFIG.MATERIALS.FLOOR.envMapIntensity ?? 0.7,
-        emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive ?? 0x000000,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity ?? 0,
-        transparent: false,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1,
+      const material = createPanelSurfaceMaterial(this.THREE, this.renderer, {
+        side: this.THREE.FrontSide,
       });
-
-      const floor = new this.THREE.Mesh(geometry, material);
+      const underMaterial = createPanelSurfaceMaterial(this.THREE, this.renderer, {
+        side: this.THREE.FrontSide,
+      });
+      const sideMaterial = new this.THREE.MeshStandardMaterial({
+        color: 0xe7e2da,
+        roughness: 0.9,
+        metalness: 0,
+        side: this.THREE.DoubleSide,
+      });
+      keepSurfaceBehindWalls(material);
+      keepSurfaceBehindWalls(underMaterial);
+      keepSurfaceBehindWalls(sideMaterial);
+      const floor = new this.THREE.Mesh(topGeometry, material);
+      finishPanelSurfaceMesh(this.THREE, floor, this.renderer);
+      floor.renderOrder = 0;
+      const underside = new this.THREE.Mesh(bottomGeometry, underMaterial);
+      finishPanelSurfaceMesh(this.THREE, underside, this.renderer);
+      underside.renderOrder = 0;
+      const edge = new this.THREE.Mesh(sideGeometry, sideMaterial);
+      edge.renderOrder = 0;
+      floor.add(underside);
+      floor.add(edge);
       // No floor edge lines — they z-fight wall bases
       floor.castShadow = false;
       floor.receiveShadow = false;
@@ -5753,7 +5792,7 @@ getModelBounds() {
         const x = flatVertices[vertexIndex * 2];
         const z = flatVertices[vertexIndex * 2 + 1];
         topPositions[i * 3] = x;
-        topPositions[i * 3 + 1] = floorThickness; // Top surface at Y=+thickness
+        topPositions[i * 3 + 1] = 0.04; // On the ground, not a raised slab
         topPositions[i * 3 + 2] = z;
       }
       topGeometry.setAttribute('position', new this.THREE.BufferAttribute(topPositions, 3));
@@ -5801,46 +5840,27 @@ getModelBounds() {
       
       sideGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
       sideGeometry.computeVertexNormals();
-      
-      // Merge all geometries into one
-      const geometry = new this.THREE.BufferGeometry();
-      const mergedPositions = [];
-      
-      // Add top surface
-      for (let i = 0; i < topPositions.length; i += 3) {
-        mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
-      }
-      
-      // Add bottom surface
+
+      const edgePositions = [];
       for (let i = 0; i < bottomPositions.length; i += 3) {
-        mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+        edgePositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
       }
-      
-      // Add side walls
       for (let i = 0; i < sidePositions.length; i += 3) {
-        mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+        edgePositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
       }
+      const edgeGeometry = new this.THREE.BufferGeometry();
+      edgeGeometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(edgePositions), 3));
+      edgeGeometry.computeVertexNormals();
       
-      geometry.setAttribute('position', new this.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
-      geometry.computeVertexNormals();
-      
-      // Create material using professional config
-      const material = new this.THREE.MeshStandardMaterial({
-        color: THREE_CONFIG.MATERIALS.FLOOR.color,
+      const material = createPanelSurfaceMaterial(this.THREE, this.renderer, {
         side: this.THREE.FrontSide,
-        roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
-        metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
-        envMapIntensity: THREE_CONFIG.MATERIALS.FLOOR.envMapIntensity ?? 0.7,
-        emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive ?? 0x000000,
-        emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity ?? 0,
-        transparent: false,
-        polygonOffset: true,
-        polygonOffsetFactor: 2,
-        polygonOffsetUnits: 2,
       });
+      keepSurfaceBehindWalls(material);
       
-      // Create mesh
-      const floor = new this.THREE.Mesh(geometry, material);
+      // Ribs only on the top, so the outside of the walls does not show the floor panel
+      const floor = new this.THREE.Mesh(topGeometry, material);
+      finishPanelSurfaceMesh(this.THREE, floor, this.renderer);
+      floor.renderOrder = 0;
       floor.name = 'floor';
       
       // Position the floor at the calculated elevation (storey elevation + room base elevation)

@@ -1,6 +1,5 @@
-// Procedural PPGI micro-rib wall finish.
-// Shared across all walls. High-frequency grooves mipmap away in orbit
-// and read as recessed vertical slats when the camera is close (tour / zoom).
+// Procedural PPGI ribbed wall finish.
+// Shared across all walls. One tile is one full panel, with a fixed rib count.
 
 import { THREE_CONFIG } from './threeConfig';
 
@@ -9,28 +8,6 @@ let cached = null;
 function smoothstep(x) {
   const t = Math.min(1, Math.max(0, x));
   return t * t * (3 - 2 * t);
-}
-
-function hash2(x, y) {
-  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return n - Math.floor(n);
-}
-
-/** Tileable 2D noise so RepeatWrapping does not show a grain seam. */
-function tileNoise(x, y, size) {
-  const x0 = x;
-  const y0 = y;
-  const x1 = x - size;
-  const y1 = y - size;
-  const tx = x / size;
-  const ty = y / size;
-  const n00 = hash2(x0, y0);
-  const n10 = hash2(x1, y0);
-  const n01 = hash2(x0, y1);
-  const n11 = hash2(x1, y1);
-  const nx0 = n00 * (1 - tx) + n10 * tx;
-  const nx1 = n01 * (1 - tx) + n11 * tx;
-  return nx0 * (1 - ty) + nx1 * ty;
 }
 
 /**
@@ -54,12 +31,7 @@ function fillHeightField(size, ribCount, grooveFrac) {
     for (let x = 0; x < size; x += 1) {
       const u = x / size;
       const periodU = u * ribCount;
-      let h = ribHeight(periodU, grooveFrac);
-      // Faint extruded mill lines (U only — seamless in V)
-      h += Math.sin(periodU * Math.PI * 2 * 7.3) * 0.012;
-      // Eggshell grain — visible only up close, averages out in mips
-      h += (tileNoise(x, y, size) - 0.5) * 0.035;
-      height[y * size + x] = h;
+      height[y * size + x] = ribHeight(periodU, grooveFrac);
     }
   }
   return height;
@@ -74,12 +46,11 @@ function writeAlbedo(ctx, height, size) {
   const bb = 227;
   for (let i = 0; i < size * size; i += 1) {
     const h = height[i];
-    const shade = 0.96 + h * 0.04;
-    const grain = (h - 0.85) * 2.2;
+    const shade = 0.98 + h * 0.02;
     const o = i * 4;
-    data[o] = Math.max(0, Math.min(255, br * shade + grain));
-    data[o + 1] = Math.max(0, Math.min(255, bg * shade + grain * 0.85));
-    data[o + 2] = Math.max(0, Math.min(255, bb * shade + grain * 0.6));
+    data[o] = Math.max(0, Math.min(255, br * shade));
+    data[o + 1] = Math.max(0, Math.min(255, bg * shade));
+    data[o + 2] = Math.max(0, Math.min(255, bb * shade));
     data[o + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
@@ -116,9 +87,9 @@ function writeRoughness(ctx, height, size) {
   const data = img.data;
   for (let i = 0; i < size * size; i += 1) {
     const h = height[i];
-    const grain = (tileNoise(i % size, Math.floor(i / size), size) - 0.5) * 0.04;
+    // Satin coated metal: smooth face, slightly softer in the grooves.
     // Encoded as the real roughness (material.roughness = 1 multiplies this).
-    const r = (0.7 + (1 - h) * 0.22 + grain) * 255;
+    const r = (0.38 + (1 - h) * 0.12) * 255;
     const v = Math.max(0, Math.min(255, r));
     const o = i * 4;
     data[o] = v;
@@ -185,8 +156,8 @@ export function getWallSurfaceTextures(THREE, renderer) {
 
   const size = cfg.TEXTURE_SIZE || 1024;
   const tileMm = (cfg.TILE_WORLD ?? 1) / (THREE_CONFIG.SCALING_FACTOR || 0.01);
-  const pitchMm = cfg.RIB_PITCH_MM || 18;
-  const ribCount = Math.max(2, Math.round(tileMm / pitchMm));
+  const pitchMm = cfg.RIB_PITCH_MM || (tileMm / 9);
+  const ribCount = cfg.RIBS_PER_PANEL || Math.max(2, Math.round(tileMm / pitchMm));
   const grooveFrac = cfg.GROOVE_FRACTION ?? 0.16;
   const height = fillHeightField(size, ribCount, grooveFrac);
 
@@ -289,6 +260,19 @@ export function createWallSurfaceMaterial(THREE, renderer) {
     emissive: wallCfg.emissive ?? 0x000000,
     emissiveIntensity: wallCfg.emissiveIntensity ?? 0,
   });
+}
+
+/** Same ribbed panel finish as the walls, with mesh-specific side and offset. */
+export function createPanelSurfaceMaterial(THREE, renderer, extra = {}) {
+  const material = createWallSurfaceMaterial(THREE, renderer);
+  Object.assign(material, extra);
+  return material;
+}
+
+export function finishPanelSurfaceMesh(THREE, mesh, renderer) {
+  if (!mesh?.geometry) return;
+  prepareWallSurfaceGeometry(THREE, mesh.geometry);
+  ensureWallSurfaceDetail(THREE, mesh, renderer);
 }
 
 /** If tangents failed, fall back to bump so grooves still read up close. */

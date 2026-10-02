@@ -3,6 +3,7 @@
 import { OrbitControls, RoomEnvironment } from './threeInstance';
 import earcut from 'earcut';
 import { THREE_CONFIG } from './threeConfig';
+import { createPanelSurfaceMaterial, finishPanelSurfaceMesh } from './wallSurfaceTextures';
 import { createFatLineSegmentsFromEdgesGeometry } from './wideLineUtils';
 
 export function addGrid(instance) {
@@ -42,10 +43,10 @@ function createSkyGradientTexture(THREE) {
   canvas.height = 512;
   const ctx = canvas.getContext('2d');
   const gradient = ctx.createLinearGradient(0, 0, 0, 512);
-  gradient.addColorStop(0, '#6a7f96');
-  gradient.addColorStop(0.4, '#8496ab');
-  gradient.addColorStop(0.7, '#9aabbd');
-  gradient.addColorStop(1, '#708297');
+  gradient.addColorStop(0, '#3e5874');
+  gradient.addColorStop(0.45, '#5d7690');
+  gradient.addColorStop(0.78, '#7d93a8');
+  gradient.addColorStop(1, '#4a5c6c');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, 4, 512);
   const texture = new THREE.CanvasTexture(canvas);
@@ -89,6 +90,148 @@ function createStudioPadTexture(THREE) {
   texture.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
   texture.needsUpdate = true;
   return texture;
+}
+
+let concreteMap = null;
+let contactShadeMap = null;
+
+function hash2(x, y) {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+/** Fine cement grain. No slab joints. */
+function createConcreteTexture(THREE) {
+  if (concreteMap) return concreteMap;
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#d5d5d2';
+  ctx.fillRect(0, 0, size, size);
+  const img = ctx.getImageData(0, 0, size, size);
+  const data = img.data;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const n = (hash2(x, y) - 0.5) * 10;
+      const o = (y * size + x) * 4;
+      data[o] = Math.max(0, Math.min(255, data[o] + n));
+      data[o + 1] = Math.max(0, Math.min(255, data[o + 1] + n * 0.96));
+      data[o + 2] = Math.max(0, Math.min(255, data[o + 2] + n * 0.9));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.needsUpdate = true;
+  concreteMap = texture;
+  return texture;
+}
+
+/** Dark in the middle, clear at the edges. Laid across each wall on the ground. */
+function createContactShadeTexture(THREE) {
+  if (contactShadeMap) return contactShadeMap;
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = 4;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, size);
+  g.addColorStop(0, 'rgba(30, 28, 26, 0)');
+  g.addColorStop(0.35, 'rgba(30, 28, 26, 0.28)');
+  g.addColorStop(0.5, 'rgba(30, 28, 26, 0.42)');
+  g.addColorStop(0.65, 'rgba(30, 28, 26, 0.28)');
+  g.addColorStop(1, 'rgba(30, 28, 26, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 4, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  contactShadeMap = texture;
+  return texture;
+}
+
+function disposeObject3D(instance, object) {
+  if (!object) return;
+  instance.scene?.remove(object);
+  object.traverse?.((child) => {
+    if (child.geometry) child.geometry.dispose();
+    const mat = child.material;
+    if (mat && !mat.userData?.sharedSite) mat.dispose();
+  });
+  if (object.geometry) object.geometry.dispose();
+  if (object.material && !object.material.userData?.sharedSite) object.material.dispose();
+}
+
+/** Light grey cement. No wall shade. */
+function paintGroundWithShade(THREE) {
+  const size = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#d5d5d2';
+  ctx.fillRect(0, 0, size, size);
+  const specks = ctx.getImageData(0, 0, size, size);
+  const data = specks.data;
+  for (let i = 0; i < size * size; i += 7) {
+    const n = (hash2(i % size, Math.floor(i / size)) - 0.5) * 8;
+    const o = i * 4;
+    data[o] = Math.max(0, Math.min(255, data[o] + n));
+    data[o + 1] = Math.max(0, Math.min(255, data[o + 1] + n));
+    data[o + 2] = Math.max(0, Math.min(255, data[o + 2] + n * 0.95));
+  }
+  ctx.putImageData(specks, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/**
+ * The ground is the concrete floor. Wall shade is painted into that texture.
+ */
+export function updateSiteDressing(instance) {
+  const THREE = instance.THREE;
+  const cfg = THREE_CONFIG.SCENE;
+  if (!THREE || typeof instance.getModelBounds !== 'function') return;
+  disposeObject3D(instance, instance.siteSlab);
+  disposeObject3D(instance, instance.wallContactGroup);
+  instance.siteSlab = null;
+  instance.wallContactGroup = null;
+  const ground = instance.studioGround;
+  if (!ground) return;
+  const bounds = instance.getModelBounds();
+  if (!Number.isFinite(bounds.minX) || !instance.walls?.length) return;
+
+  const spanX = Math.max(bounds.maxX - bounds.minX, 4);
+  const spanZ = Math.max(bounds.maxZ - bounds.minZ, 4);
+  const margin = Math.max(spanX, spanZ, 80) * 3;
+  const slabW = spanX + margin * 2;
+  const slabD = spanZ + margin * 2;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cz = (bounds.minZ + bounds.maxZ) / 2;
+  const next = paintGroundWithShade(THREE);
+  next.wrapS = THREE.RepeatWrapping;
+  next.wrapT = THREE.RepeatWrapping;
+  next.repeat.set(slabW / 24, slabD / 24);
+  const prev = ground.material.map;
+  if (prev && prev !== concreteMap) prev.dispose();
+  ground.material.map = next;
+  ground.material.needsUpdate = true;
+  ground.scale.set(slabW, slabD, 1);
+  ground.position.set(cx, cfg.STUDIO_GROUND_Y ?? 0, cz);
+}
+
+export function disposeSiteDressing(instance) {
+  disposeObject3D(instance, instance.siteSlab);
+  disposeObject3D(instance, instance.wallContactGroup);
+  instance.siteSlab = null;
+  instance.wallContactGroup = null;
 }
 
 /**
@@ -144,7 +287,6 @@ export function addStudioEnvironment(instance) {
 
   const size = cfg.STUDIO_GROUND_SIZE;
   const geom = new THREE.PlaneGeometry(size, size, 1, 1);
-  // BasicMaterial: no lighting/shadow shimmer on the huge ground plane while orbiting
   const mat = new THREE.MeshBasicMaterial({
     color: cfg.STUDIO_GROUND_COLOR,
     side: THREE.FrontSide,
@@ -907,30 +1049,18 @@ export function addCeiling(instance) {
   
   geometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
   geometry.computeVertexNormals();
-  // Create material using professional config
-  const material = new instance.THREE.MeshStandardMaterial({
-    color: THREE_CONFIG.MATERIALS.CEILING.color,
+  const material = createPanelSurfaceMaterial(instance.THREE, instance.renderer, {
     side: instance.THREE.DoubleSide,
-    roughness: THREE_CONFIG.MATERIALS.CEILING.roughness,
-    metalness: THREE_CONFIG.MATERIALS.CEILING.metalness,
-    envMapIntensity: THREE_CONFIG.MATERIALS.CEILING.envMapIntensity ?? 0.85,
-    emissive: THREE_CONFIG.MATERIALS.CEILING.emissive ?? 0x000000,
-    emissiveIntensity: THREE_CONFIG.MATERIALS.CEILING.emissiveIntensity ?? 0,
-    transparent: false,
     depthWrite: true,
     depthTest: true,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1
   });
   // Create mesh
   const ceiling = new instance.THREE.Mesh(geometry, material);
+  finishPanelSurfaceMesh(instance.THREE, ceiling, instance.renderer);
   ceiling.name = 'ceiling';
-  // Set render order to render after walls (higher number = renders later)
-  ceiling.renderOrder = 1;
-  // Position the ceiling at the calculated elevation (storey elevation + room base + room height)
-  // Add a tiny offset to prevent z-fighting with wall tops
-  ceiling.position.y = maxCeilingElevation * instance.scalingFactor + 0.001;
+  // Walls use renderOrder 2 and must paint over this overlap.
+  ceiling.renderOrder = 0;
+  ceiling.position.y = maxCeilingElevation * instance.scalingFactor;
   
   if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
     const edges = new instance.THREE.EdgesGeometry(geometry);
@@ -941,7 +1071,7 @@ export function addCeiling(instance) {
       opacity: THREE_CONFIG.EDGE_LINES?.OPACITY ?? 1,
       depthTest: true,
       depthWrite: false,
-      renderOrder: 2,
+      renderOrder: 0,
     });
     ceiling.add(edgeLines);
   }
@@ -1036,7 +1166,7 @@ export function addFloor(instance) {
     const x = flatVertices[vertexIndex * 2];
     const z = flatVertices[vertexIndex * 2 + 1];
     topPositions[i * 3] = x;
-    topPositions[i * 3 + 1] = floorThickness; // Top surface at Y=+thickness
+    topPositions[i * 3 + 1] = 0.04; // On the ground, not a raised slab
     topPositions[i * 3 + 2] = z;
   }
   topGeometry.setAttribute('position', new instance.THREE.BufferAttribute(topPositions, 3));
@@ -1084,46 +1214,34 @@ export function addFloor(instance) {
   
   sideGeometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(sidePositions), 3));
   sideGeometry.computeVertexNormals();
-  
-  // Merge all geometries into one
-  const geometry = new instance.THREE.BufferGeometry();
-  const mergedPositions = [];
-  
-  // Add top surface
-  for (let i = 0; i < topPositions.length; i += 3) {
-    mergedPositions.push(topPositions[i], topPositions[i + 1], topPositions[i + 2]);
-  }
-  
-  // Add bottom surface
+
+  const edgePositions = [];
   for (let i = 0; i < bottomPositions.length; i += 3) {
-    mergedPositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
+    edgePositions.push(bottomPositions[i], bottomPositions[i + 1], bottomPositions[i + 2]);
   }
-  
-  // Add side walls
   for (let i = 0; i < sidePositions.length; i += 3) {
-    mergedPositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
+    edgePositions.push(sidePositions[i], sidePositions[i + 1], sidePositions[i + 2]);
   }
+  const edgeGeometry = new instance.THREE.BufferGeometry();
+  edgeGeometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(edgePositions), 3));
+  edgeGeometry.computeVertexNormals();
   
-  geometry.setAttribute('position', new instance.THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
-  geometry.computeVertexNormals();
-  
-  // Create material for floor
-  const material = new instance.THREE.MeshStandardMaterial({
-    color: THREE_CONFIG.MATERIALS.FLOOR.color,
+  const material = createPanelSurfaceMaterial(instance.THREE, instance.renderer, {
     side: instance.THREE.FrontSide,
-    roughness: THREE_CONFIG.MATERIALS.FLOOR.roughness,
-    metalness: THREE_CONFIG.MATERIALS.FLOOR.metalness,
-    envMapIntensity: THREE_CONFIG.MATERIALS.FLOOR.envMapIntensity ?? 0.7,
-    emissive: THREE_CONFIG.MATERIALS.FLOOR.emissive ?? 0x000000,
-    emissiveIntensity: THREE_CONFIG.MATERIALS.FLOOR.emissiveIntensity ?? 0,
-    transparent: false,
-    polygonOffset: true,
-    polygonOffsetFactor: 2,
-    polygonOffsetUnits: 2,
   });
+  material.customProgramCacheKey = () => 'depth-behind-wall';
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+      mvPosition.z -= 0.04;
+      gl_Position = projectionMatrix * mvPosition;`
+    );
+  };
   
-  // Create mesh
-  const floor = new instance.THREE.Mesh(geometry, material);
+  const floor = new instance.THREE.Mesh(topGeometry, material);
+  finishPanelSurfaceMesh(instance.THREE, floor, instance.renderer);
+  floor.renderOrder = 0;
   floor.name = 'floor';
   
   // Position the floor at the calculated elevation (storey elevation + room base elevation)

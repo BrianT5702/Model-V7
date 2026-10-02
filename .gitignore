@@ -4,6 +4,7 @@ __pycache__/
 frontend/build/
 frontend/dist/
 debug.log
+.env
 
 # Local PDF/DWG import debug dumps (raster masks, crops, overlays)
 scripts/_pdf_samples/

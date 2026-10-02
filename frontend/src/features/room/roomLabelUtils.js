@@ -40,5 +40,3 @@ export const buildRoomLabelLines = (room) => {
     lines.push(height);
     return lines;
 };
-
-export const buildRoomLabelHtml = (room) => buildRoomLabelLines(room).join('<br/>');

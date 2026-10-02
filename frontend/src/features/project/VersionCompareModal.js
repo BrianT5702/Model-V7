@@ -79,11 +79,7 @@ const VersionCompareModal = ({ projectId, versionKeys, onClose }) => {
     }, [panes]);
 
     const count = panes.length || (versionKeys || []).length;
-    const gridClass = count <= 2
-        ? 'grid-cols-2'
-        : count === 3
-            ? 'grid-cols-3'
-            : 'grid-cols-2';
+    const gridClass = count >= 3 ? 'grid-cols-2 grid-rows-2' : 'grid-cols-2';
 
     return (
         <ModalOverlay className="bg-black bg-opacity-60 flex items-center justify-center z-[13000] p-2 sm:p-4">
@@ -138,12 +134,17 @@ const VersionCompareModal = ({ projectId, versionKeys, onClose }) => {
                         <p className="text-sm text-red-700 dark:text-red-300 py-10 text-center">{error}</p>
                     ) : (
                         <div className={`grid ${gridClass} gap-3 h-full min-h-0`}>
-                            {panes.map(({ key, payload }) => {
+                            {panes.map(({ key, payload }, index) => {
                                 const meta = payload?.version;
+                                const isBottomSingle = count === 3 && index === panes.length - 1;
                                 return (
                                     <div
                                         key={key}
-                                        className="min-h-0 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col bg-gray-50 dark:bg-gray-950"
+                                        className={`min-h-0 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col bg-gray-50 dark:bg-gray-950${
+                                            isBottomSingle
+                                                ? ' col-span-2 w-[calc((100%-0.75rem)/2)] justify-self-center'
+                                                : ''
+                                        }`}
                                     >
                                         <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
                                             <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">

@@ -4,12 +4,13 @@ Production settings for model_builder project.
 import os
 from pathlib import Path
 from .settings import *
+from .settings import _required_env
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-$uu^lgbp-w1j^1nt^1&n2=l!w5v=!@c-c#=1+h5uemvx6o%oai')
+# Fail if the host did not provide a secret. Do not fall back to a value in source.
+SECRET_KEY = _required_env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
@@ -24,7 +25,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DB_NAME', 'model-builder-v6'),
         'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', '5702Tci123'),
+        'PASSWORD': _required_env('DB_PASSWORD'),
         'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
         'PORT': os.environ.get('DB_PORT', '5432'),
     }

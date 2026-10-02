@@ -44,6 +44,133 @@ function toCanvas(x, y, scale, offsetX, offsetY) {
     return { x: offsetX + Number(x) * scale, y: offsetY + Number(y) * scale };
 }
 
+function dist2(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return dx * dx + dy * dy;
+}
+
+function pointsClose(a, b, tolMm = 12) {
+    return dist2(a, b) <= tolMm * tolMm;
+}
+
+function lineIntersection(a1, a2, b1, b2) {
+    const dax = a2.x - a1.x;
+    const day = a2.y - a1.y;
+    const dbx = b2.x - b1.x;
+    const dby = b2.y - b1.y;
+    const denom = dax * dby - day * dbx;
+    if (Math.abs(denom) < 1e-9) {
+        return null;
+    }
+    const t = ((b1.x - a1.x) * dby - (b1.y - a1.y) * dbx) / denom;
+    if (!Number.isFinite(t)) {
+        return null;
+    }
+    return { x: a1.x + t * dax, y: a1.y + t * day };
+}
+
+function wallOffsetFaces(wall) {
+    const sx = Number(wall.start_x);
+    const sy = Number(wall.start_y);
+    const ex = Number(wall.end_x);
+    const ey = Number(wall.end_y);
+    const dx = ex - sx;
+    const dy = ey - sy;
+    const len = Math.hypot(dx, dy) || 1;
+    const half = (Number(wall.thickness) || 100) / 2;
+    const nx = (-dy / len) * half;
+    const ny = (dx / len) * half;
+    return {
+        left: [{ x: sx + nx, y: sy + ny }, { x: ex + nx, y: ey + ny }],
+        right: [{ x: sx - nx, y: sy - ny }, { x: ex - nx, y: ey - ny }],
+        start: { x: sx, y: sy },
+        end: { x: ex, y: ey },
+        half,
+        isPartition: String(wall.application_type || '').toLowerCase() === 'partition',
+    };
+}
+
+function miterWallEnd(faces, whichEnd, others) {
+    const joint = whichEnd === 'start' ? faces.start : faces.end;
+    const leftFallback = whichEnd === 'start' ? faces.left[0] : faces.left[1];
+    const rightFallback = whichEnd === 'start' ? faces.right[0] : faces.right[1];
+    if (!others.length) {
+        return { left: leftFallback, right: rightFallback };
+    }
+    const wallDx = faces.end.x - faces.start.x;
+    const wallDy = faces.end.y - faces.start.y;
+    const len = Math.hypot(wallDx, wallDy) || 1;
+    const out = whichEnd === 'start'
+        ? { x: -wallDx / len, y: -wallDy / len }
+        : { x: wallDx / len, y: wallDy / len };
+    const maxMiter = Math.max(faces.half * 8, 400);
+    const alongOut = (point) => (point.x - joint.x) * out.x + (point.y - joint.y) * out.y;
+    const usable = (point) => (
+        point
+        && Number.isFinite(point.x)
+        && Number.isFinite(point.y)
+        && dist2(point, joint) <= maxMiter * maxMiter
+    );
+    const farthestOut = (fallback, hits) => {
+        const valid = [fallback, ...hits].filter(usable);
+        if (!valid.length) {
+            return fallback;
+        }
+        valid.sort((a, b) => alongOut(b) - alongOut(a));
+        return valid[0];
+    };
+
+    let left = leftFallback;
+    let right = rightFallback;
+    others.forEach((other) => {
+        left = farthestOut(left, [
+            lineIntersection(faces.left[0], faces.left[1], other.left[0], other.left[1]),
+            lineIntersection(faces.left[0], faces.left[1], other.right[0], other.right[1]),
+        ]);
+        right = farthestOut(right, [
+            lineIntersection(faces.right[0], faces.right[1], other.left[0], other.left[1]),
+            lineIntersection(faces.right[0], faces.right[1], other.right[0], other.right[1]),
+        ]);
+    });
+    return { left, right };
+}
+
+function fillWallPolygon(ctx, points, color) {
+    if (!points || points.length < 3) {
+        return;
+    }
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) {
+        ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.lineJoin = 'miter';
+    ctx.fill();
+    ctx.stroke();
+}
+
+function drawJoinedPreviewWalls(ctx, walls, scale, offsetX, offsetY, colors) {
+    const facesList = walls.map(wallOffsetFaces);
+    walls.forEach((wall, index) => {
+        const faces = facesList[index];
+        const othersAt = (joint) => facesList.filter((other, otherIndex) => (
+            otherIndex !== index
+            && (pointsClose(other.start, joint) || pointsClose(other.end, joint))
+        ));
+        const startJoin = miterWallEnd(faces, 'start', othersAt(faces.start));
+        const endJoin = miterWallEnd(faces, 'end', othersAt(faces.end));
+        const polygon = [startJoin.left, endJoin.left, endJoin.right, startJoin.right].map((point) => (
+            toCanvas(point.x, point.y, scale, offsetX, offsetY)
+        ));
+        fillWallPolygon(ctx, polygon, faces.isPartition ? colors.partition : colors.wall);
+    });
+}
+
 function storeyIdOf(row) {
     if (row == null) return null;
     if (row.storey != null && typeof row.storey === 'object') {
@@ -284,19 +411,7 @@ const VersionPlanPreview = ({ payload, storeyOrder = null }) => {
                 ctx.fill();
             });
 
-            walls.forEach((wall) => {
-                const start = toCanvas(wall.start_x, wall.start_y, scale, offsetX, offsetY);
-                const end = toCanvas(wall.end_x, wall.end_y, scale, offsetX, offsetY);
-                const thickness = Number(wall.thickness) || 100;
-                const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
-                ctx.strokeStyle = isPartition ? colors.partition : colors.wall;
-                ctx.lineWidth = Math.max(2, thickness * scale);
-                ctx.lineCap = 'butt';
-                ctx.beginPath();
-                ctx.moveTo(start.x, start.y);
-                ctx.lineTo(end.x, end.y);
-                ctx.stroke();
-            });
+            drawJoinedPreviewWalls(ctx, walls, scale, offsetX, offsetY, colors);
 
             doors.forEach((door) => {
                 const wall = walls.find((item) => Number(item.id) === Number(door.linked_wall || door.wall_id));
