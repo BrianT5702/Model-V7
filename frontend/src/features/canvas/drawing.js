@@ -28,6 +28,7 @@ import {
     getPlanWallHslSaturation,
     isPlanCanvasDark,
 } from './planCanvasTheme';
+import { buildPerWallColorMap } from './wallPlanColors';
 // Import collision detection utilities
 import {
     hasLabelOverlap,
@@ -4439,91 +4440,14 @@ export function drawWallCaps(context, wall, joints, center, intersections, SNAP_
     });
 }
 
-// Build a unique key for wall finish + thickness combination
-function getWallFinishKey(wall) {
-    const intMat = wall.inner_face_material || 'PPGI';
-    const intThk = wall.inner_face_thickness != null ? wall.inner_face_thickness : 0.5;
-    const extMat = wall.outer_face_material || 'PPGI';
-    const extThk = wall.outer_face_thickness != null ? wall.outer_face_thickness : 0.5;
-    const coreThk = wall.thickness;
-    return `${coreThk}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`;
-}
-
-// Generate distinct colors for combinations of (thickness + inner/outer finishes)
+// One distinct color per wall (stable by id). Face materials stay in the legend label.
 function generateThicknessColorMap(walls) {
-    if (!walls || walls.length === 0) return new Map();
-
-    // Collect unique combination keys (full wall specs)
-    const keys = [...new Set(walls.map(getWallFinishKey))];
-    
-    
-    // If only one combination, use default grayscale
-    if (keys.length === 1) {
-        const colorMap = new Map();
-        const onlyKey = keys[0];
-        const wall = walls.find(w => getWallFinishKey(w) === onlyKey);
-        const hasDiffFaces = wall && 
-            (wall.inner_face_material || 'PPGI') !== (wall.outer_face_material || 'PPGI');
-        
-        if (hasDiffFaces) {
-            // Generate colors for inner and outer separately
-            const innerHue = 200; // Blue-ish for inner
-            const outerHue = 0; // Red-ish for outer
-            colorMap.set(onlyKey, {
-                wall: `hsl(${outerHue}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`,
-                partition: `hsl(${outerHue}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`,
-                innerWall: `hsl(${innerHue}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`,
-                innerPartition: `hsl(${innerHue}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`,
-                label: onlyKey,
-                hasDifferentFaces: true
-            });
-        } else {
-            const defaults = getPlanDefaultWallColors();
-            colorMap.set(onlyKey, { ...defaults, label: onlyKey });
-        }
-        return colorMap;
-    }
-
-    // Assign distinct hues for each combination
-    const colorMap = new Map();
-    keys.forEach((key, index) => {
-        const wall = walls.find(w => getWallFinishKey(w) === key);
-        const hasDiffFaces = wall && 
-            (wall.inner_face_material || 'PPGI') !== (wall.outer_face_material || 'PPGI');
-        
-        if (hasDiffFaces) {
-            // Different materials - assign separate colors for inner and outer
-            const hueOuter = (index * 360) / keys.length;
-            const hueInner = ((index * 360) / keys.length + 180) % 360; // Opposite side of color wheel
-            
-            const wallColor = `hsl(${hueOuter}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`;
-            const partitionColor = `hsl(${hueOuter}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`;
-            const innerWallColor = `hsl(${hueInner}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`;
-            const innerPartitionColor = `hsl(${hueInner}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`;
-            
-            const parts = key.split('|');
-            const label = `${parts[0]}mm | ${parts[1].replace('INT:', 'Int: ')} | ${parts[2].replace('EXT:', 'Ext: ')}`;
-            
-            colorMap.set(key, {
-                wall: wallColor,
-                partition: partitionColor,
-                innerWall: innerWallColor,
-                innerPartition: innerPartitionColor,
-                label,
-                hasDifferentFaces: true
-            });
-        } else {
-            // Same material on both faces
-            const hue = (index * 360) / keys.length;
-            const wallColor = `hsl(${hue}, ${getPlanWallHslSaturation('wall')}%, ${getPlanWallHslLightness('wall')}%)`;
-            const partitionColor = `hsl(${hue}, ${getPlanWallHslSaturation('partition')}%, ${getPlanWallHslLightness('partition')}%)`;
-            const parts = key.split('|');
-            const label = `${parts[0]}mm | ${parts[1].replace('INT:', 'Int: ')} | ${parts[2].replace('EXT:', 'Ext: ')}`;
-            colorMap.set(key, { wall: wallColor, partition: partitionColor, label, hasDifferentFaces: false });
-        }
+    return buildPerWallColorMap(walls, {
+        wallSaturation: getPlanWallHslSaturation('wall'),
+        wallLightness: getPlanWallHslLightness('wall'),
+        partitionSaturation: getPlanWallHslSaturation('partition'),
+        partitionLightness: getPlanWallHslLightness('partition'),
     });
-
-    return colorMap;
 }
 
 /**
@@ -4833,7 +4757,7 @@ export function drawWalls({
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
-    // Generate color map based on (thickness + inner/outer finishes)
+    // One color per wall so each wall is easy to pick out on the plan
     const thicknessColorMap = generateThicknessColorMap(walls);
     
     // First pass: Calculate all wall lines and store them
@@ -5465,9 +5389,9 @@ export function drawWalls({
     walls.forEach((wall, index) => {
         const highlight = highlightWalls.find(h => h.id === wall.id);
         
-        // Get color for this wall's combination
-        const comboKey = getWallFinishKey(wall);
-        const thicknessColors = thicknessColorMap.get(comboKey) || getPlanDefaultWallColors();
+        const thicknessColors = thicknessColorMap.get(wall.id)
+            || thicknessColorMap.get(String(wall.id))
+            || getPlanDefaultWallColors();
         const hasDiffFaces = thicknessColors.hasDifferentFaces;
         
         // Check if inner and outer materials are actually different

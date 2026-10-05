@@ -1995,6 +1995,17 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   };
 
+  const handleDoorLabelOffset = async (doorId, labelOffset) => {
+    setDoors((prev) => prev.map((door) => (
+      door.id === doorId ? { ...door, label_offset: labelOffset } : door
+    )));
+    try {
+      await api.patch(`/doors/${doorId}/`, { label_offset: labelOffset });
+    } catch (error) {
+      console.error('Failed to save door mark position:', error);
+    }
+  };
+
   const handleUpdateDoor = async (updatedDoor) => {
     try {
       await commitHistoryAction('Update door', async () => {
@@ -2014,6 +2025,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
           side: updatedDoor.side,
           orientation: updatedDoor.orientation || 'horizontal',
           storey: updatedDoor.storey ?? activeStoreyId ?? defaultStoreyId,
+          label_offset: updatedDoor.label_offset ?? null,
         });
         const updated = response.data;
         setDoors(doors.map(d => d.id === updated.id ? updated : d));
@@ -3917,6 +3929,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     handleRoomDelete,
     handleCreateDoor,
     handleUpdateDoor,
+    handleDoorLabelOffset,
     handleWallCreate,
     handleWallSelect,
     handleWallUpdate,

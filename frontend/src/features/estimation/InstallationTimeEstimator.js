@@ -3,6 +3,7 @@ import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import { getPanelFinishingLabel, sortMaterialPanels, roundPanelSizeMmUp } from '../panel/wallPlanPanelUtils';
 import { sortDoorsForMaterialList } from '../door/doorSortUtils';
+import { buildDoorSchedule } from '../door/doorSchedule';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { calculatePolygonVisualCenter } from '../canvas/utils';
@@ -2296,15 +2297,18 @@ const InstallationTimeEstimator = ({
                     altFill: [238, 242, 255],
                     subtitle: `Total: ${exportData.doors.length} doors`,
                     fontSize: 8,
-                    head: ['Type', 'Width', 'Height', 'Thk'],
-                    body: exportData.doors.map(door => [
-                        door.door_type || 'N/A',
-                        `${door.width || 'N/A'}mm`,
-                        `${door.height || 'N/A'}mm`,
-                        `${door.thickness || 'N/A'}mm`
+                    head: ['Marks', 'Qty', 'Kind', 'Opening', 'Width', 'Height', 'Thk'],
+                    body: buildDoorSchedule(exportData.doors).types.map((type) => [
+                        type.run,
+                        String(type.count),
+                        type.familyLabel,
+                        type.openingLabel || '',
+                        `${type.width || 'N/A'}mm`,
+                        `${type.height || 'N/A'}mm`,
+                        `${type.thickness || 'N/A'}mm`
                     ]),
                     columnStyles: {
-                        0: { cellWidth: isLandscapeLayout ? 28 : 30 }
+                        0: { cellWidth: isLandscapeLayout ? 52 : 46 }
                     }
                 });
             }
@@ -3841,7 +3845,16 @@ const InstallationTimeEstimator = ({
                                             <thead className="bg-gray-50">
                                                 <tr>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
-                                                        Door Type
+                                                        Marks
+                                                    </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Qty
+                                                    </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Kind
+                                                    </th>
+                                                    <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
+                                                        Opening
                                                     </th>
                                                     <th className="px-4 py-2 border border-gray-300 text-left text-sm font-medium text-gray-700">
                                                         Width (mm)
@@ -3855,28 +3868,41 @@ const InstallationTimeEstimator = ({
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {(expandedTables.doors ? exportData.doors : exportData.doors.slice(0, 5)).map((door, index) => (
-                                                    <tr key={index} className="hover:bg-gray-50">
-                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {door.door_type || 'N/A'}
+                                                {(() => {
+                                                    const doorTypes = buildDoorSchedule(exportData.doors).types;
+                                                    const visibleTypes = expandedTables.doors ? doorTypes : doorTypes.slice(0, 5);
+                                                    return visibleTypes.map((type) => (
+                                                    <tr key={type.key} className="hover:bg-gray-50">
+                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900 whitespace-nowrap">
+                                                            {type.run}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {door.width || 'N/A'}
+                                                            {type.count}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {door.height || 'N/A'}
+                                                            {type.familyLabel}
                                                         </td>
                                                         <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
-                                                            {door.thickness || 'N/A'}
+                                                            {type.openingLabel || ''}
+                                                        </td>
+                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                            {type.width || 'N/A'}
+                                                        </td>
+                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                            {type.height || 'N/A'}
+                                                        </td>
+                                                        <td className="px-4 py-2 border border-gray-300 text-sm text-gray-900">
+                                                            {type.thickness || 'N/A'}
                                                         </td>
                                                     </tr>
-                                                ))}
-                                                {exportData.doors.length > 5 && (
+                                                    ));
+                                                })()}
+                                                {buildDoorSchedule(exportData.doors).types.length > 5 && (
                                                     <tr 
                                                         className="hover:bg-blue-50 cursor-pointer transition-colors"
                                                         onClick={() => toggleTableExpansion('doors')}
                                                     >
-                                                        <td colSpan="4" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
+                                                        <td colSpan="7" className="px-4 py-2 border border-gray-300 text-center text-blue-600 font-medium">
                                                             {expandedTables.doors ? (
                                                                 <>
                                                                     <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3889,7 +3915,7 @@ const InstallationTimeEstimator = ({
                                                                     <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                                                     </svg>
-                                                                    ... and {exportData.doors.length - 5} more doors (click to show all)
+                                                                    ... and {buildDoorSchedule(exportData.doors).types.length - 5} more (click to show all)
                                                                 </>
                                                             )}
                                                         </td>

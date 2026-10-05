@@ -18,6 +18,7 @@ const DOOR_COMPARE_KEYS = [
   'linked_wall', 'wall_id', 'width', 'height', 'thickness',
   'position_x', 'position_y', 'door_type', 'configuration',
   'swing_direction', 'slide_direction', 'side', 'orientation', 'storey',
+  'label_offset',
 ];
 
 function clone(value) {

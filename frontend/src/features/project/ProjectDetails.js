@@ -126,6 +126,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     const threeCanvasViewRef = useRef(null);
     const [is3DFullscreen, setIs3DFullscreen] = useState(false);
     const [is3DPseudoFullscreen, setIs3DPseudoFullscreen] = useState(false);
+    const [isPlanFullscreen, setIsPlanFullscreen] = useState(false);
 
     const isWallPlanView = projectDetails.currentView === 'wall-plan';
     const undoProjectAction = projectDetails.undoProjectAction;
@@ -470,6 +471,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     }, [projectDetails]);
 
     const handleToggle3DView = useCallback(() => {
+        setIsPlanFullscreen(false);
         if (projectDetails.is3DView) {
             projectDetails.forceCleanup3D();
         }
@@ -1321,6 +1323,35 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             document.removeEventListener('keydown', onKeyDown);
         };
     }, [applyPseudo3DFullscreen, is3DPseudoFullscreen, resizeThreeCanvas]);
+
+    useEffect(() => {
+        document.body.classList.toggle('wall-plan-fullscreen-lock', isPlanFullscreen);
+        return () => document.body.classList.remove('wall-plan-fullscreen-lock');
+    }, [isPlanFullscreen]);
+
+    useEffect(() => {
+        if (!isPlanFullscreen) return undefined;
+        const onKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            const tag = event.target?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
+            setIsPlanFullscreen(false);
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [isPlanFullscreen]);
+
+    useEffect(() => {
+        if (!isPlanFullscreen || projectDetails.currentView === 'wall-plan') return undefined;
+        const scroll = canvasPanelScrollRef.current;
+        const viewport = scroll?.querySelector('.plan-canvas-viewport');
+        if (!scroll || !viewport) return undefined;
+        const frame = requestAnimationFrame(() => {
+            const top = viewport.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+            scroll.scrollTo({ top: Math.max(0, top - 8) });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [isPlanFullscreen, projectDetails.currentView]);
 
     // Guard: If projectId is missing or invalid, show error and redirect
     if (!projectId || projectId === 'undefined' || projectId === 'null') {
@@ -2694,7 +2725,20 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     {/* Canvas Container - scrollable so ceiling/wall/floor content fits at 100% zoom; tighter margins in 3D for more canvas width */}
                     <div className={`bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 canvas-container flex-1 min-h-0 min-w-0 ${
                         projectDetails.is3DView ? 'canvas-container-3d flex flex-col m-2 sm:m-3' : 'canvas-container-2d flex flex-col overflow-hidden m-3 sm:m-6'
-                    }`}>
+                    }${isPlanFullscreen ? ' plan-view-fullscreen' : ''}`}>
+                        {isPlanFullscreen && !projectDetails.is3DView && (
+                            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
+                                {renderPlanViewTabs()}
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPlanFullscreen(false)}
+                                    className="px-2 py-1 text-xs rounded-md border border-slate-800 bg-slate-800 text-white font-medium shrink-0"
+                                    title="Exit fullscreen (Esc)"
+                                >
+                                    Exit fullscreen
+                                </button>
+                            </div>
+                        )}
                         {projectDetails.is3DView ? (
                             <div
                                 ref={threeCanvasViewRef}
@@ -2935,6 +2979,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             allRooms={projectDetails.rooms}
                                             onRefreshWalls={projectDetails.refreshWalls}
                                             onDoorSelect={projectDetails.handleDoorSelect}
+                                            onDoorLabelOffset={projectDetails.handleDoorLabelOffset}
                                             onDoorWallSelect={(wall) => {
                                                 projectDetails.setSelectedDoorWall(wall);
                                                 projectDetails.setShowDoorManager(true);
@@ -2976,6 +3021,14 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             planAnnotationArrowPlacementId={planAnnotationArrowPlacementId}
                                             onPlanAnnotationArrowPlacementId={setPlanAnnotationArrowPlacementId}
                                             annotationIdRemap={projectDetails.annotationIdRemap}
+                                            onToggleMode={projectDetails.toggleMode}
+                                            isPlanFullscreen={isPlanFullscreen}
+                                            onTogglePlanFullscreen={() => setIsPlanFullscreen((open) => !open)}
+                                            onToggleEditMode={() => {
+                                                projectDetails.setIsEditingMode(!projectDetails.isEditingMode);
+                                                projectDetails.setCurrentMode(null);
+                                                projectDetails.resetAllSelections();
+                                            }}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
                                         <FloorManager

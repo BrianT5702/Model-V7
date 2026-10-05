@@ -98,6 +98,36 @@ export function worldToDoorLocal(worldX, worldY, placement) {
     return { x: rx, y: ry / ySign };
 }
 
+/** Door mark radius in plan millimetres. Screen size is this times the canvas scale. */
+export const DOOR_TAG_RADIUS_MM = 280;
+
+function storedLabelOffset(door) {
+    const stored = door?.label_offset;
+    const x = Number(stored?.x);
+    const y = Number(stored?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+}
+
+/** Offset from the door center in door-local millimetres. Dragging stores this on the door. */
+export function getDoorTagLocalOffset(door, wall, placement) {
+    const stored = storedLabelOffset(door);
+    if (stored) return stored;
+
+    const wallThickness = Number(wall?.thickness) || 100;
+    const half = placement?.slashHalf || (Number(door?.width) || 900) / 2;
+    const side = placement?.isInterior ? -1 : 1;
+    return {
+        x: half + 80,
+        y: side * (wallThickness * 0.5 + DOOR_TAG_RADIUS_MM * 0.65),
+    };
+}
+
+export function getDoorTagModelPoint(door, wall, placement) {
+    const local = getDoorTagLocalOffset(door, wall, placement);
+    return doorLocalToWorld(local.x, local.y, placement);
+}
+
 export function doorLocalToWorld(localX, localY, placement, options = {}) {
     let ly = localY;
     if (options.swingInteriorFlip && placement.isInterior) {
@@ -191,6 +221,11 @@ function collectDoorSymbolPoints(door, wall, placement) {
         addLocal(rectWidth / 2, rectY);
         addLocal(rectWidth / 2, rectY + rectHeight);
         addLocal(-rectWidth / 2, rectY + rectHeight);
+        const dockTag = getDoorTagModelPoint(door, wall, placement);
+        points.push(
+            { x: dockTag.x - DOOR_TAG_RADIUS_MM, y: dockTag.y - DOOR_TAG_RADIUS_MM },
+            { x: dockTag.x + DOOR_TAG_RADIUS_MM, y: dockTag.y + DOOR_TAG_RADIUS_MM }
+        );
         return points;
     }
 
@@ -205,21 +240,22 @@ function collectDoorSymbolPoints(door, wall, placement) {
     }
 
     if (door.door_type === 'slide') {
-        const halfLength = door.width;
+        const isDoubleSlide = String(door.configuration || '').includes('double');
+        const panelLength = isDoubleSlide ? door.width * 0.4 : door.width;
         const panelYOffset = getSlidePanelYOffset(placement, wallThickness);
-        const offsets =
-            door.configuration === 'double_sided' ? [-slashHalf / 2, slashHalf / 2] : [0];
+        const offsets = isDoubleSlide ? [-door.width * 0.26, door.width * 0.26] : [0];
         for (const offsetX of offsets) {
-            addLocal(offsetX - halfLength / 2, panelYOffset - wallThickness / 2);
-            addLocal(offsetX + halfLength / 2, panelYOffset - wallThickness / 2);
-            addLocal(offsetX + halfLength / 2, panelYOffset + wallThickness / 2);
-            addLocal(offsetX - halfLength / 2, panelYOffset + wallThickness / 2);
+            addLocal(offsetX - panelLength / 2, panelYOffset - wallThickness / 2);
+            addLocal(offsetX + panelLength / 2, panelYOffset - wallThickness / 2);
+            addLocal(offsetX + panelLength / 2, panelYOffset + wallThickness / 2);
+            addLocal(offsetX - panelLength / 2, panelYOffset + wallThickness / 2);
         }
     } else if (door.door_type === 'swing') {
-        const radius = door.width / (door.configuration === 'double_sided' ? 2 : 1);
+        const isDoubleSwing = String(door.configuration || '').includes('double');
+        const radius = door.width / (isDoubleSwing ? 2 : 1);
         const swingFlip = { swingInteriorFlip: isInterior };
         const panels =
-            door.configuration === 'double_sided'
+            isDoubleSwing
                 ? [
                       { hingeOffset: -slashHalf, direction: 'left' },
                       { hingeOffset: slashHalf, direction: 'right' },
@@ -242,6 +278,12 @@ function collectDoorSymbolPoints(door, wall, placement) {
             }
         }
     }
+
+    const tag = getDoorTagModelPoint(door, wall, placement);
+    points.push(
+        { x: tag.x - DOOR_TAG_RADIUS_MM, y: tag.y - DOOR_TAG_RADIUS_MM },
+        { x: tag.x + DOOR_TAG_RADIUS_MM, y: tag.y + DOOR_TAG_RADIUS_MM }
+    );
 
     return points;
 }

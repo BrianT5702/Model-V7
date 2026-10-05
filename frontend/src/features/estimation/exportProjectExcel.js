@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { getPanelFinishingLabel, sortMaterialPanels, roundPanelSizeMmUp } from '../panel/wallPlanPanelUtils';
 import { groupWallPanelsForDisplay } from '../panel/wallPanelCalculationUtils';
+import { buildDoorSchedule } from '../door/doorSchedule';
 
 const COLORS = {
     titleFill: '1E3A5F',
@@ -199,11 +200,14 @@ function floorPanelRows(panels = []) {
 }
 
 function doorRows(doors = []) {
-    return doors.map((door) => [
-        door.door_type || '',
-        door.width ?? '',
-        door.height ?? '',
-        door.thickness ?? '',
+    return buildDoorSchedule(doors).types.map((type) => [
+        type.run,
+        type.count,
+        type.familyLabel,
+        type.openingLabel,
+        type.width ?? '',
+        type.height ?? '',
+        type.thickness ?? '',
     ]);
 }
 
@@ -389,7 +393,7 @@ function buildProjectSheet(workbook, exportData, slabWidth, slabLength) {
         wallRows.length ? 8 : 0,
         ceilingRows.length ? 5 : 0,
         floorRows.length ? 5 : 0,
-        doorBody.length ? 4 : 0,
+        doorBody.length ? 7 : 0,
         (exportData?.slabs || []).length ? 4 : 0,
         exportData?.supportAccessories?.isNeeded ? 2 : 0,
         2
@@ -470,7 +474,7 @@ function buildProjectSheet(workbook, exportData, slabWidth, slabLength) {
 
     row = appendSection(sheet, row, {
         title: 'DOORS (WHOLE PROJECT)',
-        headers: ['Type', 'Width (mm)', 'Height (mm)', 'Thk (mm)'],
+        headers: ['Marks', 'Qty', 'Kind', 'Opening', 'Width (mm)', 'Height (mm)', 'Thk (mm)'],
         bodyRows: doorBody,
         headerFill: COLORS.headerAlt.doors,
     });
@@ -535,7 +539,7 @@ function buildRoomSheet(workbook, sheetName, {
         wallRows.length ? 8 : 0,
         ceilingRows.length ? 5 : 0,
         floorRows.length ? 5 : 0,
-        doorBody.length ? 4 : 0,
+        doorBody.length ? 7 : 0,
         isSlab ? 3 : 0,
         2
     );
@@ -577,7 +581,7 @@ function buildRoomSheet(workbook, sheetName, {
 
     row = appendSection(sheet, row, {
         title: 'DOORS',
-        headers: ['Type', 'Width (mm)', 'Height (mm)', 'Thk (mm)'],
+        headers: ['Marks', 'Qty', 'Kind', 'Opening', 'Width (mm)', 'Height (mm)', 'Thk (mm)'],
         bodyRows: doorBody,
         headerFill: COLORS.headerAlt.doors,
     });

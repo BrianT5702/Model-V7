@@ -1055,6 +1055,11 @@ class Door(models.Model):
         help_text="Orientation of the door in the plan."
     )
     linked_wall = models.ForeignKey(Wall, related_name='doors', on_delete=models.CASCADE, null=True, blank=True)
+    label_offset = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Dragged door-mark offset from the door center, in door-local millimetres {x, y}.",
+    )
 
     def __str__(self):
         return f"Door {self.id} ({self.door_type}, {self.configuration}) in Project {self.project.name}"

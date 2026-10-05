@@ -1,6 +1,8 @@
 // Utility functions extracted from Canvas2D.js
 
-import { resolveDoorPlacement, worldToDoorLocal, getSlidePanelYOffset } from './doorPlacement.js';
+import { resolveDoorPlacement, worldToDoorLocal, getSlidePanelYOffset, getDoorTagModelPoint, DOOR_TAG_RADIUS_MM } from './doorPlacement.js';
+import { buildDoorSchedule, doorMarkColor, isDoubleConfiguration } from '../door/doorSchedule';
+import { adjustPlanStrokeColor } from './planCanvasTheme';
 
 // Calculate the area of a polygon given its points
 export function calculatePolygonArea(points) {
@@ -259,7 +261,7 @@ export function detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY) {
     }
 
     if (door.door_type === 'swing') {
-      const radius = door.width / (door.configuration === 'double_sided' ? 2 : 1);
+      const radius = door.width / (isDoubleConfiguration(door.configuration) ? 2 : 1);
       const swingLocalY = isInterior ? -localY : localY;
       const swingLocalX = localX;
 
@@ -304,15 +306,30 @@ export function detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY) {
         return distanceAlongPanel <= door.width && distanceToPanel <= wall.thickness;
       };
 
-      if (door.configuration === 'single_sided') {
+      if (isDoubleConfiguration(door.configuration)) {
+        if (checkSwingPanel(-slashHalf, 'left') || checkSwingPanel(slashHalf, 'right')) return door;
+      } else {
         const hingeOffset = door.swing_direction === 'right' ? slashHalf : -slashHalf;
         if (checkSwingPanel(hingeOffset, door.swing_direction)) return door;
-      } else if (door.configuration === 'double_sided') {
-        if (checkSwingPanel(-slashHalf, 'left') || checkSwingPanel(slashHalf, 'right')) return door;
       }
     }
+
   }
 
+  return null;
+}
+
+export function detectDoorTag(x, y, doors, walls) {
+  if (!Array.isArray(doors) || !Array.isArray(walls)) return null;
+  for (const door of doors) {
+    const wall = walls.find(w => w.id === door.linked_wall || w.id === door.wall_id);
+    if (!wall) continue;
+    const placement = resolveDoorPlacement(wall, door);
+    const tag = getDoorTagModelPoint(door, wall, placement);
+    if (Math.hypot(x - tag.x, y - tag.y) <= DOOR_TAG_RADIUS_MM) {
+      return door;
+    }
+  }
   return null;
 }
 
@@ -320,7 +337,33 @@ export function detectHoveredDoor(x, y, doors, walls, scale, offsetX, offsetY) {
   return detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY);
 }
 
+function drawUprightDoorTag(ctx, x, y, radius, mark) {
+    if (!(radius > 0.5)) return;
+    const stroke = adjustPlanStrokeColor('#111111');
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(0.75, radius * 0.07);
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - radius, y);
+    ctx.lineTo(x + radius, y);
+    ctx.stroke();
+    ctx.fillStyle = stroke;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const codeLen = String(mark.code).length;
+    const codeSize = radius * (codeLen > 4 ? 0.28 : codeLen > 3 ? 0.32 : 0.42);
+    ctx.font = `600 ${codeSize}px Arial, sans-serif`;
+    ctx.fillText(mark.code, x, y - radius * 0.36);
+    ctx.font = `600 ${radius * 0.46}px Arial, sans-serif`;
+    ctx.fillText(String(mark.instance), x, y + radius * 0.38);
+    ctx.restore();
+}
+
 export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoorId = null) {
+    const schedule = buildDoorSchedule(doors).marks;
     doors.forEach((door) => {
         const wall = walls.find(w => w.id === door.linked_wall || w.id === door.wall_id);
         if (!wall) return;
@@ -332,11 +375,15 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         const doorThickness = wallThickness;
 
         const isHovered = door.id === hoveredDoorId;
-        let doorColor = 'orange';
+        const mark = schedule.get(door.id) || schedule.get(String(door.id));
+        const isDouble = isDoubleConfiguration(door.configuration);
+        const typeColor = adjustPlanStrokeColor(
+            mark ? doorMarkColor(mark.typeNumber, mark.family) : '#c2410c'
+        );
+        let doorColor = typeColor;
         let strokeColor = '#000';
         let lineWidth = 2;
         if (isHovered) {
-            doorColor = '#FFA500';
             strokeColor = '#0066FF';
             lineWidth = 2.5;
         }
@@ -387,7 +434,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
             if (isInterior) {
                 ctx.scale(1, -1);
             }
-            const radius = doorWidth / (door.configuration === 'double_sided' ? 2 : 1);
+            const radius = doorWidth / (isDouble ? 2 : 1);
             const drawSwingPanel = (hingeOffset, direction) => {
                 const isRight = direction === 'right';
                 const arcStart = isRight ? Math.PI : 0;
@@ -398,14 +445,14 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
                 ctx.translate(hingeOffset * scale, 0);
                 ctx.beginPath();
                 ctx.arc(0, 0, radius * scale, arcStart, arcEnd, anticlockwise);
-                ctx.strokeStyle = strokeColor;
+                ctx.strokeStyle = doorColor;
                 ctx.lineWidth = lineWidth;
+                ctx.setLineDash([]);
                 ctx.stroke();
 
                 const arcEndX = Math.cos(arcEnd) * radius * scale;
                 const arcEndY = Math.sin(arcEnd) * radius * scale;
 
-                // Plan symbol: thin leaf line from hinge to open position (not a solid block)
                 ctx.beginPath();
                 ctx.moveTo(0, 0);
                 ctx.lineTo(arcEndX, arcEndY);
@@ -415,10 +462,18 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
                 ctx.restore();
             };
 
-            if (door.configuration === 'single_sided') {
+            if (!isDouble) {
                 const hingeOffset = door.swing_direction === 'right' ? slashHalf : -slashHalf;
                 drawSwingPanel(hingeOffset, door.swing_direction);
-            } else if (door.configuration === 'double_sided') {
+            } else {
+                // Two leaves meet at the middle of the opening.
+                ctx.beginPath();
+                ctx.moveTo(0, -wallThickness * scale * 0.85);
+                ctx.lineTo(0, wallThickness * scale * 0.85);
+                ctx.strokeStyle = doorColor;
+                ctx.lineWidth = Math.max(1.75, lineWidth);
+                ctx.setLineDash([]);
+                ctx.stroke();
                 drawSwingPanel(-slashHalf, 'left');
                 drawSwingPanel(slashHalf, 'right');
             }
@@ -426,27 +481,34 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
 
         // === SLIDE DOOR DRAWING ===
         if (door.door_type === 'slide') {
-            const halfLength = doorWidth;
             const thickness = wallThickness;
             const panelYOffset = getSlidePanelYOffset(placement, thickness);
+            const panelLength = isDouble ? doorWidth * 0.4 : doorWidth * 0.85;
 
-            const drawSlidePanel = (offsetX, direction) => {
+            const drawSlidePanel = (centerX, direction) => {
                 ctx.save();
-                ctx.translate(offsetX * scale, panelYOffset * scale);
+                ctx.translate(centerX * scale, panelYOffset * scale);
                 ctx.strokeStyle = doorColor;
                 ctx.lineWidth = Math.max(1.5, lineWidth);
+                ctx.setLineDash([]);
                 ctx.strokeRect(
-                    -halfLength * scale / 2,
+                    -panelLength * scale / 2,
                     -thickness * scale / 2,
-                    halfLength * scale,
+                    panelLength * scale,
                     thickness * scale
                 );
+                if (isDouble) {
+                    ctx.beginPath();
+                    ctx.moveTo(-panelLength * scale / 2, thickness * scale / 2);
+                    ctx.lineTo(panelLength * scale / 2, -thickness * scale / 2);
+                    ctx.stroke();
+                }
 
-                const arrowY = panelYOffset * scale * 2;
-                const arrowHeadSize = 4;
+                const arrowY = (isDouble ? thickness * 1.15 : panelYOffset * 2) * scale;
+                const arrowHeadSize = Math.max(3, panelLength * scale * 0.12);
                 const arrowDir = direction === 'right' ? 1 : -1;
-                const arrowStart = -halfLength * scale / 2;
-                const arrowEnd = halfLength * scale / 2;
+                const arrowStart = -panelLength * scale / 2;
+                const arrowEnd = panelLength * scale / 2;
 
                 ctx.beginPath();
                 ctx.moveTo(arrowStart, arrowY);
@@ -467,11 +529,18 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
                 ctx.restore();
             };
 
-            if (door.configuration === 'single_sided') {
-                drawSlidePanel(0, door.slide_direction);
-            } else if (door.configuration === 'double_sided') {
-                drawSlidePanel(-slashHalf / 2, 'left');
-                drawSlidePanel(slashHalf / 2, 'right');
+            if (!isDouble) {
+                drawSlidePanel(0, door.slide_direction || 'right');
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(0, -thickness * scale);
+                ctx.lineTo(0, thickness * scale * 1.6);
+                ctx.strokeStyle = doorColor;
+                ctx.lineWidth = Math.max(1.75, lineWidth);
+                ctx.setLineDash([]);
+                ctx.stroke();
+                drawSlidePanel(-doorWidth * 0.26, 'left');
+                drawSlidePanel(doorWidth * 0.26, 'right');
             }
         }
 
@@ -484,7 +553,7 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
             const rectH = rectHeight * scale;
             const rectY = isInterior ? 0 : -rectH;
 
-            ctx.strokeStyle = strokeColor;
+            ctx.strokeStyle = doorColor;
             ctx.lineWidth = lineWidth;
             ctx.strokeRect(rectX, rectY, rectW, rectH);
 
@@ -510,6 +579,17 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         }
 
         ctx.restore();
+
+        if (mark) {
+            const anchor = getDoorTagModelPoint(door, wall, placement);
+            drawUprightDoorTag(
+                ctx,
+                anchor.x * scale + offsetX,
+                anchor.y * scale + offsetY,
+                DOOR_TAG_RADIUS_MM * scale,
+                mark
+            );
+        }
     });
 } 
 

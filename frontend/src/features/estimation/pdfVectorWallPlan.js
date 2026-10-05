@@ -17,73 +17,19 @@ import {
 } from '../canvas/drawing';
 import { planCeilingValueDedupKey, DIMENSION_CONFIG } from '../canvas/DimensionConfig';
 import { filterDimensions } from '../canvas/dimensionFilter';
-import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset } from '../canvas/doorPlacement';
+import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset, getDoorTagModelPoint, DOOR_TAG_RADIUS_MM } from '../canvas/doorPlacement';
+import { buildPerWallColorMap } from '../canvas/wallPlanColors';
+import { buildDoorSchedule, doorMarkColor, isDoubleConfiguration } from '../door/doorSchedule';
 import { withPlanCanvasLightTheme } from '../canvas/planCanvasTheme';
 import { fitPdfRoomLabelText } from './pdfRoomLabelFit';
 
-// Copy color mapping functions from drawing.js
-function getWallFinishKey(wall) {
-    const intMat = wall.inner_face_material || 'PPGI';
-    const intThk = wall.inner_face_thickness != null ? wall.inner_face_thickness : 0.5;
-    const extMat = wall.outer_face_material || 'PPGI';
-    const extThk = wall.outer_face_thickness != null ? wall.outer_face_thickness : 0.5;
-    const coreThk = wall.thickness;
-    return `${coreThk}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`;
-}
-
 function generateThicknessColorMap(walls) {
-    if (!walls || walls.length === 0) return new Map();
-    const keys = [...new Set(walls.map(getWallFinishKey))];
-    const colorMap = new Map();
-    
-    if (keys.length === 1) {
-        const onlyKey = keys[0];
-        const wall = walls.find(w => getWallFinishKey(w) === onlyKey);
-        const hasDiffFaces = wall && 
-            (wall.inner_face_material || 'PPGI') !== (wall.outer_face_material || 'PPGI');
-        
-        if (hasDiffFaces) {
-            const innerHue = 200;
-            const outerHue = 0;
-            colorMap.set(onlyKey, {
-                wall: `hsl(${outerHue}, 70%, 35%)`,
-                partition: `hsl(${outerHue}, 60%, 50%)`,
-                innerWall: `hsl(${innerHue}, 70%, 35%)`,
-                innerPartition: `hsl(${innerHue}, 60%, 50%)`,
-                hasDifferentFaces: true
-            });
-        } else {
-            colorMap.set(onlyKey, { wall: '#333', partition: '#666', hasDifferentFaces: false });
-        }
-        return colorMap;
-    }
-    
-    keys.forEach((key, index) => {
-        const wall = walls.find(w => getWallFinishKey(w) === key);
-        const hasDiffFaces = wall && 
-            (wall.inner_face_material || 'PPGI') !== (wall.outer_face_material || 'PPGI');
-        
-        if (hasDiffFaces) {
-            const hueOuter = (index * 360) / keys.length;
-            const hueInner = ((index * 360) / keys.length + 180) % 360;
-            colorMap.set(key, {
-                wall: `hsl(${hueOuter}, 70%, 35%)`,
-                partition: `hsl(${hueOuter}, 60%, 50%)`,
-                innerWall: `hsl(${hueInner}, 70%, 35%)`,
-                innerPartition: `hsl(${hueInner}, 60%, 50%)`,
-                hasDifferentFaces: true
-            });
-        } else {
-            const hue = (index * 360) / keys.length;
-            colorMap.set(key, {
-                wall: `hsl(${hue}, 70%, 35%)`,
-                partition: `hsl(${hue}, 60%, 50%)`,
-                hasDifferentFaces: false
-            });
-        }
+    return buildPerWallColorMap(walls, {
+        wallSaturation: 70,
+        wallLightness: 35,
+        partitionSaturation: 60,
+        partitionLightness: 50,
     });
-    
-    return colorMap;
 }
 
 // Convert HSL to RGB for jsPDF
@@ -1199,8 +1145,9 @@ export function drawVectorWallPlan(
                         line2 = [...line2.map(p => ({ ...p }))];
                         
                         // Get wall colors
-                        const comboKey = getWallFinishKey(wall);
-                        const thicknessColors = thicknessColorMap.get(comboKey) || { wall: '#333', partition: '#666', hasDifferentFaces: false };
+                        const thicknessColors = thicknessColorMap.get(wall.id)
+                            || thicknessColorMap.get(String(wall.id))
+                            || { wall: '#333', partition: '#666', hasDifferentFaces: false };
                         const hasDiffFaces = thicknessColors.hasDifferentFaces;
                         const intMat = wall.inner_face_material || 'PPGI';
                         const extMat = wall.outer_face_material || 'PPGI';
@@ -1817,6 +1764,7 @@ export function drawVectorWallPlan(
                     });
                     
                     // Draw doors using same placement logic as canvas (drawDoors from utils.js)
+                    const doorSchedule = buildDoorSchedule(doorsToDraw).marks;
                     doorsToDraw.forEach((door) => {
                         const wall = wallsToDraw.find(w => w.id === door.linked_wall || w.id === door.wall_id);
                         if (!wall) return;
@@ -1825,8 +1773,11 @@ export function drawVectorWallPlan(
                         const { slashHalf, isInterior } = placement;
                         const doorWidth = door.width;
                         const doorThickness = wall.thickness || 100;
-
-                        const doorColor = [255, 165, 0]; // Orange
+                        const mark = doorSchedule.get(door.id) || doorSchedule.get(String(door.id));
+                        const isDouble = isDoubleConfiguration(door.configuration);
+                        const doorColor = mark
+                            ? parseHslColor(doorMarkColor(mark.typeNumber, mark.family))
+                            : [194, 65, 12];
                         const strokeColor = [0, 0, 0];
                         const lineWidth = 0.2;
 
@@ -1868,7 +1819,7 @@ export function drawVectorWallPlan(
 
                         // === SWING DOOR DRAWING ===
                         if (door.door_type === 'swing') {
-                            const radius = doorWidth / (door.configuration === 'double_sided' ? 2 : 1);
+                            const radius = doorWidth / (isDouble ? 2 : 1);
                             const swingFlip = { swingInteriorFlip: isInterior };
 
                             const drawSwingPanel = (hingeOffset, direction) => {
@@ -1895,8 +1846,9 @@ export function drawVectorWallPlan(
                                     arcPoints.push(transformDoorPoint(localX, localY, swingFlip));
                                 }
 
-                                doc.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
+                                doc.setDrawColor(doorColor[0], doorColor[1], doorColor[2]);
                                 doc.setLineWidth(lineWidth);
+                                doc.setLineDashPattern([], 0);
                                 for (let i = 0; i < arcPoints.length - 1; i++) {
                                     doc.line(arcPoints[i].x, arcPoints[i].y, arcPoints[i + 1].x, arcPoints[i + 1].y);
                                 }
@@ -1910,10 +1862,16 @@ export function drawVectorWallPlan(
                                 doc.line(hingePoint.x, hingePoint.y, leafPoint.x, leafPoint.y);
                             };
 
-                            if (door.configuration === 'single_sided') {
+                            if (!isDouble) {
                                 const hingeOffset = door.swing_direction === 'right' ? slashHalf : -slashHalf;
                                 drawSwingPanel(hingeOffset, door.swing_direction);
-                            } else if (door.configuration === 'double_sided') {
+                            } else {
+                                const stileTop = transformDoorPoint(0, -doorThickness * 0.85, swingFlip);
+                                const stileBottom = transformDoorPoint(0, doorThickness * 0.85, swingFlip);
+                                doc.setDrawColor(doorColor[0], doorColor[1], doorColor[2]);
+                                doc.setLineWidth(lineWidth * 1.4);
+                                doc.setLineDashPattern([], 0);
+                                doc.line(stileTop.x, stileTop.y, stileBottom.x, stileBottom.y);
                                 drawSwingPanel(-slashHalf, 'left');
                                 drawSwingPanel(slashHalf, 'right');
                             }
@@ -1922,9 +1880,9 @@ export function drawVectorWallPlan(
                         // === SLIDE DOOR DRAWING ===
                         // Match canvas drawDoors(): orange outline panel + black chevron arrow (no hatch fill).
                         if (door.door_type === 'slide') {
-                            const halfLength = doorWidth;
                             const thickness = doorThickness;
                             const panelYOffset = getSlidePanelYOffset(placement, thickness);
+                            const panelLength = isDouble ? doorWidth * 0.4 : doorWidth * 0.85;
                             const panelLineW = Math.max(0.35, lineWidth * 1.75);
 
                             const drawSlidePanel = (offsetX, direction) => {
@@ -1932,10 +1890,10 @@ export function drawVectorWallPlan(
                                 const panelLocalY = panelYOffset;
 
                                 const corners = [
-                                    { x: -halfLength / 2, y: -thickness / 2 },
-                                    { x: halfLength / 2, y: -thickness / 2 },
-                                    { x: halfLength / 2, y: thickness / 2 },
-                                    { x: -halfLength / 2, y: thickness / 2 }
+                                    { x: -panelLength / 2, y: -thickness / 2 },
+                                    { x: panelLength / 2, y: -thickness / 2 },
+                                    { x: panelLength / 2, y: thickness / 2 },
+                                    { x: -panelLength / 2, y: thickness / 2 }
                                 ].map((corner) => transformDoorPoint(
                                     panelLocalX + corner.x,
                                     panelLocalY + corner.y
@@ -1948,12 +1906,15 @@ export function drawVectorWallPlan(
                                     const next = corners[(i + 1) % corners.length];
                                     doc.line(corners[i].x, corners[i].y, next.x, next.y);
                                 }
+                                if (isDouble) {
+                                    doc.line(corners[3].x, corners[3].y, corners[1].x, corners[1].y);
+                                }
 
                                 // Chevron arrow beside the panel (same layout as canvas)
-                                const arrowLocalY = panelYOffset * 2;
+                                const arrowLocalY = isDouble ? panelYOffset + thickness * 1.15 : panelYOffset * 2;
                                 const arrowDir = direction === 'right' ? 1 : -1;
-                                const arrowStart = transformDoorPoint(-halfLength / 2, arrowLocalY);
-                                const arrowEnd = transformDoorPoint(halfLength / 2, arrowLocalY);
+                                const arrowStart = transformDoorPoint(panelLocalX - panelLength / 2, arrowLocalY);
+                                const arrowEnd = transformDoorPoint(panelLocalX + panelLength / 2, arrowLocalY);
                                 const shaftDx = arrowEnd.x - arrowStart.x;
                                 const shaftDy = arrowEnd.y - arrowStart.y;
                                 const shaftLen = Math.hypot(shaftDx, shaftDy) || 1;
@@ -1980,12 +1941,37 @@ export function drawVectorWallPlan(
                                 doc.setLineWidth(lineWidth);
                             };
 
-                            if (door.configuration === 'single_sided') {
-                                drawSlidePanel(0, door.slide_direction);
-                            } else if (door.configuration === 'double_sided') {
-                                drawSlidePanel(-slashHalf / 2, 'left');
-                                drawSlidePanel(slashHalf / 2, 'right');
+                            if (!isDouble) {
+                                drawSlidePanel(0, door.slide_direction || 'right');
+                            } else {
+                                const meetA = transformDoorPoint(0, -thickness);
+                                const meetB = transformDoorPoint(0, thickness * 1.6);
+                                doc.setDrawColor(doorColor[0], doorColor[1], doorColor[2]);
+                                doc.setLineWidth(lineWidth * 1.4);
+                                doc.line(meetA.x, meetA.y, meetB.x, meetB.y);
+                                drawSlidePanel(-doorWidth * 0.26, 'left');
+                                drawSlidePanel(doorWidth * 0.26, 'right');
                             }
+                        }
+
+                        if (mark) {
+                            const anchor = getDoorTagModelPoint(door, wall, placement);
+                            const cx = transformX(anchor.x);
+                            const cy = transformY(anchor.y);
+                            const tagRadius = DOOR_TAG_RADIUS_MM * scale;
+                            doc.setLineDashPattern([], 0);
+                            doc.setDrawColor(0, 0, 0);
+                            doc.setLineWidth(Math.max(0.12, tagRadius * 0.06));
+                            doc.circle(cx, cy, tagRadius, 'S');
+                            doc.line(cx - tagRadius, cy, cx + tagRadius, cy);
+                            doc.setTextColor(0, 0, 0);
+                            doc.setFont('helvetica', 'bold');
+                            const codeLen = String(mark.code).length;
+                            const codePt = Math.max(2.2, tagRadius * (codeLen > 4 ? 0.78 : codeLen > 3 ? 0.9 : 1.15));
+                            doc.setFontSize(codePt);
+                            doc.text(String(mark.code), cx, cy - tagRadius * 0.18, { align: 'center' });
+                            doc.setFontSize(Math.max(2.6, tagRadius * 1.25));
+                            doc.text(String(mark.instance), cx, cy + tagRadius * 0.48, { align: 'center' });
                         }
                     });
                     

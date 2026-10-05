@@ -48,9 +48,20 @@ import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightCol
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
 import { drawDoors } from './utils';
-import { detectClickedDoor, detectHoveredDoor } from './utils';
+import { detectClickedDoor, detectHoveredDoor, detectDoorTag } from './utils';
+import { resolveDoorPlacement, worldToDoorLocal, getDoorTagModelPoint } from './doorPlacement';
 import { filterDimensions } from './dimensionFilter.js';
 import { planCeilingValueDedupKey } from './DimensionConfig.js';
+
+const WALL_PLAN_TOOLS = [
+    ['add-wall', 'Add wall'],
+    ['edit-wall', 'Edit wall'],
+    ['merge-wall', 'Merge'],
+    ['split-wall', 'Split'],
+    ['define-room', 'Room'],
+    ['add-door', 'Add door'],
+    ['edit-door', 'Edit door'],
+];
 
 const Canvas2D = ({ 
     walls = [], 
@@ -86,6 +97,7 @@ const Canvas2D = ({
     ghostAreas = [],
     onDoorWallSelect,
     onDoorSelect = () => {},
+    onDoorLabelOffset = () => {},
     selectedRoomPoints = [],
     onUpdateRoomPoints = () => {},
     onRoomSelect,
@@ -120,6 +132,10 @@ const Canvas2D = ({
     planAnnotationArrowPlacementId = null,
     onPlanAnnotationArrowPlacementId = () => {},
     annotationIdRemap = null,
+    onToggleMode = null,
+    onToggleEditMode = null,
+    isPlanFullscreen = false,
+    onTogglePlanFullscreen = null,
 }) => {
 
     const canvasRef = useRef(null);
@@ -150,7 +166,18 @@ const Canvas2D = ({
     const [highlightWalls, setHighlightWalls] = useState([]);
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
+    const [hoveredTagId, setHoveredTagId] = useState(null);
+    const [tagDragPreview, setTagDragPreview] = useState(null);
+    const tagDragRef = useRef(null);
+    const suppressTagClickRef = useRef(false);
+    const doorsRef = useRef(doors);
+    const wallsRef = useRef(walls);
+    doorsRef.current = doors;
+    wallsRef.current = walls;
+    const onDoorLabelOffsetRef = useRef(onDoorLabelOffset);
+    onDoorLabelOffsetRef.current = onDoorLabelOffset;
     const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(false);
+    const [showDoorList, setShowDoorList] = useState(isPlanFullscreen);
     const [showMaterialNeeded, setShowMaterialNeeded] = useState(false);
     const [showElevations, setShowElevations] = useState(false);
     const [wallElevations, setWallElevations] = useState(null);
@@ -329,6 +356,11 @@ const Canvas2D = ({
         }));
     };
 
+    const togglePlanFullscreen = () => {
+        if (!isPlanFullscreen) setShowDoorList(true);
+        onTogglePlanFullscreen?.();
+    };
+
     // Zoom functions
     const handleZoomIn = () => {
         console.log('🔍 Zoom In clicked!');
@@ -403,8 +435,70 @@ const Canvas2D = ({
         }
     };
 
-    // Canvas dragging functions
+    const tagDragListenersRef = useRef(null);
+    useEffect(() => () => tagDragListenersRef.current?.(), []);
+
     const handleCanvasMouseDown = (e) => {
+        if (e.button === 0 && !isViewOnlyShare && currentMode !== 'define-room' && currentMode !== 'add-wall' && currentMode !== 'storey-area' && !(planAnnotateMode && planNoteAddMode)) {
+            const { x, y } = getPointerModelPosRef.current(e.clientX, e.clientY);
+            const tagDoor = detectDoorTag(x, y, doors, walls);
+            const wall = tagDoor
+                ? walls.find((item) => item.id === tagDoor.linked_wall || item.id === tagDoor.wall_id)
+                : null;
+            if (tagDoor && wall) {
+                const placement = resolveDoorPlacement(wall, tagDoor);
+                const center = getDoorTagModelPoint(tagDoor, wall, placement);
+                const centerLocal = worldToDoorLocal(center.x, center.y, placement);
+                const grab = worldToDoorLocal(x, y, placement);
+                tagDragRef.current = {
+                    doorId: tagDoor.id,
+                    moved: false,
+                    grabDx: grab.x - centerLocal.x,
+                    grabDy: grab.y - centerLocal.y,
+                    offset: centerLocal,
+                };
+                const onMove = (event) => {
+                    const drag = tagDragRef.current;
+                    if (!drag) return;
+                    const point = getPointerModelPosRef.current(event.clientX, event.clientY);
+                    const door = (doorsRef.current || []).find((item) => item.id === drag.doorId);
+                    const host = (wallsRef.current || []).find(
+                        (item) => item.id === door?.linked_wall || item.id === door?.wall_id
+                    );
+                    if (!door || !host) return;
+                    const local = worldToDoorLocal(point.x, point.y, resolveDoorPlacement(host, door));
+                    const next = { x: local.x - drag.grabDx, y: local.y - drag.grabDy };
+                    if (!drag.moved && Math.hypot(next.x - drag.offset.x, next.y - drag.offset.y) < 6) {
+                        return;
+                    }
+                    drag.moved = true;
+                    drag.offset = next;
+                    setTagDragPreview({ doorId: drag.doorId, offset: next });
+                };
+                const finish = () => {
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', finish);
+                    tagDragListenersRef.current = null;
+                    const drag = tagDragRef.current;
+                    tagDragRef.current = null;
+                    setTagDragPreview(null);
+                    if (drag?.moved) {
+                        suppressTagClickRef.current = true;
+                        onDoorLabelOffsetRef.current(drag.doorId, {
+                            x: Math.round(drag.offset.x),
+                            y: Math.round(drag.offset.y),
+                        });
+                    }
+                };
+                tagDragListenersRef.current = finish;
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', finish);
+                setTagDragPreview({ doorId: tagDoor.id, offset: centerLocal });
+                e.preventDefault();
+                return;
+            }
+        }
+
         if (planAnnotateMode && planNoteAddMode && canAnnotate && !planAnnotationArrowPlacementId && e.button === 0) {
             const { x, y } = getPointerModelPosRef.current(e.clientX, e.clientY);
             startPlanNotePlacement(x, y);
@@ -1407,12 +1501,19 @@ const Canvas2D = ({
 
     // Enhanced click handling with endpoint detection
     const handleCanvasClick = async (event) => {
-        // Don't handle clicks if we were dragging the canvas
+        // Don't handle clicks if we were dragging the canvas or a door mark
         if (isDraggingCanvas.current) {
+            return;
+        }
+        if (suppressTagClickRef.current) {
+            suppressTagClickRef.current = false;
             return;
         }
         
         const { x, y } = getMousePos(event);
+        if (detectDoorTag(x, y, doors, walls)) {
+            return;
+        }
         console.log('Canvas clicked! Screen:', event.clientX, event.clientY, 'Model:', x, y, 'currentMode:', currentMode);
 
         if (commentWallSelectMode) {
@@ -2007,6 +2108,13 @@ const Canvas2D = ({
     };
 
     const handleMouseMove = (event) => {
+        if (!isDraggingCanvas.current && !tagDragRef.current) {
+            const pos = getMousePos(event);
+            const tagHit = detectDoorTag(pos.x, pos.y, doors, walls);
+            const nextTagId = tagHit?.id ?? null;
+            setHoveredTagId((current) => (current === nextTagId ? current : nextTagId));
+        }
+
         // Handle canvas dragging regardless of editing mode (right mouse button only)
         if (isDraggingCanvas.current) {
             const deltaX = event.clientX - lastMousePos.current.x;
@@ -2771,7 +2879,7 @@ const Canvas2D = ({
             if (!changed) {
                 for (const [key, colors] of colorMap) {
                     const prevColors = prev.get(key);
-                    if (!prevColors || prevColors.wall !== colors.wall || prevColors.partition !== colors.partition) {
+                    if (!prevColors || prevColors.wall !== colors.wall || prevColors.partition !== colors.partition || prevColors.label !== colors.label || prevColors.finishLabel !== colors.finishLabel) {
                         changed = true;
                         break;
                     }
@@ -2902,8 +3010,15 @@ const Canvas2D = ({
             canvasRef.current.setAttribute('data-offset-y', offsetY.current.toString());
         }
         
+        const doorsForMarks = tagDragPreview
+            ? doors.map((door) => (
+                door.id === tagDragPreview.doorId
+                    ? { ...door, label_offset: tagDragPreview.offset }
+                    : door
+            ))
+            : doors;
         // Draw doors
-        drawDoors(context, doors, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
+        drawDoors(context, doorsForMarks, walls, scaleFactor.current, offsetX.current, offsetY.current, hoveredDoorId);
         drawPlanAnnotationArrows(
             context,
             planAnnotations,
@@ -3007,7 +3122,7 @@ const Canvas2D = ({
         canvasSize.height,
         walls, rooms, selectedWall, tempWall, doors,
         selectedWallsForRoom, joints, isEditingMode,
-        hoveredWall, hoveredDoorId, highlightWalls,
+        hoveredWall, hoveredDoorId, highlightWalls, tagDragPreview,
         selectedRoomPoints, project, hoveredPoint,
         wallPanelsMap,
         filteredDimensions,
@@ -3272,7 +3387,7 @@ const Canvas2D = ({
             )}
 
             {/* Main Content - Matching Ceiling Plan Structure */}
-            <div className="plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4">
+            <div className={`plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4${isPlanFullscreen ? ' wall-plan-fullscreen' : ''}`}>
                 {/* Header */}
                 <div className="wall-canvas-header mb-3">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -3330,31 +3445,88 @@ const Canvas2D = ({
                             </label>
                         </div>
 
-                        {!isDetailsPanelOpen && (
+                        <button
+                            type="button"
+                            onClick={() => setShowDoorList((open) => !open)}
+                            className={`px-2 py-1 text-xs rounded-md border font-medium shrink-0 ${
+                                showDoorList
+                                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                                    : 'border-indigo-200 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500 dark:text-indigo-200 dark:hover:bg-indigo-950'
+                            }`}
+                        >
+                            {showDoorList ? 'Hide door list' : 'Door list'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={togglePlanFullscreen}
+                            className={`px-2 py-1 text-xs rounded-md border font-medium shrink-0 ${
+                                isPlanFullscreen
+                                    ? 'border-slate-800 bg-slate-800 text-white'
+                                    : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+                            }`}
+                            title={isPlanFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen wall plan'}
+                        >
+                            {isPlanFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                        </button>
+                        {onToggleEditMode && (
+                            <button
+                                type="button"
+                                onClick={onToggleEditMode}
+                                className={`px-2 py-1 text-xs rounded-md border font-medium shrink-0 ${
+                                    isEditingMode
+                                        ? 'border-red-600 bg-red-600 text-white'
+                                        : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+                                }`}
+                            >
+                                {isEditingMode ? 'Exit edit' : 'Edit'}
+                            </button>
+                        )}
+                        {!isDetailsPanelOpen && !isPlanFullscreen && (
                             <button
                                 onClick={() => setIsDetailsPanelOpen(true)}
-                                className="px-2 py-1 text-xs rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0 ml-auto"
+                                className="px-2 py-1 text-xs rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium shrink-0"
                             >
                                 Show Plan Details
                             </button>
                         )}
                     </div>
+                    {isPlanFullscreen && isEditingMode && onToggleMode && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 mr-1">Tools</span>
+                            {WALL_PLAN_TOOLS.map(([mode, label]) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => onToggleMode(mode)}
+                                    className={`px-2 py-1 text-xs rounded-md border font-medium ${
+                                        currentMode === mode
+                                            ? 'border-blue-600 bg-blue-600 text-white'
+                                            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
-                <div className="space-y-6">
-                    <div className="space-y-4">
+                <div className="wall-plan-body space-y-6">
+                    <div className="wall-plan-stage space-y-4">
                         {/* Canvas */}
-                        <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 min-w-0 w-full max-w-full">
+                        <div className="wall-plan-drawing flex flex-col lg:flex-row gap-4 lg:gap-6 min-w-0 w-full max-w-full">
                             {/* Canvas Container */}
                             <div className="wall-canvas-wrapper flex-1 min-w-0 w-full max-w-full">
                                 <div className="plan-canvas-zoom-stack">
                                 <div
                                     ref={canvasContainerRef}
                                     className="plan-canvas-viewport border-2 border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden shadow-lg relative w-full max-w-full"
-                                    style={{
-                                        height: `${CANVAS_HEIGHT}px`,
-                                        minHeight: `${MIN_CANVAS_HEIGHT}px`
-                                    }}
+                                    style={isPlanFullscreen
+                                        ? { height: '100%', minHeight: 0, flex: '1 1 auto' }
+                                        : {
+                                            height: `${CANVAS_HEIGHT}px`,
+                                            minHeight: `${MIN_CANVAS_HEIGHT}px`
+                                        }}
                                 >
                                     <canvas
                                         ref={canvasRef}
@@ -3368,7 +3540,11 @@ const Canvas2D = ({
                                         onTouchEnd={handleTouchEnd}
                                         tabIndex={0}
                                         className={`wall-canvas block w-full h-full max-w-full ${
-                                            planAnnotateMode && planNoteAddMode && canAnnotate
+                                            tagDragPreview
+                                                ? 'cursor-grabbing'
+                                                : hoveredTagId
+                                                ? 'cursor-grab'
+                                                : planAnnotateMode && planNoteAddMode && canAnnotate
                                                 ? 'cursor-crosshair'
                                                 : 'cursor-grab active:cursor-grabbing'
                                         }`}
@@ -3562,7 +3738,7 @@ const Canvas2D = ({
                                                         <svg className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                                                         </svg>
-                                                        Wall Finish Legend
+                                                        Wall colors
                                                     </h5>
                                                     <div className="space-y-3">
                                                         {Array.from(thicknessColorMap.entries()).map(([key, colors]) => (
@@ -3673,26 +3849,16 @@ const Canvas2D = ({
                                                                             );
                                                                         })()}
                                                                     </div>
-                                                                    <span className="text-sm text-gray-700 font-medium">{colors.label}</span>
+                                                                    <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{colors.label}</span>
                                                                 </div>
-                                                                {(() => {
-                                                                    // Parse combo key: `${core}|INT:${intThk} ${intMat}|EXT:${extThk} ${extMat}`
-                                                                    const parts = String(key).split('|');
-                                                                    const core = parts[0];
-                                                                    const intPart = (parts[1] || '').replace('INT:', '').trim();
-                                                                    const extPart = (parts[2] || '').replace('EXT:', '').trim();
-                                                                    return (
-                                                                        <div className="ml-0 pl-0 text-xs text-gray-600">
-                                                                            <div><span className="font-medium">Panel Thickness:</span> {core}mm</div>
-                                                                            <div><span className="font-medium">Finishing:</span> Ext: {extPart} | Int: {intPart}</div>
-                                                                        </div>
-                                                                    );
-                                                                })()}
+                                                                <div className="ml-0 pl-0 text-xs text-gray-600 dark:text-gray-300">
+                                                                    {colors.finishLabel}
+                                                                </div>
                                                             </div>
                                                         ))}
                                                     </div>
                                                     <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                                        💡 <strong>Tip:</strong> Different colors represent unique combinations of core thickness and inner/outer finishes. When materials differ, walls show two lines (top=outer, bottom=inner).
+                                                        Each wall has its own color. When the two faces use different materials, the pair of lines shows outer on top and inner below.
                                                     </div>
                                                 </div>
                                             )}
@@ -3704,9 +3870,25 @@ const Canvas2D = ({
                         </div>
                     </div>
 
+                    {showDoorList && (
+                        <div className="wall-plan-door-list bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                                <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">Door list</h4>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowDoorList(false)}
+                                    className="px-2 py-1 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                            <DoorTable doors={doors} />
+                        </div>
+                    )}
+
                     {/* View Material Needed Section — hidden for view-only share links */}
                     {!isViewOnlyShare && (
-                    <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600">
+                    <div className="plan-material-card wall-plan-below dark:bg-gray-800 dark:border-gray-600">
                         <div className="plan-material-card-header">
                             <h3 className="plan-material-card-title dark:text-gray-100">View Material Needed</h3>
                             <button
@@ -3739,7 +3921,7 @@ const Canvas2D = ({
                     )}
 
                     {/* Front View & Side View elevations */}
-                    <div className="plan-material-card dark:bg-gray-800 dark:border-gray-600">
+                    <div className="plan-material-card wall-plan-below dark:bg-gray-800 dark:border-gray-600">
                         <div className="plan-material-card-header">
                             <h3 className="plan-material-card-title dark:text-gray-100">Wall Elevations</h3>
                             <button

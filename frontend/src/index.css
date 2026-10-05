@@ -156,6 +156,121 @@ body.three-view-fullscreen-lock {
   touch-action: none;
 }
 
+/* Plan fullscreen covers the page. The switcher stays in this shell, so wall, ceiling, and floor can change without leaving it. */
+.canvas-container.plan-view-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+  margin: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.canvas-container.plan-view-fullscreen .canvas-panel,
+.canvas-container.plan-view-fullscreen .canvas-panel-scroll,
+.canvas-container.plan-view-fullscreen .canvas-panel-scroll > .relative {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-container.plan-view-fullscreen .canvas-panel-scroll {
+  overflow: auto !important;
+}
+
+.canvas-container.plan-view-fullscreen .canvas-panel-scroll:has(.wall-plan-fullscreen) {
+  overflow: hidden !important;
+}
+
+.canvas-container.plan-view-fullscreen .floor-canvas-container .plan-canvas-viewport,
+.canvas-container.plan-view-fullscreen .ceiling-canvas-container .plan-canvas-viewport {
+  height: calc(100dvh - 12rem) !important;
+  min-height: 360px !important;
+}
+
+/* Wall plan fills the shell. Dialogs above z-index 10000 stay usable. */
+.wall-canvas-container.wall-plan-fullscreen {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .wall-canvas-header {
+  flex: 0 0 auto;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .wall-plan-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .wall-plan-body > * {
+  margin-top: 0 !important;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .plan-canvas-meta {
+  display: none;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .wall-plan-stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .wall-plan-drawing,
+.wall-canvas-container.wall-plan-fullscreen .wall-canvas-wrapper,
+.wall-canvas-container.wall-plan-fullscreen .plan-canvas-zoom-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .wall-summary-sidebar,
+.wall-canvas-container.wall-plan-fullscreen .wall-plan-below {
+  display: none !important;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .plan-canvas-viewport {
+  height: 100% !important;
+  min-height: 0 !important;
+}
+
+.wall-canvas-container.wall-plan-fullscreen .wall-plan-door-list {
+  width: min(340px, 38vw);
+  flex: 0 0 auto;
+  max-height: 100%;
+  overflow: auto;
+}
+
+body.wall-plan-fullscreen-lock {
+  overflow: hidden !important;
+}
+
 @media (min-width: 640px) {
   .canvas-container {
     min-height: 600px;
