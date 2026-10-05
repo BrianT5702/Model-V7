@@ -6669,6 +6669,72 @@ class CeilingService:
             return []
     
     @staticmethod
+    def _effective_saved_panel_length(panel_length, custom_panel_length):
+        """Panel length value the generator understands.
+
+        Saved plans store either 'auto', a numeric length, or 'custom' plus custom_panel_length.
+        """
+        if panel_length in (None, '', 'auto'):
+            return 'auto'
+        if str(panel_length) == 'custom':
+            if custom_panel_length:
+                return float(custom_panel_length)
+            return 'auto'
+        return panel_length
+
+    @staticmethod
+    def _ceiling_settings_for_untargeted_room(existing_plan, defaults):
+        """Settings for a room that is not the one being edited.
+
+        A room that already has a ceiling plan keeps that plan. The request defaults
+        are only used when the room has never been generated.
+        """
+        if existing_plan is None:
+            panel_length = defaults.get('panel_length', 'auto')
+            custom_panel_length = defaults.get('custom_panel_length')
+            return {
+                'ceiling_thickness': defaults.get('ceiling_thickness', 150),
+                'panel_width': defaults.get('panel_width', CeilingService.DEFAULT_PANEL_WIDTH),
+                'panel_length': panel_length,
+                'custom_panel_length': custom_panel_length,
+                'orientation_strategy': defaults.get('orientation_strategy', 'auto'),
+                'support_type': defaults.get('support_type') or 'nylon',
+                'support_config': defaults.get('support_config') or {},
+                'effective_panel_length': CeilingService._effective_saved_panel_length(
+                    panel_length, custom_panel_length
+                ),
+            }
+
+        panel_length = existing_plan.panel_length or defaults.get('panel_length', 'auto')
+        custom_panel_length = existing_plan.custom_panel_length
+        support_config = existing_plan.support_config
+        if not isinstance(support_config, dict):
+            support_config = defaults.get('support_config') or {}
+        else:
+            support_config = dict(support_config)
+
+        return {
+            'ceiling_thickness': (
+                existing_plan.ceiling_thickness
+                if existing_plan.ceiling_thickness is not None
+                else defaults.get('ceiling_thickness', 150)
+            ),
+            'panel_width': (
+                existing_plan.panel_width
+                if existing_plan.panel_width is not None
+                else defaults.get('panel_width', CeilingService.DEFAULT_PANEL_WIDTH)
+            ),
+            'panel_length': panel_length,
+            'custom_panel_length': custom_panel_length,
+            'orientation_strategy': existing_plan.orientation_strategy or defaults.get('orientation_strategy', 'auto'),
+            'support_type': existing_plan.support_type or defaults.get('support_type') or 'nylon',
+            'support_config': support_config,
+            'effective_panel_length': CeilingService._effective_saved_panel_length(
+                panel_length, custom_panel_length
+            ),
+        }
+
+    @staticmethod
     def _generate_panels_with_room_specific_orientation(project_id, global_panel_width, global_panel_length, 
                                                           global_ceiling_thickness, global_orientation_strategy, room_specific_config):
         """Generate panels for all rooms, with each room using its own orientation, with leftover tracking and reuse"""
@@ -6680,7 +6746,9 @@ class CeilingService:
             logger.debug("ROOM-SPECIFIC GENERATION STARTING - Created project leftover tracker")
             
             all_panels = []
-            rooms = Room.objects.filter(project_id=project_id, exclude_from_ceiling=False)
+            rooms = Room.objects.filter(
+                project_id=project_id, exclude_from_ceiling=False
+            ).select_related('ceiling_plan')
             rooms_count = rooms.count()
             logger.debug(f"Found {rooms_count} rooms in project {project_id}")
             
@@ -6766,24 +6834,30 @@ class CeilingService:
                     
                     logger.debug(f"  Room {room.id} ({room.room_name}): Using CUSTOM config - orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}")
                 else:
-                    # This room is not the target - use existing or global settings
-                    logger.debug(f"  Room {room.id} does not match target {custom_room_id}, using default config")
-                    # Check if room has existing ceiling plan with orientation
-                    if hasattr(room, 'ceiling_plan') and room.ceiling_plan and room.ceiling_plan.orientation_strategy:
-                        room_orientation = room.ceiling_plan.orientation_strategy
-                        logger.debug(f"  Room {room.id} ({room.room_name}): Using SAVED orientation = {room_orientation}")
-                    else:
-                        room_orientation = global_orientation_strategy
-                        logger.debug(f"  Room {room.id} ({room.room_name}): Using GLOBAL orientation = {room_orientation}")
-                    
-                    # Use global parameters for other rooms
-                    room_panel_width = global_panel_width
-                    room_panel_length = global_panel_length
-                    room_custom_panel_length = None
-                    room_ceiling_thickness = global_ceiling_thickness
-                    if hasattr(room, 'ceiling_plan') and room.ceiling_plan and room.ceiling_plan.ceiling_thickness:
-                        room_ceiling_thickness = room.ceiling_plan.ceiling_thickness
+                    # Not the room being edited. Keep its saved thickness, panel size,
+                    # and orientation. Global values apply only if this room has no plan yet.
+                    existing_plan = getattr(room, 'ceiling_plan', None)
+                    saved = CeilingService._ceiling_settings_for_untargeted_room(
+                        existing_plan,
+                        {
+                            'ceiling_thickness': global_ceiling_thickness,
+                            'panel_width': global_panel_width,
+                            'panel_length': global_panel_length,
+                            'custom_panel_length': None,
+                            'orientation_strategy': global_orientation_strategy,
+                        },
+                    )
+                    room_orientation = saved['orientation_strategy']
+                    room_panel_width = saved['panel_width']
+                    room_panel_length = saved['effective_panel_length']
+                    room_custom_panel_length = saved['custom_panel_length']
+                    room_ceiling_thickness = saved['ceiling_thickness']
                     room_panel_settings = CeilingService._resolve_ceiling_panel_settings(room=room)
+                    logger.debug(
+                        f"  Room {room.id} ({room.room_name}): Keeping saved config - "
+                        f"orientation={room_orientation}, width={room_panel_width}, "
+                        f"length={room_panel_length}, thickness={room_ceiling_thickness}"
+                    )
                 
                 # Generate panels for this room with its specific orientation and parameters (with leftover tracking)
                 logger.debug(f"  Generating panels for room {room.id} with: orientation={room_orientation}, width={room_panel_width}, length={room_panel_length}, thickness={room_ceiling_thickness}, faces={room_panel_settings}")
@@ -7029,7 +7103,26 @@ class CeilingService:
                 'full_panels_saved': 0,
                 'total_leftover_area': 0
             }
-            if zones:
+            if zones and room_specific_config and room_specific_config.get('room_id') is not None:
+                # Editing one room must not rebuild merged zones with the global form.
+                from .serializers import CeilingZoneSerializer, CeilingPanelSerializer
+                for zone in zones:
+                    serialized_panels = CeilingPanelSerializer(zone.ceiling_panels.all(), many=True).data
+                    zone_plans.append({
+                        'zone_id': zone.id,
+                        'orientation_used': zone.orientation_strategy,
+                        'total_panels': zone.total_panels,
+                        'waste_percentage': zone.waste_percentage,
+                        'leftover_stats': {
+                            'leftovers_created': 0,
+                            'leftovers_reused': 0,
+                            'full_panels_saved': 0,
+                            'total_leftover_area': 0,
+                        },
+                        'zone': CeilingZoneSerializer(zone).data,
+                        'panels': serialized_panels,
+                    })
+            elif zones:
                 generation_settings = {
                     'ceiling_thickness': ceiling_thickness,
                     'orientation_strategy': orientation_strategy,
@@ -7540,17 +7633,49 @@ class CeilingService:
                         logger.warning(f"Invalid room_area ({room_area}) for room {room_id}, using 0.0")
                         room_area = 0.0
                     
-                    # Get room-specific config or use defaults
-                    room_config = room_specific_config if room_specific_config and str(room_id) == str(room_specific_config.get('room_id')) else None
-                    
-                    # Use room-specific config if available, otherwise use global params
-                    room_ceiling_thickness = room_config.get('ceiling_thickness', ceiling_thickness) if room_config else ceiling_thickness
-                    room_panel_width = room_config.get('panel_width', panel_width) if room_config else panel_width
-                    room_panel_length = room_config.get('panel_length', panel_length) if room_config else panel_length
-                    room_custom_panel_length = room_config.get('custom_panel_length', custom_panel_length) if room_config else custom_panel_length
-                    room_orientation_strategy = room_config.get('orientation_strategy', orientation_strategy) if room_config else orientation_strategy
-                    room_support_type = room_config.get('support_type', support_type) if room_config else support_type
-                    room_support_config = room_config.get('support_config', support_config) if room_config else support_config
+                    # The edited room uses the submitted config. Every other room keeps the
+                    # plan already saved for it. A project-wide generation still applies the
+                    # global parameters to every room.
+                    is_room_specific_run = bool(room_specific_config and room_specific_config.get('room_id') is not None)
+                    is_target_room = is_room_specific_run and str(room_id) == str(room_specific_config.get('room_id'))
+                    existing_plan = CeilingPlan.objects.filter(room=room).first()
+
+                    if is_target_room:
+                        room_ceiling_thickness = room_specific_config.get('ceiling_thickness', ceiling_thickness)
+                        room_panel_width = room_specific_config.get('panel_width', panel_width)
+                        room_panel_length = room_specific_config.get('panel_length', panel_length)
+                        room_custom_panel_length = room_specific_config.get('custom_panel_length', custom_panel_length)
+                        room_orientation_strategy = room_specific_config.get('orientation_strategy', orientation_strategy)
+                        room_support_type = room_specific_config.get('support_type', support_type)
+                        room_support_config = room_specific_config.get('support_config', support_config)
+                    elif is_room_specific_run:
+                        saved = CeilingService._ceiling_settings_for_untargeted_room(
+                            existing_plan,
+                            {
+                                'ceiling_thickness': ceiling_thickness,
+                                'panel_width': panel_width,
+                                'panel_length': panel_length,
+                                'custom_panel_length': custom_panel_length,
+                                'orientation_strategy': orientation_strategy,
+                                'support_type': support_type,
+                                'support_config': support_config,
+                            },
+                        )
+                        room_ceiling_thickness = saved['ceiling_thickness']
+                        room_panel_width = saved['panel_width']
+                        room_panel_length = saved['panel_length']
+                        room_custom_panel_length = saved['custom_panel_length']
+                        room_orientation_strategy = saved['orientation_strategy']
+                        room_support_type = saved['support_type']
+                        room_support_config = saved['support_config']
+                    else:
+                        room_ceiling_thickness = ceiling_thickness
+                        room_panel_width = panel_width
+                        room_panel_length = panel_length
+                        room_custom_panel_length = custom_panel_length
+                        room_orientation_strategy = orientation_strategy
+                        room_support_type = support_type
+                        room_support_config = support_config
 
                     # Ceiling face finishes: use room-specific values if provided, else fall back to project/room defaults
                     # Defaults mirror model defaults so behavior is stable even without explicit configuration
@@ -7559,14 +7684,13 @@ class CeilingService:
                     room_outer_face_material = None
                     room_outer_face_thickness = None
 
-                    if room_config:
-                        room_inner_face_material = room_config.get('inner_face_material')
-                        room_inner_face_thickness = room_config.get('inner_face_thickness')
-                        room_outer_face_material = room_config.get('outer_face_material')
-                        room_outer_face_thickness = room_config.get('outer_face_thickness')
+                    if is_target_room:
+                        room_inner_face_material = room_specific_config.get('inner_face_material')
+                        room_inner_face_thickness = room_specific_config.get('inner_face_thickness')
+                        room_outer_face_material = room_specific_config.get('outer_face_material')
+                        room_outer_face_thickness = room_specific_config.get('outer_face_thickness')
 
-                    # For non-target rooms (room_config is None), preserve existing face materials from
-                    # current ceiling panels so regenerating one room does not reset another room's finishes.
+                    # Preserve existing face materials when this room is not the one being edited.
                     if room_inner_face_material is None or room_outer_face_material is None:
                         existing_panel = CeilingPanel.objects.filter(room=room).first()
                         if existing_panel:

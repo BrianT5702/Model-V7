@@ -2040,10 +2040,11 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             const response = await api.post('/ceiling-plans/generate_enhanced_ceiling_plan/', {
                 project_id: parseInt(projectId),
                 orientation_strategy: selectedOrientationStrategy,
-                panel_width: panelWidth,  // Global panel width (for other rooms)
+                // Fallback only. Rooms that already have a ceiling plan keep their own settings.
+                panel_width: panelWidth,
                 panel_length: panelLength === 'auto' ? 'auto' : customPanelLength,
-                ceiling_thickness: ceilingThickness,  // Global thickness (for other rooms)
-                custom_panel_length: customPanelLength,  // Global custom length (for other rooms)
+                ceiling_thickness: ceilingThickness,
+                custom_panel_length: customPanelLength,
                 support_type: supportType,
                 support_config: {
                     enableNylonHangers: enableNylonHangers,
