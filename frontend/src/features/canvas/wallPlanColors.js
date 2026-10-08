@@ -10,11 +10,6 @@ export function wallFinishLabel(wall) {
     return `${core}mm · Int ${interior} · Ext ${exterior}`;
 }
 
-function wallSortId(wall) {
-    const id = Number(wall?.id);
-    return Number.isFinite(id) ? id : Number.MAX_SAFE_INTEGER;
-}
-
 function configNumber(value, fallback) {
     const n = Number(value);
     if (!Number.isFinite(n)) return String(fallback);
@@ -37,99 +32,147 @@ export function wallFinishKey(wall) {
 }
 
 /**
- * Fixed hues for thin plan strokes. Golden-angle hues at one shared lightness
- * collapse into similar pastels, and a +180 inner face lands on another wall.
- * Each stop is a [hue, saturation, lightness] triple.
+ * Stroke colors for material + wall thickness. Neighbors in this list are far apart,
+ * because 100 mm and 150 mm of the same material are assigned one after another.
+ * Blues near the dimension lines are left out.
  */
 const DARK_FACE_STOPS = [
-    [355, 100, 62],
-    [128, 100, 45],
-    [274, 100, 70],
-    [48, 100, 50],
-    [175, 100, 42],
-    [322, 100, 60],
-    [28, 100, 52],
-    [96, 100, 46],
+    [4, 100, 58],
+    [150, 100, 42],
+    [48, 100, 52],
+    [280, 100, 68],
+    [175, 100, 44],
+    [330, 100, 58],
+    [25, 100, 52],
+    [255, 85, 70],
 ];
 
 const LIGHT_FACE_STOPS = [
-    [355, 85, 40],
-    [128, 80, 30],
-    [274, 75, 45],
-    [45, 100, 32],
+    [4, 85, 40],
+    [150, 85, 28],
+    [48, 95, 32],
+    [280, 70, 42],
     [175, 80, 28],
-    [322, 75, 40],
-    [18, 95, 38],
-    [85, 85, 28],
+    [330, 75, 38],
+    [25, 90, 36],
+    [255, 70, 42],
 ];
 
-function formatHsl(h, s, l) {
-    return `hsl(${Math.round(((h % 360) + 360) % 360)}, ${Math.round(s)}%, ${Math.round(l)}%)`;
+const MATERIAL_LABELS = {
+    PPGI: 'PPGI',
+    'S/STEEL': 'S/Steel',
+    PVC: 'PVC',
+};
+
+const MATERIAL_ORDER = ['PPGI', 'S/STEEL', 'PVC'];
+
+function materialLabel(material) {
+    return MATERIAL_LABELS[material] || material;
 }
 
-function faceColor(index, stops) {
+function wallThicknessMm(wall) {
+    return configNumber(wall?.thickness, '');
+}
+
+function faceKey(thickness, material) {
+    return `${material}|${thickness}`;
+}
+
+function faceLegendLabel(material, thickness) {
+    const name = materialLabel(material);
+    return thickness === '' ? name : `${name} · ${thickness}mm`;
+}
+
+function compareFaceKeys(a, b) {
+    const [matA, thkA] = String(a).split('|');
+    const [matB, thkB] = String(b).split('|');
+    const ia = MATERIAL_ORDER.indexOf(matA);
+    const ib = MATERIAL_ORDER.indexOf(matB);
+    const materialOrder = (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    if (materialOrder !== 0) return materialOrder;
+    if (matA !== matB) return matA.localeCompare(matB);
+    return Number(thkA) - Number(thkB);
+}
+
+function paletteColor(index, darkCanvas) {
+    const stops = darkCanvas ? DARK_FACE_STOPS : LIGHT_FACE_STOPS;
     const cycle = Math.floor(index / stops.length);
     const [h, s, l] = stops[index % stops.length];
-    return formatHsl(h + cycle * 23, s, l);
-}
-
-function partitionVariant(color) {
-    const match = String(color).match(/^hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)$/i);
-    if (!match) return color;
-    const lightness = Math.min(78, Math.max(24, Number(match[3]) + 12));
-    const saturation = Math.max(55, Number(match[2]) - 14);
-    return formatHsl(Number(match[1]), saturation, lightness);
+    const hue = Math.round((h + cycle * 17) % 360);
+    return `hsl(${hue}, ${s}%, ${l}%)`;
 }
 
 /**
- * One color per wall configuration (thickness and face materials).
- * When the two faces use different materials, the inner line takes the next
- * unused color so it does not match another wall.
+ * Face lines use material plus wall thickness.
+ * Stainless steel of one thickness is the same color on every wall.
+ * A different wall thickness gets a different color.
+ * Sheet gauge (0.5 vs 0.6) does not change the color.
+ * The outer line uses the outside material; the inner line uses the inside material.
  */
 export function buildPerWallColorMap(walls, palette) {
     const colorMap = new Map();
     if (!Array.isArray(walls) || walls.length === 0) return colorMap;
 
-    const stops = Number(palette.wallLightness) >= 60 ? DARK_FACE_STOPS : LIGHT_FACE_STOPS;
-
-    const ordered = [...walls].sort((a, b) => {
-        const diff = wallSortId(a) - wallSortId(b);
-        if (diff !== 0) return diff;
-        return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+    const darkCanvas = Number(palette?.wallLightness) >= 60;
+    const usable = walls.filter((wall) => wall?.id != null);
+    const keys = new Set();
+    usable.forEach((wall) => {
+        const thickness = wallThicknessMm(wall);
+        keys.add(faceKey(thickness, configMaterial(wall.outer_face_material)));
+        keys.add(faceKey(thickness, configMaterial(wall.inner_face_material)));
     });
 
-    const styleByConfig = new Map();
-    let faceIndex = 0;
-    ordered.forEach((wall) => {
-        const key = wallFinishKey(wall);
-        if (styleByConfig.has(key)) return;
-        const index = styleByConfig.size;
-        const hasDiffFaces = configMaterial(wall.inner_face_material) !== configMaterial(wall.outer_face_material);
-        const wallColor = faceColor(faceIndex, stops);
-        faceIndex += 1;
-        const entry = {
-            wall: wallColor,
-            partition: partitionVariant(wallColor),
-            label: `Wall ${index + 1}`,
-            finishLabel: wallFinishLabel(wall),
-            finishKey: key,
+    const colorByKey = new Map();
+    [...keys].sort(compareFaceKeys).forEach((key, index) => {
+        colorByKey.set(key, paletteColor(index, darkCanvas));
+    });
+
+    usable.forEach((wall) => {
+        const thickness = wallThicknessMm(wall);
+        const outer = configMaterial(wall.outer_face_material);
+        const inner = configMaterial(wall.inner_face_material);
+        const outerKey = faceKey(thickness, outer);
+        const innerKey = faceKey(thickness, inner);
+        const hasDiffFaces = outer !== inner;
+        const outerColor = colorByKey.get(outerKey);
+        const innerColor = colorByKey.get(innerKey);
+        const outerLegend = faceLegendLabel(outer, thickness);
+        const innerLegend = faceLegendLabel(inner, thickness);
+        colorMap.set(wall.id, {
+            wall: outerColor,
+            partition: outerColor,
+            innerWall: innerColor,
+            innerPartition: innerColor,
             hasDifferentFaces: hasDiffFaces,
+            outerMaterial: outer,
+            innerMaterial: inner,
+            outerKey,
+            innerKey,
+            outerLegend,
+            innerLegend,
+            label: outerLegend,
+            finishLabel: hasDiffFaces ? `${outerLegend} outside · ${innerLegend} inside` : outerLegend,
+            finishKey: hasDiffFaces ? `${outerKey}|${innerKey}` : outerKey,
             wallId: wall.id,
-        };
-        if (hasDiffFaces) {
-            const innerColor = faceColor(faceIndex, stops);
-            faceIndex += 1;
-            entry.innerWall = innerColor;
-            entry.innerPartition = partitionVariant(innerColor);
-        }
-        styleByConfig.set(key, entry);
-    });
-
-    ordered.forEach((wall) => {
-        const entry = styleByConfig.get(wallFinishKey(wall));
-        if (!entry || wall.id == null) return;
-        colorMap.set(wall.id, entry);
+        });
     });
 
     return colorMap;
+}
+
+/** Material and thickness combinations on the plan, each with its face color. */
+export function collectFaceMaterialLegend(colorMap) {
+    const found = new Map();
+    if (!colorMap) return [];
+    for (const colors of colorMap.values()) {
+        if (colors?.outerKey) found.set(colors.outerKey, { label: colors.outerLegend, color: colors.wall });
+        if (colors?.innerKey) found.set(colors.innerKey, { label: colors.innerLegend, color: colors.innerWall || colors.wall });
+    }
+    return [...found.entries()]
+        .sort((a, b) => compareFaceKeys(a[0], b[0]))
+        .map(([key, item]) => ({
+            key,
+            label: item.label,
+            color: item.color,
+        }));
 }

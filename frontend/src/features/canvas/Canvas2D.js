@@ -45,6 +45,7 @@ import {
     getPlanNotePlacementRect,
 } from './planAnnotationUtils';
 import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightColor } from './planCanvasTheme';
+import { collectFaceMaterialLegend } from './wallPlanColors';
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
 import { drawDoors } from './utils';
@@ -2892,7 +2893,7 @@ const Canvas2D = ({
             if (!changed) {
                 for (const [key, colors] of colorMap) {
                     const prevColors = prev.get(key);
-                    if (!prevColors || prevColors.wall !== colors.wall || prevColors.partition !== colors.partition || prevColors.label !== colors.label || prevColors.finishLabel !== colors.finishLabel) {
+                    if (!prevColors || prevColors.wall !== colors.wall || prevColors.partition !== colors.partition || prevColors.innerWall !== colors.innerWall || prevColors.label !== colors.label || prevColors.finishLabel !== colors.finishLabel) {
                         changed = true;
                         break;
                     }
@@ -3755,127 +3756,23 @@ const Canvas2D = ({
                                                         Wall colors
                                                     </h5>
                                                     <div className="space-y-3">
-                                                        {Array.from(thicknessColorMap.entries()).filter(([, colors], index, entries) => {
-                                                            const finishKey = colors.finishKey || colors.finishLabel;
-                                                            return entries.findIndex(([, item]) => (item.finishKey || item.finishLabel) === finishKey) === index;
-                                                        }).map(([key, colors]) => (
-                                                            <div key={key} className="space-y-1">
-                                                                <div className="flex items-center">
-                                                                    {/* Mini wall representation - two close lines with end caps */}
-                                                                    <div className="mr-3 relative" style={{ width: '60px', height: '16px' }}>
-                                                                        {/* Geometry constants for layout */}
-                                                                        {(() => {
-                                                                            const lineHeight = 2; // px
-                                                                            const gap = 4; // px between the two lines (closer)
-                                                                            const topY = 4; // px from top
-                                                                            const bottomY = topY + gap + lineHeight; // maintain small gap
-                                                                            const capWidth = 1; // px
-                                                                            const capLeft = 0;
-                                                                            const capRight = 'calc(100% - 1px)';
-
-                                                                            if (colors.hasDifferentFaces) {
-                                                                                return (
-                                                                                    <>
-                                                                                        {/* Outer face (top line) */}
-                                                                                        <div
-                                                                                            className="absolute left-0 right-0"
-                                                                                            style={{
-                                                                                                top: `${topY}px`,
-                                                                                                height: `${lineHeight}px`,
-                                                                                                backgroundColor: adjustPlanStrokeColor(colors.wall)
-                                                                                            }}
-                                                                                            title="Outer face"
-                                                                                        ></div>
-                                                                                        {/* Inner face (bottom line) */}
-                                                                                        <div
-                                                                                            className="absolute left-0 right-0"
-                                                                                            style={{
-                                                                                                top: `${bottomY}px`,
-                                                                                                height: `${lineHeight}px`,
-                                                                                                backgroundColor: adjustPlanStrokeColor(colors.innerWall)
-                                                                                            }}
-                                                                                            title="Inner face"
-                                                                                        ></div>
-                                                                                        {/* End caps - left */}
-                                                                                        <div
-                                                                                            className="absolute"
-                                                                                            style={{
-                                                                                                left: `${capLeft}px`,
-                                                                                                top: `${topY}px`,
-                                                                                                width: `${capWidth}px`,
-                                                                                                height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                                backgroundColor: adjustPlanStrokeColor(colors.innerWall)
-                                                                                            }}
-                                                                                        ></div>
-                                                                                        {/* End caps - right */}
-                                                                                        <div
-                                                                                            className="absolute"
-                                                                                            style={{
-                                                                                                left: capRight,
-                                                                                                top: `${topY}px`,
-                                                                                                width: `${capWidth}px`,
-                                                                                                height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                                backgroundColor: adjustPlanStrokeColor(colors.innerWall)
-                                                                                            }}
-                                                                                        ></div>
-                                                                                    </>
-                                                                                );
-                                                                            }
-
-                                                                            // Same material on both faces: draw two close lines with same color
-                                                                            return (
-                                                                                <>
-                                                                                    <div
-                                                                                        className="absolute left-0 right-0"
-                                                                                        style={{
-                                                                                            top: `${topY}px`,
-                                                                                            height: `${lineHeight}px`,
-                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
-                                                                                        }}
-                                                                                    ></div>
-                                                                                    <div
-                                                                                        className="absolute left-0 right-0"
-                                                                                        style={{
-                                                                                            top: `${bottomY}px`,
-                                                                                            height: `${lineHeight}px`,
-                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
-                                                                                        }}
-                                                                                    ></div>
-                                                                                    {/* Caps */}
-                                                                                    <div
-                                                                                        className="absolute"
-                                                                                        style={{
-                                                                                            left: `${capLeft}px`,
-                                                                                            top: `${topY}px`,
-                                                                                            width: `${capWidth}px`,
-                                                                                            height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
-                                                                                        }}
-                                                                                    ></div>
-                                                                                    <div
-                                                                                        className="absolute"
-                                                                                        style={{
-                                                                                            left: capRight,
-                                                                                            top: `${topY}px`,
-                                                                                            width: `${capWidth}px`,
-                                                                                            height: `${(bottomY + lineHeight) - topY}px`,
-                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
-                                                                                        }}
-                                                                                    ></div>
-                                                                                </>
-                                                                            );
-                                                                        })()}
-                                                                    </div>
-                                                                    <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{colors.label}</span>
-                                                                </div>
-                                                                <div className="ml-0 pl-0 text-xs text-gray-600 dark:text-gray-300">
-                                                                    {colors.finishLabel}
-                                                                </div>
+                                                        {collectFaceMaterialLegend(thicknessColorMap).map((material) => (
+                                                            <div key={material.key} className="flex items-center">
+                                                                <div
+                                                                    className="mr-3 rounded-sm"
+                                                                    style={{
+                                                                        width: '60px',
+                                                                        height: '6px',
+                                                                        backgroundColor: adjustPlanStrokeColor(material.color),
+                                                                    }}
+                                                                    title={material.label}
+                                                                ></div>
+                                                                <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{material.label}</span>
                                                             </div>
                                                         ))}
                                                     </div>
                                                     <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                                        Walls with the same thickness and face materials use the same color. When the two faces use different materials, the pair of lines shows outer on top and inner below.
+                                                        Each face line uses the material and wall thickness. Stainless steel of the same thickness stays the same color on every wall. A different thickness uses a different color. When the two faces differ, the outer line is the outside material and the inner line is the inside material.
                                                     </div>
                                                 </div>
                                             )}
