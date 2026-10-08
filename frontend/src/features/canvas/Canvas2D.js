@@ -260,6 +260,14 @@ const Canvas2D = ({
         wall: true,
         panel: false
     });
+    // Draw walls, doors, and rooms first. Dimension placement walks every wall
+    // against every other label, so it waits one frame after the plan appears.
+    const [planDetailsReady, setPlanDetailsReady] = useState(false);
+    useEffect(() => {
+        if (!walls?.length) return undefined;
+        const frame = requestAnimationFrame(() => setPlanDetailsReady(true));
+        return () => cancelAnimationFrame(frame);
+    }, [walls]);
     const [splitTargetWallId, setSplitTargetWallId] = useState(null);
     const [splitPreviewPoint, setSplitPreviewPoint] = useState(null);
     const [splitDistanceInput, setSplitDistanceInput] = useState('');
@@ -2589,6 +2597,7 @@ const Canvas2D = ({
     // Prefer the map from the latest panel calculation (shared leftovers + SP swaps).
     // Fall back to rebuilding from saved optimized order / wall list.
     const wallPanelsMap = React.useMemo(() => {
+        if (!planDetailsReady) return {};
         const panelWalls = allWalls || walls;
         const fingerprint = getWallCalculationFingerprint(panelWalls, intersections);
         if (
@@ -2599,6 +2608,7 @@ const Canvas2D = ({
         }
         return buildProjectWallPanelsMap(panelWalls, intersections, project?.panel_optimization);
     }, [
+        planDetailsReady,
         walls,
         allWalls,
         intersections,
@@ -2815,7 +2825,10 @@ const Canvas2D = ({
         const allLabels = [];
         // Global value-level dedup: each dimension value (mm) appears at most once (match floor/ceiling)
         const dimensionValuesSeen = new Set();
-        if (walls.length > 0 && dimensionVisibility.project) {
+        const paintDimensionVisibility = planDetailsReady
+            ? dimensionVisibility
+            : { project: false, wall: false, panel: false };
+        if (walls.length > 0 && paintDimensionVisibility.project) {
             const actualDimensions = calculateActualProjectDimensions(walls);
             const wKey = planCeilingValueDedupKey(actualDimensions.width, true);
             const hKey = planCeilingValueDedupKey(actualDimensions.length, false);
@@ -2860,8 +2873,8 @@ const Canvas2D = ({
             filteredDimensions,
             placedLabels, // Share collision detection arrays
             allLabels,
-            dimensionVisibility,
-            showPanelLines, // Panel lines visibility toggle
+            dimensionVisibility: paintDimensionVisibility,
+            showPanelLines: planDetailsReady && showPanelLines, // Panel lines visibility toggle
             initialScale: initialScale.current,
             dimensionValuesSeen,
             rooms,
@@ -2892,7 +2905,7 @@ const Canvas2D = ({
         }
 
         // Draw overall project dimensions last so they appear outermost (outside all wall dimensions)
-        if (walls.length > 0 && dimensionVisibility.project) {
+        if (walls.length > 0 && paintDimensionVisibility.project) {
             drawOverallProjectDimensions(
                 context,
                 walls,
@@ -3128,6 +3141,7 @@ const Canvas2D = ({
         filteredDimensions,
         forceRefresh,
         dimensionVisibility,
+        planDetailsReady,
         showPanelLines,
         currentMode,
         roomSelectionSnapPoints,
@@ -3741,7 +3755,10 @@ const Canvas2D = ({
                                                         Wall colors
                                                     </h5>
                                                     <div className="space-y-3">
-                                                        {Array.from(thicknessColorMap.entries()).map(([key, colors]) => (
+                                                        {Array.from(thicknessColorMap.entries()).filter(([, colors], index, entries) => {
+                                                            const finishKey = colors.finishKey || colors.finishLabel;
+                                                            return entries.findIndex(([, item]) => (item.finishKey || item.finishLabel) === finishKey) === index;
+                                                        }).map(([key, colors]) => (
                                                             <div key={key} className="space-y-1">
                                                                 <div className="flex items-center">
                                                                     {/* Mini wall representation - two close lines with end caps */}
@@ -3858,7 +3875,7 @@ const Canvas2D = ({
                                                         ))}
                                                     </div>
                                                     <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                                        Each wall has its own color. When the two faces use different materials, the pair of lines shows outer on top and inner below.
+                                                        Walls with the same thickness and face materials use the same color. When the two faces use different materials, the pair of lines shows outer on top and inner below.
                                                     </div>
                                                 </div>
                                             )}

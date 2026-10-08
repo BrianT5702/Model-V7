@@ -8,7 +8,7 @@ import json
 from django.db import transaction
 from django.db.models import Max
 
-from core.models import Project, ProjectVersion
+from core.models import Door, Intersection, Project, ProjectVersion, Room, Storey, Wall
 from core.project_copy import (
     _as_pk,
     copy_project_from_payload,
@@ -60,8 +60,8 @@ def _embedded_original_from_version(version: ProjectVersion | None) -> dict | No
     return None
 
 
-def original_layout_snapshot(project: Project) -> dict | None:
-    """Frozen version 0. Named versions must never replace this."""
+def _original_layout_ref(project: Project) -> dict | None:
+    """Frozen version 0, without copying. Callers that mutate must copy first."""
     stored = project.baseline_snapshot if _is_layout_snapshot(project.baseline_snapshot) else None
     oldest = project.versions.order_by('number', 'id').first()
     embedded = _embedded_original_from_version(oldest)
@@ -71,13 +71,100 @@ def original_layout_snapshot(project: Project) -> dict | None:
         if stored_fp != _layout_fingerprint(embedded):
             for version in project.versions.all():
                 if _layout_fingerprint(version.snapshot) == stored_fp:
-                    return copy.deepcopy(embedded)
-        return copy.deepcopy(stored)
+                    return embedded
+        return stored
     if stored:
-        return copy.deepcopy(stored)
+        return stored
     if embedded:
-        return copy.deepcopy(embedded)
+        return embedded
     return None
+
+
+def original_layout_snapshot(project: Project) -> dict | None:
+    """Frozen version 0. Named versions must never replace this."""
+    ref = _original_layout_ref(project)
+    return copy.deepcopy(ref) if ref is not None else None
+
+
+def _baseline_has_walls(project_id) -> bool:
+    return Project.objects.filter(pk=project_id, baseline_snapshot__has_key='walls').exists()
+
+
+def _live_layout_snapshot(project: Project) -> dict:
+    """Geometry rows used to compare the live drawing with version 0.
+
+    This is much smaller than export_project: panel, window, and comment tables
+    are not part of the layout fingerprint.
+    """
+    project_id = project.pk
+    walls = [
+        {
+            '_pk': row['id'],
+            'start_x': row['start_x'],
+            'start_y': row['start_y'],
+            'end_x': row['end_x'],
+            'end_y': row['end_y'],
+            'height': row['height'],
+            'thickness': row['thickness'],
+            'application_type': row['application_type'],
+            'is_default': row['is_default'],
+        }
+        for row in Wall.objects.filter(project_id=project_id).values(
+            'id', 'start_x', 'start_y', 'end_x', 'end_y',
+            'height', 'thickness', 'application_type', 'is_default',
+        )
+    ]
+    rooms = list(Room.objects.filter(project_id=project_id).values(
+        'room_name', 'floor_type', 'height', 'room_points',
+    ))
+    doors = list(Door.objects.filter(project_id=project_id).values(
+        'door_type', 'width', 'height', 'position_x', 'position_y',
+    ))
+    intersections = [
+        {
+            'wall_1': row['wall_1_id'],
+            'wall_2': row['wall_2_id'],
+            'joining_method': row['joining_method'],
+            'deduct_joining_thickness': row['deduct_joining_thickness'],
+        }
+        for row in Intersection.objects.filter(project_id=project_id).values(
+            'wall_1_id', 'wall_2_id', 'joining_method', 'deduct_joining_thickness',
+        )
+    ]
+    storey_count = Storey.objects.filter(project_id=project_id).count()
+    return {
+        'project': {
+            'width': project.width,
+            'length': project.length,
+            'height': project.height,
+        },
+        'walls': walls,
+        'rooms': rooms,
+        'doors': doors,
+        'intersections': intersections,
+        'storeys': [None] * storey_count,
+    }
+
+
+def _lock_project(project: Project, *, with_baseline: bool) -> Project:
+    queryset = Project.objects.select_for_update()
+    if not with_baseline:
+        queryset = queryset.defer('baseline_snapshot')
+    return queryset.get(pk=project.pk)
+
+
+def _restore_live_to_original(locked: Project, *, user=None) -> Project:
+    """If named versions exist, put the live drawing back to version 0."""
+    original = _original_layout_ref(locked)
+    if original is None:
+        return locked
+    stored = locked.baseline_snapshot if _is_layout_snapshot(locked.baseline_snapshot) else None
+    if stored is None or _layout_fingerprint(stored) != _layout_fingerprint(original):
+        _persist_original(locked, original)
+    if _layout_fingerprint(_live_layout_snapshot(locked)) != _layout_fingerprint(original):
+        restore_project_from_payload(locked, copy.deepcopy(original), user=user)
+        _persist_original(locked, original)
+    return locked
 
 
 def _persist_original(project: Project, snapshot: dict) -> None:
@@ -88,16 +175,22 @@ def _persist_original(project: Project, snapshot: dict) -> None:
 @transaction.atomic
 def ensure_project_baseline(project: Project) -> Project:
     """Freeze version 0 once. Never capture a restored working copy as the original."""
-    locked = Project.objects.select_for_update().get(pk=project.pk)
-    original = original_layout_snapshot(locked)
-    if original is not None:
-        if not locked.baseline_snapshot or _layout_fingerprint(locked.baseline_snapshot) != _layout_fingerprint(original):
-            _persist_original(locked, original)
+    locked = _lock_project(project, with_baseline=False)
+    if not locked.versions.exists():
+        if _baseline_has_walls(locked.pk):
+            return locked
+        locked = _lock_project(project, with_baseline=True)
+        if _original_layout_ref(locked) is None:
+            locked.baseline_snapshot = export_project(locked, include_comments=False)
+            locked.save(update_fields=['baseline_snapshot'])
         return locked
-    if locked.versions.exists():
+    locked = _lock_project(project, with_baseline=True)
+    original = _original_layout_ref(locked)
+    if original is None:
         return locked
-    locked.baseline_snapshot = export_project(locked, include_comments=False)
-    locked.save(update_fields=['baseline_snapshot'])
+    stored = locked.baseline_snapshot if _is_layout_snapshot(locked.baseline_snapshot) else None
+    if stored is None or _layout_fingerprint(stored) != _layout_fingerprint(original):
+        _persist_original(locked, original)
     return locked
 
 
@@ -460,22 +553,14 @@ def capture_original_edits_if_live_is_original(project: Project) -> Project:
 @transaction.atomic
 def prepare_project_original_on_open(project: Project, *, user=None) -> Project:
     """On open: if versions exist, always show frozen V0. If not, V0 is the live drawing."""
-    locked = Project.objects.select_for_update().get(pk=project.pk)
-    original = original_layout_snapshot(locked)
+    locked = _lock_project(project, with_baseline=False)
     if locked.versions.exists():
-        if original is None:
-            return locked
-        if (
-            not locked.baseline_snapshot
-            or _layout_fingerprint(locked.baseline_snapshot) != _layout_fingerprint(original)
-        ):
-            _persist_original(locked, original)
-        current = export_project(locked, include_comments=False)
-        if _layout_fingerprint(current) != _layout_fingerprint(original):
-            restore_project_from_payload(locked, original, user=user)
-            _persist_original(locked, original)
+        locked = _lock_project(project, with_baseline=True)
+        return _restore_live_to_original(locked, user=user)
+    if _baseline_has_walls(locked.pk):
         return locked
-    if original is None:
+    locked = _lock_project(project, with_baseline=True)
+    if _original_layout_ref(locked) is None:
         locked.baseline_snapshot = export_project(locked, include_comments=False)
         locked.save(update_fields=['baseline_snapshot'])
     return locked
@@ -484,22 +569,11 @@ def prepare_project_original_on_open(project: Project, *, user=None) -> Project:
 @transaction.atomic
 def ensure_live_is_original(project: Project, *, user=None) -> Project:
     """If named versions exist, put the live drawing back to version 0."""
-    locked = Project.objects.select_for_update().get(pk=project.pk)
+    locked = _lock_project(project, with_baseline=False)
     if not locked.versions.exists():
         return locked
-    original = original_layout_snapshot(locked)
-    if original is None:
-        return locked
-    if (
-        not locked.baseline_snapshot
-        or _layout_fingerprint(locked.baseline_snapshot) != _layout_fingerprint(original)
-    ):
-        _persist_original(locked, original)
-    current = export_project(locked, include_comments=False)
-    if _layout_fingerprint(current) != _layout_fingerprint(original):
-        restore_project_from_payload(locked, original, user=user)
-        _persist_original(locked, original)
-    return locked
+    locked = _lock_project(project, with_baseline=True)
+    return _restore_live_to_original(locked, user=user)
 
 
 @transaction.atomic

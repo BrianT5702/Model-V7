@@ -2,8 +2,11 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 
 from core.models import Intersection, Project, ProjectComment, ProjectVersion, Room, Storey, Wall
+from core.project_copy import export_project
 from core.project_versions import (
     MAX_PROJECT_VERSIONS,
+    _layout_fingerprint,
+    _live_layout_snapshot,
     build_version_preview,
     capture_original_edits_if_live_is_original,
     copy_project_version,
@@ -425,3 +428,37 @@ class ProjectVersionTests(TestCase):
         self.assertEqual(Intersection.objects.get(project=self.project).joining_method, '45_cut')
         preview = build_version_preview(self.project, original_layout_snapshot(self.project))
         self.assertEqual(preview['intersections'][0]['joining_method'], '45_cut')
+
+    def test_live_layout_fingerprint_matches_export(self):
+        from core.models import Door
+        Door.objects.create(
+            project=self.project,
+            storey=self.storey,
+            width=900,
+            height=2100,
+            thickness=50,
+            position_x=500,
+            position_y=0,
+            linked_wall=self.wall,
+        )
+        wall_b = Wall.objects.create(
+            project=self.project,
+            storey=self.storey,
+            start_x=4000,
+            start_y=0,
+            end_x=4000,
+            end_y=3000,
+            is_default=False,
+        )
+        Intersection.objects.create(
+            project=self.project,
+            wall_1=self.wall,
+            wall_2=wall_b,
+            joining_method='butt_in',
+            deduct_joining_thickness=True,
+        )
+        exported = export_project(self.project, include_comments=False)
+        self.assertEqual(
+            _layout_fingerprint(_live_layout_snapshot(self.project)),
+            _layout_fingerprint(exported),
+        )

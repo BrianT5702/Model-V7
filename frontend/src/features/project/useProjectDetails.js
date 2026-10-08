@@ -1532,80 +1532,24 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     const fetchGeneration = ++layoutFetchGenerationRef.current;
 
     try {
-      const projectUrl = showOriginal
-        ? `/projects/${projectId}/?original=1`
-        : `/projects/${projectId}/`;
-      let projectResponse;
-      let wallsResponse;
-      let doorsResponse;
-      let intersectionsResponse;
-      let roomsResponse;
-      let storeysResponse;
-      if (showOriginal) {
-        projectResponse = await api.get(projectUrl);
-        if (fetchGeneration !== layoutFetchGenerationRef.current) {
-          return;
-        }
-        [
-          wallsResponse,
-          doorsResponse,
-          intersectionsResponse,
-          roomsResponse,
-          storeysResponse,
-        ] = await Promise.all([
-          api.get(`/projects/${projectId}/walls/`),
-          api.get(`/doors/?project=${projectId}`),
-          api.get(`/intersections/?project=${projectId}`),
-          api.get(`/rooms/?project=${projectId}`),
-          api.get(`/storeys/?project=${projectId}`),
-        ]);
-      } else {
-        [
-          projectResponse,
-          wallsResponse,
-          doorsResponse,
-          intersectionsResponse,
-          roomsResponse,
-          storeysResponse,
-        ] = await Promise.all([
-          api.get(projectUrl),
-          api.get(`/projects/${projectId}/walls/`),
-          api.get(`/doors/?project=${projectId}`),
-          api.get(`/intersections/?project=${projectId}`),
-          api.get(`/rooms/?project=${projectId}`),
-          api.get(`/storeys/?project=${projectId}`),
-        ]);
-      }
+      const layoutUrl = showOriginal
+        ? `/projects/${projectId}/open-layout/?original=1`
+        : `/projects/${projectId}/open-layout/`;
+      const layoutResponse = await api.get(layoutUrl);
 
       if (fetchGeneration !== layoutFetchGenerationRef.current) {
         return;
       }
 
-      let planAnnotationsData = [];
-      try {
-        const planAnnotationsResponse = await api.get(`/plan-annotations/?project=${projectId}`);
-        planAnnotationsData = Array.isArray(planAnnotationsResponse.data)
-          ? planAnnotationsResponse.data
-          : [];
-      } catch (annotationError) {
-        const status = annotationError.response?.status;
-        if (![401, 403, 404].includes(status)) {
-          console.warn('Could not load plan annotations:', annotationError);
-        }
-      }
-
-      if (fetchGeneration !== layoutFetchGenerationRef.current) {
-        return;
-      }
-
-      const projectData = projectResponse.data;
+      const layout = layoutResponse.data || {};
+      const projectData = layout.project || null;
       setProject(projectData);
-      setWalls(wallsResponse.data);
-      setDoors(doorsResponse.data);
-      setJoints(intersectionsResponse.data);
-      setRooms(Array.isArray(roomsResponse.data) ? roomsResponse.data : []);
-      setPlanAnnotations(planAnnotationsData);
-      const prefetchedStoreys = Array.isArray(storeysResponse?.data) ? storeysResponse.data : [];
+      setWalls(Array.isArray(layout.walls) ? layout.walls : []);
+      setDoors(Array.isArray(layout.doors) ? layout.doors : []);
+      setJoints(Array.isArray(layout.intersections) ? layout.intersections : []);
+      setRooms(Array.isArray(layout.rooms) ? layout.rooms : []);
+      setPlanAnnotations(Array.isArray(layout.plan_annotations) ? layout.plan_annotations : []);
+      const prefetchedStoreys = Array.isArray(layout.storeys) ? layout.storeys : [];
       setActiveStoreyId(null);
       await ensureStoreys(projectData, prefetchedStoreys);
       setStoreyError('');
@@ -1777,6 +1721,27 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       setIsTourMode(false);
     }
   }, [is3DView, isTourMode]);
+
+  // Opening the plan uses room outlines only. 3D ceilings need the panel trees.
+  const roomsNeedPanelTrees = (rooms || []).some(
+    (room) => room && !Object.prototype.hasOwnProperty.call(room, 'ceiling_plan')
+  );
+  useEffect(() => {
+    if (!is3DView || !projectId || !roomsNeedPanelTrees) return undefined;
+    let cancelled = false;
+    api.get(`/rooms/?project=${projectId}`)
+      .then((response) => {
+        if (!cancelled && Array.isArray(response.data)) {
+          setRooms(response.data);
+        }
+      })
+      .catch((error) => {
+        console.warn('Could not load room details for 3D view:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [is3DView, projectId, roomsNeedPanelTrees]);
 
   // Update 3D canvas when walls, joints, doors, project, storeys, or rooms change
   useEffect(() => {

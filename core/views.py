@@ -8,7 +8,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .models import Project, ProjectFolder, ProjectComment, PlanAnnotation, Storey, Wall, Room, CeilingPanel, CeilingPlan, FloorPanel, FloorPlan, Door, Window, WallWindow, Intersection, CeilingZone
 from .serializers import (
-    ProjectSerializer, ProjectListSerializer, ProjectRetrieveSerializer, ProjectFolderSerializer, StoreySerializer, WallSerializer, RoomSerializer,
+    ProjectSerializer, ProjectListSerializer, ProjectRetrieveSerializer, ProjectFolderSerializer, StoreySerializer, WallSerializer, RoomSerializer, RoomLayoutSerializer,
     CeilingPanelSerializer, CeilingPlanSerializer, FloorPanelSerializer, FloorPlanSerializer,
     DoorSerializer, WindowSerializer, WallWindowSerializer, IntersectionSerializer, CeilingZoneSerializer,
     ProjectCommentSerializer, PlanAnnotationSerializer,
@@ -300,6 +300,47 @@ class ProjectViewSet(ShareScopedModelViewSet):
         )
         serializer = WallSerializer(walls, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='open-layout')
+    def open_layout(self, request, pk=None):
+        """One payload for opening a project: layout only, no ceiling/floor panels."""
+        project = self.get_object()
+        show_original = str(request.query_params.get('original', '')).lower() in ('1', 'true', 'yes')
+        if show_original:
+            from .project_versions import prepare_project_original_on_open
+            project = prepare_project_original_on_open(project, user=request.user)
+        elif user_can_edit(request.user):
+            from .project_versions import ensure_project_baseline
+            project = ensure_project_baseline(project)
+
+        project = (
+            Project.objects
+            .prefetch_related('storeys', 'rooms', 'rooms__storey', 'rooms__walls')
+            .get(pk=project.pk)
+        )
+        walls = (
+            Wall.objects
+            .filter(project_id=project.pk)
+            .prefetch_related('windows', 'rooms')
+        )
+        doors = Door.objects.filter(project_id=project.pk).prefetch_related('windows')
+        intersections = Intersection.objects.filter(project_id=project.pk)
+        annotations = (
+            PlanAnnotation.objects
+            .filter(project_id=project.pk)
+            .select_related('created_by')
+        )
+        context = self.get_serializer_context()
+        context['unread_comment_counts'] = get_unread_comment_counts(request.user, [project.pk])
+        return Response({
+            'project': ProjectRetrieveSerializer(project, context=context).data,
+            'walls': WallSerializer(walls, many=True).data,
+            'doors': DoorSerializer(doors, many=True).data,
+            'rooms': RoomLayoutSerializer(project.rooms.all(), many=True).data,
+            'intersections': IntersectionSerializer(intersections, many=True).data,
+            'storeys': StoreySerializer(project.storeys.all(), many=True).data,
+            'plan_annotations': PlanAnnotationSerializer(annotations, many=True).data,
+        })
 
     @action(
         detail=True,

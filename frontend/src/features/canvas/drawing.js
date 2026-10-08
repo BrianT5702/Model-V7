@@ -899,9 +899,8 @@ function computeNearWallLabelOffsetPx(wall, scaleFactor, fontSize, textWidth = 4
 
 function findWallLineDataForWall(wallLinesMap, wall) {
     if (!wallLinesMap || !wall) return null;
-    for (const [, data] of wallLinesMap) {
-        if (data?.wall?.id === wall.id) return data;
-    }
+    const direct = wallLinesMap.get(wall.id);
+    if (direct) return direct;
     return findWallDataForSegment(
         wallLinesMap,
         wall.start_x,
@@ -1285,8 +1284,72 @@ function isLabelAcceptableForNearWallPlacement(
     return true;
 }
 
+let wallCorridorIndex = null;
+
+function buildWallCorridorIndex(wallLinesMap, scaleFactor, offsetX, offsetY) {
+    if (!(wallLinesMap instanceof Map) || wallLinesMap.size === 0) return null;
+    const cellSize = 96;
+    const cells = new Map();
+    for (const [, wallData] of wallLinesMap) {
+        if (!wallData?.line1 || !wallData?.line2) continue;
+        const entry = {
+            bounds2: getWallCorridorScreenBounds(
+                wallData.line1, wallData.line2, scaleFactor, offsetX, offsetY, 2
+            ),
+            bounds10: getWallCorridorScreenBounds(
+                wallData.line1, wallData.line2, scaleFactor, offsetX, offsetY, 10
+            ),
+        };
+        const b = entry.bounds10;
+        const x0 = Math.floor(b.x / cellSize);
+        const y0 = Math.floor(b.y / cellSize);
+        const x1 = Math.floor((b.x + b.width) / cellSize);
+        const y1 = Math.floor((b.y + b.height) / cellSize);
+        for (let x = x0; x <= x1; x += 1) {
+            for (let y = y0; y <= y1; y += 1) {
+                const key = `${x},${y}`;
+                const bucket = cells.get(key);
+                if (bucket) bucket.push(entry);
+                else cells.set(key, [entry]);
+            }
+        }
+    }
+    return { cells, cellSize };
+}
+
+function corridorEntriesNear(labelBounds) {
+    if (!wallCorridorIndex || !labelBounds) return null;
+    const { cells, cellSize } = wallCorridorIndex;
+    const margin = 4;
+    const x0 = Math.floor((labelBounds.x - margin) / cellSize);
+    const y0 = Math.floor((labelBounds.y - margin) / cellSize);
+    const x1 = Math.floor((labelBounds.x + labelBounds.width + margin) / cellSize);
+    const y1 = Math.floor((labelBounds.y + labelBounds.height + margin) / cellSize);
+    const seen = new Set();
+    const hits = [];
+    for (let x = x0; x <= x1; x += 1) {
+        for (let y = y0; y <= y1; y += 1) {
+            const bucket = cells.get(`${x},${y}`);
+            if (!bucket) continue;
+            for (const entry of bucket) {
+                if (seen.has(entry)) continue;
+                seen.add(entry);
+                hits.push(entry);
+            }
+        }
+    }
+    return hits;
+}
+
 function doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) {
     if (!(wallLinesMap instanceof Map) || wallLinesMap.size === 0) return false;
+    const nearby = corridorEntriesNear(labelBounds);
+    if (nearby) {
+        for (const entry of nearby) {
+            if (checkBoxOverlap(labelBounds, entry.bounds2, 4)) return true;
+        }
+        return false;
+    }
     for (const [, wallData] of wallLinesMap) {
         if (doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offsetX, offsetY, 2)) {
             return true;
@@ -1774,6 +1837,14 @@ function doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offset
 // Check if label bounds overlap any wall thickness corridor
 function doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) {
     if (!(wallLinesMap instanceof Map) || wallLinesMap.size === 0) return false;
+
+    const nearby = corridorEntriesNear(labelBounds);
+    if (nearby) {
+        for (const entry of nearby) {
+            if (checkBoxOverlap(labelBounds, entry.bounds10, 4)) return true;
+        }
+        return false;
+    }
 
     for (const [, wallData] of wallLinesMap) {
         if (doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offsetX, offsetY, 10)) {
@@ -4440,7 +4511,7 @@ export function drawWallCaps(context, wall, joints, center, intersections, SNAP_
     });
 }
 
-// One distinct color per wall (stable by id). Face materials stay in the legend label.
+// One color per wall configuration (thickness and face materials).
 function generateThicknessColorMap(walls) {
     return buildPerWallColorMap(walls, {
         wallSaturation: getPlanWallHslSaturation('wall'),
@@ -4484,6 +4555,8 @@ export function drawWallPlanDimensionsLayer({
         return { dimensionEdgeExtents: createDimensionEdgeExtents(), placedLabels, allLabels };
     }
 
+    wallCorridorIndex = buildWallCorridorIndex(wallLinesMap, scaleFactor, offsetX, offsetY);
+    try {
     const doorObstacles =
         doorLabelObstacles ??
         buildDoorLabelObstacles(doors, walls, scaleFactor, offsetX, offsetY, wallLinesMap);
@@ -4713,6 +4786,9 @@ export function drawWallPlanDimensionsLayer({
     }
 
     return { dimensionEdgeExtents, placedLabels, allLabels };
+    } finally {
+        wallCorridorIndex = null;
+    }
 }
 
 // Draw all walls on the canvas
@@ -4757,7 +4833,7 @@ export function drawWalls({
 }) {
     if (!Array.isArray(walls) || !walls) return;
     
-    // One color per wall so each wall is easy to pick out on the plan
+    // Same thickness and face materials share one color.
     const thicknessColorMap = generateThicknessColorMap(walls);
     
     // First pass: Calculate all wall lines and store them

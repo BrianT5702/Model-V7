@@ -469,6 +469,14 @@ class RoomSerializer(serializers.ModelSerializer):
         return instance
 
 
+class RoomLayoutSerializer(serializers.ModelSerializer):
+    """Room outline for opening a project. Omits ceiling/floor panel trees."""
+
+    class Meta:
+        model = Room
+        fields = '__all__'
+
+
 class ProjectFolderSerializer(serializers.ModelSerializer):
     project_count = serializers.SerializerMethodField()
     parent_name = serializers.CharField(source='parent.name', read_only=True, default=None)
