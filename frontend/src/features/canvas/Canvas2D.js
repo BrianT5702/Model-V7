@@ -3838,7 +3838,7 @@ const Canvas2D = ({
                                                                                         style={{
                                                                                             top: `${bottomY}px`,
                                                                                             height: `${lineHeight}px`,
-                                                                                            backgroundColor: adjustPlanStrokeColor(colors.partition || colors.wall)
+                                                                                            backgroundColor: adjustPlanStrokeColor(colors.wall)
                                                                                         }}
                                                                                     ></div>
                                                                                     {/* Caps */}

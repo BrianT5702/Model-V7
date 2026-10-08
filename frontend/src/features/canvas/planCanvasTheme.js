@@ -465,6 +465,20 @@ function boostHslForDarkCanvas(hsl) {
 
     let { h, s, l } = hsl;
 
+    // Saturated strokes are already chosen to read on the dark plan.
+    // Lifting them to the shared luminance floor turns separate hues into one pastel family.
+    if (s >= 75 && l >= 40) {
+
+        const vivid = hslToRgb(h, s, l);
+
+        if (relativeLuminance(vivid.r, vivid.g, vivid.b) >= 0.22) {
+
+            return `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%)`;
+
+        }
+
+    }
+
     s = Math.max(s, 38);
 
     l = Math.max(l, 66);
