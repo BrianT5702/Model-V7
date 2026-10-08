@@ -5469,11 +5469,7 @@ export function drawWalls({
             || thicknessColorMap.get(String(wall.id))
             || getPlanDefaultWallColors();
         const hasDiffFaces = thicknessColors.hasDifferentFaces;
-        
-        // Check if inner and outer materials are actually different
-        const intMat = wall.inner_face_material || 'PPGI';
-        const extMat = wall.outer_face_material || 'PPGI';
-        const actuallyHasDiffFaces = hasDiffFaces && (intMat !== extMat);
+        const actuallyHasDiffFaces = hasDiffFaces;
         
         const baseColor = wall.application_type === "partition" ? thicknessColors.partition : thicknessColors.wall;
         const baseInnerColor = actuallyHasDiffFaces 

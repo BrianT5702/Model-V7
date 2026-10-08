@@ -45,7 +45,7 @@ import {
     getPlanNotePlacementRect,
 } from './planAnnotationUtils';
 import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightColor } from './planCanvasTheme';
-import { collectFaceMaterialLegend } from './wallPlanColors';
+import { collectWallFaceLegend } from './wallPlanColors';
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
 import { drawDoors } from './utils';
@@ -3756,23 +3756,37 @@ const Canvas2D = ({
                                                         Wall colors
                                                     </h5>
                                                     <div className="space-y-3">
-                                                        {collectFaceMaterialLegend(thicknessColorMap).map((material) => (
-                                                            <div key={material.key} className="flex items-center">
-                                                                <div
-                                                                    className="mr-3 rounded-sm"
-                                                                    style={{
-                                                                        width: '60px',
-                                                                        height: '6px',
-                                                                        backgroundColor: adjustPlanStrokeColor(material.color),
-                                                                    }}
-                                                                    title={material.label}
-                                                                ></div>
-                                                                <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{material.label}</span>
+                                                        {collectWallFaceLegend(thicknessColorMap).map((colors) => (
+                                                            <div key={colors.finishKey} className="space-y-1">
+                                                                <div className="flex items-center">
+                                                                    <div className="mr-3 relative" style={{ width: '60px', height: '16px' }} title="Inner face on top, outer face below">
+                                                                        <div
+                                                                            className="absolute left-0 right-0"
+                                                                            style={{
+                                                                                top: '4px',
+                                                                                height: '2px',
+                                                                                backgroundColor: adjustPlanStrokeColor(colors.innerColor || colors.innerWall),
+                                                                            }}
+                                                                        ></div>
+                                                                        <div
+                                                                            className="absolute left-0 right-0"
+                                                                            style={{
+                                                                                top: '10px',
+                                                                                height: '2px',
+                                                                                backgroundColor: adjustPlanStrokeColor(colors.outerColor || colors.wall),
+                                                                            }}
+                                                                        ></div>
+                                                                    </div>
+                                                                    <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{colors.label}</span>
+                                                                </div>
+                                                                <div className="text-xs text-gray-600 dark:text-gray-300">
+                                                                    {colors.finishLabel}
+                                                                </div>
                                                             </div>
                                                         ))}
                                                     </div>
                                                     <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                                        Each face line uses the material and wall thickness. Stainless steel of the same thickness stays the same color on every wall. A different thickness uses a different color. When the two faces differ, the outer line is the outside material and the inner line is the inside material.
+                                                        The top line is the inner face and the bottom line is the outer face. The color follows the face sheet, so 0.5 mm stainless steel is the same color on a 100 mm wall and a 150 mm wall.
                                                     </div>
                                                 </div>
                                             )}

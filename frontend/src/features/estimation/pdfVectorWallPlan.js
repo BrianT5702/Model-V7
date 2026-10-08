@@ -1149,9 +1149,7 @@ export function drawVectorWallPlan(
                             || thicknessColorMap.get(String(wall.id))
                             || { wall: '#333', partition: '#666', hasDifferentFaces: false };
                         const hasDiffFaces = thicknessColors.hasDifferentFaces;
-                        const intMat = wall.inner_face_material || 'PPGI';
-                        const extMat = wall.outer_face_material || 'PPGI';
-                        const actuallyHasDiffFaces = hasDiffFaces && (intMat !== extMat);
+                        const actuallyHasDiffFaces = hasDiffFaces;
                         const baseColor = wall.application_type === "partition" ? thicknessColors.partition : thicknessColors.wall;
                         const baseInnerColor = actuallyHasDiffFaces 
                             ? (wall.application_type === "partition" ? thicknessColors.innerPartition : thicknessColors.innerWall)

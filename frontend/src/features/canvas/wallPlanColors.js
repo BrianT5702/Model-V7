@@ -58,29 +58,16 @@ const LIGHT_FACE_STOPS = [
     [255, 70, 42],
 ];
 
-const MATERIAL_LABELS = {
-    PPGI: 'PPGI',
-    'S/STEEL': 'S/Steel',
-    PVC: 'PVC',
-};
-
 const MATERIAL_ORDER = ['PPGI', 'S/STEEL', 'PVC'];
 
-function materialLabel(material) {
-    return MATERIAL_LABELS[material] || material;
+function wallSortId(wall) {
+    const id = Number(wall?.id);
+    return Number.isFinite(id) ? id : Number.MAX_SAFE_INTEGER;
 }
 
-function wallThicknessMm(wall) {
-    return configNumber(wall?.thickness, '');
-}
-
-function faceKey(thickness, material) {
-    return `${material}|${thickness}`;
-}
-
-function faceLegendLabel(material, thickness) {
-    const name = materialLabel(material);
-    return thickness === '' ? name : `${name} · ${thickness}mm`;
+/** Face sheet only. Wall core thickness is not part of the color. */
+function sheetFaceKey(sheetThickness, material) {
+    return `${configMaterial(material)}|${configNumber(sheetThickness, 0.5)}`;
 }
 
 function compareFaceKeys(a, b) {
@@ -103,11 +90,9 @@ function paletteColor(index, darkCanvas) {
 }
 
 /**
- * Face lines use material plus wall thickness.
- * Stainless steel of one thickness is the same color on every wall.
- * A different wall thickness gets a different color.
- * Sheet gauge (0.5 vs 0.6) does not change the color.
- * The outer line uses the outside material; the inner line uses the inside material.
+ * Each face line is colored by its own sheet: material plus sheet thickness.
+ * 0.5 mm stainless steel is the same color on a 100 mm wall and a 150 mm wall.
+ * The outer line uses the outside sheet. The inner line uses the inside sheet.
  */
 export function buildPerWallColorMap(walls, palette) {
     const colorMap = new Map();
@@ -117,9 +102,8 @@ export function buildPerWallColorMap(walls, palette) {
     const usable = walls.filter((wall) => wall?.id != null);
     const keys = new Set();
     usable.forEach((wall) => {
-        const thickness = wallThicknessMm(wall);
-        keys.add(faceKey(thickness, configMaterial(wall.outer_face_material)));
-        keys.add(faceKey(thickness, configMaterial(wall.inner_face_material)));
+        keys.add(sheetFaceKey(wall.inner_face_thickness, wall.inner_face_material));
+        keys.add(sheetFaceKey(wall.outer_face_thickness, wall.outer_face_material));
     });
 
     const colorByKey = new Map();
@@ -127,32 +111,44 @@ export function buildPerWallColorMap(walls, palette) {
         colorByKey.set(key, paletteColor(index, darkCanvas));
     });
 
-    usable.forEach((wall) => {
-        const thickness = wallThicknessMm(wall);
-        const outer = configMaterial(wall.outer_face_material);
-        const inner = configMaterial(wall.inner_face_material);
-        const outerKey = faceKey(thickness, outer);
-        const innerKey = faceKey(thickness, inner);
-        const hasDiffFaces = outer !== inner;
-        const outerColor = colorByKey.get(outerKey);
+    const ordered = [...usable].sort((a, b) => {
+        const diff = wallSortId(a) - wallSortId(b);
+        if (diff !== 0) return diff;
+        return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+    });
+
+    const styleByConfig = new Map();
+    ordered.forEach((wall) => {
+        const finishKey = wallFinishKey(wall);
+        if (styleByConfig.has(finishKey)) return;
+        const innerKey = sheetFaceKey(wall.inner_face_thickness, wall.inner_face_material);
+        const outerKey = sheetFaceKey(wall.outer_face_thickness, wall.outer_face_material);
         const innerColor = colorByKey.get(innerKey);
-        const outerLegend = faceLegendLabel(outer, thickness);
-        const innerLegend = faceLegendLabel(inner, thickness);
+        const outerColor = colorByKey.get(outerKey);
+        styleByConfig.set(finishKey, {
+            label: `Wall ${styleByConfig.size + 1}`,
+            finishLabel: wallFinishLabel(wall),
+            finishKey,
+            innerColor,
+            outerColor,
+            hasDifferentFaces: innerKey !== outerKey,
+        });
+    });
+
+    ordered.forEach((wall) => {
+        const style = styleByConfig.get(wallFinishKey(wall));
+        if (!style) return;
         colorMap.set(wall.id, {
-            wall: outerColor,
-            partition: outerColor,
-            innerWall: innerColor,
-            innerPartition: innerColor,
-            hasDifferentFaces: hasDiffFaces,
-            outerMaterial: outer,
-            innerMaterial: inner,
-            outerKey,
-            innerKey,
-            outerLegend,
-            innerLegend,
-            label: outerLegend,
-            finishLabel: hasDiffFaces ? `${outerLegend} outside · ${innerLegend} inside` : outerLegend,
-            finishKey: hasDiffFaces ? `${outerKey}|${innerKey}` : outerKey,
+            wall: style.outerColor,
+            partition: style.outerColor,
+            innerWall: style.innerColor,
+            innerPartition: style.innerColor,
+            hasDifferentFaces: style.hasDifferentFaces,
+            innerColor: style.innerColor,
+            outerColor: style.outerColor,
+            label: style.label,
+            finishLabel: style.finishLabel,
+            finishKey: style.finishKey,
             wallId: wall.id,
         });
     });
@@ -160,19 +156,17 @@ export function buildPerWallColorMap(walls, palette) {
     return colorMap;
 }
 
-/** Material and thickness combinations on the plan, each with its face color. */
-export function collectFaceMaterialLegend(colorMap) {
+/** One legend row per wall build, with the inner and outer face colors. */
+export function collectWallFaceLegend(colorMap) {
     const found = new Map();
     if (!colorMap) return [];
     for (const colors of colorMap.values()) {
-        if (colors?.outerKey) found.set(colors.outerKey, { label: colors.outerLegend, color: colors.wall });
-        if (colors?.innerKey) found.set(colors.innerKey, { label: colors.innerLegend, color: colors.innerWall || colors.wall });
+        if (!colors?.finishKey || found.has(colors.finishKey)) continue;
+        found.set(colors.finishKey, colors);
     }
-    return [...found.entries()]
-        .sort((a, b) => compareFaceKeys(a[0], b[0]))
-        .map(([key, item]) => ({
-            key,
-            label: item.label,
-            color: item.color,
-        }));
+    return [...found.values()].sort((a, b) => {
+        const na = Number(String(a.label).replace(/\D/g, '')) || 0;
+        const nb = Number(String(b.label).replace(/\D/g, '')) || 0;
+        return na - nb;
+    });
 }
