@@ -1289,8 +1289,11 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     const roomsData = Array.isArray(roomsResponse.data) ? roomsResponse.data : [];
     const doorsData = doorsResponse.data || [];
     setWalls(wallsData);
+    wallsRef.current = wallsData;
     setRooms(roomsData);
+    roomsRef.current = roomsData;
     setDoors(doorsData);
+    doorsRef.current = doorsData;
     setJoints(intersectionsResponse.data || []);
     return captureProjectSnapshot(wallsData, roomsData, doorsData);
   }, [projectId]);
@@ -2624,17 +2627,61 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         }
       }
       setWalls(updatedWalls);
+      wallsRef.current = updatedWalls;
     });
+  };
+
+  const swapWallFaceSides = (wall) => ({
+    ...wall,
+    inner_face_material: wall.outer_face_material || 'PPGI',
+    inner_face_thickness: wall.outer_face_thickness ?? 0.5,
+    outer_face_material: wall.inner_face_material || 'PPGI',
+    outer_face_thickness: wall.inner_face_thickness ?? 0.5,
+  });
+
+  const handleFlipWallSides = async (wallIds) => {
+    const ids = (Array.isArray(wallIds) ? wallIds : [wallIds]).filter((id) => id != null);
+    if (ids.length === 0) return;
+    try {
+      await commitHistoryAction(
+        ids.length > 1 ? `Flip sides on ${ids.length} walls` : 'Flip wall sides',
+        async () => {
+          const saved = [];
+          for (const wallId of ids) {
+            const wall = wallsRef.current.find((item) => item.id === wallId);
+            if (!wall) continue;
+            const response = await api.put(`/walls/${wall.id}/`, prepareWallPayloadForSave(swapWallFaceSides(wall)));
+            saved.push(response.data);
+            wallsRef.current = wallsRef.current.map((item) => (
+              item.id === response.data.id ? response.data : item
+            ));
+          }
+          if (saved.length > 0) {
+            setWalls(wallsRef.current);
+          }
+        }
+      );
+    } catch (error) {
+      alert('Failed to flip wall sides');
+      return false;
+    }
+    return true;
   };
 
   // Add these functions to handle wall delete confirmation/cancellation
   const handleConfirmWallDelete = async () => {
-    if (wallToDelete === null) return;
+    const ids = (Array.isArray(wallToDelete) ? wallToDelete : [wallToDelete]).filter((id) => id != null);
+    if (ids.length === 0) return;
     try {
-      await handleWallDelete(wallToDelete);
-      setWallDeleteSuccess(true);
+      for (const wallId of ids) {
+        await handleWallDelete(wallId);
+      }
+      setWallDeleteSuccess(ids.length > 1 ? 'many' : true);
       setTimeout(() => setWallDeleteSuccess(false), 3000);
       setSelectedWall(null);
+      setSelectedWallsForEdit([]);
+      setShowWallEditor(false);
+      setIsMultiWallEditMode(false);
     } catch (error) {
       setWallDeleteError('Failed to delete wall. Please try again.');
       setTimeout(() => setWallDeleteError(''), 5000);
@@ -3925,6 +3972,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     toggleMode,
     refreshWalls,
     handleConfirmWallDelete,
+    handleFlipWallSides,
     handleCancelWallDelete,
     handleWallUpdateNoMerge,
     handleRoomSelect,

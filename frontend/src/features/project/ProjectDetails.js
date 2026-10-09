@@ -2476,14 +2476,35 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 </div>
                                                 
                                                 {projectDetails.selectedWallsForEdit.length > 0 && (
-                                                    <button
-                                                        onClick={() => {
-                                                            projectDetails.setShowWallEditor(true);
-                                                        }}
-                                                        className="w-full px-4 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium shadow-sm"
-                                                    >
-                                                        Show Edit Wall Form ({projectDetails.selectedWallsForEdit.length} wall{projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''})
-                                                    </button>
+                                                    <div className="space-y-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                projectDetails.setShowWallEditor(true);
+                                                            }}
+                                                            className="w-full px-4 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium shadow-sm"
+                                                        >
+                                                            Show Edit Wall Form ({projectDetails.selectedWallsForEdit.length} wall{projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''})
+                                                        </button>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => projectDetails.handleFlipWallSides(projectDetails.selectedWallsForEdit)}
+                                                                className="px-3 py-2 rounded-lg border border-green-300 bg-white text-green-800 hover:bg-green-50 text-sm font-medium dark:bg-gray-800 dark:text-green-100 dark:border-green-600"
+                                                            >
+                                                                Flip sides
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    projectDetails.setWallToDelete([...projectDetails.selectedWallsForEdit]);
+                                                                    projectDetails.setShowWallDeleteConfirm(true);
+                                                                }}
+                                                                className="px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </div>
                                         )}
@@ -3868,6 +3889,26 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 </div>
                                             </div>
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                const ids = projectDetails.selectedWallsForEdit.length > 0
+                                                    ? projectDetails.selectedWallsForEdit
+                                                    : [projectDetails.selectedWall];
+                                                const flipped = await projectDetails.handleFlipWallSides(ids);
+                                                if (!flipped) return;
+                                                setEditedWall((prev) => prev ? {
+                                                    ...prev,
+                                                    inner_face_material: prev.outer_face_material || 'PPGI',
+                                                    inner_face_thickness: prev.outer_face_thickness ?? 0.5,
+                                                    outer_face_material: prev.inner_face_material || 'PPGI',
+                                                    outer_face_thickness: prev.inner_face_thickness ?? 0.5,
+                                                } : prev);
+                                            }}
+                                            className="form-btn-secondary mt-2"
+                                        >
+                                            Flip sides
+                                        </button>
                                     </div>
 
                                     {/* Side panel length — single wall only */}
@@ -4068,14 +4109,15 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                 </div>
 
                                     {/* Action Buttons: delete left, save right */}
-                                    <div className={`form-actions shrink-0 !flex-row px-3 py-2 bg-white dark:bg-gray-900${projectDetails.selectedWall !== null ? ' !justify-between' : ''}`}>
-                                        {projectDetails.selectedWall !== null && (
+                                    <div className={`form-actions shrink-0 !flex-row px-3 py-2 bg-white dark:bg-gray-900${(projectDetails.selectedWall !== null || projectDetails.selectedWallsForEdit.length > 0) ? ' !justify-between' : ''}`}>
+                                        {(projectDetails.selectedWall !== null || projectDetails.selectedWallsForEdit.length > 0) && (
                                         <button
                                             onClick={() => {
-                                                const wallId = projectDetails.selectedWall;
-                                                projectDetails.setWallToDelete(wallId);
+                                                const ids = projectDetails.selectedWallsForEdit.length > 0
+                                                    ? [...projectDetails.selectedWallsForEdit]
+                                                    : [projectDetails.selectedWall];
+                                                projectDetails.setWallToDelete(ids.length === 1 ? ids[0] : ids);
                                                 projectDetails.setShowWallDeleteConfirm(true);
-                                                // Close editor so the confirm dialog is immediately usable
                                                 projectDetails.setSelectedWall(null);
                                                 projectDetails.setSelectedWallsForEdit([]);
                                                 projectDetails.setShowWallEditor(false);
@@ -4084,7 +4126,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             }}
                                             className="form-btn-danger"
                                         >
-                                            Remove Wall
+                                            {projectDetails.selectedWallsForEdit.length > 1
+                                                ? `Remove ${projectDetails.selectedWallsForEdit.length} Walls`
+                                                : 'Remove Wall'}
                                         </button>
                                         )}
                                         <button
@@ -4453,9 +4497,15 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             {projectDetails.showWallDeleteConfirm && (
                 <ModalOverlay className="bg-black/50 flex items-center justify-center z-[12000] p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete wall?</h3>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                            {Array.isArray(projectDetails.wallToDelete) && projectDetails.wallToDelete.length > 1
+                                ? `Delete ${projectDetails.wallToDelete.length} walls?`
+                                : 'Delete wall?'}
+                        </h3>
                         <p className="text-sm text-gray-600 mb-6">
-                            Are you sure you want to delete this wall? This cannot be undone from this dialog.
+                            {Array.isArray(projectDetails.wallToDelete) && projectDetails.wallToDelete.length > 1
+                                ? `Are you sure you want to delete these ${projectDetails.wallToDelete.length} walls? This cannot be undone from this dialog.`
+                                : 'Are you sure you want to delete this wall? This cannot be undone from this dialog.'}
                         </p>
                         <div className="flex justify-end gap-2">
                             <button
@@ -4482,7 +4532,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3-9a1 1 0 10-2 0 1 1 0 002 0zm-1-4a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                     </svg>
-                    <span className="font-medium">Wall deleted successfully!</span>
+                    <span className="font-medium">{projectDetails.wallDeleteSuccess === 'many' ? 'Walls deleted successfully!' : 'Wall deleted successfully!'}</span>
                     </div>
                 </div>
             )}
