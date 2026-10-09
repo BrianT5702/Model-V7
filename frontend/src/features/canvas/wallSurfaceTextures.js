@@ -233,6 +233,110 @@ export function prepareWallSurfaceGeometry(THREE, geometry) {
   }
 }
 
+const SURFACE_LOOK = {
+  'S/STEEL': { color: 0xc5ccd6, metalness: 0.72, roughness: 0.42 },
+  PVC: { color: 0xf3efe4, metalness: 0.04, roughness: 0.92 },
+};
+
+/** One material per wall face. Side and surface type stay on the material for later 3D finishes. */
+export function createWallFaceMaterial(THREE, renderer, face, fallback) {
+  const material = (fallback || createWallSurfaceMaterial(THREE, renderer)).clone();
+  const surfaceType = String(face?.material || 'PPGI').trim().toUpperCase();
+  const look = SURFACE_LOOK[surfaceType];
+  if (look) {
+    material.color = new THREE.Color(look.color);
+    material.metalness = look.metalness;
+    material.roughness = look.roughness;
+    if (surfaceType !== 'PPGI') {
+      material.map = null;
+      material.normalMap = null;
+      material.roughnessMap = null;
+    }
+  }
+  material.userData.surfaceType = surfaceType;
+  material.userData.faceSide = face?.side;
+  material.userData.sheetThickness = face?.thickness;
+  return material;
+}
+
+/**
+ * Split the extruded wall so local +Z and local -Z can carry different face finishes.
+ * Local +Z is the side toward the model center. side1OnPositiveZ says whether Side 1 is that face.
+ */
+export function applyWallFaceSideMaterials(THREE, mesh, renderer, { side1, side2, side1OnPositiveZ }) {
+  const geometry = mesh?.geometry;
+  const position = geometry?.attributes?.position;
+  if (!position) return;
+
+  geometry.computeVertexNormals();
+  const index = geometry.getIndex();
+  const triCount = index ? index.count / 3 : position.count / 3;
+  const vertex = (tri, corner) => (index ? index.getX(tri * 3 + corner) : tri * 3 + corner);
+  const edge = [];
+  const positiveZ = [];
+  const negativeZ = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+
+  for (let tri = 0; tri < triCount; tri += 1) {
+    const i0 = vertex(tri, 0);
+    const i1 = vertex(tri, 1);
+    const i2 = vertex(tri, 2);
+    a.fromBufferAttribute(position, i0);
+    b.fromBufferAttribute(position, i1);
+    c.fromBufferAttribute(position, i2);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    normal.crossVectors(ab, ac);
+    const len = normal.length() || 1;
+    const nz = normal.z / len;
+    if (nz > 0.55) positiveZ.push(tri);
+    else if (nz < -0.55) negativeZ.push(tri);
+    else edge.push(tri);
+  }
+
+  const side1Tris = side1OnPositiveZ ? positiveZ : negativeZ;
+  const side2Tris = side1OnPositiveZ ? negativeZ : positiveZ;
+  const buckets = [edge, side1Tris, side2Tris];
+  const src = index ? index.array : null;
+  const next = new (position.count > 65535 ? Uint32Array : Uint16Array)(triCount * 3);
+  let cursor = 0;
+  const ranges = buckets.map((tris) => {
+    const start = cursor;
+    tris.forEach((tri) => {
+      if (src) {
+        next[cursor++] = src[tri * 3];
+        next[cursor++] = src[tri * 3 + 1];
+        next[cursor++] = src[tri * 3 + 2];
+      } else {
+        next[cursor++] = tri * 3;
+        next[cursor++] = tri * 3 + 1;
+        next[cursor++] = tri * 3 + 2;
+      }
+    });
+    return { start, count: cursor - start };
+  });
+
+  geometry.setIndex(new THREE.BufferAttribute(next, 1));
+  geometry.clearGroups();
+  ranges.forEach((range, materialIndex) => {
+    if (range.count > 0) geometry.addGroup(range.start, range.count, materialIndex);
+  });
+
+  const edgeMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+  const side1Material = createWallFaceMaterial(THREE, renderer, side1, edgeMaterial);
+  const side2Material = createWallFaceMaterial(THREE, renderer, side2, edgeMaterial);
+  mesh.material = [edgeMaterial, side1Material, side2Material];
+  mesh.userData.faceSides = {
+    side1: { ...side1, onPositiveZ: Boolean(side1OnPositiveZ) },
+    side2: { ...side2, onPositiveZ: !side1OnPositiveZ },
+  };
+}
+
 export function createWallSurfaceMaterial(THREE, renderer) {
   const wallCfg = THREE_CONFIG.MATERIALS.WALL;
   if (THREE_CONFIG.WALL_SURFACE?.ENABLED === false) {

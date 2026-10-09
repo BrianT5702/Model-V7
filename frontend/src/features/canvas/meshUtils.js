@@ -15,6 +15,7 @@ import {
   finishPanelSurfaceMesh,
   prepareWallSurfaceGeometry,
   ensureWallSurfaceDetail,
+  applyWallFaceSideMaterials,
 } from './wallSurfaceTextures';
 
 /** Remove horizontal edges near Y=0 so wall bases don't z-fight the floor while orbiting. */
@@ -1720,6 +1721,21 @@ export function createWallMesh(instance, wall) {
     }
   }
   
+  applyWallFaceSideMaterials(instance.THREE, wallMesh, instance.renderer, {
+    side1: {
+      side: 1,
+      material: wall.inner_face_material || 'PPGI',
+      thickness: wall.inner_face_thickness ?? 0.5,
+    },
+    side2: {
+      side: 2,
+      material: wall.outer_face_material || 'PPGI',
+      thickness: wall.outer_face_thickness ?? 0.5,
+    },
+    // Local +Z points at the model center. Side 1 follows the drawn wall direction.
+    side1OnPositiveZ: !wallEndpointsSwapped,
+  });
+
   return wallMesh;
 }
 

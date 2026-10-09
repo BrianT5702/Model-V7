@@ -5,9 +5,9 @@ function finishPart(thickness, material) {
 
 export function wallFinishLabel(wall) {
     const core = wall?.thickness ?? '';
-    const interior = finishPart(wall?.inner_face_thickness, wall?.inner_face_material);
-    const exterior = finishPart(wall?.outer_face_thickness, wall?.outer_face_material);
-    return `${core}mm · Int ${interior} · Ext ${exterior}`;
+    const side1 = finishPart(wall?.inner_face_thickness, wall?.inner_face_material);
+    const side2 = finishPart(wall?.outer_face_thickness, wall?.outer_face_material);
+    return `${core}mm · Side 1 ${side1} · Side 2 ${side2}`;
 }
 
 function configNumber(value, fallback) {

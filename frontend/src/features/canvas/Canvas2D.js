@@ -3759,7 +3759,7 @@ const Canvas2D = ({
                                                         {collectWallFaceLegend(thicknessColorMap).map((colors) => (
                                                             <div key={colors.finishKey} className="space-y-1">
                                                                 <div className="flex items-center">
-                                                                    <div className="mr-3 relative" style={{ width: '60px', height: '16px' }} title="Inner face on top, outer face below">
+                                                                    <div className="mr-3 relative" style={{ width: '60px', height: '16px' }} title="Side 1 on top, Side 2 below">
                                                                         <div
                                                                             className="absolute left-0 right-0"
                                                                             style={{
@@ -3786,7 +3786,7 @@ const Canvas2D = ({
                                                         ))}
                                                     </div>
                                                     <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                                        The top line is the inner face and the bottom line is the outer face. The color follows the face sheet, so 0.5 mm stainless steel is the same color on a 100 mm wall and a 150 mm wall.
+                                                        The top line is Side 1 and the bottom line is Side 2. Side 1 sits on the right as the wall runs from its start to its end, not toward the model center. A face sheet keeps the same color on every wall.
                                                     </div>
                                                 </div>
                                             )}

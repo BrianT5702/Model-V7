@@ -19,6 +19,7 @@ import { planCeilingValueDedupKey, DIMENSION_CONFIG } from '../canvas/DimensionC
 import { filterDimensions } from '../canvas/dimensionFilter';
 import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset, getDoorTagModelPoint, DOOR_TAG_RADIUS_MM } from '../canvas/doorPlacement';
 import { buildPerWallColorMap } from '../canvas/wallPlanColors';
+import { lineLiesOnSide1 } from '../canvas/wallFaceSides';
 import { buildDoorSchedule, doorMarkColor, isDoubleConfiguration } from '../door/doorSchedule';
 import { withPlanCanvasLightTheme } from '../canvas/planCanvasTheme';
 import { fitPdfRoomLabelText } from './pdfRoomLabelFit';
@@ -1214,6 +1215,20 @@ export function drawVectorWallPlan(
                             innerColorRgb[0] = Math.max(0, Math.min(255, Math.round(innerColorRgb[0])));
                             innerColorRgb[1] = Math.max(0, Math.min(255, Math.round(innerColorRgb[1])));
                             innerColorRgb[2] = Math.max(0, Math.min(255, Math.round(innerColorRgb[2])));
+                        }
+
+                        // Side 1 is the inner_face finish, Side 2 the outer_face finish.
+                        // Place them on the wall direction, not on the model-center side.
+                        if (innerColorRgb && wallColorRgb && line1 && lineLiesOnSide1(wall, line1)) {
+                            const swapR = wallColorRgb[0];
+                            const swapG = wallColorRgb[1];
+                            const swapB = wallColorRgb[2];
+                            wallColorRgb[0] = innerColorRgb[0];
+                            wallColorRgb[1] = innerColorRgb[1];
+                            wallColorRgb[2] = innerColorRgb[2];
+                            innerColorRgb[0] = swapR;
+                            innerColorRgb[1] = swapG;
+                            innerColorRgb[2] = swapB;
                         }
                         
                         // Check for 45Â° cuts at EACH END separately

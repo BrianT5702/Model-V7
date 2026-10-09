@@ -29,6 +29,7 @@ import {
     isPlanCanvasDark,
 } from './planCanvasTheme';
 import { buildPerWallColorMap } from './wallPlanColors';
+import { colorsForWallLines } from './wallFaceSides';
 // Import collision detection utilities
 import {
     hasLabelOverlap,
@@ -5680,7 +5681,14 @@ export function drawWalls({
         const highlightLineWidth = highlight
             ? Math.max(2.5, DIMENSION_CONFIG.WALL_LINE_WIDTH * 2.5)
             : DIMENSION_CONFIG.WALL_LINE_WIDTH;
-        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, wallColor, [], innerColor, highlightLineWidth);
+        let line1Color = wallColor;
+        let line2Color = innerColor;
+        if (innerColor && wallColor && innerColor !== wallColor) {
+            const placed = colorsForWallLines(wall, line1, line2, innerColor, wallColor);
+            line1Color = placed.line1Color;
+            line2Color = placed.line2Color;
+        }
+        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, line1Color, [], line2Color, highlightLineWidth);
         drawWallCaps(context, wall, joints, center, intersections, SNAP_THRESHOLD, currentScaleFactor, offsetX, offsetY, scaleFactor);
         if (wall.application_type === "partition") {
             drawPartitionSlashes(context, line1, line2, scaleFactor, offsetX, offsetY);

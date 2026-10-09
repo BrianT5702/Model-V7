@@ -2573,9 +2573,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
                                         <div className="pt-2 border-t border-gray-100">
                                             <p className="form-section-title mb-2">Face Finishes</p>
+                                            <p className="text-xs text-gray-500 mb-2">Side 1 is on the right as the wall runs from its start point to its end point.</p>
                                             <div className="form-grid-narrow">
                                                 <div className="form-subsection">
-                                                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Inner</p>
+                                                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Side 1</p>
                                                     <div className="form-field">
                                                         <label className="form-label">Material</label>
                                                         <select
@@ -2601,7 +2602,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     </div>
                                                 </div>
                                                 <div className="form-subsection">
-                                                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Outer</p>
+                                                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Side 2</p>
                                                     <div className="form-field">
                                                         <label className="form-label">Material</label>
                                                         <select
@@ -3808,9 +3809,10 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     {/* Face Finishes Section */}
                                     <div>
                                         <h4 className="form-section-title mb-1">Face Finishes</h4>
+                                        <p className="text-xs text-gray-500 mb-2">Side 1 is on the right as the wall runs from its start point to its end point.</p>
                                         <div className="grid grid-cols-2 gap-2">
                                             <div className="form-subsection !p-1.5 !space-y-1">
-                                                <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Inner</h5>
+                                                <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Side 1</h5>
                                                 <div className="grid grid-cols-2 gap-1.5">
                                                 <label className="block min-w-0">
                                                     <span className="form-label">Material</span>
@@ -3838,7 +3840,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 </div>
                                             </div>
                                             <div className="form-subsection !p-1.5 !space-y-1">
-                                                <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Outer</h5>
+                                                <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Side 2</h5>
                                                 <div className="grid grid-cols-2 gap-1.5">
                                                 <label className="block min-w-0">
                                                     <span className="form-label">Material</span>
