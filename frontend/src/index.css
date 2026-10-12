@@ -271,26 +271,26 @@ body.wall-plan-fullscreen-lock {
   overflow: hidden !important;
 }
 
-/* Add-wall settings live in the controls sidebar, which fullscreen otherwise covers. */
+/* Fullscreen covers the page, including the controls sidebar. Keep that panel above the plan. */
 .controls-sidebar-scroll.plan-fullscreen-tool-panel {
   position: fixed !important;
   z-index: 10050 !important;
-  top: 0 !important;
-  right: 0 !important;
-  left: auto !important;
-  height: 100dvh !important;
+  top: 42px !important;
+  left: 0 !important;
+  right: auto !important;
+  height: calc(100dvh - 42px) !important;
   width: min(340px, 92vw) !important;
-  min-width: 0 !important;
+  min-width: 280px !important;
   max-width: 340px !important;
   overflow: auto !important;
   pointer-events: auto !important;
   transform: none !important;
-  border-left: 1px solid rgb(229 231 235);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  border-right: 1px solid rgb(229 231 235);
+  box-shadow: 8px 0 24px rgba(0, 0, 0, 0.18);
 }
 
 html.dark .controls-sidebar-scroll.plan-fullscreen-tool-panel {
-  border-left-color: rgb(31 41 55);
+  border-right-color: rgb(31 41 55);
 }
 
 @media (min-width: 640px) {

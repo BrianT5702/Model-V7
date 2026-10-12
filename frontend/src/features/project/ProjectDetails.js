@@ -2290,7 +2290,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                 <div className={`controls-sidebar-scroll fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shadow-sm lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain transition-all duration-300 ease-in-out w-80 min-w-[300px] max-w-[340px] ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''} ${
-                    isPlanFullscreen && projectDetails.currentMode === 'add-wall' ? ' plan-fullscreen-tool-panel' : ''
+                    isPlanFullscreen && (projectDetails.isEditingMode || !controlsSidebarCollapsed) ? ' plan-fullscreen-tool-panel' : ''
                 }`}>
                     <div className="p-4 sm:p-6">
                         {/* Mobile Close Button */}
@@ -3051,9 +3051,14 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             isPlanFullscreen={isPlanFullscreen}
                                             onTogglePlanFullscreen={() => setIsPlanFullscreen((open) => !open)}
                                             onToggleEditMode={() => {
-                                                projectDetails.setIsEditingMode(!projectDetails.isEditingMode);
+                                                const next = !projectDetails.isEditingMode;
+                                                projectDetails.setIsEditingMode(next);
                                                 projectDetails.setCurrentMode(null);
                                                 projectDetails.resetAllSelections();
+                                                if (next) {
+                                                    setControlsSidebarCollapsed(false);
+                                                    setSidebarOpen(true);
+                                                }
                                             }}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
