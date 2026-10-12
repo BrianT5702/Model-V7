@@ -1335,6 +1335,8 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             if (event.key !== 'Escape') return;
             const tag = event.target?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
+            // An edit form is open above the plan. Leave fullscreen only after it closes.
+            if (document.querySelector('.modal-overlay')) return;
             setIsPlanFullscreen(false);
         };
         document.addEventListener('keydown', onKeyDown);
@@ -2287,7 +2289,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                 {!projectDetails.is3DView && isWallPlanView && (
                 <div className={`controls-sidebar-scroll fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shadow-sm lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain transition-all duration-300 ease-in-out w-80 min-w-[300px] max-w-[340px] ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-                } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''}`}>
+                } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''} ${
+                    isPlanFullscreen && projectDetails.currentMode === 'add-wall' ? ' plan-fullscreen-tool-panel' : ''
+                }`}>
                     <div className="p-4 sm:p-6">
                         {/* Mobile Close Button */}
                         <div className="flex items-center justify-between mb-4 lg:hidden">
@@ -3496,6 +3500,51 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                     </div>
                 </div>
             )}
+
+                {isPlanFullscreen && projectDetails.currentMode === 'merge-wall' && (
+                    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] w-[min(420px,calc(100vw-2rem))] rounded-xl border border-yellow-200 dark:border-amber-700 bg-white dark:bg-gray-900 shadow-xl p-4">
+                        <p className="text-sm text-yellow-800 dark:text-amber-100 mb-3 font-medium">
+                            Select walls to merge. Continuous identical walls merge; different ones are left alone.
+                            {projectDetails.selectedWallsForRoom.length > 0
+                                ? ` ${projectDetails.selectedWallsForRoom.length} selected.`
+                                : ''}
+                        </p>
+                        {projectDetails.wallMergeError && (
+                            <p className="text-sm text-red-700 mb-3">{projectDetails.wallMergeError}</p>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (projectDetails.selectedWallsForRoom.length >= 2) {
+                                    projectDetails.handleManualWallMerge(projectDetails.selectedWallsForRoom);
+                                } else {
+                                    projectDetails.setWallMergeError('Please select at least 2 walls to merge.');
+                                    projectDetails.setSelectedWallsForRoom([]);
+                                    projectDetails.setSelectedWallsForEdit([]);
+                                    setTimeout(() => projectDetails.setWallMergeError(''), 5000);
+                                }
+                            }}
+                            className="w-full px-4 py-2.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-lg hover:from-yellow-600 hover:to-orange-600 font-semibold"
+                        >
+                            Confirm Merge
+                        </button>
+                    </div>
+                )}
+
+                {isPlanFullscreen && projectDetails.currentMode === 'edit-wall' && projectDetails.isMultiWallEditMode && projectDetails.selectedWallsForEdit.length > 0 && (
+                    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] w-[min(420px,calc(100vw-2rem))] rounded-xl border border-green-200 dark:border-green-700 bg-white dark:bg-gray-900 shadow-xl p-4 space-y-2">
+                        <p className="text-sm font-medium text-green-900 dark:text-green-100">
+                            {projectDetails.selectedWallsForEdit.length} wall{projectDetails.selectedWallsForEdit.length > 1 ? 's' : ''} selected
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => projectDetails.setShowWallEditor(true)}
+                            className="w-full px-4 py-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700 font-medium"
+                        >
+                            Show Edit Wall Form
+                        </button>
+                    </div>
+                )}
 
                 {/* Wall Editor Modal */}
                     {((projectDetails.selectedWall !== null || (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor)) && projectDetails.currentMode === 'edit-wall') && (

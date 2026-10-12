@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
@@ -3364,6 +3365,73 @@ const Canvas2D = ({
         setShowLengthInput(false);
         setPendingWallData(null);
     };
+
+    const renderManualSplitPanel = () => {
+        if (currentMode !== 'split-wall') {
+            return null;
+        }
+        return (
+            <div className="plan-details-card bg-white dark:bg-gray-900 border border-emerald-200 dark:border-emerald-800 rounded-lg p-5 shadow-sm">
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Manual Wall Split</h5>
+                {!splitTargetWall ? (
+                    <div className="text-sm text-emerald-700 dark:text-emerald-300 space-y-2">
+                        <p>Click a wall on the canvas to select it for splitting.</p>
+                        <p>Click again on the wall to split at the snapped point, or enter an exact distance below.</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="text-sm text-gray-700 dark:text-gray-200 space-y-1 mb-3">
+                            <div className="flex justify-between">
+                                <span className="font-medium">Wall ID:</span>
+                                <span>#{splitTargetWall.id}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="font-medium">Length:</span>
+                                <span>{Math.round(splitTargetWallLength || 0)}</span>
+                            </div>
+                            {splitHoverDistance !== null && (
+                                <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
+                                    <span className="font-medium">Preview distance:</span>
+                                    <span>{Math.round(splitHoverDistance)}</span>
+                                </div>
+                            )}
+                        </div>
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide mb-2">
+                            Distance from start (mm)
+                        </label>
+                        <input
+                            type="number"
+                            min="1"
+                            value={splitDistanceInput}
+                            onChange={(e) => updatePreviewFromDistance(e.target.value)}
+                            className="w-full px-3 py-2 border border-emerald-200 dark:border-emerald-700 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                            placeholder="e.g. 1200"
+                        />
+                        <div className="mt-3 flex flex-col gap-2">
+                            <button
+                                onClick={handleSplitAtDistance}
+                                disabled={isProcessingSplit}
+                                className={`w-full px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ${
+                                    isProcessingSplit
+                                        ? 'bg-emerald-300 cursor-wait'
+                                        : 'bg-emerald-500 hover:bg-emerald-600'
+                                }`}
+                            >
+                                {isProcessingSplit ? 'Splitting...' : 'Split at Distance'}
+                            </button>
+                            <button
+                                onClick={() => resetSplitState(true)}
+                                disabled={isProcessingSplit}
+                                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-200 text-sm"
+                            >
+                                Clear Selection
+                            </button>
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    };
     
     return (
         <>
@@ -3684,67 +3752,7 @@ const Canvas2D = ({
                                             </div>
 
                                                             {/* Manual Wall Split Section */}
-                                            {currentMode === 'split-wall' && (
-                                                <div className="plan-details-card bg-white border border-emerald-200 dark:border-emerald-800 rounded-lg p-5 shadow-sm">
-                                                    <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Manual Wall Split</h5>
-                                                    {!splitTargetWall ? (
-                                                        <div className="text-sm text-emerald-700 space-y-2">
-                                                            <p>Click a wall on the canvas to select it for splitting.</p>
-                                                            <p>Click again on the wall to split at the snapped point, or enter an exact distance below.</p>
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                            <div className="text-sm text-gray-700 space-y-1 mb-3">
-                                                                <div className="flex justify-between">
-                                                                    <span className="font-medium">Wall ID:</span>
-                                                                    <span>#{splitTargetWall.id}</span>
-                                                                </div>
-                                                                <div className="flex justify-between">
-                                                                    <span className="font-medium">Length:</span>
-                                                                    <span>{Math.round(splitTargetWallLength || 0)}</span>
-                                                                </div>
-                                                                {splitHoverDistance !== null && (
-                                                                    <div className="flex justify-between text-emerald-700">
-                                                                        <span className="font-medium">Preview distance:</span>
-                                                                        <span>{Math.round(splitHoverDistance)}</span>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                                                                Distance from start (mm)
-                                                            </label>
-                                                            <input
-                                                                type="number"
-                                                                min="1"
-                                                                value={splitDistanceInput}
-                                                                onChange={(e) => updatePreviewFromDistance(e.target.value)}
-                                                                className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
-                                                                placeholder="e.g. 1200"
-                                                            />
-                                                            <div className="mt-3 flex flex-col gap-2">
-                                                                <button
-                                                                    onClick={handleSplitAtDistance}
-                                                                    disabled={isProcessingSplit}
-                                                                    className={`w-full px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ${
-                                                                        isProcessingSplit
-                                                                            ? 'bg-emerald-300 cursor-wait'
-                                                                            : 'bg-emerald-500 hover:bg-emerald-600'
-                                                                    }`}
-                                                                >
-                                                                    {isProcessingSplit ? 'Splitting...' : 'Split at Distance'}
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => resetSplitState(true)}
-                                                                    disabled={isProcessingSplit}
-                                                                    className="w-full px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-all duration-200 text-sm"
-                                                                >
-                                                                    Clear Selection
-                                                                </button>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            )}
+                                            {!isPlanFullscreen && renderManualSplitPanel()}
 
                                             {/* Wall Finish Legend */}
                                             {thicknessColorMap && thicknessColorMap.size > 0 && (
@@ -3786,7 +3794,7 @@ const Canvas2D = ({
                                                         ))}
                                                     </div>
                                                     <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                                                        The top line is Side 1 and the bottom line is Side 2. Side 1 sits on the right as the wall runs from its start to its end, not toward the model center. A face sheet keeps the same color on every wall.
+                                                        The top line is Side 1 and the bottom line is Side 2. Side 1 sits on the right as the wall runs from its start to its end, not toward the model center. The same finish on a different wall thickness uses a different color.
                                                     </div>
                                                 </div>
                                             )}
@@ -3879,6 +3887,13 @@ const Canvas2D = ({
                 </div>
             </div>
             
+            {isPlanFullscreen && currentMode === 'split-wall' && typeof document !== 'undefined' && createPortal(
+                <div className="fixed top-16 right-4 z-[10050] w-[min(360px,calc(100vw-2rem))] max-h-[calc(100dvh-5rem)] overflow-y-auto">
+                    {renderManualSplitPanel()}
+                </div>,
+                document.body,
+            )}
+
             {selectedIntersections.length > 0 && (
             <div className="fixed inset-0 bg-transparent pointer-events-none flex justify-end items-start z-50">
                 <div className="configure-joints-panel pointer-events-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-lg shadow-lg m-4 max-w-md w-full max-h-[90vh] flex flex-col">

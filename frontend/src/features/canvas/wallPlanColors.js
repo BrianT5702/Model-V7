@@ -65,20 +65,26 @@ function wallSortId(wall) {
     return Number.isFinite(id) ? id : Number.MAX_SAFE_INTEGER;
 }
 
-/** Face sheet only. Wall core thickness is not part of the color. */
-function sheetFaceKey(sheetThickness, material) {
-    return `${configMaterial(material)}|${configNumber(sheetThickness, 0.5)}`;
+/** Wall thickness plus face sheet. 150 mm and 100 mm of the same finish stay different colors. */
+function sheetFaceKey(wallThickness, sheetThickness, material) {
+    return [
+        configNumber(wallThickness, ''),
+        configMaterial(material),
+        configNumber(sheetThickness, 0.5),
+    ].join('|');
 }
 
 function compareFaceKeys(a, b) {
-    const [matA, thkA] = String(a).split('|');
-    const [matB, thkB] = String(b).split('|');
+    const [wallA, matA, sheetA] = String(a).split('|');
+    const [wallB, matB, sheetB] = String(b).split('|');
     const ia = MATERIAL_ORDER.indexOf(matA);
     const ib = MATERIAL_ORDER.indexOf(matB);
     const materialOrder = (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
     if (materialOrder !== 0) return materialOrder;
     if (matA !== matB) return matA.localeCompare(matB);
-    return Number(thkA) - Number(thkB);
+    const sheetOrder = Number(sheetA) - Number(sheetB);
+    if (sheetOrder !== 0) return sheetOrder;
+    return Number(wallA) - Number(wallB);
 }
 
 function paletteColor(index, darkCanvas) {
@@ -90,9 +96,8 @@ function paletteColor(index, darkCanvas) {
 }
 
 /**
- * Each face line is colored by its own sheet: material plus sheet thickness.
- * 0.5 mm stainless steel is the same color on a 100 mm wall and a 150 mm wall.
- * The outer line uses the outside sheet. The inner line uses the inside sheet.
+ * Each face line is colored by wall thickness plus that side's sheet.
+ * 150 mm 0.6 PPGI is not the same color as 100 mm 0.6 PPGI.
  */
 export function buildPerWallColorMap(walls, palette) {
     const colorMap = new Map();
@@ -102,8 +107,8 @@ export function buildPerWallColorMap(walls, palette) {
     const usable = walls.filter((wall) => wall?.id != null);
     const keys = new Set();
     usable.forEach((wall) => {
-        keys.add(sheetFaceKey(wall.inner_face_thickness, wall.inner_face_material));
-        keys.add(sheetFaceKey(wall.outer_face_thickness, wall.outer_face_material));
+        keys.add(sheetFaceKey(wall.thickness, wall.inner_face_thickness, wall.inner_face_material));
+        keys.add(sheetFaceKey(wall.thickness, wall.outer_face_thickness, wall.outer_face_material));
     });
 
     const colorByKey = new Map();
@@ -121,8 +126,8 @@ export function buildPerWallColorMap(walls, palette) {
     ordered.forEach((wall) => {
         const finishKey = wallFinishKey(wall);
         if (styleByConfig.has(finishKey)) return;
-        const innerKey = sheetFaceKey(wall.inner_face_thickness, wall.inner_face_material);
-        const outerKey = sheetFaceKey(wall.outer_face_thickness, wall.outer_face_material);
+        const innerKey = sheetFaceKey(wall.thickness, wall.inner_face_thickness, wall.inner_face_material);
+        const outerKey = sheetFaceKey(wall.thickness, wall.outer_face_thickness, wall.outer_face_material);
         const innerColor = colorByKey.get(innerKey);
         const outerColor = colorByKey.get(outerKey);
         styleByConfig.set(finishKey, {

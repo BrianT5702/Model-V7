@@ -43,12 +43,33 @@ function findScrollableModalPanel(start, root) {
     return deepestMarked;
 }
 
+// Plan and 3D fullscreen shells use z-index 10000. Dialogs are portaled to
+// document.body, so a utility like z-50 paints behind that shell and looks
+// like the form never opened. Keep layers that are already above 11000.
+const MODAL_ABOVE_FULLSCREEN_Z = 11000;
+
+function overlayZIndex(className) {
+    const text = String(className || '');
+    const arbitrary = text.match(/z-\[(\d+)\]/);
+    const named = text.match(/(?:^|\s)z-(\d+)(?:\s|$)/);
+    const requested = arbitrary
+        ? Number(arbitrary[1])
+        : named
+            ? Number(named[1])
+            : 0;
+    if (requested >= MODAL_ABOVE_FULLSCREEN_Z) {
+        return requested;
+    }
+    // Preserve relative order (z-50 under z-[60]) while clearing the shell.
+    return MODAL_ABOVE_FULLSCREEN_Z + Math.min(requested, 100);
+}
+
 /**
  * Full-screen modal backdrop.
  * Rendered in a portal on document.body so wheel events are not stolen by
  * scrollable ancestors (e.g. canvas-panel-scroll on desktop project view).
  */
-const ModalOverlay = ({ children, className = '', onWheel, ...rest }) => {
+const ModalOverlay = ({ children, className = '', onWheel, style, ...rest }) => {
     useLockBodyScroll(true);
     const overlayRef = useRef(null);
 
@@ -105,8 +126,9 @@ const ModalOverlay = ({ children, className = '', onWheel, ...rest }) => {
     return createPortal(
         <div
             ref={overlayRef}
-            className={`modal-overlay fixed inset-0 ${className}`.trim()}
             {...rest}
+            className={`modal-overlay fixed inset-0 ${className}`.trim()}
+            style={{ ...style, zIndex: overlayZIndex(className) }}
         >
             {children}
         </div>,
