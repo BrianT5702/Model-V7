@@ -474,6 +474,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
         setIsPlanFullscreen(false);
         if (projectDetails.is3DView) {
             projectDetails.forceCleanup3D();
+            projectDetails.setIs3DBuilding(false);
+        } else {
+            projectDetails.setIs3DBuilding(true);
         }
         projectDetails.setIs3DView(!projectDetails.is3DView);
     }, [projectDetails]);
@@ -2865,6 +2868,15 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         id="three-canvas-container"
                                         className="bg-gray-50 dark:bg-gray-800 active overflow-hidden transition-colors"
                                     />
+                                    {projectDetails.is3DBuilding && (
+                                        <div className="three-build-overlay" role="status" aria-live="polite">
+                                            <div className="three-build-card">
+                                                <div className="three-build-spinner" aria-hidden="true" />
+                                                <p className="three-build-title">Building 3D model</p>
+                                                <p className="three-build-copy">Loading walls, rooms, and panels…</p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ) : (

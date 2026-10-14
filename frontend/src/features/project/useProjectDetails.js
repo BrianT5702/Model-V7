@@ -34,6 +34,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const [selectedWallsForEdit, setSelectedWallsForEdit] = useState([]);
   const [isMultiWallEditMode, setIsMultiWallEditMode] = useState(false);
   const [is3DView, setIs3DView] = useState(false);
+  const [is3DBuilding, setIs3DBuilding] = useState(false);
   const [isInteriorView, setIsInteriorView] = useState(false);
   const [isTourMode, setIsTourMode] = useState(false);
   const threeCanvasInstance = useRef(null);
@@ -88,6 +89,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const historyActionChainRef = useRef(Promise.resolve());
   const layoutAuthorityRef = useRef('original');
   const layoutFetchGenerationRef = useRef(0);
+  const layoutReadyGenerationRef = useRef(0);
+  const skipNext3DUpdateRef = useRef(false);
   const [isHistoryBusy, setIsHistoryBusy] = useState(false);
   const [planAnnotations, setPlanAnnotations] = useState([]);
   const [filteredPlanAnnotations, setFilteredPlanAnnotations] = useState([]);
@@ -1557,22 +1560,37 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
       const layout = layoutResponse.data || {};
       const projectData = layout.project || null;
+      const wallsData = Array.isArray(layout.walls) ? layout.walls : [];
+      const doorsData = Array.isArray(layout.doors) ? layout.doors : [];
+      const jointsData = Array.isArray(layout.intersections) ? layout.intersections : [];
+      const roomsData = Array.isArray(layout.rooms) ? layout.rooms : [];
+      projectRef.current = projectData;
+      wallsRef.current = wallsData;
+      doorsRef.current = doorsData;
+      jointsRef.current = jointsData;
+      roomsRef.current = roomsData;
       setProject(projectData);
-      setWalls(Array.isArray(layout.walls) ? layout.walls : []);
-      setDoors(Array.isArray(layout.doors) ? layout.doors : []);
-      setJoints(Array.isArray(layout.intersections) ? layout.intersections : []);
-      setRooms(Array.isArray(layout.rooms) ? layout.rooms : []);
+      setWalls(wallsData);
+      setDoors(doorsData);
+      setJoints(jointsData);
+      setRooms(roomsData);
       setPlanAnnotations(Array.isArray(layout.plan_annotations) ? layout.plan_annotations : []);
       const prefetchedStoreys = Array.isArray(layout.storeys) ? layout.storeys : [];
       setActiveStoreyId(null);
-      await ensureStoreys(projectData, prefetchedStoreys);
+      const storeyList = await ensureStoreys(projectData, prefetchedStoreys);
+      if (fetchGeneration !== layoutFetchGenerationRef.current) {
+        return;
+      }
+      storeysRef.current = Array.isArray(storeyList) ? storeyList : [];
       setStoreyError('');
       setProjectLoadError('');
       setLayoutPreview(null);
+      layoutReadyGenerationRef.current = fetchGeneration;
     } catch (error) {
       if (fetchGeneration !== layoutFetchGenerationRef.current) {
         return;
       }
+      layoutReadyGenerationRef.current = fetchGeneration;
       console.error('Error fetching project details:', error);
       if (isDatabaseConnectionError(error)) {
         setProjectLoadError('Fail to connect to database. Try again later.');
@@ -1672,9 +1690,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     };
   }, [cancelPendingHistorySync]);
 
-  // 3D view effect. Build once per visit, from the latest data at fire time.
-  // Walls/rooms that arrive during the short DOM delay must not be captured
-  // by an earlier snapshot, and a superseded timer must not create a second canvas.
+  // Build the 3D scene once per visit, only after layout and ceiling/floor
+  // panel trees are in memory. A later rebuild was dropping part of a large model.
   useEffect(() => {
     const disposeCanvas = () => {
       const canvas = threeCanvasInstance.current;
@@ -1689,20 +1706,70 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
 
     if (!is3DView) {
       disposeCanvas();
+      setIs3DBuilding(false);
       return undefined;
     }
 
     let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
+    setIs3DBuilding(true);
+
+    const wait = (ms) => new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+    const nextFrame = () => new Promise((resolve) => {
+      window.requestAnimationFrame(resolve);
+    });
+    const roomsLackPanelTrees = (list) => (list || []).some(
+      (room) => room && !Object.prototype.hasOwnProperty.call(room, 'ceiling_plan')
+    );
+
+    const buildWhenReady = async () => {
+      while (
+        !cancelled
+        && layoutReadyGenerationRef.current !== layoutFetchGenerationRef.current
+      ) {
+        await wait(40);
+      }
       if (cancelled) return;
-      const container = document.getElementById('three-canvas-container');
-      if (!container) return;
+
+      let roomsForModel = roomsRef.current || [];
+      let fetchedPanelTrees = false;
+      if (roomsLackPanelTrees(roomsForModel) && projectId) {
+        try {
+          const response = await api.get(`/rooms/?project=${projectId}`);
+          if (cancelled) return;
+          if (Array.isArray(response.data)) {
+            roomsForModel = response.data;
+            roomsRef.current = response.data;
+            fetchedPanelTrees = true;
+          }
+        } catch (error) {
+          console.warn('Could not load room details for 3D view:', error);
+        }
+      }
+      if (cancelled) return;
+
+      let container = null;
+      for (let attempt = 0; attempt < 30 && !cancelled; attempt += 1) {
+        container = document.getElementById('three-canvas-container');
+        if (container) break;
+        await nextFrame();
+      }
+      if (cancelled || !container) {
+        if (!cancelled) setIs3DBuilding(false);
+        return;
+      }
+
+      // Paint the loading screen before the synchronous model build blocks the page.
+      await nextFrame();
+      if (cancelled) return;
+
       try {
         const currentProject = projectRef.current;
         const projectWithData = currentProject ? {
           ...currentProject,
           storeys: storeysRef.current || [],
-          rooms: roomsRef.current || [],
+          rooms: roomsForModel,
         } : null;
         const threeCanvas = new ThreeCanvas3D(
           'three-canvas-container',
@@ -1725,18 +1792,29 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
           threeCanvas.setAllPanelLinesVisibility(showPanelLinesRef.current);
         }
         threeCanvasInstance.current = threeCanvas;
+        if (fetchedPanelTrees) {
+          // The scene already includes these rooms. Skip the rebuild that
+          // setRooms would trigger — that second build was leaving pieces out.
+          skipNext3DUpdateRef.current = true;
+          setRooms(roomsForModel);
+        }
+        await nextFrame();
+        await nextFrame();
+        if (!cancelled) setIs3DBuilding(false);
       } catch (error) {
         console.error('Error creating 3D canvas:', error);
         threeCanvasInstance.current = null;
+        if (!cancelled) setIs3DBuilding(false);
       }
-    }, 100);
+    };
+
+    buildWhenReady();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timeoutId);
       disposeCanvas();
     };
-  }, [is3DView]);
+  }, [is3DView, projectId]);
 
   useEffect(() => {
     if (!is3DView && isTourMode) {
@@ -1747,29 +1825,13 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   }, [is3DView, isTourMode]);
 
-  // Opening the plan uses room outlines only. 3D ceilings need the panel trees.
-  const roomsNeedPanelTrees = (rooms || []).some(
-    (room) => room && !Object.prototype.hasOwnProperty.call(room, 'ceiling_plan')
-  );
-  useEffect(() => {
-    if (!is3DView || !projectId || !roomsNeedPanelTrees) return undefined;
-    let cancelled = false;
-    api.get(`/rooms/?project=${projectId}`)
-      .then((response) => {
-        if (!cancelled && Array.isArray(response.data)) {
-          setRooms(response.data);
-        }
-      })
-      .catch((error) => {
-        console.warn('Could not load room details for 3D view:', error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [is3DView, projectId, roomsNeedPanelTrees]);
-
   // Update 3D canvas when walls, joints, doors, project, storeys, or rooms change
+  // after the first build. The first build waits for panel trees itself.
   useEffect(() => {
+    if (skipNext3DUpdateRef.current) {
+      skipNext3DUpdateRef.current = false;
+      return;
+    }
     if (is3DView && threeCanvasInstance.current) {
       // Create combined project object with storeys and rooms for 3D canvas
       const projectWithData = project ? {
@@ -3832,6 +3894,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     setIsMultiWallEditMode,
     is3DView,
     setIs3DView,
+    is3DBuilding,
+    setIs3DBuilding,
     isInteriorView,
     setIsInteriorView,
     isTourMode,
