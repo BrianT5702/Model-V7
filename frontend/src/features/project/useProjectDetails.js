@@ -69,6 +69,16 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
   const wallsRef = useRef(walls);
   const roomsRef = useRef(rooms);
   const doorsRef = useRef(doors);
+  const jointsRef = useRef(joints);
+  const storeysRef = useRef(storeys);
+  const projectRef = useRef(project);
+  const showPanelLinesRef = useRef(true);
+  wallsRef.current = walls;
+  roomsRef.current = rooms;
+  doorsRef.current = doors;
+  jointsRef.current = joints;
+  storeysRef.current = storeys;
+  projectRef.current = project;
   const historySyncInFlightRef = useRef(false);
   const historySyncTimerRef = useRef(null);
   const historyTargetSnapshotRef = useRef(null);
@@ -1263,6 +1273,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     const [roomError, setRoomError] = useState('');
     const [projectLoadError, setProjectLoadError] = useState('');
     const [showPanelLines, setShowPanelLines] = useState(true);
+  showPanelLinesRef.current = showPanelLines;
 
   // Utility: DB/network error check
   const isDatabaseConnectionError = (error) => {
@@ -1661,60 +1672,71 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     };
   }, [cancelPendingHistorySync]);
 
-  // 3D view effect
+  // 3D view effect. Build once per visit, from the latest data at fire time.
+  // Walls/rooms that arrive during the short DOM delay must not be captured
+  // by an earlier snapshot, and a superseded timer must not create a second canvas.
   useEffect(() => {
-    if (is3DView) {
-      // Small delay to ensure DOM is ready
-      setTimeout(() => {
-        const container = document.getElementById('three-canvas-container');
-        if (container) {
-          try {
-            // Create combined project object with storeys and rooms for 3D canvas
-            const projectWithData = project ? {
-              ...project,
-              storeys: storeys || [],
-              rooms: rooms || []
-            } : null;
-            const threeCanvas = new ThreeCanvas3D('three-canvas-container', walls, joints, doors, 0.01, projectWithData);
-            threeCanvas.onTourChange = (active) => setIsTourMode(active);
-            threeCanvasInstance.current = threeCanvas;
-          } catch (error) {
-            console.error('Error creating 3D canvas:', error);
-            threeCanvasInstance.current = null;
+    const disposeCanvas = () => {
+      const canvas = threeCanvasInstance.current;
+      if (!canvas) return;
+      if (typeof canvas.dispose === 'function') {
+        canvas.dispose();
+      } else if (canvas.renderer) {
+        canvas.renderer.dispose();
+      }
+      threeCanvasInstance.current = null;
+    };
+
+    if (!is3DView) {
+      disposeCanvas();
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      const container = document.getElementById('three-canvas-container');
+      if (!container) return;
+      try {
+        const currentProject = projectRef.current;
+        const projectWithData = currentProject ? {
+          ...currentProject,
+          storeys: storeysRef.current || [],
+          rooms: roomsRef.current || [],
+        } : null;
+        const threeCanvas = new ThreeCanvas3D(
+          'three-canvas-container',
+          wallsRef.current,
+          jointsRef.current,
+          doorsRef.current,
+          0.01,
+          projectWithData,
+        );
+        if (cancelled) {
+          if (typeof threeCanvas.dispose === 'function') {
+            threeCanvas.dispose();
+          } else if (threeCanvas.renderer) {
+            threeCanvas.renderer.dispose();
           }
+          return;
         }
-      }, 100);
-      return () => {
-        if (threeCanvasInstance.current) {
-          // Use dispose method if available (includes resize handler cleanup)
-          if (typeof threeCanvasInstance.current.dispose === 'function') {
-            threeCanvasInstance.current.dispose();
-          } else {
-            // Fallback to manual cleanup
-            if (threeCanvasInstance.current.renderer) {
-              threeCanvasInstance.current.renderer.dispose();
-            }
-          }
-          threeCanvasInstance.current = null;
+        threeCanvas.onTourChange = (active) => setIsTourMode(active);
+        if (typeof threeCanvas.setAllPanelLinesVisibility === 'function') {
+          threeCanvas.setAllPanelLinesVisibility(showPanelLinesRef.current);
         }
-      };
-    } else {
-      // Clean up 3D canvas when switching back to 2D
-      if (threeCanvasInstance.current) {
-        // Use dispose method if available (includes resize handler cleanup)
-        if (typeof threeCanvasInstance.current.dispose === 'function') {
-          threeCanvasInstance.current.dispose();
-        } else {
-          // Fallback to manual cleanup
-          if (threeCanvasInstance.current.renderer) {
-            threeCanvasInstance.current.renderer.dispose();
-          }
-        }
+        threeCanvasInstance.current = threeCanvas;
+      } catch (error) {
+        console.error('Error creating 3D canvas:', error);
         threeCanvasInstance.current = null;
       }
-    }
-    // eslint-disable-next-line
-  }, [is3DView, walls, joints, doors]);
+    }, 100);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      disposeCanvas();
+    };
+  }, [is3DView]);
 
   useEffect(() => {
     if (!is3DView && isTourMode) {

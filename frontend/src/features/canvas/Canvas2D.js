@@ -3473,8 +3473,8 @@ const Canvas2D = ({
             <div className={`plan-canvas wall-canvas-container bg-white dark:bg-gray-900 rounded-xl shadow-lg p-4${isPlanFullscreen ? ' wall-plan-fullscreen' : ''}`}>
                 {/* Header */}
                 <div className="wall-canvas-header mb-3">
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                        <div className="shrink-0">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <div className="shrink-0 min-w-0">
                             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight">
                                 Wall Plan
                             </h3>
@@ -3483,51 +3483,7 @@ const Canvas2D = ({
                             </p>
                         </div>
 
-                        <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0 text-xs text-gray-700 dark:text-gray-300">
-                            <span className="font-semibold text-gray-900 dark:text-gray-100 shrink-0 inline-flex items-center">
-                                <svg className="w-3.5 h-3.5 mr-1 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
-                                </svg>
-                                Dimension Labels
-                            </span>
-                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    checked={dimensionVisibility.project}
-                                    onChange={() => handleDimensionVisibilityChange('project')}
-                                />
-                                <span>Overall project dimensions</span>
-                            </label>
-                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    checked={dimensionVisibility.wall}
-                                    onChange={() => handleDimensionVisibilityChange('wall')}
-                                />
-                                <span>Wall dimensions</span>
-                            </label>
-                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    checked={dimensionVisibility.panel}
-                                    onChange={() => handleDimensionVisibilityChange('panel')}
-                                />
-                                <span title="End panel sizes, plus grouped repeats such as 4 × 1150">Side Panel dimensions</span>
-                            </label>
-                            <label className="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                    checked={showPanelLines}
-                                    onChange={onTogglePanelLines}
-                                />
-                                <span>Panel division lines</span>
-                            </label>
-                        </div>
-
+                        <div className="wall-plan-header-actions order-2 flex flex-wrap items-center gap-1.5 lg:order-3">
                         <button
                             type="button"
                             onClick={() => setShowDoorList((open) => !open)}
@@ -3572,6 +3528,54 @@ const Canvas2D = ({
                                 Show Plan Details
                             </button>
                         )}
+                        </div>
+
+                        <div className="wall-dimension-toggles order-3 lg:order-2 w-full min-w-0 lg:w-auto lg:min-w-[16rem] lg:flex-1 lg:flex lg:flex-wrap lg:items-center lg:gap-x-3 lg:gap-y-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/70 px-2.5 py-2 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 text-xs text-gray-700 dark:text-gray-300">
+                            <span className="font-semibold text-gray-900 dark:text-gray-100 inline-flex items-center mb-1.5 lg:mb-0 lg:mr-3">
+                                <svg className="w-3.5 h-3.5 mr-1 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M5 12h16M8 18h13" />
+                                </svg>
+                                Dimension Labels
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 lg:contents">
+                            <label className="inline-flex items-center gap-1.5 min-w-0 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 shrink-0 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.project}
+                                    onChange={() => handleDimensionVisibilityChange('project')}
+                                />
+                                <span className="leading-tight">Overall project dimensions</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 min-w-0 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 shrink-0 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.wall}
+                                    onChange={() => handleDimensionVisibilityChange('wall')}
+                                />
+                                <span className="leading-tight">Wall dimensions</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 min-w-0 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 shrink-0 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={dimensionVisibility.panel}
+                                    onChange={() => handleDimensionVisibilityChange('panel')}
+                                />
+                                <span className="leading-tight" title="End panel sizes, plus grouped repeats such as 4 × 1150">Side Panel dimensions</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 min-w-0 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 shrink-0 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    checked={showPanelLines}
+                                    onChange={onTogglePanelLines}
+                                />
+                                <span className="leading-tight">Panel division lines</span>
+                            </label>
+                            </div>
+                        </div>
                     </div>
                     {isPlanFullscreen && isEditingMode && onToggleMode && (
                         <div className="flex flex-wrap items-center gap-1.5 pt-2">

@@ -940,8 +940,24 @@ html.dark #three-canvas-container .button-container button:hover {
   .project-details-nav {
     min-width: 0 !important;
     max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
+  }
+
+  /* Phone: stack the wall-plan title, actions, and dimension toggles so they cannot overlap */
+  .wall-canvas-header > .flex {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wall-plan-header-actions,
+  .wall-dimension-toggles {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .wall-dimension-toggles label {
+    white-space: normal;
   }
 
   .project-details-sticky-chrome,
@@ -977,12 +993,19 @@ html.dark #three-canvas-container .button-container button:hover {
     display: block;
   }
 
-  /* Touch targets: don't force every control to 44px wide (that overflows toolbars) */
+  /* Keep toolbar buttons at content width so labels wrap onto the next row instead of overlapping */
   .project-details-nav button,
   .project-details-nav a,
   .project-details-header button,
-  .project-details-header a {
+  .project-details-header a,
+  .wall-plan-header-actions button {
+    min-width: auto;
+    min-height: 36px;
+  }
+
+  .plan-view-tabs button {
     min-width: 0;
+    min-height: 32px;
   }
 }
 

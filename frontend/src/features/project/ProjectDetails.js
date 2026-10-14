@@ -1530,8 +1530,8 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             {/* Navigation Bar */}
             <div className="project-details-nav shrink-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 shadow-sm transition-colors w-full max-w-full min-w-0">
                 <div className="w-full max-w-full min-w-0 px-3 sm:px-4 py-2">
-                    <div className="flex items-center justify-between w-full max-w-full min-w-0 gap-1">
-                        <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1 overflow-x-auto">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 w-full max-w-full min-w-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
                             {!projectDetails.is3DView && isWallPlanView && (
                             <>
                             <button
@@ -1558,6 +1558,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     <button
                                         onClick={() => navigate(getProjectsListPath())}
                                         className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                                        aria-label="Back to Projects"
                                     >
                                         <FaArrowLeft className="w-3.5 h-3.5 sm:mr-1.5" />
                                         <span className="hidden sm:inline">Back to Projects</span>
@@ -1565,9 +1566,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                     <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
                                 </>
                             )}
-                            <div className="flex items-center text-sm text-gray-900 dark:text-gray-100">
+                            <div className="hidden sm:flex items-center text-sm text-gray-900 dark:text-gray-100">
                                 <FaCube className="w-3.5 h-3.5 mr-1.5 text-blue-600 dark:text-blue-400" />
-                                <span className="font-medium hidden sm:inline">
+                                <span className="font-medium">
                                     {isShareSession ? 'Shared Project' : 'Project View'}
                                 </span>
                             </div>
@@ -1575,7 +1576,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                             <button
                                 type="button"
                                 onClick={handleToggle3DView}
-                                className={`flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                                className={`flex items-center px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 shrink-0 ${
                                     projectDetails.is3DView
                                         ? 'btn-primary'
                                         : 'btn-secondary'
@@ -1595,7 +1596,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                             </button>
                         </div>
                         
-                        <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5 w-full sm:w-auto sm:ml-auto min-w-0">
                             <AuthStatusBar />
                             {!isShareSession && (
                                 <>
@@ -1730,7 +1731,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                         
                         {/* Header actions */}
                         <div
-                            className={`flex flex-wrap items-center gap-1.5 shrink-0 lg:justify-self-end ${
+                            className={`project-header-actions flex flex-wrap items-center gap-1.5 w-full min-w-0 lg:w-auto lg:justify-self-end ${
                                 projectDetails.is3DView ? 'lg:col-start-2' : 'lg:col-start-3'
                             }`}
                         >
@@ -1740,21 +1741,23 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         type="button"
                                         onClick={() => projectDetails.undoProjectAction()}
                                         disabled={!projectDetails.canUndoProject}
-                                        className="flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="flex items-center justify-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
                                         title={projectDetails.isHistoryBusy ? 'Saving undo… then you can keep editing' : 'Undo (Ctrl+Z)'}
+                                        aria-label="Undo"
                                     >
-                                        <FaUndo className="mr-1.5 text-xs" />
-                                        <span className="hidden sm:inline">Undo</span>
+                                        <FaUndo className="text-xs lg:mr-1.5" />
+                                        <span className="hidden lg:inline">Undo</span>
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => projectDetails.redoProjectAction()}
                                         disabled={!projectDetails.canRedoProject}
-                                        className="flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="flex items-center justify-center px-2 py-1.5 rounded-md text-sm font-medium transition-all duration-200 btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
                                         title={projectDetails.isHistoryBusy ? 'Saving undo… then you can keep editing' : 'Redo (Ctrl+Y)'}
+                                        aria-label="Redo"
                                     >
-                                        <FaRedo className="mr-1.5 text-xs" />
-                                        <span className="hidden sm:inline">Redo</span>
+                                        <FaRedo className="text-xs lg:mr-1.5" />
+                                        <span className="hidden lg:inline">Redo</span>
                                     </button>
                                 </>
                             )}
@@ -1821,7 +1824,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                             {projectDetails.currentView === 'wall-plan' && (
                                 <>
                             <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
-                            <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+                            <div className="project-storey-switcher flex items-center gap-1.5 w-full sm:w-auto min-w-0">
                                 <FaLayerGroup className="text-blue-600 dark:text-blue-400 hidden sm:block shrink-0 text-sm" />
                                 <select
                                     value={projectDetails.activeStoreyId ?? ''}
@@ -1833,7 +1836,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                         const numericValue = Number(value);
                                         projectDetails.setActiveStoreyId(Number.isNaN(numericValue) ? value : numericValue);
                                     }}
-                                    className="form-control min-w-0 w-full sm:min-w-[112px] sm:w-auto"
+                                    className="form-control min-w-0 flex-1 sm:flex-none sm:min-w-[112px] sm:w-auto"
                                 >
                                     {projectDetails.storeys.length === 0 && (
                                         <option value="">No levels</option>
