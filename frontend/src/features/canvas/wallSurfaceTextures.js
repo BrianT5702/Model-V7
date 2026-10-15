@@ -373,6 +373,19 @@ export function createPanelSurfaceMaterial(THREE, renderer, extra = {}) {
   return material;
 }
 
+/**
+ * Wall ribs with a cool, slightly darker tint. The real door matches the
+ * panel; this step is only enough to show where the leaf is.
+ */
+export function createDoorLeafMaterial(THREE, renderer, extra = {}) {
+  const material = createPanelSurfaceMaterial(THREE, renderer, extra);
+  const door = THREE_CONFIG.MATERIALS.DOOR || {};
+  if (door.color != null) material.color.set(door.color);
+  if (door.metalness != null) material.metalness = door.metalness;
+  if (door.envMapIntensity != null) material.envMapIntensity = door.envMapIntensity;
+  return material;
+}
+
 export function finishPanelSurfaceMesh(THREE, mesh, renderer) {
   if (!mesh?.geometry) return;
   prepareWallSurfaceGeometry(THREE, mesh.geometry);

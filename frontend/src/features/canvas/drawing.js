@@ -2987,7 +2987,7 @@ export function drawDimensions(
     rooms = [],
     dimensionEdgeExtents = null
 ) {
-    const length = Math.sqrt(
+    let length = Math.sqrt(
         Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
 
@@ -3024,8 +3024,8 @@ export function drawDimensions(
         }
     }
     context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
-    const text = formatDimMmCanvas(length);
-    const textWidth = context.measureText(text).width;
+    let text = formatDimMmCanvas(length);
+    let textWidth = context.measureText(text).width;
     const dx = endX - startX;
     const dy = endY - startY;
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
@@ -3073,6 +3073,33 @@ export function drawDimensions(
         const dimStartY = faceSpan.startY;
         const dimEndX = faceSpan.endX;
         const dimEndY = faceSpan.endY;
+        // Ticks sit on the drawn faces. A wall with a 45° cut at both ends is stored
+        // centerline-to-centerline, so the label was short of the long points
+        // (980 instead of 1180). When both ticks fall outside that centerline,
+        // report the span they actually measure: extended end to extended end.
+        const measuredLength = Math.hypot(dimEndX - dimStartX, dimEndY - dimStartY);
+        const along = length || 1;
+        const dirX = (endX - startX) / along;
+        const dirY = (endY - startY) / along;
+        const startExtension =
+            -((dimStartX - startX) * dirX + (dimStartY - startY) * dirY);
+        const endExtension =
+            (dimEndX - endX) * dirX + (dimEndY - endY) * dirY;
+        if (measuredLength > length + 1 && startExtension > 1 && endExtension > 1) {
+            if (dimensionValuesSeen) {
+                const oldKey = planCeilingValueDedupKey(length, isHorizLen);
+                const newKey = planCeilingValueDedupKey(measuredLength, isHorizLen);
+                if (oldKey && oldKey !== newKey) dimensionValuesSeen.delete(oldKey);
+                if (newKey && dimensionValuesSeen.has(newKey)) {
+                    context.restore();
+                    return;
+                }
+                if (newKey) dimensionValuesSeen.add(newKey);
+            }
+            length = measuredLength;
+            text = formatDimMmCanvas(length);
+            textWidth = context.measureText(text).width;
+        }
         const segmentWall = wallData?.wall ?? null;
         const hostForNear = segmentWall || wallData?.wall || null;
         const isHorizSegment = Math.abs(angle) < 45 || Math.abs(angle) > 135;

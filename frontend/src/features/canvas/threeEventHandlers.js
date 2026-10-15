@@ -3,7 +3,7 @@
 import { isDoorOpen, toggleDoorContainer } from './doorInteraction';
 
 export function onMouseMoveHandler(instance, event) {
-  if (instance.isTourEngaged?.()) {
+  if (instance.isTourEngaged?.() || instance._orbitDragging) {
     return;
   }
   // Calculate mouse position in normalized device coordinates

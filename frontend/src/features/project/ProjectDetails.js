@@ -2295,9 +2295,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                 {!projectDetails.is3DView && isWallPlanView && (
                 <div className={`controls-sidebar-scroll fixed lg:static inset-y-0 left-0 z-50 lg:z-auto bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shadow-sm lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain transition-all duration-300 ease-in-out w-80 min-w-[300px] max-w-[340px] ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-                } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''} ${
-                    isPlanFullscreen && (projectDetails.isEditingMode || !controlsSidebarCollapsed) ? ' plan-fullscreen-tool-panel' : ''
-                }`}>
+                } ${controlsSidebarCollapsed ? 'lg:w-0 lg:min-w-0 lg:max-w-0 lg:border-r-0 lg:shadow-none lg:overflow-hidden lg:pointer-events-none' : ''}`}>
                     <div className="p-4 sm:p-6">
                         {/* Mobile Close Button */}
                         <div className="flex items-center justify-between mb-4 lg:hidden">
@@ -2759,16 +2757,40 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                         projectDetails.is3DView ? 'canvas-container-3d flex flex-col m-2 sm:m-3' : 'canvas-container-2d flex flex-col overflow-hidden m-3 sm:m-6'
                     }${isPlanFullscreen ? ' plan-view-fullscreen' : ''}`}>
                         {isPlanFullscreen && !projectDetails.is3DView && (
-                            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
-                                {renderPlanViewTabs()}
-                                <button
-                                    type="button"
-                                    onClick={() => setIsPlanFullscreen(false)}
-                                    className="px-2 py-1 text-xs rounded-md border border-slate-800 bg-slate-800 text-white font-medium shrink-0"
-                                    title="Exit fullscreen (Esc)"
-                                >
-                                    Exit fullscreen
-                                </button>
+                            <div className="shrink-0 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                                <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+                                    {renderPlanViewTabs()}
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsPlanFullscreen(false)}
+                                        className="px-2 py-1 text-xs rounded-md border border-slate-800 bg-slate-800 text-white font-medium shrink-0"
+                                        title="Exit fullscreen (Esc)"
+                                    >
+                                        Exit fullscreen
+                                    </button>
+                                </div>
+                                {isWallPlanView && projectDetails.isEditingMode && (
+                                    <div className="plan-fullscreen-edit-bar">
+                                        {[
+                                            ['add-wall', 'Add wall'],
+                                            ['edit-wall', 'Edit wall'],
+                                            ['merge-wall', 'Merge'],
+                                            ['split-wall', 'Split'],
+                                            ['define-room', 'Room'],
+                                            ['add-door', 'Add door'],
+                                            ['edit-door', 'Edit door'],
+                                        ].map(([mode, label]) => (
+                                            <button
+                                                key={mode}
+                                                type="button"
+                                                onClick={() => projectDetails.toggleMode(mode)}
+                                                className={`plan-fullscreen-edit-btn${projectDetails.currentMode === mode ? ' is-active' : ''}`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                         {projectDetails.is3DView ? (
@@ -3066,14 +3088,9 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             isPlanFullscreen={isPlanFullscreen}
                                             onTogglePlanFullscreen={() => setIsPlanFullscreen((open) => !open)}
                                             onToggleEditMode={() => {
-                                                const next = !projectDetails.isEditingMode;
-                                                projectDetails.setIsEditingMode(next);
+                                                projectDetails.setIsEditingMode(!projectDetails.isEditingMode);
                                                 projectDetails.setCurrentMode(null);
                                                 projectDetails.resetAllSelections();
-                                                if (next) {
-                                                    setControlsSidebarCollapsed(false);
-                                                    setSidebarOpen(true);
-                                                }
                                             }}
                                         />
                                     ) : projectDetails.currentView === 'floor-plan' ? (
@@ -3117,6 +3134,19 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             canEdit={canEdit}
                                             layoutPreview={projectDetails.layoutPreview}
                                             room={projectDetails.filteredRooms && projectDetails.filteredRooms.length > 0 ? projectDetails.filteredRooms[0] : null}
+                                            onWallsUpdated={(freshWalls) => {
+                                                const byId = new Map((freshWalls || []).map((wall) => [String(wall.id), wall]));
+                                                projectDetails.setWalls((current) => (current || []).map((wall) => {
+                                                    const fresh = byId.get(String(wall.id));
+                                                    if (!fresh) return wall;
+                                                    return {
+                                                        ...wall,
+                                                        ceiling_joint_type: fresh.ceiling_joint_type ?? null,
+                                                        ceiling_cut_l_horizontal_extension: fresh.ceiling_cut_l_horizontal_extension ?? null,
+                                                        height: fresh.height ?? wall.height,
+                                                    };
+                                                }));
+                                            }}
                                             onClose={() => {
                                                 projectDetails.resetAllSelections();
                                                 projectDetails.setCurrentView('wall-plan');

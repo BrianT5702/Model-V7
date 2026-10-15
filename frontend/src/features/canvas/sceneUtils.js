@@ -5,6 +5,7 @@ import earcut from 'earcut';
 import { THREE_CONFIG } from './threeConfig';
 import { createPanelSurfaceMaterial, finishPanelSurfaceMesh } from './wallSurfaceTextures';
 import { createFatLineSegmentsFromEdgesGeometry } from './wideLineUtils';
+import { ceilingInsetFromOuterFaceMm } from './ceilingLJoint';
 
 export function addGrid(instance) {
   if (!THREE_CONFIG.GRID.SHOW_IN_3D) {
@@ -513,24 +514,6 @@ export function calculateModelOffset(instance) {
   instance.modelOffset = { x: 0, z: 0 };
 }
 
-// Helper function to get default Cut L horizontal extension based on wall thickness
-function getCutLDefaultHorizontalExtension(wallThickness) {
-  if (wallThickness >= 200) return 125.0;
-  if (wallThickness >= 150) return 100.0;
-  if (wallThickness >= 125) return 75.0;
-  if (wallThickness >= 100) return 75.0;
-  if (wallThickness >= 75) return 50.0;
-  return 50.0;
-}
-
-// Helper function to get Cut L horizontal extension for a wall
-function getCutLHorizontalExtension(wall) {
-  if (wall.ceiling_cut_l_horizontal_extension !== null && wall.ceiling_cut_l_horizontal_extension !== undefined) {
-    return wall.ceiling_cut_l_horizontal_extension;
-  }
-  return getCutLDefaultHorizontalExtension(wall.thickness || 150);
-}
-
 // Calculate Cut L wall offsets for a room
 function calculateCutLWallOffsets(room, walls) {
   const offsets = {};
@@ -564,10 +547,9 @@ function calculateCutLWallOffsets(room, walls) {
   
   wallsToCheck.forEach(wall => {
     if (wall.ceiling_joint_type === 'cut_l') {
-      const horizontalExtension = getCutLHorizontalExtension(wall);
-      const offset = Math.max(0, horizontalExtension);
+      const offset = ceilingInsetFromOuterFaceMm(wall);
       offsets[wall.id] = offset;
-      console.log(`[Cut L] Room ${room.id || 'unknown'}: Wall ${wall.id} - thickness: ${wall.thickness}mm, extension: ${horizontalExtension}mm, offset: ${offset}mm`);
+      console.log(`[Cut L] Room ${room.id || 'unknown'}: Wall ${wall.id} - thickness: ${wall.thickness}mm, inset from outer face: ${offset}mm`);
     }
   });
   

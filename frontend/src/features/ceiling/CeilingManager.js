@@ -10,7 +10,7 @@ import useScrollContainment from '../../utils/useScrollContainment';
 
 const DEFAULT_CEILING_PANEL_LENGTH_MM = 6000;
 
-const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, updateSharedPanelData = null, sharedPanelData = null, layoutPreview = null }) => {
+const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, onWallsUpdated = null, updateSharedPanelData = null, sharedPanelData = null, layoutPreview = null }) => {
     const { isAuthenticated } = useAuth();
     // Essential state for project-level ceiling planning
     const [isGenerating, setIsGenerating] = useState(false);
@@ -1018,9 +1018,14 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
             
             await Promise.all(updatePromises);
             
-            // Reload walls to get updated data
+            // Reload walls to get updated data, and hand the same list to the
+            // project so the 3D view builds the L cut the next time it opens.
             const wallsResponse = await api.get(`/walls/?project=${projectId}`);
-            setAllWalls(wallsResponse.data || []);
+            const savedWalls = wallsResponse.data || [];
+            setAllWalls(savedWalls);
+            if (typeof onWallsUpdated === 'function') {
+                onWallsUpdated(savedWalls);
+            }
             
             // Auto-regenerate geometry so Cut L / Cut 45 changes are reflected immediately in ceiling panels.
             // (Saving wall joint fields alone does not update existing generated panel geometry.)

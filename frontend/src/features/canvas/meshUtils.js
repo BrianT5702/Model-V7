@@ -3,6 +3,15 @@
 
 import { THREE_CONFIG } from './threeConfig';
 import {
+  CUT_L_ALU_LONG_MM,
+  CUT_L_ALU_SHORT_MM,
+  CUT_L_ALU_THICK_MM,
+  CUT_L_FASTENER_DIA_MM,
+  CUT_L_FASTENER_SPACING_MM,
+  CUT_L_UPSTAND_MM,
+  resolveCutLRebateMm,
+} from './ceilingLJoint';
+import {
   createFatLineSegmentsFromEdgesGeometry,
   createFatLineSegmentsFromPositions,
 } from './wideLineUtils';
@@ -10,7 +19,7 @@ import { resolveWallBaseElevationMm } from '../project/projectUtils';
 import { getWallInteriorNormalModel } from './wallInteriorSide';
 import { buildIntersectionsFromJoints } from '../panel/wallPanelCalculationUtils';
 import {
-  createPanelSurfaceMaterial,
+  createDoorLeafMaterial,
   createWallSurfaceMaterial,
   finishPanelSurfaceMesh,
   prepareWallSurfaceGeometry,
@@ -1212,16 +1221,30 @@ export function createWallMesh(instance, wall) {
   const startMiterEdgeYs = startBandYs;
   const endMiterEdgeYs = endBandYs;
 
+  // Cut L: the interior top is rebated by the ceiling thickness. The outer
+  // tongue stays full height and is added after the body is extruded.
+  const cutLRebateMm = resolveCutLRebateMm(wall, instance.project?.rooms, wallHeight / scale);
+  const cutL = cutLRebateMm ? {
+    ledgeY: wallHeight - cutLRebateMm.rebateDepth * scale,
+    rebateDepth: cutLRebateMm.rebateDepth * scale,
+    tongueWidth: cutLRebateMm.tongue * scale,
+    gap: cutLRebateMm.gap * scale,
+  } : null;
+  const shapeTop = cutL ? cutL.ledgeY : wallHeight;
+  const belowShapeTop = (y) => y < shapeTop - cutStepEps;
+
   const wallShape = new instance.THREE.Shape();
   // console.log('[45° Cut Debug] Creating wall shape for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
   // Face is otherwise a pure rectangle (length X, height Y). Miter is applied in geometry later.
   wallShape.moveTo(0, 0);
   for (const y of startMiterEdgeYs) {
+    if (!belowShapeTop(y)) continue;
     wallShape.lineTo(0, y);
   }
-  wallShape.lineTo(0, wallHeight);
-  wallShape.lineTo(finalWallLength, wallHeight);
+  wallShape.lineTo(0, shapeTop);
+  wallShape.lineTo(finalWallLength, shapeTop);
   for (let i = endMiterEdgeYs.length - 1; i >= 0; i -= 1) {
+    if (!belowShapeTop(endMiterEdgeYs[i])) continue;
     wallShape.lineTo(finalWallLength, endMiterEdgeYs[i]);
   }
   wallShape.lineTo(finalWallLength, 0);
@@ -1351,12 +1374,28 @@ export function createWallMesh(instance, wall) {
   
   // Combine door and window cutouts
   const allCutouts = [...cutouts, ...windowCutouts];
+
+  // Openings stay in the wall body. The rebate above the ledge is ceiling, not wall.
+  if (cutL) {
+    const openingLimit = cutL.ledgeY - Math.max(scale * 2, 0.02);
+    for (const cutout of allCutouts) {
+      if (cutout.doorInfo) {
+        const bottom = cutout.floorThickness || 0;
+        if (bottom + cutout.height > openingLimit) {
+          cutout.height = Math.max(0, openingLimit - bottom);
+        }
+      } else if (cutout.windowInfo && cutout.topY > openingLimit) {
+        cutout.topY = Math.max(cutout.bottomY, openingLimit);
+      }
+    }
+  }
   
   // Shape already closed above
   for (const cutout of allCutouts) {
     const hole = new instance.THREE.Path();
     // Check if this is a door cutout or window cutout
     if (cutout.doorInfo) {
+      if (!(cutout.height > 0.02)) continue;
       // Door cutout starts at floorThickness (top of floor) and extends upward by doorHeight
       const cutoutBottomY = cutout.floorThickness;
       const cutoutTopY = cutout.floorThickness + cutout.height;
@@ -1366,12 +1405,15 @@ export function createWallMesh(instance, wall) {
       hole.lineTo(cutout.start, cutoutTopY);
       hole.lineTo(cutout.start, cutoutBottomY);
     } else if (cutout.windowInfo) {
+      if (!(cutout.topY > cutout.bottomY + 0.02)) continue;
       // Window cutout
       hole.moveTo(cutout.start, cutout.bottomY);
       hole.lineTo(cutout.end, cutout.bottomY);
       hole.lineTo(cutout.end, cutout.topY);
       hole.lineTo(cutout.start, cutout.topY);
       hole.lineTo(cutout.start, cutout.bottomY);
+    } else {
+      continue;
     }
     wallShape.holes.push(hole);
   }
@@ -1736,7 +1778,159 @@ export function createWallMesh(instance, wall) {
     side1OnPositiveZ: !wallEndpointsSwapped,
   });
 
+  if (cutL) {
+    addCutLJointDetails(instance, wallMesh, {
+      shapeTop,
+      wallThickness,
+      wallLength: finalWallLength,
+      rebateDepth: cutL.rebateDepth,
+      tongueWidth: cutL.tongueWidth,
+      gap: cutL.gap,
+      hasStart45,
+      hasEnd45,
+      startCutOnInner,
+      endCutOnInner,
+      startMiterXs,
+      endMiterXs,
+    });
+  }
+
   return wallMesh;
+}
+
+/**
+ * Exterior tongue, chemical infill, and the two 1 1/2" x 3" aluminum angles.
+ * Local space matches the extruded wall: X along the wall, Y up, Z from the
+ * outer face (0) toward the room.
+ */
+function addCutLJointDetails(instance, wallMesh, spec) {
+  const THREE = instance.THREE;
+  const scale = instance.scalingFactor || 0.01;
+  const {
+    shapeTop,
+    wallThickness,
+    wallLength,
+    rebateDepth,
+    tongueWidth,
+    gap,
+    hasStart45,
+    hasEnd45,
+    startCutOnInner,
+    endCutOnInner,
+    startMiterXs,
+    endMiterXs,
+  } = spec;
+  if (!(wallLength > 0.05) || !(rebateDepth > 0.01) || !(tongueWidth > 0.005)) return;
+
+  let x0 = 0;
+  let x1 = wallLength;
+  if (hasStart45 && !startCutOnInner) x0 += wallThickness;
+  if (hasEnd45 && !endCutOnInner) x1 -= wallThickness;
+  if (startMiterXs && Number.isFinite(startMiterXs.xOuter)) x0 = Math.max(x0, startMiterXs.xOuter);
+  if (endMiterXs && Number.isFinite(endMiterXs.xOuter)) x1 = Math.min(x1, endMiterXs.xOuter);
+  const run = x1 - x0;
+  if (run < 0.05) return;
+  const midX = (x0 + x1) / 2;
+
+  const shortLeg = CUT_L_ALU_SHORT_MM * scale;
+  const longLeg = CUT_L_ALU_LONG_MM * scale;
+  const angleT = Math.max(CUT_L_ALU_THICK_MM * scale, 0.012);
+  const upstand = CUT_L_UPSTAND_MM * scale;
+  const ceilingTop = shapeTop + rebateDepth;
+  const sink = Math.min(1.5 * scale, rebateDepth * 0.08);
+
+  const srcMat = Array.isArray(wallMesh.material) ? wallMesh.material[0] : wallMesh.material;
+  const tongueMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: 0xf4f4f2 });
+  const tongueH = rebateDepth + upstand + sink;
+  const tongue = new THREE.Mesh(
+    new THREE.BoxGeometry(run, tongueH, tongueWidth),
+    tongueMat
+  );
+  tongue.position.set(midX, shapeTop + (rebateDepth + upstand) / 2 - sink / 2, tongueWidth / 2);
+  tongue.castShadow = true;
+  tongue.receiveShadow = false;
+  tongue.renderOrder = 2;
+  tongue.userData.isCutLDetail = true;
+  tongue.name = 'cutLTongue';
+  wallMesh.add(tongue);
+
+  if (gap > 0.004) {
+    const infill = new THREE.Mesh(
+      new THREE.BoxGeometry(run, rebateDepth * 0.72, gap),
+      new THREE.MeshStandardMaterial({
+        color: 0xC4B48A,
+        roughness: 0.94,
+        metalness: 0.02,
+      })
+    );
+    infill.position.set(midX, shapeTop + rebateDepth * 0.55, tongueWidth + gap / 2);
+    infill.castShadow = false;
+    infill.receiveShadow = false;
+    infill.renderOrder = 2;
+    infill.userData.isCutLDetail = true;
+    infill.name = 'cutLInfill';
+    wallMesh.add(infill);
+  }
+
+  const angleMaterial = () => new THREE.MeshStandardMaterial({
+    color: 0xC5C9CE,
+    roughness: 0.32,
+    metalness: 0.88,
+    envMapIntensity: 0.55,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+  const addAngleLeg = (w, h, d, x, y, z) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), angleMaterial());
+    mesh.position.set(x, y, z);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.renderOrder = 3;
+    mesh.userData.isCutLDetail = true;
+    mesh.name = 'cutLAngle';
+    wallMesh.add(mesh);
+  };
+
+  const extLift = 0.4 * scale;
+  const intDrop = 0.4 * scale;
+  // Outside angle at the step: short leg up the tongue face, long leg on the ceiling.
+  const stepLeg = Math.max(shortLeg, upstand);
+  addAngleLeg(run, stepLeg, angleT, midX, ceilingTop + stepLeg / 2, tongueWidth + angleT / 2);
+  addAngleLeg(run, angleT, longLeg, midX, ceilingTop + angleT / 2 + extLift, tongueWidth + longLeg / 2);
+  // Inside angle: short leg on the inner face, long leg along the ceiling soffit.
+  addAngleLeg(run, shortLeg, angleT, midX, shapeTop - shortLeg / 2, wallThickness + angleT / 2);
+  addAngleLeg(run, angleT, longLeg, midX, shapeTop - angleT / 2 - intDrop, wallThickness + longLeg / 2);
+
+  const spacing = CUT_L_FASTENER_SPACING_MM * scale;
+  const count = Math.min(40, Math.max(2, Math.round(run / spacing)));
+  const fastenerR = (CUT_L_FASTENER_DIA_MM / 2) * scale;
+  const fastenerH = 14 * scale;
+  const fasteners = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(fastenerR, fastenerR, fastenerH, 8),
+    new THREE.MeshStandardMaterial({ color: 0x3a3d40, metalness: 0.72, roughness: 0.38 }),
+    count * 2
+  );
+  fasteners.userData.isCutLDetail = true;
+  fasteners.name = 'cutLFasteners';
+  fasteners.castShadow = false;
+  fasteners.receiveShadow = false;
+  fasteners.renderOrder = 3;
+  const dummy = new THREE.Object3D();
+  const topFastenerZ = tongueWidth + Math.min(gap + 4 * scale, longLeg * 0.45);
+  for (let i = 0; i < count; i += 1) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const x = x0 + run * (0.08 + t * 0.84);
+    dummy.position.set(x, ceilingTop + extLift + angleT / 2, topFastenerZ);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    fasteners.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(x, shapeTop - intDrop - angleT / 2, wallThickness + longLeg * 0.55);
+    dummy.updateMatrix();
+    fasteners.setMatrixAt(count + i, dummy.matrix);
+  }
+  fasteners.instanceMatrix.needsUpdate = true;
+  wallMesh.add(fasteners);
 }
 
 function apply45DegreeCuts(
@@ -2422,7 +2616,7 @@ function createSectionalDockAssembly(instance, {
   const sealH = mmToWorld(scale, d.DOCK_SEAL_MM ?? 26);
   const headerH = mmToWorld(scale, d.DOCK_HEADER_MM ?? 58);
 
-  const panelMat = createPanelSurfaceMaterial(instance.THREE, instance.renderer, {
+  const panelMat = createDoorLeafMaterial(instance.THREE, instance.renderer, {
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
@@ -3182,7 +3376,7 @@ export function createDoorMesh(instance, door, wall) {
   const doorWidthMultiplier = isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05;
   const doorWidth = width * scale * doorWidthMultiplier;
   const doorThickness = thickness * instance.scalingFactor;
-  const doorMaterial = createPanelSurfaceMaterial(instance.THREE, instance.renderer, {
+  const doorMaterial = createDoorLeafMaterial(instance.THREE, instance.renderer, {
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
@@ -3325,7 +3519,7 @@ export function createDoorMesh(instance, door, wall) {
         adjustedSide: adjustedSide
       };
       instance.doorObjects.push(doorContainer);
-      instance.doorStates.set(`door_${door.id}`, true); // Start in open state
+      instance.doorStates.set(`door_${door.id}`, false);
       
       // Add window glass to double slide door panels
       // For slide doors, glass should be at z = 0 (center of door thickness)
@@ -3369,20 +3563,6 @@ export function createDoorMesh(instance, door, wall) {
         slideSign: 0,
         extraTravel: slideDistance * 2,
       });
-      if (typeof window !== 'undefined' && window.gsap) {
-        window.gsap.to(leftDoor.position, {
-          x: -halfWidth/2 - slideDistance,
-          z: leftDoor.position.z,
-          duration: 1.5,
-          ease: 'power2.inOut'
-        });
-        window.gsap.to(rightDoor.position, {
-          x: halfWidth/2 + slideDistance,
-          z: rightDoor.position.z,
-          duration: 1.5,
-          ease: 'power2.inOut'
-        });
-      }
       return doorContainer;
     } else {
       // Single sliding door
@@ -3421,7 +3601,7 @@ export function createDoorMesh(instance, door, wall) {
         adjustedSide: adjustedSide
       };
       instance.doorObjects.push(doorContainer);
-      instance.doorStates.set(`door_${door.id}`, true); // Start in open state
+      instance.doorStates.set(`door_${door.id}`, false);
       
       // Add window glass to single slide door
       // For slide doors, glass should be at z = 0 (center of door thickness) in doorMesh local space
@@ -3452,14 +3632,6 @@ export function createDoorMesh(instance, door, wall) {
         slideSign: slideDirectionSign,
         extraTravel: slideDistance,
       });
-      // Animate door sliding
-      if (typeof window !== 'undefined' && window.gsap) {
-        window.gsap.to(doorMesh.position, {
-          x: slideDistance * slideDirectionSign,
-          duration: 1.5,
-          ease: 'power2.inOut'
-        });
-      }
       return doorContainer;
     }
   }
@@ -3567,32 +3739,11 @@ export function createDoorMesh(instance, door, wall) {
         adjustedSide: adjustedSide
       };
       instance.doorObjects.push(doorContainer);
-      instance.doorStates.set(`door_${door.id}_left`, true);
-      instance.doorStates.set(`door_${door.id}_right`, true);
-      
-      // For double-sided doors, the swing angles are determined by the side (interior/exterior)
-      // When the wall is flipped, the side is adjusted, so the angles are automatically correct
-      const leftAngle = Math.PI / 2 * (adjustedSide === 'exterior' ? 1 : -1);
-      const rightAngle = Math.PI / 2 * (adjustedSide === 'exterior' ? -1 : 1);
-      if (wasWallFlipped) {
-        // Double door swing angles calculated with adjusted side
-      }
-      if (typeof window !== 'undefined' && window.gsap) {
-        window.gsap.to(leftPanel.rotation, {
-          y: leftAngle,
-          duration: 1.5,
-          ease: 'power2.inOut'
-        });
-        window.gsap.to(rightPanel.rotation, {
-          y: rightAngle,
-          duration: 1.5,
-          ease: 'power2.inOut'
-        });
-      }
+      instance.doorStates.set(`door_${door.id}_left`, false);
+      instance.doorStates.set(`door_${door.id}_right`, false);
       return doorContainer;
     } else {
       const hingeOnRight = adjustedSwingDirection === 'right';
-      const mountedInside = adjustedSide === 'interior';
       const doorContainer = new instance.THREE.Object3D();
       // Position door centered vertically on wall opening (consistent for all door types)
       doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
@@ -3637,22 +3788,7 @@ export function createDoorMesh(instance, door, wall) {
         effectiveHingeOnRight: effectiveHingeOnRight
       };
       instance.doorObjects.push(doorContainer);
-      instance.doorStates.set(`door_${door.id}`, true);
-      
-      let baseDir = 0;
-      if (mountedInside) {
-        baseDir = effectiveHingeOnRight ? 1 : -1;
-      } else {
-        baseDir = effectiveHingeOnRight ? -1 : 1;
-      }
-      const swingAngle = Math.PI / 2 * baseDir;
-      if (typeof window !== 'undefined' && window.gsap) {
-        window.gsap.to(doorPanel.rotation, {
-          y: swingAngle,
-          duration: 1.5,
-          ease: 'power2.inOut'
-        });
-      }
+      instance.doorStates.set(`door_${door.id}`, false);
       return doorContainer;
     }
   }

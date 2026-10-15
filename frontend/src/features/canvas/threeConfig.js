@@ -213,11 +213,16 @@ export const THREE_CONFIG = {
       emissiveIntensity: 0,
       transparent: false,
     },
+    /**
+     * Multiplied with the warm PPGI ribs (#ECEAE3). Lands near #6588A0,
+     * a blue-gray that stays in the metal family and still reads against
+     * the cream panel under the bright studio light.
+     */
     DOOR: {
-      color: 0xeeeae3,
-      roughness: 0.74,
-      metalness: 0.02,
-      envMapIntensity: 0.2,
+      color: 0x6d94b4,
+      roughness: 1,
+      metalness: 0.18,
+      envMapIntensity: 0.08,
       transparent: false,
       opacity: 1,
     },

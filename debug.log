@@ -344264,3 +344264,88 @@ WARNING 2026-10-08 10:04:57,528 log 27812 27012 Not Found: /
 WARNING 2026-10-08 10:04:57,698 log 27812 27012 Not Found: /favicon.ico
 WARNING 2026-10-08 10:05:00,817 log 27812 27012 Not Found: /
 WARNING 2026-10-08 10:05:13,848 log 27812 27012 Not Found: /
+INFO 2026-10-15 14:26:59,082 autoreload 33048 19828 Watching for file changes with StatReloader
+INFO 2026-10-15 14:57:37,933 services 33048 32656 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:37,939 services 33048 18328 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:37,943 services 33048 32656 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:37,947 services 33048 18328 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:37,975 services 33048 34032 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:37,975 services 33048 34032 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:37,975 services 33048 12224 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:37,975 services 33048 12388 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:37,982 services 33048 12388 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:37,982 services 33048 12224 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:37,995 services 33048 32656 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,002 services 33048 34032 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,009 services 33048 18328 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,009 services 33048 12388 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,009 services 33048 12224 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,009 services 33048 12436 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,028 services 33048 12436 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,059 services 33048 12436 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,148 services 33048 24084 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,148 services 33048 12960 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,148 services 33048 24084 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,155 services 33048 12960 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,155 services 33048 23516 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,162 services 33048 23516 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,189 services 33048 12960 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,189 services 33048 24084 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,197 services 33048 33860 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,203 services 33048 33860 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,214 services 33048 23516 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,218 services 33048 31268 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,222 services 33048 31268 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,234 services 33048 33860 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,266 services 33048 31268 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,277 services 33048 30876 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,282 services 33048 30876 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,321 services 33048 30876 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,347 services 33048 26192 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,350 services 33048 26192 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,350 services 33048 29904 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,384 services 33048 29904 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,391 services 33048 26192 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,416 services 33048 29904 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,416 services 33048 1996 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,421 services 33048 12416 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,423 services 33048 12896 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,423 services 33048 1996 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,433 services 33048 12416 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,435 services 33048 12896 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,502 services 33048 12896 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,502 services 33048 1996 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,520 services 33048 12416 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,528 services 33048 32720 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,538 services 33048 32720 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,579 services 33048 32720 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,592 services 33048 25136 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,599 services 33048 29536 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,601 services 33048 25136 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,601 services 33048 29536 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,634 services 33048 29536 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,634 services 33048 25136 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,655 services 33048 31984 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,655 services 33048 33056 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:57:38,655 services 33048 31984 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,655 services 33048 33056 Recalculating room boundary for room 463
+INFO 2026-10-15 14:57:38,683 services 33048 33056 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:38,683 services 33048 31984 Updated room 463 boundary with 23 points (order preserved)
+INFO 2026-10-15 14:57:39,178 services 33048 31508 Ceiling generation complete: 334 panels across 11 rooms
+INFO 2026-10-15 14:57:40,572 services 33048 31508 Ceiling plan generated for project 519: 334 panels, strategy=mixed
+INFO 2026-10-15 14:58:26,469 services 33048 2264 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:58:26,469 services 33048 25560 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:58:26,476 services 33048 23520 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:58:26,476 services 33048 2264 Recalculating room boundary for room 461
+INFO 2026-10-15 14:58:26,476 services 33048 15200 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-15 14:58:26,476 services 33048 25560 Recalculating room boundary for room 461
+INFO 2026-10-15 14:58:26,476 services 33048 23520 Recalculating room boundary for room 462
+INFO 2026-10-15 14:58:26,476 services 33048 15200 Recalculating room boundary for room 461
+INFO 2026-10-15 14:58:26,497 services 33048 2264 Updated room 461 boundary with 4 points (order preserved)
+INFO 2026-10-15 14:58:26,505 services 33048 25560 Updated room 461 boundary with 4 points (order preserved)
+INFO 2026-10-15 14:58:26,510 services 33048 23520 Updated room 462 boundary with 4 points (order preserved)
+INFO 2026-10-15 14:58:26,510 services 33048 15200 Updated room 461 boundary with 4 points (order preserved)
+INFO 2026-10-15 14:58:26,510 services 33048 23520 Recalculating room boundary for room 461
+INFO 2026-10-15 14:58:26,531 services 33048 23520 Updated room 461 boundary with 4 points (order preserved)
+INFO 2026-10-15 14:58:26,867 services 33048 1588 Ceiling generation complete: 334 panels across 11 rooms
+INFO 2026-10-15 14:58:28,254 services 33048 1588 Ceiling plan generated for project 519: 334 panels, strategy=mixed

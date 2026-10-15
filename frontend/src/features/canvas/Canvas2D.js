@@ -55,16 +55,6 @@ import { resolveDoorPlacement, worldToDoorLocal, getDoorTagModelPoint } from './
 import { filterDimensions } from './dimensionFilter.js';
 import { planCeilingValueDedupKey } from './DimensionConfig.js';
 
-const WALL_PLAN_TOOLS = [
-    ['add-wall', 'Add wall'],
-    ['edit-wall', 'Edit wall'],
-    ['merge-wall', 'Merge'],
-    ['split-wall', 'Split'],
-    ['define-room', 'Room'],
-    ['add-door', 'Add door'],
-    ['edit-door', 'Edit door'],
-];
-
 const Canvas2D = ({ 
     walls = [], 
     setWalls, 
@@ -134,7 +124,6 @@ const Canvas2D = ({
     planAnnotationArrowPlacementId = null,
     onPlanAnnotationArrowPlacementId = () => {},
     annotationIdRemap = null,
-    onToggleMode = null,
     onToggleEditMode = null,
     isPlanFullscreen = false,
     onTogglePlanFullscreen = null,
@@ -3577,25 +3566,6 @@ const Canvas2D = ({
                             </div>
                         </div>
                     </div>
-                    {isPlanFullscreen && isEditingMode && onToggleMode && (
-                        <div className="flex flex-wrap items-center gap-1.5 pt-2">
-                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 mr-1">Tools</span>
-                            {WALL_PLAN_TOOLS.map(([mode, label]) => (
-                                <button
-                                    key={mode}
-                                    type="button"
-                                    onClick={() => onToggleMode(mode)}
-                                    className={`px-2 py-1 text-xs rounded-md border font-medium ${
-                                        currentMode === mode
-                                            ? 'border-blue-600 bg-blue-600 text-white'
-                                            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
-                                    }`}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-                    )}
                 </div>
 
                 <div className="wall-plan-body space-y-6">

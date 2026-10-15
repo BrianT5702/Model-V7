@@ -11,6 +11,7 @@ import {
   updatePresentationAoClip,
 } from './presentationPostFx';
 import { createWallMesh, createDoorMesh } from './meshUtils';
+import { ceilingInsetFromOuterFaceMm } from './ceilingLJoint';
 import PanelCalculator from '../panel/PanelCalculator';
 import {
   buildIntersectionsFromJoints,
@@ -221,9 +222,33 @@ export default class ThreeCanvas3D {
     return Math.max(1, Math.min(dpr * bias, max));
   }
 
+  /**
+   * Full sharpness when the camera is still. While orbiting a large model,
+   * draw at screen resolution so the drag is not filling a 2–3× buffer.
+   */
+  pixelRatioForOrbit(dragging) {
+    const full = this.getEffectivePixelRatio();
+    if (dragging && (this.walls?.length || 0) >= 16) return Math.min(full, 1);
+    return full;
+  }
+
+  setOrbitRenderScale(dragging) {
+    if (!this.renderer || !this.container || this._disposed) return;
+    const next = this.pixelRatioForOrbit(dragging);
+    if (this._appliedPixelRatio === next) return;
+    this._appliedPixelRatio = next;
+    this.renderer.setPixelRatio(next);
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    this.renderer.setSize(width, height);
+    syncLineMaterialResolution(width, height, this.renderer.getPixelRatio());
+    resizePresentationPostFx(this, width, height);
+  }
+
   init() {
     // Match backing-store resolution to display (DPR cap in THREE_CONFIG.RENDERER)
     this.renderer.setPixelRatio(this.getEffectivePixelRatio());
+    this._appliedPixelRatio = this.renderer.getPixelRatio();
     
     // Set renderer size accounting for pixel ratio
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
@@ -304,6 +329,25 @@ export default class ThreeCanvas3D {
     addLighting(this);
     adjustModelScale(this);
     addControls(this);
+    this._orbitDragging = false;
+    this._orbitRestoreTimer = null;
+    this.controls.addEventListener('start', () => {
+      this._orbitDragging = true;
+      if (this._orbitRestoreTimer) {
+        clearTimeout(this._orbitRestoreTimer);
+        this._orbitRestoreTimer = null;
+      }
+      this.setOrbitRenderScale(true);
+    });
+    this.controls.addEventListener('end', () => {
+      this._orbitDragging = false;
+      if (this._orbitRestoreTimer) clearTimeout(this._orbitRestoreTimer);
+      // Damping keeps the camera moving briefly after the pointer is released.
+      this._orbitRestoreTimer = setTimeout(() => {
+        this._orbitRestoreTimer = null;
+        if (!this._orbitDragging) this.setOrbitRenderScale(false);
+      }, 450);
+    });
     calculateModelOffset(this);
     this.buildModel();
     fitMainLightShadows(this);
@@ -335,7 +379,8 @@ export default class ThreeCanvas3D {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     
-    this.renderer.setPixelRatio(this.getEffectivePixelRatio());
+    this.renderer.setPixelRatio(this.pixelRatioForOrbit(this._orbitDragging));
+    this._appliedPixelRatio = this.renderer.getPixelRatio();
     
     // Update camera aspect ratio
     this.camera.aspect = width / height;
@@ -408,6 +453,11 @@ export default class ThreeCanvas3D {
       return;
     }
     this._disposed = true;
+
+    if (this._orbitRestoreTimer) {
+      clearTimeout(this._orbitRestoreTimer);
+      this._orbitRestoreTimer = null;
+    }
 
     if (this._rafId != null && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(this._rafId);
@@ -881,6 +931,14 @@ getModelBounds() {
         if (object.userData?.isWall || object.userData?.isDoor || 
             object.name?.startsWith('ceiling') || object.name?.startsWith('floor') || 
             object.userData?.isPanelLine || object.userData?.isCeilingPanelLine) {
+
+          if (object.userData?.isWall) {
+            object.traverse((child) => {
+              if (child === object || !child.userData?.isCutLDetail) return;
+              if (child.geometry) child.geometry.dispose();
+              if (child.material) disposeMaterialSafe(child.material);
+            });
+          }
           
           // Dispose of geometry
           if (object.geometry) {
@@ -1604,6 +1662,7 @@ getModelBounds() {
             x: point.x * this.scalingFactor + this.modelOffset.x,
             z: point.y * this.scalingFactor + this.modelOffset.z
         }));
+        roomVertices = this.shrinkRoomVerticesForCutL(roomVertices, room);
         
         // Get ceiling thickness from room's ceiling plan or use default
         const roomCeilingThickness = (room.ceiling_plan?.ceiling_thickness || defaultCeilingThickness) * this.scalingFactor;
@@ -1774,9 +1833,9 @@ getModelBounds() {
     return offsets;
   }
 
-  // Room points lie on the wall outer face. A ceiling built on that line shares
-  // the wall face and the wall top, so the two surfaces blink. Pull every edge
-  // that sits on a wall in past that wall's thickness.
+  // Room points lie on the wall outer face. On a Cut L wall the ceiling
+  // stops at the infill pocket, leaving the exterior tongue (50mm on a
+  // 150mm wall with the default 100mm extension) standing full height.
   shrinkRoomVerticesForCutL(roomVertices, room) {
     if (!roomVertices || roomVertices.length < 3 || !this.walls?.length) return roomVertices;
 
@@ -1789,21 +1848,22 @@ getModelBounds() {
     }));
 
     const lineTol = 25;
-    const clearance = 12;
     const wallSegs = [];
     this.walls.forEach(wall => {
+      if (wall.ceiling_joint_type !== 'cut_l') return;
       const dx = wall.end_x - wall.start_x;
       const dy = wall.end_y - wall.start_y;
       const len = Math.hypot(dx, dy);
       const thickness = Number(wall.thickness) || 0;
-      if (len < 1 || thickness <= 0) return;
+      const offset = ceilingInsetFromOuterFaceMm(wall);
+      if (len < 1 || thickness <= 0 || !(offset > 0)) return;
       wallSegs.push({
         ax: wall.start_x,
         ay: wall.start_y,
         ux: dx / len,
         uy: dy / len,
         len,
-        offset: thickness + clearance,
+        offset,
       });
     });
     if (wallSegs.length === 0) return roomVertices;
