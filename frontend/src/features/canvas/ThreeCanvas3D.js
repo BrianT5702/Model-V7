@@ -127,6 +127,7 @@ export default class ThreeCanvas3D {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       logarithmicDepthBuffer: THREE_CONFIG.RENDERER.LOG_DEPTH_BUFFER,
+      powerPreference: 'high-performance',
     });
     this.walls = walls;
     this.joints = joints;
@@ -223,32 +224,28 @@ export default class ThreeCanvas3D {
   }
 
   /**
-   * Full sharpness when the camera is still. While orbiting a large model,
-   * draw at screen resolution so the drag is not filling a 2–3× buffer.
+   * While the camera is moving on a high-density screen, draw at normal
+   * screen pixels. The canvas CSS size stays put, so the page does not reflow.
+   * When the camera rests, the full sharpness comes back.
    */
-  pixelRatioForOrbit(dragging) {
-    const full = this.getEffectivePixelRatio();
-    if (dragging && (this.walls?.length || 0) >= 16) return Math.min(full, 1);
-    return full;
-  }
-
-  setOrbitRenderScale(dragging) {
+  setInteractiveScale(active) {
     if (!this.renderer || !this.container || this._disposed) return;
-    const next = this.pixelRatioForOrbit(dragging);
-    if (this._appliedPixelRatio === next) return;
-    this._appliedPixelRatio = next;
+    const full = this.getEffectivePixelRatio();
+    const next = active && full > 1.05 ? 1 : full;
+    this._interactiveScale = next < full - 0.02;
+    if (Math.abs(this.renderer.getPixelRatio() - next) < 0.02) return;
     this.renderer.setPixelRatio(next);
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
-    this.renderer.setSize(width, height);
-    syncLineMaterialResolution(width, height, this.renderer.getPixelRatio());
-    resizePresentationPostFx(this, width, height);
+    syncLineMaterialResolution(
+      this.container.clientWidth,
+      this.container.clientHeight,
+      this.renderer.getPixelRatio()
+    );
+    resizePresentationPostFx(this, this.container.clientWidth, this.container.clientHeight);
   }
 
   init() {
     // Match backing-store resolution to display (DPR cap in THREE_CONFIG.RENDERER)
     this.renderer.setPixelRatio(this.getEffectivePixelRatio());
-    this._appliedPixelRatio = this.renderer.getPixelRatio();
     
     // Set renderer size accounting for pixel ratio
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
@@ -330,23 +327,14 @@ export default class ThreeCanvas3D {
     adjustModelScale(this);
     addControls(this);
     this._orbitDragging = false;
-    this._orbitRestoreTimer = null;
+    this._orbitIdleFrames = 0;
     this.controls.addEventListener('start', () => {
       this._orbitDragging = true;
-      if (this._orbitRestoreTimer) {
-        clearTimeout(this._orbitRestoreTimer);
-        this._orbitRestoreTimer = null;
-      }
-      this.setOrbitRenderScale(true);
+      this._orbitIdleFrames = 0;
+      this.setInteractiveScale(true);
     });
     this.controls.addEventListener('end', () => {
       this._orbitDragging = false;
-      if (this._orbitRestoreTimer) clearTimeout(this._orbitRestoreTimer);
-      // Damping keeps the camera moving briefly after the pointer is released.
-      this._orbitRestoreTimer = setTimeout(() => {
-        this._orbitRestoreTimer = null;
-        if (!this._orbitDragging) this.setOrbitRenderScale(false);
-      }, 450);
     });
     calculateModelOffset(this);
     this.buildModel();
@@ -378,9 +366,8 @@ export default class ThreeCanvas3D {
     
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
-    
-    this.renderer.setPixelRatio(this.pixelRatioForOrbit(this._orbitDragging));
-    this._appliedPixelRatio = this.renderer.getPixelRatio();
+    const full = this.getEffectivePixelRatio();
+    this.renderer.setPixelRatio(this._interactiveScale ? Math.min(full, 1) : full);
     
     // Update camera aspect ratio
     this.camera.aspect = width / height;
@@ -453,11 +440,6 @@ export default class ThreeCanvas3D {
       return;
     }
     this._disposed = true;
-
-    if (this._orbitRestoreTimer) {
-      clearTimeout(this._orbitRestoreTimer);
-      this._orbitRestoreTimer = null;
-    }
 
     if (this._rafId != null && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(this._rafId);
@@ -854,10 +836,20 @@ getModelBounds() {
     if (!this.renderer || !this.scene || !this.camera) {
       return;
     }
+    let cameraMoved = false;
     if (this.roomTourController?.isWalking?.()) {
       this.roomTourController.update();
+      cameraMoved = true;
     } else if (this.controls) {
-      this.controls.update();
+      cameraMoved = this.controls.update() === true;
+    }
+    if (this._interactiveScale && !this._orbitDragging) {
+      if (cameraMoved) {
+        this._orbitIdleFrames = 0;
+      } else {
+        this._orbitIdleFrames = (this._orbitIdleFrames || 0) + 1;
+        if (this._orbitIdleFrames >= 12) this.setInteractiveScale(false);
+      }
     }
     renderPresentationPostFx(this);
 

@@ -18,13 +18,11 @@ let lastResH = 1;
 export function syncLineMaterialResolution(width, height, pixelRatio = 1) {
   const w = Math.max(1, Math.floor((width || 1) * (pixelRatio || 1)));
   const h = Math.max(1, Math.floor((height || 1) * (pixelRatio || 1)));
+  if (w === lastResW && h === lastResH) return;
   lastResW = w;
   lastResH = h;
   trackedLineMaterials.forEach((mat) => {
-    if (mat && mat.resolution) {
-      mat.resolution.set(w, h);
-      mat.needsUpdate = true;
-    }
+    if (mat && mat.resolution) mat.resolution.set(w, h);
   });
 }
 

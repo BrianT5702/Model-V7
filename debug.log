@@ -344349,3 +344349,4 @@ INFO 2026-10-15 14:58:26,510 services 33048 23520 Recalculating room boundary fo
 INFO 2026-10-15 14:58:26,531 services 33048 23520 Updated room 461 boundary with 4 points (order preserved)
 INFO 2026-10-15 14:58:26,867 services 33048 1588 Ceiling generation complete: 334 panels across 11 rooms
 INFO 2026-10-15 14:58:28,254 services 33048 1588 Ceiling plan generated for project 519: 334 panels, strategy=mixed
+INFO 2026-10-15 17:21:00,978 autoreload 13336 32272 Watching for file changes with StatReloader
