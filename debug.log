@@ -344350,3 +344350,117 @@ INFO 2026-10-15 14:58:26,531 services 33048 23520 Updated room 461 boundary with
 INFO 2026-10-15 14:58:26,867 services 33048 1588 Ceiling generation complete: 334 panels across 11 rooms
 INFO 2026-10-15 14:58:28,254 services 33048 1588 Ceiling plan generated for project 519: 334 panels, strategy=mixed
 INFO 2026-10-15 17:21:00,978 autoreload 13336 32272 Watching for file changes with StatReloader
+INFO 2026-10-16 09:04:09,065 autoreload 23528 23880 Watching for file changes with StatReloader
+WARNING 2026-10-16 09:41:40,154 log 23528 25132 Unauthorized: /api/auth/login/
+WARNING 2026-10-16 09:42:17,493 log 23528 14428 Unauthorized: /api/auth/login/
+WARNING 2026-10-16 09:42:23,355 log 23528 16740 Unauthorized: /api/auth/login/
+WARNING 2026-10-16 09:42:31,261 log 23528 26972 Unauthorized: /api/auth/login/
+INFO 2026-10-16 11:38:31,215 services 23528 25900 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 11:59:28,432 services 23528 27044 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 12:00:43,551 log 23528 28840 Not Found: /api/walls/11838/
+INFO 2026-10-16 12:16:10,654 services 23528 22440 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 12:21:57,016 services 23528 24248 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 12:40:16,375 services 23528 24616 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 12:56:41,245 log 23528 21964 Not Found: /api/projects/554/open-layout/
+WARNING 2026-10-16 12:56:46,182 log 23528 22704 Not Found: /api/projects/554/open-layout/
+WARNING 2026-10-16 12:57:38,318 log 23528 14428 Not Found: /api/projects/554/open-layout/
+WARNING 2026-10-16 12:59:11,774 log 23528 26912 Not Found: /api/projects/554/open-layout/
+INFO 2026-10-16 13:12:18,504 services 23528 23588 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 13:19:15,302 log 23528 27072 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 13:19:20,465 log 23528 22748 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 13:19:24,719 log 23528 28360 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 13:20:08,759 log 23528 2040 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 14:12:01,651 log 23528 24616 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 14:12:05,224 log 23528 27840 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 14:12:15,455 log 23528 27256 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 14:12:31,489 log 23528 9008 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 14:12:39,010 log 23528 30584 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 14:12:40,647 log 23528 27708 Not Found: /api/projects/555/open-layout/
+WARNING 2026-10-16 14:13:35,407 log 23528 29804 Not Found: /api/projects/555/open-layout/
+INFO 2026-10-16 14:24:43,258 autoreload 23528 23880 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\serializers.py changed, reloading.
+INFO 2026-10-16 14:24:45,123 autoreload 8504 16984 Watching for file changes with StatReloader
+INFO 2026-10-16 14:25:51,364 autoreload 8504 16984 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\models.py changed, reloading.
+INFO 2026-10-16 14:25:52,858 autoreload 7396 23856 Watching for file changes with StatReloader
+INFO 2026-10-16 14:58:15,481 autoreload 7396 23856 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\models.py changed, reloading.
+INFO 2026-10-16 14:58:17,123 autoreload 25912 27012 Watching for file changes with StatReloader
+INFO 2026-10-16 15:41:01,360 services 25912 31504 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 15:41:58,586 log 25912 30756 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 15:42:06,180 log 25912 30016 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 15:46:26,419 log 25912 23168 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 15:56:18,441 log 25912 16396 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 15:59:21,124 log 25912 30804 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 15:59:24,132 log 25912 28792 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 15:59:36,839 log 25912 30284 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:00:08,736 services 25912 28284 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:05:21,604 log 25912 22216 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:06:38,343 services 25912 720 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:09:19,767 log 25912 30504 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:09:25,073 log 25912 29084 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:09:34,645 services 25912 30360 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:10:36,021 services 25912 31512 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:10:50,100 log 25912 21924 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:12:40,406 services 25912 18668 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:13:04,560 services 25912 26912 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:15:11,492 services 25912 10340 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:24:01,240 log 25912 24164 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:24:06,854 log 25912 30896 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:25:13,181 services 25912 8488 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:26:00,210 services 25912 23320 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:28:22,857 log 25912 24748 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:41:09,210 log 25912 23972 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:41:31,534 log 25912 6852 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:41:34,129 log 25912 3436 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:42:10,171 log 25912 32416 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:42:33,967 services 25912 23256 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:43:29,836 services 25912 32716 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:43:29,907 services 25912 30996 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:43:49,451 log 25912 5888 Not Found: /api/walls/11997/
+INFO 2026-10-16 16:43:56,064 services 25912 17944 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:43:56,143 services 25912 31888 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:44:09,104 autoreload 25912 27012 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\models.py changed, reloading.
+INFO 2026-10-16 16:44:11,076 autoreload 24836 31500 Watching for file changes with StatReloader
+INFO 2026-10-16 16:44:24,097 services 24836 30664 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:45:44,948 services 24836 32160 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:48:56,129 log 24836 30796 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:49:01,874 log 24836 30676 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:49:16,788 log 24836 32344 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:49:41,725 log 24836 23464 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:49:47,823 log 24836 25284 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:50:10,970 services 24836 20732 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:50:49,190 services 24836 31972 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:52:05,972 log 24836 30188 Not Found: /api/walls/12023/
+WARNING 2026-10-16 16:55:10,229 log 24836 27896 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 16:55:33,780 services 24836 29972 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 16:56:38,046 services 24836 18360 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 16:58:37,429 log 24836 6608 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:58:59,865 log 24836 31188 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 16:59:26,364 log 24836 21776 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 17:00:40,459 services 24836 27084 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 17:02:02,244 autoreload 24836 31500 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\migrations\0085_wall_tip_to_tip.py changed, reloading.
+INFO 2026-10-16 17:02:03,906 autoreload 708 28016 Watching for file changes with StatReloader
+INFO 2026-10-16 17:16:26,851 services 708 2012 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 17:17:10,952 services 708 32264 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 17:26:37,885 services 708 31884 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 17:27:19,601 services 708 32240 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 17:27:37,020 services 708 31684 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 17:28:33,252 services 708 28408 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 17:28:54,707 services 708 26748 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 20:22:00,843 log 708 35088 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 20:23:42,781 services 708 30784 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 20:24:33,543 services 708 11416 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 20:30:26,778 log 708 36368 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 20:45:42,403 services 708 26432 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 20:46:04,962 services 708 31240 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 20:46:25,818 services 708 27872 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 20:46:25,890 services 708 32356 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 20:55:19,925 log 708 15496 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 20:55:21,641 log 708 35556 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-16 21:07:25,337 services 708 31596 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-16 21:08:16,286 services 708 32404 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-16 21:16:58,240 log 708 17388 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 21:17:02,402 log 708 32976 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 21:17:15,733 log 708 816 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 21:17:22,369 log 708 27900 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 21:17:58,010 log 708 21344 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 21:18:41,679 log 708 20780 Not Found: /api/projects/556/open-layout/
+WARNING 2026-10-16 21:18:54,367 log 708 36076 Not Found: /api/projects/556/open-layout/

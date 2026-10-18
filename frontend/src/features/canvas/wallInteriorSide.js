@@ -85,3 +85,41 @@ export function getWallInteriorNormalModel(wall, rooms, centerModel = null, join
     const dot = normalX * (line2MidX - midX) + normalY * (line2MidY - midY);
     return dot > 0 ? { x: normalX, y: normalY } : { x: -normalX, y: -normalY };
 }
+
+/**
+ * Cut L opens toward the ceiling. The wall solid's +Z points at the model
+ * center, which is the wrong face on a shared wall whose room is on the
+ * other side. True means the rebate stays on +Z (the original cut).
+ */
+export function cutLRebateFacesPositiveZ(interiorNormal, thicknessNormal) {
+    if (!interiorNormal || !thicknessNormal) return true;
+    return interiorNormal.x * thicknessNormal.x + interiorNormal.y * thicknessNormal.y >= 0;
+}
+
+/**
+ * Unit normal of the 3D wall solid's +Z, in plan mm. That is the perpendicular
+ * of the wall line that points at the model center — the side the thickness
+ * is extruded toward. `centerModel` is {x, y} in the same mm space as the wall.
+ */
+export function thicknessNormalTowardModelCenter(wall, centerModel) {
+    if (!wall) return null;
+    const x0 = Number(wall.start_x) || 0;
+    const y0 = Number(wall.start_y) || 0;
+    const x1 = Number(wall.end_x) || 0;
+    const y1 = Number(wall.end_y) || 0;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) return null;
+    let nx = -dy / len;
+    let ny = dx / len;
+    const mx = (x0 + x1) / 2;
+    const my = (y0 + y1) / 2;
+    const cx = Number.isFinite(centerModel?.x) ? centerModel.x : mx + nx;
+    const cy = Number.isFinite(centerModel?.y) ? centerModel.y : my + ny;
+    if (nx * (cx - mx) + ny * (cy - my) < 0) {
+        nx = -nx;
+        ny = -ny;
+    }
+    return { x: nx, y: ny };
+}

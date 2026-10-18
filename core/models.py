@@ -400,6 +400,10 @@ class Wall(models.Model):
         help_text="Specify whether this is a wall or a partition."
     )
     is_default = models.BooleanField(default=True, help_text="True if the wall is a default boundary wall")
+    tip_to_tip = models.BooleanField(
+        default=False,
+        help_text="True when the drawn length is tip to tip. Saved corners sit one thickness inside each end."
+    )
     has_concrete_base = models.BooleanField(default=False, help_text="Whether the wall has a concrete base")
     concrete_base_height = models.FloatField(null=True, blank=True, help_text="Height of the concrete base in mm")
     fill_gap_mode = models.BooleanField(default=False, help_text="Fill only the gap between rooms with different heights")

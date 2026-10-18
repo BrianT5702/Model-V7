@@ -2580,12 +2580,68 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     }
   };
 
+  // A 45° joint stores the partner tip one thickness past the crossing.
+  // Deleting the wall removes that joint, so pull the partner back to the crossing.
+  const retract45TipsAfterWallDelete = async (deletedWall) => {
+    const related = (jointsRef.current || []).filter((joint) =>
+      joint.joining_method === '45_cut' &&
+      (String(joint.wall_1) === String(deletedWall.id) || String(joint.wall_2) === String(deletedWall.id))
+    );
+    const updates = [];
+    for (const joint of related) {
+      const otherId = String(joint.wall_1) === String(deletedWall.id) ? joint.wall_2 : joint.wall_1;
+      const other = wallsRef.current.find((w) => String(w.id) === String(otherId));
+      if (!other) continue;
+      const hit = calculateIntersection(
+        { x: deletedWall.start_x, y: deletedWall.start_y },
+        { x: deletedWall.end_x, y: deletedWall.end_y },
+        { x: other.start_x, y: other.start_y },
+        { x: other.end_x, y: other.end_y }
+      );
+      if (!hit) continue;
+      const thickness = Number(other.thickness) || 100;
+      const start = { x: Number(other.start_x), y: Number(other.start_y) };
+      const end = { x: Number(other.end_x), y: Number(other.end_y) };
+      const dStart = Math.hypot(start.x - hit.x, start.y - hit.y);
+      const dEnd = Math.hypot(end.x - hit.x, end.y - hit.y);
+      if (Math.min(dStart, dEnd) > thickness + 1.5) continue;
+      const atStart = dStart <= dEnd;
+      const tip = atStart ? start : end;
+      const anchor = atStart ? end : start;
+      const vx = tip.x - anchor.x;
+      const vy = tip.y - anchor.y;
+      const len = Math.hypot(vx, vy);
+      if (len < 1) continue;
+      const ux = vx / len;
+      const uy = vy / len;
+      const past = (tip.x - hit.x) * ux + (tip.y - hit.y) * uy;
+      if (past <= 1) continue;
+      const updated = {
+        ...other,
+        ...(atStart
+          ? { start_x: Math.round(tip.x - ux * past), start_y: Math.round(tip.y - uy * past) }
+          : { end_x: Math.round(tip.x - ux * past), end_y: Math.round(tip.y - uy * past) }),
+      };
+      const idx = wallsRef.current.findIndex((w) => String(w.id) === String(other.id));
+      if (idx >= 0) wallsRef.current[idx] = updated;
+      updates.push(updated);
+    }
+    for (const updated of updates) {
+      await api.put(`/walls/${updated.id}/`, prepareWallPayloadForSave(updated));
+    }
+    if (updates.length > 0) {
+      setWalls((prev) => prev.map((w) => updates.find((u) => String(u.id) === String(w.id)) || w));
+    }
+  };
+
   // Add this function to handle wall deletion
   const handleWallDelete = async (wallId) => {
     return commitHistoryAction('Delete wall', async () => {
       // Find the wall to be deleted
       const wallToDelete = wallsRef.current.find(w => w.id === wallId);
       if (!wallToDelete) return;
+
+      await retract45TipsAfterWallDelete(wallToDelete);
 
       const deletedStoreyId = wallToDelete.storey ?? wallToDelete.storey_id ?? null;
       const sameStoreyAsDeleted = (wall) => {
@@ -3340,6 +3396,15 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         }
         continue;
       }
+      // A join one thickness in from a free tip is the overhang of that tip
+      // (1180 past the 800). Cutting there turns the drawn wall into 100 + 1080.
+      const tipZone = Math.max(1, Number(wall.thickness) || 100);
+      const hitsNewEnd =
+        Math.hypot(intersection.x - startPoint.x, intersection.y - startPoint.y) <= JOIN_SNAP_TOL_MM
+        || Math.hypot(intersection.x - endPoint.x, intersection.y - endPoint.y) <= JOIN_SNAP_TOL_MM;
+      if (hitsNewEnd && (dStart <= tipZone + 1 || dEnd <= tipZone + 1)) {
+        continue;
+      }
       intersection = projectPointToWall(intersection, wall);
       refinedIntersections.push({ wall, intersection });
     }
@@ -3479,6 +3544,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         outer_face_thickness: wallProps.outer_face_thickness ?? 0.5,
         project: project.id,
         storey: activeStoreyId ?? defaultStoreyId,
+        tip_to_tip: wallProps.tip_to_tip === true,
       };
 
       if (startTouchingWall || endTouchingWall) {

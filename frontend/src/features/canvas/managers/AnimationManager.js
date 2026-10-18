@@ -1,5 +1,6 @@
 // Animation management module for Three.js 3D system
 import { THREE_CONFIG } from '../threeConfig';
+import { getExteriorCameraFrame } from '../sceneUtils';
 
 export class AnimationManager {
   constructor(instance) {
@@ -55,11 +56,25 @@ export class AnimationManager {
     // Kill existing camera animations
     this.killCameraAnimations();
 
-    // Animate camera position
-    const exteriorAnimation = this.gsap.to(this.instance.camera.position, {
+    const frame = getExteriorCameraFrame(this.instance);
+    const position = frame?.position || {
       x: modelCenter.x + 200,
       y: 200,
       z: modelCenter.z + 200,
+    };
+    const target = frame?.target || { x: modelCenter.x, y: 0, z: modelCenter.z };
+    if (frame && this.instance.controls) {
+      this.instance.controls.maxDistance = Math.max(
+        this.instance.controls.maxDistance || 0,
+        frame.distance * 4
+      );
+    }
+
+    // Animate camera position
+    const exteriorAnimation = this.gsap.to(this.instance.camera.position, {
+      x: position.x,
+      y: position.y,
+      z: position.z,
       duration,
       ease,
       onComplete: () => this.activeAnimations.delete(exteriorAnimation)
@@ -69,9 +84,9 @@ export class AnimationManager {
 
     // Animate camera target
     const targetAnimation = this.gsap.to(this.instance.controls.target, {
-      x: modelCenter.x,
-      y: 0,
-      z: modelCenter.z,
+      x: target.x,
+      y: target.y,
+      z: target.z,
       duration,
       ease,
       onComplete: () => this.activeAnimations.delete(targetAnimation)

@@ -2,7 +2,7 @@ import THREE from './threeInstance';
 import gsap from 'gsap';
 import earcut from 'earcut';
 import { onMouseMoveHandler, onCanvasClickHandler, toggleDoorHandler } from './threeEventHandlers';
-import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset, disposeSiteDressing, fitMainLightShadows } from './sceneUtils';
+import { addGrid, addStudioEnvironment, adjustModelScale, addLighting, addControls, calculateModelOffset, disposeSiteDressing, fitMainLightShadows, applyExteriorCameraFrame } from './sceneUtils';
 import {
   setupPresentationPostFx,
   resizePresentationPostFx,
@@ -10,8 +10,13 @@ import {
   disposePresentationPostFx,
   updatePresentationAoClip,
 } from './presentationPostFx';
-import { createWallMesh, createDoorMesh } from './meshUtils';
-import { ceilingInsetFromOuterFaceMm } from './ceilingLJoint';
+import { createWallMesh, createDoorMesh, planFaceOffsetUnit } from './meshUtils';
+import { ceilingInsetFromOuterFaceMm, cutLCeilingShiftAlongThicknessMm } from './ceilingLJoint';
+import {
+  cutLRebateFacesPositiveZ,
+  getWallInteriorNormalModel,
+  thicknessNormalTowardModelCenter,
+} from './wallInteriorSide';
 import PanelCalculator from '../panel/PanelCalculator';
 import {
   buildIntersectionsFromJoints,
@@ -24,7 +29,11 @@ import {
   createFatLineSegmentsFromPositions,
   createFatLine2FromPositions,
   syncLineMaterialResolution,
+  consolidateFatLines,
+  disposeFatLineObject,
+  disposeTrackedLineMaterial,
 } from './wideLineUtils';
+import { consolidateStaticMeshes } from './staticBatch';
 import WallRenderer from './components/WallRenderer';
 import DoorRenderer from './components/DoorRenderer';
 import AnimationManager from './managers/AnimationManager';
@@ -223,26 +232,6 @@ export default class ThreeCanvas3D {
     return Math.max(1, Math.min(dpr * bias, max));
   }
 
-  /**
-   * While the camera is moving on a high-density screen, draw at normal
-   * screen pixels. The canvas CSS size stays put, so the page does not reflow.
-   * When the camera rests, the full sharpness comes back.
-   */
-  setInteractiveScale(active) {
-    if (!this.renderer || !this.container || this._disposed) return;
-    const full = this.getEffectivePixelRatio();
-    const next = active && full > 1.05 ? 1 : full;
-    this._interactiveScale = next < full - 0.02;
-    if (Math.abs(this.renderer.getPixelRatio() - next) < 0.02) return;
-    this.renderer.setPixelRatio(next);
-    syncLineMaterialResolution(
-      this.container.clientWidth,
-      this.container.clientHeight,
-      this.renderer.getPixelRatio()
-    );
-    resizePresentationPostFx(this, this.container.clientWidth, this.container.clientHeight);
-  }
-
   init() {
     // Match backing-store resolution to display (DPR cap in THREE_CONFIG.RENDERER)
     this.renderer.setPixelRatio(this.getEffectivePixelRatio());
@@ -327,17 +316,15 @@ export default class ThreeCanvas3D {
     adjustModelScale(this);
     addControls(this);
     this._orbitDragging = false;
-    this._orbitIdleFrames = 0;
     this.controls.addEventListener('start', () => {
       this._orbitDragging = true;
-      this._orbitIdleFrames = 0;
-      this.setInteractiveScale(true);
     });
     this.controls.addEventListener('end', () => {
       this._orbitDragging = false;
     });
     calculateModelOffset(this);
     this.buildModel();
+    applyExteriorCameraFrame(this);
     fitMainLightShadows(this);
     setupPresentationPostFx(this);
     updatePresentationAoClip(this);
@@ -366,8 +353,7 @@ export default class ThreeCanvas3D {
     
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
-    const full = this.getEffectivePixelRatio();
-    this.renderer.setPixelRatio(this._interactiveScale ? Math.min(full, 1) : full);
+    this.renderer.setPixelRatio(this.getEffectivePixelRatio());
     
     // Update camera aspect ratio
     this.camera.aspect = width / height;
@@ -836,20 +822,10 @@ getModelBounds() {
     if (!this.renderer || !this.scene || !this.camera) {
       return;
     }
-    let cameraMoved = false;
     if (this.roomTourController?.isWalking?.()) {
       this.roomTourController.update();
-      cameraMoved = true;
     } else if (this.controls) {
-      cameraMoved = this.controls.update() === true;
-    }
-    if (this._interactiveScale && !this._orbitDragging) {
-      if (cameraMoved) {
-        this._orbitIdleFrames = 0;
-      } else {
-        this._orbitIdleFrames = (this._orbitIdleFrames || 0) + 1;
-        if (this._orbitIdleFrames >= 12) this.setInteractiveScale(false);
-      }
+      this.controls.update();
     }
     renderPresentationPostFx(this);
 
@@ -915,6 +891,27 @@ getModelBounds() {
     updatePresentationAoClip(this);
   }
 
+  // Draw repeated seams as a few lines so a zoomed-out orbit stays smooth.
+  consolidateSceneFatLines() {
+    const batches = consolidateFatLines(this.scene);
+    if (!batches.length) return;
+    const panel = this.panelLines.filter((line) => line.parent);
+    const ceiling = this.ceilingPanelLines.filter((line) => line.parent);
+    let panelChanged = false;
+    let ceilingChanged = false;
+    batches.forEach((batch) => {
+      if (batch.userData.isPanelLine) {
+        panel.push(batch);
+        panelChanged = true;
+      } else if (batch.userData.isCeilingPanelLine) {
+        ceiling.push(batch);
+        ceilingChanged = true;
+      }
+    });
+    if (panelChanged) this.panelLines = panel;
+    if (ceilingChanged) this.ceilingPanelLines = ceiling;
+  }
+
   // Method to rebuild the model
   buildModel() {
     try {
@@ -922,7 +919,8 @@ getModelBounds() {
       this.scene.traverse((object) => {
         if (object.userData?.isWall || object.userData?.isDoor || 
             object.name?.startsWith('ceiling') || object.name?.startsWith('floor') || 
-            object.userData?.isPanelLine || object.userData?.isCeilingPanelLine) {
+            object.userData?.isPanelLine || object.userData?.isCeilingPanelLine ||
+            object.userData?.isFatLineBatch || object.userData?.isStaticBatch) {
 
           if (object.userData?.isWall) {
             object.traverse((child) => {
@@ -937,8 +935,12 @@ getModelBounds() {
             object.geometry.dispose();
           }
           
-          // Dispose of materials
-          if (object.material) {
+          // Dispose of materials. Fat-line batches are tracked for resize.
+          if (object.userData?.isFatLineBatch && object.material) {
+            const materials = Array.isArray(object.material) ? object.material : [object.material];
+            materials.forEach((mat) => disposeTrackedLineMaterial(mat));
+            object.material = null;
+          } else if (object.material) {
             disposeMaterialSafe(object.material);
           }
           
@@ -982,6 +984,10 @@ getModelBounds() {
         this.createCeilingPanelDivisionLines();
       }
       
+      // One mesh per finish, so a zoomed-out orbit does not draw every wall.
+      this.consolidateSceneFatLines();
+      consolidateStaticMeshes(this.scene);
+
       // Update grid size to cover the entire model area
       this.updateGridSize();
       fitMainLightShadows(this);
@@ -1825,9 +1831,9 @@ getModelBounds() {
     return offsets;
   }
 
-  // Room points lie on the wall outer face. On a Cut L wall the ceiling
-  // stops at the infill pocket, leaving the exterior tongue (50mm on a
-  // 150mm wall with the default 100mm extension) standing full height.
+  // Room points lie on the wall line. The ceiling of the room the rebate
+  // faces extends onto the ledge; the room on the tongue side stops at the
+  // tongue, so a shared wall does not leave the step in the other ceiling.
   shrinkRoomVerticesForCutL(roomVertices, room) {
     if (!roomVertices || roomVertices.length < 3 || !this.walls?.length) return roomVertices;
 
@@ -1839,6 +1845,27 @@ getModelBounds() {
       y: (v.z - originZ) / scale,
     }));
 
+    const center3 = this.calculateModelCenter?.();
+    const centerModel = center3
+      ? { x: center3.x / scale, y: center3.z / scale }
+      : null;
+
+    let rcx = 0;
+    let rcy = 0;
+    let rn = 0;
+    (room?.room_points || []).forEach((pt) => {
+      const x = Number(pt?.x ?? pt?.[0]);
+      const y = Number(pt?.y ?? pt?.[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      rcx += x;
+      rcy += y;
+      rn += 1;
+    });
+    if (rn > 0) {
+      rcx /= rn;
+      rcy /= rn;
+    }
+
     const lineTol = 25;
     const wallSegs = [];
     this.walls.forEach(wall => {
@@ -1847,15 +1874,31 @@ getModelBounds() {
       const dy = wall.end_y - wall.start_y;
       const len = Math.hypot(dx, dy);
       const thickness = Number(wall.thickness) || 0;
-      const offset = ceilingInsetFromOuterFaceMm(wall);
-      if (len < 1 || thickness <= 0 || !(offset > 0)) return;
+      const inset = ceilingInsetFromOuterFaceMm(wall);
+      if (len < 1 || thickness <= 0 || !(inset > 0)) return;
+      const thicknessNormal = thicknessNormalTowardModelCenter(wall, centerModel);
+      if (!thicknessNormal) return;
+      const interiorNormal = getWallInteriorNormalModel(
+        wall,
+        this.project?.rooms || [],
+        centerModel,
+        null
+      );
+      const rebatePos = cutLRebateFacesPositiveZ(interiorNormal, thicknessNormal);
+      const mx = (Number(wall.start_x) + Number(wall.end_x)) / 2;
+      const my = (Number(wall.start_y) + Number(wall.end_y)) / 2;
+      const roomOnPositive = rn > 0
+        && (thicknessNormal.x * (rcx - mx) + thicknessNormal.y * (rcy - my) >= 0);
+      const along = cutLCeilingShiftAlongThicknessMm(wall, roomOnPositive, rebatePos);
       wallSegs.push({
         ax: wall.start_x,
         ay: wall.start_y,
         ux: dx / len,
         uy: dy / len,
         len,
-        offset,
+        shiftX: thicknessNormal.x * along,
+        shiftY: thicknessNormal.y * along,
+        along,
       });
     });
     if (wallSegs.length === 0) return roomVertices;
@@ -1875,39 +1918,35 @@ getModelBounds() {
       const euy = edy / elen;
       const midX = a.x + eux * (elen / 2);
       const midY = a.y + euy * (elen / 2);
-      let offset = 0;
+      let shiftX = 0;
+      let shiftY = 0;
+      let along = 0;
       wallSegs.forEach(seg => {
         if (distToLine(a.x, a.y, seg) > lineTol || distToLine(b.x, b.y, seg) > lineTol) return;
         if (Math.abs(eux * seg.ux + euy * seg.uy) < 0.98) return;
         const tm = (midX - seg.ax) * seg.ux + (midY - seg.ay) * seg.uy;
         if (tm < -lineTol || tm > seg.len + lineTol) return;
-        offset = Math.max(offset, seg.offset);
+        if (Math.abs(seg.along) >= Math.abs(along)) {
+          along = seg.along;
+          shiftX = seg.shiftX;
+          shiftY = seg.shiftY;
+        }
       });
-      edges.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y, ux: eux, uy: euy, offset });
+      edges.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y, ux: eux, uy: euy, shiftX, shiftY });
     }
-    if (!edges.some(edge => edge.offset > 0)) return roomVertices;
+    if (!edges.some(edge => Math.hypot(edge.shiftX, edge.shiftY) > 0.5)) return roomVertices;
 
-    let area = 0;
-    for (let i = 0; i < points.length; i++) {
-      const q = points[(i + 1) % points.length];
-      area += points[i].x * q.y - q.x * points[i].y;
-    }
-
-    const buildOffset = (inwardSign) => {
-      const offsetEdges = edges.map(edge => {
-        const nx = inwardSign * -edge.uy;
-        const ny = inwardSign * edge.ux;
-        return {
-          x0: edge.x0 + nx * edge.offset,
-          y0: edge.y0 + ny * edge.offset,
-          x1: edge.x1 + nx * edge.offset,
-          y1: edge.y1 + ny * edge.offset,
-          dx: edge.ux,
-          dy: edge.uy,
-        };
-      });
+    const buildOffset = () => {
+      const offsetEdges = edges.map(edge => ({
+        x0: edge.x0 + edge.shiftX,
+        y0: edge.y0 + edge.shiftY,
+        x1: edge.x1 + edge.shiftX,
+        y1: edge.y1 + edge.shiftY,
+        dx: edge.ux,
+        dy: edge.uy,
+      }));
       const nextPoints = [];
-      const maxJump = Math.max(...edges.map(edge => edge.offset), 1) * 3;
+      const maxJump = Math.max(...edges.map(edge => Math.hypot(edge.shiftX, edge.shiftY)), 1) * 3;
       for (let i = 0; i < offsetEdges.length; i++) {
         const prev = offsetEdges[(i + offsetEdges.length - 1) % offsetEdges.length];
         const curr = offsetEdges[i];
@@ -1948,12 +1987,13 @@ getModelBounds() {
       return Math.abs(a);
     };
 
-    const inwardSign = area >= 0 ? 1 : -1;
-    let cleaned = buildOffset(inwardSign);
-    if (cleaned.length >= 3 && polygonArea(cleaned) > polygonArea(points) * 1.01) {
-      cleaned = buildOffset(-inwardSign);
-    }
-    if (cleaned.length < 3 || polygonArea(cleaned) > polygonArea(points) * 1.01) return roomVertices;
+    const cleaned = buildOffset();
+    const originalArea = polygonArea(points);
+    const perim = edges.reduce((sum, edge) => sum + Math.hypot(edge.x1 - edge.x0, edge.y1 - edge.y0), 0);
+    // The interior ceiling of a shared wall steps onto the ledge, so the
+    // outline may grow by about one wall thickness. Anything past that is a bad join.
+    if (cleaned.length < 3 || polygonArea(cleaned) < originalArea * 0.35) return roomVertices;
+    if (polygonArea(cleaned) > originalArea + perim * 500) return roomVertices;
 
     return cleaned.map(p => ({
       x: p.x * scale + originX,
@@ -2582,9 +2622,7 @@ getModelBounds() {
   createPanelDivisionLines() {
     try {
       // Clear existing panel lines
-      this.panelLines.forEach(line => {
-        this.scene.remove(line);
-      });
+      this.panelLines.forEach((line) => disposeFatLineObject(line));
       this.panelLines = [];
       
       // Helper function for line intersection (matching meshUtils.js)
@@ -2688,6 +2726,7 @@ getModelBounds() {
             const otherIsHorizontal = Math.abs(otherWall.start_y - otherWall.end_y) < 1e-6;
             const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
             
+            const otherOff = planFaceOffsetUnit(otherWall, this);
             const otherMidX = (oSX + oEX) / 2;
             const otherMidZ = (oSZ + oEZ) / 2;
             const toOtherCenterX = modelCenter.x - otherMidX;
@@ -2695,9 +2734,11 @@ getModelBounds() {
             let otherNormX, otherNormZ;
             if (otherIsHorizontal) {
               otherNormX = 0;
-              otherNormZ = toOtherCenterZ < 0 ? -1 : 1;
+              const signZ = otherOff ? otherOff.z : (toOtherCenterZ < 0 ? -1 : 1);
+              otherNormZ = signZ >= 0 ? 1 : -1;
             } else if (otherIsVertical) {
-              otherNormX = toOtherCenterX < 0 ? -1 : 1;
+              const signX = otherOff ? otherOff.x : (toOtherCenterX < 0 ? -1 : 1);
+              otherNormX = signX >= 0 ? 1 : -1;
               otherNormZ = 0;
             } else {
               return;
@@ -2912,11 +2953,13 @@ getModelBounds() {
         let nz = ux;
         const midX = (finalStartX + finalEndX) / 2;
         const midZ = (finalStartZ + finalEndZ) / 2;
-        // CRITICAL: Model center is already in scaled coordinates, don't scale again!
-        // This matches meshUtils.js line 243: modelCenter is already scaled
+        // Second face matches the plan, same as the wall solid.
         const toCenterX = modelCenter.x - midX;
         const toCenterZ = modelCenter.z - midZ;
-        const dot = nx * toCenterX + nz * toCenterZ;
+        const faceOff = planFaceOffsetUnit(wall, this);
+        const dot = faceOff
+          ? nx * faceOff.x + nz * faceOff.z
+          : nx * toCenterX + nz * toCenterZ;
         if (dot < 0) {
           nx = -nx;
           nz = -nz;
@@ -3071,8 +3114,7 @@ getModelBounds() {
       if (wallsWithPanels === 0) {
         this.createFallbackPanelLines();
       }
-      
-      // Panel division lines created
+      this.consolidateSceneFatLines();
     } catch (error) {
       console.error('Error creating panel division lines:', error);
     }
@@ -3534,7 +3576,7 @@ getModelBounds() {
   createCeilingPanelDivisionLines() {
     try {
       // 1. Clear existing lines
-      this.ceilingPanelLines.forEach(line => this.scene.remove(line));
+      this.ceilingPanelLines.forEach((line) => disposeFatLineObject(line));
       this.ceilingPanelLines = [];
       
       const ceilingPanelsMap = this.calculateCeilingPanels();
@@ -3679,7 +3721,7 @@ getModelBounds() {
            }
         });
       });
-      
+      this.consolidateSceneFatLines();
     } catch (error) {
       console.error('Error creating ceiling panel lines:', error);
     }

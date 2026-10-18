@@ -31,8 +31,9 @@ import {
   drawOverallProjectDimensions,
   calculateActualProjectDimensions,
   compareDimensions,
-  findHostWallNearPoint,
-  getWallAngleSnapThresholdDeg,
+    findHostWallNearPoint,
+    translateJoinedWallKeepingLength,
+    getWallAngleSnapThresholdDeg,
   snapWallEndToPreferredAngles,
   clearDimensionPlacementMemory,
 } from './drawing';
@@ -168,7 +169,7 @@ const Canvas2D = ({
     const onDoorLabelOffsetRef = useRef(onDoorLabelOffset);
     onDoorLabelOffsetRef.current = onDoorLabelOffset;
     const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(false);
-    const [showDoorList, setShowDoorList] = useState(isPlanFullscreen);
+    const [showDoorList, setShowDoorList] = useState(false);
     const [showMaterialNeeded, setShowMaterialNeeded] = useState(false);
     const [showElevations, setShowElevations] = useState(false);
     const [wallElevations, setWallElevations] = useState(null);
@@ -356,7 +357,6 @@ const Canvas2D = ({
     };
 
     const togglePlanFullscreen = () => {
-        if (!isPlanFullscreen) setShowDoorList(true);
         onTogglePlanFullscreen?.();
     };
 
@@ -1700,7 +1700,8 @@ const Canvas2D = ({
                     const endPointBeforeAngleSnap = { ...endPoint };
 
                     // World H/V snap, plus perpendicular-to-host when starting from a slant.
-                    // Only skip ortho when locked to a wall endpoint — segment snaps still get 90°.
+                    // A locked point wins: the wall ends on that point. Snaps onto the
+                    // middle of a wall still lock to 90°.
                     const endOnEndpoint = isPointOnWallEndpoint(endPoint) || Boolean(hoveredPoint);
                     const hostWall =
                         (tempWall.hostWallId != null && walls.find((w) => w.id === tempWall.hostWallId)) ||
@@ -1778,8 +1779,7 @@ const Canvas2D = ({
                             y: (angleSnap.end.y - startPoint.y) / currentLength
                         } : { x: 1, y: 0 });
 
-                        // Default: typed mm = exact centerline length along the wall.
-                        // PDF horizontal/vertical span is opt-in in the modal (avoids 750 → 759).
+                        // Typed mm is saved as the wall length. PDF span is opt-in in the modal.
                         
                         // If start didn't snap but end did, we'll use end as reference point
                         // Otherwise, use start as reference point
@@ -1806,6 +1806,25 @@ const Canvas2D = ({
                         setTempWall(null);
                         return;
                     }
+
+                    // Both ends are on existing walls. Extend either end that stopped
+                    // on the inner line so it reaches that wall's outer line.
+                    const siteWidth = Number(project?.width);
+                    const siteLength = Number(project?.length);
+                    const siteBox = {
+                        minX: 0,
+                        minY: 0,
+                        maxX: Number.isFinite(siteWidth) ? siteWidth : Infinity,
+                        maxY: Number.isFinite(siteLength) ? siteLength : Infinity,
+                    };
+                    let reached = translateJoinedWallKeepingLength(
+                        startPoint, endPoint, startPoint, walls, rooms, siteBox, { lengthenOnly: true }
+                    );
+                    reached = translateJoinedWallKeepingLength(
+                        reached.start, reached.end, reached.end, walls, rooms, siteBox, { lengthenOnly: true }
+                    );
+                    startPoint = reached.start;
+                    endPoint = reached.end;
 
                     // Normalize wall coordinates to ensure proper direction
                     const normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
@@ -2252,7 +2271,7 @@ const Canvas2D = ({
             const startPt = { x: tempWall.start_x, y: tempWall.start_y };
             const onEndpoint = isPointOnWallEndpoint(snapped);
             let angleSnapType = null;
-            // Endpoint snap wins over ortho; free drag / segment snaps still get 90°.
+            // A locked point is the end of the wall. The middle of a wall still snaps to 90°.
             if (!onEndpoint) {
                 const hostWall =
                     (tempWall.hostWallId != null && walls.find((w) => w.id === tempWall.hostWallId)) ||
@@ -2345,10 +2364,104 @@ const Canvas2D = ({
         };
     };
 
+    /**
+     * Move the wall end that meets jointPoint out to the 45° long point
+     * (one full wall thickness past the joint) or back onto the joint.
+     * A joint in the middle of a wall is left alone.
+     */
+    const tipShiftForJoint = (wall, jointPoint, mode) => {
+        const thickness = Number(wall.thickness) || 100;
+        const start = { x: Number(wall.start_x), y: Number(wall.start_y) };
+        const end = { x: Number(wall.end_x), y: Number(wall.end_y) };
+        const dStart = Math.hypot(start.x - jointPoint.x, start.y - jointPoint.y);
+        const dEnd = Math.hypot(end.x - jointPoint.x, end.y - jointPoint.y);
+        if (Math.min(dStart, dEnd) > thickness + 1.5) return null;
+        const atStart = dStart <= dEnd;
+        const tip = atStart ? start : end;
+        const anchor = atStart ? end : start;
+        const vx = tip.x - anchor.x;
+        const vy = tip.y - anchor.y;
+        const len = Math.hypot(vx, vy);
+        if (len < 1) return null;
+        const ux = vx / len;
+        const uy = vy / len;
+        const past = (tip.x - jointPoint.x) * ux + (tip.y - jointPoint.y) * uy;
+        if (mode === 'extend') {
+            const need = thickness - past;
+            if (need <= 1) return null;
+            return {
+                atStart,
+                x: Math.round(tip.x + ux * need),
+                y: Math.round(tip.y + uy * need),
+            };
+        }
+        if (past <= 1) return null;
+        return {
+            atStart,
+            x: Math.round(tip.x - ux * past),
+            y: Math.round(tip.y - uy * past),
+        };
+    };
+
+    const saveWallTip = async (wall, tip, walls) => {
+        const updated = { ...wall };
+        if (tip.atStart) {
+            updated.start_x = tip.x;
+            updated.start_y = tip.y;
+        } else {
+            updated.end_x = tip.x;
+            updated.end_y = tip.y;
+        }
+        const res = await api.put(`/walls/${updated.id}/`, updated);
+        const idx = walls.findIndex((w) => String(w.id) === String(updated.id));
+        if (idx >= 0) walls[idx] = res.data;
+        setWalls((prev) => prev.map((w) => (String(w.id) === String(updated.id) ? res.data : w)));
+        return res.data;
+    };
+
     const adjustWallForJointType = async (joint, walls, setWalls, projectId, intersection) => {
-        const wall1 = walls.find(w => w.id === joint.wall_1);
-        const wall2 = walls.find(w => w.id === joint.wall_2);
+        let wall1 = walls.find(w => w.id === joint.wall_1);
+        let wall2 = walls.find(w => w.id === joint.wall_2);
         if (!wall1 || !wall2) return;
+
+        const jointPoint = intersection && Number.isFinite(Number(intersection.x)) && Number.isFinite(Number(intersection.y))
+            ? { x: Number(intersection.x), y: Number(intersection.y) }
+            : null;
+
+        if (joint.joining_method === '45_cut') {
+            // The saved start/end stay where the walls touch. Moving them out to the
+            // 45° tip puts the point outside the drawn corner and outside the site.
+            for (const wallId of [joint.wall_1, joint.wall_2]) {
+                const wall = walls.find((w) => String(w.id) === String(wallId));
+                if (!wall || !originalWallEndpoints.has(wall.id)) continue;
+                const original = originalWallEndpoints.get(wall.id);
+                originalWallEndpoints.delete(wall.id);
+                const restored = {
+                    ...wall,
+                    start_x: original.start_x,
+                    start_y: original.start_y,
+                    end_x: original.end_x,
+                    end_y: original.end_y,
+                };
+                const idx = walls.findIndex((w) => String(w.id) === String(wall.id));
+                if (idx >= 0) walls[idx] = restored;
+                await api.put(`/walls/${restored.id}/`, restored);
+                setWalls((prev) => prev.map((w) => (String(w.id) === String(restored.id) ? restored : w)));
+            }
+            return;
+        }
+
+        if (jointPoint && joint.joining_method !== '45_cut') {
+            for (const wallId of [joint.wall_1, joint.wall_2]) {
+                const wall = walls.find((w) => String(w.id) === String(wallId));
+                if (!wall) continue;
+                const tip = tipShiftForJoint(wall, jointPoint, 'retract');
+                if (tip) await saveWallTip(wall, tip, walls);
+            }
+            wall1 = walls.find(w => w.id === joint.wall_1);
+            wall2 = walls.find(w => w.id === joint.wall_2);
+            if (!wall1 || !wall2) return;
+        }
     
         const updatedWall = { ...wall1 };
     
@@ -3210,7 +3323,8 @@ const Canvas2D = ({
             return;
         }
 
-        // Use integer length (mm) so "5000" gives exactly 5000mm with no decimal drift
+        // The typed length is the saved length. A join slides the whole wall
+        // later; it does not shorten one end.
         const lengthMm = Math.round(desiredLength);
         const roundToInt = (v) => Math.round(v);
         const intPoint = (pt) => ({ x: roundToInt(pt.x), y: roundToInt(pt.y) });
@@ -3294,6 +3408,29 @@ const Canvas2D = ({
             }
         }
 
+        // One joined end slides the whole wall onto the host's far face.
+        // Both ends move by the same amount, so the typed length stays put.
+        if (pendingWallData.startPointSnapped !== pendingWallData.endPointSnapped) {
+            const joined = useEndAsReference ? roundedEndPoint : roundedStartPoint;
+            const siteWidth = Number(project?.width);
+            const siteLength = Number(project?.length);
+            const shifted = translateJoinedWallKeepingLength(
+                roundedStartPoint,
+                roundedEndPoint,
+                joined,
+                walls,
+                rooms,
+                {
+                    minX: 0,
+                    minY: 0,
+                    maxX: Number.isFinite(siteWidth) ? siteWidth : Infinity,
+                    maxY: Number.isFinite(siteLength) ? siteLength : Infinity,
+                }
+            );
+            roundedStartPoint = shifted.start;
+            roundedEndPoint = shifted.end;
+        }
+
         // Ghost areas are taller rooms below — allow walls; base elev is raised on save.
         if (
             (isPointInGhostedArea(roundedStartPoint) || isPointInGhostedArea(roundedEndPoint))
@@ -3321,6 +3458,7 @@ const Canvas2D = ({
                 pendingWallData?.deductCornerThickness ?? deductCornerThickness
             ),
             auto_split: autoSplitOnIntersect !== false,
+            tip_to_tip: false,
         };
 
         try {
@@ -4087,6 +4225,7 @@ const Canvas2D = ({
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                     onClick={async () => {
                         try {
+                            const workingWalls = walls.map((w) => ({ ...w }));
                             for (const inter of selectedIntersections) {
                                 for (const pair of (inter.pairs || [])) {
                                     await api.post('/intersections/set_joint/', {
@@ -4108,7 +4247,7 @@ const Canvas2D = ({
                                                 ? Boolean(pair.deduct_joining_thickness)
                                                 : false,
                                         },
-                                        walls,
+                                        workingWalls,
                                         setWalls,
                                         projectId,
                                         inter
@@ -4182,9 +4321,6 @@ const Canvas2D = ({
                                     />
                                     <span className="text-gray-800">
                                         <strong>Snap:</strong> {snapLabel}
-                                        <span className="block text-xs text-gray-600 mt-0.5">
-                                            Typed value = wall centerline length (exact), unless you enable PDF span below.
-                                        </span>
                                     </span>
                                 </div>
                             );
@@ -4258,14 +4394,14 @@ const Canvas2D = ({
                                     ? 'Horizontal span (mm) — as on PDF:'
                                     : pendingWallData.axisSpanMode === 'vertical'
                                         ? 'Vertical span (mm) — as on PDF:'
-                                        : 'Wall Length (mm):'}
+                                        : 'Length (mm):'}
                             </label>
                             <input
                                 type="number"
                                 id="wallLengthInput"
                                 min="1"
                                 step="1"
-                                defaultValue={Math.round(pendingWallData.currentLength)}
+                                defaultValue={Math.round(pendingWallData.currentLength || 0)}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
                                 autoFocus
                                 onKeyDown={(e) => {

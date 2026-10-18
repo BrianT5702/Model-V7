@@ -363,6 +363,81 @@ export function adjustModelScale(instance) {
   instance.camera.lookAt(0, 0, 0);
 }
 
+/**
+ * Three-quarter view that fits the whole building in frame.
+ * A fixed camera sits inside a large project and only shows a roof corner.
+ */
+export function getExteriorCameraFrame(instance) {
+  const scale = instance.scalingFactor || THREE_CONFIG.SCALING_FACTOR || 0.01;
+  const offsetX = instance.modelOffset?.x || 0;
+  const offsetZ = instance.modelOffset?.z || 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let maxTop = 0;
+
+  (instance.walls || []).forEach((wall) => {
+    const x1 = Number(wall.start_x) * scale + offsetX;
+    const z1 = Number(wall.start_y) * scale + offsetZ;
+    const x2 = Number(wall.end_x) * scale + offsetX;
+    const z2 = Number(wall.end_y) * scale + offsetZ;
+    if (![x1, z1, x2, z2].every(Number.isFinite)) return;
+    minX = Math.min(minX, x1, x2);
+    maxX = Math.max(maxX, x1, x2);
+    minZ = Math.min(minZ, z1, z2);
+    maxZ = Math.max(maxZ, z1, z2);
+    const base = Number(wall.base_elevation_mm) || 0;
+    const height = Number(wall.height) || 0;
+    maxTop = Math.max(maxTop, (base + height) * scale);
+  });
+
+  const projectHeight = Number(instance.project?.height || instance.project?.calculated_height) || 0;
+  if (projectHeight > 0) maxTop = Math.max(maxTop, projectHeight * scale);
+  if (!Number.isFinite(minX) || maxX - minX < 0.01) return null;
+
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  const spanY = Math.max(maxTop, 1);
+  const cy = spanY / 2;
+  const radius = 0.5 * Math.hypot(Math.max(maxX - minX, 1), spanY, Math.max(maxZ - minZ, 1));
+  const camera = instance.camera;
+  const fovY = ((camera?.fov || THREE_CONFIG.CAMERA.FOV) * Math.PI) / 180;
+  const aspect = camera?.aspect > 0.2 ? camera.aspect : 1.6;
+  const fovX = 2 * Math.atan(Math.tan(fovY / 2) * aspect);
+  // Fit the whole building, whichever of width or height is tighter.
+  const distance = (radius / Math.sin(Math.min(fovX, fovY) / 2)) * 1.08;
+  const direction = new instance.THREE.Vector3(1, 0.62, 1).normalize();
+
+  return {
+    position: {
+      x: cx + direction.x * distance,
+      y: cy + direction.y * distance,
+      z: cz + direction.z * distance,
+    },
+    target: { x: cx, y: cy, z: cz },
+    distance,
+    radius,
+  };
+}
+
+export function applyExteriorCameraFrame(instance) {
+  const frame = getExteriorCameraFrame(instance);
+  if (!frame || !instance.camera) return frame;
+  instance.camera.position.set(frame.position.x, frame.position.y, frame.position.z);
+  instance.camera.lookAt(frame.target.x, frame.target.y, frame.target.z);
+  if (instance.camera.far < frame.distance + frame.radius * 4) {
+    instance.camera.far = frame.distance + frame.radius * 4;
+    instance.camera.updateProjectionMatrix();
+  }
+  if (instance.controls) {
+    instance.controls.target.set(frame.target.x, frame.target.y, frame.target.z);
+    instance.controls.maxDistance = Math.max(instance.controls.maxDistance || 0, frame.distance * 4);
+    instance.controls.update();
+  }
+  return frame;
+}
+
 export function addLighting(instance) {
   const L = THREE_CONFIG.LIGHTING;
   const THREE = instance.THREE;

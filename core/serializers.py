@@ -76,7 +76,7 @@ class WallSerializer(serializers.ModelSerializer):
             'height', 'thickness', 'base_elevation_mm', 'base_elevation_manual', 'application_type',
             'inner_face_material', 'inner_face_thickness',
             'outer_face_material', 'outer_face_thickness',
-            'is_default', 'has_concrete_base', 'concrete_base_height',
+            'is_default', 'tip_to_tip', 'has_concrete_base', 'concrete_base_height',
             'fill_gap_mode', 'gap_fill_height', 'gap_base_position',
             'side_panel_length', 'side_panel_end',
             'ceiling_joint_type', 'ceiling_cut_l_horizontal_extension',

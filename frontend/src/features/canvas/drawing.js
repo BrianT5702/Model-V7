@@ -98,6 +98,198 @@ export function findHostWallNearPoint(point, walls, maxDistMm = 25) {
     return best;
 }
 
+/**
+ * Slide a newly drawn wall onto the host face the long joint extends to.
+ * Both endpoints move by the same amount, so the typed length stays the same.
+ * Returns the original points when there is no perpendicular host to join.
+ * The slide is clamped to the site box so a join on y=0 or x=0 cannot cross 0,
+ * and a join on the far edge cannot pass the declared width or length.
+ * If the slide still leaves the joined end short of the host's outer line,
+ * that end is extended so the wall reaches the line.
+ */
+export function translateJoinedWallKeepingLength(start, end, joinedPoint, walls, rooms, siteBox = null, options = null) {
+    if (!start || !end || !joinedPoint || !walls?.length) {
+        return { start, end };
+    }
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return { start, end };
+    const ux = dx / len;
+    const uy = dy / len;
+
+    let host = null;
+    let bestDist = 80;
+    for (const wall of walls) {
+        if (!wall) continue;
+        const hdx = Number(wall.end_x) - Number(wall.start_x);
+        const hdy = Number(wall.end_y) - Number(wall.start_y);
+        const hlen = Math.hypot(hdx, hdy);
+        if (hlen < 1) continue;
+        // A colinear neighbour is a continuation, not the joint we slide onto.
+        if (Math.abs(ux * hdx + uy * hdy) / hlen > 0.85) continue;
+        const proj = _projectPointToWallSegment(joinedPoint.x, joinedPoint.y, wall);
+        if (proj.dist < bestDist) {
+            host = wall;
+            bestDist = proj.dist;
+        }
+    }
+    if (!host) return { start, end };
+
+    const thickness = Math.max(1, Number(host.thickness) || 100);
+    const box = {
+        minX: Number.isFinite(Number(siteBox?.minX)) ? Number(siteBox.minX) : 0,
+        minY: Number.isFinite(Number(siteBox?.minY)) ? Number(siteBox.minY) : 0,
+        maxX: Number.isFinite(Number(siteBox?.maxX)) ? Number(siteBox.maxX) : Infinity,
+        maxY: Number.isFinite(Number(siteBox?.maxY)) ? Number(siteBox.maxY) : Infinity,
+    };
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const wall of walls) {
+        minX = Math.min(minX, Number(wall.start_x), Number(wall.end_x));
+        minY = Math.min(minY, Number(wall.start_y), Number(wall.end_y));
+        maxX = Math.max(maxX, Number(wall.start_x), Number(wall.end_x));
+        maxY = Math.max(maxY, Number(wall.start_y), Number(wall.end_y));
+    }
+    const center = Number.isFinite(minX)
+        ? { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+        : { x: 0, y: 0 };
+    const offsetOpts = buildWallOffsetOptions(host, rooms) || {};
+    offsetOpts.siteBox = box;
+    const faces = calculateOffsetPoints(
+        Number(host.start_x),
+        Number(host.start_y),
+        Number(host.end_x),
+        Number(host.end_y),
+        thickness,
+        center,
+        1,
+        offsetOpts
+    );
+    if (!faces?.line1 || !faces?.line2) return { start, end };
+
+    const mid = (line, axis) => (line[0][axis] + line[1][axis]) / 2;
+    const coordOnLine = (line, axis, at) => {
+        const other = axis === 'x' ? 'y' : 'x';
+        const span = line[1][other] - line[0][other];
+        if (Math.abs(span) < 0.001) return (line[0][axis] + line[1][axis]) / 2;
+        const t = (at - line[0][other]) / span;
+        return line[0][axis] + t * (line[1][axis] - line[0][axis]);
+    };
+
+    const wallIsHorizontal = Math.abs(dx) >= Math.abs(dy);
+    let deltaX = 0;
+    let deltaY = 0;
+    if (wallIsHorizontal) {
+        const x1 = mid(faces.line1, 'x');
+        const x2 = mid(faces.line2, 'x');
+        const onLeft = (start.x + end.x) / 2 < (Number(host.start_x) + Number(host.end_x)) / 2;
+        const far = onLeft
+            ? (x1 >= x2 ? faces.line1 : faces.line2)
+            : (x1 <= x2 ? faces.line1 : faces.line2);
+        deltaX = coordOnLine(far, 'x', joinedPoint.y) - joinedPoint.x;
+    } else {
+        const y1 = mid(faces.line1, 'y');
+        const y2 = mid(faces.line2, 'y');
+        const other = Math.hypot(joinedPoint.x - start.x, joinedPoint.y - start.y)
+            < Math.hypot(joinedPoint.x - end.x, joinedPoint.y - end.y)
+            ? end
+            : start;
+        const joinedIsTop = joinedPoint.y < other.y;
+        const far = joinedIsTop
+            ? (y1 <= y2 ? faces.line1 : faces.line2)
+            : (y1 >= y2 ? faces.line1 : faces.line2);
+        deltaY = coordOnLine(far, 'y', joinedPoint.x) - joinedPoint.y;
+        // Dropped from an interior tip (the 1180), stand one thickness toward
+        // that wall and stay on the line that was snapped. The tip then sits
+        // on this wall's outer face, and the saved line is the same 420 line
+        // you get by drawing the 420 wall first.
+        // Do not also step onto the far face. That crosses the host, and the
+        // split cuts the typed 800 into 700 + 100 and the 1180 into 100 + 1080.
+        // A corner on the site edge (the 23320 on y=0) stays on the snapped
+        // point. A vertical stood on a lower wall stays on that point too.
+        const hostEnd = Math.min(
+            Math.hypot(joinedPoint.x - Number(host.start_x), joinedPoint.y - Number(host.start_y)),
+            Math.hypot(joinedPoint.x - Number(host.end_x), joinedPoint.y - Number(host.end_y))
+        );
+        const hostX0 = Number(host.start_x);
+        const hostX1 = Number(host.end_x);
+        const hostY0 = Number(host.start_y);
+        const hostY1 = Number(host.end_y);
+        const onSiteEdge = (value, lo, hi) =>
+            (Number.isFinite(lo) && Math.abs(value - lo) <= 1)
+            || (Number.isFinite(hi) && Math.abs(value - hi) <= 1);
+        const hostOnSiteEdge =
+            (Math.abs(hostY0 - hostY1) <= 1 && onSiteEdge(hostY0, box.minY, box.maxY))
+            || (Math.abs(hostX0 - hostX1) <= 1 && onSiteEdge(hostX0, box.minX, box.maxX));
+        if (joinedIsTop && !hostOnSiteEdge && hostEnd <= thickness + 1) {
+            const towardHost = Math.sign(((hostX0 + hostX1) / 2) - joinedPoint.x);
+            if (towardHost !== 0) {
+                deltaX += towardHost * thickness;
+                deltaY = 0;
+            }
+        }
+    }
+
+    // Each axis is one face only. Up and sideways can both apply.
+    if (Math.abs(deltaX) > thickness + 1) deltaX = 0;
+    if (Math.abs(deltaY) > thickness + 1) deltaY = 0;
+    const clampToBox = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+    const targetX = clampToBox(joinedPoint.x + deltaX, box.minX, box.maxX);
+    const targetY = clampToBox(joinedPoint.y + deltaY, box.minY, box.maxY);
+    const lengthenOnly = options?.lengthenOnly === true;
+    let slideX = lengthenOnly ? 0 : deltaX;
+    let slideY = lengthenOnly ? 0 : deltaY;
+    // Shrink the slide so neither end crosses the site. A wall already on
+    // x=0 or y=0 stays there instead of sticking out past the boundary.
+    if (slideX < 0) {
+        const edge = Math.min(start.x, end.x);
+        if (edge + slideX < box.minX) slideX = box.minX - edge;
+    } else if (slideX > 0) {
+        const edge = Math.max(start.x, end.x);
+        if (edge + slideX > box.maxX) slideX = box.maxX - edge;
+    }
+    if (slideY < 0) {
+        const edge = Math.min(start.y, end.y);
+        if (edge + slideY < box.minY) slideY = box.minY - edge;
+    } else if (slideY > 0) {
+        const edge = Math.max(start.y, end.y);
+        if (edge + slideY > box.maxY) slideY = box.maxY - edge;
+    }
+    const sx = Math.round(slideX);
+    const sy = Math.round(slideY);
+    let nextStart = { x: start.x + sx, y: start.y + sy };
+    let nextEnd = { x: end.x + sx, y: end.y + sy };
+    const joinedIsEnd = Math.hypot(end.x - joinedPoint.x, end.y - joinedPoint.y)
+        <= Math.hypot(start.x - joinedPoint.x, start.y - joinedPoint.y);
+    const fixed = joinedIsEnd ? nextStart : nextEnd;
+    const moving = joinedIsEnd ? nextEnd : nextStart;
+    // The slide keeps the typed length. If that still stops short of the
+    // host's outer line, extend this end so the wall reaches that line.
+    if (wallIsHorizontal) {
+        const dir = Math.sign(moving.x - fixed.x) || Math.sign(targetX - fixed.x);
+        const now = (moving.x - fixed.x) * dir;
+        const want = (targetX - fixed.x) * dir;
+        if (dir !== 0 && want > now + 0.5) {
+            const reached = { x: Math.round(targetX), y: moving.y };
+            if (joinedIsEnd) nextEnd = reached;
+            else nextStart = reached;
+        }
+    } else {
+        const dir = Math.sign(moving.y - fixed.y) || Math.sign(targetY - fixed.y);
+        const now = (moving.y - fixed.y) * dir;
+        const want = (targetY - fixed.y) * dir;
+        if (dir !== 0 && want > now + 0.5) {
+            const reached = { x: moving.x, y: Math.round(targetY) };
+            if (joinedIsEnd) nextEnd = reached;
+            else nextStart = reached;
+        }
+    }
+    return { start: nextStart, end: nextEnd };
+}
+
 function _normalizeAngleDiffRad(a, b) {
     let d = a - b;
     while (d > Math.PI) d -= 2 * Math.PI;
@@ -2284,6 +2476,30 @@ function expandDimensionSegmentToWallFaces(startX, startY, endX, endY, wallData,
     return result;
 }
 
+// Face point at a dimension tick. Prefer the face toward the label when both
+// faces share that station, so the witness meets the corner instead of the
+// centerline or the far side of the wall.
+function facePointTowardLabel(wall, along, isHorizontal, labelModel) {
+    const pts = [];
+    if (wall?._line1) pts.push(...wall._line1);
+    if (wall?._line2) pts.push(...wall._line2);
+    if (!pts.length) return null;
+    const alongOf = (p) => (isHorizontal ? p.x : p.y);
+    const acrossOf = (p) => (isHorizontal ? p.y : p.x);
+    const near = pts.filter((p) => Number.isFinite(alongOf(p)) && Math.abs(alongOf(p) - along) <= 1.5);
+    if (!near.length) return null;
+    let best = near[0];
+    let bestD = Infinity;
+    for (const p of near) {
+        const d = Math.abs(acrossOf(p) - labelModel);
+        if (d < bestD) {
+            bestD = d;
+            best = p;
+        }
+    }
+    return best;
+}
+
 /**
  * First/last side-panel ticks follow the drawn faces: 45° outer corner when that
  * end is extended, shortened face for butt-in. Interior seams stay on the joint.
@@ -2996,11 +3212,11 @@ export function drawDimensions(
     const angleLen = Math.atan2(dyLen, dxLen) * (180 / Math.PI);
     const isHorizLen = Math.abs(angleLen) < 45 || Math.abs(angleLen) > 135;
 
-    // Per-axis value dedup (H and V may share the same mm)
+    // Skip only a value already used by the overall project dimension.
+    // Two walls of the same length each keep their own dimension line.
     if (dimensionValuesSeen && typeof length === 'number') {
         const dedupKey = planCeilingValueDedupKey(length, isHorizLen);
         if (dedupKey && dimensionValuesSeen.has(dedupKey)) return;
-        if (dedupKey) dimensionValuesSeen.add(dedupKey);
     }
 
     let midX = 0;
@@ -3060,46 +3276,12 @@ export function drawDimensions(
         const projectHeight = (maxY - minY) || 1;
         const projectSize = Math.max(projectWidth, projectHeight);
         const wallData = findWallDataForSegment(wallLinesMap, startX, startY, endX, endY);
-        const faceSpan = expandDimensionSegmentToWallFaces(
-            startX,
-            startY,
-            endX,
-            endY,
-            wallData,
-            modelBounds,
-            wallLinesMap
-        );
-        const dimStartX = faceSpan.startX;
-        const dimStartY = faceSpan.startY;
-        const dimEndX = faceSpan.endX;
-        const dimEndY = faceSpan.endY;
-        // Ticks sit on the drawn faces. A wall with a 45° cut at both ends is stored
-        // centerline-to-centerline, so the label was short of the long points
-        // (980 instead of 1180). When both ticks fall outside that centerline,
-        // report the span they actually measure: extended end to extended end.
-        const measuredLength = Math.hypot(dimEndX - dimStartX, dimEndY - dimStartY);
-        const along = length || 1;
-        const dirX = (endX - startX) / along;
-        const dirY = (endY - startY) / along;
-        const startExtension =
-            -((dimStartX - startX) * dirX + (dimStartY - startY) * dirY);
-        const endExtension =
-            (dimEndX - endX) * dirX + (dimEndY - endY) * dirY;
-        if (measuredLength > length + 1 && startExtension > 1 && endExtension > 1) {
-            if (dimensionValuesSeen) {
-                const oldKey = planCeilingValueDedupKey(length, isHorizLen);
-                const newKey = planCeilingValueDedupKey(measuredLength, isHorizLen);
-                if (oldKey && oldKey !== newKey) dimensionValuesSeen.delete(oldKey);
-                if (newKey && dimensionValuesSeen.has(newKey)) {
-                    context.restore();
-                    return;
-                }
-                if (newKey) dimensionValuesSeen.add(newKey);
-            }
-            length = measuredLength;
-            text = formatDimMmCanvas(length);
-            textWidth = context.measureText(text).width;
-        }
+        // TEMPORARY: dimension the stored start/end only. Do not stretch to the
+        // chamfer tips or add the tip-to-tip extra. The number is the DB length.
+        let dimStartX = startX;
+        let dimStartY = startY;
+        let dimEndX = endX;
+        let dimEndY = endY;
         const segmentWall = wallData?.wall ?? null;
         const hostForNear = segmentWall || wallData?.wall || null;
         const isHorizSegment = Math.abs(angle) < 45 || Math.abs(angle) > 135;
@@ -3543,12 +3725,25 @@ export function drawDimensions(
                 ? (labelY < clipMidYScreen ? minY : maxY)
                 : (labelY < clipMidYScreen ? clipBounds.minY : clipBounds.maxY);
             const originY = originYModel * scaleFactor + offsetY;
+            // Interior walls: drop the witness onto the face at the tick, on the
+            // label side. Starting at the building edge runs the line through the wall.
+            let startAttachY = originY;
+            let endAttachY = originY;
+            let extensionClip = rectScreen;
+            if (isNearWallDimension && hostForNear) {
+                const labelModelY = (labelY - offsetY) / scaleFactor;
+                const startFace = facePointTowardLabel(hostForNear, dimStartX, true, labelModelY);
+                const endFace = facePointTowardLabel(hostForNear, dimEndX, true, labelModelY);
+                if (startFace) startAttachY = startFace.y * scaleFactor + offsetY;
+                if (endFace) endAttachY = endFace.y * scaleFactor + offsetY;
+                extensionClip = null;
+            }
 
             context.strokeStyle = color;
             context.lineWidth = extLineW;
             context.setLineDash(extDash);
-            canvasDrawExtensionDashed(context, startXScreen, originY, startXScreen, labelY, rectScreen);
-            canvasDrawExtensionDashed(context, endXScreen, originY, endXScreen, labelY, rectScreen);
+            canvasDrawExtensionDashed(context, startXScreen, startAttachY, startXScreen, labelY, extensionClip);
+            canvasDrawExtensionDashed(context, endXScreen, endAttachY, endXScreen, labelY, extensionClip);
 
             context.setLineDash([]);
             context.lineWidth = dimLineW;
@@ -3801,12 +3996,23 @@ export function drawDimensions(
                 ? (labelX < clipMidXScreen ? minX : maxX)
                 : (labelX < clipMidXScreen ? clipBounds.minX : clipBounds.maxX);
             const originX = originXModel * scaleFactor + offsetX;
+            let startAttachX = originX;
+            let endAttachX = originX;
+            let extensionClip = rectScreen;
+            if (isNearWallDimension && hostForNear) {
+                const labelModelX = (labelX - offsetX) / scaleFactor;
+                const startFace = facePointTowardLabel(hostForNear, dimStartY, false, labelModelX);
+                const endFace = facePointTowardLabel(hostForNear, dimEndY, false, labelModelX);
+                if (startFace) startAttachX = startFace.x * scaleFactor + offsetX;
+                if (endFace) endAttachX = endFace.x * scaleFactor + offsetX;
+                extensionClip = null;
+            }
 
             context.strokeStyle = color;
             context.lineWidth = extLineW;
             context.setLineDash(extDash);
-            canvasDrawExtensionDashed(context, originX, startYScreen, labelX, startYScreen, rectScreen);
-            canvasDrawExtensionDashed(context, originX, endYScreen, labelX, endYScreen, rectScreen);
+            canvasDrawExtensionDashed(context, startAttachX, startYScreen, labelX, startYScreen, extensionClip);
+            canvasDrawExtensionDashed(context, endAttachX, endYScreen, labelX, endYScreen, extensionClip);
 
             context.setLineDash([]);
             context.lineWidth = dimLineW;
@@ -4333,21 +4539,39 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
         shouldFlip = dotProduct > 0;
     }
 
-    const finalOffsetX = shouldFlip ? -offsetX : offsetX;
-    const finalOffsetY = shouldFlip ? -offsetY : offsetY;
-    // Both faces at ± half thickness from centerline (gapPixels = full thickness in px).
-    // line2 is the inward/inner face; line1 is the opposite (outer) face.
-    // One-sided centerline+offset made slant 45_cut miters look like crossed pink X's.
-    const halfX = finalOffsetX / 2;
-    const halfY = finalOffsetY / 2;
+    let finalOffsetX = shouldFlip ? -offsetX : offsetX;
+    let finalOffsetY = shouldFlip ? -offsetY : offsetY;
+    // A face that would sit outside the site is drawn inward instead, so the
+    // outer line of a wall already on x=0 or y=0 stays on that edge.
+    const siteBox = offsetOptions && offsetOptions.siteBox;
+    if (siteBox) {
+        const px = midX + finalOffsetX;
+        const py = midY + finalOffsetY;
+        const minX = Number(siteBox.minX);
+        const maxX = Number(siteBox.maxX);
+        const minY = Number(siteBox.minY);
+        const maxY = Number(siteBox.maxY);
+        const outside =
+            (Number.isFinite(minX) && px < minX - 0.5)
+            || (Number.isFinite(maxX) && px > maxX + 0.5)
+            || (Number.isFinite(minY) && py < minY - 0.5)
+            || (Number.isFinite(maxY) && py > maxY + 0.5);
+        if (outside) {
+            finalOffsetX = -finalOffsetX;
+            finalOffsetY = -finalOffsetY;
+        }
+    }
+    // The saved start/end is one face. The other line is the full thickness
+    // on the remaining side. +finalOffset points away from the interior
+    // unless that side is outside the site.
     return {
         line1: [
-            { x: x1 + halfX, y: y1 + halfY },
-            { x: x2 + halfX, y: y2 + halfY },
+            { x: x1 + finalOffsetX, y: y1 + finalOffsetY },
+            { x: x2 + finalOffsetX, y: y2 + finalOffsetY },
         ],
         line2: [
-            { x: x1 - halfX, y: y1 - halfY },
-            { x: x2 - halfX, y: y2 - halfY },
+            { x: x1, y: y1 },
+            { x: x2, y: y2 },
         ],
     };
 }
@@ -4877,6 +5101,9 @@ export function drawWalls({
         const wallThickness = wall.thickness; // Default to 100mm if not set
         const gapPixels = (wallThickness * scaleFactor);
         const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
+        if (center && Number(center.x) > 0 && Number(center.y) > 0) {
+            offsetOpts.siteBox = { minX: 0, minY: 0, maxX: center.x * 2, maxY: center.y * 2 };
+        }
         const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
         if (typeof forcedFlip === 'boolean') {
             offsetOpts.forceShouldFlip = forcedFlip;
@@ -5404,6 +5631,9 @@ export function drawWalls({
                         }
                     }
                     
+                    // Stored ends are already the long tips. A 45° joint keeps the
+                    // far-face target so the two cuts meet, instead of pushing
+                    // each tip out by another full thickness.
                     // Extend vertical wall lines to horizontal wall's line
                     // Only extend if intersection is at an endpoint (not in the middle)
                     if (!verticalWall.isOnBody) {
@@ -5567,9 +5797,10 @@ export function drawWalls({
         // Check each intersection to find 45° cuts at each endpoint
         intersections.forEach(inter => {
             const tolerance = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
+            const wallThk = Number(wall.thickness) || 0;
             const endTol = wall.application_type && String(wall.application_type).toLowerCase() === 'partition'
-                ? Math.max(tolerance, (Number(wall.thickness) || 0) * 2 + 1)
-                : tolerance;
+                ? Math.max(tolerance, wallThk * 2 + 1)
+                : Math.max(tolerance, wallThk + 1);
             const isAtStart = Math.hypot(inter.x - wall.start_x, inter.y - wall.start_y) < endTol;
             const isAtEnd = Math.hypot(inter.x - wall.end_x, inter.y - wall.end_y) < endTol;
             
@@ -5772,7 +6003,10 @@ export function drawWalls({
         // Calculate gap in pixels based on wall thickness for temp wall
         const tempWallThickness = tempWall.thickness || 100; // Default to 100mm if not set
         const tempGapPixels = (tempWallThickness * scaleFactor) / 2;
-        const tempOffsetOpts = buildWallOffsetOptions(tempWall, rooms);
+        const tempOffsetOpts = buildWallOffsetOptions(tempWall, rooms) || {};
+        if (center && Number(center.x) > 0 && Number(center.y) > 0) {
+            tempOffsetOpts.siteBox = { minX: 0, minY: 0, maxX: center.x * 2, maxY: center.y * 2 };
+        }
 
         const { line1, line2 } = calculateOffsetPoints(
             tempWall.start_x,

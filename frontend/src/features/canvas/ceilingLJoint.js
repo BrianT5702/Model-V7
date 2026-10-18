@@ -10,8 +10,6 @@
  */
 
 export const CUT_L_INFILL_GAP_MM = 15;
-/** Tongue stands this far above the ceiling, matching the step in the section. */
-export const CUT_L_UPSTAND_MM = 40;
 export const CUT_L_ALU_SHORT_MM = 38.1;
 export const CUT_L_ALU_LONG_MM = 76.2;
 export const CUT_L_ALU_THICK_MM = 3;
@@ -68,16 +66,33 @@ export function ceilingThicknessMmForWall(wall, rooms) {
 
 /**
  * How far the ceiling edge sits in from the wall's outer face.
- * Tongue plus the infill pocket, with 1mm of bite so the ceiling
- * meets the infill instead of leaving a hairline crack.
+ * The rebate is cut to the ceiling thickness, so the ceiling fills
+ * that pocket and meets the tongue. 1mm of bite hides the joint line.
  */
 export function ceilingInsetFromOuterFaceMm(wall) {
   if (wall?.ceiling_joint_type !== 'cut_l' || wall.fill_gap_mode) return 0;
   const thickness = Number(wall.thickness) || 0;
   const tongue = cutLTongueWidthMm(wall);
-  const gap = Math.min(CUT_L_INFILL_GAP_MM, Math.max(0, thickness - tongue - 5));
-  const inset = tongue + gap - 1;
+  const inset = Math.max(0, tongue - 1);
   return Math.max(0, Math.min(inset, Math.max(0, thickness - 8)));
+}
+
+/**
+ * How far this room's ceiling edge moves along the wall's thickness normal
+ * (3D +Z, toward the model center). Positive lands further onto the wall solid.
+ *
+ * The rebate opens toward the plan interior. That room's ceiling extends onto
+ * the ledge. The room on the tongue side stops at the tongue's outer face,
+ * so a shared wall does not leave the step in the neighbouring ceiling.
+ */
+export function cutLCeilingShiftAlongThicknessMm(wall, roomOnPositiveSide, rebateFacesPositiveZ) {
+  const thickness = Math.max(0, Number(wall?.thickness) || 0);
+  const inset = ceilingInsetFromOuterFaceMm(wall);
+  if (!(inset > 0) || !(thickness > 0)) return 0;
+  if (rebateFacesPositiveZ) {
+    return roomOnPositiveSide ? inset : 0;
+  }
+  return roomOnPositiveSide ? thickness : Math.max(0, thickness - inset);
 }
 
 /** Rebate sizes in millimetres. Null when this wall should stay a plain top. */

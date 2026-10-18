@@ -8,7 +8,6 @@ import {
   CUT_L_ALU_THICK_MM,
   CUT_L_FASTENER_DIA_MM,
   CUT_L_FASTENER_SPACING_MM,
-  CUT_L_UPSTAND_MM,
   resolveCutLRebateMm,
 } from './ceilingLJoint';
 import {
@@ -16,8 +15,14 @@ import {
   createFatLineSegmentsFromPositions,
 } from './wideLineUtils';
 import { resolveWallBaseElevationMm } from '../project/projectUtils';
-import { getWallInteriorNormalModel } from './wallInteriorSide';
+import { cutLRebateFacesPositiveZ, getWallInteriorNormalModel } from './wallInteriorSide';
 import { buildIntersectionsFromJoints } from '../panel/wallPanelCalculationUtils';
+import {
+  buildWallOffsetOptions,
+  calculateOffsetPoints,
+  getRoomsLinkedToWall,
+  resolve45CutForceShouldFlip,
+} from './drawing';
 import {
   createDoorLeafMaterial,
   createWallSurfaceMaterial,
@@ -175,7 +180,58 @@ function calculateLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4, allowExtended
   return null;
 }
 
-/** Inward unit normal (toward model center) for a plan segment in XZ. */
+/**
+ * Unit plan normal of the second face, matching the 2D wall.
+ * The saved start/end is one face. The other face is a full thickness
+ * away from the interior (flipped inward when that side would leave the site).
+ * 3D used to extrude toward the model center instead, which put the second
+ * face on the opposite side and then stretched a tip out by another thickness.
+ */
+export function planFaceOffsetUnit(wall, instance) {
+  if (!wall) return null;
+  const thickness = Math.max(1, Number(wall.thickness) || 100);
+  const project = instance?.project;
+  const width = Number(project?.width);
+  const length = Number(project?.length);
+  let centerX = width / 2;
+  let centerY = length / 2;
+  if (!(centerX > 0) || !(centerY > 0)) {
+    const mc = instance?.calculateModelCenter?.();
+    const scale = instance?.scalingFactor || 1;
+    centerX = (mc?.x || 0) / scale;
+    centerY = (mc?.z || 0) / scale;
+  }
+  const center = { x: centerX, y: centerY };
+  const rooms = Array.isArray(project?.rooms) ? project.rooms : [];
+  const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
+  if (center.x > 0 && center.y > 0) {
+    offsetOpts.siteBox = { minX: 0, minY: 0, maxX: center.x * 2, maxY: center.y * 2 };
+  }
+  const walls = instance?.walls || [];
+  const intersections = buildIntersectionsFromJoints(walls, instance?.joints || []);
+  const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+  if (typeof forcedFlip === 'boolean') offsetOpts.forceShouldFlip = forcedFlip;
+  const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
+  if (isPartition || getRoomsLinkedToWall(wall, rooms).length >= 2) {
+    offsetOpts.skipPolygonProbe = true;
+  }
+  const faces = calculateOffsetPoints(
+    Number(wall.start_x),
+    Number(wall.start_y),
+    Number(wall.end_x),
+    Number(wall.end_y),
+    thickness,
+    center,
+    1,
+    offsetOpts
+  );
+  const ox = (faces?.line1?.[0]?.x ?? 0) - (faces?.line2?.[0]?.x ?? 0);
+  const oz = (faces?.line1?.[0]?.y ?? 0) - (faces?.line2?.[0]?.y ?? 0);
+  const len = Math.hypot(ox, oz);
+  if (len < 1e-6) return null;
+  return { x: ox / len, z: oz / len };
+}
+
 function getWallInwardNormalXZ(startX, startZ, endX, endZ, modelCenter) {
   const dirX = endX - startX;
   const dirZ = endZ - startZ;
@@ -444,18 +500,12 @@ export function createWallMesh(instance, wall) {
   }
   const wallThickness = thickness * scale;
   // ============================================================================
-  // WALL FLIPPING: Based ONLY on model center position
+  // WALL FLIPPING: second face matches the plan
   // ============================================================================
-  // Reverse start/end when the right-hand normal (from start→end) points AWAY from
-  // the model center. After that, local +Z extrude matches the inward normal.
-  //
-  // This is required for ALL walls — including slant/diagonal. The old H/V-only
-  // flip left slant walls unflipped, so thickness extruded outward while 45° miters
-  // were computed as if inward → broken slant corners.
-  //
-  // Equivalent to the legacy rules:
-  //   horizontal: flip when modelCenter.z < wall.z
-  //   vertical:   flip when modelCenter.x > wall.x
+  // The saved line is one face. Local +Z is the other face, the same full
+  // thickness offset the plan draws. Reverse start/end when the right-hand
+  // normal points the other way, so the solid sits on the plan's second line.
+  // A site-edge wall still offsets inward, same as the plan.
   // ============================================================================
   // Joints do NOT affect flipping decisions. Joints only affect:
   // - Wall extension (after flipping)
@@ -470,6 +520,7 @@ export function createWallMesh(instance, wall) {
   // butt-in shortening also move finalStart, so comparing it to startX would report a
   // swap that never happened and mirror door positions/hinges.
   let wallEndpointsSwapped = false;
+  const faceOffset = planFaceOffsetUnit(wall, instance);
   {
     const dirX0 = endX - startX;
     const dirZ0 = endZ - startZ;
@@ -483,7 +534,9 @@ export function createWallMesh(instance, wall) {
     const midZ0 = (startZ + endZ) / 2;
     const toCenterX0 = modelCenter.x - midX0;
     const toCenterZ0 = modelCenter.z - midZ0;
-    const rhDotCenter = rhx * toCenterX0 + rhz * toCenterZ0;
+    const rhDotCenter = faceOffset
+      ? rhx * faceOffset.x + rhz * faceOffset.z
+      : rhx * toCenterX0 + rhz * toCenterZ0;
     if (rhDotCenter < 0) {
       finalStartX = endX;
       finalStartZ = endZ;
@@ -515,7 +568,11 @@ export function createWallMesh(instance, wall) {
     // Model center is already in scaled coordinates, don't scale again
     const toCenterX2 = modelCenter.x - midX;
     const toCenterZ2 = modelCenter.z - midZ;
-    const dot = nx * toCenterX2 + nz * toCenterZ2;
+    // Same side as the plan's second face. Falling back to the model center
+    // only when that offset cannot be built.
+    const dot = faceOffset
+      ? nx * faceOffset.x + nz * faceOffset.z
+      : nx * toCenterX2 + nz * toCenterZ2;
     
     // DEBUG for Wall 7255
     if (id === 7255) {
@@ -576,6 +633,7 @@ export function createWallMesh(instance, wall) {
       const otherIsVertical = Math.abs(otherWall.start_x - otherWall.end_x) < 1e-6;
       // Calculate other wall's normal
       // Model center is already in scaled coordinates, don't scale again
+      const otherOff = planFaceOffsetUnit(otherWall, instance);
       const otherMidX = (oSX + oEX) / 2;
       const otherMidZ = (oSZ + oEZ) / 2;
       const toOtherCenterX = modelCenter.x - otherMidX;
@@ -583,9 +641,11 @@ export function createWallMesh(instance, wall) {
       let otherNormX, otherNormZ;
       if (otherIsHorizontal) {
         otherNormX = 0;
-        otherNormZ = toOtherCenterZ < 0 ? -1 : 1;
+        const signZ = otherOff ? otherOff.z : (toOtherCenterZ < 0 ? -1 : 1);
+        otherNormZ = signZ >= 0 ? 1 : -1;
       } else if (otherIsVertical) {
-        otherNormX = toOtherCenterX < 0 ? -1 : 1;
+        const signX = otherOff ? otherOff.x : (toOtherCenterX < 0 ? -1 : 1);
+        otherNormX = signX >= 0 ? 1 : -1;
         otherNormZ = 0;
       } else {
         return; // Not perpendicular, skip
@@ -1065,7 +1125,8 @@ export function createWallMesh(instance, wall) {
             const thisIsSlant = !isHorizontal && !isVertical;
             const otherIsSlant = !otherIsH && !otherIsV;
             if (thisIsSlant || otherIsSlant) {
-              const otherNorm = getWallInwardNormalXZ(oSX, oSZ, oEX, oEZ, modelCenter);
+              const otherNorm = planFaceOffsetUnit(otherWall, instance)
+                || getWallInwardNormalXZ(oSX, oSZ, oEX, oEZ, modelCenter);
               const otherThk = (Number(otherWall.thickness) || 0) * scale;
               startMiterXs = compute45MiterLocalXs({
                 finalStartX,
@@ -1122,7 +1183,8 @@ export function createWallMesh(instance, wall) {
             const thisIsSlant = !isHorizontal && !isVertical;
             const otherIsSlant = !otherIsH && !otherIsV;
             if (thisIsSlant || otherIsSlant) {
-              const otherNorm = getWallInwardNormalXZ(oSX, oSZ, oEX, oEZ, modelCenter);
+              const otherNorm = planFaceOffsetUnit(otherWall, instance)
+                || getWallInwardNormalXZ(oSX, oSZ, oEX, oEZ, modelCenter);
               const otherThk = (Number(otherWall.thickness) || 0) * scale;
               endMiterXs = compute45MiterLocalXs({
                 finalStartX,
@@ -1498,7 +1560,7 @@ export function createWallMesh(instance, wall) {
   // Cast-only: wall self-receive causes shadow acne that blinks while orbiting
   wallMesh.receiveShadow = false;
   wallMesh.rotation.y = -Math.atan2(finalDz, finalDx);
-  // Position the mesh so that the database line is one face, and thickness extends toward the model center
+  // Position the mesh so the saved line is one face and thickness follows the plan's second face
   wallMesh.position.set(finalStartX + instance.modelOffset.x, basePositionY, finalStartZ + instance.modelOffset.z);
   // IMPORTANT: Create edges AFTER cuts are applied, so edges reflect the modified geometry
   // Use a threshold angle to filter out nearly-coplanar edges (internal edges we don't want to see)
@@ -1774,11 +1836,24 @@ export function createWallMesh(instance, wall) {
       material: wall.outer_face_material || 'PPGI',
       thickness: wall.outer_face_thickness ?? 0.5,
     },
-    // Local +Z points at the model center. Side 1 follows the drawn wall direction.
+    // Local +Z is the plan's second face. Side 1 follows the drawn wall direction.
     side1OnPositiveZ: !wallEndpointsSwapped,
   });
 
   if (cutL) {
+    const center = instance.calculateModelCenter?.();
+    const centerModel = center
+      ? { x: center.x / scale, y: center.z / scale }
+      : null;
+    // The ceiling rebate follows the room, not the 45° miter flip. That flip
+    // keeps the wall thickness stable at a corner, and on a shared wall it
+    // points the step into the neighbouring ceiling.
+    const interiorNormal = getWallInteriorNormalModel(
+      wall,
+      instance.project?.rooms || [],
+      centerModel,
+      null
+    );
     addCutLJointDetails(instance, wallMesh, {
       shapeTop,
       wallThickness,
@@ -1792,6 +1867,10 @@ export function createWallMesh(instance, wall) {
       endCutOnInner,
       startMiterXs,
       endMiterXs,
+      rebateFacesPositiveZ: cutLRebateFacesPositiveZ(
+        interiorNormal,
+        { x: finalNormX, y: finalNormZ }
+      ),
     });
   }
 
@@ -1799,9 +1878,11 @@ export function createWallMesh(instance, wall) {
 }
 
 /**
- * Exterior tongue, chemical infill, and the two 1 1/2" x 3" aluminum angles.
+ * Exterior tongue and the soffit aluminum angle.
  * Local space matches the extruded wall: X along the wall, Y up, Z from the
- * outer face (0) toward the room.
+ * model-center face. The tongue stays on the face opposite the ceiling, which
+ * is Z=0 except on a shared wall whose room is on that side.
+ * The ceiling fills the rebate, so there is no infill pocket and no angle on top.
  */
 function addCutLJointDetails(instance, wallMesh, spec) {
   const THREE = instance.THREE;
@@ -1812,41 +1893,76 @@ function addCutLJointDetails(instance, wallMesh, spec) {
     wallLength,
     rebateDepth,
     tongueWidth,
-    gap,
     hasStart45,
     hasEnd45,
     startCutOnInner,
     endCutOnInner,
     startMiterXs,
     endMiterXs,
+    rebateFacesPositiveZ = true,
   } = spec;
   if (!(wallLength > 0.05) || !(rebateDepth > 0.01) || !(tongueWidth > 0.005)) return;
 
-  let x0 = 0;
-  let x1 = wallLength;
-  if (hasStart45 && !startCutOnInner) x0 += wallThickness;
-  if (hasEnd45 && !endCutOnInner) x1 -= wallThickness;
-  if (startMiterXs && Number.isFinite(startMiterXs.xOuter)) x0 = Math.max(x0, startMiterXs.xOuter);
-  if (endMiterXs && Number.isFinite(endMiterXs.xOuter)) x1 = Math.min(x1, endMiterXs.xOuter);
-  const run = x1 - x0;
-  if (run < 0.05) return;
-  const midX = (x0 + x1) / 2;
+  // Tongue sits on the face opposite the ceiling. On a shared wall that face
+  // can be the inner one, so the whole joint is mirrored through the wall.
+  const zFromOuter = (z) => (rebateFacesPositiveZ ? z : wallThickness - z);
+  const z0 = rebateFacesPositiveZ ? 0 : wallThickness - tongueWidth;
+  const z1 = z0 + tongueWidth;
+  // A square end stops short of the other wall's 45° face and leaves a wedge.
+  // The lip uses that same 45° line, so the two ends meet.
+  const miterX = (atStart, z) => {
+    const t = wallThickness > 1e-6 ? Math.min(1, Math.max(0, z / wallThickness)) : 0;
+    const slant = atStart ? startMiterXs : endMiterXs;
+    if (slant && Number.isFinite(slant.xOuter) && Number.isFinite(slant.xInner)) {
+      return slant.xOuter * (1 - t) + slant.xInner * t;
+    }
+    const cutOnInner = atStart ? startCutOnInner : endCutOnInner;
+    const hasCut = atStart ? hasStart45 : hasEnd45;
+    if (!hasCut) return atStart ? 0 : wallLength;
+    const w = cutOnInner ? t : (1 - t);
+    return atStart ? w * wallThickness : wallLength - w * wallThickness;
+  };
+  const xs0 = miterX(true, z0);
+  const xs1 = miterX(true, z1);
+  const xe0 = miterX(false, z0);
+  const xe1 = miterX(false, z1);
+  if (Math.min(xe0, xe1) - Math.max(xs0, xs1) < 0.02 && (xe0 - xs0) < 0.02 && (xe1 - xs1) < 0.02) return;
 
   const shortLeg = CUT_L_ALU_SHORT_MM * scale;
   const longLeg = CUT_L_ALU_LONG_MM * scale;
   const angleT = Math.max(CUT_L_ALU_THICK_MM * scale, 0.012);
-  const upstand = CUT_L_UPSTAND_MM * scale;
-  const ceilingTop = shapeTop + rebateDepth;
   const sink = Math.min(1.5 * scale, rebateDepth * 0.08);
+  const yBot = shapeTop - sink;
+  const yTop = shapeTop + rebateDepth;
 
-  const srcMat = Array.isArray(wallMesh.material) ? wallMesh.material[0] : wallMesh.material;
-  const tongueMat = srcMat ? srcMat.clone() : new THREE.MeshStandardMaterial({ color: 0xf4f4f2 });
-  const tongueH = rebateDepth + upstand + sink;
-  const tongue = new THREE.Mesh(
-    new THREE.BoxGeometry(run, tongueH, tongueWidth),
-    tongueMat
-  );
-  tongue.position.set(midX, shapeTop + (rebateDepth + upstand) / 2 - sink / 2, tongueWidth / 2);
+  const mats = Array.isArray(wallMesh.material) ? wallMesh.material : [wallMesh.material];
+  const side1OnPositiveZ = Boolean(wallMesh.userData.faceSides?.side1?.onPositiveZ);
+  const tongueOnPositiveZ = !rebateFacesPositiveZ;
+  const faceMat = (tongueOnPositiveZ === side1OnPositiveZ ? mats[1] : mats[2]) || mats[0];
+  const tongueMat = faceMat ? faceMat.clone() : new THREE.MeshStandardMaterial({ color: 0xf4f4f2 });
+  tongueMat.side = THREE.FrontSide;
+  const tongueGeom = new THREE.BufferGeometry();
+  // 0 start-z0-bot, 1 end-z0-bot, 2 end-z1-bot, 3 start-z1-bot, 4..7 the top.
+  tongueGeom.setAttribute('position', new THREE.Float32BufferAttribute([
+    xs0, yBot, z0, xe0, yBot, z0, xe1, yBot, z1, xs1, yBot, z1,
+    xs0, yTop, z0, xe0, yTop, z0, xe1, yTop, z1, xs1, yTop, z1,
+  ], 3));
+  tongueGeom.setIndex([
+    4, 6, 5, 4, 7, 6,
+    0, 2, 3, 0, 1, 2,
+    0, 5, 1, 0, 4, 5,
+    3, 6, 7, 3, 2, 6,
+    0, 7, 4, 0, 3, 7,
+    1, 6, 2, 1, 5, 6,
+  ]);
+  // Split vertices so each face keeps its own normal. Shared corners were
+  // tilting the rib map, which made the lip look like a different panel.
+  const tongueSurface = tongueGeom.toNonIndexed();
+  tongueGeom.dispose();
+  tongueSurface.computeVertexNormals();
+  prepareWallSurfaceGeometry(THREE, tongueSurface);
+  const tongue = new THREE.Mesh(tongueSurface, tongueMat);
+  ensureWallSurfaceDetail(THREE, tongue, instance.renderer);
   tongue.castShadow = true;
   tongue.receiveShadow = false;
   tongue.renderOrder = 2;
@@ -1854,23 +1970,54 @@ function addCutLJointDetails(instance, wallMesh, spec) {
   tongue.name = 'cutLTongue';
   wallMesh.add(tongue);
 
-  if (gap > 0.004) {
-    const infill = new THREE.Mesh(
-      new THREE.BoxGeometry(run, rebateDepth * 0.72, gap),
-      new THREE.MeshStandardMaterial({
-        color: 0xC4B48A,
-        roughness: 0.94,
-        metalness: 0.02,
-      })
-    );
-    infill.position.set(midX, shapeTop + rebateDepth * 0.55, tongueWidth + gap / 2);
-    infill.castShadow = false;
-    infill.receiveShadow = false;
-    infill.renderOrder = 2;
-    infill.userData.isCutLDetail = true;
-    infill.name = 'cutLInfill';
-    wallMesh.add(infill);
-  }
+  // On a shared wall the lip is on the inner face, so a 45° cut leaves the
+  // outer corner empty above the ledge. That wedge is the gap.
+  const addOuterCornerWedge = (atStart) => {
+    const has = atStart ? hasStart45 : hasEnd45;
+    if (!has || !(z0 > 0.02)) return;
+    const xTip = miterX(atStart, 0);
+    const xTongue = miterX(atStart, z0);
+    if (Math.abs(xTongue - xTip) < 0.02) return;
+    const inward = atStart ? 1 : -1;
+    const xIn = inward > 0 ? Math.max(xTip, xTongue) : Math.min(xTip, xTongue);
+    const xC = xIn;
+    const zC = Math.abs(xTip - xIn) < 1e-6 ? z0 : 0;
+    const wedgeMat = tongueMat.clone();
+    wedgeMat.side = THREE.DoubleSide;
+    const wedgeGeom = new THREE.BufferGeometry();
+    wedgeGeom.setAttribute('position', new THREE.Float32BufferAttribute([
+      xTip, yBot, 0, xTongue, yBot, z0, xC, yBot, zC,
+      xTip, yTop, 0, xTongue, yTop, z0, xC, yTop, zC,
+    ], 3));
+    wedgeGeom.setIndex([
+      3, 4, 5,
+      0, 2, 1,
+      0, 3, 4, 0, 4, 1,
+      1, 4, 5, 1, 5, 2,
+      0, 5, 3, 0, 2, 5,
+    ]);
+    const wedgeSurface = wedgeGeom.toNonIndexed();
+    wedgeGeom.dispose();
+    wedgeSurface.computeVertexNormals();
+    prepareWallSurfaceGeometry(THREE, wedgeSurface);
+    const wedge = new THREE.Mesh(wedgeSurface, wedgeMat);
+    ensureWallSurfaceDetail(THREE, wedge, instance.renderer);
+    wedge.castShadow = true;
+    wedge.receiveShadow = false;
+    wedge.renderOrder = 2;
+    wedge.userData.isCutLDetail = true;
+    wedge.name = 'cutLTongue';
+    wallMesh.add(wedge);
+  };
+  addOuterCornerWedge(true);
+  addOuterCornerWedge(false);
+
+  // Hardware stays on the straight run, clear of the mitred corner.
+  const x0 = Math.max(xs0, xs1);
+  const x1 = Math.min(xe0, xe1);
+  const run = x1 - x0;
+  if (run < 0.05) return;
+  const midX = (x0 + x1) / 2;
 
   const angleMaterial = () => new THREE.MeshStandardMaterial({
     color: 0xC5C9CE,
@@ -1892,15 +2039,11 @@ function addCutLJointDetails(instance, wallMesh, spec) {
     wallMesh.add(mesh);
   };
 
-  const extLift = 0.4 * scale;
   const intDrop = 0.4 * scale;
-  // Outside angle at the step: short leg up the tongue face, long leg on the ceiling.
-  const stepLeg = Math.max(shortLeg, upstand);
-  addAngleLeg(run, stepLeg, angleT, midX, ceilingTop + stepLeg / 2, tongueWidth + angleT / 2);
-  addAngleLeg(run, angleT, longLeg, midX, ceilingTop + angleT / 2 + extLift, tongueWidth + longLeg / 2);
-  // Inside angle: short leg on the inner face, long leg along the ceiling soffit.
-  addAngleLeg(run, shortLeg, angleT, midX, shapeTop - shortLeg / 2, wallThickness + angleT / 2);
-  addAngleLeg(run, angleT, longLeg, midX, shapeTop - angleT / 2 - intDrop, wallThickness + longLeg / 2);
+  // The angle on top of the ceiling is omitted. The underside angle stays
+  // on the soffit: short leg on the ceiling face, long leg along the soffit.
+  addAngleLeg(run, shortLeg, angleT, midX, shapeTop - shortLeg / 2, zFromOuter(wallThickness + angleT / 2));
+  addAngleLeg(run, angleT, longLeg, midX, shapeTop - angleT / 2 - intDrop, zFromOuter(wallThickness + longLeg / 2));
 
   const spacing = CUT_L_FASTENER_SPACING_MM * scale;
   const count = Math.min(40, Math.max(2, Math.round(run / spacing)));
@@ -1909,7 +2052,7 @@ function addCutLJointDetails(instance, wallMesh, spec) {
   const fasteners = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(fastenerR, fastenerR, fastenerH, 8),
     new THREE.MeshStandardMaterial({ color: 0x3a3d40, metalness: 0.72, roughness: 0.38 }),
-    count * 2
+    count
   );
   fasteners.userData.isCutLDetail = true;
   fasteners.name = 'cutLFasteners';
@@ -1917,17 +2060,13 @@ function addCutLJointDetails(instance, wallMesh, spec) {
   fasteners.receiveShadow = false;
   fasteners.renderOrder = 3;
   const dummy = new THREE.Object3D();
-  const topFastenerZ = tongueWidth + Math.min(gap + 4 * scale, longLeg * 0.45);
   for (let i = 0; i < count; i += 1) {
     const t = count === 1 ? 0.5 : i / (count - 1);
     const x = x0 + run * (0.08 + t * 0.84);
-    dummy.position.set(x, ceilingTop + extLift + angleT / 2, topFastenerZ);
+    dummy.position.set(x, shapeTop - intDrop - angleT / 2, zFromOuter(wallThickness + longLeg * 0.55));
     dummy.rotation.set(0, 0, 0);
     dummy.updateMatrix();
     fasteners.setMatrixAt(i, dummy.matrix);
-    dummy.position.set(x, shapeTop - intDrop - angleT / 2, wallThickness + longLeg * 0.55);
-    dummy.updateMatrix();
-    fasteners.setMatrixAt(count + i, dummy.matrix);
   }
   fasteners.instanceMatrix.needsUpdate = true;
   wallMesh.add(fasteners);

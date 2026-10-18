@@ -3789,15 +3789,17 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     </button>
                                                     <input 
                                                         type="number" 
-                                                        value={editedWall ? Math.round(Math.hypot(
+                                                        value={editedWall ? Math.round((Math.hypot(
                                                             (editedWall.end_x || 0) - (editedWall.start_x || 0),
                                                             (editedWall.end_y || 0) - (editedWall.start_y || 0)
-                                                        ) * 100) / 100 : ''} 
+                                                        ) + (editedWall.tip_to_tip === true ? 2 * (Number(editedWall.thickness) || 0) : 0)) * 100) / 100 : ''} 
                                                         onChange={(e) => {
                                                             if (isLengthLocked) return;
                                                             
-                                                            const newLength = parseFloat(e.target.value);
-                                                            if (isNaN(newLength) || newLength <= 0 || !editedWall) return;
+                                                            const typedLength = parseFloat(e.target.value);
+                                                            if (isNaN(typedLength) || typedLength <= 0 || !editedWall) return;
+                                                            const tipExtra = editedWall.tip_to_tip === true ? 2 * (Number(editedWall.thickness) || 0) : 0;
+                                                            const newLength = Math.max(1, typedLength - tipExtra);
                                                             
                                                             const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
                                                             const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
