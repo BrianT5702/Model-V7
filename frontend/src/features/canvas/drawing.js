@@ -202,34 +202,17 @@ export function translateJoinedWallKeepingLength(start, end, joinedPoint, walls,
             ? (y1 <= y2 ? faces.line1 : faces.line2)
             : (y1 >= y2 ? faces.line1 : faces.line2);
         deltaY = coordOnLine(far, 'y', joinedPoint.x) - joinedPoint.y;
-        // Dropped from an interior tip (the 1180), stand one thickness toward
-        // that wall and stay on the line that was snapped. The tip then sits
-        // on this wall's outer face, and the saved line is the same 420 line
-        // you get by drawing the 420 wall first.
-        // Do not also step onto the far face. That crosses the host, and the
-        // split cuts the typed 800 into 700 + 100 and the 1180 into 100 + 1080.
-        // A corner on the site edge (the 23320 on y=0) stays on the snapped
-        // point. A vertical stood on a lower wall stays on that point too.
+        // Snapped to the end of a wall already drawn, such as the 420.
+        // Stay on that point. Stepping one thickness back onto the 420
+        // cuts it to 320, and the wall dragged from here to the other
+        // side is only 320 as well.
         const hostEnd = Math.min(
             Math.hypot(joinedPoint.x - Number(host.start_x), joinedPoint.y - Number(host.start_y)),
             Math.hypot(joinedPoint.x - Number(host.end_x), joinedPoint.y - Number(host.end_y))
         );
-        const hostX0 = Number(host.start_x);
-        const hostX1 = Number(host.end_x);
-        const hostY0 = Number(host.start_y);
-        const hostY1 = Number(host.end_y);
-        const onSiteEdge = (value, lo, hi) =>
-            (Number.isFinite(lo) && Math.abs(value - lo) <= 1)
-            || (Number.isFinite(hi) && Math.abs(value - hi) <= 1);
-        const hostOnSiteEdge =
-            (Math.abs(hostY0 - hostY1) <= 1 && onSiteEdge(hostY0, box.minY, box.maxY))
-            || (Math.abs(hostX0 - hostX1) <= 1 && onSiteEdge(hostX0, box.minX, box.maxX));
-        if (joinedIsTop && !hostOnSiteEdge && hostEnd <= thickness + 1) {
-            const towardHost = Math.sign(((hostX0 + hostX1) / 2) - joinedPoint.x);
-            if (towardHost !== 0) {
-                deltaX += towardHost * thickness;
-                deltaY = 0;
-            }
+        if (hostEnd <= thickness + 1) {
+            deltaX = 0;
+            deltaY = 0;
         }
     }
 
