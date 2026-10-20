@@ -29,7 +29,7 @@ import {
     isPlanCanvasDark,
 } from './planCanvasTheme';
 import { buildPerWallColorMap } from './wallPlanColors';
-import { colorsForWallLines } from './wallFaceSides';
+import { colorsForWallLines, side1Normal } from './wallFaceSides';
 // Import collision detection utilities
 import {
     hasLabelOverlap,
@@ -65,6 +65,429 @@ export function getWallAngleSnapThresholdDeg(wallLengthMm) {
     return 2;
 }
 
+/** The two lines actually drawn for a wall. Either one can be snapped to. */
+function _drawnWallLines(wall) {
+    const drawn = [];
+    if (wall?._line1?.[0] && wall?._line1?.[1]) drawn.push(wall._line1);
+    if (wall?._line2?.[0] && wall?._line2?.[1]) drawn.push(wall._line2);
+    if (drawn.length > 0) return drawn;
+    const thickness = Number(wall?.thickness);
+    const x1 = Number(wall?.start_x);
+    const y1 = Number(wall?.start_y);
+    const x2 = Number(wall?.end_x);
+    const y2 = Number(wall?.end_y);
+    if (!(thickness > 0) || !Number.isFinite(x1) || !Number.isFinite(y1)) return [];
+    if (Math.hypot(x2 - x1, y2 - y1) < 1) return [];
+    const n = side1Normal(x1, y1, x2, y2);
+    return [
+        [{ x: x1, y: y1 }, { x: x2, y: y2 }],
+        [
+            { x: x1 + n.x * thickness, y: y1 + n.y * thickness },
+            { x: x2 + n.x * thickness, y: y2 + n.y * thickness },
+        ],
+        [
+            { x: x1 - n.x * thickness, y: y1 - n.y * thickness },
+            { x: x2 - n.x * thickness, y: y2 - n.y * thickness },
+        ],
+    ];
+}
+
+/**
+ * Nearest point on either drawn line of a wall.
+ * The two lines on screen are both valid snap targets.
+ */
+export function nearestPointOnWallFace(x, y, wall) {
+    const lines = _drawnWallLines(wall);
+    let best = null;
+    for (const line of lines) {
+        const proj = _projectPointToWallSegment(x, y, {
+            start_x: line[0].x,
+            start_y: line[0].y,
+            end_x: line[1].x,
+            end_y: line[1].y,
+        });
+        if (!best || proj.dist < best.dist - 0.01) {
+            best = {
+                ...proj,
+                ax: line[0].x,
+                ay: line[0].y,
+                bx: line[1].x,
+                by: line[1].y,
+            };
+        }
+    }
+    return best;
+}
+
+/** Point `lengthMm` from start toward aim. Axis-aligned aims stay on that axis. */
+export function pointAlongDirection(start, aim, lengthMm) {
+    const length = Number(lengthMm);
+    if (!start || !aim || !(length > 0)) return aim ? { x: aim.x, y: aim.y } : null;
+    const dx = aim.x - start.x;
+    const dy = aim.y - start.y;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 0.5)) return { x: aim.x, y: aim.y };
+    if (Math.abs(dy) <= 1) {
+        const sign = dx >= 0 ? 1 : -1;
+        return { x: start.x + sign * length, y: start.y };
+    }
+    if (Math.abs(dx) <= 1) {
+        const sign = dy >= 0 ? 1 : -1;
+        return { x: start.x, y: start.y + sign * length };
+    }
+    return {
+        x: start.x + (dx / len) * length,
+        y: start.y + (dy / len) * length,
+    };
+}
+
+/** The two lines last drawn for a wall. Empty until the plan has painted. */
+function _visibleWallLines(wall) {
+    const drawn = [];
+    if (wall?._line1?.[0] && wall?._line1?.[1]) drawn.push(wall._line1);
+    if (wall?._line2?.[0] && wall?._line2?.[1]) drawn.push(wall._line2);
+    return drawn;
+}
+
+function _footOnLine(x, y, line) {
+    const x1 = Number(line[0].x);
+    const y1 = Number(line[0].y);
+    const x2 = Number(line[1].x);
+    const y2 = Number(line[1].y);
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1) return null;
+    const t = ((x - x1) * dx + (y - y1) * dy) / lenSq;
+    if (t < -0.02 || t > 1.02) return null;
+    const tt = Math.max(0, Math.min(1, t));
+    const px = x1 + tt * dx;
+    const py = y1 + tt * dy;
+    return { x: px, y: py, dist: Math.hypot(x - px, y - py) };
+}
+
+/**
+ * Nearest endpoint or joint on either drawn line.
+ * The cursor has to come near that one point; the other line is not pulled in.
+ */
+export function snapMagnetPoint(x, y, walls, intersections, maxDistMm) {
+    if (!(maxDistMm > 0)) return null;
+    let best = null;
+    const consider = (px, py) => {
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+        const dist = Math.hypot(px - x, py - y);
+        if (dist > maxDistMm) return;
+        if (!best || dist < best.dist - 0.01) best = { x: px, y: py, dist };
+    };
+    for (const wall of walls || []) {
+        const lines = _visibleWallLines(wall);
+        if (lines.length) {
+            lines.forEach((line) => {
+                consider(line[0].x, line[0].y);
+                consider(line[1].x, line[1].y);
+            });
+        } else {
+            consider(Number(wall.start_x), Number(wall.start_y));
+            consider(Number(wall.end_x), Number(wall.end_y));
+        }
+        const reach = Math.max(40, Number(wall.thickness) || 100);
+        for (const inter of intersections || []) {
+            const ix = Number(inter?.x);
+            const iy = Number(inter?.y);
+            if (!Number.isFinite(ix) || !Number.isFinite(iy)) continue;
+            const body = _projectPointToWallSegment(ix, iy, wall);
+            if (body.dist > reach) continue;
+            if (!lines.length) {
+                consider(ix, iy);
+                continue;
+            }
+            lines.forEach((line) => {
+                const foot = _footOnLine(ix, iy, line);
+                if (foot) consider(foot.x, foot.y);
+            });
+        }
+    }
+    return best;
+}
+
+/** One snap point: the nearer of the two drawn lines. The other line is left alone. */
+export function bothLineSnapMarks(x, y, walls, maxDistMm) {
+    if (!(maxDistMm > 0)) return null;
+    let best = null;
+    for (const wall of walls || []) {
+        const lines = _visibleWallLines(wall);
+        if (!lines.length) continue;
+        for (const line of lines) {
+            const foot = _footOnLine(x, y, line);
+            if (!foot || foot.dist > maxDistMm) continue;
+            if (!best || foot.dist < best.dist) best = foot;
+        }
+    }
+    return best ? { x: best.x, y: best.y } : null;
+}
+
+/** Nearest point on either face line of any wall, within maxDistMm. */
+export function snapToEitherFaceLine(x, y, walls, maxDistMm) {
+    let best = null;
+    for (const wall of walls || []) {
+        const face = nearestPointOnWallFace(x, y, wall);
+        if (!face || !(maxDistMm > 0) || face.dist > maxDistMm) continue;
+        if (!best || face.dist < best.dist) best = face;
+    }
+    return best
+        ? { x: best.x, y: best.y, dist: best.dist, ax: best.ax, ay: best.ay, bx: best.bx, by: best.by }
+        : null;
+}
+
+/** How far a point sits off the infinite line through a and b. */
+function _distToInfiniteLine(pt, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return Math.abs((pt.x - a.x) * dy - (pt.y - a.y) * dx) / len;
+}
+
+/** Which side of a locked line the cursor is on. Horizontal: up or down. Vertical: left or right. */
+export function sideOfReferenceLine(refStart, refEnd, cursor, previousSide = null) {
+    const dx = Number(refEnd?.x) - Number(refStart?.x);
+    const dy = Number(refEnd?.y) - Number(refStart?.y);
+    const horizontal = Math.abs(dx) >= Math.abs(dy);
+    const dead = 8;
+    let side = previousSide || null;
+    if (horizontal) {
+        const off = Number(cursor?.y) - Number(refStart?.y);
+        if (off < -dead) side = { x: 0, y: -1 };
+        else if (off > dead) side = { x: 0, y: 1 };
+    } else {
+        const off = Number(cursor?.x) - Number(refStart?.x);
+        if (off < -dead) side = { x: -1, y: 0 };
+        else if (off > dead) side = { x: 1, y: 0 };
+    }
+    if (!side) side = horizontal ? { x: 0, y: 1 } : { x: 1, y: 0 };
+    return side;
+}
+
+/** Stored middle, halfway from the drawn line toward the side the user placed. */
+export function centerlineForSide(refStart, refEnd, side, thickness) {
+    const half = (Number(thickness) || 0) / 2;
+    const shift = (pt) => ({
+        x: Math.round(pt.x + side.x * half),
+        y: Math.round(pt.y + side.y * half),
+    });
+    return { start: shift(refStart), end: shift(refEnd) };
+}
+
+/**
+ * Side code for a split or merged piece so the second line stays where it was placed.
+ * -1 is side 1 of the piece. -2 is the other side. Null when the wall has no placed side.
+ */
+export function faceSideCodeForSegment(host, start, end) {
+    const code = Number(host?.tip_length);
+    if (host?.tip_to_tip === true || (code !== -1 && code !== -2)) return null;
+    const hostNormal = side1Normal(host.start_x, host.start_y, host.end_x, host.end_y);
+    const sign = code === -1 ? 1 : -1;
+    const offset = { x: hostNormal.x * sign, y: hostNormal.y * sign };
+    const segmentNormal = side1Normal(start?.x, start?.y, end?.x, end?.y);
+    const dot = segmentNormal.x * offset.x + segmentNormal.y * offset.y;
+    return dot >= 0 ? -1 : -2;
+}
+
+/** Lock the aim onto the horizontal or vertical line through the anchor. */
+export function referenceEndOnAxis(anchor, aim) {
+    if (!anchor || !aim) return aim;
+    const dx = aim.x - anchor.x;
+    const dy = aim.y - anchor.y;
+    if (Math.abs(dx) >= Math.abs(dy)) return { x: aim.x, y: anchor.y };
+    return { x: anchor.x, y: aim.y };
+}
+
+/**
+ * The line the user draws is one face. The other face sits one thickness
+ * to the side of the cursor: up or down on a horizontal line, left or right
+ * on a vertical line. The stored middle is halfway between those faces, so
+ * the drawn length does not change.
+ */
+export function drawnWallFromLine(anchor, cursor, options = null) {
+    const walls = options?.walls || [];
+    const maxDist = Number(options?.maxDistMm) || 0;
+    const thickness = Number(options?.thickness) || 0;
+    const typedLen = Number(options?.typedLength) || 0;
+    const magnet = options?.magnetPoint
+        || snapMagnetPoint(cursor?.x, cursor?.y, walls, options?.intersections, Number(options?.magnetDistMm) || 0);
+    const face = magnet ? null : snapToEitherFaceLine(cursor?.x, cursor?.y, walls, maxDist);
+    const aim = magnet || face || { x: cursor?.x, y: cursor?.y };
+    let refEnd = magnet ? { x: magnet.x, y: magnet.y } : referenceEndOnAxis(anchor, aim);
+    // A straight wall still ends on the snapped line. If that line is the
+    // other face, parallel to this wall, stay on the face the cursor hit.
+    if (!magnet && face && Number.isFinite(face.ax) && _distToInfiniteLine(refEnd, { x: face.ax, y: face.ay }, { x: face.bx, y: face.by }) > 1) {
+        refEnd = { x: face.x, y: face.y };
+    }
+    if (typedLen > 0) {
+        const at = pointAlongDirection(anchor, refEnd, typedLen);
+        if (at) refEnd = at;
+    }
+    const refStart = { x: Math.round(anchor.x), y: Math.round(anchor.y) };
+    refEnd = { x: Math.round(refEnd.x), y: Math.round(refEnd.y) };
+    const dx = refEnd.x - refStart.x;
+    const dy = refEnd.y - refStart.y;
+    const horizontal = Math.abs(dx) >= Math.abs(dy);
+    const dead = 8;
+    let side = options?.previousSide || null;
+    if (horizontal) {
+        const off = cursor.y - refStart.y;
+        if (off < -dead) side = { x: 0, y: -1 };
+        else if (off > dead) side = { x: 0, y: 1 };
+    } else if (Math.hypot(dx, dy) > 1) {
+        const off = cursor.x - refStart.x;
+        if (off < -dead) side = { x: -1, y: 0 };
+        else if (off > dead) side = { x: 1, y: 0 };
+    }
+    if (!side) side = horizontal ? { x: 0, y: 1 } : { x: 1, y: 0 };
+    const half = thickness / 2;
+    const shift = (pt) => ({
+        x: Math.round(pt.x + side.x * half),
+        y: Math.round(pt.y + side.y * half),
+    });
+    return {
+        refStart,
+        refEnd,
+        side,
+        start: shift(refStart),
+        end: shift(refEnd),
+        snapped: Boolean(face),
+        axis: horizontal ? 'horizontal' : 'vertical',
+    };
+}
+
+function _pointOnWallEndpoint(point, walls, tolMm = 1) {
+    if (!point || !walls?.length) return false;
+    for (const wall of walls) {
+        if (Math.hypot(point.x - Number(wall.start_x), point.y - Number(wall.start_y)) <= tolMm) return true;
+        if (Math.hypot(point.x - Number(wall.end_x), point.y - Number(wall.end_y)) <= tolMm) return true;
+    }
+    return false;
+}
+
+/** True when the point sits on a wall centerline or on either face. */
+export function pointLiesOnWallLine(point, walls, tolMm = 1.5) {
+    if (!point || !walls?.length) return false;
+    for (const wall of walls) {
+        const center = _projectPointToWallSegment(point.x, point.y, wall);
+        if (center.dist <= tolMm) return true;
+        const face = nearestPointOnWallFace(point.x, point.y, wall);
+        if (face && face.dist <= tolMm) return true;
+    }
+    return false;
+}
+
+function _wallParallelTo(dx, dy, wall) {
+    const hdx = Number(wall.end_x) - Number(wall.start_x);
+    const hdy = Number(wall.end_y) - Number(wall.start_y);
+    const hlen = Math.hypot(hdx, hdy);
+    const len = Math.hypot(dx, dy);
+    if (hlen < 1 || len < 1) return false;
+    return Math.abs(dx * hdx + dy * hdy) / (len * hlen) > 0.85;
+}
+
+function _hostUnderJoin(point, dx, dy, walls) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const wall of walls || []) {
+        if (!wall || _wallParallelTo(dx, dy, wall)) continue;
+        const proj = _projectPointToWallSegment(point.x, point.y, wall);
+        const half = Math.max(1, Number(wall.thickness) || 100) / 2;
+        if (proj.dist > half + 2) continue;
+        if (proj.dist < bestDist) {
+            const toStart = Math.hypot(proj.x - Number(wall.start_x), proj.y - Number(wall.start_y));
+            const toEnd = Math.hypot(proj.x - Number(wall.end_x), proj.y - Number(wall.end_y));
+            best = { wall, proj, atEnd: toStart <= half + 1 || toEnd <= half + 1 };
+            bestDist = proj.dist;
+        }
+    }
+    return best;
+}
+
+function _pointOnNearFace(wall, join, other) {
+    const proj = _projectPointToWallSegment(join.x, join.y, wall);
+    const half = Math.max(1, Number(wall.thickness) || 100) / 2;
+    const n = side1Normal(wall.start_x, wall.start_y, wall.end_x, wall.end_y);
+    const side = (other.x - proj.x) * n.x + (other.y - proj.y) * n.y;
+    let sign = side >= 0 ? 1 : -1;
+    if (Math.abs(side) < 0.5) {
+        const joinSide = (join.x - proj.x) * n.x + (join.y - proj.y) * n.y;
+        sign = joinSide >= 0 ? 1 : -1;
+    }
+    return { x: proj.x + n.x * half * sign, y: proj.y + n.y * half * sign };
+}
+
+function _liesOnColinearWall(point, dx, dy, walls) {
+    for (const wall of walls || []) {
+        if (!wall || !_wallParallelTo(dx, dy, wall)) continue;
+        const proj = _projectPointToWallSegment(point.x, point.y, wall);
+        if (proj.dist <= 1.5) return true;
+    }
+    return false;
+}
+
+/**
+ * A snap onto the side of a wall is the near face, and the other end of a
+ * perpendicular wall comes back to its near face too. The sheet length is
+ * that clear gap. A corner-to-corner wall is left on the two endpoints.
+ * A rise of about one thickness is flattened; a real corner step is kept.
+ */
+export function settleSnappedWall(start, end, walls) {
+    if (!start || !end) return { start, end };
+    let s = { x: Number(start.x), y: Number(start.y) };
+    let e = { x: Number(end.x), y: Number(end.y) };
+    const dx0 = e.x - s.x;
+    const dy0 = e.y - s.y;
+    const len = Math.hypot(dx0, dy0);
+    if (len < 1) return { start: s, end: e };
+
+    const maxThickness = (walls || []).reduce(
+        (m, wall) => Math.max(m, Number(wall?.thickness) || 0),
+        100
+    );
+    const horizontal = Math.abs(dx0) >= Math.abs(dy0);
+    const off = horizontal ? Math.abs(dy0) : Math.abs(dx0);
+    const along = horizontal ? Math.abs(dx0) : Math.abs(dy0);
+    const angleDeg = Math.atan2(off, Math.max(along, 1)) * (180 / Math.PI);
+    const bothEndpoints = _pointOnWallEndpoint(s, walls) && _pointOnWallEndpoint(e, walls);
+    if ((off <= maxThickness + 2 || angleDeg <= 2) && !(bothEndpoints && off > 2)) {
+        if (horizontal) e = { x: e.x, y: s.y };
+        else e = { x: s.x, y: e.y };
+    }
+
+    const dx = e.x - s.x;
+    const dy = e.y - s.y;
+    const startHost = _hostUnderJoin(s, dx, dy, walls);
+    const endHost = _hostUnderJoin(e, dx, dy, walls);
+    const startBody = Boolean(startHost && !startHost.atEnd);
+    const endBody = Boolean(endHost && !endHost.atEnd);
+    const startPinned = _liesOnColinearWall(s, dx, dy, walls);
+    const endPinned = _liesOnColinearWall(e, dx, dy, walls);
+    if ((startBody || endBody) && horizontal) {
+        if (endHost && (endBody || startBody) && !endPinned) {
+            e = { x: _pointOnNearFace(endHost.wall, e, s).x, y: e.y };
+        }
+        if (startHost && (startBody || endBody) && !startPinned) {
+            s = { x: _pointOnNearFace(startHost.wall, s, e).x, y: s.y };
+        }
+    } else if (startBody || endBody) {
+        if (endHost && (endBody || startBody) && !endPinned) {
+            e = { x: e.x, y: _pointOnNearFace(endHost.wall, e, s).y };
+        }
+        if (startHost && (startBody || endBody) && !startPinned) {
+            s = { x: s.x, y: _pointOnNearFace(startHost.wall, s, e).y };
+        }
+    }
+
+    return {
+        start: { x: Math.round(s.x), y: Math.round(s.y) },
+        end: { x: Math.round(e.x), y: Math.round(e.y) },
+    };
+}
+
 function _projectPointToWallSegment(x, y, wall) {
     const wx = wall.end_x - wall.start_x;
     const wy = wall.end_y - wall.start_y;
@@ -74,6 +497,411 @@ function _projectPointToWallSegment(x, y, wall) {
     const px = wall.start_x + t * wx;
     const py = wall.start_y + t * wy;
     return { x: px, y: py, dist: Math.hypot(x - px, y - py) };
+}
+
+function _wallsTouchingPoint(walls, point, tol, ignoreId) {
+    const hits = [];
+    for (const wall of walls || []) {
+        if (!wall || (ignoreId != null && String(wall.id) === String(ignoreId))) continue;
+        const ds = Math.hypot(Number(wall.start_x) - point.x, Number(wall.start_y) - point.y);
+        const de = Math.hypot(Number(wall.end_x) - point.x, Number(wall.end_y) - point.y);
+        if (ds <= tol || de <= tol) {
+            hits.push(wall);
+            continue;
+        }
+        const proj = _projectPointToWallSegment(point.x, point.y, wall);
+        const len = Math.hypot(Number(wall.end_x) - Number(wall.start_x), Number(wall.end_y) - Number(wall.start_y));
+        const along = Math.hypot(proj.x - Number(wall.start_x), proj.y - Number(wall.start_y));
+        if (proj.dist <= tol && along > tol && along < len - tol) hits.push(wall);
+    }
+    return hits;
+}
+
+/** 'left' or 'right' of wall, from the other wall's midpoint. */
+function _joinSide(wall, other) {
+    if (!wall || !other) return null;
+    const dx = Number(wall.end_x) - Number(wall.start_x);
+    const vertical = Math.abs(dx) < Math.abs(Number(wall.end_y) - Number(wall.start_y));
+    const midX = (Number(other.start_x) + Number(other.end_x)) / 2;
+    const midY = (Number(other.start_y) + Number(other.end_y)) / 2;
+    const refX = (Number(wall.start_x) + Number(wall.end_x)) / 2;
+    const refY = (Number(wall.start_y) + Number(wall.end_y)) / 2;
+    if (vertical) {
+        if (Math.abs(midX - refX) < 0.5) return null;
+        return midX < refX ? 'left' : 'right';
+    }
+    if (Math.abs(midY - refY) < 0.5) return null;
+    if (dx >= 0) return midY < refY ? 'left' : 'right';
+    return midY > refY ? 'left' : 'right';
+}
+
+function _jointsFromIntersections(intersections) {
+    const joints = [];
+    for (const inter of intersections || []) {
+        for (const pair of inter.pairs || []) {
+            const w1 = pair.wall1?.id ?? pair.wall1;
+            const w2 = pair.wall2?.id ?? pair.wall2;
+            if (w1 == null || w2 == null) continue;
+            joints.push({
+                wall_1: w1,
+                wall_2: w2,
+                joining_method: pair.joining_method,
+            });
+        }
+    }
+    return joints;
+}
+
+function _pairIsButt(wall, other, joints) {
+    if (!joints || !wall || !other || other.id == null) return false;
+    const w = String(wall.id);
+    const o = String(other.id);
+    return joints.some((j) => {
+        if (j?.joining_method !== 'butt_in') return false;
+        const a = String(j.wall_1);
+        const b = String(j.wall_2);
+        return (a === w && b === o) || (a === o && b === w);
+    });
+}
+
+/**
+ * Walls drawn as tip-to-tip store one face. When the two joins sit on opposite
+ * sides, that face is one thickness shorter than the tip-to-tip number.
+ * Existing walls (tip_to_tip not set) stay on the stored length.
+ */
+export function tipToTipExtraMm(wall, walls, joints = null) {
+    if (!wall || wall.tip_to_tip !== true || !isAxisAlignedWall(wall)) return 0;
+    const tol = Math.max(2, (Number(wall.thickness) || 100) + 1);
+    const startHits = _wallsTouchingPoint(
+        walls,
+        { x: Number(wall.start_x), y: Number(wall.start_y) },
+        tol,
+        wall.id
+    );
+    const endHits = _wallsTouchingPoint(
+        walls,
+        { x: Number(wall.end_x), y: Number(wall.end_y) },
+        tol,
+        wall.id
+    );
+    if (!startHits.length || !endHits.length) return 0;
+    // A wall that only passes through this end is a crossing. It does not
+    // add a tip. A tip needs the other wall to stop at this end.
+    const meetsEnd = (point, hit) => {
+        const reach = Math.max(2, (Number(hit.thickness) || 100) + 1);
+        const ds = Math.hypot(Number(hit.start_x) - point.x, Number(hit.start_y) - point.y);
+        const de = Math.hypot(Number(hit.end_x) - point.x, Number(hit.end_y) - point.y);
+        return ds <= reach || de <= reach;
+    };
+    const startPt = { x: Number(wall.start_x), y: Number(wall.start_y) };
+    const endPt = { x: Number(wall.end_x), y: Number(wall.end_y) };
+    const sidesOf = (hits, point) => {
+        const sides = new Set();
+        for (const hit of hits) {
+            if (_pairIsButt(wall, hit, joints)) return null;
+            if (!meetsEnd(point, hit)) continue;
+            const side = _joinSide(wall, hit);
+            if (side) sides.add(side);
+        }
+        return sides;
+    };
+    const startSides = sidesOf(startHits, startPt);
+    const endSides = sidesOf(endHits, endPt);
+    if (!startSides || !endSides || !startSides.size || !endSides.size) return 0;
+    // A corner where the wall runs both above and below is the other side from
+    // a joiner that sits on only one of those sides. Two joiners on the same
+    // single side leave the short face, and the tips still cross those joiners.
+    let opposite = false;
+    for (const side of startSides) if (!endSides.has(side)) opposite = true;
+    for (const side of endSides) if (!startSides.has(side)) opposite = true;
+    if (!opposite) {
+        // Both joiners sit on one side, so a drag between their ends lands on
+        // the short face. The tip still crosses each joiner. Add that joiner's
+        // thickness only while this end is still on the joiner's own line.
+        // An end that already reaches the far line keeps the length that was drawn.
+        const stick = (hits, point) => {
+            let extra = 0;
+            for (const hit of hits) {
+                if (!_wallsPerpendicular(wall, hit)) continue;
+                if (!meetsEnd(point, hit)) continue;
+                const x1 = Number(hit.start_x);
+                const y1 = Number(hit.start_y);
+                const x2 = Number(hit.end_x);
+                const y2 = Number(hit.end_y);
+                const len = Math.hypot(x2 - x1, y2 - y1);
+                if (len < 1) continue;
+                const dist = Math.abs((point.x - x1) * (y2 - y1) - (point.y - y1) * (x2 - x1)) / len;
+                if (dist > 2) continue;
+                extra = Math.max(extra, Math.max(1, Math.round(Number(hit.thickness) || 100)));
+            }
+            return extra;
+        };
+        return stick(startHits, { x: Number(wall.start_x), y: Number(wall.start_y) })
+            + stick(endHits, { x: Number(wall.end_x), y: Number(wall.end_y) });
+    }
+    return Math.max(1, Math.round(Number(wall.thickness) || 100));
+}
+
+/**
+ * Top and bottom of one room share one length. The length is the one that was
+ * drawn. A face that stops a thickness short of that drawn wall uses the same number.
+ */
+function _sameBayLengthMm(wall, walls, ownShown) {
+    const face = _wallFaceLength(wall);
+    if (!isAxisAlignedWall(wall) || face < 1) return null;
+    const horizontal = Math.abs(Number(wall.end_x) - Number(wall.start_x))
+        >= Math.abs(Number(wall.end_y) - Number(wall.start_y));
+    const coord = (w, along) => horizontal
+        ? (along ? [Number(w.start_x), Number(w.end_x)] : [Number(w.start_y), Number(w.end_y)])
+        : (along ? [Number(w.start_y), Number(w.end_y)] : [Number(w.start_x), Number(w.end_x)]);
+    const [a, b] = coord(wall, true);
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    const cross = (coord(wall, false)[0] + coord(wall, false)[1]) / 2;
+    const reach = Math.max(100, Number(wall.thickness) || 100) * 2 + 1;
+    let best = ownShown > 0 ? ownShown : face;
+    for (const other of walls || []) {
+        if (!other || String(other.id) === String(wall.id)) continue;
+        const otherHoriz = Math.abs(Number(other.end_x) - Number(other.start_x))
+            >= Math.abs(Number(other.end_y) - Number(other.start_y));
+        if (otherHoriz !== horizontal) continue;
+        const [c, d] = coord(other, true);
+        const oLo = Math.min(c, d);
+        const oHi = Math.max(c, d);
+        if (Math.abs(oLo - lo) > reach || Math.abs(oHi - hi) > reach) continue;
+        const oCross = (coord(other, false)[0] + coord(other, false)[1]) / 2;
+        if (Math.abs(oCross - cross) < 1) continue;
+        const otherFace = _wallFaceLength(other);
+        const shown = Number(other.tip_length) > 0 ? Number(other.tip_length) : otherFace;
+        // Only close the one-thickness gap between the two sides of a room.
+        // A step whose short face is two thicknesses under its tip stays as it is.
+        const limit = Math.max(Number(wall.thickness) || 100, Number(other.thickness) || 100) + 1;
+        if (shown > best && shown - best <= limit) best = shown;
+    }
+    return Math.round(best);
+}
+
+/** Plan label for a wall. The number is the line that was drawn. Joints do not change it. */
+export function wallShownLengthMm(wall, walls, joints = null) {
+    const drawn = Math.hypot(
+        Number(wall?.end_x) - Number(wall?.start_x),
+        Number(wall?.end_y) - Number(wall?.start_y)
+    );
+    if (wall?.tip_to_tip === true && Number(wall?.tip_length) > 0) {
+        return Math.round(Number(wall.tip_length));
+    }
+    return Math.round(drawn);
+}
+
+function _wallFaceLength(wall) {
+    return Math.hypot(
+        Number(wall?.end_x) - Number(wall?.start_x),
+        Number(wall?.end_y) - Number(wall?.start_y)
+    );
+}
+
+function _wallsPerpendicular(a, b) {
+    const ax = Number(a?.end_x) - Number(a?.start_x);
+    const ay = Number(a?.end_y) - Number(a?.start_y);
+    const bx = Number(b?.end_x) - Number(b?.start_x);
+    const by = Number(b?.end_y) - Number(b?.start_y);
+    const la = Math.hypot(ax, ay);
+    const lb = Math.hypot(bx, by);
+    if (la < 1 || lb < 1) return false;
+    return Math.abs(ax * bx + ay * by) / (la * lb) < 0.35;
+}
+
+/**
+ * A tip sticks out by the joining wall's thickness. When that thickness
+ * changes, every wall it joins grows or shrinks by the same amount at that end.
+ * changes: [{ id, oldThickness, newThickness }]
+ * Returns [{ id, tip_length }] for walls whose tip-to-tip number changes.
+ */
+export function tipLengthPatchesForThicknessChange(changes, walls) {
+    const deltaById = new Map();
+    for (const change of changes || []) {
+        const delta = Number(change.newThickness) - Number(change.oldThickness);
+        if (!Number.isFinite(delta) || Math.abs(delta) < 0.5) continue;
+        deltaById.set(String(change.id), delta);
+    }
+    if (!deltaById.size) return [];
+    const patches = [];
+    for (const wall of walls || []) {
+        let delta = 0;
+        const ends = [
+            { x: Number(wall.start_x), y: Number(wall.start_y) },
+            { x: Number(wall.end_x), y: Number(wall.end_y) },
+        ];
+        for (const end of ends) {
+            const tol = Math.max(2, (Number(wall.thickness) || 100) + 1);
+            const hits = _wallsTouchingPoint(walls, end, tol, wall.id);
+            let endDelta = 0;
+            for (const hit of hits) {
+                if (!_wallsPerpendicular(wall, hit)) continue;
+                const d = deltaById.get(String(hit.id)) || 0;
+                if (Math.abs(d) > Math.abs(endDelta)) endDelta = d;
+            }
+            delta += endDelta;
+        }
+        if (Math.abs(delta) < 0.5) continue;
+        const face = _wallFaceLength(wall);
+        const base = Number(wall.tip_length) > 0 ? Number(wall.tip_length) : face;
+        const next = Math.round(base + delta);
+        if (next <= 1 || Math.abs(next - base) < 0.5) continue;
+        patches.push({ id: wall.id, tip_length: next });
+    }
+    return patches;
+}
+
+/**
+ * A new tip-to-tip wall landing on the free end of an earlier tip-to-tip wall
+ * pulls that end in so the new wall meets the face, not the tip.
+ * Opposite sides: pull in by one thickness. Same side: pull in by two,
+ * because both joiners sit on the short face. The typed tip-to-tip number
+ * stays. The new wall keeps its length: both of its ends slide together.
+ * Walls that were not drawn as tip-to-tip are left where they are.
+ */
+export function seatTipToTipOppositeJoin({
+    startPoint,
+    endPoint,
+    walls = [],
+    joints = [],
+}) {
+    if (!startPoint || !endPoint) {
+        return { startPoint, endPoint, hostUpdates: [] };
+    }
+    let s = { x: startPoint.x, y: startPoint.y };
+    let e = { x: endPoint.x, y: endPoint.y };
+    const hostUpdates = new Map();
+    const tol = 2;
+    const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) <= tol;
+    const live = (wall) => {
+        const u = hostUpdates.get(wall.id);
+        return u
+            ? { ...wall, start_x: u.start_x, start_y: u.start_y, end_x: u.end_x, end_y: u.end_y }
+            : wall;
+    };
+
+    const tryInset = (joinPt, otherPt) => {
+        const hits = [];
+        for (const raw of walls) {
+            const wall = live(raw);
+            const atStart = near(joinPt, { x: Number(wall.start_x), y: Number(wall.start_y) });
+            const atEnd = near(joinPt, { x: Number(wall.end_x), y: Number(wall.end_y) });
+            if (atStart || atEnd) hits.push({ wall, atStart, atEnd });
+        }
+        if (hits.length !== 1) return null;
+        const { wall, atStart, atEnd } = hits[0];
+        if (wall.tip_to_tip !== true || atStart === atEnd) return null;
+
+        const t = Math.max(1, Math.round(Number(wall.thickness) || 100));
+        const hostStart = { x: Number(wall.start_x), y: Number(wall.start_y) };
+        const hostEnd = { x: Number(wall.end_x), y: Number(wall.end_y) };
+        const hostLen = Math.hypot(hostEnd.x - hostStart.x, hostEnd.y - hostStart.y);
+        if (hostLen < t + 1) return null;
+
+        let uAx;
+        let uAy;
+        let otherEnd;
+        if (atEnd && !atStart) {
+            uAx = (hostEnd.x - hostStart.x) / hostLen;
+            uAy = (hostEnd.y - hostStart.y) / hostLen;
+            otherEnd = hostStart;
+        } else if (atStart && !atEnd) {
+            uAx = (hostStart.x - hostEnd.x) / hostLen;
+            uAy = (hostStart.y - hostEnd.y) / hostLen;
+            otherEnd = hostEnd;
+        } else {
+            return null;
+        }
+
+        const newDx = otherPt.x - joinPt.x;
+        const newDy = otherPt.y - joinPt.y;
+        const newLen = Math.hypot(newDx, newDy);
+        if (newLen < 1) return null;
+        if (Math.abs(uAx * (newDx / newLen) + uAy * (newDy / newLen)) > 0.5) return null;
+
+        const liveWalls = walls.map(live);
+        const others = _wallsTouchingPoint(liveWalls, otherEnd, Math.max(tol, t + 1), wall.id);
+        if (!others.length) return null;
+        const draft = {
+            id: '__new__',
+            start_x: joinPt.x,
+            start_y: joinPt.y,
+            end_x: otherPt.x,
+            end_y: otherPt.y,
+        };
+        const newSide = _joinSide(wall, draft);
+        if (!newSide) return null;
+        const otherSides = new Set();
+        for (const hit of others) {
+            if (_pairIsButt(wall, hit, joints)) return null;
+            const side = _joinSide(wall, hit);
+            if (side) otherSides.add(side);
+        }
+        if (!otherSides.size) return null;
+        // Same side only when every wall at the other end is on this one side.
+        // A corner with walls on both sides is the other side from a one-sided joiner,
+        // so that run loses one thickness, not two.
+        const sameSide = otherSides.size === 1 && otherSides.has(newSide);
+        const inset = sameSide ? t * 2 : t;
+        if (hostLen < inset + 1) return null;
+
+        const newJoin = {
+            x: Math.round(joinPt.x - uAx * inset),
+            y: Math.round(joinPt.y - uAy * inset),
+        };
+        const updated = {
+            wall,
+            start_x: hostStart.x,
+            start_y: hostStart.y,
+            end_x: hostEnd.x,
+            end_y: hostEnd.y,
+        };
+        if (atEnd) {
+            updated.end_x = newJoin.x;
+            updated.end_y = newJoin.y;
+        } else {
+            updated.start_x = newJoin.x;
+            updated.start_y = newJoin.y;
+        }
+        const normalized = normalizeWallCoordinates(
+            { x: updated.start_x, y: updated.start_y },
+            { x: updated.end_x, y: updated.end_y }
+        );
+        updated.start_x = normalized.startPoint.x;
+        updated.start_y = normalized.startPoint.y;
+        updated.end_x = normalized.endPoint.x;
+        updated.end_y = normalized.endPoint.y;
+        hostUpdates.set(wall.id, updated);
+        const jStart = { x: updated.start_x, y: updated.start_y };
+        const jEnd = { x: updated.end_x, y: updated.end_y };
+        const join = Math.hypot(jStart.x - newJoin.x, jStart.y - newJoin.y)
+            <= Math.hypot(jEnd.x - newJoin.x, jEnd.y - newJoin.y)
+            ? jStart
+            : jEnd;
+        const other = {
+            x: Math.round(join.x + (otherPt.x - joinPt.x)),
+            y: Math.round(join.y + (otherPt.y - joinPt.y)),
+        };
+        return { join, other };
+    };
+
+    const shiftStart = tryInset(s, e);
+    if (shiftStart) {
+        s = shiftStart.join;
+        e = shiftStart.other;
+    }
+    const shiftEnd = tryInset(e, s);
+    if (shiftEnd) {
+        e = shiftEnd.join;
+        s = shiftEnd.other;
+    }
+    return {
+        startPoint: s,
+        endPoint: e,
+        hostUpdates: Array.from(hostUpdates.values()),
+    };
 }
 
 /**
@@ -190,6 +1018,23 @@ export function translateJoinedWallKeepingLength(start, end, joinedPoint, walls,
             ? (x1 >= x2 ? faces.line1 : faces.line2)
             : (x1 <= x2 ? faces.line1 : faces.line2);
         deltaX = coordOnLine(far, 'x', joinedPoint.y) - joinedPoint.x;
+        // The vertical keeps going past this corner. Stay on its line, the
+        // same line the wall on the other side already uses.
+        const hostDx = Number(host.end_x) - Number(host.start_x);
+        const hostDy = Number(host.end_y) - Number(host.start_y);
+        const hostLen = Math.hypot(hostDx, hostDy);
+        if (hostLen > 1) {
+            const along = ((joinedPoint.x - Number(host.start_x)) * hostDx
+                + (joinedPoint.y - Number(host.start_y)) * hostDy) / hostLen;
+            if (along > thickness + 1 && along < hostLen - thickness - 1) deltaX = 0;
+        }
+        // Snapped to the end of a wall. Stay on that line. Jumping to the
+        // other face makes the top and bottom of a room differ by a thickness.
+        const hostEnd = Math.min(
+            Math.hypot(joinedPoint.x - Number(host.start_x), joinedPoint.y - Number(host.start_y)),
+            Math.hypot(joinedPoint.x - Number(host.end_x), joinedPoint.y - Number(host.end_y))
+        );
+        if (hostEnd <= thickness + 1) deltaX = 0;
     } else {
         const y1 = mid(faces.line1, 'y');
         const y2 = mid(faces.line2, 'y');
@@ -2459,6 +3304,99 @@ function expandDimensionSegmentToWallFaces(startX, startY, endX, endY, wallData,
     return result;
 }
 
+function _clampDimPoint(x, y, bounds) {
+    if (!bounds) return { x, y };
+    const minX = Number(bounds.minX);
+    const maxX = Number(bounds.maxX);
+    const minY = Number(bounds.minY);
+    const maxY = Number(bounds.maxY);
+    return {
+        x: Number.isFinite(minX) && Number.isFinite(maxX) ? Math.min(maxX, Math.max(minX, x)) : x,
+        y: Number.isFinite(minY) && Number.isFinite(maxY) ? Math.min(maxY, Math.max(minY, y)) : y,
+    };
+}
+
+/**
+ * Tip-to-tip ticks. A 45° joint staggers the two faces and the outer corner
+ * is the tip. Before that joint is set the faces still end together, so the
+ * same tip is taken from the drawn length: one thickness past each end when
+ * the short face is stored (tip = face + 2T), or one thickness past the end
+ * that already reaches the far line when the joins are on opposite sides.
+ * A short-face number is not drawn with this helper.
+ */
+function dimensionSegmentToTips(startX, startY, endX, endY, wallData, bounds) {
+    const dx0 = endX - startX;
+    const dy0 = endY - startY;
+    const face = Math.hypot(dx0, dy0);
+    const wall = wallData?.wall;
+    const thick = Math.max(1, Math.round(Number(wall?.thickness) || 100));
+    const tip = Number(wall?.tip_length) || 0;
+    const line1 = wall?._line1 || wallData?.line1;
+    const line2 = wall?._line2 || wallData?.line2;
+    let startOver = 0;
+    let endOver = 0;
+    if (face > 1) {
+        let startStagger = false;
+        let endStagger = false;
+        let startExt = 0;
+        let endExt = 0;
+        if (line1?.[0] && line1?.[1] && line2?.[0] && line2?.[1]) {
+            const ux = dx0 / face;
+            const uy = dy0 / face;
+            const along = (p) => (p.x - startX) * ux + (p.y - startY) * uy;
+            const a1 = along(line1[0]);
+            const a2 = along(line2[0]);
+            const b1 = along(line1[1]);
+            const b2 = along(line2[1]);
+            startStagger = Math.abs(a1 - a2) > 1;
+            endStagger = Math.abs(b1 - b2) > 1;
+            if (startStagger) startOver = Math.max(0, -Math.min(a1, a2));
+            if (endStagger) endOver = Math.max(0, Math.max(b1, b2) - face);
+            startExt = Math.max(0, -Math.min(a1, a2));
+            endExt = Math.max(0, Math.max(b1, b2) - face);
+        }
+        const extra = tip > face + 1 ? tip - face : 0;
+        if (extra > 1 && !startStagger && !endStagger) {
+            if (startExt > 1 && endExt > 1 && extra < thick * 0.85) {
+                // Thickness edit: both ends already reach a joiner, and the
+                // extra is the change in those thicknesses.
+                if (Math.abs(startExt - endExt) > 1) {
+                    if (startExt > endExt) startOver = extra;
+                    else endOver = extra;
+                } else {
+                    startOver = extra / 2;
+                    endOver = extra - startOver;
+                }
+            } else if (extra >= thick * 1.5) {
+                // Short face is saved. Each tip hangs one thickness past it,
+                // unless the faces already show the whole extra on one end.
+                if (startExt > thick * 0.5 && endExt <= thick * 0.5) {
+                    startOver = extra;
+                } else if (endExt > thick * 0.5 && startExt <= thick * 0.5) {
+                    endOver = extra;
+                } else {
+                    startOver = thick;
+                    endOver = extra - thick;
+                }
+            } else if (endExt > startExt + 1) {
+                endOver = extra;
+            } else if (startExt > endExt + 1) {
+                startOver = extra;
+            } else if (startExt + endExt > 1) {
+                startOver = startExt >= endExt ? extra : 0;
+                endOver = startExt >= endExt ? 0 : extra;
+            } else {
+                endOver = extra;
+            }
+        }
+    }
+    const sux = face > 1 ? dx0 / face : 0;
+    const suy = face > 1 ? dy0 / face : 0;
+    const a = _clampDimPoint(startX - sux * startOver, startY - suy * startOver, bounds);
+    const b = _clampDimPoint(endX + sux * endOver, endY + suy * endOver, bounds);
+    return { startX: a.x, startY: a.y, endX: b.x, endY: b.y };
+}
+
 // Face point at a dimension tick. Prefer the face toward the label when both
 // faces share that station, so the witness meets the corner instead of the
 // centerline or the far side of the wall.
@@ -2470,7 +3408,23 @@ function facePointTowardLabel(wall, along, isHorizontal, labelModel) {
     const alongOf = (p) => (isHorizontal ? p.x : p.y);
     const acrossOf = (p) => (isHorizontal ? p.y : p.x);
     const near = pts.filter((p) => Number.isFinite(alongOf(p)) && Math.abs(alongOf(p) - along) <= 1.5);
-    if (!near.length) return null;
+    if (!near.length) {
+        // The tick is at a tip past the saved corner. Meet the face toward
+        // the label so the witness still points at that tip.
+        let best = pts[0];
+        let bestD = Infinity;
+        for (const p of pts) {
+            const d = Math.abs(acrossOf(p) - labelModel);
+            if (d < bestD) {
+                bestD = d;
+                best = p;
+            }
+        }
+        if (!best) return null;
+        return isHorizontal
+            ? { x: along, y: acrossOf(best) }
+            : { x: acrossOf(best), y: along };
+    }
     let best = near[0];
     let bestD = Infinity;
     for (const p of near) {
@@ -3184,11 +4138,13 @@ export function drawDimensions(
     dimensionValuesSeen = null,
     dimensionLanes = null,
     rooms = [],
-    dimensionEdgeExtents = null
+    dimensionEdgeExtents = null,
+    labelLength = null
 ) {
     let length = Math.sqrt(
         Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
     );
+    if (typeof labelLength === 'number' && labelLength > 0) length = labelLength;
 
     const dxLen = endX - startX;
     const dyLen = endY - startY;
@@ -3259,13 +4215,29 @@ export function drawDimensions(
         const projectHeight = (maxY - minY) || 1;
         const projectSize = Math.max(projectWidth, projectHeight);
         const wallData = findWallDataForSegment(wallLinesMap, startX, startY, endX, endY);
-        // TEMPORARY: dimension the stored start/end only. Do not stretch to the
-        // chamfer tips or add the tip-to-tip extra. The number is the DB length.
+        const segmentWall = wallData?.wall ?? null;
+        // Tip-to-tip walls: the line runs between the two tips, including
+        // before the joint is set. A short-face wall keeps the saved corners.
         let dimStartX = startX;
         let dimStartY = startY;
         let dimEndX = endX;
         let dimEndY = endY;
-        const segmentWall = wallData?.wall ?? null;
+        const faceLen = Math.hypot(endX - startX, endY - startY);
+        const rememberedTip = Number(segmentWall?.tip_length);
+        if (segmentWall?.tip_to_tip === true || rememberedTip > faceLen + 1) {
+            const tips = dimensionSegmentToTips(
+                startX,
+                startY,
+                endX,
+                endY,
+                wallData,
+                modelBounds
+            );
+            dimStartX = tips.startX;
+            dimStartY = tips.startY;
+            dimEndX = tips.endX;
+            dimEndY = tips.endY;
+        }
         const hostForNear = segmentWall || wallData?.wall || null;
         const isHorizSegment = Math.abs(angle) < 45 || Math.abs(angle) > 135;
         const wallThickness = Number(segmentWall?.thickness) || 100;
@@ -4318,6 +5290,16 @@ export function buildWallOffsetOptions(wall, rooms) {
     if (!wall) return undefined;
     const roomsList = Array.isArray(rooms) ? rooms : [];
     const base = { wall, rooms: roomsList };
+    // A line drawn by the user is one face. tip_length -1 keeps the second
+    // line on side 1; -2 keeps it on the other side. The length is unchanged.
+    const sideCode = Number(wall.tip_length);
+    if (wall.tip_to_tip !== true && (sideCode === -1 || sideCode === -2)) {
+        const n = side1Normal(wall.start_x, wall.start_y, wall.end_x, wall.end_y);
+        const sign = sideCode === -1 ? 1 : -1;
+        base.offsetSide = { x: n.x * sign, y: n.y * sign };
+        base.skipPolygonProbe = true;
+        return base;
+    }
     const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
     const linked = getRoomsLinkedToWall(wall, roomsList);
     const sharedOrPartition = isPartition || linked.length >= 2;
@@ -4524,6 +5506,12 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
 
     let finalOffsetX = shouldFlip ? -offsetX : offsetX;
     let finalOffsetY = shouldFlip ? -offsetY : offsetY;
+    const placedSide = offsetOptions && offsetOptions.offsetSide;
+    if (placedSide && Number.isFinite(placedSide.x) && Number.isFinite(placedSide.y)) {
+        const thickMm = scaleFactor ? gapPixels / scaleFactor : gapPixels;
+        finalOffsetX = placedSide.x * thickMm;
+        finalOffsetY = placedSide.y * thickMm;
+    }
     // A face that would sit outside the site is drawn inward instead, so the
     // outer line of a wall already on x=0 or y=0 stays on that edge.
     const siteBox = offsetOptions && offsetOptions.siteBox;
@@ -4838,7 +5826,9 @@ export function drawWallPlanDimensionsLayer({
 
     walls.forEach((wall) => {
         const wallData = wallLinesMap.get(wall.id);
-        if (wallData) {
+        // Keep the mitered faces from the draw pass. Replacing them with the
+        // pre-joint lines makes the dimension miss the tips.
+        if (wallData && !wall._line1) {
             wall._line1 = wallData.line1;
             wall._line2 = wallData.line2;
         }
@@ -4876,7 +5866,7 @@ export function drawWallPlanDimensionsLayer({
         }
 
         if (showWallDimensions && (!fd || shouldShowWallDimension(wall, intersections, fd.wallDimensions, walls))) {
-            const length = Math.hypot(wall.end_x - wall.start_x, wall.end_y - wall.start_y);
+            const length = wallShownLengthMm(wall, walls, _jointsFromIntersections(intersections));
             wallDimensionSpecs.push({
                 startX: wall.start_x,
                 startY: wall.start_y,
@@ -4886,6 +5876,7 @@ export function drawWallPlanDimensionsLayer({
                 modelBounds,
                 wallLinesMap,
                 length,
+                labelLength: length,
                 rooms,
             });
         }
@@ -4943,7 +5934,8 @@ export function drawWallPlanDimensionsLayer({
             valuesSeen,
             dimensionLanes,
             spec.rooms,
-            dimensionEdgeExtents
+            dimensionEdgeExtents,
+            spec.labelLength
         );
     });
 
@@ -5047,6 +6039,7 @@ export function drawWalls({
     SNAP_THRESHOLD,
     drawPartitionSlashes,
     hoveredPoint,
+    lineSnapMarks = null,
     drawWallLinePair,
     drawWallCaps,
     drawEndpoints,
@@ -5940,8 +6933,13 @@ export function drawWalls({
             // (extended host junctions). Hide blue tips so deducted butt-ins don't
             // appear as two selectable dots on the same corner.
             if (!polygonSelectMode) {
-                drawEndpoints(context, wall.start_x, wall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
-                drawEndpoints(context, wall.end_x, wall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
+                const faceEnds = [line1?.[0], line1?.[1], line2?.[0], line2?.[1]].filter(Boolean);
+                const drawnEnds = [];
+                faceEnds.forEach((pt) => {
+                    if (drawnEnds.some((prev) => Math.hypot(prev.x - pt.x, prev.y - pt.y) < 1)) return;
+                    drawnEnds.push(pt);
+                    drawEndpoints(context, pt.x, pt.y, scaleFactor, offsetX, offsetY, hoveredPoint, endpointColor, 2, initialScale);
+                });
             }
         }
     });
@@ -5972,6 +6970,21 @@ export function drawWalls({
         });
     }
 
+    if (isEditingMode && !polygonSelectMode && lineSnapMarks) {
+        drawEndpoints(
+            context,
+            lineSnapMarks.x,
+            lineSnapMarks.y,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            lineSnapMarks,
+            '#FF9800',
+            3.6,
+            initialScale
+        );
+    }
+
     // Gap-fill indicators on top of wall geometry
     walls.forEach((wall) => {
         if (!wall.fill_gap_mode) return;
@@ -5983,35 +6996,42 @@ export function drawWalls({
 
     // Draw temporary wall while adding wall (skip label collection for temp wall)
     if (tempWall) {
-        // Calculate gap in pixels based on wall thickness for temp wall
-        const tempWallThickness = tempWall.thickness || 100; // Default to 100mm if not set
-        const tempGapPixels = (tempWallThickness * scaleFactor) / 2;
-        const tempOffsetOpts = buildWallOffsetOptions(tempWall, rooms) || {};
-        if (center && Number(center.x) > 0 && Number(center.y) > 0) {
-            tempOffsetOpts.siteBox = { minX: 0, minY: 0, maxX: center.x * 2, maxY: center.y * 2 };
-        }
-
-        const { line1, line2 } = calculateOffsetPoints(
-            tempWall.start_x,
-            tempWall.start_y,
-            tempWall.end_x,
-            tempWall.end_y,
-            tempGapPixels,
-            center,
-            scaleFactor,
-            tempOffsetOpts
-        );
-        // Preview color by angle snap:
-        // blue = world 90°, orange = ⊥ to slant, purple = ∥ along slant, green = free
         const snapType = tempWall.angleSnapType;
         const previewColor =
             snapType === 'horizontal' || snapType === 'vertical' ? '#2196F3' :
             snapType === 'perpendicular' ? '#FF9800' :
             snapType === 'parallel' ? '#9C27B0' :
             '#4CAF50';
-        drawWallLinePair(context, [line1, line2], scaleFactor, offsetX, offsetY, previewColor, [5, 5]);
-        drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
-        drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+        const strokeLine = (x1, y1, x2, y2, dash) => {
+            context.beginPath();
+            context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
+            context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
+            context.strokeStyle = previewColor;
+            context.lineWidth = 2;
+            context.setLineDash(dash || []);
+            context.stroke();
+            context.setLineDash([]);
+        };
+        if (tempWall.placingSide) {
+            const rx1 = tempWall.anchor_x;
+            const ry1 = tempWall.anchor_y;
+            const rx2 = tempWall.ref_x;
+            const ry2 = tempWall.ref_y;
+            const side = tempWall.offsetSide || { x: 0, y: 1 };
+            const thick = Number(tempWall.thickness) || 100;
+            strokeLine(rx1, ry1, rx2, ry2, []);
+            strokeLine(
+                rx1 + side.x * thick, ry1 + side.y * thick,
+                rx2 + side.x * thick, ry2 + side.y * thick,
+                [5, 5]
+            );
+            drawEndpoints(context, rx1, ry1, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+            drawEndpoints(context, rx2, ry2, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+        } else {
+            strokeLine(tempWall.start_x, tempWall.start_y, tempWall.end_x, tempWall.end_y, [5, 5]);
+            drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+            drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+        }
 
         // Snap mode tag near the free end
         if (snapType) {
@@ -6038,26 +7058,35 @@ export function drawWalls({
             }
         }
 
-        const snapPoint = snapToClosestPoint(tempWall.end_x, tempWall.end_y);
-        if (snapPoint.x !== tempWall.end_x || snapPoint.y !== tempWall.end_y) {
-            context.beginPath();
-            context.moveTo(
-                tempWall.end_x * scaleFactor + offsetX,
-                tempWall.end_y * scaleFactor + offsetY
-            );
-            context.lineTo(
-                snapPoint.x * scaleFactor + offsetX,
-                snapPoint.y * scaleFactor + offsetY
-            );
-            context.strokeStyle = previewColor;
-            context.globalAlpha = 0.45;
-            context.lineWidth = 1;
-            context.setLineDash([3, 3]);
-            context.stroke();
-            context.setLineDash([]);
-            context.globalAlpha = 1;
-            drawEndpoints(context, snapPoint.x, snapPoint.y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2.25, initialScale);
+        // The number being typed is the wall length. Thickness is the second line.
+        {
+            const typed = tempWall.typedLength ? String(tempWall.typedLength) : '';
+            const live = Math.round(Math.hypot(
+                tempWall.end_x - tempWall.start_x,
+                tempWall.end_y - tempWall.start_y
+            ));
+            const label = typed || (live > 0 ? String(live) : '');
+            const suffix = tempWall.placingSide
+                ? '  click the side'
+                : (typed ? '  Enter' : '   type mm, Enter');
+            if (label) {
+                const tx = tempWall.end_x * scaleFactor + offsetX + 12;
+                const ty = tempWall.end_y * scaleFactor + offsetY + 16;
+                context.save();
+                context.font = 'bold 13px Segoe UI, Arial, sans-serif';
+                const text = label + suffix;
+                const tw = context.measureText(text).width;
+                context.fillStyle = 'rgba(255,255,255,0.94)';
+                context.fillRect(tx - 4, ty - 13, tw + 8, 18);
+                context.strokeStyle = previewColor;
+                context.lineWidth = 1;
+                context.strokeRect(tx - 4, ty - 13, tw + 8, 18);
+                context.fillStyle = '#111';
+                context.fillText(text, tx, ty);
+                context.restore();
+            }
         }
+
     }
     const { dimensionEdgeExtents } = drawWallPlanDimensionsLayer({
         context,

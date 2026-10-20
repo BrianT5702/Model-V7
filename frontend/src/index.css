@@ -322,6 +322,31 @@ body.three-view-fullscreen-lock {
   display: none !important;
 }
 
+/* Door / wall-length forms sit on the right, over the plan, so the canvas
+   does not resize and the zoom stays where the user left it. */
+.opening-side-panel {
+  position: fixed;
+  top: 4rem;
+  right: 1rem;
+  z-index: 11000;
+  width: min(440px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 5.5rem);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+
+.opening-side-panel .form-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+html.dark .opening-side-panel .text-gray-900,
+html.dark .opening-side-panel .text-gray-800,
+html.dark .opening-side-panel .text-gray-700,
+html.dark .opening-side-panel .text-gray-600 {
+  color: #e5e7eb;
+}
+
 .wall-canvas-container.wall-plan-fullscreen .plan-canvas-viewport {
   height: 100% !important;
   min-height: 0 !important;

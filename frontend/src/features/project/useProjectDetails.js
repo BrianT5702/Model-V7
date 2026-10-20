@@ -14,7 +14,7 @@ import {
   compensateExteriorCornerThickness,
   estimateWallsPlanCenter,
 } from './projectUtils';
-import { normalizeWallCoordinates, clearDimensionPlacementMemory } from '../canvas/drawing';
+import { normalizeWallCoordinates, clearDimensionPlacementMemory, seatTipToTipOppositeJoin, tipToTipExtraMm, faceSideCodeForSegment } from '../canvas/drawing';
 import { doPolygonsOverlap } from '../canvas/utils';
 import useProjectHistory from './useProjectHistory';
 import { captureProjectSnapshot, restoreProjectSnapshot } from './projectHistorySync';
@@ -2534,21 +2534,31 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     return payload;
   };
 
+  const saveWallList = async (updatedWalls) => {
+    const toSave = updatedWalls;
+    await commitHistoryAction('Update wall', async () => {
+      const saved = [];
+      for (const wall of toSave) {
+        if (wall.height <= 0 || wall.thickness <= 0) {
+          throw new Error('Wall Height and Thickness must be greater than 0');
+        }
+        const response = await api.put(`/walls/${wall.id}/`, prepareWallPayloadForSave(wall));
+        saved.push(response.data);
+      }
+      if (saved.length) {
+        const savedById = new Map(saved.map((w) => [String(w.id), w]));
+        setWalls((prev) => prev.map((wall) => savedById.get(String(wall.id)) || wall));
+      }
+    });
+  };
+
   const handleWallUpdate = async (updatedWall) => {
     try {
       if (updatedWall.height <= 0 || updatedWall.thickness <= 0) {
         alert("Wall Height and Thickness must be greater than 0");
         return;
       }
-      await commitHistoryAction('Update wall', async () => {
-        const response = await api.put(`/walls/${updatedWall.id}/`, prepareWallPayloadForSave(updatedWall));
-        const updatedWallData = response.data;
-        setWalls(prevWalls =>
-          prevWalls.map(wall =>
-            wall.id === updatedWallData.id ? updatedWallData : wall
-          )
-        );
-      });
+      await saveWallList([updatedWall]);
     } catch (error) {
       alert('Failed to update wall');
     }
@@ -2561,15 +2571,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         alert("Wall Height and Thickness must be greater than 0");
         return;
       }
-      await commitHistoryAction('Update wall', async () => {
-        const response = await api.put(`/walls/${updatedWall.id}/`, prepareWallPayloadForSave(updatedWall));
-        const updatedWallData = response.data;
-        setWalls(prevWalls =>
-          prevWalls.map(wall =>
-            wall.id === updatedWallData.id ? updatedWallData : wall
-          )
-        );
-      });
+      await saveWallList([updatedWall]);
     } catch (error) {
       if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || (error.response?.status >= 500 && error.response?.status < 600)) {
         setDbConnectionError(true);
@@ -2958,7 +2960,13 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         ceiling_joint_type: targetWall.ceiling_joint_type ?? null,
         ceiling_cut_l_horizontal_extension: targetWall.ceiling_cut_l_horizontal_extension ?? null,
         // Default wall flag - inherit from original wall
-        is_default: targetWall.is_default ?? true
+        is_default: targetWall.is_default ?? true,
+        tip_to_tip: targetWall.tip_to_tip === true,
+        tip_length: faceSideCodeForSegment(
+          targetWall,
+          normalized.startPoint,
+          normalized.endPoint
+        ) ?? (targetWall.tip_to_tip === true ? targetWall.tip_length ?? null : null),
       };
 
       // Add optional fields that may not exist in all walls
@@ -3305,10 +3313,28 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     startPoint = cornerCompensation.startPoint;
     endPoint = cornerCompensation.endPoint;
 
-    const hostCornerUpdates = cornerCompensation.hostUpdates || [];
-    const hostCornerById = new Map(
-      hostCornerUpdates.map((u) => [u.wall.id, u])
-    );
+    // New walls are tip-to-tip. A join on the opposite side of an earlier
+    // tip-to-tip wall pulls that face in by one thickness. Already-drawn
+    // walls are not tip-to-tip, so they stay put.
+    const tipSeat = wallProps.tip_to_tip === true
+      ? seatTipToTipOppositeJoin({
+          startPoint,
+          endPoint,
+          walls: wallsOnSameStorey,
+          joints,
+        })
+      : { startPoint, endPoint, hostUpdates: [] };
+    startPoint = tipSeat.startPoint;
+    endPoint = tipSeat.endPoint;
+
+    const hostCornerById = new Map();
+    for (const update of cornerCompensation.hostUpdates || []) {
+      hostCornerById.set(update.wall.id, update);
+    }
+    for (const update of tipSeat.hostUpdates || []) {
+      hostCornerById.set(update.wall.id, update);
+    }
+    const hostCornerUpdates = Array.from(hostCornerById.values());
     const wallsForGeometry = wallsOnSameStorey.map((w) => {
       const u = hostCornerById.get(w.id);
       return u
@@ -3365,7 +3391,87 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       });
     }
 
+    // A same-side step (the 1000 drawn on the right, which only takes 800) must
+    // not be carved out of a run the user already drew. Slide that run below
+    // the step so a 11200 stays 11200. Only the gap is the 800.
+    const siteMaxX = Number(project?.width);
+    const siteMaxY = Number(project?.length);
+    const slideRunBelowStep = (wall, intersection) => {
+      const ax = Number(wall.end_x) - Number(wall.start_x);
+      const ay = Number(wall.end_y) - Number(wall.start_y);
+      const wallLen = Math.hypot(ax, ay);
+      if (wallLen < 1) return null;
+      const ux = ax / wallLen;
+      const uy = ay / wallLen;
+      const start = { x: Number(wall.start_x), y: Number(wall.start_y) };
+      const end = { x: Number(wall.end_x), y: Number(wall.end_y) };
+      const dStart = Math.hypot(intersection.x - start.x, intersection.y - start.y);
+      const dEnd = Math.hypot(intersection.x - end.x, intersection.y - end.y);
+      const nearIsStart = dStart <= dEnd;
+      const dNear = nearIsStart ? dStart : dEnd;
+      if (dNear < 50 || dNear > wallLen - 50) return null;
+      const near = nearIsStart ? start : end;
+      const far = nearIsStart ? end : start;
+      let matched = false;
+      for (const other of wallsForGeometry) {
+        if (!other || other.id === wall.id || other.tip_to_tip !== true) continue;
+        const odx = Number(other.end_x) - Number(other.start_x);
+        const ody = Number(other.end_y) - Number(other.start_y);
+        const olen = Math.hypot(odx, ody);
+        if (olen < 1 || Math.abs(olen - dNear) > 3) continue;
+        if (Math.abs(ux * (odx / olen) + uy * (ody / olen)) > 0.35) continue;
+        const pts = [
+          { x: Number(other.start_x), y: Number(other.start_y) },
+          { x: Number(other.end_x), y: Number(other.end_y) },
+        ];
+        const onStation = (p, target) => (
+          (Math.abs(p.y - target.y) <= 3 && Math.abs(p.x - target.x) > 3)
+          || (Math.abs(p.x - target.x) <= 3 && Math.abs(p.y - target.y) > 3)
+        );
+        if (pts.some((p) => onStation(p, near)) && pts.some((p) => onStation(p, intersection))) {
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) return null;
+      const delta = { x: intersection.x - near.x, y: intersection.y - near.y };
+      let newFar = { x: far.x + delta.x, y: far.y + delta.y };
+      const clamped = {
+        x: Math.min(Number.isFinite(siteMaxX) ? siteMaxX : newFar.x, Math.max(0, newFar.x)),
+        y: Math.min(Number.isFinite(siteMaxY) ? siteMaxY : newFar.y, Math.max(0, newFar.y)),
+      };
+      const hitSite = Math.hypot(clamped.x - newFar.x, clamped.y - newFar.y) > 1;
+      newFar = clamped;
+      const moved = nearIsStart
+        ? { start_x: intersection.x, start_y: intersection.y, end_x: newFar.x, end_y: newFar.y }
+        : { start_x: newFar.x, start_y: newFar.y, end_x: intersection.x, end_y: intersection.y };
+      let neighborUpdate = null;
+      if (!hitSite) {
+        for (const other of wallsForGeometry) {
+          if (!other || other.id === wall.id) continue;
+          const odx = Number(other.end_x) - Number(other.start_x);
+          const ody = Number(other.end_y) - Number(other.start_y);
+          const olen = Math.hypot(odx, ody);
+          if (olen < 1) continue;
+          if (Math.abs((odx / olen) * ux + (ody / olen) * uy) < 0.85) continue;
+          const startHit = Math.hypot(Number(other.start_x) - far.x, Number(other.start_y) - far.y) <= 3;
+          const endHit = Math.hypot(Number(other.end_x) - far.x, Number(other.end_y) - far.y) <= 3;
+          if (!startHit && !endHit) continue;
+          neighborUpdate = {
+            wall: other,
+            start_x: startHit ? newFar.x : Number(other.start_x),
+            start_y: startHit ? newFar.y : Number(other.start_y),
+            end_x: endHit ? newFar.x : Number(other.end_x),
+            end_y: endHit ? newFar.y : Number(other.end_y),
+          };
+          break;
+        }
+      }
+      return { wallUpdate: { wall, ...moved }, neighborUpdate };
+    };
+
     // Prefer existing corners over mid-body splits when the hit is only ~1mm away
+    const stepSlides = [];
     const refinedIntersections = [];
     for (const item of intersections) {
       const { wall } = item;
@@ -3405,6 +3511,26 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       if (hitsNewEnd && (dStart <= tipZone + 1 || dEnd <= tipZone + 1)) {
         continue;
       }
+      const slid = slideRunBelowStep(wall, intersection);
+      if (slid) {
+        stepSlides.push(slid.wallUpdate);
+        if (slid.neighborUpdate) stepSlides.push(slid.neighborUpdate);
+        const apply = (update) => {
+          const idx = wallsForGeometry.findIndex((w) => w.id === update.wall.id);
+          if (idx >= 0) {
+            wallsForGeometry[idx] = {
+              ...wallsForGeometry[idx],
+              start_x: update.start_x,
+              start_y: update.start_y,
+              end_x: update.end_x,
+              end_y: update.end_y,
+            };
+          }
+        };
+        apply(slid.wallUpdate);
+        if (slid.neighborUpdate) apply(slid.neighborUpdate);
+        continue;
+      }
       intersection = projectPointToWall(intersection, wall);
       refinedIntersections.push({ wall, intersection });
     }
@@ -3412,6 +3538,61 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     // 2. Split existing walls at intersections
     const wallsToDelete = [];
     let wallsToAdd = [];
+    // A tip-to-tip wall keeps its number past the face. A boundary cut on that
+    // same line must keep the same tip, so the right side stays 23200 with the left.
+    const carriedTipLength = (host, cut, segStart, segEnd) => {
+      const ax = Number(host.end_x) - Number(host.start_x);
+      const ay = Number(host.end_y) - Number(host.start_y);
+      const alen = Math.hypot(ax, ay);
+      if (alen < 1) return null;
+      const ux = ax / alen;
+      const uy = ay / alen;
+      const along = (p) => (p.x - cut.x) * ux + (p.y - cut.y) * uy;
+      const segSide = along({
+        x: (segStart.x + segEnd.x) / 2,
+        y: (segStart.y + segEnd.y) / 2,
+      });
+      let best = 0;
+      for (const other of wallsForGeometry) {
+        if (!other || String(other.id) === String(host.id) || other.tip_to_tip !== true) continue;
+        const tip = Number(other.tip_length);
+        const face = Math.hypot(
+          Number(other.end_x) - Number(other.start_x),
+          Number(other.end_y) - Number(other.start_y)
+        );
+        const shown = tip > face + 1 ? tip : face;
+        if (!(shown > 1)) continue;
+        const odx = Number(other.end_x) - Number(other.start_x);
+        const ody = Number(other.end_y) - Number(other.start_y);
+        const olen = Math.hypot(odx, ody);
+        if (olen < 1) continue;
+        if (Math.abs((odx / olen) * ux + (ody / olen) * uy) < 0.85) continue;
+        const ends = [
+          { x: Number(other.start_x), y: Number(other.start_y) },
+          { x: Number(other.end_x), y: Number(other.end_y) },
+        ];
+        const endAlong = ends.map((p) => along(p));
+        const reach = (Number(other.thickness) || 100) * 2 + 1;
+        const crossesCut = Math.min(...endAlong) < 1 && Math.max(...endAlong) > -1;
+        if (!crossesCut && !endAlong.some((a) => Math.abs(a) <= reach)) continue;
+        const otherSide = along({
+          x: (Number(other.start_x) + Number(other.end_x)) / 2,
+          y: (Number(other.start_y) + Number(other.end_y)) / 2,
+        });
+        if (otherSide * segSide <= 0) continue;
+        const extra = Math.max(0, Math.round(shown - face));
+        const segLen = Math.hypot(segEnd.x - segStart.x, segEnd.y - segStart.y);
+        const slack = Math.max(extra, (Number(other.thickness) || 100) * 2);
+        // Same bay: keep that wall's tip-to-tip number, including a bottom
+        // that runs one thickness past the line the top was cut on.
+        if (Math.abs(face - segLen) <= slack + 1 && shown > segLen + 1) {
+          best = Math.max(best, Math.round(shown));
+        } else if (extra > 1) {
+          best = Math.max(best, Math.round(segLen + extra));
+        }
+      }
+      return best > 1 ? best : null;
+    };
     refinedIntersections.forEach(({ wall, intersection }) => {
       wallsToDelete.push(wall);
       
@@ -3451,7 +3632,18 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         ceiling_joint_type: wall.ceiling_joint_type ?? null,
         ceiling_cut_l_horizontal_extension: wall.ceiling_cut_l_horizontal_extension ?? null,
         // Default wall flag - inherit from original wall
-        is_default: wall.is_default ?? true
+        is_default: wall.is_default ?? true,
+        tip_to_tip: wall.tip_to_tip === true,
+        tip_length: faceSideCodeForSegment(
+          wall,
+          segment1Coords.startPoint,
+          segment1Coords.endPoint
+        ) ?? carriedTipLength(
+          wall,
+          intersection,
+          segment1Coords.startPoint,
+          segment1Coords.endPoint
+        ),
       });
       
       // Normalize second segment
@@ -3487,7 +3679,18 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         ceiling_joint_type: wall.ceiling_joint_type ?? null,
         ceiling_cut_l_horizontal_extension: wall.ceiling_cut_l_horizontal_extension ?? null,
         // Default wall flag - inherit from original wall
-        is_default: wall.is_default ?? true
+        is_default: wall.is_default ?? true,
+        tip_to_tip: wall.tip_to_tip === true,
+        tip_length: faceSideCodeForSegment(
+          wall,
+          segment2Coords.startPoint,
+          segment2Coords.endPoint
+        ) ?? carriedTipLength(
+          wall,
+          intersection,
+          segment2Coords.startPoint,
+          segment2Coords.endPoint
+        ),
       });
     });
 
@@ -3546,6 +3749,23 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
         storey: activeStoreyId ?? defaultStoreyId,
         tip_to_tip: wallProps.tip_to_tip === true,
       };
+      if (wallProps.tip_to_tip !== true && (wallProps.tip_length === -1 || wallProps.tip_length === -2)) {
+        wallData.tip_length = wallProps.tip_length;
+      }
+      if (wallProps.tip_to_tip === true) {
+        const faceLen = Math.hypot(
+          wallData.end_x - wallData.start_x,
+          wallData.end_y - wallData.start_y
+        );
+        const typedTip = Number(wallProps.tip_length);
+        // A typed length is already tip-to-tip. A drag that snaps both ends
+        // stops on the inner face, so add the joining thickness at each end.
+        wallData.tip_length = Math.round(
+          typedTip > 0 && Math.abs(faceLen - typedTip) < 1
+            ? typedTip
+            : faceLen + tipToTipExtraMm(wallData, wallsForGeometry, joints)
+        );
+      }
 
       if (startTouchingWall || endTouchingWall) {
         wallData.base_elevation_mm = baseElevationToUse;
@@ -3636,7 +3856,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     // 4. Delete split walls, add new segments (API)
     return commitHistoryAction('Add wall', async () => {
       // Apply corner host shortenings before creating the new wall
-      for (const update of hostCornerUpdates) {
+      for (const update of [...hostCornerUpdates, ...stepSlides]) {
         const payload = prepareWallPayloadForSave({
           ...update.wall,
           start_x: update.start_x,
@@ -4127,6 +4347,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     handleFlipWallSides,
     handleCancelWallDelete,
     handleWallUpdateNoMerge,
+    saveWallList,
     handleRoomSelect,
     forceCleanup3D,
     // Canvas image methods

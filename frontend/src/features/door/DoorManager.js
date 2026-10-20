@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 
@@ -27,6 +28,7 @@ const DoorManager = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [dbConnectionError, setDbConnectionError] = useState(false);
   const [validationError, setValidationError] = useState("");
+  const widthInputRef = useRef(null);
   
   // Window management state
   const [windows, setWindows] = useState([]);
@@ -91,11 +93,21 @@ const DoorManager = ({
         loadWindows(doorId);
       }
     } else if (!isEditMode && wall) {
+      const wallHeight = Number(wall.height);
+      const wallThick = Number(wall.thickness);
       setDoorType('swing');
       setConfiguration('single');
-      setWidth('');
-      setHeight('');
-      setThickness('');
+      setWidth('900');
+      setHeight(
+        Number.isFinite(wallHeight) && wallHeight > 0
+          ? String(Math.round(Math.min(2100, wallHeight)))
+          : '2100'
+      );
+      setThickness(
+        Number.isFinite(wallThick) && wallThick > 0
+          ? String(Math.round(wallThick))
+          : '50'
+      );
       setSide('interior');
       setSwingDirection('right');
       setSlideDirection('right');
@@ -103,6 +115,17 @@ const DoorManager = ({
       setWindows([]);
     }
   }, [editingDoor?.id, isEditMode, wall?.id]);
+
+  useEffect(() => {
+    if (isEditMode || !wall) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const input = widthInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.select();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isEditMode, wall?.id]);
 
   // Load windows for a door
   const loadWindows = async (doorId) => {
@@ -327,9 +350,22 @@ const DoorManager = ({
   };
   
 
-  return (
-    <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto modal-scroll-panel">
+  return createPortal(
+    <div
+      className="opening-side-panel"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onClose?.();
+          return;
+        }
+        if (event.key === 'Enter' && event.target instanceof HTMLInputElement && !showWindowForm) {
+          event.preventDefault();
+          handleSave();
+        }
+      }}
+    >
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-full max-h-full overflow-y-auto modal-scroll-panel">
         {/* Header */}
         <div className="form-modal-header">
           <div className="flex-1 min-w-0 pr-2">
@@ -339,6 +375,11 @@ const DoorManager = ({
             <p className="form-modal-subtitle">
               Storey: {activeStoreyName || (activeStoreyId ? `Level ${activeStoreyId}` : 'Not set')}
             </p>
+            {!isEditMode && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Width is selected. Type a size and press Enter to place the door.
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -402,13 +443,14 @@ const DoorManager = ({
             <div className="form-grid mt-2">
               <div>
                 <label className="form-label">Width (mm)</label>
-                <input 
-                  type="number" 
-                  value={width} 
-                  onChange={e => setWidth(e.target.value)} 
+                <input
+                  ref={widthInputRef}
+                  type="number"
+                  value={width}
+                  onChange={e => setWidth(e.target.value)}
                   min="100"
-                  step="100"
-                  className="form-control mt-1" 
+                  step="1"
+                  className="form-control mt-1"
                 />
               </div>
 
@@ -722,7 +764,8 @@ const DoorManager = ({
           </div>
         )}
       </div>
-    </ModalOverlay>
+    </div>,
+    document.body
   );
 };
 

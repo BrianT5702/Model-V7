@@ -272,6 +272,40 @@ def normalize_wall_coordinates(start_x, start_y, end_x, end_y):
     # No change needed
     return start_x, start_y, end_x, end_y
 
+
+def _side1_normal(start_x, start_y, end_x, end_y):
+    """Right-hand normal of start→end. Matches the plan's side1Normal."""
+    from math import hypot
+    dx = float(end_x) - float(start_x)
+    dy = float(end_y) - float(start_y)
+    length = hypot(dx, dy) or 1.0
+    return (-dy / length, dx / length)
+
+
+def _placed_line_offset(wall):
+    """World direction of the second line, or None when this wall has no placed side."""
+    if getattr(wall, 'tip_to_tip', False):
+        return None
+    try:
+        code = int(wall.tip_length)
+    except (TypeError, ValueError):
+        return None
+    if code not in (-1, -2):
+        return None
+    nx, ny = _side1_normal(wall.start_x, wall.start_y, wall.end_x, wall.end_y)
+    sign = 1 if code == -1 else -1
+    return (nx * sign, ny * sign)
+
+
+def _face_side_for_segment(start_x, start_y, end_x, end_y, offset):
+    """Re-encode a world offset onto a segment that may have been reversed."""
+    if offset is None:
+        return None
+    nx, ny = _side1_normal(start_x, start_y, end_x, end_y)
+    dot = nx * offset[0] + ny * offset[1]
+    return -1 if dot >= 0 else -2
+
+
 class WallService:
     @staticmethod
     def update_wall_base_elevations(wall_ids=None):
@@ -391,6 +425,7 @@ class WallService:
         """
         with transaction.atomic():
             wall = Wall.objects.get(pk=wall_id)
+            placed_offset = _placed_line_offset(wall)
             
             # Normalize first segment
             norm_start_x1, norm_start_y1, norm_end_x1, norm_end_y1 = normalize_wall_coordinates(
@@ -425,7 +460,15 @@ class WallService:
                 ceiling_joint_type=wall.ceiling_joint_type,
                 ceiling_cut_l_horizontal_extension=wall.ceiling_cut_l_horizontal_extension,
                 # Default wall flag (inherit from original)
-                is_default=wall.is_default
+                is_default=wall.is_default,
+                tip_to_tip=wall.tip_to_tip,
+                tip_length=(
+                    _face_side_for_segment(
+                        norm_start_x1, norm_start_y1, norm_end_x1, norm_end_y1, placed_offset
+                    )
+                    if placed_offset is not None
+                    else wall.tip_length
+                ),
             )
             
             # Normalize second segment
@@ -461,7 +504,15 @@ class WallService:
                 ceiling_joint_type=wall.ceiling_joint_type,
                 ceiling_cut_l_horizontal_extension=wall.ceiling_cut_l_horizontal_extension,
                 # Default wall flag (inherit from original)
-                is_default=wall.is_default
+                is_default=wall.is_default,
+                tip_to_tip=wall.tip_to_tip,
+                tip_length=(
+                    _face_side_for_segment(
+                        norm_start_x2, norm_start_y2, norm_end_x2, norm_end_y2, placed_offset
+                    )
+                    if placed_offset is not None
+                    else wall.tip_length
+                ),
             )
 
             wall.delete()
@@ -532,6 +583,18 @@ class WallService:
         norm_start_x, norm_start_y, norm_end_x, norm_end_y = normalize_wall_coordinates(
             new_start_x, new_start_y, new_end_x, new_end_y
         )
+
+        # Keep the second line on the side it was placed. Normalize can reverse
+        # start→end, so the side code is written for the merged direction.
+        placed_offset = _placed_line_offset(wall_1) or _placed_line_offset(wall_2)
+        if placed_offset is not None:
+            merged_tip_to_tip = False
+            merged_tip_length = _face_side_for_segment(
+                norm_start_x, norm_start_y, norm_end_x, norm_end_y, placed_offset
+            )
+        else:
+            merged_tip_to_tip = bool(wall_1.tip_to_tip)
+            merged_tip_length = wall_1.tip_length
         
         # Create the merged wall (properties match by validation above)
         merged_wall = Wall.objects.create(
@@ -558,6 +621,8 @@ class WallService:
             ceiling_joint_type=wall_1.ceiling_joint_type,
             ceiling_cut_l_horizontal_extension=wall_1.ceiling_cut_l_horizontal_extension,
             is_default=wall_1.is_default,
+            tip_to_tip=merged_tip_to_tip,
+            tip_length=merged_tip_length,
         )
 
         wall_1.delete()

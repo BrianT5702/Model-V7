@@ -404,6 +404,11 @@ class Wall(models.Model):
         default=False,
         help_text="True when the drawn length is tip to tip. Saved corners sit one thickness inside each end."
     )
+    tip_length = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Tip-to-tip length in mm, fixed when the wall is drawn. Later joins do not change this number."
+    )
     has_concrete_base = models.BooleanField(default=False, help_text="Whether the wall has a concrete base")
     concrete_base_height = models.FloatField(null=True, blank=True, help_text="Height of the concrete base in mm")
     fill_gap_mode = models.BooleanField(default=False, help_text="Fill only the gap between rooms with different heights")

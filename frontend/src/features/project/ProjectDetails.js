@@ -8,6 +8,7 @@ import ProjectVersionModal from './ProjectVersionModal';
 import VersionCompareModal from './VersionCompareModal';
 import AuthStatusBar from '../../components/AuthStatusBar';
 import { getWallSegmentKey } from './projectUtils';
+import { tipToTipExtraMm, wallShownLengthMm } from '../canvas/drawing';
 import {
     FOLDER_QUERY_PARAM,
     UNCATEGORIZED_KEY,
@@ -3789,17 +3790,24 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                     </button>
                                                     <input 
                                                         type="number" 
-                                                        value={editedWall ? Math.round((Math.hypot(
-                                                            (editedWall.end_x || 0) - (editedWall.start_x || 0),
-                                                            (editedWall.end_y || 0) - (editedWall.start_y || 0)
-                                                        ) + (editedWall.tip_to_tip === true ? 2 * (Number(editedWall.thickness) || 0) : 0)) * 100) / 100 : ''} 
+                                                        value={editedWall ? wallShownLengthMm(editedWall, projectDetails.filteredWalls || [], projectDetails.joints || []) : ''} 
                                                         onChange={(e) => {
                                                             if (isLengthLocked) return;
                                                             
                                                             const typedLength = parseFloat(e.target.value);
                                                             if (isNaN(typedLength) || typedLength <= 0 || !editedWall) return;
-                                                            const tipExtra = editedWall.tip_to_tip === true ? 2 * (Number(editedWall.thickness) || 0) : 0;
-                                                            const newLength = Math.max(1, typedLength - tipExtra);
+                                                            const frozenTip = Number(editedWall.tip_length) > 0 ? Number(editedWall.tip_length) : null;
+                                                            const tipExtra = frozenTip == null
+                                                                ? tipToTipExtraMm(editedWall, projectDetails.filteredWalls || [], projectDetails.joints || [])
+                                                                : 0;
+                                                            const shownNow = frozenTip ?? (Math.hypot(
+                                                                (editedWall.end_x || 0) - (editedWall.start_x || 0),
+                                                                (editedWall.end_y || 0) - (editedWall.start_y || 0)
+                                                            ) + tipExtra);
+                                                            const newLength = Math.max(1, Math.hypot(
+                                                                (editedWall.end_x || 0) - (editedWall.start_x || 0),
+                                                                (editedWall.end_y || 0) - (editedWall.start_y || 0)
+                                                            ) + (typedLength - shownNow));
                                                             
                                                             const dx = (editedWall.end_x || 0) - (editedWall.start_x || 0);
                                                             const dy = (editedWall.end_y || 0) - (editedWall.start_y || 0);
@@ -3815,16 +3823,19 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
                                                             const endFree = !lockedWallCoords.end_x && !lockedWallCoords.end_y;
                                                             const startFree = !lockedWallCoords.start_x && !lockedWallCoords.start_y;
+                                                            const tipPatch = editedWall.tip_to_tip === true ? { tip_length: typedLength } : {};
 
                                                             if (endFree) {
                                                                 patchEditedWall({
                                                                     end_x: startX + unitX * newLength,
                                                                     end_y: startY + unitY * newLength,
+                                                                    ...tipPatch,
                                                                 });
                                                             } else if (startFree) {
                                                                 patchEditedWall({
                                                                     start_x: endX - unitX * newLength,
                                                                     start_y: endY - unitY * newLength,
+                                                                    ...tipPatch,
                                                                 });
                                                             } else {
                                                                 // Partial locks: update only unlocked coords that can still satisfy length
@@ -3858,8 +3869,8 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                                         updates.start_y = endY - sign * Math.sqrt(dySq);
                                                                     }
                                                                 }
-                                                                if (Object.keys(updates).length > 0) {
-                                                                    patchEditedWall(updates);
+                                                                if (Object.keys(updates).length > 0 || editedWall.tip_to_tip === true) {
+                                                                    patchEditedWall({ ...updates, ...tipPatch });
                                                                 }
                                                             }
                                                         }}
@@ -4240,7 +4251,6 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 }
                                                 if (projectDetails.selectedWallsForEdit.length > 0) {
                                                     // Multi-wall editing: apply changes to all selected walls
-                                                    const updates = [];
                                                     const propertiesToUpdate = {
                                                         height: editedWall?.height,
                                                         thickness: editedWall?.thickness,
@@ -4253,15 +4263,12 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                         base_elevation_manual: editedWall?.base_elevation_manual
                                                     };
                                                     
+                                                    const wallsToSave = [];
                                                     for (const wallId of projectDetails.selectedWallsForEdit) {
                                                         const wall = projectDetails.walls.find(w => w.id === wallId);
-                                                        if (wall) {
-                                                            const updatedWall = { ...wall, ...propertiesToUpdate };
-                                                            updates.push(projectDetails.handleWallUpdateNoMerge(updatedWall));
-                                                        }
+                                                        if (wall) wallsToSave.push({ ...wall, ...propertiesToUpdate });
                                                     }
-                                                    
-                                                    await Promise.all(updates);
+                                                    await projectDetails.saveWallList(wallsToSave);
                                                     projectDetails.setSelectedWallsForEdit([]);
                                                     projectDetails.setShowWallEditor(false);
                                                     setEditedWall(null);

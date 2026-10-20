@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import ModalOverlay from '../../components/ModalOverlay';
 import useDoorForm from './useDoorForm';
 import api from '../../api/api';
@@ -148,9 +149,22 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
     }
   };
 
-  return (
-    <ModalOverlay className="bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto modal-scroll-panel">
+  return createPortal(
+    <div
+      className="opening-side-panel"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onClose?.();
+          return;
+        }
+        if (event.key === 'Enter' && event.target instanceof HTMLInputElement && !showWindowForm) {
+          event.preventDefault();
+          form.handleSave();
+        }
+      }}
+    >
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-full max-h-full overflow-y-auto modal-scroll-panel">
         {/* Header */}
         <div className="form-modal-header">
           <h2 className="form-modal-title">Edit Door</h2>
@@ -537,7 +551,8 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
           </div>
         </ModalOverlay>
       )}
-    </ModalOverlay>
+    </div>,
+    document.body
   );
 };
 

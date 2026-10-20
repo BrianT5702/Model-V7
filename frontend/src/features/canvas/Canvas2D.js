@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
 import PanelCalculationControls from '../panel/PanelCalculationControls';
 import {
@@ -36,6 +35,14 @@ import {
     getWallAngleSnapThresholdDeg,
   snapWallEndToPreferredAngles,
   clearDimensionPlacementMemory,
+  nearestPointOnWallFace,
+  pointAlongDirection,
+  snapToEitherFaceLine,
+  bothLineSnapMarks,
+  snapMagnetPoint,
+  drawnWallFromLine,
+  sideOfReferenceLine,
+  centerlineForSide,
 } from './drawing';
 import InteractiveRoomLabel from './InteractiveRoomLabel';
 import InteractivePlanAnnotation from './InteractivePlanAnnotation';
@@ -48,6 +55,7 @@ import {
 } from './planAnnotationUtils';
 import { adjustPlanStrokeColor, getPlanCanvasBackground, getPlanWallHighlightColor } from './planCanvasTheme';
 import { collectWallFaceLegend } from './wallPlanColors';
+import { side1Normal } from './wallFaceSides';
 import { useTheme } from '../theme/ThemeContext';
 import { useShare } from '../share/ShareContext';
 import { drawDoors } from './utils';
@@ -138,8 +146,17 @@ const Canvas2D = ({
     const [tempWall, setTempWall] = useState(null);
     const [hoveredWall, setHoveredWall] = useState(null);
     const [hoveredPoint, setHoveredPoint] = useState(null);
+    const [lineSnapMarks, setLineSnapMarks] = useState(null);
     const [showLengthInput, setShowLengthInput] = useState(false);
     const [pendingWallData, setPendingWallData] = useState(null);
+    const [typedWallLength, setTypedWallLength] = useState('');
+    const typedLengthRef = useRef('');
+    const tempWallRef = useRef(null);
+    const isDrawingRef = useRef(false);
+    const commitTypedWallRef = useRef(async () => {});
+    tempWallRef.current = tempWall;
+    isDrawingRef.current = isDrawing;
+    typedLengthRef.current = typedWallLength;
     const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
     const [intersections, setIntersections] = useState([]);
     // Define-room snap targets: partition butt-ins extended to centerline corners
@@ -261,7 +278,9 @@ const Canvas2D = ({
         return () => cancelAnimationFrame(frame);
     }, [walls]);
     const [splitTargetWallId, setSplitTargetWallId] = useState(null);
+    const splitDistanceInputRef = useRef(null);
     const [splitPreviewPoint, setSplitPreviewPoint] = useState(null);
+    const [splitPreviewFace, setSplitPreviewFace] = useState(null);
     const [splitDistanceInput, setSplitDistanceInput] = useState('');
     const [splitHoverDistance, setSplitHoverDistance] = useState(null);
     const [isProcessingSplit, setIsProcessingSplit] = useState(false);
@@ -505,8 +524,8 @@ const Canvas2D = ({
             return;
         }
 
-        // Only initiate dragging with the right mouse button
-        if (e.button !== 2) {
+        // Right button pans. In fullscreen the middle button pans too, like AutoCAD.
+        if (e.button !== 2 && !(isPlanFullscreen && e.button === 1)) {
             return;
         }
 
@@ -650,6 +669,33 @@ const Canvas2D = ({
         });
     }, [planAnnotateMode, planNoteAddMode, canAnnotate, planAnnotationArrowPlacementId]);
 
+    // Fullscreen: scroll zooms toward the cursor, the way AutoCAD does.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || !isPlanFullscreen) return undefined;
+        const onWheel = (event) => {
+            event.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const screenX = event.clientX - rect.left;
+            const screenY = event.clientY - rect.top;
+            const oldScale = scaleFactor.current;
+            if (!(oldScale > 0)) return;
+            const zoomIn = event.deltaY < 0;
+            const factor = zoomIn ? 1.12 : 1 / 1.12;
+            const newScale = Math.min(8, Math.max(0.002, oldScale * factor));
+            const modelX = (screenX - offsetX.current) / oldScale;
+            const modelY = (screenY - offsetY.current) / oldScale;
+            scaleFactor.current = newScale;
+            offsetX.current = screenX - modelX * newScale;
+            offsetY.current = screenY - modelY * newScale;
+            isZoomed.current = true;
+            setCurrentScaleFactor(newScale);
+            setForceRefresh((tick) => tick + 1);
+        };
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        return () => canvas.removeEventListener('wheel', onWheel);
+    }, [isPlanFullscreen]);
+
     // Handle right-click (context menu) for define-room mode and cancel add-wall mode
     const handleCanvasContextMenu = (event) => {
         event.preventDefault();
@@ -665,6 +711,8 @@ const Canvas2D = ({
         else if (currentMode === 'add-wall' && isDrawing) {
             setTempWall(null);
             setIsDrawing(false);
+            typedLengthRef.current = '';
+            setTypedWallLength('');
             setCurrentMode(null);
         }
     };
@@ -692,17 +740,77 @@ const Canvas2D = ({
         };
     }, []);
 
-    // Add ESC key handler to exit add-wall mode
+    function applyTypedLengthToPreview(raw) {
+        const tw = tempWallRef.current;
+        if (!tw) return;
+        const len = parseInt(raw, 10);
+        if (!len || len <= 0) {
+            setTempWall({ ...tw, typedLength: raw || '' });
+            return;
+        }
+        const end = pointAlongDirection(
+            { x: tw.start_x, y: tw.start_y },
+            { x: tw.end_x, y: tw.end_y },
+            len
+        );
+        if (!end) return;
+        setTempWall({
+            ...tw,
+            end_x: end.x,
+            end_y: end.y,
+            typedLength: raw,
+        });
+    }
+
+    // While a wall is following the cursor: type the sheet length, Enter places it.
+    // Escape clears a half-typed number first, then leaves add-wall.
     useEffect(() => {
         const handleKeyDown = (event) => {
-            // Exit add-wall mode when ESC is pressed
-            if (event.key === 'Escape' && currentMode === 'add-wall') {
+            if (currentMode !== 'add-wall') return;
+            const tag = event.target && event.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
+
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                if (typedLengthRef.current) {
+                    typedLengthRef.current = '';
+                    setTypedWallLength('');
+                    return;
+                }
                 setTempWall(null);
                 setIsDrawing(false);
                 setCurrentMode(null);
+                return;
+            }
+
+            if (!isDrawingRef.current) return;
+
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const len = parseInt(typedLengthRef.current, 10);
+                const tw = tempWallRef.current;
+                if (!tw || !len || len <= 0) return;
+                commitTypedWallRef.current(tw, len);
+                return;
+            }
+
+            if (event.key === 'Backspace') {
+                event.preventDefault();
+                typedLengthRef.current = typedLengthRef.current.slice(0, -1);
+                setTypedWallLength(typedLengthRef.current);
+                applyTypedLengthToPreview(typedLengthRef.current);
+                return;
+            }
+
+            if (/^[0-9]$/.test(event.key)) {
+                event.preventDefault();
+                if (typedLengthRef.current.length >= 7) return;
+                typedLengthRef.current += event.key;
+                setTypedWallLength(typedLengthRef.current);
+                applyTypedLengthToPreview(typedLengthRef.current);
             }
         };
-        
+
         document.addEventListener('keydown', handleKeyDown);
         return () => {
             document.removeEventListener('keydown', handleKeyDown);
@@ -717,6 +825,11 @@ const Canvas2D = ({
                 setTempWall(null);
                 setIsDrawing(false);
             }
+            if (typedLengthRef.current) {
+                typedLengthRef.current = '';
+                setTypedWallLength('');
+            }
+            setLineSnapMarks(null);
         }
     }, [currentMode, isDrawing, tempWall]);
 
@@ -787,6 +900,7 @@ const Canvas2D = ({
     };
 
     const SNAP_THRESHOLD = 10;
+    const MAGNET_PX = 28;
     const gridSize = 50;
 
     //start here about the room area defining
@@ -1122,7 +1236,7 @@ const Canvas2D = ({
             });
         });
 
-        // Check snapping to wall segments
+        // Check snapping to wall segments (the middle line)
         walls.forEach((wall) => {
             const segmentPoint = snapToWallSegment(x, y, wall);
             if (segmentPoint) {
@@ -1133,6 +1247,42 @@ const Canvas2D = ({
                 }
             }
         });
+
+        // Faces sit half the thickness off the middle. A room width on the
+        // sheet is measured from a face, so the snap has to land there.
+        // A face at a corner is half a thickness past the corner. The corner
+        // itself wins, or the wall runs 50mm long on a 100mm wall.
+        let snappedToFace = false;
+        walls.forEach((wall) => {
+            const facePoint = nearestPointOnWallFace(x, y, wall);
+            if (facePoint && facePoint.dist < minDistance) {
+                closestPoint = { x: facePoint.x, y: facePoint.y };
+                minDistance = facePoint.dist;
+                snappedToFace = true;
+            }
+        });
+
+        if (snappedToFace) {
+            let cornerReach = 1;
+            walls.forEach((wall) => {
+                const half = (Number(wall.thickness) || 0) / 2;
+                if (half + 1 > cornerReach) cornerReach = half + 1;
+            });
+            let corner = null;
+            let cornerDist = cornerReach;
+            walls.forEach((wall) => {
+                ['start', 'end'].forEach((point) => {
+                    const px = wall[`${point}_x`];
+                    const py = wall[`${point}_y`];
+                    const distance = Math.hypot(px - closestPoint.x, py - closestPoint.y);
+                    if (distance <= cornerDist) {
+                        corner = { x: px, y: py };
+                        cornerDist = distance;
+                    }
+                });
+            });
+            if (corner) return corner;
+        }
 
         return closestPoint;
     };
@@ -1259,54 +1409,158 @@ const Canvas2D = ({
         return candidatePoints;
     };
 
+    const isNearWallEnd = (wall, point, tolerance = SPLIT_ENDPOINT_TOLERANCE) => {
+        if (!point) return false;
+        const distStart = Math.hypot(point.x - wall.start_x, point.y - wall.start_y);
+        const distEnd = Math.hypot(point.x - wall.end_x, point.y - wall.end_y);
+        return distStart < tolerance || distEnd < tolerance;
+    };
+
+    const pointAlongWall = (wall, distanceFromStart) => {
+        const wallLength = getWallLength(wall);
+        if (wallLength <= 0) return null;
+        const ratio = distanceFromStart / wallLength;
+        return {
+            x: wall.start_x + (wall.end_x - wall.start_x) * ratio,
+            y: wall.start_y + (wall.end_y - wall.start_y) * ratio
+        };
+    };
+
+    const splitFaceLines = (wall) => {
+        if (!wall) return [];
+        const stored = [
+            { x: Number(wall.start_x), y: Number(wall.start_y) },
+            { x: Number(wall.end_x), y: Number(wall.end_y) },
+        ];
+        const lines = [stored];
+        const thick = Number(wall.thickness) || 0;
+        const code = Number(wall.tip_length);
+        if (wall.tip_to_tip !== true && (code === -1 || code === -2) && thick > 0) {
+            const n = side1Normal(stored[0].x, stored[0].y, stored[1].x, stored[1].y);
+            const sign = code === -1 ? 1 : -1;
+            lines.push([
+                { x: stored[0].x + n.x * thick * sign, y: stored[0].y + n.y * thick * sign },
+                { x: stored[1].x + n.x * thick * sign, y: stored[1].y + n.y * thick * sign },
+            ]);
+            return lines;
+        }
+        const drawn = [wall._line1, wall._line2].filter((line) => line?.[0] && line?.[1]);
+        if (drawn.length === 2) {
+            const mid = {
+                x: (stored[0].x + stored[1].x) / 2,
+                y: (stored[0].y + stored[1].y) / 2,
+            };
+            let far = null;
+            let farDist = 1;
+            drawn.forEach((line) => {
+                const mx = (Number(line[0].x) + Number(line[1].x)) / 2;
+                const my = (Number(line[0].y) + Number(line[1].y)) / 2;
+                const dist = Math.hypot(mx - mid.x, my - mid.y);
+                if (dist > farDist) {
+                    farDist = dist;
+                    far = { x: mx - mid.x, y: my - mid.y };
+                }
+            });
+            if (far) {
+                lines.push([
+                    { x: stored[0].x + far.x, y: stored[0].y + far.y },
+                    { x: stored[1].x + far.x, y: stored[1].y + far.y },
+                ]);
+            }
+        }
+        return lines;
+    };
+
+    const segmentCrossing = (a, b, c, d) => {
+        const rx = b.x - a.x;
+        const ry = b.y - a.y;
+        const sx = d.x - c.x;
+        const sy = d.y - c.y;
+        const denom = rx * sy - ry * sx;
+        if (Math.abs(denom) < 1e-6) return null;
+        const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / denom;
+        const u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / denom;
+        if (t < -0.002 || t > 1.002 || u < -0.002 || u > 1.002) return null;
+        const tt = Math.max(0, Math.min(1, t));
+        return { x: a.x + tt * rx, y: a.y + tt * ry };
+    };
+
     const snapSplitPoint = (wall, x, y) => {
-        const intersectionThreshold = (SNAP_THRESHOLD * 2) / scaleFactor.current;
-        const endpointThreshold = SNAP_THRESHOLD / scaleFactor.current;
-        const segmentThreshold = (SNAP_THRESHOLD * 1.5) / scaleFactor.current;
+        const wallLength = getWallLength(wall);
+        const scale = Math.max(scaleFactor.current, 1e-6);
         const wallThick = Number(wall.thickness) || 0;
+        // Snap is a fixed pixel radius. On a large plan the fit zoom is ~0.006,
+        // so 20px is about 3.5m — longer than a 1500mm wall. Both corners then
+        // win every click and the split is rejected as "too close to the ends".
+        // Cap along-wall magnetism so the middle of a short wall stays reachable.
+        const alongCap = Math.max(wallLength * 0.22, SPLIT_ENDPOINT_TOLERANCE + 1);
+        const intersectionReach = Math.min((SNAP_THRESHOLD * 2) / scale + wallThick, alongCap);
+        const segmentThreshold = (SNAP_THRESHOLD * 1.5) / scale;
+        const dx = wall.end_x - wall.start_x;
+        const dy = wall.end_y - wall.start_y;
+        const lenSq = dx * dx + dy * dy || 1;
+        const station = (px, py) => Math.max(0, Math.min(1, ((px - wall.start_x) * dx + (py - wall.start_y) * dy) / lenSq));
+        const storedAt = (t) => ({
+            x: wall.start_x + dx * t,
+            y: wall.start_y + dy * t,
+        });
+        const lines = splitFaceLines(wall);
 
-        let bestPoint = null;
-        let bestDistance = Infinity;
-
-        const considerPoint = (point, maxDistance) => {
-            const distance = Math.hypot(point.x - x, point.y - y);
-            if (distance <= maxDistance && distance < bestDistance) {
-                bestPoint = point;
-                bestDistance = distance;
+        let best = null;
+        const consider = (display, maxDistance) => {
+            if (!display) return;
+            const distance = Math.hypot(display.x - x, display.y - y);
+            if (distance > maxDistance) return;
+            const stored = storedAt(station(display.x, display.y));
+            if (isNearWallEnd(wall, stored)) return;
+            if (!best || distance < best.dist) {
+                best = {
+                    x: stored.x,
+                    y: stored.y,
+                    faceX: display.x,
+                    faceY: display.y,
+                    dist: distance,
+                };
             }
         };
 
-        // Intersections associated with this wall — always project onto the wall
-        // segment. Partition butt-in tips are offset from the host centerline and
-        // would otherwise block splits ("point must lie on the selected wall").
-        getIntersectionsForWall(wall.id).forEach((pt) => {
-            const onWall = snapToWallSegment(pt.x, pt.y, wall);
-            if (!onWall) return;
-            const projDist = Math.hypot(onWall.x - pt.x, onWall.y - pt.y);
-            if (projDist > wallThick * 2 + 50) return;
-            considerPoint(onWall, intersectionThreshold + wallThick);
+        // A crossing on either line of this wall, against either line of the other wall.
+        walls.forEach((other) => {
+            if (!other || other.id === wall.id) return;
+            const otherLines = splitFaceLines(other);
+            lines.forEach((line) => {
+                otherLines.forEach((otherLine) => {
+                    consider(
+                        segmentCrossing(line[0], line[1], otherLine[0], otherLine[1]),
+                        intersectionReach
+                    );
+                });
+            });
         });
 
-        // Endpoints
-        considerPoint({ x: wall.start_x, y: wall.start_y }, endpointThreshold);
-        considerPoint({ x: wall.end_x, y: wall.end_y }, endpointThreshold);
+        getIntersectionsForWall(wall.id).forEach((pt) => {
+            const t = station(pt.x, pt.y);
+            lines.forEach((line) => {
+                consider({
+                    x: line[0].x + (line[1].x - line[0].x) * t,
+                    y: line[0].y + (line[1].y - line[0].y) * t,
+                }, intersectionReach);
+            });
+        });
 
-        if (bestPoint) {
-            return bestPoint;
-        }
+        if (best) return best;
 
-        // Segment projection
-        const segmentPoint = snapToWallSegment(x, y, wall);
-        if (!segmentPoint) {
-            return null;
-        }
+        lines.forEach((line) => {
+            const hit = snapToWallSegment(x, y, {
+                start_x: line[0].x,
+                start_y: line[0].y,
+                end_x: line[1].x,
+                end_y: line[1].y,
+            });
+            if (hit) consider(hit, segmentThreshold);
+        });
 
-        const segmentDistance = Math.hypot(segmentPoint.x - x, segmentPoint.y - y);
-        if (segmentDistance <= segmentThreshold) {
-            return segmentPoint;
-        }
-
-        return null;
+        return best;
     };
 
     const findClosestWallAtPoint = (x, y) => {
@@ -1319,10 +1573,10 @@ const Canvas2D = ({
             const snapped = snapSplitPoint(targetWall, x, y);
             if (!snapped) return null;
 
-            const distance = Math.hypot(snapped.x - x, snapped.y - y);
-            if (distance > selectionThreshold + (Number(targetWall.thickness) || 0)) {
-                return null;
-            }
+            const faceX = snapped.faceX ?? snapped.x;
+            const faceY = snapped.faceY ?? snapped.y;
+            const distance = Math.hypot(faceX - x, faceY - y);
+            if (distance > selectionThreshold) return null;
 
             return { wall: targetWall, point: snapped };
         }
@@ -1335,17 +1589,14 @@ const Canvas2D = ({
             const snapped = snapSplitPoint(wall, x, y);
             if (!snapped) return;
 
-            const distance = Math.hypot(snapped.x - x, snapped.y - y);
+            const faceX = snapped.faceX ?? snapped.x;
+            const faceY = snapped.faceY ?? snapped.y;
+            const distance = Math.hypot(faceX - x, faceY - y);
             const thick = Number(wall.thickness) || 0;
-            if (distance > selectionThreshold + thick) return;
+            if (distance > selectionThreshold) return;
 
-            // Prefer the wall whose body is nearest the click (host over partition tip).
-            const onSeg = snapToWallSegment(x, y, wall);
-            const perp = onSeg
-                ? Math.hypot(onSeg.x - x, onSeg.y - y)
-                : distance;
             const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
-            const scorePerp = perp + (isPartition ? thick * 0.35 : 0);
+            const scorePerp = distance + (isPartition ? thick * 0.35 : 0);
 
             if (
                 scorePerp < bestPerp - 0.5
@@ -1363,6 +1614,7 @@ const Canvas2D = ({
     const resetSplitState = useCallback((clearError = false) => {
         setSplitTargetWallId(null);
         setSplitPreviewPoint(null);
+        setSplitPreviewFace(null);
         setSplitDistanceInput('');
         setSplitHoverDistance(null);
         setIsProcessingSplit(false);
@@ -1407,6 +1659,7 @@ const Canvas2D = ({
         const distance = parseFloat(value);
         if (Number.isNaN(distance) || distance <= 0) {
             setSplitPreviewPoint(null);
+            setSplitPreviewFace(null);
             setSplitHoverDistance(null);
             return;
         }
@@ -1414,23 +1667,22 @@ const Canvas2D = ({
         const wallLength = getWallLength(targetWall);
         if (distance >= wallLength) {
             setSplitPreviewPoint(null);
+            setSplitPreviewFace(null);
             setSplitHoverDistance(null);
             return;
         }
 
-        const ratio = distance / wallLength;
-        const previewPoint = {
-            x: targetWall.start_x + (targetWall.end_x - targetWall.start_x) * ratio,
-            y: targetWall.start_y + (targetWall.end_y - targetWall.start_y) * ratio
-        };
+        const previewPoint = pointAlongWall(targetWall, distance);
+        if (!previewPoint) {
+            setSplitPreviewPoint(null);
+            setSplitPreviewFace(null);
+            setSplitHoverDistance(null);
+            return;
+        }
 
-        const snappedPoint = snapSplitPoint(targetWall, previewPoint.x, previewPoint.y);
-        const effectivePoint = snappedPoint || {
-            x: Math.round(previewPoint.x),
-            y: Math.round(previewPoint.y)
-        };
-        const roundedPreview = getRoundedPoint(effectivePoint);
+        const roundedPreview = getRoundedPoint(previewPoint);
         setSplitPreviewPoint(roundedPreview);
+        setSplitPreviewFace(null);
         setSplitHoverDistance(getDistanceFromWallStart(targetWall, roundedPreview));
     };
 
@@ -1462,18 +1714,14 @@ const Canvas2D = ({
             return;
         }
 
-        const ratio = distance / wallLength;
-        const splitPoint = {
-            x: targetWall.start_x + (targetWall.end_x - targetWall.start_x) * ratio,
-            y: targetWall.start_y + (targetWall.end_y - targetWall.start_y) * ratio
-        };
+        const splitPoint = pointAlongWall(targetWall, distance);
+        if (!splitPoint) {
+            setWallSplitError('Selected wall could not be found.');
+            setTimeout(() => setWallSplitError(''), 4000);
+            return;
+        }
 
-        const snappedPoint = snapSplitPoint(targetWall, splitPoint.x, splitPoint.y);
-        const effectivePoint = snappedPoint || {
-            x: Math.round(splitPoint.x),
-            y: Math.round(splitPoint.y)
-        };
-        const roundedSplitPoint = getRoundedPoint(effectivePoint);
+        const roundedSplitPoint = getRoundedPoint(splitPoint);
 
         if (!isValidSplitPoint(targetWall, roundedSplitPoint)) {
             setWallSplitError('Split point must lie on the wall and away from its ends.');
@@ -1678,160 +1926,22 @@ const Canvas2D = ({
             // Helper to round coordinates
             const roundPoint = (pt) => ({ x: Math.round(pt.x), y: Math.round(pt.y) });
             if (isDrawing) {
-                setIsDrawing(false);
-                if (tempWall) {
-                    // Check if start point snapped (before any angle snapping)
-                    // Use original click position if stored, otherwise use current tempWall position
-                    const originalStartPoint = tempWall.originalStart_x !== undefined 
-                        ? { x: tempWall.originalStart_x, y: tempWall.originalStart_y }
-                        : { x: tempWall.start_x, y: tempWall.start_y };
-                    let startPoint = snapToClosestPoint(tempWall.start_x, tempWall.start_y);
-                    const startPointSnapped = didPointSnap(originalStartPoint, startPoint);
-                    console.log('Start point snap check:', { original: originalStartPoint, snapped: startPoint, didSnap: startPointSnapped });
-                    
-                    // Check if end point snapped (before any angle snapping)
-                    const originalEndPoint = { x, y };
-                    let endPoint = hoveredPoint || snapToClosestPoint(x, y);
-                    const endPointSnapped = hoveredPoint
-                        ? true
-                        : (didPointSnap(originalEndPoint, endPoint) || isPointOnWallEndpoint(endPoint));
-
-                    // Store original end point before angle snapping for modal
-                    const endPointBeforeAngleSnap = { ...endPoint };
-
-                    // World H/V snap, plus perpendicular-to-host when starting from a slant.
-                    // A locked point wins: the wall ends on that point. Snaps onto the
-                    // middle of a wall still lock to 90°.
-                    const endOnEndpoint = isPointOnWallEndpoint(endPoint) || Boolean(hoveredPoint);
-                    const hostWall =
-                        (tempWall.hostWallId != null && walls.find((w) => w.id === tempWall.hostWallId)) ||
-                        findHostWallNearPoint(startPoint, walls, 30);
-                    const wallLengthForSnap = Math.hypot(
-                        endPoint.x - startPoint.x,
-                        endPoint.y - startPoint.y
-                    );
-                    const angleThreshold = getWallAngleSnapThresholdDeg(wallLengthForSnap);
-                    let angleSnap = { end: endPoint, snapType: null, direction: null };
-                    if (!endOnEndpoint) {
-                        angleSnap = snapWallEndToPreferredAngles(
-                            startPoint,
-                            endPoint,
-                            hostWall,
-                            angleThreshold
-                        );
-                        endPoint = angleSnap.end;
-                    }
-                    const isNearVertical = angleSnap.snapType === 'vertical';
-                    const isNearHorizontal = angleSnap.snapType === 'horizontal';
-                    const isNearPerpendicular = angleSnap.snapType === 'perpendicular';
-
-                    // If the end hit geometry and we locked to world H/V, keep the snap's
-                    // join coordinate (X for horizontal, Y for vertical). Ortho must not
-                    // stretch past the target — that creates 1–2mm overload stubs.
-                    if (endPointSnapped && isNearHorizontal) {
-                        endPoint = { x: endPointBeforeAngleSnap.x, y: startPoint.y };
-                    } else if (endPointSnapped && isNearVertical) {
-                        endPoint = { x: startPoint.x, y: endPointBeforeAngleSnap.y };
-                    }
-
-                    // Round both points before saving
-                    startPoint = roundPoint(startPoint);
-                    endPoint = roundPoint(endPoint);
-                    // After rounding, keep near-plumb walls on one X so T-joins don't create 1mm stubs.
-                    // Skip when end is locked to an endpoint — a slight slant to a corner must stay.
-                    if (!endOnEndpoint) {
-                        if (isNearVertical || (Math.abs(endPoint.x - startPoint.x) <= 2 && Math.abs(endPoint.y - startPoint.y) > 2)) {
-                            endPoint = { ...endPoint, x: startPoint.x };
-                        } else if (isNearHorizontal || (Math.abs(endPoint.y - startPoint.y) <= 2 && Math.abs(endPoint.x - startPoint.x) > 2)) {
-                            endPoint = { ...endPoint, y: startPoint.y };
-                        }
-                    }
-                    if (endPointSnapped && isNearHorizontal) {
-                        endPoint = { x: Math.round(endPointBeforeAngleSnap.x), y: startPoint.y };
-                    } else if (endPointSnapped && isNearVertical) {
-                        endPoint = { x: startPoint.x, y: Math.round(endPointBeforeAngleSnap.y) };
-                    }
-
-                    // Ghost areas mark taller lower-level rooms. Allow drawing on top of them
-                    // (room/wall base elevation is raised when saving).
-                    if (isPointInGhostedArea(startPoint) || isPointInGhostedArea(endPoint)) {
+                if (tempWall?.placingSide) {
+                    const refStart = { x: tempWall.anchor_x, y: tempWall.anchor_y };
+                    const refEnd = { x: tempWall.ref_x, y: tempWall.ref_y };
+                    const side = sideOfReferenceLine(refStart, refEnd, { x, y }, tempWall.offsetSide);
+                    setIsDrawing(false);
+                    const normalizedCoords = normalizeWallCoordinates(refStart, refEnd);
+                    const savedStart = normalizedCoords.startPoint;
+                    const savedEnd = normalizedCoords.endPoint;
+                    const faceNormal = side1Normal(savedStart.x, savedStart.y, savedEnd.x, savedEnd.y);
+                    const faceSide = (faceNormal.x * side.x + faceNormal.y * side.y) >= 0 ? -1 : -2;
+                    if (isPointInGhostedArea(savedStart) || isPointInGhostedArea(savedEnd)) {
                         if (setWallSplitError) {
                             setWallSplitError('Building over a taller lower-level room — base elevation will sit on top of it.');
                             setTimeout(() => setWallSplitError(''), 4000);
                         }
                     }
-
-                    // Check if either point didn't snap - show length input modal
-                    console.log('Snap status:', { startPointSnapped, endPointSnapped, shouldShowModal: !startPointSnapped || !endPointSnapped });
-                    if (!startPointSnapped || !endPointSnapped) {
-                        console.log('Showing length input modal');
-                        // Use points before angle snapping for direction calculation
-                        const dirStartPoint = startPoint;
-                        const dirEndPoint = endPointBeforeAngleSnap;
-                        
-                        // Prefer snapped direction (world H/V or perpendicular to slant)
-                        const currentLength = Math.hypot(
-                            angleSnap.end.x - startPoint.x,
-                            angleSnap.end.y - startPoint.y
-                        ) || Math.hypot(dirEndPoint.x - dirStartPoint.x, dirEndPoint.y - dirStartPoint.y);
-                        const direction = angleSnap.direction || (currentLength > 0 ? {
-                            x: (angleSnap.end.x - startPoint.x) / currentLength,
-                            y: (angleSnap.end.y - startPoint.y) / currentLength
-                        } : { x: 1, y: 0 });
-
-                        // Typed mm is saved as the wall length. PDF span is opt-in in the modal.
-                        
-                        // If start didn't snap but end did, we'll use end as reference point
-                        // Otherwise, use start as reference point
-                        const referencePoint = (!startPointSnapped && endPointSnapped) ? endPointBeforeAngleSnap : startPoint;
-                        const useEndAsReference = !startPointSnapped && endPointSnapped;
-                        
-                        // Store pending wall data for the modal
-                        setPendingWallData({
-                            referencePoint,
-                            direction,
-                            currentLength: currentLength || 1000, // Default to 1000mm if length is 0
-                            startPointSnapped,
-                            endPointSnapped,
-                            useEndAsReference,
-                            isNearVertical,
-                            isNearHorizontal,
-                            isNearPerpendicular,
-                            angleSnapType: angleSnap.snapType,
-                            axisSpanMode: null,
-                            deductCornerThickness: Boolean(deductCornerThickness),
-                            angleThreshold
-                        });
-                        setShowLengthInput(true);
-                        setTempWall(null);
-                        return;
-                    }
-
-                    // Both ends are on existing walls. Extend either end that stopped
-                    // on the inner line so it reaches that wall's outer line.
-                    const siteWidth = Number(project?.width);
-                    const siteLength = Number(project?.length);
-                    const siteBox = {
-                        minX: 0,
-                        minY: 0,
-                        maxX: Number.isFinite(siteWidth) ? siteWidth : Infinity,
-                        maxY: Number.isFinite(siteLength) ? siteLength : Infinity,
-                    };
-                    let reached = translateJoinedWallKeepingLength(
-                        startPoint, endPoint, startPoint, walls, rooms, siteBox, { lengthenOnly: true }
-                    );
-                    reached = translateJoinedWallKeepingLength(
-                        reached.start, reached.end, reached.end, walls, rooms, siteBox, { lengthenOnly: true }
-                    );
-                    startPoint = reached.start;
-                    endPoint = reached.end;
-
-                    // Normalize wall coordinates to ensure proper direction
-                    const normalizedCoords = normalizeWallCoordinates(startPoint, endPoint);
-                    startPoint = normalizedCoords.startPoint;
-                    endPoint = normalizedCoords.endPoint;
-
-                    // Use modular handler for wall splitting/adding
                     const wallProperties = {
                         height: wallHeight,
                         thickness: wallThickness,
@@ -1842,41 +1952,75 @@ const Canvas2D = ({
                         outer_face_thickness: outerFaceThickness,
                         deduct_corner_thickness: Boolean(deductCornerThickness),
                         auto_split: autoSplitOnIntersect !== false,
+                        tip_to_tip: false,
+                        tip_length: faceSide,
                     };
                     try {
-                        if (typeof onNewWall !== 'function') {
-                            // no handler
-                        } else if (onNewWall.length === 3) {
-                            // Handler expects (startPoint, endPoint, wallProps) e.g. handleAddWallWithSplitting
-                            await onNewWall(startPoint, endPoint, wallProperties);
-                        } else {
-                            // Handler expects single wall object
+                        if (typeof onNewWall === 'function' && onNewWall.length === 3) {
+                            await onNewWall(savedStart, savedEnd, wallProperties);
+                        } else if (typeof onNewWall === 'function') {
                             await onNewWall({
-                                start_x: startPoint.x,
-                                start_y: startPoint.y,
-                                end_x: endPoint.x,
-                                end_y: endPoint.y,
-                                ...wallProperties
+                                start_x: savedStart.x,
+                                start_y: savedStart.y,
+                                end_x: savedEnd.x,
+                                end_y: savedEnd.y,
+                                ...wallProperties,
                             });
-                        }
-                        // Refresh wall list from parent state
-                        if (typeof setWalls === 'function') {
-                            // Optionally, you can call refreshWalls in parent and pass down new walls
                         }
                     } catch (error) {
                         console.error('Error managing walls:', error);
-                        if (isDatabaseConnectionError(error)) {
-                            showDatabaseError();
-                        }
+                        if (isDatabaseConnectionError(error)) showDatabaseError();
                     }
                     setTempWall(null);
+                    return;
+                }
+                if (tempWall && parseInt(typedLengthRef.current, 10) > 0) {
+                    commitTypedWallRef.current(tempWall, parseInt(typedLengthRef.current, 10));
+                    return;
+                }
+                if (tempWall) {
+                    const anchorPoint = {
+                        x: tempWall.anchor_x ?? tempWall.start_x,
+                        y: tempWall.anchor_y ?? tempWall.start_y,
+                    };
+                    const magnet = snapMagnetPoint(x, y, walls, intersections, MAGNET_PX / scaleFactor.current);
+                    const drawn = drawnWallFromLine(anchorPoint, { x, y }, {
+                        walls,
+                        maxDistMm: (SNAP_THRESHOLD * 1.8) / scaleFactor.current,
+                        thickness: tempWall.thickness ?? wallThickness,
+                        magnetPoint: magnet,
+                    });
+                    if (Math.hypot(drawn.refEnd.x - drawn.refStart.x, drawn.refEnd.y - drawn.refStart.y) < 1) {
+                        return;
+                    }
+                    const locked = {
+                        ...tempWall,
+                        placingSide: true,
+                        singleLine: false,
+                        anchor_x: drawn.refStart.x,
+                        anchor_y: drawn.refStart.y,
+                        ref_x: drawn.refEnd.x,
+                        ref_y: drawn.refEnd.y,
+                        start_x: drawn.refStart.x,
+                        start_y: drawn.refStart.y,
+                        end_x: drawn.refEnd.x,
+                        end_y: drawn.refEnd.y,
+                        offsetSide: null,
+                        thickness: tempWall.thickness ?? wallThickness,
+                        typedLength: '',
+                    };
+                    typedLengthRef.current = '';
+                    setTypedWallLength('');
+                    tempWallRef.current = locked;
+                    setTempWall(locked);
+                    return;
                 }
             } else {
                 // Store original click position (before snapping) for accurate snap detection
                 const originalClickPoint = { x, y };
-                let snappedStart = hoveredPoint || snapToClosestPoint(x, y);
-                // Round the start point before showing temp wall
-                snappedStart = roundPoint(snappedStart);
+                const magnetStart = snapMagnetPoint(x, y, walls, intersections, MAGNET_PX / scaleFactor.current);
+                const faceStart = magnetStart || snapToEitherFaceLine(x, y, walls, (SNAP_THRESHOLD * 1.8) / scaleFactor.current);
+                let snappedStart = roundPoint(faceStart ? { x: faceStart.x, y: faceStart.y } : { x, y });
                 const hostWall = findHostWallNearPoint(snappedStart, walls, 30);
                 setIsDrawing(true);
                 setTempWall({
@@ -1886,8 +2030,12 @@ const Canvas2D = ({
                     end_y: snappedStart.y,
                     originalStart_x: originalClickPoint.x, // Store original for snap detection
                     originalStart_y: originalClickPoint.y,
+                    anchor_x: snappedStart.x,
+                    anchor_y: snappedStart.y,
                     hostWallId: hostWall?.id ?? null,
-                    thickness: wallThickness, // So preview line width matches selected thickness
+                    thickness: wallThickness,
+                    singleLine: true,
+                    placingSide: false,
                 });
             }
             return;
@@ -1973,10 +2121,14 @@ const Canvas2D = ({
 
             const { wall, point } = closest;
             const roundedPoint = getRoundedPoint(point);
+            const facePoint = Number.isFinite(point.faceX)
+                ? { x: Number(point.faceX.toFixed(3)), y: Number(point.faceY.toFixed(3)) }
+                : null;
 
             if (!splitTargetWallId || wall.id !== splitTargetWallId) {
                 setSplitTargetWallId(wall.id);
                 setSplitPreviewPoint(roundedPoint);
+                setSplitPreviewFace(facePoint);
                 setSplitDistanceInput('');
                 setSplitHoverDistance(getDistanceFromWallStart(wall, roundedPoint));
                 setHighlightWalls([{ id: wall.id, color: getPlanWallHighlightColor('edit') }]);
@@ -2180,9 +2332,13 @@ const Canvas2D = ({
                     if (snappedPoint) {
                         const rounded = getRoundedPoint(snappedPoint);
                         setSplitPreviewPoint(rounded);
+                        setSplitPreviewFace(Number.isFinite(snappedPoint.faceX)
+                            ? { x: Number(snappedPoint.faceX.toFixed(3)), y: Number(snappedPoint.faceY.toFixed(3)) }
+                            : null);
                         setSplitHoverDistance(getDistanceFromWallStart(targetWall, rounded));
                     } else {
                         setSplitPreviewPoint(null);
+                        setSplitPreviewFace(null);
                     }
                 }
             } else {
@@ -2190,10 +2346,14 @@ const Canvas2D = ({
                 if (closest) {
                     const rounded = getRoundedPoint(closest.point);
                     setSplitPreviewPoint(rounded);
+                    setSplitPreviewFace(Number.isFinite(closest.point.faceX)
+                        ? { x: Number(closest.point.faceX.toFixed(3)), y: Number(closest.point.faceY.toFixed(3)) }
+                        : null);
                     setSplitHoverDistance(getDistanceFromWallStart(closest.wall, rounded));
                     setHighlightWalls([{ id: closest.wall.id, color: getPlanWallHighlightColor('edit') }]);
                 } else {
                     setSplitPreviewPoint(null);
+                    setSplitPreviewFace(null);
                     setSplitHoverDistance(null);
                     setHighlightWalls([]);
                 }
@@ -2217,14 +2377,19 @@ const Canvas2D = ({
             return;
         }
 
-        // Endpoint Hover Detection
+        // Endpoint hover: both lines of a wall, not only the stored middle.
         let closestPoint = null;
         let minDistance = SNAP_THRESHOLD / scaleFactor.current;
         walls.forEach((wall) => {
-            const points = [
-                { x: wall.start_x, y: wall.start_y },
-                { x: wall.end_x, y: wall.end_y },
-            ];
+            const points = [];
+            if (wall._line1?.[0] && wall._line1?.[1]) points.push(wall._line1[0], wall._line1[1]);
+            if (wall._line2?.[0] && wall._line2?.[1]) points.push(wall._line2[0], wall._line2[1]);
+            if (!points.length) {
+                points.push(
+                    { x: wall.start_x, y: wall.start_y },
+                    { x: wall.end_x, y: wall.end_y }
+                );
+            }
             points.forEach((point) => {
                 const distance = Math.hypot(point.x - x, point.y - y);
                 if (distance < minDistance) {
@@ -2234,6 +2399,23 @@ const Canvas2D = ({
             });
         });
         setHoveredPoint(closestPoint);
+        let addWallMagnet = null;
+        if (currentMode === 'add-wall' && !tempWall?.placingSide) {
+            const magnetMm = MAGNET_PX / scaleFactor.current;
+            let magnet = snapMagnetPoint(x, y, walls, intersections, magnetMm);
+            if (!magnet && isDrawing && tempWall) {
+                const held = snapMagnetPoint(tempWall.end_x, tempWall.end_y, walls, intersections, 1.5);
+                if (held && Math.hypot(x - held.x, y - held.y) <= magnetMm * 1.45) {
+                    magnet = held;
+                }
+            }
+            addWallMagnet = magnet;
+            const mark = magnet || bothLineSnapMarks(x, y, walls, (SNAP_THRESHOLD * 1.8) / scaleFactor.current);
+            setLineSnapMarks(mark);
+            if (mark) setHoveredPoint(mark);
+        } else {
+            setLineSnapMarks(null);
+        }
         // Wall Hover Detection (use wall.id)
         if ([
             'add-wall', 'edit-wall', 'add-door', 'merge-wall'
@@ -2267,32 +2449,45 @@ const Canvas2D = ({
         }
         // --- Update tempWall while drawing (snapping logic) ---
         if (isDrawing && tempWall && currentMode === 'add-wall') {
-            let snapped = snapToClosestPoint(x, y);
-            const startPt = { x: tempWall.start_x, y: tempWall.start_y };
-            const onEndpoint = isPointOnWallEndpoint(snapped);
-            let angleSnapType = null;
-            // A locked point is the end of the wall. The middle of a wall still snaps to 90°.
-            if (!onEndpoint) {
-                const hostWall =
-                    (tempWall.hostWallId != null && walls.find((w) => w.id === tempWall.hostWallId)) ||
-                    findHostWallNearPoint(startPt, walls, 30);
-                const wallLength = Math.hypot(snapped.x - startPt.x, snapped.y - startPt.y);
-                const angleSnap = snapWallEndToPreferredAngles(
-                    startPt,
-                    snapped,
-                    hostWall,
-                    getWallAngleSnapThresholdDeg(wallLength)
-                );
-                snapped = angleSnap.end;
-                angleSnapType = angleSnap.snapType;
+            if (tempWall.placingSide) {
+                const refStart = { x: tempWall.anchor_x, y: tempWall.anchor_y };
+                const refEnd = { x: tempWall.ref_x, y: tempWall.ref_y };
+                const side = sideOfReferenceLine(refStart, refEnd, { x, y }, tempWall.offsetSide);
+                setTempWall({
+                    ...tempWall,
+                    offsetSide: side,
+                    singleLine: false,
+                });
+            } else {
+                const anchor = {
+                    x: tempWall.anchor_x ?? tempWall.start_x,
+                    y: tempWall.anchor_y ?? tempWall.start_y,
+                };
+                const typedLen = parseInt(typedLengthRef.current, 10);
+                const drawn = drawnWallFromLine(anchor, { x, y }, {
+                    walls,
+                    maxDistMm: (SNAP_THRESHOLD * 1.8) / scaleFactor.current,
+                    thickness: 0,
+                    typedLength: typedLen > 0 ? typedLen : 0,
+                    magnetPoint: addWallMagnet,
+                });
+                setTempWall({
+                    ...tempWall,
+                    anchor_x: anchor.x,
+                    anchor_y: anchor.y,
+                    ref_x: drawn.refEnd.x,
+                    ref_y: drawn.refEnd.y,
+                    start_x: drawn.refStart.x,
+                    start_y: drawn.refStart.y,
+                    end_x: drawn.refEnd.x,
+                    end_y: drawn.refEnd.y,
+                    thickness: tempWall.thickness ?? wallThickness,
+                    angleSnapType: drawn.axis,
+                    typedLength: typedLengthRef.current,
+                    singleLine: true,
+                    placingSide: false,
+                });
             }
-            setTempWall({
-                ...tempWall,
-                end_x: snapped.x,
-                end_y: snapped.y,
-                thickness: tempWall.thickness ?? wallThickness,
-                angleSnapType, // 'vertical' | 'horizontal' | 'perpendicular' | null
-            });
         }
     };
 
@@ -2316,6 +2511,15 @@ const Canvas2D = ({
             resetSplitState(true);
         }
     }, [wallSplitSuccess, resetSplitState]);
+
+    useEffect(() => {
+        if (currentMode !== 'split-wall' || !splitTargetWallId) return undefined;
+        const input = splitDistanceInputRef.current;
+        if (!input) return undefined;
+        input.focus();
+        input.select();
+        return undefined;
+    }, [currentMode, splitTargetWallId]);
 
     // Add adjustWallForJointType and dependencies from old code
     const originalWallEndpoints = new Map();
@@ -2794,9 +2998,13 @@ const Canvas2D = ({
             if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
                 return;
             }
-            // Large size jumps (rotate / first real measure): re-fit so the plan isn't clipped
-            if (Math.abs(prev.width - width) > 48 || Math.abs(prev.height - height) > 48) {
+            // Only the first real measurement re-fits. Opening or closing a side
+            // form used to clear the zoom flag, so the plan snapped back to fit.
+            const firstRealMeasure = prev.width < 40 || prev.height < 40;
+            if (firstRealMeasure) {
                 isZoomed.current = false;
+                clearDimensionPlacementMemory();
+            } else if (!isZoomed.current && (Math.abs(prev.width - width) > 48 || Math.abs(prev.height - height) > 48)) {
                 // Which side of the plan a dimension lands on is decided by pixel collision and
                 // then locked for the rest of the session. A decision made against the old box —
                 // most often a first paint measured before the stylesheet applied — would stay
@@ -2967,6 +3175,7 @@ const Canvas2D = ({
             SNAP_THRESHOLD,
             drawPartitionSlashes,
             hoveredPoint,
+            lineSnapMarks,
             drawWallLinePair,
             drawWallCaps,
             drawEndpoints,
@@ -3176,8 +3385,9 @@ const Canvas2D = ({
                 : null);
 
         if (currentMode === 'split-wall' && splitPreviewPoint) {
-            const markerX = splitPreviewPoint.x * scaleFactor.current + offsetX.current;
-            const markerY = splitPreviewPoint.y * scaleFactor.current + offsetY.current;
+            const marker = splitPreviewFace || splitPreviewPoint;
+            const markerX = marker.x * scaleFactor.current + offsetX.current;
+            const markerY = marker.y * scaleFactor.current + offsetY.current;
             context.save();
             context.fillStyle = '#F97316';
             context.strokeStyle = '#F97316';
@@ -3191,19 +3401,37 @@ const Canvas2D = ({
                 const wallLength = getWallLength(previewWall);
                 const dirX = (previewWall.end_x - previewWall.start_x) / wallLength;
                 const dirY = (previewWall.end_y - previewWall.start_y) / wallLength;
-                const perpX = -dirY;
-                const perpY = dirX;
-                const cutScreenLength = 28;
-                const cutModelHalf = (cutScreenLength / scaleFactor.current) / 2;
-
-                const cutStart = {
-                    x: splitPreviewPoint.x - perpX * cutModelHalf,
-                    y: splitPreviewPoint.y - perpY * cutModelHalf
-                };
-                const cutEnd = {
-                    x: splitPreviewPoint.x + perpX * cutModelHalf,
-                    y: splitPreviewPoint.y + perpY * cutModelHalf
-                };
+                const t = ((splitPreviewPoint.x - previewWall.start_x) * dirX
+                    + (splitPreviewPoint.y - previewWall.start_y) * dirY) / wallLength;
+                const faces = splitFaceLines(previewWall);
+                const facePoint = (line) => ({
+                    x: line[0].x + (line[1].x - line[0].x) * t,
+                    y: line[0].y + (line[1].y - line[0].y) * t,
+                });
+                const cutA = facePoint(faces[0]);
+                const cutB = faces[1] ? facePoint(faces[1]) : null;
+                let cutStart = cutA;
+                let cutEnd = cutB;
+                if (!cutEnd) {
+                    const perpX = -dirY;
+                    const perpY = dirX;
+                    const cutModelHalf = (28 / scaleFactor.current) / 2;
+                    cutStart = {
+                        x: splitPreviewPoint.x - perpX * cutModelHalf,
+                        y: splitPreviewPoint.y - perpY * cutModelHalf,
+                    };
+                    cutEnd = {
+                        x: splitPreviewPoint.x + perpX * cutModelHalf,
+                        y: splitPreviewPoint.y + perpY * cutModelHalf,
+                    };
+                } else {
+                    const span = Math.hypot(cutEnd.x - cutStart.x, cutEnd.y - cutStart.y) || 1;
+                    const ux = (cutEnd.x - cutStart.x) / span;
+                    const uy = (cutEnd.y - cutStart.y) / span;
+                    const extra = 8 / scaleFactor.current;
+                    cutStart = { x: cutStart.x - ux * extra, y: cutStart.y - uy * extra };
+                    cutEnd = { x: cutEnd.x + ux * extra, y: cutEnd.y + uy * extra };
+                }
 
                 context.beginPath();
                 context.moveTo(
@@ -3240,7 +3468,7 @@ const Canvas2D = ({
         walls, rooms, selectedWall, tempWall, doors,
         selectedWallsForRoom, joints, isEditingMode,
         hoveredWall, hoveredDoorId, highlightWalls, tagDragPreview,
-        selectedRoomPoints, project, hoveredPoint,
+        selectedRoomPoints, project, hoveredPoint, lineSnapMarks,
         wallPanelsMap,
         filteredDimensions,
         forceRefresh,
@@ -3251,6 +3479,7 @@ const Canvas2D = ({
         roomSelectionSnapPoints,
         selectedIntersections,
         splitPreviewPoint,
+        splitPreviewFace,
         splitTargetWallId,
         ghostWalls,
         ghostAreas,
@@ -3323,8 +3552,8 @@ const Canvas2D = ({
             return;
         }
 
-        // The typed length is the saved length. A join slides the whole wall
-        // later; it does not shorten one end.
+        // The typed number is the wall length from the start point. It is the
+        // figure on the sheet. Thickness draws the second line and is not added.
         const lengthMm = Math.round(desiredLength);
         const roundToInt = (v) => Math.round(v);
         const intPoint = (pt) => ({ x: roundToInt(pt.x), y: roundToInt(pt.y) });
@@ -3493,6 +3722,44 @@ const Canvas2D = ({
         setPendingWallData(null);
     };
 
+    // Enter locks the first line at the typed length. The next click places the second line.
+    commitTypedWallRef.current = async (tw, lengthMm) => {
+        const length = Math.round(Number(lengthMm));
+        if (!tw || tw.placingSide || !(length > 0)) return;
+        const start = {
+            x: tw.anchor_x ?? tw.start_x,
+            y: tw.anchor_y ?? tw.start_y,
+        };
+        const aim = { x: tw.end_x, y: tw.end_y };
+        if (Math.hypot(aim.x - start.x, aim.y - start.y) < 1) return;
+        let end = pointAlongDirection(start, aim, length);
+        if (!end) return;
+        end = { x: Math.round(end.x), y: Math.round(end.y) };
+        const roundedStart = { x: Math.round(start.x), y: Math.round(start.y) };
+        if (Math.hypot(end.x - roundedStart.x, end.y - roundedStart.y) < 1) return;
+        const locked = {
+            ...tw,
+            placingSide: true,
+            singleLine: false,
+            anchor_x: roundedStart.x,
+            anchor_y: roundedStart.y,
+            ref_x: end.x,
+            ref_y: end.y,
+            start_x: roundedStart.x,
+            start_y: roundedStart.y,
+            end_x: end.x,
+            end_y: end.y,
+            offsetSide: null,
+            typedLength: '',
+            thickness: tw.thickness ?? wallThickness,
+        };
+        typedLengthRef.current = '';
+        setTypedWallLength('');
+        setIsDrawing(true);
+        tempWallRef.current = locked;
+        setTempWall(locked);
+    };
+
     const renderManualSplitPanel = () => {
         if (currentMode !== 'split-wall') {
             return null;
@@ -3527,12 +3794,19 @@ const Canvas2D = ({
                             Distance from start (mm)
                         </label>
                         <input
+                            ref={splitDistanceInputRef}
                             type="number"
                             min="1"
                             value={splitDistanceInput}
                             onChange={(e) => updatePreviewFromDistance(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSplitAtDistance();
+                                }
+                            }}
                             className="w-full px-3 py-2 border border-emerald-200 dark:border-emerald-700 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                            placeholder="e.g. 1200"
+                            placeholder="Type a distance, then Enter"
                         />
                         <div className="mt-3 flex flex-col gap-2">
                             <button
@@ -4292,11 +4566,17 @@ const Canvas2D = ({
               </div>
             )}
 
-            {/* Wall Length Input Modal */}
-            {showLengthInput && pendingWallData && (
-                <ModalOverlay className="bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            {/* Wall length sits on the right. A centered overlay locks page scroll
+                and the plan re-fits, which throws away the current zoom. */}
+            {showLengthInput && pendingWallData && typeof document !== 'undefined' && createPortal(
+                <div className="opening-side-panel">
+                    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-6 w-full max-h-full overflow-y-auto">
                         <h3 className="text-lg font-semibold text-gray-900 mb-4">Enter Wall Length</h3>
+                        <p className="text-sm text-gray-600 mb-3">
+                            This is the length on the drawing, from the point you started.
+                            Type it and press Enter while the wall is following the cursor.
+                            Wall thickness draws the second line. It is not added to this number.
+                        </p>
                         {(() => {
                             const snapType = pendingWallData.angleSnapType;
                             const snapLabel =
@@ -4404,8 +4684,10 @@ const Canvas2D = ({
                                 defaultValue={Math.round(pendingWallData.currentLength || 0)}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
                                 autoFocus
+                                onFocus={(e) => e.target.select()}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
+                                        e.preventDefault();
                                         handleLengthConfirm();
                                     } else if (e.key === 'Escape') {
                                         handleLengthCancel();
@@ -4428,7 +4710,8 @@ const Canvas2D = ({
                             </button>
                         </div>
                     </div>
-                </ModalOverlay>
+                </div>,
+                document.body
             )}
         </>
     );

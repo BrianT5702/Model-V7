@@ -344464,3 +344464,674 @@ WARNING 2026-10-16 21:17:22,369 log 708 27900 Not Found: /api/projects/556/open-
 WARNING 2026-10-16 21:17:58,010 log 708 21344 Not Found: /api/projects/556/open-layout/
 WARNING 2026-10-16 21:18:41,679 log 708 20780 Not Found: /api/projects/556/open-layout/
 WARNING 2026-10-16 21:18:54,367 log 708 36076 Not Found: /api/projects/556/open-layout/
+INFO 2026-10-18 21:11:40,136 autoreload 20980 23520 Watching for file changes with StatReloader
+INFO 2026-10-18 21:18:09,071 services 20980 28224 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-18 22:16:14,355 services 20980 24468 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-18 22:26:07,099 services 20980 1572 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-18 22:26:50,475 services 20980 20376 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-18 22:27:37,433 services 20980 372 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-18 22:30:07,915 services 20980 1436 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-18 22:35:05,078 autoreload 20980 23520 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\models.py changed, reloading.
+INFO 2026-10-18 22:35:06,657 autoreload 19808 1940 Watching for file changes with StatReloader
+ERROR 2026-10-18 22:35:11,728 log 19808 21344 Internal Server Error: /api/projects/574/open-layout/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 337, in open_layout
+    'walls': WallSerializer(walls, many=True).data,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 795, in data
+    ret = super().data
+          ^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 714, in to_representation
+    self.child.to_representation(item) for item in iterable
+                                                   ^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 400, in __iter__
+    self._fetch_all()
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 1928, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\sql\compiler.py", line 1574, in execute_sql
+    cursor.execute(sql, params)
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+ERROR 2026-10-18 22:35:19,934 log 19808 22872 Internal Server Error: /api/projects/574/open-layout/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 337, in open_layout
+    'walls': WallSerializer(walls, many=True).data,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 795, in data
+    ret = super().data
+          ^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 714, in to_representation
+    self.child.to_representation(item) for item in iterable
+                                                   ^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 400, in __iter__
+    self._fetch_all()
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 1928, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\sql\compiler.py", line 1574, in execute_sql
+    cursor.execute(sql, params)
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+ERROR 2026-10-18 22:35:22,788 log 19808 2288 Internal Server Error: /api/projects/574/open-layout/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 337, in open_layout
+    'walls': WallSerializer(walls, many=True).data,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 795, in data
+    ret = super().data
+          ^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 714, in to_representation
+    self.child.to_representation(item) for item in iterable
+                                                   ^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 400, in __iter__
+    self._fetch_all()
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 1928, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\sql\compiler.py", line 1574, in execute_sql
+    cursor.execute(sql, params)
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+ERROR 2026-10-18 22:35:32,863 log 19808 19004 Internal Server Error: /api/projects/574/open-layout/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 337, in open_layout
+    'walls': WallSerializer(walls, many=True).data,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 795, in data
+    ret = super().data
+          ^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 714, in to_representation
+    self.child.to_representation(item) for item in iterable
+                                                   ^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 400, in __iter__
+    self._fetch_all()
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 1928, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\sql\compiler.py", line 1574, in execute_sql
+    cursor.execute(sql, params)
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+ERROR 2026-10-18 22:35:39,600 log 19808 9272 Internal Server Error: /api/projects/574/open-layout/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 337, in open_layout
+    'walls': WallSerializer(walls, many=True).data,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 795, in data
+    ret = super().data
+          ^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 714, in to_representation
+    self.child.to_representation(item) for item in iterable
+                                                   ^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 400, in __iter__
+    self._fetch_all()
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 1928, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\sql\compiler.py", line 1574, in execute_sql
+    cursor.execute(sql, params)
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+ERROR 2026-10-18 22:36:01,046 log 19808 28224 Internal Server Error: /api/projects/574/open-layout/
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\brian\Lib\site-packages\rest_framework\views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py", line 337, in open_layout
+    'walls': WallSerializer(walls, many=True).data,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 795, in data
+    ret = super().data
+          ^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 249, in data
+    self._data = self.to_representation(self.instance)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\rest_framework\serializers.py", line 714, in to_representation
+    self.child.to_representation(item) for item in iterable
+                                                   ^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 400, in __iter__
+    self._fetch_all()
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 1928, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\models\sql\compiler.py", line 1574, in execute_sql
+    cursor.execute(sql, params)
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\brian\Lib\site-packages\django\db\utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\brian\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column core_wall.tip_length does not exist
+LINE 1: ...ore_wall"."is_default", "core_wall"."tip_to_tip", "core_wall...
+                                                             ^
+
+INFO 2026-10-19 08:47:17,008 services 19808 24356 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 09:01:18,298 log 19808 30612 Not Found: /api/projects/574/open-layout/
+WARNING 2026-10-19 09:01:23,125 log 19808 32600 Not Found: /api/projects/574/open-layout/
+WARNING 2026-10-19 09:01:26,474 log 19808 23876 Not Found: /api/projects/574/open-layout/
+INFO 2026-10-19 09:03:14,971 services 19808 31948 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 09:04:04,861 services 19808 26396 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 09:19:38,139 services 19808 32316 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 09:26:31,875 log 19808 21000 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:26:40,133 log 19808 30424 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:27:01,412 log 19808 5692 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:27:08,612 log 19808 30040 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:30:16,997 log 19808 12548 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:30:21,551 log 19808 18972 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:31:10,084 log 19808 22164 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:31:49,934 log 19808 25072 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:32:12,658 log 19808 26160 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:32:45,804 log 19808 32284 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:32:54,252 log 19808 18936 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:32:59,101 log 19808 26388 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:33:12,520 log 19808 27880 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:33:16,713 log 19808 18176 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:33:18,415 log 19808 18908 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:33:28,822 log 19808 4452 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:33:57,079 log 19808 31996 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 09:35:30,826 log 19808 15592 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 09:46:08,416 services 19808 29200 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 10:03:51,080 log 19808 32460 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:07:46,015 log 19808 31340 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:17:54,649 log 19808 30544 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 10:18:22,994 services 19808 7196 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:26:43,377 services 19808 29380 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:26:46,632 services 19808 30644 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:26:51,864 services 19808 26452 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:26:55,544 services 19808 32972 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:26:58,901 services 19808 12612 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:27:02,103 services 19808 31144 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:27:05,645 services 19808 32476 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:27:10,361 services 19808 22248 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:27:18,409 services 19808 3352 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:27:22,014 services 19808 20376 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:27:26,242 services 19808 25892 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:27:30,481 services 19808 30424 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 10:29:21,956 services 19808 29364 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 10:35:27,632 log 19808 25072 Not Found: /api/walls/12407/
+WARNING 2026-10-19 10:36:08,577 log 19808 26704 Not Found: /api/walls/12423/
+WARNING 2026-10-19 10:36:43,467 log 19808 9824 Not Found: /api/walls/12442/
+WARNING 2026-10-19 10:49:55,711 log 19808 27320 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:50:03,527 log 19808 32452 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:50:08,007 log 19808 18244 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:50:56,407 log 19808 33336 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:51:18,188 log 19808 26608 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:51:25,441 log 19808 33004 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 10:51:42,713 log 19808 24740 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 11:09:00,471 log 19808 34992 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 11:10:54,726 log 19808 23728 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 11:10:56,680 log 19808 21316 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 11:11:11,749 log 19808 2660 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 11:13:03,496 services 19808 23376 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 11:13:07,093 services 19808 19256 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 11:13:15,074 services 19808 30184 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 11:13:15,156 services 19808 33780 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 11:14:53,598 log 19808 23572 Not Found: /api/walls/12556/
+INFO 2026-10-19 11:14:56,723 services 19808 29652 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 11:14:59,668 services 19808 6568 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 11:18:28,886 log 19808 15352 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 12:07:13,817 services 19808 23908 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:07:21,882 services 19808 4528 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:27,472 services 19808 30864 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:30,709 services 19808 35192 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:34,068 services 19808 9188 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:37,734 services 19808 32736 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:44,215 services 19808 34232 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:46,518 services 19808 23728 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:49,588 services 19808 33100 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:52,282 services 19808 29080 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:54,557 services 19808 8664 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:08:57,800 services 19808 29408 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:11:54,115 services 19808 22652 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 12:13:54,675 log 19808 34648 Not Found: /api/walls/12609/
+WARNING 2026-10-19 12:16:36,004 log 19808 28356 Not Found: /api/walls/12610/
+WARNING 2026-10-19 12:22:42,329 log 19808 26016 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 12:23:01,595 log 19808 30940 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 12:33:47,891 services 19808 6404 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:40:26,729 services 19808 1948 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 12:45:51,026 log 19808 8276 Not Found: /api/walls/12617/
+WARNING 2026-10-19 12:51:24,476 log 19808 28792 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 12:56:11,877 services 19808 34264 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 12:57:55,506 services 19808 3248 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 13:03:29,745 log 19808 17108 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 13:05:59,988 log 19808 21000 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 13:06:02,120 log 19808 17912 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 13:06:36,555 log 19808 2456 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 13:10:11,249 services 19808 34724 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 13:14:35,479 log 19808 33504 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 13:14:39,723 log 19808 24720 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 13:14:56,446 log 19808 34252 Not Found: /api/projects/576/open-layout/
+WARNING 2026-10-19 13:15:25,211 log 19808 22772 Not Found: /api/projects/576/open-layout/
+INFO 2026-10-19 13:16:20,075 services 19808 33932 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 13:59:25,363 services 19808 31952 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 14:31:54,656 services 19808 36032 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 14:33:37,285 log 19808 18964 Forbidden: /api/projects/
+WARNING 2026-10-19 14:57:53,835 log 19808 14972 Not Found: /api/walls/12785/
+INFO 2026-10-19 15:02:33,613 services 19808 26424 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 15:03:57,078 log 19808 37908 Not Found: /api/walls/12800/
+INFO 2026-10-19 15:30:53,763 services 19808 33212 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:30:53,857 services 19808 24604 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:38:09,658 services 19808 31124 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:39:55,493 services 19808 37552 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:40:09,928 services 19808 2016 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:40:17,736 services 19808 36908 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:45:01,637 services 19808 38100 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:45:39,355 services 19808 8092 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:46:21,549 services 19808 29040 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 15:46:59,222 services 19808 32424 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:00:52,311 services 19808 36404 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:27:05,528 services 19808 18928 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:29:00,469 services 19808 34516 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:29:00,550 services 19808 36912 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:29:16,988 services 19808 23084 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:29:27,219 services 19808 18036 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:37:23,990 services 19808 37312 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:38:44,733 services 19808 29496 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:40:00,411 services 19808 29176 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:40:00,523 services 19808 23756 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:40:11,862 services 19808 8912 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:55:58,992 services 19808 38020 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 16:56:50,246 services 19808 38356 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 17:05:35,196 services 19808 9808 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 17:15:55,568 services 19808 34160 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 17:16:17,905 services 19808 23792 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 17:16:17,987 services 19808 21280 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 17:16:44,877 log 19808 20864 Not Found: /api/walls/12928/
+INFO 2026-10-19 17:16:49,888 services 19808 5668 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:46:02,966 autoreload 3316 7260 Watching for file changes with StatReloader
+WARNING 2026-10-19 20:47:57,892 log 3316 8652 Not Found: /api/walls/12962/
+INFO 2026-10-19 20:48:05,761 autoreload 3316 7260 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\models.py changed, reloading.
+INFO 2026-10-19 20:48:09,382 autoreload 22300 23024 Watching for file changes with StatReloader
+INFO 2026-10-19 20:50:20,783 services 22300 6804 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:50:47,445 services 22300 23972 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:51:47,390 services 22300 21860 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:53:06,145 services 22300 12796 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:54:35,069 services 22300 6076 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:54:53,382 services 22300 12276 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:55:20,412 services 22300 9020 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:57:40,178 services 22300 8000 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 20:57:48,929 services 22300 22288 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:22:25,120 services 22300 23708 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:24:30,668 services 22300 23428 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:26:03,703 services 22300 15864 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:26:20,463 services 22300 21736 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:32:19,806 services 22300 5592 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 21:36:19,995 log 22300 8860 Not Found: /api/walls/13033/
+WARNING 2026-10-19 21:36:48,578 log 22300 22680 Not Found: /api/walls/13037/
+WARNING 2026-10-19 21:37:15,919 log 22300 23724 Not Found: /api/walls/13042/
+WARNING 2026-10-19 21:46:13,599 log 22300 11736 Not Found: /api/walls/13065/
+INFO 2026-10-19 21:49:07,379 services 22300 14576 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:50:01,978 services 22300 20052 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:50:36,165 services 22300 3468 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:51:35,453 services 22300 21920 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:51:54,299 services 22300 23724 Updated base_elevation_mm for 0 wall(s)
+WARNING 2026-10-19 21:52:20,560 log 22300 13052 Not Found: /api/walls/13085/
+INFO 2026-10-19 21:52:41,700 services 22300 1080 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:53:01,966 services 22300 23184 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:53:59,928 services 22300 23300 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:54:32,896 services 22300 11740 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-19 21:58:40,709 autoreload 22300 23024 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\migrations\0085_wall_tip_to_tip.py changed, reloading.
+INFO 2026-10-19 21:58:42,230 autoreload 17296 12780 Watching for file changes with StatReloader
+INFO 2026-10-19 22:02:12,420 autoreload 17296 12780 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-19 22:02:13,329 autoreload 7780 24356 Watching for file changes with StatReloader
+INFO 2026-10-19 22:02:25,138 autoreload 7780 24356 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-19 22:02:26,059 autoreload 24340 10616 Watching for file changes with StatReloader
+INFO 2026-10-19 22:02:29,603 autoreload 24340 10616 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-19 22:02:30,450 autoreload 22548 12204 Watching for file changes with StatReloader
+INFO 2026-10-20 08:56:19,172 autoreload 12876 11284 Watching for file changes with StatReloader
+INFO 2026-10-20 08:59:39,309 services 12876 22440 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:06:07,057 services 12876 2080 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:06:18,820 services 12876 26260 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:06:53,003 services 12876 25784 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:07:39,436 services 12876 12980 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:08:20,205 services 12876 8480 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:09:38,170 services 12876 11860 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:10:12,859 services 12876 24896 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:12:51,711 services 12876 12772 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:14:04,312 services 12876 6924 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:15:47,454 services 12876 26888 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:18:58,435 services 12876 23932 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:19:03,699 services 12876 14628 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:19:52,490 services 12876 21656 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:20:45,454 services 12876 25072 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:22:12,867 services 12876 26648 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:23:16,913 services 12876 2472 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:23:46,065 services 12876 27192 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:25:09,003 services 12876 19248 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-20 09:26:18,206 services 12876 8200 Updated base_elevation_mm for 0 wall(s)
