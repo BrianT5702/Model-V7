@@ -6105,8 +6105,9 @@ export function drawWalls({
         wallLinesMap.set(wall.id, { line1, line2, wall });
     });
     
-    // Second pass: Extend lines to intersections (before 45° cuts)
-    // This ensures perfect alignment at intersections
+    // Second pass: joint trimming only. Drawn ends already stop on the line
+    // the drafter chose, so faces are not auto-extended. Butt-in shortening,
+    // 45° cuts, and angled miters still run. 3D meshing is unchanged.
     intersections.forEach(inter => {
         const tolerance = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
         
@@ -6685,7 +6686,6 @@ export function drawWalls({
                 }
             });
             };
-            runVhPairPhase('extend');
             runVhPairPhase('shorten');
 
             // Slanted / non-ortho corners: true face-line miters
@@ -6724,7 +6724,7 @@ export function drawWalls({
             hoveredWall !== wall.id
             ? baseInnerColor
             : null;
-        // Get pre-calculated lines (already extended to intersections)
+        // Get pre-calculated lines (butt-in tips already shortened; ends otherwise as drawn)
         let { line1, line2 } = wallLinesMap.get(wall.id);
         
         // Make copies for modification (45° cuts will modify these)

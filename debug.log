@@ -348512,3 +348512,5 @@ INFO 2026-10-21 17:46:00,970 autoreload 28008 28020 Watching for file changes wi
 INFO 2026-10-22 09:07:05,617 autoreload 2052 28940 Watching for file changes with StatReloader
 INFO 2026-10-22 11:01:15,256 autoreload 2052 28940 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\views.py changed, reloading.
 INFO 2026-10-22 11:01:17,566 autoreload 5804 26432 Watching for file changes with StatReloader
+INFO 2026-10-22 11:02:57,466 autoreload 23464 26560 Watching for file changes with StatReloader
+INFO 2026-10-22 12:00:51,784 autoreload 27588 31852 Watching for file changes with StatReloader

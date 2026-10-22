@@ -2,6 +2,7 @@
 // Note: CSG operations are handled via vertex manipulation instead of three-csg-ts
 
 import { THREE_CONFIG } from './threeConfig';
+import { DIMENSION_CONFIG } from './DimensionConfig';
 import {
   CUT_L_ALU_LONG_MM,
   CUT_L_ALU_SHORT_MM,
@@ -105,9 +106,15 @@ function getDoorSideJointContext(instance) {
   if (cached && cached.wallsRef === walls && cached.jointsRef === joints) {
     return cached.context;
   }
+  const project = instance?.project;
+  const width = Number(project?.width);
+  const length = Number(project?.length);
   const context = {
     intersections: buildIntersectionsFromJoints(walls, joints),
     allWalls: walls,
+    siteBox: width > 0 && length > 0
+      ? { minX: 0, minY: 0, maxX: width, maxY: length }
+      : null,
   };
   instance._doorSideJointContext = { wallsRef: walls, jointsRef: joints, context };
   return context;
@@ -816,19 +823,22 @@ export function createWallMesh(instance, wall) {
       const startDist = Math.hypot(jointX - finalStartX, jointZ - finalStartZ);
       const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
       // Solve for where the tip has to land instead of subtracting a fixed thickness.
-      // Wall coordinates describe the OUTER FACE, not the centerline, so the joining wall
-      // occupies the band between its stored line and that line offset by its thickness
-      // toward the model center. The tip must stop on whichever of those two faces is
-      // nearer this wall's body. Deriving it this way also covers non-perpendicular
-      // meetings, pulls back a tip drawn deep inside, and leaves a flush tip alone.
+      // The saved line is one face. The other face is a full thickness away, on the
+      // same side the plan draws. The tip stops on whichever of those two faces is
+      // nearer this wall's body. That covers a slanted meeting, pulls back a tip
+      // drawn through the host, and leaves a tip that is already flush alone.
       const otherLen = Math.hypot(oEX - oSX, oEZ - oSZ) || 1;
       const oux = (oEX - oSX) / otherLen;
       const ouz = (oEZ - oSZ) / otherLen;
       const sinBetween = Math.abs(wallDirX * ouz - wallDirZ * oux);
       if (sinBetween < 0.1) return; // near-colinear: no face to stop against
+      const hostFace = planFaceOffsetUnit(otherWall, instance);
       let onx = -ouz;
       let onz = oux;
-      if (onx * (modelCenter.x - (oSX + oEX) / 2) + onz * (modelCenter.z - (oSZ + oEZ) / 2) < 0) {
+      if (hostFace) {
+        onx = hostFace.x;
+        onz = hostFace.z;
+      } else if (onx * (modelCenter.x - (oSX + oEX) / 2) + onz * (modelCenter.z - (oSZ + oEZ) / 2) < 0) {
         onx = -onx;
         onz = -onz;
       }
@@ -1055,12 +1065,20 @@ export function createWallMesh(instance, wall) {
       endCutYMax = Math.max(endCutYMax, band.max);
     }
   };
-  // 0.1 scene units = 10 mm at scale 0.01. A tip stretched to the joining wall's
-  // far face sits one thickness back from that wall's original line, so the
-  // allowance for each end includes the distance that end was extended.
-  const jointTolerance = 0.1;
-  const startJointTolerance = jointTolerance + startExtensionDist;
-  const endJointTolerance = jointTolerance + endExtensionDist;
+  // Same reach as the plan: a tip within one wall thickness of the crossing is
+  // at the joint. A stored long tip already sits on the other wall's far face,
+  // one thickness past the line crossing, so a 10 mm test never sees it and the
+  // miter is skipped. Any stretch applied above is added on top of that reach.
+  const planJointTolMm = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM ?? 35;
+  const tipReachFor = (otherWall) => {
+    const thisThkMm = Number(thickness) || 100;
+    const otherThkMm = Number(otherWall?.thickness) || thisThkMm;
+    const partition = String(wall.application_type || '').toLowerCase() === 'partition';
+    const reachMm = partition
+      ? Math.max(planJointTolMm, thisThkMm * 2 + 1, otherThkMm + 1)
+      : Math.max(planJointTolMm, thisThkMm + 1, otherThkMm + 1);
+    return reachMm * scale;
+  };
   // After extension, check for 45_cut joints at the extended endpoints
   // Use the intersection points that were already calculated during extension
   if (instance.joints && instance.joints.length) {
@@ -1095,6 +1113,9 @@ export function createWallMesh(instance, wall) {
           const endDist = Math.hypot(jointX - finalEndX, jointZ - finalEndZ);
           // Determine which endpoint is closer to the intersection
           const isCloserToStart = startDist < endDist;
+          const jointTolerance = tipReachFor(otherWall);
+          const startJointTolerance = jointTolerance + startExtensionDist;
+          const endJointTolerance = jointTolerance + endExtensionDist;
           const cutYBand = getJointOverlapLocalYBand(
             wall,
             otherWall,

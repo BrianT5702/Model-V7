@@ -1127,7 +1127,6 @@ export function drawVectorWallPlan(
                                 }
                             });
                             };
-                            runVhPairPhase('extend');
                             runVhPairPhase('shorten');
                             applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
                         }
@@ -1138,7 +1137,7 @@ export function drawVectorWallPlan(
                     
                     // Third pass: Apply 45Â° cuts and draw walls
                     wallsToDraw.forEach((wall) => {
-                        // Get pre-calculated lines (already extended to intersections)
+                        // Get pre-calculated lines (butt-in tips already shortened; ends otherwise as drawn)
                         let { line1, line2 } = wallLinesMap.get(wall.id);
                         
                         // Make copies for modification (45Â° cuts will modify these)

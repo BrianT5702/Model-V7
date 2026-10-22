@@ -7,8 +7,9 @@
 // opposite face from the plan symbol.
 //
 // Rather than restate those heuristics (they drift), this asks `calculateOffsetPoints` for
-// the same line1/line2 the plan draws and reports which side line2 — the inner face —
-// landed on.
+// the same line1/line2 the plan draws. line2 is the saved face and line1 is the thickness
+// offset, so line2 sits on the wall and cannot be side-tested by itself. The interior
+// direction is from line1 toward line2, then the plan's 45_cut role swap is applied.
 
 import {
     calculateOffsetPoints,
@@ -24,8 +25,8 @@ import {
  * @param {object[]} rooms — project rooms (room_points / walls)
  * @param {{x: number, y: number}|null} centerModel — plan center in model mm, used only when
  *   no room context resolves the side (the legacy 3D behaviour)
- * @param {{intersections?: object[], allWalls?: object[]}} [jointContext] — enables the
- *   45_cut override that takes priority in the plan
+ * @param {{intersections?: object[], allWalls?: object[], siteBox?: object}} [jointContext]
+ *   — 45_cut override, and the project site box so perimeter faces match the plan
  * @returns {{x: number, y: number}|null} null when the wall is degenerate
  */
 export function getWallInteriorNormalModel(wall, rooms, centerModel = null, jointContext = null) {
@@ -67,23 +68,50 @@ export function getWallInteriorNormalModel(wall, rooms, centerModel = null, join
         offsetOpts.skipPolygonProbe = true;
     }
 
+    // Door placement passes the project site box so a perimeter wall that offsets
+    // inward is measured on the same face as the plan symbol. Ceiling rebates omit
+    // it and keep pointing at the room.
+    const center = centerModel || { x: midX + normalX, y: midY + normalY };
+    if (jointContext?.siteBox) {
+        offsetOpts.siteBox = jointContext.siteBox;
+    }
+
     // Only the direction matters here, so work in model units (scaleFactor = 1).
-    const { line2 } = calculateOffsetPoints(
+    const faces = calculateOffsetPoints(
         startX,
         startY,
         endX,
         endY,
         Number(wall.thickness) || 100,
-        centerModel || { x: midX + normalX, y: midY + normalY },
+        center,
         1,
         offsetOpts
     );
-    if (!line2?.[0] || !line2?.[1]) return { x: normalX, y: normalY };
+    let innerLine = faces?.line2;
+    let outerLine = faces?.line1;
+    if (!innerLine?.[0] || !innerLine?.[1] || !outerLine?.[0] || !outerLine?.[1]) {
+        return { x: -normalX, y: -normalY };
+    }
 
-    const line2MidX = (line2[0].x + line2[1].x) / 2;
-    const line2MidY = (line2[0].y + line2[1].y) / 2;
-    const dot = normalX * (line2MidX - midX) + normalY * (line2MidY - midY);
-    return dot > 0 ? { x: normalX, y: normalY } : { x: -normalX, y: -normalY };
+    // drawWalls swaps the two faces when a 45_cut demands line2 on the forced side.
+    // The saved line's side-dot is 0, so that swap runs exactly when forcedFlip is true
+    // unless a later edit has already moved line2 off the wall.
+    if (typeof forcedFlip === 'boolean') {
+        const line2MidX = (innerLine[0].x + innerLine[1].x) / 2;
+        const line2MidY = (innerLine[0].y + innerLine[1].y) / 2;
+        const line2OnPositive = normalX * (line2MidX - midX) + normalY * (line2MidY - midY) > 0;
+        if (line2OnPositive !== forcedFlip) {
+            const swapped = innerLine;
+            innerLine = outerLine;
+            outerLine = swapped;
+        }
+    }
+
+    const ix = (innerLine[0].x + innerLine[1].x) / 2 - (outerLine[0].x + outerLine[1].x) / 2;
+    const iy = (innerLine[0].y + innerLine[1].y) / 2 - (outerLine[0].y + outerLine[1].y) / 2;
+    const ilen = Math.hypot(ix, iy);
+    if (ilen < 1e-6) return { x: -normalX, y: -normalY };
+    return { x: ix / ilen, y: iy / ilen };
 }
 
 /**
