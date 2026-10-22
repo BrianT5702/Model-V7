@@ -749,6 +749,7 @@ class WallViewSet(ShareScopedModelViewSet):
             instance.save(update_fields=['base_elevation_manual'])
         else:
             WallService.update_wall_base_elevations([instance.id])
+        instance.refresh_from_db()
         
         # After updating a wall, recalculate room boundaries ONLY for rooms on the same storey
         # This prevents cross-level contamination when editing walls on different levels
@@ -767,7 +768,7 @@ class WallViewSet(ShareScopedModelViewSet):
         for room in rooms_to_update:
             RoomService.recalculate_room_boundary_from_walls(room.id)
         
-        return Response(serializer.data)
+        return Response(self.get_serializer(instance).data)
 
     @action(detail=False, methods=['post'])
     def create_wall(self, request):

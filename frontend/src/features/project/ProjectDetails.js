@@ -93,7 +93,7 @@ function exitDocumentFullscreen() {
     return Promise.reject(new Error('Exit fullscreen unavailable'));
 }
 
-const ProjectDetails = ({ shareProjectId = null } = {}) => {
+const ProjectDetails = ({ shareProjectId = null, onShareBack = null, shareBackLabel = 'Back' } = {}) => {
     const { projectId: routeProjectId } = useParams();
     const projectId = shareProjectId || routeProjectId;
     const navigate = useNavigate();
@@ -624,6 +624,7 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
     
     // Add this state for the edited wall
     const [editedWall, setEditedWall] = useState(null);
+    const [baseElevationTouched, setBaseElevationTouched] = useState(false);
     const editedWallSourceIdRef = useRef(null);
     const [gapFillError, setGapFillError] = useState('');
     const [isLengthLocked, setIsLengthLocked] = useState(false);
@@ -650,6 +651,16 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
 
     const editingOneWall = projectDetails.selectedWall != null
         && projectDetails.selectedWallsForEdit.length === 0;
+    const multiEditWalls = projectDetails.selectedWallsForEdit
+        .map((id) => projectDetails.filteredWalls.find((wall) => wall.id === id))
+        .filter(Boolean);
+    const sharedBaseElevation = multiEditWalls.length
+        ? (Number(multiEditWalls[0].base_elevation_mm) || 0)
+        : null;
+    const baseElevationsDiffer = sharedBaseElevation !== null && multiEditWalls.some(
+        (wall) => (Number(wall.base_elevation_mm) || 0) !== sharedBaseElevation
+    );
+    const showMixedBaseElevation = multiEditWalls.length > 1 && baseElevationsDiffer && !baseElevationTouched;
     const sidePanelPlan = editingOneWall ? planCustomSidePanelsForWall(editedWall) : null;
 
     /** Apply wall field updates, skipping any individually locked coordinates. */
@@ -1109,19 +1120,22 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
             if (editedWallSourceIdRef.current !== wall.id) {
                 editedWallSourceIdRef.current = wall.id;
                 setEditedWall({ ...wall });
+                setBaseElevationTouched(false);
                 resetWallEditLocks();
             }
         } else if (projectDetails.selectedWallsForEdit.length > 0 && projectDetails.showWallEditor) {
             const firstWall = projectDetails.filteredWalls.find(w => w.id === projectDetails.selectedWallsForEdit[0]);
-            const sourceKey = firstWall ? `multi-${firstWall.id}` : null;
+            const sourceKey = firstWall ? `multi-${projectDetails.selectedWallsForEdit.join(',')}` : null;
             if (firstWall && editedWallSourceIdRef.current !== sourceKey) {
                 editedWallSourceIdRef.current = sourceKey;
                 setEditedWall({ ...firstWall });
+                setBaseElevationTouched(false);
                 resetWallEditLocks();
             }
         } else {
             editedWallSourceIdRef.current = null;
             setEditedWall(null);
+            setBaseElevationTouched(false);
             resetWallEditLocks();
         }
     }, [projectDetails.selectedWall, projectDetails.selectedWallsForEdit, projectDetails.showWallEditor, projectDetails.filteredWalls]);
@@ -1556,6 +1570,20 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                 </button>
                             )}
                             </>
+                            )}
+                            {onShareBack && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={onShareBack}
+                                        className="flex items-center px-2 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                                        aria-label={shareBackLabel}
+                                    >
+                                        <FaArrowLeft className="w-3.5 h-3.5 sm:mr-1.5" />
+                                        <span className="hidden sm:inline">{shareBackLabel}</span>
+                                    </button>
+                                    <div className="h-5 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+                                </>
                             )}
                             {!isShareSession && (
                                 <>
@@ -3902,14 +3930,22 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                             </label>
 
                                             <label className="block min-w-0">
-                                                <span className="form-label">Base elev. (mm)</span>
+                                                <span className="form-label">Base elevation (mm)</span>
                                                 <input 
                                                     type="number" 
-                                                    value={editedWall?.base_elevation_mm ?? 0} 
-                                                    onChange={(e) => setEditedWall({ ...editedWall, base_elevation_mm: parseFloat(e.target.value) || 0 })} 
+                                                    value={showMixedBaseElevation ? '' : (editedWall?.base_elevation_mm ?? 0)} 
+                                                    onChange={(e) => {
+                                                        setBaseElevationTouched(true);
+                                                        const parsed = parseFloat(e.target.value);
+                                                        setEditedWall({
+                                                            ...editedWall,
+                                                            base_elevation_mm: Number.isFinite(parsed) ? parsed : 0,
+                                                            base_elevation_manual: true,
+                                                        });
+                                                    }} 
                                                     step="10"
                                                     className="form-control"
-                                                    placeholder="0"
+                                                    placeholder={showMixedBaseElevation ? 'Mixed' : '0'}
                                                 />
                                             </label>
 
@@ -3937,6 +3973,13 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                 </select>
                                             </label>
                                         </div>
+                                        {projectDetails.selectedWallsForEdit.length > 1 && (
+                                            <p className="mt-1 text-[10px] text-gray-500">
+                                                {showMixedBaseElevation
+                                                    ? 'These walls use different base elevations. Enter a value to set all of them.'
+                                                    : 'Enter a base elevation to set it on every selected wall.'}
+                                            </p>
+                                        )}
                                     </div>
 
                                     {/* Face Finishes Section */}
@@ -4259,14 +4302,24 @@ const ProjectDetails = ({ shareProjectId = null } = {}) => {
                                                         inner_face_thickness: editedWall?.inner_face_thickness,
                                                         outer_face_material: editedWall?.outer_face_material,
                                                         outer_face_thickness: editedWall?.outer_face_thickness,
-                                                        base_elevation_mm: editedWall?.base_elevation_mm,
-                                                        base_elevation_manual: editedWall?.base_elevation_manual
                                                     };
+                                                    if (baseElevationTouched) {
+                                                        propertiesToUpdate.base_elevation_mm = Number.isFinite(Number(editedWall?.base_elevation_mm))
+                                                            ? Number(editedWall.base_elevation_mm)
+                                                            : 0;
+                                                        propertiesToUpdate.base_elevation_manual = true;
+                                                    }
                                                     
                                                     const wallsToSave = [];
                                                     for (const wallId of projectDetails.selectedWallsForEdit) {
                                                         const wall = projectDetails.walls.find(w => w.id === wallId);
-                                                        if (wall) wallsToSave.push({ ...wall, ...propertiesToUpdate });
+                                                        if (!wall) continue;
+                                                        const next = { ...wall, ...propertiesToUpdate };
+                                                        if (!baseElevationTouched) {
+                                                            delete next.base_elevation_mm;
+                                                            delete next.base_elevation_manual;
+                                                        }
+                                                        wallsToSave.push(next);
                                                     }
                                                     await projectDetails.saveWallList(wallsToSave);
                                                     projectDetails.setSelectedWallsForEdit([]);

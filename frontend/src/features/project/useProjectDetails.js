@@ -3779,8 +3779,7 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
     wallsToAdd = wallsToAdd.filter(w => !isTooShort(w));
     newWallSegments = newWallSegments.filter(w => !isTooShort(w));
 
-    // Partition walls: inset start/end by the joining wall thickness so stored length
-    // matches butt-in panel length (does not run through the host wall body).
+    // Host wall a partition end meets, used only to record the butt-in joint.
     const findJoiningWallAtPoint = (pt, segment, candidateWalls) => {
       let bodyHit = null;
       let endpointHit = null;
@@ -3812,46 +3811,8 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       return bodyHit || endpointHit;
     };
 
-    const insetPartitionEndsByJoiningThickness = (segment, candidateWalls) => {
-      const start = { x: segment.start_x, y: segment.start_y };
-      const end = { x: segment.end_x, y: segment.end_y };
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const len = Math.hypot(dx, dy);
-      if (len < 0.001) return segment;
-
-      const joinStart = findJoiningWallAtPoint(start, segment, candidateWalls);
-      const joinEnd = findJoiningWallAtPoint(end, segment, candidateWalls);
-      const ux = dx / len;
-      const uy = dy / len;
-      const startInset = joinStart ? (Number(joinStart.thickness) || 0) : 0;
-      const endInset = joinEnd ? (Number(joinEnd.thickness) || 0) : 0;
-      if (startInset + endInset <= 0) return segment;
-      if (startInset + endInset >= len - 0.001) return segment;
-
-      const nextStart = {
-        x: start.x + ux * startInset,
-        y: start.y + uy * startInset,
-      };
-      const nextEnd = {
-        x: end.x - ux * endInset,
-        y: end.y - uy * endInset,
-      };
-      const normalized = normalizeWallCoordinates(nextStart, nextEnd);
-      return {
-        ...segment,
-        start_x: normalized.startPoint.x,
-        start_y: normalized.startPoint.y,
-        end_x: normalized.endPoint.x,
-        end_y: normalized.endPoint.y,
-      };
-    };
-
-    if (isPartition) {
-      newWallSegments = newWallSegments.map((segment) =>
-        insetPartitionEndsByJoiningThickness(segment, wallsForGeometry)
-      ).filter((w) => !isTooShort(w));
-    }
+    // Partitions keep the length that was drawn. Joining thickness is not
+    // subtracted from the stored ends.
 
     // 4. Delete split walls, add new segments (API)
     return commitHistoryAction('Add wall', async () => {

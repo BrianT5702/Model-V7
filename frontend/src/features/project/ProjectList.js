@@ -6,12 +6,14 @@ import EditProject from './EditProject';
 import ProjectExplorer from './ProjectExplorer';
 import CreateFolderModal from './CreateFolderModal';
 import ProjectVisibilityModal from './ProjectVisibilityModal';
+import ShareProjectModal from '../share/ShareProjectModal';
 import { UNCATEGORIZED_KEY } from './ProjectFolderSection';
 import {
     buildProjectPath,
     collectDescendantFolderIds,
     getCreateFolderParentId,
     getFolderLabel,
+    getFolderPath,
 } from './projectFolderUtils';
 
 const ProjectList = ({
@@ -36,6 +38,7 @@ const ProjectList = ({
     const [projectToEdit, setProjectToEdit] = useState(null);
     const [showVisibilityModal, setShowVisibilityModal] = useState(false);
     const [projectToManageViewers, setProjectToManageViewers] = useState(null);
+    const [folderToShare, setFolderToShare] = useState(null);
     const [draggingProjectId, setDraggingProjectId] = useState(null);
     const [dropTargetId, setDropTargetId] = useState(null);
     const [showFolderDeleteConfirm, setShowFolderDeleteConfirm] = useState(false);
@@ -356,6 +359,12 @@ const ProjectList = ({
         onStartCreateSubfolder: canEdit && foldersAvailable
             ? (folderKey) => openCreateFolderModal(folderKey)
             : undefined,
+        onShareFolder: canEdit && foldersAvailable
+            ? (folderKey) => {
+                const folder = safeFolders.find((item) => item.id === folderKey);
+                if (folder) setFolderToShare(folder);
+            }
+            : undefined,
     };
 
     return (
@@ -462,6 +471,14 @@ const ProjectList = ({
                     parentLabel={getFolderLabel(createFolderParentKey, safeFolders)}
                     onClose={closeCreateFolderModal}
                     onSubmit={handleCreateFolder}
+                />
+            )}
+
+            {canEdit && folderToShare && (
+                <ShareProjectModal
+                    folderId={folderToShare.id}
+                    folderName={getFolderPath(folderToShare.id, safeFolders)}
+                    onClose={() => setFolderToShare(null)}
                 />
             )}
         </div>

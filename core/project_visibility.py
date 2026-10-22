@@ -4,17 +4,7 @@ from django.db.models import Q
 
 from .models import Project, ProjectFolder
 from .role_utils import ROLE_SALESMAN, get_user_role, user_can_edit
-from .share_utils import extract_project_id_from_obj, get_share_link_from_request
-
-
-def _share_project_id(request):
-    share = get_share_link_from_request(request)
-    if share is None:
-        return None
-    try:
-        return int(share.project_id)
-    except (TypeError, ValueError):
-        return None
+from .share_utils import extract_project_id_from_obj, get_share_link_from_request, share_covers_project, share_project_ids
 
 
 def visible_project_ids_for_request(request):
@@ -25,9 +15,9 @@ def visible_project_ids_for_request(request):
         ids.update(
             Project.objects.filter(visible_to_salesmen=user).values_list('id', flat=True)
         )
-    share_id = _share_project_id(request)
-    if share_id is not None:
-        ids.add(share_id)
+    share = get_share_link_from_request(request)
+    if share is not None:
+        ids.update(share_project_ids(share))
     return ids
 
 
@@ -111,8 +101,8 @@ def user_can_access_project(request, project_id) -> bool:
         if Project.objects.filter(pk=project_id, visible_to_salesmen=user).exists():
             return True
 
-    share_id = _share_project_id(request)
-    return share_id is not None and share_id == project_id
+    share = get_share_link_from_request(request)
+    return share_covers_project(share, project_id)
 
 
 def user_can_access_obj(request, obj) -> bool:

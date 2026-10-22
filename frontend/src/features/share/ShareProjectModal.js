@@ -8,12 +8,20 @@ const buildShareUrl = (path) => {
     return `${window.location.origin}${path}`;
 };
 
-const ShareProjectModal = ({ projectId, projectName, onClose }) => {
+const ShareProjectModal = ({
+    projectId = null,
+    projectName = '',
+    folderId = null,
+    folderName = '',
+    onClose,
+}) => {
     const [mode, setMode] = useState('view');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [link, setLink] = useState(null);
     const [copied, setCopied] = useState(false);
+    const isFolder = folderId != null;
+    const targetName = isFolder ? folderName : projectName;
 
     useEffect(() => {
         setLink(null);
@@ -26,7 +34,10 @@ const ShareProjectModal = ({ projectId, projectName, onClose }) => {
         setError('');
         setCopied(false);
         try {
-            const response = await api.post(`projects/${projectId}/share-links/`, { mode });
+            const endpoint = isFolder
+                ? `project-folders/${folderId}/share-links/`
+                : `projects/${projectId}/share-links/`;
+            const response = await api.post(endpoint, { mode });
             setLink(response.data);
         } catch (err) {
             const message = err.response?.data?.error || 'Failed to create share link.';
@@ -55,11 +66,11 @@ const ShareProjectModal = ({ projectId, projectName, onClose }) => {
                     <div className="min-w-0">
                         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                             <FaLink className="text-blue-600 dark:text-blue-400" />
-                            Share project
+                            {isFolder ? 'Share folder' : 'Share project'}
                         </h2>
-                        {projectName && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5" title={projectName}>
-                                {projectName}
+                        {targetName && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5" title={targetName}>
+                                {targetName}
                             </p>
                         )}
                     </div>
@@ -101,9 +112,13 @@ const ShareProjectModal = ({ projectId, projectName, onClose }) => {
                             </button>
                         </div>
                         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                            {mode === 'view'
-                                ? 'Recipients can open this project only. They cannot open the project list, login, or registration screens from the share session.'
-                                : 'Recipients can view the project and must log in with an editor account to edit. They cannot open the project list or registration.'}
+                            {isFolder
+                                ? (mode === 'view'
+                                    ? 'Recipients can open every project in this folder, including subfolders. They cannot open the rest of the project list.'
+                                    : 'Recipients can open every project in this folder, including subfolders, and must log in with an editor account to edit.')
+                                : (mode === 'view'
+                                    ? 'Recipients can open this project only. They cannot open the project list, login, or registration screens from the share session.'
+                                    : 'Recipients can view the project and must log in with an editor account to edit. They cannot open the project list or registration.')}
                         </p>
                     </div>
 

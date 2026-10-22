@@ -153,7 +153,7 @@ class ProjectVersion(models.Model):
 
 
 class ProjectShareLink(models.Model):
-    """Tokenized share link for a project (view-only or editable)."""
+    """Tokenized share link for one project, or for every project in a folder."""
     MODE_VIEW = 'view'
     MODE_EDIT = 'edit'
     MODE_CHOICES = (
@@ -165,6 +165,15 @@ class ProjectShareLink(models.Model):
         Project,
         related_name='share_links',
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+    )
+    folder = models.ForeignKey(
+        ProjectFolder,
+        related_name='share_links',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
     )
     token = models.CharField(max_length=64, unique=True, db_index=True)
     mode = models.CharField(max_length=10, choices=MODE_CHOICES, default=MODE_VIEW)
@@ -180,13 +189,27 @@ class ProjectShareLink(models.Model):
 
     class Meta:
         ordering = ['-created_at', '-id']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(project__isnull=False, folder__isnull=True)
+                    | models.Q(project__isnull=True, folder__isnull=False)
+                ),
+                name='share_link_project_or_folder',
+            ),
+        ]
 
     @property
     def is_active(self):
         return self.revoked_at is None
 
+    @property
+    def kind(self):
+        return 'folder' if self.folder_id else 'project'
+
     def __str__(self):
-        return f'{self.project_id}:{self.mode}:{self.token[:8]}'
+        target = f'folder:{self.folder_id}' if self.folder_id else f'project:{self.project_id}'
+        return f'{target}:{self.mode}:{self.token[:8]}'
 
 
 class ProjectComment(models.Model):

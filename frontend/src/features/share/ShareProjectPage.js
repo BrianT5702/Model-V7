@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useShare } from './ShareContext';
 import ProjectDetails from '../project/ProjectDetails';
+import ShareFolderPage from './ShareFolderPage';
 
 const ShareProjectPage = () => {
     const { shareToken } = useParams();
@@ -17,7 +18,7 @@ const ShareProjectPage = () => {
         if (!shareToken) {
             return undefined;
         }
-        if (share?.token === shareToken && share?.projectId) {
+        if (share?.token === shareToken && (share.kind === 'folder' ? share.folderId : share.projectId)) {
             return undefined;
         }
         let cancelled = false;
@@ -31,17 +32,17 @@ const ShareProjectPage = () => {
         return () => {
             cancelled = true;
         };
-    }, [shareToken, share?.token, share?.projectId, resolveShareToken]);
+    }, [shareToken, share?.token, share?.kind, share?.folderId, share?.projectId, resolveShareToken]);
 
     if (isResolving || (shareToken && !share && !resolveError)) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
-                <p className="text-sm text-gray-600 dark:text-gray-300">Opening shared project…</p>
+                <p className="text-sm text-gray-600 dark:text-gray-300">Opening shared link…</p>
             </div>
         );
     }
 
-    if (resolveError || !share?.projectId) {
+    if (resolveError || (share?.kind !== 'folder' && !share?.projectId) || (share?.kind === 'folder' && !share?.folderId)) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
                 <div className="max-w-md w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 shadow-sm">
@@ -61,6 +62,10 @@ const ShareProjectPage = () => {
                 </div>
             </div>
         );
+    }
+
+    if (share.kind === 'folder') {
+        return <ShareFolderPage />;
     }
 
     return <ProjectDetails shareProjectId={String(share.projectId)} />;

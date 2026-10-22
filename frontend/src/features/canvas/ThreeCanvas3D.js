@@ -551,41 +551,6 @@ export default class ThreeCanvas3D {
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerZ = (bounds.minZ + bounds.maxZ) / 2;
 
-    // Handle multiple ceiling types: room-specific ceilings, level ceilings, and single ceiling
-    const ceilingLevels = [];
-    
-    // Check for room-specific ceilings from the new enhanced system
-    // Search for any object with "ceiling_room_" in the name
-    this.scene.children.forEach(child => {
-      if (child.name && child.name.startsWith('ceiling_room_')) {
-        ceilingLevels.push(child);
-      }
-    });
-    
-    // Check for legacy ceiling level naming conventions
-    for (let i = 0; i < 10; i++) { // Check for up to 10 ceiling levels
-      const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
-      if (ceiling) {
-        ceilingLevels.push(ceiling);
-      }
-    }
-    
-    // Check for single ceiling
-    const singleCeiling = this.scene.getObjectByName('ceiling');
-    if (singleCeiling) {
-      ceilingLevels.push(singleCeiling);
-    }
-    
-    // Also search for any objects with "ceiling" in the name or userData
-    this.scene.children.forEach(child => {
-      if (child.name && child.name.toLowerCase().includes('ceiling') && !ceilingLevels.includes(child)) {
-        ceilingLevels.push(child);
-      }
-      if (child.userData && child.userData.isCeiling && !ceilingLevels.includes(child)) {
-        ceilingLevels.push(child);
-      }
-    });
-
     // Handle floors: room-specific floors and fallback floor
     const floorLevels = [];
     
@@ -612,14 +577,6 @@ export default class ThreeCanvas3D {
       }
     });
 
-    // Debug: Interior view animation
-    // debugLog(`🏠 Interior view: Hiding ${ceilingLevels.length} ceilings, keeping ${floorLevels.length} floors visible`);
-
-    // Hide only ceilings for interior view (keep floors visible)
-    ceilingLevels.forEach(ceiling => {
-      ceiling.visible = false;
-    });
-    
     // Calculate maximum ceiling height from all rooms to determine which floors to hide
     // Hide floors that are above the maximum ceiling height (floors from upper levels)
     let maxCeilingHeight = 0;
@@ -655,9 +612,6 @@ export default class ThreeCanvas3D {
       }
     });
 
-    // Hide only ceiling panel lines for interior view (keep wall panel lines visible)
-    this.ceilingPanelLines.forEach(line => { line.visible = false; });
-
     // Animate camera position using AnimationManager
     const modelCenter = {
       x: centerX,
@@ -673,41 +627,6 @@ animateToExteriorView() {
     const bounds = this.getModelBounds();
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-
-    // Handle multiple ceiling types: room-specific ceilings, level ceilings, and single ceiling
-    const ceilingLevels = [];
-    
-    // Check for room-specific ceilings from the new enhanced system
-    // Search for any object with "ceiling_room_" in the name
-    this.scene.children.forEach(child => {
-      if (child.name && child.name.startsWith('ceiling_room_')) {
-        ceilingLevels.push(child);
-      }
-    });
-    
-    // Check for legacy ceiling level naming conventions
-    for (let i = 0; i < 10; i++) { // Check for up to 10 ceiling levels
-      const ceiling = this.scene.getObjectByName(`ceiling_level_${i}`);
-      if (ceiling) {
-        ceilingLevels.push(ceiling);
-      }
-    }
-    
-    // Check for single ceiling
-    const singleCeiling = this.scene.getObjectByName('ceiling');
-    if (singleCeiling) {
-      ceilingLevels.push(singleCeiling);
-    }
-    
-    // Also search for any objects with "ceiling" in the name or userData
-    this.scene.children.forEach(child => {
-      if (child.name && child.name.toLowerCase().includes('ceiling') && !ceilingLevels.includes(child)) {
-        ceilingLevels.push(child);
-      }
-      if (child.userData && child.userData.isCeiling && !ceilingLevels.includes(child)) {
-        ceilingLevels.push(child);
-      }
-    });
 
     // Handle floors: room-specific floors and fallback floor
     const floorLevels = [];
@@ -735,22 +654,11 @@ animateToExteriorView() {
       }
     });
 
-    // Animate all ceiling levels
-    ceilingLevels.forEach(ceiling => {
-      // Show ceilings for exterior view
-      ceiling.visible = true;
-    });
-    
     // Animate all floor levels
     floorLevels.forEach(floor => {
       // Show floors for exterior view
       floor.visible = true;
     });
-
-    // Restore ceiling panel lines visibility to their previous state for exterior view
-    // Wall panel lines visibility remains unchanged (they were never hidden)
-    const shouldShowCeilingPanelLines = this.showCeilingPanelLines;
-    this.ceilingPanelLines.forEach(line => { line.visible = shouldShowCeilingPanelLines; });
 
     // Animate camera position using AnimationManager
     const modelCenter = { x: centerX, y: 0, z: centerZ };
@@ -760,6 +668,10 @@ animateToExteriorView() {
 }
 
 setCeilingsVisible(visible) {
+    if (this.animationManager?.setCeilingPresented) {
+        this.animationManager.setCeilingPresented(visible);
+        return;
+    }
     this.scene.traverse((child) => {
         if (
             (child.name && child.name.toLowerCase().includes('ceiling')) ||
@@ -822,7 +734,9 @@ getModelBounds() {
     if (!this.renderer || !this.scene || !this.camera) {
       return;
     }
-    if (this.roomTourController?.isWalking?.()) {
+    if (this._viewTransitionActive) {
+      // The interior/exterior crane owns the camera until it settles.
+    } else if (this.roomTourController?.isWalking?.()) {
       this.roomTourController.update();
     } else if (this.controls) {
       this.controls.update();

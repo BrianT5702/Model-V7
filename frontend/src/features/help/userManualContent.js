@@ -543,6 +543,7 @@ export const MANUAL_SECTIONS = [
                 'Click **Share**.',
                 'Choose **View only** or **Editable**.',
                 'Create the link, then click **Copy**.',
+                'On the project list, open a folder menu or click **Share folder**. That one link includes every project in the folder and its subfolders.',
                 'View only: the recipient browses this project without signing in. Summary, Comments, and the project list are hidden.',
                 'Editable: the recipient must sign in as Admin or Drafter. They still cannot open the project list from that session.',
             ] },

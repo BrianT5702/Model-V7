@@ -5,6 +5,7 @@ from .role_utils import user_can_comment, user_can_edit, user_is_admin
 from .share_utils import (
     extract_project_id_from_obj,
     get_share_link_from_request,
+    share_covers_project,
 )
 
 
@@ -27,7 +28,7 @@ def _share_matches_obj(share, obj) -> bool:
     if project_id is None:
         return False
     try:
-        return int(project_id) == int(share.project_id)
+        return share_covers_project(share, project_id)
     except (TypeError, ValueError):
         return False
 

@@ -7,6 +7,7 @@ import {
     FaFolder,
     FaFolderOpen,
     FaFolderPlus,
+    FaLink,
     FaPencilAlt,
     FaPlus,
     FaSearch,
@@ -83,6 +84,7 @@ const FolderTreeItem = ({
     onDrop,
     onRename,
     onDelete,
+    onShare,
     onStartCreateSubfolder,
 }) => {
     const [menuOpen, setMenuOpen] = useState(false);
@@ -166,6 +168,19 @@ const FolderTreeItem = ({
                         <>
                             <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                             <div className="absolute right-0 top-full mt-1 z-20 w-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg py-1 text-sm text-gray-900 dark:text-gray-100">
+                                {onShare && (
+                                    <button
+                                        type="button"
+                                        className="w-full px-3 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                                        onClick={() => {
+                                            setMenuOpen(false);
+                                            onShare(folderKey);
+                                        }}
+                                    >
+                                        <FaLink className="w-3 h-3 text-blue-600" />
+                                        Share folder
+                                    </button>
+                                )}
                                 {onStartCreateSubfolder && (
                                     <button
                                         type="button"
@@ -429,6 +444,7 @@ const ProjectExplorer = ({
     currentFolderLabel,
     createFolderParentLabel,
     onStartCreateSubfolder,
+    onShareFolder,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedFolderIds, setExpandedFolderIds] = useState(() => new Set());
@@ -638,6 +654,17 @@ const ProjectExplorer = ({
                     </button>
                 )}
 
+                {canEdit && showFolderToolbar && selectedFolderKey !== UNCATEGORIZED_KEY && onShareFolder && (
+                    <button
+                        type="button"
+                        onClick={() => onShareFolder(selectedFolderKey)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 shrink-0 transition-colors"
+                        title={`Share ${currentFolderLabel || 'this folder'}`}
+                    >
+                        <FaLink className="w-3.5 h-3.5 text-blue-600" />
+                        Share folder
+                    </button>
+                )}
                 {canEdit && showFolderToolbar && (
                     <button
                         type="button"
@@ -701,6 +728,7 @@ const ProjectExplorer = ({
                                 onDrop={canEdit ? (e) => onDropOnFolder(e, row.key) : undefined}
                                 onRename={onRenameFolderRequest}
                                 onDelete={onDeleteFolder}
+                                onShare={onShareFolder}
                                 onStartCreateSubfolder={canEdit ? onStartCreateSubfolder : undefined}
                             />
                         ))}

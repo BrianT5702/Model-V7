@@ -363,11 +363,7 @@ export function adjustModelScale(instance) {
   instance.camera.lookAt(0, 0, 0);
 }
 
-/**
- * Three-quarter view that fits the whole building in frame.
- * A fixed camera sits inside a large project and only shows a roof corner.
- */
-export function getExteriorCameraFrame(instance) {
+function measureBuildingBounds(instance) {
   const scale = instance.scalingFactor || THREE_CONFIG.SCALING_FACTOR || 0.01;
   const offsetX = instance.modelOffset?.x || 0;
   const offsetZ = instance.modelOffset?.z || 0;
@@ -396,18 +392,50 @@ export function getExteriorCameraFrame(instance) {
   if (projectHeight > 0) maxTop = Math.max(maxTop, projectHeight * scale);
   if (!Number.isFinite(minX) || maxX - minX < 0.01) return null;
 
-  const cx = (minX + maxX) / 2;
-  const cz = (minZ + maxZ) / 2;
   const spanY = Math.max(maxTop, 1);
-  const cy = spanY / 2;
-  const radius = 0.5 * Math.hypot(Math.max(maxX - minX, 1), spanY, Math.max(maxZ - minZ, 1));
+  return {
+    cx: (minX + maxX) / 2,
+    cz: (minZ + maxZ) / 2,
+    spanY,
+    radius: 0.5 * Math.hypot(Math.max(maxX - minX, 1), spanY, Math.max(maxZ - minZ, 1)),
+  };
+}
+
+function fittedCameraDistance(instance, radius, padding) {
   const camera = instance.camera;
   const fovY = ((camera?.fov || THREE_CONFIG.CAMERA.FOV) * Math.PI) / 180;
   const aspect = camera?.aspect > 0.2 ? camera.aspect : 1.6;
   const fovX = 2 * Math.atan(Math.tan(fovY / 2) * aspect);
-  // Fit the whole building, whichever of width or height is tighter.
-  const distance = (radius / Math.sin(Math.min(fovX, fovY) / 2)) * 1.08;
-  const direction = new instance.THREE.Vector3(1, 0.62, 1).normalize();
+  return (radius / Math.sin(Math.min(fovX, fovY) / 2)) * padding;
+}
+
+/**
+ * Three-quarter view that fits the whole building in frame.
+ * A fixed camera sits inside a large project and only shows a roof corner.
+ * Pass azimuth (atan2 of x, z) to keep the same side of the building.
+ */
+export function getExteriorCameraFrame(instance, options = {}) {
+  const bounds = measureBuildingBounds(instance);
+  if (!bounds) return null;
+
+  const { cx, cz, spanY, radius } = bounds;
+  const cy = spanY / 2;
+  const distance = fittedCameraDistance(instance, radius, 1.08);
+  let direction;
+  if (Number.isFinite(options.azimuth)) {
+    // Same elevation as (1, 0.62, 1), swung to the caller's side.
+    const y = 0.62;
+    const horiz = Math.SQRT2;
+    const len = Math.hypot(horiz, y);
+    const horizScale = horiz / len;
+    direction = new instance.THREE.Vector3(
+      Math.sin(options.azimuth) * horizScale,
+      y / len,
+      Math.cos(options.azimuth) * horizScale
+    );
+  } else {
+    direction = new instance.THREE.Vector3(1, 0.62, 1).normalize();
+  }
 
   return {
     position: {
@@ -416,6 +444,37 @@ export function getExteriorCameraFrame(instance) {
       z: cz + direction.z * distance,
     },
     target: { x: cx, y: cy, z: cz },
+    distance,
+    radius,
+  };
+}
+
+/**
+ * Overhead cutaway. Ceilings are hidden, so the camera looks down into the rooms
+ * from the same side the user was already viewing.
+ */
+export function getInteriorCameraFrame(instance, azimuth) {
+  const bounds = measureBuildingBounds(instance);
+  if (!bounds) return null;
+
+  const { cx, cz, spanY, radius } = bounds;
+  const theta = Number.isFinite(azimuth) ? azimuth : Math.PI / 4;
+  const phi = 0.58;
+  const direction = new instance.THREE.Vector3(
+    Math.sin(phi) * Math.sin(theta),
+    Math.cos(phi),
+    Math.sin(phi) * Math.cos(theta)
+  );
+  const distance = fittedCameraDistance(instance, radius, 1.04);
+  const targetY = spanY * 0.36;
+
+  return {
+    position: {
+      x: cx + direction.x * distance,
+      y: targetY + direction.y * distance,
+      z: cz + direction.z * distance,
+    },
+    target: { x: cx, y: targetY, z: cz },
     distance,
     radius,
   };

@@ -10,11 +10,26 @@ const readStoredShare = () => {
         const raw = sessionStorage.getItem(SHARE_STORAGE_KEY);
         if (!raw) return null;
         const parsed = JSON.parse(raw);
-        if (!parsed?.token || !parsed?.projectId || !parsed?.mode) return null;
+        if (!parsed?.token || !parsed?.mode) return null;
+        const mode = parsed.mode === 'edit' ? 'edit' : 'view';
+        if (parsed.kind === 'folder') {
+            if (!parsed.folderId) return null;
+            return {
+                kind: 'folder',
+                token: String(parsed.token),
+                mode,
+                folderId: String(parsed.folderId),
+                folderName: parsed.folderName || '',
+                folderPath: parsed.folderPath || parsed.folderName || '',
+                projects: Array.isArray(parsed.projects) ? parsed.projects : [],
+            };
+        }
+        if (!parsed.projectId) return null;
         return {
+            kind: 'project',
             token: String(parsed.token),
             projectId: String(parsed.projectId),
-            mode: parsed.mode === 'edit' ? 'edit' : 'view',
+            mode,
             projectName: parsed.projectName || '',
         };
     } catch {
@@ -51,12 +66,27 @@ export const ShareProvider = ({ children }) => {
     }, []);
 
     const activateShare = useCallback((payload) => {
-        const next = {
-            token: String(payload.token),
-            projectId: String(payload.project_id ?? payload.projectId),
-            mode: payload.mode === 'edit' ? 'edit' : 'view',
-            projectName: payload.project_name || payload.projectName || '',
-        };
+        const mode = payload.mode === 'edit' ? 'edit' : 'view';
+        const kind = payload.kind === 'folder' || payload.folder_id || payload.folderId
+            ? 'folder'
+            : 'project';
+        const next = kind === 'folder'
+            ? {
+                kind: 'folder',
+                token: String(payload.token),
+                mode,
+                folderId: String(payload.folder_id ?? payload.folderId),
+                folderName: payload.folder_name || payload.folderName || '',
+                folderPath: payload.folder_path || payload.folderPath || payload.folder_name || payload.folderName || '',
+                projects: Array.isArray(payload.projects) ? payload.projects : [],
+            }
+            : {
+                kind: 'project',
+                token: String(payload.token),
+                projectId: String(payload.project_id ?? payload.projectId),
+                mode,
+                projectName: payload.project_name || payload.projectName || '',
+            };
         setShare(next);
         writeStoredShare(next);
         setActiveShareToken(next.token);

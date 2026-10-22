@@ -16,6 +16,7 @@ from .project_version_views import (
     restore_project_version_view,
 )
 from .share_views import (
+    folder_share_links_view,
     project_share_links_view,
     resolve_share_link_view,
     revoke_project_share_link_view,
@@ -88,6 +89,11 @@ urlpatterns = [
         'projects/<int:project_id>/share-links/<int:link_id>/revoke/',
         revoke_project_share_link_view,
         name='project-share-link-revoke',
+    ),
+    path(
+        'project-folders/<int:folder_id>/share-links/',
+        folder_share_links_view,
+        name='folder-share-links',
     ),
     path('share/<str:token>/', resolve_share_link_view, name='share-resolve'),
     path('', include(router.urls)),  # Include all routes defined by the router
