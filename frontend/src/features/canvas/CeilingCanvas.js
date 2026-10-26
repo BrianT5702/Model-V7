@@ -22,8 +22,7 @@ import useScrollContainment from '../../utils/useScrollContainment';
 import {
     calculateOffsetPoints,
     makeLabelDrawFn,
-    buildWallOffsetOptions,
-    wallUsesLegacyPlanAdjustments
+    buildWallOffsetOptions
 } from './drawing.js';
 import { calculatePolygonVisualCenter } from './utils.js';
 import { computePlanFitTransform } from './planCanvasUtils.js';
@@ -2987,10 +2986,7 @@ const CeilingCanvas = ({
                 // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
                 const wallThickness = wall.thickness || 100; // Default to 100mm if not set
                 const gapPixels = (wallThickness * scaleFactor.current) / 2;
-                const offsetOpts = buildWallOffsetOptions(wall, effectiveRooms) || {};
-                if (!wallUsesLegacyPlanAdjustments(wall, projectData?.legacy_wall_plan !== false)) {
-                    offsetOpts.noAutoFlip = true;
-                }
+                const offsetOpts = buildWallOffsetOptions(wall, effectiveRooms);
 
                 // Calculate offset points for double-line wall
                 let { line1, line2 } = calculateOffsetPoints(

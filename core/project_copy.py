@@ -437,9 +437,7 @@ def clear_project_layout(project: Project):
     Storey.objects.filter(project_id=project_id).delete()
 
 
-LAYOUT_PROJECT_FIELDS = (
-    'width', 'length', 'height', 'wall_thickness', 'panel_optimization', 'legacy_wall_plan',
-)
+LAYOUT_PROJECT_FIELDS = ('width', 'length', 'height', 'wall_thickness', 'panel_optimization')
 
 
 def _apply_project_layout_fields(project: Project, payload: dict):
@@ -447,9 +445,6 @@ def _apply_project_layout_fields(project: Project, payload: dict):
     for field_name in LAYOUT_PROJECT_FIELDS:
         if field_name in project_row:
             setattr(project, field_name, project_row[field_name])
-    # Snapshots saved before this field are older drawings.
-    if 'legacy_wall_plan' not in project_row:
-        project.legacy_wall_plan = True
 
 
 @transaction.atomic
@@ -494,9 +489,6 @@ def import_project_from_payload(
     project_row.pop('last_edited_by', None)
     project_row.pop('created_at', None)
     project_row.pop('updated_at', None)
-    # Snapshots saved before this field are older drawings and still extend and flip.
-    if 'legacy_wall_plan' not in project_row:
-        project_row['legacy_wall_plan'] = True
 
     existing = Project.objects.filter(name=project_name).first()
     if existing and not replace:

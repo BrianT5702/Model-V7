@@ -1257,7 +1257,7 @@ function markWallMiteredEnd(wall, atStart) {
  * Uses fresh ±half-thickness faces from the stem centerline (not the possibly
  * already-edited drawn faces) so left/right identity cannot flip into an hourglass X.
  */
-export function applyAngledButtInAtIntersection(wallsAtIntersection, inter, legacyWallPlan = true) {
+export function applyAngledButtInAtIntersection(wallsAtIntersection, inter) {
     if (!inter || !Array.isArray(wallsAtIntersection) || wallsAtIntersection.length < 2) return;
 
     const resolvePair = (wallA, wallB) => {
@@ -1360,9 +1360,6 @@ export function applyAngledButtInAtIntersection(wallsAtIntersection, inter, lega
             if (stemEntry.isOnBody && !stemEntry.isAtStart && !stemEntry.isAtEnd) continue;
 
             const stem = stemEntry.wall;
-            // A drawn face already ends on the line the drafter snapped. Only older
-            // plans still pull the stem onto the host face the joint math picks.
-            if (!wallUsesLegacyPlanAdjustments(stem, legacyWallPlan)) continue;
             const stemLines = stemEntry.wallData;
             const hostLines = hostEntry.wallData;
             const atStart = endAtJoint(stemEntry);
@@ -1478,7 +1475,7 @@ export function applyAngledButtInAtIntersection(wallsAtIntersection, inter, lega
  * the centerline, then picks the face-intersection pair whose separation best
  * matches a true thickness miter — avoids crossed pink “X” corners on slants.
  */
-export function applyAngledWallMitersAtIntersection(wallsAtIntersection, inter, legacyWallPlan = true) {
+export function applyAngledWallMitersAtIntersection(wallsAtIntersection, inter) {
     if (!inter || !Array.isArray(wallsAtIntersection) || wallsAtIntersection.length < 2) return;
 
     const resolveJoiningMethod = (wallA, wallB) => {
@@ -1558,11 +1555,6 @@ export function applyAngledWallMitersAtIntersection(wallsAtIntersection, inter, 
             // Only true 45° corners get face miters. butt_in uses applyAngledButtIn;
             // 'none' must keep square ends (do not miter).
             if (joiningMethod !== '45_cut') continue;
-            // A snapped face stays on that line. Only older plans still pull the corner into a miter.
-            if (
-                !wallUsesLegacyPlanAdjustments(wallA, legacyWallPlan)
-                || !wallUsesLegacyPlanAdjustments(wallB, legacyWallPlan)
-            ) continue;
 
             const linesA = aEntry.wallData;
             const linesB = bEntry.wallData;
@@ -5288,23 +5280,6 @@ function getNearestRoomCentroidToWallSegment(wall, rooms) {
 }
 
 /**
- * Current drawings store the chosen face as tip_length -1 or -2.
- * Older walls have no chosen side, so a legacy project still flips the thickness
- * and extends the corner the way those projects were drawn.
- */
-export function wallKeepsDrawnFace(wall) {
-    if (!wall || wall.tip_to_tip === true) return false;
-    const code = Number(wall.tip_length);
-    return code === -1 || code === -2;
-}
-
-/** Projects and versions created from now on pass legacyWallPlan false and skip both. */
-export function wallUsesLegacyPlanAdjustments(wall, legacyWallPlan = true) {
-    if (legacyWallPlan === false) return false;
-    return wallKeepsDrawnFace(wall) === false;
-}
-
-/**
  * Options for `calculateOffsetPoints`: prefer room-weighted scoring, else nearest-room reference,
  * else undefined (caller uses plain `center` in calculateOffsetPoints).
  *
@@ -5427,8 +5402,7 @@ export function getWallOffsetFallbackReference(wall, rooms, center) {
  * @param {object[]} [offsetOptions.rooms]
  * @param {{ x: number, y: number, w?: number }[]} [offsetOptions.scoringSamples] — prefer flip that puts more weighted room mass on the inner half-plane
  * @param {{ x: number, y: number }} [offsetOptions.innerReferencePoint] — tie-break / fallback instead of `center`
- * @param {boolean} [offsetOptions.forceShouldFlip] — hard override for side selection (used by 3D, not the 2D plan)
- * @param {boolean} [offsetOptions.noAutoFlip] — 2D plan: keep the side chosen while drawing
+ * @param {boolean} [offsetOptions.forceShouldFlip] — hard override for side selection (used by FloorCanvas 45_cut priority)
  */
 export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFactor, offsetOptions) {
     const dx = x2 - x1;
@@ -5475,9 +5449,7 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
     };
 
     let shouldFlip;
-    const noAutoFlip = Boolean(offsetOptions && offsetOptions.noAutoFlip);
     const forcedFlip =
-        !noAutoFlip &&
         offsetOptions && typeof offsetOptions.forceShouldFlip === 'boolean'
             ? offsetOptions.forceShouldFlip
             : null;
@@ -5498,9 +5470,7 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
               )
             : null;
 
-    if (noAutoFlip) {
-        shouldFlip = false;
-    } else if (forcedFlip !== null) {
+    if (forcedFlip !== null) {
         shouldFlip = forcedFlip;
     } else if (polygonResolved !== null) {
         shouldFlip = polygonResolved;
@@ -5544,7 +5514,7 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
     }
     // A face that would sit outside the site is drawn inward instead, so the
     // outer line of a wall already on x=0 or y=0 stays on that edge.
-    const siteBox = !noAutoFlip && offsetOptions && offsetOptions.siteBox;
+    const siteBox = offsetOptions && offsetOptions.siteBox;
     if (siteBox) {
         const px = midX + finalOffsetX;
         const py = midY + finalOffsetY;
@@ -6088,9 +6058,7 @@ export function drawWalls({
     // Define-room / storey-area: hide shortened partition tips; caller draws extended snaps.
     polygonSelectMode = false,
     selectedIntersectionKeys = null,
-    legacyWallPlan = true,
 }) {
-    const usesLegacyPlan = (wall) => wallUsesLegacyPlanAdjustments(wall, legacyWallPlan);
     if (!Array.isArray(walls) || !walls) return;
     
     // Same thickness and face materials share one color.
@@ -6109,16 +6077,12 @@ export function drawWalls({
         const wallThickness = wall.thickness; // Default to 100mm if not set
         const gapPixels = (wallThickness * scaleFactor);
         const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
-        const keepsDrawnFace = !usesLegacyPlan(wall);
-        if (keepsDrawnFace) {
-            // The drafter already picked which side the thickness sits on.
-            offsetOpts.noAutoFlip = true;
-        } else if (center && Number(center.x) > 0 && Number(center.y) > 0) {
+        if (center && Number(center.x) > 0 && Number(center.y) > 0) {
             offsetOpts.siteBox = { minX: 0, minY: 0, maxX: center.x * 2, maxY: center.y * 2 };
-            const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
-            if (typeof forcedFlip === 'boolean') {
-                offsetOpts.forceShouldFlip = forcedFlip;
-            }
+        }
+        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+        if (typeof forcedFlip === 'boolean') {
+            offsetOpts.forceShouldFlip = forcedFlip;
         }
         // Shared/partition walls: skip polygon probe (both sides "inside" → unstable null,
         // then scoring can flip when a second room is defined).
@@ -6141,9 +6105,9 @@ export function drawWalls({
         wallLinesMap.set(wall.id, { line1, line2, wall });
     });
     
-    // Second pass: butt-in shortening, 45° cuts, and angled miters.
-    // Walls drawn with a chosen face stay on that line. Older walls still
-    // extend to the crossing face, which is how those projects were closed.
+    // Second pass: joint trimming only. Drawn ends already stop on the line
+    // the drafter chose, so faces are not auto-extended. Butt-in shortening,
+    // 45° cuts, and angled miters still run. 3D meshing is unchanged.
     intersections.forEach(inter => {
         const tolerance = DIMENSION_CONFIG.WALL_JOINT_TOLERANCE_MM;
         
@@ -6396,7 +6360,7 @@ export function drawWalls({
                     // Case A: Vertical is wall2 (host), Horizontal is wall1 (stem)
                     // Only extend host if the intersection is at an actual endpoint of the host.
                     // If host is intersected in the middle (isOnBody), skip extension (full length).
-                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody && usesLegacyPlan(vWall)) {
+                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody) {
                         // Extend vertical wall (wall2) to horizontal wall's line
                         const vEndpointYCaseA = vIsAtStart ? vWall.start_y : vWall.end_y;
                         const vOtherYCaseA = vIsAtStart ? vWall.end_y : vWall.start_y;
@@ -6444,7 +6408,7 @@ export function drawWalls({
                     // Case B: Horizontal is wall2, Vertical is wall1
                     // Only extend wall2 if the intersection is at an actual endpoint of wall2
                     // If wall2 is intersected in the middle (isOnBody), skip extension (it should remain full length)
-                    else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && !vHasColinearPartner && !hHasColinearPartner && usesLegacyPlan(hWall)) {
+                    else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && !vHasColinearPartner && !hHasColinearPartner) {
                         // Extend horizontal wall (wall2) to vertical wall's line
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -6508,7 +6472,7 @@ export function drawWalls({
 
                     // Case 1: Vertical is stem (wall1), Horizontal is host (wall2)
                     // At T-junctions always allow shortening the stem even if isOnBody flags disagree.
-                    if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody && usesLegacyPlan(vWall)) {
+                    if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody) {
                         // Use geometry at the intersection (nearest endpoint) so stem direction — and thus
                         // which horizontal edge is the near face — is not flipped when wall1/2 flags disagree.
                         const distJointToStart = Math.hypot(inter.x - vWall.start_x, inter.y - vWall.start_y);
@@ -6545,7 +6509,7 @@ export function drawWalls({
                     // Case 2: Horizontal is stem (wall1), Vertical is host (wall2)
                     // Only shorten wall1 if the intersection is at an actual endpoint of wall1
                     // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
-                    else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody && usesLegacyPlan(hWall)) {
+                    else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody) {
                         // Determine which line of vertical (wall2) to connect to
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -6649,7 +6613,7 @@ export function drawWalls({
                     // each tip out by another full thickness.
                     // Extend vertical wall lines to horizontal wall's line
                     // Only extend if intersection is at an endpoint (not in the middle)
-                    if (!verticalWall.isOnBody && usesLegacyPlan(vWall)) {
+                    if (!verticalWall.isOnBody) {
                         if (vIsAtStart) {
                             vLines.line1[0].y = targetY;
                             vLines.line2[0].y = targetY;
@@ -6709,7 +6673,7 @@ export function drawWalls({
                     
                     // Extend horizontal wall lines to vertical wall's line
                     // Only extend if intersection is at an endpoint (not in the middle)
-                    if (!horizontalWall.isOnBody && usesLegacyPlan(hWall)) {
+                    if (!horizontalWall.isOnBody) {
                         if (hIsAtStart) {
                             hLines.line1[0].x = targetX;
                             hLines.line2[0].x = targetX;
@@ -6722,13 +6686,12 @@ export function drawWalls({
                 }
             });
             };
-            runVhPairPhase('extend');
             runVhPairPhase('shorten');
 
             // Slanted / non-ortho corners: true face-line miters
-            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter, legacyWallPlan);
+            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
             // Slant / non-ortho butt-in: trim stem faces to host near face
-            applyAngledButtInAtIntersection(wallsAtIntersection, inter, legacyWallPlan);
+            applyAngledButtInAtIntersection(wallsAtIntersection, inter);
         }
     });
     
@@ -6873,7 +6836,7 @@ export function drawWalls({
         // The one-face ortho shorten creates crossed pink “X” artifacts on slant 45_cut joints.
         const wallThickness = wall.thickness || 100; // Default to 100mm if not set
         const finalAdjust = wallThickness; // Shorten by wall thickness
-        const allowOrtho45Shorten = isAxisAlignedWall(wall) && usesLegacyPlan(wall);
+        const allowOrtho45Shorten = isAxisAlignedWall(wall);
 
         // Make copies of lines for modification
         line1 = [...line1.map(p => ({ ...p }))];
@@ -6929,23 +6892,22 @@ export function drawWalls({
             }
         }
 
-        if (usesLegacyPlan(wall)) {
-            const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
-            if (typeof forcedFlip === 'boolean') {
-                const len = Math.hypot(wallDx, wallDy) || 1;
-                const normalX = wallDy / len;
-                const normalY = -wallDx / len;
-                const wallMidX = (wall.start_x + wall.end_x) / 2;
-                const wallMidY = (wall.start_y + wall.end_y) / 2;
-                const line2MidXNow = (line2[0].x + line2[1].x) / 2;
-                const line2MidYNow = (line2[0].y + line2[1].y) / 2;
-                const line2Dot = normalX * (line2MidXNow - wallMidX) + normalY * (line2MidYNow - wallMidY);
-                const line2IsPositiveSide = line2Dot > 0;
-                if (line2IsPositiveSide !== forcedFlip) {
-                    const tmp = line1;
-                    line1 = line2;
-                    line2 = tmp;
-                }
+        // Final role enforcement: ensure line2 (inner) is on forced 45_cut side.
+        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+        if (typeof forcedFlip === 'boolean') {
+            const len = Math.hypot(wallDx, wallDy) || 1;
+            const normalX = wallDy / len;
+            const normalY = -wallDx / len;
+            const wallMidX = (wall.start_x + wall.end_x) / 2;
+            const wallMidY = (wall.start_y + wall.end_y) / 2;
+            const line2MidXNow = (line2[0].x + line2[1].x) / 2;
+            const line2MidYNow = (line2[0].y + line2[1].y) / 2;
+            const line2Dot = normalX * (line2MidXNow - wallMidX) + normalY * (line2MidYNow - wallMidY);
+            const line2IsPositiveSide = line2Dot > 0;
+            if (line2IsPositiveSide !== forcedFlip) {
+                const tmp = line1;
+                line1 = line2;
+                line2 = tmp;
             }
         }
         wall._line1 = line1;

@@ -398,7 +398,7 @@ export const MANUAL_SECTIONS = [
                 'Finish drawing, then click **Exit Edit Mode**.',
                 'Click a wall corner. **Configure Joints** opens.',
                 'Set **None**, **Butt-in**, or **45° Cut**.',
-                'Use **Flip Wall Order** if the wrong wall shortens.',
+                'For Butt-in, optionally tick **Deduct joining wall thickness**. Use **Flip Wall Order** if the wrong wall shortens.',
                 'To set several corners the same, click more corners, pick a type, then **Apply type to all**.',
                 'Click **Save Changes**. Recalculate wall panels after joints change.',
             ] },

@@ -37,8 +37,7 @@ import {
   clearDimensionPlacementMemory,
   nearestPointOnWallFace,
   pointAlongDirection,
-    wallUsesLegacyPlanAdjustments,
-    snapToEitherFaceLine,
+  snapToEitherFaceLine,
   bothLineSnapMarks,
   snapMagnetPoint,
   drawnWallFromLine,
@@ -172,6 +171,7 @@ const Canvas2D = ({
     // mirrors selectedIntersection as the "focused" one when only one is picked.
     const [selectedIntersections, setSelectedIntersections] = useState([]);
     const [bulkJointMethod, setBulkJointMethod] = useState('butt_in');
+    const [bulkDeductThickness, setBulkDeductThickness] = useState(false);
     const [highlightWalls, setHighlightWalls] = useState([]);
     const [selectedJointPair, setSelectedJointPair] = useState(null);
     const [hoveredDoorId, setHoveredDoorId] = useState(null);
@@ -2627,14 +2627,6 @@ const Canvas2D = ({
         let wall1 = walls.find(w => w.id === joint.wall_1);
         let wall2 = walls.find(w => w.id === joint.wall_2);
         if (!wall1 || !wall2) return;
-        const legacyPlan = project?.legacy_wall_plan !== false;
-        // The joint type is only a label. A line the drafter snapped stays where it is.
-        if (
-            !wallUsesLegacyPlanAdjustments(wall1, legacyPlan)
-            && !wallUsesLegacyPlanAdjustments(wall2, legacyPlan)
-        ) {
-            return;
-        }
 
         const jointPoint = intersection && Number.isFinite(Number(intersection.x)) && Number.isFinite(Number(intersection.y))
             ? { x: Number(intersection.x), y: Number(intersection.y) }
@@ -2645,7 +2637,7 @@ const Canvas2D = ({
             // 45° tip puts the point outside the drawn corner and outside the site.
             for (const wallId of [joint.wall_1, joint.wall_2]) {
                 const wall = walls.find((w) => String(w.id) === String(wallId));
-                if (!wall || !wallUsesLegacyPlanAdjustments(wall, legacyPlan) || !originalWallEndpoints.has(wall.id)) continue;
+                if (!wall || !originalWallEndpoints.has(wall.id)) continue;
                 const original = originalWallEndpoints.get(wall.id);
                 originalWallEndpoints.delete(wall.id);
                 const restored = {
@@ -2666,7 +2658,7 @@ const Canvas2D = ({
         if (jointPoint && joint.joining_method !== '45_cut') {
             for (const wallId of [joint.wall_1, joint.wall_2]) {
                 const wall = walls.find((w) => String(w.id) === String(wallId));
-                if (!wall || !wallUsesLegacyPlanAdjustments(wall, legacyPlan)) continue;
+                if (!wall) continue;
                 const tip = tipShiftForJoint(wall, jointPoint, 'retract');
                 if (tip) await saveWallTip(wall, tip, walls);
             }
@@ -2683,10 +2675,7 @@ const Canvas2D = ({
                 return; // Do not adjust walls when joint type is "none"
             }
 
-                if (joint.joining_method === 'butt_in') {
-                if (!wallUsesLegacyPlanAdjustments(wall1, legacyPlan)) {
-                    return;
-                }
+            if (joint.joining_method === 'butt_in') {
                 const deduct = Boolean(joint.deduct_joining_thickness);
                 if (!deduct) {
                     return;
@@ -3205,7 +3194,6 @@ const Canvas2D = ({
             doors,
             polygonSelectMode: currentMode === 'define-room' || currentMode === 'storey-area',
             selectedIntersectionKeys: new Set(selectedIntersections.map(getIntersectionKey)),
-            legacyWallPlan: project?.legacy_wall_plan !== false,
         });
         const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
         const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;
@@ -4318,24 +4306,40 @@ const Canvas2D = ({
                     </div>
                     <select
                         value={bulkJointMethod}
-                        onChange={(e) => setBulkJointMethod(e.target.value)}
+                        onChange={(e) => {
+                            const method = e.target.value;
+                            setBulkJointMethod(method);
+                            if (method !== 'butt_in') setBulkDeductThickness(false);
+                        }}
                         className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                     >
                         <option value="none">None</option>
                         <option value="butt_in">Butt-in</option>
                         <option value="45_cut">45° Cut</option>
                     </select>
+                    {bulkJointMethod === 'butt_in' && (
+                    <label className="flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={bulkDeductThickness}
+                            onChange={(e) => setBulkDeductThickness(e.target.checked)}
+                        />
+                        <span>Deduct joining wall thickness</span>
+                    </label>
+                    )}
                     <button
                         type="button"
                         className="w-full px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                         onClick={() => {
                             const method = bulkJointMethod;
+                            const deduct = method === 'butt_in' ? bulkDeductThickness : false;
                             const next = selectedIntersections.map((inter) => ({
                                 ...inter,
                                 pairs: (inter.pairs || []).map((pair) => ({
                                     ...pair,
                                     joining_method: method,
-                                    deduct_joining_thickness: false,
+                                    deduct_joining_thickness: deduct,
                                 })),
                             }));
                             syncFocusedIntersection(next);
@@ -4408,7 +4412,9 @@ const Canvas2D = ({
                             pairs[index] = {
                                 ...pairs[index],
                                 joining_method: method,
-                                deduct_joining_thickness: false,
+                                deduct_joining_thickness: method === 'butt_in'
+                                    ? Boolean(pairs[index].deduct_joining_thickness)
+                                    : false,
                             };
                             return { ...item, pairs };
                         });
@@ -4421,6 +4427,35 @@ const Canvas2D = ({
                     <option value="butt_in">Butt-in</option>
                     <option value="45_cut">45° Cut</option>
                     </select>
+
+                    {(pair.joining_method || 'none') === 'butt_in' && (
+                    <label className="mt-2 flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={Boolean(pair.deduct_joining_thickness)}
+                            onChange={(e) => {
+                                const next = selectedIntersections.map((item, i) => {
+                                    if (i !== interIdx) return item;
+                                    const pairs = [...(item.pairs || [])];
+                                    pairs[index] = {
+                                        ...pairs[index],
+                                        deduct_joining_thickness: e.target.checked,
+                                    };
+                                    return { ...item, pairs };
+                                });
+                                syncFocusedIntersection(next);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                        <span>
+                            Deduct joining wall thickness
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">
+                                Shortens Wall {pair.wall1.id} by Wall {pair.wall2.id}&apos;s thickness
+                            </span>
+                        </span>
+                    </label>
+                    )}
 
                     <div className="flex justify-end">
                     <button
@@ -4472,7 +4507,9 @@ const Canvas2D = ({
                                         wall_1: pair.wall1.id,
                                         wall_2: pair.wall2.id,
                                         joining_method: pair.joining_method,
-                                        deduct_joining_thickness: false,
+                                        deduct_joining_thickness: pair.joining_method === 'butt_in'
+                                            ? Boolean(pair.deduct_joining_thickness)
+                                            : false,
                                     });
                             
                                     await adjustWallForJointType(
@@ -4480,7 +4517,9 @@ const Canvas2D = ({
                                             wall_1: pair.wall1.id,
                                             wall_2: pair.wall2.id,
                                             joining_method: pair.joining_method,
-                                            deduct_joining_thickness: false,
+                                            deduct_joining_thickness: pair.joining_method === 'butt_in'
+                                                ? Boolean(pair.deduct_joining_thickness)
+                                                : false,
                                         },
                                         workingWalls,
                                         setWalls,

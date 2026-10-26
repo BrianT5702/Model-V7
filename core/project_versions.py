@@ -210,20 +210,11 @@ def create_project_version(project: Project, *, label: str = '', user=None) -> P
             _persist_original(locked, original_snapshot)
     last_number = locked.versions.aggregate(Max('number'))['number__max'] or 0
     created_by = user if user is not None and getattr(user, 'is_authenticated', False) else None
-    if original_snapshot is not None:
-        original_row = dict(original_snapshot.get('project') or {})
-        if 'legacy_wall_plan' not in original_row:
-            original_snapshot = copy.deepcopy(original_snapshot)
-            original_row['legacy_wall_plan'] = bool(locked.legacy_wall_plan)
-            original_snapshot['project'] = original_row
-            _persist_original(locked, original_snapshot)
-    current_snapshot = copy.deepcopy(current_snapshot)
-    project_row = dict(current_snapshot.get('project') or {})
-    # A version saved from now on keeps the drawn line and the chosen face.
-    project_row['legacy_wall_plan'] = False
     if original_snapshot:
+        current_snapshot = copy.deepcopy(current_snapshot)
+        project_row = dict(current_snapshot.get('project') or {})
         project_row['baseline_snapshot'] = copy.deepcopy(original_snapshot)
-    current_snapshot['project'] = project_row
+        current_snapshot['project'] = project_row
     version = ProjectVersion.objects.create(
         project=locked,
         number=last_number + 1,
@@ -443,7 +434,6 @@ def build_version_preview(project: Project, snapshot: dict) -> dict:
             'height': project_row.get('height', project.height),
             'wall_thickness': project_row.get('wall_thickness', project.wall_thickness),
             'panel_optimization': project_row.get('panel_optimization', project.panel_optimization),
-            'legacy_wall_plan': project_row.get('legacy_wall_plan', True),
             'storeys': storeys,
         },
         'storeys': storeys,

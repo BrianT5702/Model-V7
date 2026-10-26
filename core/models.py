@@ -72,10 +72,6 @@ class Project(models.Model):
         default=False,
         help_text="If True, this project is hidden on Home. Used for leftover version copies.",
     )
-    legacy_wall_plan = models.BooleanField(
-        default=False,
-        help_text="Older projects auto-extend corners and flip wall thickness on the 2D plan. Projects created from now on leave this off.",
-    )
     baseline_snapshot = models.JSONField(
         null=True,
         blank=True,

@@ -549,12 +549,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         model = Project
         fields = [
             'id', 'name', 'width', 'length', 'height', 'calculated_height', 'wall_thickness',
-            'folder', 'list_order', 'panel_optimization', 'legacy_wall_plan',
+            'folder', 'list_order', 'panel_optimization',
             'storeys', 'walls', 'rooms', 'doors', 'intersections'
         ]
-        extra_kwargs = {
-            'legacy_wall_plan': {'read_only': True},
-        }
 
     def get_calculated_height(self, obj):
         """Calculate the maximum height from all rooms and storeys"""
@@ -644,7 +641,6 @@ class ProjectRetrieveSerializer(serializers.ModelSerializer):
             'calculated_height',
             'wall_thickness',
             'panel_optimization',
-            'legacy_wall_plan',
             'storeys',
             'created_at',
             'updated_at',

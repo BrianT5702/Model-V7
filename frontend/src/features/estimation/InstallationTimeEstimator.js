@@ -156,8 +156,7 @@ const InstallationTimeEstimator = ({
                         doors,
                         walls: wallsForVector,
                         planPageOrientation,
-                        fitToPage,
-                        legacyWallPlan: projectData?.legacy_wall_plan !== false
+                        fitToPage
                     })
                 ]);
                 if (cancelled) return;
@@ -181,8 +180,7 @@ const InstallationTimeEstimator = ({
                     walls: wallsForVector,
                     wallIntersections: ceilingFloorIntersections,
                     slabWidth,
-                    slabLength,
-                    legacyWallPlan: projectData?.legacy_wall_plan !== false
+                    slabLength
                 });
                 if (cancelled) return;
 
@@ -2416,9 +2414,7 @@ const InstallationTimeEstimator = ({
                                 wallsForVector,
                                 planPageOrientation,
                                 fitToPage,
-                                false,
-                                null,
-                                projectData?.legacy_wall_plan !== false
+                                false
                             );
                         }
                     }
@@ -2436,9 +2432,7 @@ const InstallationTimeEstimator = ({
                         wallsForVector,
                         planPageOrientation,
                         fitToPage,
-                        false,
-                        null,
-                        projectData?.legacy_wall_plan !== false
+                        false
                     );
                 }
             }
@@ -2471,8 +2465,7 @@ const InstallationTimeEstimator = ({
                         walls: wallsForVector,
                         wallIntersections: wallIntersectionsForPlans,
                         slabWidth,
-                        slabLength,
-                        legacyWallPlan: projectData?.legacy_wall_plan !== false
+                        slabLength
                     });
                     usedVectorCeiling = flags.usedVectorCeiling;
                     usedVectorFloor = flags.usedVectorFloor;

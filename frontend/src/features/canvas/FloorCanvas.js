@@ -14,8 +14,7 @@ import {
     calculateOffsetPoints,
     makeLabelDrawFn,
     buildWallOffsetOptions,
-    wallUsesLegacyPlanAdjustments,
-    resolve45CutForceShouldFlip,
+    resolve45CutForceShouldFlip
 } from './drawing.js';
 import { drawFloorPlanDimensionOnContext } from './planDimensionDrawing.js';
 import {
@@ -715,22 +714,36 @@ const FloorCanvas = ({
                 const wallThickness = wall.thickness || 100;
                 const gapPixels = (wallThickness * scaleFactor.current) / 2;
                 const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
-                const legacyWallPlan = projectData?.legacy_wall_plan !== false;
-                if (!wallUsesLegacyPlanAdjustments(wall, legacyWallPlan)) {
-                    offsetOpts.noAutoFlip = true;
-                } else {
-                    const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
-                    if (typeof forcedFlip === 'boolean') {
-                        offsetOpts.forceShouldFlip = forcedFlip;
-                    }
-                }
 
                 let has45 = false;
+                let joinVecX = 0;
+                let joinVecY = 0;
+                let joinCount = 0;
                 intersections.forEach(inter => {
                     if ((inter.wall_1 === wall.id || inter.wall_2 === wall.id) && inter.joining_method === '45_cut') {
                         has45 = true;
+                        const otherWallId = inter.wall_1 === wall.id ? inter.wall_2 : inter.wall_1;
+                        const otherWall = walls.find(w => w.id === otherWallId);
+                        if (otherWall) {
+                            const wallMidX = (wall.start_x + wall.end_x) / 2;
+                            const wallMidY = (wall.start_y + wall.end_y) / 2;
+                            const otherMidX = (otherWall.start_x + otherWall.end_x) / 2;
+                            const otherMidY = (otherWall.start_y + otherWall.end_y) / 2;
+                            joinVecX += otherMidX - wallMidX;
+                            joinVecY += otherMidY - wallMidY;
+                            joinCount += 1;
+                        }
                     }
                 });
+                if (has45 && joinCount > 0) {
+                    const dx = wall.end_x - wall.start_x;
+                    const dy = wall.end_y - wall.start_y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const normalX = dy / len;
+                    const normalY = -dx / len;
+                    const joinDot = normalX * (joinVecX / joinCount) + normalY * (joinVecY / joinCount);
+                    offsetOpts.forceShouldFlip = joinDot > 0;
+                }
 
                 let { line1, line2 } = calculateOffsetPoints(
                     wall.start_x, wall.start_y, wall.end_x, wall.end_y,
@@ -740,7 +753,7 @@ const FloorCanvas = ({
                 // Do not recompute line2 from centroid vs joining wall: that overwrote polygon-based inner
                 // side from calculateOffsetPoints (drawing.js), e.g. wall 7611 with 45_cut joints.
 
-                if (has45 && wallUsesLegacyPlanAdjustments(wall, projectData?.legacy_wall_plan !== false)) {
+                if (has45) {
                     const dx = wall.end_x - wall.start_x;
                     const dy = wall.end_y - wall.start_y;
                     const len = Math.hypot(dx, dy);
@@ -755,24 +768,25 @@ const FloorCanvas = ({
                     line2[1].y -= uy * finalAdjust;
                 }
 
-                if (wallUsesLegacyPlanAdjustments(wall, projectData?.legacy_wall_plan !== false)) {
-                    const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
-                    if (typeof forcedFlip === 'boolean') {
-                        const dx = wall.end_x - wall.start_x;
-                        const dy = wall.end_y - wall.start_y;
-                        const len = Math.hypot(dx, dy) || 1;
-                        const normalX = dy / len;
-                        const normalY = -dx / len;
-                        const wallMidX = (wall.start_x + wall.end_x) / 2;
-                        const wallMidY = (wall.start_y + wall.end_y) / 2;
-                        const line2MidX = (line2[0].x + line2[1].x) / 2;
-                        const line2MidY = (line2[0].y + line2[1].y) / 2;
-                        const line2Dot = normalX * (line2MidX - wallMidX) + normalY * (line2MidY - wallMidY);
-                        if ((line2Dot > 0) !== forcedFlip) {
-                            const tmp = line1;
-                            line1 = line2;
-                            line2 = tmp;
-                        }
+                // Ensure inner styling follows forced 45_cut side even if prior transforms leave
+                // line identity mismatched for this wall.
+                const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+                if (typeof forcedFlip === 'boolean') {
+                    const dx = wall.end_x - wall.start_x;
+                    const dy = wall.end_y - wall.start_y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const normalX = dy / len;
+                    const normalY = -dx / len;
+                    const wallMidX = (wall.start_x + wall.end_x) / 2;
+                    const wallMidY = (wall.start_y + wall.end_y) / 2;
+                    const line2MidX = (line2[0].x + line2[1].x) / 2;
+                    const line2MidY = (line2[0].y + line2[1].y) / 2;
+                    const line2Dot = normalX * (line2MidX - wallMidX) + normalY * (line2MidY - wallMidY);
+                    const line2IsPositiveSide = line2Dot > 0;
+                    if (line2IsPositiveSide !== forcedFlip) {
+                        const tmp = line1;
+                        line1 = line2;
+                        line2 = tmp;
                     }
                 }
 
