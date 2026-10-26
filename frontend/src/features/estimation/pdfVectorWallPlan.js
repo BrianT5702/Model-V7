@@ -1140,7 +1140,7 @@ export function drawVectorWallPlan(
                             };
                             runVhPairPhase('extend');
                             runVhPairPhase('shorten');
-                            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
+                            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter, legacyWallPlan);
                         }
                     });
                     
@@ -1341,6 +1341,7 @@ export function drawVectorWallPlan(
                         const finalAdjust = wallThickness; // Shorten by wall thickness to match visual gap
                         const allowOrtho45Shorten =
                             isAxisAlignedWall(wall)
+                            && usesLegacyPlan(wall)
                             && !wall._miteredStart
                             && !wall._miteredEnd;
                         

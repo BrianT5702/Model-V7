@@ -740,7 +740,7 @@ const FloorCanvas = ({
                 // Do not recompute line2 from centroid vs joining wall: that overwrote polygon-based inner
                 // side from calculateOffsetPoints (drawing.js), e.g. wall 7611 with 45_cut joints.
 
-                if (has45) {
+                if (has45 && wallUsesLegacyPlanAdjustments(wall, projectData?.legacy_wall_plan !== false)) {
                     const dx = wall.end_x - wall.start_x;
                     const dy = wall.end_y - wall.start_y;
                     const len = Math.hypot(dx, dy);

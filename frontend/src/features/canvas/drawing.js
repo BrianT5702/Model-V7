@@ -1478,7 +1478,7 @@ export function applyAngledButtInAtIntersection(wallsAtIntersection, inter, lega
  * the centerline, then picks the face-intersection pair whose separation best
  * matches a true thickness miter — avoids crossed pink “X” corners on slants.
  */
-export function applyAngledWallMitersAtIntersection(wallsAtIntersection, inter) {
+export function applyAngledWallMitersAtIntersection(wallsAtIntersection, inter, legacyWallPlan = true) {
     if (!inter || !Array.isArray(wallsAtIntersection) || wallsAtIntersection.length < 2) return;
 
     const resolveJoiningMethod = (wallA, wallB) => {
@@ -1558,6 +1558,11 @@ export function applyAngledWallMitersAtIntersection(wallsAtIntersection, inter) 
             // Only true 45° corners get face miters. butt_in uses applyAngledButtIn;
             // 'none' must keep square ends (do not miter).
             if (joiningMethod !== '45_cut') continue;
+            // A snapped face stays on that line. Only older plans still pull the corner into a miter.
+            if (
+                !wallUsesLegacyPlanAdjustments(wallA, legacyWallPlan)
+                || !wallUsesLegacyPlanAdjustments(wallB, legacyWallPlan)
+            ) continue;
 
             const linesA = aEntry.wallData;
             const linesB = bEntry.wallData;
@@ -6721,7 +6726,7 @@ export function drawWalls({
             runVhPairPhase('shorten');
 
             // Slanted / non-ortho corners: true face-line miters
-            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
+            applyAngledWallMitersAtIntersection(wallsAtIntersection, inter, legacyWallPlan);
             // Slant / non-ortho butt-in: trim stem faces to host near face
             applyAngledButtInAtIntersection(wallsAtIntersection, inter, legacyWallPlan);
         }
@@ -6868,7 +6873,7 @@ export function drawWalls({
         // The one-face ortho shorten creates crossed pink “X” artifacts on slant 45_cut joints.
         const wallThickness = wall.thickness || 100; // Default to 100mm if not set
         const finalAdjust = wallThickness; // Shorten by wall thickness
-        const allowOrtho45Shorten = isAxisAlignedWall(wall);
+        const allowOrtho45Shorten = isAxisAlignedWall(wall) && usesLegacyPlan(wall);
 
         // Make copies of lines for modification
         line1 = [...line1.map(p => ({ ...p }))];

@@ -37,7 +37,8 @@ import {
   clearDimensionPlacementMemory,
   nearestPointOnWallFace,
   pointAlongDirection,
-  snapToEitherFaceLine,
+    wallUsesLegacyPlanAdjustments,
+    snapToEitherFaceLine,
   bothLineSnapMarks,
   snapMagnetPoint,
   drawnWallFromLine,
@@ -2626,6 +2627,14 @@ const Canvas2D = ({
         let wall1 = walls.find(w => w.id === joint.wall_1);
         let wall2 = walls.find(w => w.id === joint.wall_2);
         if (!wall1 || !wall2) return;
+        const legacyPlan = project?.legacy_wall_plan !== false;
+        // The joint type is only a label. A line the drafter snapped stays where it is.
+        if (
+            !wallUsesLegacyPlanAdjustments(wall1, legacyPlan)
+            && !wallUsesLegacyPlanAdjustments(wall2, legacyPlan)
+        ) {
+            return;
+        }
 
         const jointPoint = intersection && Number.isFinite(Number(intersection.x)) && Number.isFinite(Number(intersection.y))
             ? { x: Number(intersection.x), y: Number(intersection.y) }
@@ -2636,7 +2645,7 @@ const Canvas2D = ({
             // 45° tip puts the point outside the drawn corner and outside the site.
             for (const wallId of [joint.wall_1, joint.wall_2]) {
                 const wall = walls.find((w) => String(w.id) === String(wallId));
-                if (!wall || !originalWallEndpoints.has(wall.id)) continue;
+                if (!wall || !wallUsesLegacyPlanAdjustments(wall, legacyPlan) || !originalWallEndpoints.has(wall.id)) continue;
                 const original = originalWallEndpoints.get(wall.id);
                 originalWallEndpoints.delete(wall.id);
                 const restored = {
@@ -2657,7 +2666,7 @@ const Canvas2D = ({
         if (jointPoint && joint.joining_method !== '45_cut') {
             for (const wallId of [joint.wall_1, joint.wall_2]) {
                 const wall = walls.find((w) => String(w.id) === String(wallId));
-                if (!wall) continue;
+                if (!wall || !wallUsesLegacyPlanAdjustments(wall, legacyPlan)) continue;
                 const tip = tipShiftForJoint(wall, jointPoint, 'retract');
                 if (tip) await saveWallTip(wall, tip, walls);
             }
@@ -2674,7 +2683,10 @@ const Canvas2D = ({
                 return; // Do not adjust walls when joint type is "none"
             }
 
-            if (joint.joining_method === 'butt_in') {
+                if (joint.joining_method === 'butt_in') {
+                if (!wallUsesLegacyPlanAdjustments(wall1, legacyPlan)) {
+                    return;
+                }
                 const deduct = Boolean(joint.deduct_joining_thickness);
                 if (!deduct) {
                     return;
