@@ -277,7 +277,8 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
             const wallThickness = num(wall.thickness, 100);
             // Match CeilingCanvas/FloorCanvas: offset = half thickness per side (gapPixels/scaleFactor with sf=1).
             const gapPixels = (wallThickness * MODEL_SF) / 2;
-            const offsetOpts = buildWallOffsetOptions(wall, storeyRooms);
+            const offsetOpts = buildWallOffsetOptions(wall, storeyRooms) || {};
+            offsetOpts.noAutoFlip = true;
 
             let { line1, line2 } = calculateOffsetPoints(
                 num(wall.start_x),

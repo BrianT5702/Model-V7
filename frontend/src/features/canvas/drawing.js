@@ -5402,7 +5402,8 @@ export function getWallOffsetFallbackReference(wall, rooms, center) {
  * @param {object[]} [offsetOptions.rooms]
  * @param {{ x: number, y: number, w?: number }[]} [offsetOptions.scoringSamples] — prefer flip that puts more weighted room mass on the inner half-plane
  * @param {{ x: number, y: number }} [offsetOptions.innerReferencePoint] — tie-break / fallback instead of `center`
- * @param {boolean} [offsetOptions.forceShouldFlip] — hard override for side selection (used by FloorCanvas 45_cut priority)
+ * @param {boolean} [offsetOptions.forceShouldFlip] — hard override for side selection (used by 3D, not the 2D plan)
+ * @param {boolean} [offsetOptions.noAutoFlip] — 2D plan: keep the side chosen while drawing
  */
 export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFactor, offsetOptions) {
     const dx = x2 - x1;
@@ -5449,7 +5450,9 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
     };
 
     let shouldFlip;
+    const noAutoFlip = Boolean(offsetOptions && offsetOptions.noAutoFlip);
     const forcedFlip =
+        !noAutoFlip &&
         offsetOptions && typeof offsetOptions.forceShouldFlip === 'boolean'
             ? offsetOptions.forceShouldFlip
             : null;
@@ -5470,7 +5473,9 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
               )
             : null;
 
-    if (forcedFlip !== null) {
+    if (noAutoFlip) {
+        shouldFlip = false;
+    } else if (forcedFlip !== null) {
         shouldFlip = forcedFlip;
     } else if (polygonResolved !== null) {
         shouldFlip = polygonResolved;
@@ -5514,7 +5519,7 @@ export function calculateOffsetPoints(x1, y1, x2, y2, gapPixels, center, scaleFa
     }
     // A face that would sit outside the site is drawn inward instead, so the
     // outer line of a wall already on x=0 or y=0 stays on that edge.
-    const siteBox = offsetOptions && offsetOptions.siteBox;
+    const siteBox = !noAutoFlip && offsetOptions && offsetOptions.siteBox;
     if (siteBox) {
         const px = midX + finalOffsetX;
         const py = midY + finalOffsetY;
@@ -6077,13 +6082,8 @@ export function drawWalls({
         const wallThickness = wall.thickness; // Default to 100mm if not set
         const gapPixels = (wallThickness * scaleFactor);
         const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
-        if (center && Number(center.x) > 0 && Number(center.y) > 0) {
-            offsetOpts.siteBox = { minX: 0, minY: 0, maxX: center.x * 2, maxY: center.y * 2 };
-        }
-        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
-        if (typeof forcedFlip === 'boolean') {
-            offsetOpts.forceShouldFlip = forcedFlip;
-        }
+        // The drafter already picked which side the thickness sits on.
+        offsetOpts.noAutoFlip = true;
         // Shared/partition walls: skip polygon probe (both sides "inside" → unstable null,
         // then scoring can flip when a second room is defined).
         const isPartition = String(wall.application_type || '').toLowerCase() === 'partition';
@@ -6892,24 +6892,6 @@ export function drawWalls({
             }
         }
 
-        // Final role enforcement: ensure line2 (inner) is on forced 45_cut side.
-        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
-        if (typeof forcedFlip === 'boolean') {
-            const len = Math.hypot(wallDx, wallDy) || 1;
-            const normalX = wallDy / len;
-            const normalY = -wallDx / len;
-            const wallMidX = (wall.start_x + wall.end_x) / 2;
-            const wallMidY = (wall.start_y + wall.end_y) / 2;
-            const line2MidXNow = (line2[0].x + line2[1].x) / 2;
-            const line2MidYNow = (line2[0].y + line2[1].y) / 2;
-            const line2Dot = normalX * (line2MidXNow - wallMidX) + normalY * (line2MidYNow - wallMidY);
-            const line2IsPositiveSide = line2Dot > 0;
-            if (line2IsPositiveSide !== forcedFlip) {
-                const tmp = line1;
-                line1 = line2;
-                line2 = tmp;
-            }
-        }
         wall._line1 = line1;
         wall._line2 = line2;
         const highlightLineWidth = highlight

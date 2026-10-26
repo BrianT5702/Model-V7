@@ -2986,7 +2986,8 @@ const CeilingCanvas = ({
                 // Convert thickness (mm) to pixels: thickness * scaleFactor / 2
                 const wallThickness = wall.thickness || 100; // Default to 100mm if not set
                 const gapPixels = (wallThickness * scaleFactor.current) / 2;
-                const offsetOpts = buildWallOffsetOptions(wall, effectiveRooms);
+                const offsetOpts = buildWallOffsetOptions(wall, effectiveRooms) || {};
+                offsetOpts.noAutoFlip = true;
 
                 // Calculate offset points for double-line wall
                 let { line1, line2 } = calculateOffsetPoints(

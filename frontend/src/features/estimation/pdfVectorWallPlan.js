@@ -9,7 +9,6 @@ import {
     calculateOffsetPoints,
     calculateActualProjectDimensions,
     buildWallOffsetOptions,
-    resolve45CutForceShouldFlip,
     drawWallPlanDimensionsLayer,
     drawOverallProjectDimensions,
     applyAngledWallMitersAtIntersection,
@@ -360,10 +359,7 @@ export function drawVectorWallPlan(
                         const y2 = wall.end_y || 0;
                         const thickness = wall.thickness || 200;
                         const offsetOpts = buildWallOffsetOptions(wall, roomsToDraw) || {};
-                        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
-                        if (typeof forcedFlip === 'boolean') {
-                            offsetOpts.forceShouldFlip = forcedFlip;
-                        }
+                        offsetOpts.noAutoFlip = true;
                         const { line1, line2 } = calculateOffsetPoints(
                             x1, y1, x2, y2, thickness, center, 1, offsetOpts
                         );
@@ -748,10 +744,7 @@ export function drawVectorWallPlan(
                         // Use scale = 1 for model space calculations (we'll transform to PDF space later)
                         const gapPixels = wallThickness; // In model space, gap = thickness
                         const offsetOpts = buildWallOffsetOptions(wall, roomsToDraw) || {};
-                        const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
-                        if (typeof forcedFlip === 'boolean') {
-                            offsetOpts.forceShouldFlip = forcedFlip;
-                        }
+                        offsetOpts.noAutoFlip = true;
 
                         let { line1, line2 } = calculateOffsetPoints(
                             wall.start_x,
@@ -1374,28 +1367,6 @@ export function drawVectorWallPlan(
                             }
                         }
                         
-                        // Keep line role aligned with forced 45_cut side for consistent inner/outer coloring.
-                        const forcedFlipForWall = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
-                        if (typeof forcedFlipForWall === 'boolean') {
-                            const dx = wall.end_x - wall.start_x;
-                            const dy = wall.end_y - wall.start_y;
-                            const len = Math.hypot(dx, dy) || 1;
-                            const normalX = dy / len;
-                            const normalY = -dx / len;
-                            const wallMidX = (wall.start_x + wall.end_x) / 2;
-                            const wallMidY = (wall.start_y + wall.end_y) / 2;
-                            const line2MidX = (line2[0].x + line2[1].x) / 2;
-                            const line2MidY = (line2[0].y + line2[1].y) / 2;
-                            const line2Dot = normalX * (line2MidX - wallMidX) + normalY * (line2MidY - wallMidY);
-                            const line2IsPositiveSide = line2Dot > 0;
-                            if (line2IsPositiveSide !== forcedFlipForWall) {
-                                const tmp = line1;
-                                line1 = line2;
-                                line2 = tmp;
-                            }
-                        }
-
-                        // Store lines for wall caps
                         wall._line1 = line1;
                         wall._line2 = line2;
                         
