@@ -3719,8 +3719,17 @@ export default function useProjectDetails(projectId, { canEdit = true } = {}) {
       baseElevationToUse
     );
 
-    // 3. Split the new wall at intersection points (sort by distance from start)
-    let splitPoints = [startPoint, ...refinedIntersections.map(i => i.intersection), endPoint];
+    // 3. Split the new wall where it crosses another wall in the middle.
+    // A cut within one host thickness of either drawn end is the face they
+    // aimed at (3100 landing on the far line of a 100mm wall). Splitting
+    // there turns that wall into 3000. Keep the length that was drawn.
+    const newWallCuts = refinedIntersections.filter((item) => {
+      const thick = Math.max(1, Number(item.wall?.thickness) || 100);
+      const dStart = Math.hypot(item.intersection.x - startPoint.x, item.intersection.y - startPoint.y);
+      const dEnd = Math.hypot(item.intersection.x - endPoint.x, item.intersection.y - endPoint.y);
+      return Math.min(dStart, dEnd) > thick + 1;
+    });
+    let splitPoints = [startPoint, ...newWallCuts.map((item) => item.intersection), endPoint];
     splitPoints = splitPoints.sort((a, b) => {
       const da = Math.hypot(a.x - startPoint.x, a.y - startPoint.y);
       const db = Math.hypot(b.x - startPoint.x, b.y - startPoint.y);
